@@ -1,0 +1,12 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Wallet or secret files
+wallet.dat
+
+# IDE/OS files
+.DS_Store
+*.swp
+.idea/
+.vscode/
