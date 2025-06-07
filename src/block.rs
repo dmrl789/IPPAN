@@ -1,34 +1,34 @@
-use crate::transaction::Transaction;
 use serde::{Serialize, Deserialize};
+use crate::transaction::Transaction;
+use chrono::Utc;
+use sha2::{Sha256, Digest};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Block {
     pub index: u64,
-    pub timestamp: u64,
     pub previous_hash: String,
+    pub timestamp: i64,
+    pub transactions: Vec<Transaction>,
+    pub nonce: u64,
     pub hash: String,
-    pub author: String,
     pub reward: u64,
-    pub transactions: Vec<Transaction>, // Add this!
 }
 
 impl Block {
-    pub fn new(transactions: Vec<Transaction>, previous_hash: String, author: String, reward: u64) -> Self {
-        let index = 0; // (set appropriately if needed)
-        let timestamp = chrono::Utc::now().timestamp() as u64;
-        let hash = format!("{:x}", blake3::hash(format!("{:?}{:?}{:?}", &transactions, &previous_hash, &author).as_bytes()));
-        Self {
-            index,
-            timestamp,
-            previous_hash,
-            hash,
-            author,
-            reward,
-            transactions,
-        }
-    }
+    pub fn new(index: u64, previous_hash: String, transactions: Vec<Transaction>, nonce: u64, reward: u64) -> Self {
+        let timestamp = Utc::now().timestamp();
+        let mut hasher = Sha256::new();
+        hasher.update(format!("{}{}{}{:?}{}{}", index, &previous_hash, timestamp, &transactions, nonce, reward));
+        let hash = format!("{:x}", hasher.finalize());
 
-    pub fn genesis() -> Self {
-        Block::new(vec![], "0".repeat(64), "genesis".to_string(), 0)
+        Block {
+            index,
+            previous_hash,
+            timestamp,
+            transactions,
+            nonce,
+            hash,
+            reward,
+        }
     }
 }

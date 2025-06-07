@@ -1,47 +1,42 @@
 mod wallet;
-mod block;
-mod blockchain;
-mod account;
-mod transaction;
 
-use wallet::Wallet;
-use block::Block;
-use blockchain::Blockchain;
-use transaction::Transaction;
+use std::io::{self, Write};
 
 fn main() {
-    println!("=== IPPAN Blockchain Demo: Transactions ===");
+    println!("=== IPPAN Wallet Demo ===");
 
-    // Create wallets
-    let wallet1 = Wallet::generate();
-    let wallet2 = Wallet::generate();
-    println!("Wallet1 address: {}", wallet1.address);
-    println!("Wallet2 address: {}", wallet2.address);
+    // Load or create wallet
+    let wallet = if std::path::Path::new("wallet.dat").exists() {
+        wallet::Wallet::load_from_file("wallet.dat")
+    } else {
+        let w = wallet::Wallet::generate();
+        w.save_to_file("wallet.dat");
+        println!("New wallet generated and saved to wallet.dat");
+        w
+    };
 
-    // Create genesis block & blockchain
-    let genesis = Block::genesis();
-    let mut chain = Blockchain::new(genesis, 100);
+    println!("Your wallet address: {}", wallet.address);
 
-    // Reward wallet1 for block authoring
-    chain.add_block(wallet1.address.clone());
+    loop {
+        println!("\nOptions:");
+        println!("1. Show private key as mnemonic words");
+        println!("2. Show private key as hex");
+        println!("3. Show both (for backup)");
+        println!("4. Exit");
+        print!("Choice: ");
+        io::stdout().flush().unwrap();
 
-    // Print balances
-    println!("Balance of wallet1: {}", chain.get_balance(&wallet1.address));
-    println!("Balance of wallet2: {}", chain.get_balance(&wallet2.address));
-
-    // Create and add a transaction from wallet1 to wallet2
-    let tx = Transaction::new(
-        wallet1.address.clone(),
-        wallet2.address.clone(),
-        50,
-        vec![], // Not actually signed for now
-    );
-    chain.add_transaction(tx);
-
-    // Author new block with transaction (by wallet1)
-    chain.add_block(wallet1.address.clone());
-
-    // Print balances again
-    println!("Balance of wallet1: {}", chain.get_balance(&wallet1.address));
-    println!("Balance of wallet2: {}", chain.get_balance(&wallet2.address));
+        let mut choice = String::new();
+        io::stdin().read_line(&mut choice).unwrap();
+        match choice.trim() {
+            "1" => wallet.print_mnemonic(),
+            "2" => wallet.print_private_hex(),
+            "3" => {
+                wallet.print_mnemonic();
+                wallet.print_private_hex();
+            }
+            "4" => break,
+            _ => println!("Invalid choice!"),
+        }
+    }
 }
