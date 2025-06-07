@@ -1,53 +1,34 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-use sha2::{Sha256, Digest};
+use crate::transaction::Transaction;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
-    pub data: String,
-    pub previous_hash: String,
+    pub index: u64,
     pub timestamp: u64,
-    pub author: String,
+    pub previous_hash: String,
     pub hash: String,
-    pub reward: u64, // New: block reward field
+    pub author: String,
+    pub reward: u64,
+    pub transactions: Vec<Transaction>, // Add this!
 }
 
 impl Block {
-    pub fn new(data: String, previous_hash: String, author: String, reward: u64) -> Self {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let hash = Block::calculate_hash(&data, &previous_hash, timestamp, &author, reward);
-        Block {
-            data,
-            previous_hash,
+    pub fn new(transactions: Vec<Transaction>, previous_hash: String, author: String, reward: u64) -> Self {
+        let index = 0; // (set appropriately if needed)
+        let timestamp = chrono::Utc::now().timestamp() as u64;
+        let hash = format!("{:x}", blake3::hash(format!("{:?}{:?}{:?}", &transactions, &previous_hash, &author).as_bytes()));
+        Self {
+            index,
             timestamp,
-            author,
+            previous_hash,
             hash,
+            author,
             reward,
+            transactions,
         }
     }
 
-    pub fn calculate_hash(
-        data: &str,
-        previous_hash: &str,
-        timestamp: u64,
-        author: &str,
-        reward: u64,
-    ) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(data.as_bytes());
-        hasher.update(previous_hash.as_bytes());
-        hasher.update(timestamp.to_le_bytes());
-        hasher.update(author.as_bytes());
-        hasher.update(reward.to_le_bytes());
-        let result = hasher.finalize();
-        hex::encode(result)
-    }
-
     pub fn genesis() -> Self {
-        Block::new(
-            "genesis".to_string(),
-            "0".repeat(64),
-            "network".to_string(),
-            0, // Genesis block: reward 0
-        )
+        Block::new(vec![], "0".repeat(64), "genesis".to_string(), 0)
     }
 }
