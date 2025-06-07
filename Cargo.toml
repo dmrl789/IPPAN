@@ -2,21 +2,34 @@
 name = "ippan-core"
 version = "0.1.0"
 edition = "2021"
+authors = ["dmrl789 <ippan.org@gmail.com>"]
+description = "IPPAN blockchain wallet and core logic prototype"
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
+# Key management
+ed25519-dalek = "2.1"
 rand = "0.8"
+
+# Mnemonic (BIP39)
+bip39 = "1.2"
+
+# Serialization (save/load wallet)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-bs58 = "0.4"
-ripemd = "0.1"
-sha2 = "0.10"
-ed25519-dalek = "2.1.1"
-argon2 = "0.5"
-bip39 = "1.1.0"
-qrcode = "0.12"
-image = "0.23"
-hex = "0.4"
-aes-gcm = "0.10"
-tokio = { version = "1", features = ["full"] }
 
+# Base58 encoding for addresses
+bs58 = "0.4"
+
+# Hex encoding for displaying keys
+hex = "0.4"
+
+# (Optional) For QR code generation and image export, uncomment these:
+# qrcode = "0.12"
+# image = "0.23"
+
+[dev-dependencies]
+# (Optional) For writing tests in /tests
+assert_cmd = "2.0"
 

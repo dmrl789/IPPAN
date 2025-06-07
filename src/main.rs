@@ -1,17 +1,13 @@
 mod wallet;
-mod domain;
-mod node;
-mod utils;
-mod types;
 
-// (rest of your use lines, as before)
 use std::io::{self, Write};
+use std::path::Path;
 
 fn main() {
     println!("=== IPPAN Wallet Demo ===");
 
     // Load or create wallet
-    let wallet = if std::path::Path::new("wallet.dat").exists() {
+    let wallet = if Path::new("wallet.dat").exists() {
         wallet::Wallet::load_from_file("wallet.dat")
     } else {
         let w = wallet::Wallet::generate();
