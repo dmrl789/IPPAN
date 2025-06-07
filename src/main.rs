@@ -1,42 +1,27 @@
 mod wallet;
+mod block;
+mod blockchain;
+mod transaction;
 
-use std::io::{self, Write};
+use block::Block;
+use blockchain::Blockchain;
 
 fn main() {
-    println!("=== IPPAN Wallet Demo ===");
-
-    // Load or create wallet
-    let wallet = if std::path::Path::new("wallet.dat").exists() {
-        wallet::Wallet::load_from_file("wallet.dat")
-    } else {
-        let w = wallet::Wallet::generate();
-        w.save_to_file("wallet.dat");
-        println!("New wallet generated and saved to wallet.dat");
-        w
+    let chain_file = "blockchain.bin";
+    let mut chain = Blockchain {
+        chain: Blockchain::load_from_bin(chain_file),
     };
 
-    println!("Your wallet address: {}", wallet.address);
-
-    loop {
-        println!("\nOptions:");
-        println!("1. Show private key as mnemonic words");
-        println!("2. Show private key as hex");
-        println!("3. Show both (for backup)");
-        println!("4. Exit");
-        print!("Choice: ");
-        io::stdout().flush().unwrap();
-
-        let mut choice = String::new();
-        io::stdin().read_line(&mut choice).unwrap();
-        match choice.trim() {
-            "1" => wallet.print_mnemonic(),
-            "2" => wallet.print_private_hex(),
-            "3" => {
-                wallet.print_mnemonic();
-                wallet.print_private_hex();
-            }
-            "4" => break,
-            _ => println!("Invalid choice!"),
-        }
+    if chain.chain.is_empty() {
+        let genesis = Block::new(0, String::from("0"), vec![], 0, 50);
+        chain.chain.push(genesis);
+        println!("Genesis block created.");
     }
+
+    // Add a new block example (normally, after some transactions)
+    // let new_block = Block::new(...);
+    // chain.add_block(new_block);
+
+    chain.save_to_bin(chain_file);
+    println!("Blockchain (binary) saved to {chain_file}.");
 }
