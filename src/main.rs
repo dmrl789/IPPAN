@@ -1,49 +1,38 @@
 mod wallet;
 mod block;
+mod blockchain;
 
-use std::io::{self, Write};
+use wallet::Wallet;
 use block::Block;
+use blockchain::Blockchain;
 
 fn main() {
-    println!("=== IPPAN Wallet & Block Demo ===");
+    println!("=== IPPAN Blockchain Demo ===");
 
-    // --- Block Demo ---
-    let genesis = Block::new(0, "Genesis block".to_string(), "0".to_string());
-    println!("\nGenesis block:\n{:#?}\n", genesis);
+    // Wallet
+    let wallet = Wallet::generate();
 
-    // --- Wallet Demo ---
-    // Load or create wallet
-    let wallet = if std::path::Path::new("wallet.dat").exists() {
-        wallet::Wallet::load_from_file("wallet.dat")
-    } else {
-        let w = wallet::Wallet::generate();
-        w.save_to_file("wallet.dat");
-        println!("New wallet generated and saved to wallet.dat");
-        w
-    };
+    // Genesis Block
+    let genesis = Block::genesis();
+    println!("Genesis Block:\n{:#?}", genesis);
 
-    println!("Your wallet address: {}", wallet.address);
+    // Blockchain with block reward 100
+    let mut chain = Blockchain::new(genesis, 100);
 
-    loop {
-        println!("\nOptions:");
-        println!("1. Show private key as mnemonic words");
-        println!("2. Show private key as hex");
-        println!("3. Show both (for backup)");
-        println!("4. Exit");
-        print!("Choice: ");
-        io::stdout().flush().unwrap();
+    // Add a valid block with reward
+    println!("\nAdding valid block (rewarded)...");
+    let added = chain.add_block("tx1".to_string(), wallet.address.clone());
+    println!("Block added? {}", added);
 
-        let mut choice = String::new();
-        io::stdin().read_line(&mut choice).unwrap();
-        match choice.trim() {
-            "1" => wallet.print_mnemonic(),
-            "2" => wallet.print_private_hex(),
-            "3" => {
-                wallet.print_mnemonic();
-                wallet.print_private_hex();
-            }
-            "4" => break,
-            _ => println!("Invalid choice!"),
-        }
+    // Show block rewards in the chain
+    println!("\nBlockchain blocks (showing rewards):");
+    for (i, block) in chain.chain.iter().enumerate() {
+        println!(
+            "Block {}: hash={} reward={} author={}",
+            i,
+            &block.hash[0..10],
+            block.reward,
+            block.author
+        );
     }
 }
