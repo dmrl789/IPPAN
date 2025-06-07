@@ -1,13 +1,19 @@
 mod wallet;
+mod block;
 
 use std::io::{self, Write};
-use std::path::Path;
+use block::Block;
 
 fn main() {
-    println!("=== IPPAN Wallet Demo ===");
+    println!("=== IPPAN Wallet & Block Demo ===");
 
+    // --- Block Demo ---
+    let genesis = Block::new(0, "Genesis block".to_string(), "0".to_string());
+    println!("\nGenesis block:\n{:#?}\n", genesis);
+
+    // --- Wallet Demo ---
     // Load or create wallet
-    let wallet = if Path::new("wallet.dat").exists() {
+    let wallet = if std::path::Path::new("wallet.dat").exists() {
         wallet::Wallet::load_from_file("wallet.dat")
     } else {
         let w = wallet::Wallet::generate();
