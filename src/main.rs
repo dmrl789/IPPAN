@@ -1,31 +1,31 @@
 mod wallet;
 mod block;
 mod blockchain;
+mod account;
 
 use wallet::Wallet;
 use block::Block;
 use blockchain::Blockchain;
 
 fn main() {
-    println!("=== IPPAN Blockchain Demo ===");
+    println!("=== IPPAN Blockchain Demo: Accounts & Rewards ===");
 
-    // Wallet
+    // Create a wallet (block author)
     let wallet = Wallet::generate();
+    println!("Wallet address: {}", wallet.address);
 
-    // Genesis Block
+    // Create genesis block
     let genesis = Block::genesis();
     println!("Genesis Block:\n{:#?}", genesis);
 
-    // Blockchain with block reward 100
+    // Create blockchain with a block reward of 100
     let mut chain = Blockchain::new(genesis, 100);
 
-    // Add a valid block with reward
-    println!("\nAdding valid block (rewarded)...");
-    let added = chain.add_block("tx1".to_string(), wallet.address.clone());
-    println!("Block added? {}", added);
+    // Add a block with reward
+    let added = chain.add_block("first tx".to_string(), wallet.address.clone());
+    println!("\nBlock added? {}", added);
 
-    // Show block rewards in the chain
-    println!("\nBlockchain blocks (showing rewards):");
+    // Show blockchain
     for (i, block) in chain.chain.iter().enumerate() {
         println!(
             "Block {}: hash={} reward={} author={}",
@@ -35,4 +35,8 @@ fn main() {
             block.author
         );
     }
+
+    // Show balances
+    println!("\nBalances:");
+    println!("{}: {}", wallet.address, chain.get_balance(&wallet.address));
 }
