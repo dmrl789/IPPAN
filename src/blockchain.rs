@@ -1,116 +1,55 @@
-use std::fs::{self, File};
-use std::io::{Read, Write};
-use std::path::Path;
-use serde::{Serialize, Deserialize};
-
 use crate::block::Block;
 use crate::transaction::Transaction;
+use crate::handle::HandleRegistry;
+use serde::{Serialize, Deserialize};
+use std::fs::{File};
+use std::io::{Read, Write};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Blockchain {
     pub chain: Vec<Block>,
-    pub mempool: Vec<Transaction>,
+    pub pending_transactions: Vec<Transaction>,
+    pub handle_registry: HandleRegistry,
     pub miner_address: String,
 }
 
 impl Blockchain {
-    /// Loads the blockchain from disk, or creates a new one with a genesis block.
-    pub fn load_or_new(path: &str, miner_address: String) -> Self {
-        if Path::new(path).exists() {
-            let mut file = File::open(path).expect("Unable to open blockchain file");
-            let mut data = Vec::new();
-            file.read_to_end(&mut data).expect("Unable to read blockchain file");
-            bincode::deserialize(&data).expect("Unable to parse blockchain file")
-        } else {
-            let mut bc = Self::new(miner_address);
-            bc.save(path);
-            bc
-        }
-    }
-
-    /// Creates a new blockchain with a genesis block.
     pub fn new(miner_address: String) -> Self {
-        let genesis_block = Block::new(
-            0,
-            "0".to_string(),
-            vec![],
-            0,
-            miner_address.clone(),
-        );
+        let genesis = Block::genesis();
         Blockchain {
-            chain: vec![genesis_block],
-            mempool: vec![],
+            chain: vec![genesis],
+            pending_transactions: Vec::new(),
+            handle_registry: HandleRegistry::new(),
             miner_address,
         }
     }
 
-    /// Adds a new transaction to the mempool (not yet mined).
+    pub fn add_block(&mut self, block: Block) {
+        self.chain.push(block);
+    }
+
     pub fn add_transaction(&mut self, tx: Transaction) {
-        self.mempool.push(tx);
+        self.pending_transactions.push(tx);
     }
 
-    /// Mines a new block with current mempool transactions.
-    pub fn mine_block(&mut self, reward: u64) -> &Block {
-        let last_block = self.chain.last().expect("Blockchain should never be empty");
-        let new_block = Block::new(
-            last_block.index + 1,
-            last_block.hash.clone(),
-            self.mempool.clone(),
-            reward,
-            self.miner_address.clone(),
-        );
-        self.chain.push(new_block);
-        self.mempool.clear();
-        self.chain.last().unwrap()
+    pub fn register_handle(&mut self, handle: &str, pubkey_hex: &str) -> Result<(), String> {
+        self.handle_registry.register(handle, pubkey_hex)
     }
 
-    /// Validates the entire chain.
-    pub fn is_valid(&self) -> bool {
-        for i in 1..self.chain.len() {
-            if !self.chain[i].is_valid(&self.chain[i - 1]) {
-                return false;
-            }
-        }
-        true
+    pub fn save_to_file(&self, filename: &str) {
+        let data = serde_json::to_string(self).expect("Failed to serialize blockchain");
+        let mut file = File::create(filename).expect("Failed to create file");
+        file.write_all(data.as_bytes()).expect("Failed to write to file");
     }
 
-    /// Saves the blockchain to disk as binary.
-    pub fn save(&self, path: &str) {
-        let data = bincode::serialize(self).expect("Unable to serialize blockchain");
-        let mut file = File::create(path).expect("Unable to create blockchain file");
-        file.write_all(&data).expect("Unable to write blockchain file");
+    pub fn load_from_file(filename: &str) -> Option<Self> {
+        let mut file = File::open(filename).ok()?;
+        let mut data = String::new();
+        file.read_to_string(&mut data).ok()?;
+        serde_json::from_str(&data).ok()
     }
 
-    /// Loads blockchain from disk (shortcut).
-    pub fn load(path: &str) -> Self {
-        let mut file = File::open(path).expect("Unable to open blockchain file");
-        let mut data = Vec::new();
-        file.read_to_end(&mut data).expect("Unable to read blockchain file");
-        bincode::deserialize(&data).expect("Unable to parse blockchain file")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::transaction::Transaction;
-
-    #[test]
-    fn test_blockchain() {
-        let mut bc = Blockchain::new("miner".to_string());
-        assert_eq!(bc.chain.len(), 1);
-
-        // Add a tx and mine
-        let tx = Transaction {
-            from: "A".to_string(),
-            to: "B".to_string(),
-            amount: 10,
-            signature: vec![0; 64],
-        };
-        bc.add_transaction(tx);
-        bc.mine_block(50);
-        assert_eq!(bc.chain.len(), 2);
-        assert_eq!(bc.mempool.len(), 0);
-        assert!(bc.is_valid());
+    pub fn get_pubkey_by_handle(&self, handle: &str) -> Option<&String> {
+        self.handle_registry.get_pubkey(handle)
     }
 }
