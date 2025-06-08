@@ -1,44 +1,56 @@
-mod wallet;
-mod transaction;
-mod block;
-mod blockchain;
-mod mempool;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use warp::Filter;
 
-use wallet::Wallet;
-use transaction::Transaction;
-use blockchain::Blockchain;
-use mempool::Mempool;
+use ippan_core::blockchain::Blockchain;
+use ippan_core::p2p::run_p2p_server;
+use ippan_core::transaction::Transaction;
 
-fn main() {
-    println!("=== IPPAN Blockchain Node Demo ===");
+#[tokio::main]
+async fn main() {
+    let blockchain = Arc::new(Mutex::new(Blockchain::new("GENESIS_MINER".to_string())));
+    let blockchain_filter = warp::any().map({
+        let blockchain = Arc::clone(&blockchain);
+        move || Arc::clone(&blockchain)
+    });
 
-    // Initialize components
-    let mut blockchain = Blockchain::new();
-    let mut mempool = Mempool::new();
+    // Start P2P in background
+    tokio::spawn({
+        let blockchain_clone = Arc::clone(&blockchain);
+        async move {
+            run_p2p_server(blockchain_clone, 9000).await;
+        }
+    });
 
-    // Demo: Add a sample transaction to the mempool
-    let tx = Transaction {
-        from: "Alice".to_string(),
-        to: "Bob".to_string(),
-        amount: 42,
-        signature: vec![0; 64], // Replace with real signatures in production!
-    };
-    mempool.add_transaction(tx);
+    // Submit a new transaction: POST /tx {from, to, amount, signature}
+    let submit_tx = warp::path("tx")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(blockchain_filter.clone())
+        .and_then(handle_submit_tx);
 
-    println!("Transactions in mempool: {}", mempool.get_transactions().len());
+    // Get blockchain: GET /chain
+    let get_chain = warp::path("chain")
+        .and(warp::get())
+        .and(blockchain_filter.clone())
+        .and_then(handle_get_chain);
 
-    // Mine/create a block using transactions in the mempool
-    let miner = "Miner1".to_string();
-    let reward = 1;
-    let new_block = blockchain.create_block_from_mempool(&mut mempool, reward, miner.clone());
-    println!("New block created by {}: {:?}", miner, new_block);
+    println!("✅ Node HTTP server on http://localhost:8080 ...");
+    warp::serve(submit_tx.or(get_chain)).run(([127, 0, 0, 1], 8080)).await;
+}
 
-    // Add the new block to the chain
-    blockchain.add_block(new_block);
+async fn handle_submit_tx(
+    tx: Transaction,
+    blockchain: Arc<Mutex<Blockchain>>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    let mut chain = blockchain.lock().await;
+    chain.add_transaction(tx);
+    Ok(warp::reply::json(&"Transaction submitted"))
+}
 
-    // Print chain info
-    println!("Current blockchain length: {}", blockchain.chain.len());
-    for (i, block) in blockchain.chain.iter().enumerate() {
-        println!("Block {}: hash {}", i, block.hash);
-    }
+async fn handle_get_chain(
+    blockchain: Arc<Mutex<Blockchain>>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    let chain = blockchain.lock().await;
+    Ok(warp::reply::json(&chain.chain))
 }

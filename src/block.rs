@@ -1,34 +1,19 @@
-use crate::transaction::Transaction;
 use serde::{Serialize, Deserialize};
-use chrono::Utc;
-use sha2::{Digest, Sha256};
+use crate::transaction::Transaction;
+use sha2::{Sha256, Digest};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Block {
     pub index: u64,
     pub previous_hash: String,
-    pub timestamp: i64,
     pub transactions: Vec<Transaction>,
     pub reward: u64,
     pub miner: String,
     pub hash: String,
-    pub nonce: u64,
 }
 
 impl Block {
-    pub fn genesis() -> Self {
-        Block {
-            index: 0,
-            previous_hash: "0".repeat(64),
-            timestamp: Utc::now().timestamp(),
-            transactions: vec![],
-            reward: 0,
-            miner: "genesis".to_string(),
-            hash: "GENESIS".to_string(),
-            nonce: 0,
-        }
-    }
-
+    /// Create a new block with hash
     pub fn new(
         index: u64,
         previous_hash: String,
@@ -36,40 +21,57 @@ impl Block {
         reward: u64,
         miner: String,
     ) -> Self {
-        let timestamp = Utc::now().timestamp();
-        let nonce = 0; // Add real PoW or randomness if needed
-        let hash = Self::calculate_hash(index, &previous_hash, timestamp, &transactions, reward, &miner, nonce);
+        let hash = Self::calculate_hash(index, &previous_hash, &transactions, reward, &miner);
         Block {
             index,
             previous_hash,
-            timestamp,
             transactions,
             reward,
             miner,
             hash,
-            nonce,
         }
     }
 
+    /// Calculate hash for block data
     pub fn calculate_hash(
         index: u64,
         previous_hash: &str,
-        timestamp: i64,
         transactions: &Vec<Transaction>,
         reward: u64,
         miner: &str,
-        nonce: u64,
     ) -> String {
-        let tx_bytes = bincode::serialize(&transactions).unwrap_or_default();
+        let data = format!(
+            "{}{}{:?}{}{}",
+            index,
+            previous_hash,
+            transactions,
+            reward,
+            miner
+        );
         let mut hasher = Sha256::new();
-        hasher.update(index.to_be_bytes());
-        hasher.update(previous_hash.as_bytes());
-        hasher.update(timestamp.to_be_bytes());
-        hasher.update(&tx_bytes);
-        hasher.update(reward.to_be_bytes());
-        hasher.update(miner.as_bytes());
-        hasher.update(nonce.to_be_bytes());
-        let result = hasher.finalize();
-        hex::encode(result)
+        hasher.update(data);
+        let hash_bytes = hasher.finalize();
+        hex::encode(hash_bytes)
+    }
+
+    /// Validate block (hash, prev hash, index)
+    pub fn is_valid(&self, previous: &Block) -> bool {
+        // Check previous hash linkage
+        if self.previous_hash != previous.hash {
+            return false;
+        }
+        // Check sequential index
+        if self.index != previous.index + 1 {
+            return false;
+        }
+        // Check the hash is valid for this block's data
+        let expected_hash = Self::calculate_hash(
+            self.index,
+            &self.previous_hash,
+            &self.transactions,
+            self.reward,
+            &self.miner,
+        );
+        self.hash == expected_hash
     }
 }

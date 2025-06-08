@@ -1,3 +1,4 @@
+pub mod p2p;
 pub mod mempool;
 pub mod wallet;
 pub mod transaction;

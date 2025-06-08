@@ -1,24 +1,20 @@
 use crate::transaction::Transaction;
-use std::collections::VecDeque;
 
 pub struct Mempool {
-    transactions: VecDeque<Transaction>,
+    transactions: Vec<Transaction>,
 }
 
 impl Mempool {
     pub fn new() -> Self {
-        Mempool { transactions: VecDeque::new() }
+        Mempool { transactions: vec![] }
     }
-
     pub fn add_transaction(&mut self, tx: Transaction) {
-        self.transactions.push_back(tx);
+        self.transactions.push(tx);
     }
-
-    pub fn get_transactions(&self) -> &VecDeque<Transaction> {
-        &self.transactions
-    }
-
     pub fn take_all(&mut self) -> Vec<Transaction> {
-        self.transactions.drain(..).collect()
+        std::mem::take(&mut self.transactions)
+    }
+    pub fn get_transactions(&self) -> &Vec<Transaction> {
+        &self.transactions
     }
 }
