@@ -1,29 +1,15 @@
-# IPPAN Core Wallet
+# IPPAN Blockchain
 
-![Rust](https://img.shields.io/badge/Rust-🦀-orange?logo=rust)
+This project implements a next-generation BlockDAG blockchain with BFT consensus and a novel IPPAN median network time mechanism ("HashTimer") for robust, fair, and scalable block validation.
 
-IPPAN Core is an experimental, modular blockchain wallet engine written in Rust.  
-This repo contains a basic CLI wallet demonstrating:
-- Keypair generation (Ed25519)
-- Human-readable mnemonic backup (BIP39)
-- Hexadecimal key display
-- Simple address derivation
+## Key Features
 
----
+- BlockDAG structure for parallel block production and validation
+- Median (IPPAN) time for network-wide consensus on block timestamps
+- Gossipsub/libp2p peer discovery and communication
+- BFT voting and block approval with validator committees
+- Modular Rust code for easy extension and integration
 
-## 🚀 Features
+## Getting Started
 
-- Deterministic Ed25519 key generation
-- Export private key as BIP39 mnemonic words (for easy backup)
-- Show private key in hex format
-- Simple CLI menu for user interaction
-
----
-
-## 📦 Getting Started
-
-### **1. Clone the Repo**
-
-```bash
-git clone https://github.com/dmrl789/IPPAN.git
-cd IPPAN
+See `src/main.rs` and `src/blockdag.rs` for main logic and DAG implementation.
