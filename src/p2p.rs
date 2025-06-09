@@ -1,40 +1,49 @@
-use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncWriteExt};
-use tokio::sync::Mutex;
-use crate::blockchain::Blockchain;
+use serde::{Serialize, Deserialize};
+use std::sync::{Arc, Mutex};
 
-/// Run the P2P server on the given port
-pub async fn run_p2p_server(blockchain: Arc<Mutex<Blockchain>>, port: u16) {
-    let addr = format!("127.0.0.1:{}", port);
-    let listener = TcpListener::bind(&addr).await.expect("Failed to bind to address");
-    println!("✅ P2P server running on {}", addr);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerInfo {
+    pub address: String, // e.g. "127.0.0.1:3031"
+}
 
-    loop {
-        match listener.accept().await {
-            Ok((socket, _peer_addr)) => {
-                let blockchain_clone = Arc::clone(&blockchain);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerList {
+    pub peers: Vec<PeerInfo>,
+}
 
-                let chain_data = {
-                    let chain = blockchain_clone.lock().await;
-                    bincode::serialize(&chain.chain).unwrap()
-                };
+pub struct P2P {
+    pub peers: Arc<Mutex<Vec<PeerInfo>>>,
+}
 
-                tokio::spawn(async move {
-                    if let Err(e) = handle_connection(socket, chain_data).await {
-                        eprintln!("❌ Error handling connection: {:?}", e);
+impl P2P {
+    pub fn new(initial_peers: Vec<String>, my_addr: String) -> Self {
+        let mut all = vec![PeerInfo { address: my_addr }];
+        all.extend(initial_peers.into_iter().map(|a| PeerInfo { address: a }));
+        Self { peers: Arc::new(Mutex::new(all)) }
+    }
+
+    pub fn add_peer(&self, address: &str) {
+        let mut peers = self.peers.lock().unwrap();
+        if !peers.iter().any(|p| p.address == address) {
+            peers.push(PeerInfo { address: address.to_string() });
+        }
+    }
+
+    pub fn get_peers(&self) -> Vec<PeerInfo> {
+        self.peers.lock().unwrap().clone()
+    }
+
+    // Fetch peers from another node and merge with ours
+    pub async fn sync_peers(&self) {
+        let peers = self.get_peers();
+        for p in &peers {
+            if let Ok(resp) = reqwest::get(format!("http://{}/peers", p.address)).await {
+                if let Ok(list) = resp.json::<PeerList>().await {
+                    for np in list.peers {
+                        self.add_peer(&np.address);
                     }
-                });
-            }
-            Err(e) => {
-                eprintln!("❌ Failed to accept connection: {:?}", e);
+                }
             }
         }
     }
-}
-
-/// Handle sending blockchain data over the socket
-async fn handle_connection(mut socket: TcpStream, data: Vec<u8>) -> tokio::io::Result<()> {
-    socket.write_all(&data).await?;
-    Ok(())
 }
