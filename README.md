@@ -1,15 +1,18 @@
-# IPPAN Blockchain
+# 🪐 IPPAN Core
 
-This project implements a next-generation BlockDAG blockchain with BFT consensus and a novel IPPAN median network time mechanism ("HashTimer") for robust, fair, and scalable block validation.
+**IPPAN Core** is a next-generation, immutable decentralized blockchain protocol designed for true fairness, parallelism, and high throughput.  
+Built around the BlockDAG paradigm, IPPAN features cryptographically robust *IPPAN Time* and *HashTimer* mechanisms, advanced parallel validator committees, and a deterministic CLI for managing transactions and blocks.
 
-## Key Features
+---
 
-- BlockDAG structure for parallel block production and validation
-- Median (IPPAN) time for network-wide consensus on block timestamps
-- Gossipsub/libp2p peer discovery and communication
-- BFT voting and block approval with validator committees
-- Modular Rust code for easy extension and integration
+## 🚀 Key Features
 
-## Getting Started
+- **BlockDAG Structure:** Each node operates its own chain; consensus rounds validate and merge blocks in parallel.
+- **IPPAN Time:** A network-wide, decentralized, microsecond-precise time source, computed as the median of peer-reported times.
+- **HashTimer:** Compact, hex-encoded timestamp plus hash, anchoring every transaction and block to an immutable, totally ordered timeline.
+- **Parallel Validator Committees:** Multiple validator sets cross-validate blocks simultaneously for massive throughput.
+- **Zero-Knowledge Incentivization:** (Planned) Validators with best uptime are favored in selection, but cannot predict or prove this for Sybil resistance.
+- **Immutable by Design:** No protocol upgrades; IPPAN is forever stable after launch.
 
-See `src/main.rs` and `src/blockdag.rs` for main logic and DAG implementation.
+---
+
