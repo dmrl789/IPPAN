@@ -1,0 +1,9 @@
+# IPPAN Default Configuration
+
+[dht]
+bootstrap_nodes = []
+max_connections = 50
+
+[staking]
+min_stake_amount = 10_000_000_000  # 10 IPN in smallest units
+max_stake_amount = 100_000_000_000 # 100 IPN in smallest units 
