@@ -1,20 +1,19 @@
 //! Round management for consensus
-//! 
-//! Handles consensus rounds and validator selection
+//!
+//! Rounds are a logical/consensus concept for validator selection and block production, and are NOT part of the DAG structure.
 
 use crate::{
-    consensus::randomness::RandomnessEngine,
-    error::{IppanError, Result},
-    staking::StakingManager,
+    error::IppanError,
     NodeId,
     BlockHash,
 };
+use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use super::randomness::VerifiableRandomness;
+
 
 /// Round state enumeration
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

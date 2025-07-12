@@ -1,0 +1,232 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ippan-node
+  namespace: ippan
+  labels:
+    app: ippan-node
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ippan-node
+  template:
+    metadata:
+      labels:
+        app: ippan-node
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/api/v1/metrics"
+    spec:
+      serviceAccountName: ippan-service-account
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ippan-node
+        image: ippan/ippan:latest
+        imagePullPolicy: Always
+        ports:
+        - name: p2p
+          containerPort: 8080
+          protocol: TCP
+        - name: api
+          containerPort: 3000
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info"
+        - name: IPPAN_NETWORK_PORT
+          value: "8080"
+        - name: IPPAN_API_PORT
+          value: "3000"
+        - name: IPPAN_STORAGE_DIR
+          value: "/data"
+        - name: IPPAN_KEYS_DIR
+          value: "/keys"
+        - name: IPPAN_LOG_DIR
+          value: "/logs"
+        - name: IPPAN_NODE_ID
+          valueFrom:
+            secretKeyRef:
+              name: ippan-secrets
+              key: node-id
+        - name: IPPAN_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ippan-secrets
+              key: private-key
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: ippan-data
+          mountPath: /data
+        - name: ippan-keys
+          mountPath: /keys
+        - name: ippan-logs
+          mountPath: /logs
+        livenessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: ippan-data
+        persistentVolumeClaim:
+          claimName: ippan-data-pvc
+      - name: ippan-keys
+        persistentVolumeClaim:
+          claimName: ippan-keys-pvc
+      - name: ippan-logs
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ippan-node-service
+  namespace: ippan
+  labels:
+    app: ippan-node
+spec:
+  type: ClusterIP
+  ports:
+  - name: p2p
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: api
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  selector:
+    app: ippan-node
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ippan-node-headless
+  namespace: ippan
+  labels:
+    app: ippan-node
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: p2p
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: api
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  selector:
+    app: ippan-node
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ippan-data-pvc
+  namespace: ippan
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ippan-keys-pvc
+  namespace: ippan
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ippan-service-account
+  namespace: ippan
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ippan-role
+  namespace: ippan
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ippan-role-binding
+  namespace: ippan
+subjects:
+- kind: ServiceAccount
+  name: ippan-service-account
+  namespace: ippan
+roleRef:
+  kind: Role
+  name: ippan-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ippan-secrets
+  namespace: ippan
+type: Opaque
+data:
+  node-id: <base64-encoded-node-id>
+  private-key: <base64-encoded-private-key> 

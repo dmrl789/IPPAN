@@ -6,11 +6,15 @@ pub mod config;
 pub mod crypto;
 pub mod logging;
 pub mod time;
+pub mod performance;
+pub mod optimization;
 
 pub use config::*;
 pub use crypto::*;
 pub use logging::*;
 pub use time::*;
+pub use performance::*;
+pub use optimization::*;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use sha2::{Sha256, Digest};

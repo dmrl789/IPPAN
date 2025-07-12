@@ -4,9 +4,10 @@
 
 use crate::{
     consensus::ippan_time::IppanTimeManager,
-    error::{IppanError, Result},
+    error::IppanError,
     NodeId,
 };
+use crate::Result;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use super::SignatureWrapper;
+
 
 /// Custom serialization for byte arrays
 mod byte_array_serde {
@@ -49,6 +50,7 @@ pub struct VrfOutput {
     pub output: [u8; 32],
     
     /// The proof
+    #[serde(with = "byte_array_serde")]
     pub proof: [u8; 64],
     
     /// The round number
@@ -119,7 +121,7 @@ impl RandomnessEngine {
     /// Generate VRF output for a round
     pub async fn generate_vrf(&self, round: u64, node_id: NodeId) -> Result<VrfOutput> {
         // Get current IPPAN Time for seeding
-        let current_time = self.time_manager.current_time().await;
+        let current_time = self.time_manager.median_time_ns();
         
         // Create seed from round and time
         let mut seed = [0u8; 32];

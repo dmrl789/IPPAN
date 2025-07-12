@@ -1,16 +1,40 @@
-fn main() {
-    println!("IPPAN (Immutable Proof & Availability Network)");
-    println!("A fully decentralized Layer-1 blockchain with built-in global DHT storage");
-    println!("Version: 0.1.0");
-    println!("Status: Development build - simplified version");
-    println!("");
-    println!("Core Features:");
-    println!("- HashTimers with 0.1 microsecond precision");
-    println!("- BlockDAG consensus with verifiable randomness");
-    println!("- Encrypted, sharded storage with proof-of-storage");
-    println!("- Human-readable domains (@alice.ipn, @bot.iot)");
-    println!("- M2M payments in tiny IPN units");
-    println!("- Keyless Global Fund for incentives");
-    println!("");
-    println!("Build successful! 🎉");
+use ippan::{
+    config::Config,
+    node::IppanNode,
+    utils::logging,
+};
+use std::path::Path;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging
+    logging::init()?;
+    
+    log::info!("Starting IPPAN node...");
+    
+    // Load configuration
+    let config_path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "config/default.toml".to_string());
+    
+    let config = Config::load(&config_path)?;
+    log::info!("Loaded configuration from: {}", config_path);
+    
+    // Create and initialize node
+    let mut node = IppanNode::new(config).await?;
+    
+    // Initialize API layer after node creation
+    node.init_api();
+    log::info!("Initialized API layer");
+    
+    // Start the node
+    node.start().await?;
+    log::info!("IPPAN node started successfully");
+    
+    // Run the main node loop
+    log::info!("Running IPPAN node...");
+    node.run().await?;
+    
+    log::info!("IPPAN node stopped");
+    Ok(())
 }

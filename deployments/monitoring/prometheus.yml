@@ -1,0 +1,139 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: ippan-production
+    environment: production
+
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # IPPAN Node Metrics
+  - job_name: 'ippan-node'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    honor_labels: true
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+
+  # IPPAN Node API Health
+  - job_name: 'ippan-api-health'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/status'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # IPPAN Network Metrics
+  - job_name: 'ippan-network'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/network/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+
+  # IPPAN Storage Metrics
+  - job_name: 'ippan-storage'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/storage/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # IPPAN Consensus Metrics
+  - job_name: 'ippan-consensus'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/consensus/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # IPPAN Wallet Metrics
+  - job_name: 'ippan-wallet'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/wallet/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # IPPAN DHT Metrics
+  - job_name: 'ippan-dht'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/dht/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+
+  # IPPAN Domain Metrics
+  - job_name: 'ippan-domain'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/domain/metrics'
+    scrape_interval: 60s
+    scrape_timeout: 10s
+
+  # IPPAN Staking Metrics
+  - job_name: 'ippan-staking'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/staking/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # IPPAN Global Fund Metrics
+  - job_name: 'ippan-global-fund'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/global-fund/metrics'
+    scrape_interval: 60s
+    scrape_timeout: 10s
+
+  # IPPAN M2M Payment Metrics
+  - job_name: 'ippan-m2m-payments'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/m2m-payments/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # IPPAN Security Metrics
+  - job_name: 'ippan-security'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/security/metrics'
+    scrape_interval: 60s
+    scrape_timeout: 10s
+
+  # Node Exporter (System Metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+    scrape_timeout: 5s
+
+  # Cadvisor (Container Metrics)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 15s
+    scrape_timeout: 5s
+
+  # Prometheus Self-Monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s
+    scrape_timeout: 5s 

@@ -2,7 +2,7 @@
 //! 
 //! Handles block creation, validation, and consensus mechanisms
 
-use crate::Result;
+use crate::{Result, IppanError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -12,10 +12,10 @@ pub mod ippan_time;
 pub mod randomness;
 pub mod round;
 
-use blockdag::{Block, BlockDAG};
+use blockdag::{Block, BlockDAG, Transaction};
 use hashtimer::HashTimer;
 use ippan_time::IppanTimeManager;
-use randomness::RandomnessManager;
+
 use round::RoundManager;
 
 /// Custom serialization for byte arrays
@@ -85,8 +85,7 @@ pub struct ConsensusEngine {
     blockdag: BlockDAG,
     /// Round manager for consensus rounds
     round_manager: RoundManager,
-    /// Randomness manager for validator selection
-    randomness_manager: RandomnessManager,
+
     /// IPPAN Time manager for median time calculation
     time_manager: IppanTimeManager,
     /// Configuration
@@ -103,10 +102,11 @@ impl ConsensusEngine {
             config.max_time_drift,
         );
         
+        let blockdag = BlockDAG::new(std::sync::Arc::new(time_manager.clone()));
+        
         Self {
-            blockdag: BlockDAG::new(),
+            blockdag,
             round_manager: RoundManager::new(config.max_validators),
-            randomness_manager: RandomnessManager::new(),
             time_manager,
             config,
             validators: HashMap::new(),
@@ -135,7 +135,7 @@ impl ConsensusEngine {
     }
 
     /// Create a new block
-    pub fn create_block(
+    pub async fn create_block(
         &mut self,
         transactions: Vec<Transaction>,
         validator_id: [u8; 32],
@@ -144,9 +144,8 @@ impl ConsensusEngine {
         let ippan_time = self.time_manager.median_time_ns();
         
         // Create HashTimer for the block
-        let block_hash = self.calculate_block_hash(&transactions, round, validator_id);
         let hashtimer = HashTimer::with_ippan_time(
-            block_hash,
+            [0u8; 32], // Will be calculated
             validator_id,
             ippan_time,
         );
@@ -164,7 +163,7 @@ impl ConsensusEngine {
     /// Validate a block
     pub fn validate_block(&self, block: &Block) -> Result<bool> {
         // Check if validator is authorized for this round
-        if !self.round_manager.is_validator_authorized(&block.validator_id, block.round) {
+        if !self.round_manager.is_validator_authorized(&block.header.validator_id, block.header.round) {
             return Ok(false);
         }
 
@@ -181,8 +180,8 @@ impl ConsensusEngine {
         }
 
         // Validate block hash
-        let expected_hash = self.calculate_block_hash(&block.transactions, block.round, block.validator_id);
-        if block.hash != expected_hash {
+        let expected_hash = self.calculate_block_hash(&block.transactions, block.header.round, block.header.validator_id);
+        if block.header.hash != expected_hash {
             return Ok(false);
         }
 
@@ -211,12 +210,12 @@ impl ConsensusEngine {
     /// Validate block HashTimer
     fn validate_block_hashtimer(&self, block: &Block) -> Result<bool> {
         // Check if HashTimer is within acceptable time bounds
-        if !block.hashtimer.is_valid(self.config.max_time_drift) {
+        if !block.header.hashtimer.is_valid(self.config.max_time_drift) {
             return Ok(false);
         }
 
         // Check if IPPAN Time is valid
-        if !block.hashtimer.is_ippan_time_valid(self.config.max_time_drift) {
+        if !block.header.hashtimer.is_ippan_time_valid(self.config.max_time_drift) {
             return Ok(false);
         }
 
@@ -227,7 +226,7 @@ impl ConsensusEngine {
         }
 
         // Check if the block's IPPAN Time is close to our median
-        let drift_ns = self.time_manager.get_time_drift_ns(block.hashtimer.ippan_time_ns);
+        let drift_ns = self.time_manager.get_time_drift_ns(block.header.hashtimer.ippan_time_ns);
         let max_drift_ns = self.config.max_time_drift * 1_000_000_000;
         
         Ok(drift_ns.abs() <= max_drift_ns as i64)
@@ -259,17 +258,19 @@ impl ConsensusEngine {
     }
 
     /// Add a block to the consensus engine
-    pub fn add_block(&mut self, block: Block) -> Result<()> {
+    pub async fn add_block(&mut self, block: Block) -> Result<()> {
         // Validate the block
         if !self.validate_block(&block)? {
-            return Err(crate::Error::InvalidBlock);
+            return Err(IppanError::Validation("Block validation failed".to_string()));
         }
 
+        let round = block.header.round;
+
         // Add to BlockDAG
-        self.blockdag.add_block(block)?;
+        self.blockdag.add_block(block).await?;
 
         // Update round if needed
-        self.round_manager.update_round(block.round);
+        self.round_manager.update_round(round);
 
         Ok(())
     }
@@ -328,74 +329,6 @@ impl ConsensusEngine {
     }
 }
 
-/// Transaction structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Transaction {
-    /// Transaction hash
-    pub hash: [u8; 32],
-    /// Sender address
-    pub from: [u8; 32],
-    /// Recipient address
-    pub to: [u8; 32],
-    /// Amount in smallest units
-    pub amount: u64,
-    /// Transaction fee
-    pub fee: u64,
-    /// Nonce to prevent replay attacks
-    pub nonce: u64,
-    /// HashTimer for precise timing
-    pub hashtimer: HashTimer,
-    /// Transaction signature
-    #[serde(with = "byte_array_serde")]
-    pub signature: Option<[u8; 64]>,
-}
 
-impl Transaction {
-    /// Create a new transaction
-    pub fn new(
-        from: [u8; 32],
-        to: [u8; 32],
-        amount: u64,
-        fee: u64,
-        nonce: u64,
-        node_id: [u8; 32],
-    ) -> Self {
-        let mut tx = Self {
-            hash: [0u8; 32],
-            from,
-            to,
-            amount,
-            fee,
-            nonce,
-            hashtimer: HashTimer::new([0u8; 32], node_id),
-            signature: None,
-        };
-        
-        tx.hash = tx.calculate_hash();
-        tx.hashtimer = HashTimer::new(tx.hash, node_id);
-        
-        tx
-    }
 
-    /// Calculate transaction hash
-    fn calculate_hash(&self) -> [u8; 32] {
-        use sha2::{Digest, Sha256};
-        
-        let mut hasher = Sha256::new();
-        hasher.update(&self.from);
-        hasher.update(&self.to);
-        hasher.update(&self.amount.to_be_bytes());
-        hasher.update(&self.fee.to_be_bytes());
-        hasher.update(&self.nonce.to_be_bytes());
-        
-        let result = hasher.finalize();
-        let mut hash = [0u8; 32];
-        hash.copy_from_slice(&result);
-        hash
-    }
 
-    /// Get transaction hash
-    pub fn hash(&self) -> &[u8; 32] {
-        &self.hash
-    }
-}

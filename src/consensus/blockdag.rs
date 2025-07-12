@@ -1,0 +1,667 @@
+//! BlockDAG implementation for IPPAN consensus
+//!
+//! Only blocks are part of the DAG. Rounds are a logical/consensus concept and are not DAG nodes.
+//!
+//! Provides Directed Acyclic Graph structure for blocks with deterministic ordering
+
+use crate::{
+    consensus::{hashtimer::HashTimer, ippan_time::IppanTimeManager},
+    error::IppanError,
+    NodeId, BlockHash, TransactionHash,
+};
+use crate::Result;
+use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{debug, info, warn};
+
+/// Custom serialization for byte arrays
+mod byte_array_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &Option<[u8; 64]>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match bytes {
+            Some(b) => b.serialize(serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[u8; 64]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Option<Vec<u8>> = Option::deserialize(deserializer)?;
+        match bytes {
+            Some(b) => {
+                if b.len() != 64 {
+                    return Err(serde::de::Error::custom("Invalid signature length"));
+                }
+                let mut signature = [0u8; 64];
+                signature.copy_from_slice(&b);
+                Ok(Some(signature))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+/// Block header containing metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockHeader {
+    /// Block hash
+    pub hash: BlockHash,
+    /// Round number
+    pub round: u64,
+    /// Block height (number of blocks from genesis)
+    pub height: u64,
+    /// Validator ID that created this block
+    pub validator_id: NodeId,
+    /// HashTimer for precise timing
+    pub hashtimer: HashTimer,
+    /// Parent block hashes (for DAG structure)
+    pub parent_hashes: Vec<BlockHash>,
+    /// Block creation timestamp in nanoseconds
+    pub timestamp_ns: u64,
+}
+
+/// Block containing transactions and metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Block {
+    /// Block header
+    pub header: BlockHeader,
+    /// Transactions in this block
+    pub transactions: Vec<Transaction>,
+    /// Block signature (optional, for future use)
+    #[serde(with = "byte_array_serde")]
+    pub signature: Option<[u8; 64]>,
+}
+
+/// Transaction structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Transaction {
+    /// Transaction hash
+    pub hash: TransactionHash,
+    /// Sender address
+    pub from: NodeId,
+    /// Recipient address
+    pub to: NodeId,
+    /// Amount in smallest units
+    pub amount: u64,
+    /// Transaction fee
+    pub fee: u64,
+    /// Nonce to prevent replay attacks
+    pub nonce: u64,
+    /// HashTimer for precise timing
+    pub hashtimer: HashTimer,
+    /// Transaction signature
+    #[serde(with = "byte_array_serde")]
+    pub signature: Option<[u8; 64]>,
+}
+
+/// BlockDAG node representing a block in the DAG
+#[derive(Debug, Clone)]
+pub struct BlockDAGNode {
+    /// The block
+    pub block: Block,
+    /// Children blocks (blocks that have this block as parent)
+    pub children: HashSet<BlockHash>,
+    /// Whether this block is finalized
+    pub finalized: bool,
+    /// Block score for ordering (based on HashTimer)
+    pub score: u64,
+}
+
+/// BlockDAG for managing the blockchain as a Directed Acyclic Graph
+#[derive(Debug)]
+pub struct BlockDAG {
+    /// All blocks in the DAG
+    blocks: Arc<RwLock<HashMap<BlockHash, BlockDAGNode>>>,
+    /// Genesis block hash
+    genesis_hash: BlockHash,
+    /// Current tips (blocks with no children)
+    tips: Arc<RwLock<HashSet<BlockHash>>>,
+    /// Finalized blocks
+    finalized_blocks: Arc<RwLock<HashSet<BlockHash>>>,
+    /// IPPAN Time manager for timing validation
+    time_manager: Arc<IppanTimeManager>,
+    /// Maximum number of tips to maintain
+    max_tips: usize,
+}
+
+impl BlockDAG {
+    /// Create a new BlockDAG
+    pub fn new(time_manager: Arc<IppanTimeManager>) -> Self {
+        let genesis_hash = Self::calculate_genesis_hash();
+        
+        Self {
+            blocks: Arc::new(RwLock::new(HashMap::new())),
+            genesis_hash,
+            tips: Arc::new(RwLock::new(HashSet::new())),
+            finalized_blocks: Arc::new(RwLock::new(HashSet::new())),
+            time_manager,
+            max_tips: 100,
+        }
+    }
+
+    /// Add a block to the DAG
+    pub async fn add_block(&self, block: Block) -> Result<()> {
+        let block_hash = block.header.hash;
+        
+        // Validate the block
+        if !self.validate_block(&block).await? {
+            return Err(IppanError::Validation("Block validation failed".to_string()));
+        }
+
+        // Create DAG node
+        let mut node = BlockDAGNode {
+            block: block.clone(),
+            children: HashSet::new(),
+            finalized: false,
+            score: self.calculate_block_score(&block),
+        };
+
+        // Add to blocks map
+        {
+            let mut blocks = self.blocks.write().await;
+            
+            // Check if block already exists
+            if blocks.contains_key(&block_hash) {
+                return Err(IppanError::Validation("Block already exists".to_string()));
+            }
+
+            // Add the block
+            blocks.insert(block_hash, node);
+        }
+
+        // Update parent-child relationships
+        self.update_parent_child_relationships(&block).await?;
+
+        // Update tips
+        self.update_tips(&block_hash).await?;
+
+        // Try to finalize blocks
+        self.try_finalize_blocks().await?;
+
+        info!("Added block {} to DAG", hex::encode(&block_hash));
+        Ok(())
+    }
+
+    /// Validate a block
+    pub async fn validate_block(&self, block: &Block) -> Result<bool> {
+        // Check basic structure
+        if block.transactions.is_empty() {
+            return Ok(false);
+        }
+
+        // Validate HashTimer
+        if !self.validate_block_hashtimer(block)? {
+            return Ok(false);
+        }
+
+        // Validate transactions
+        for tx in &block.transactions {
+            if !self.validate_transaction(tx)? {
+                return Ok(false);
+            }
+        }
+
+        // Validate parent hashes exist (except for genesis)
+        if block.header.hash != self.genesis_hash {
+            for parent_hash in &block.header.parent_hashes {
+                let blocks = self.blocks.read().await;
+                if !blocks.contains_key(parent_hash) {
+                    return Ok(false);
+                }
+            }
+        }
+
+        // Validate block hash
+        let expected_hash = self.calculate_block_hash(block);
+        if block.header.hash != expected_hash {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    /// Validate block HashTimer
+    fn validate_block_hashtimer(&self, block: &Block) -> Result<bool> {
+        // Check if HashTimer matches block content
+        if !block.header.hashtimer.matches_content(&block.header.hash) {
+            return Ok(false);
+        }
+
+        // Validate timing (within acceptable bounds)
+        if !block.header.hashtimer.is_valid(30) { // 30 second drift
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    /// Validate transaction
+    fn validate_transaction(&self, tx: &Transaction) -> Result<bool> {
+        // Basic validation
+        if tx.amount == 0 {
+            return Ok(false);
+        }
+
+        // Validate HashTimer
+        if !tx.hashtimer.matches_content(&tx.hash) {
+            return Ok(false);
+        }
+
+        // Validate timing
+        if !tx.hashtimer.is_valid(30) {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    /// Calculate block score for ordering
+    fn calculate_block_score(&self, block: &Block) -> u64 {
+        // Score based on HashTimer precision and IPPAN Time
+        let hashtimer_score = block.header.hashtimer.ippan_time_micros();
+        let transaction_count = block.transactions.len() as u64;
+        
+        // Higher score for more precise timing and more transactions
+        hashtimer_score + (transaction_count * 1000)
+    }
+
+    /// Update parent-child relationships
+    async fn update_parent_child_relationships(&self, block: &Block) -> Result<()> {
+        let block_hash = block.header.hash;
+        
+        {
+            let mut blocks = self.blocks.write().await;
+            
+            // Add this block as child to all its parents
+            for parent_hash in &block.header.parent_hashes {
+                if let Some(parent_node) = blocks.get_mut(parent_hash) {
+                    parent_node.children.insert(block_hash);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Update tips (blocks with no children)
+    async fn update_tips(&self, new_block_hash: &BlockHash) -> Result<()> {
+        let mut tips = self.tips.write().await;
+        let blocks = self.blocks.read().await;
+
+        // Remove parent hashes from tips (they now have children)
+        if let Some(block) = blocks.get(new_block_hash) {
+            for parent_hash in &block.block.header.parent_hashes {
+                tips.remove(parent_hash);
+            }
+        }
+
+        // Add new block to tips if it has no children
+        if let Some(block) = blocks.get(new_block_hash) {
+            if block.children.is_empty() {
+                tips.insert(*new_block_hash);
+            }
+        }
+
+        // Limit number of tips
+        if tips.len() > self.max_tips {
+            // Remove oldest tips (simplified strategy)
+            let tips_vec: Vec<BlockHash> = tips.iter().cloned().collect();
+            tips.clear();
+            for tip in tips_vec.iter().take(self.max_tips) {
+                tips.insert(*tip);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Try to finalize blocks
+    async fn try_finalize_blocks(&self) -> Result<()> {
+        // Simple finalization: blocks with sufficient depth are finalized
+        let blocks = self.blocks.read().await;
+        let mut finalized = self.finalized_blocks.write().await;
+        
+        for (hash, node) in blocks.iter() {
+            if !node.finalized && self.is_block_finalizable(node).await {
+                finalized.insert(*hash);
+                debug!("Finalized block {}", hex::encode(hash));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if a block is finalizable
+    async fn is_block_finalizable(&self, node: &BlockDAGNode) -> bool {
+        // Simple finalization rule: block is finalizable if it's older than 10 blocks
+        // In a real implementation, this would be more sophisticated
+        let current_height = self.get_max_height().await;
+        node.block.header.height + 10 <= current_height
+    }
+
+    /// Get maximum block height
+    async fn get_max_height(&self) -> u64 {
+        let blocks = self.blocks.read().await;
+        blocks.values()
+            .map(|node| node.block.header.height)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Calculate block hash
+    fn calculate_block_hash(&self, block: &Block) -> BlockHash {
+        let mut hasher = Sha256::new();
+        
+        // Include round, validator, and parent hashes
+        hasher.update(&block.header.round.to_be_bytes());
+        hasher.update(&block.header.validator_id);
+        for parent_hash in &block.header.parent_hashes {
+            hasher.update(parent_hash);
+        }
+        
+        // Include transaction hashes
+        for tx in &block.transactions {
+            hasher.update(&tx.hash);
+        }
+        
+        // Include HashTimer
+        hasher.update(&block.header.hashtimer.ippan_time_ns.to_be_bytes());
+        
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result);
+        hash
+    }
+
+    /// Calculate genesis block hash
+    fn calculate_genesis_hash() -> BlockHash {
+        let mut hasher = Sha256::new();
+        hasher.update(b"IPPAN_GENESIS");
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result);
+        hash
+    }
+
+    /// Get block by hash
+    pub async fn get_block(&self, hash: &BlockHash) -> Option<Block> {
+        let blocks = self.blocks.read().await;
+        blocks.get(hash).map(|node| node.block.clone())
+    }
+
+    /// Get all blocks
+    pub async fn get_all_blocks(&self) -> Vec<Block> {
+        let blocks = self.blocks.read().await;
+        blocks.values().map(|node| node.block.clone()).collect()
+    }
+
+    /// Get tips (blocks with no children)
+    pub async fn get_tips(&self) -> Vec<BlockHash> {
+        let tips = self.tips.read().await;
+        tips.iter().cloned().collect()
+    }
+
+    /// Get finalized blocks
+    pub async fn get_finalized_blocks(&self) -> Vec<BlockHash> {
+        let finalized = self.finalized_blocks.read().await;
+        finalized.iter().cloned().collect()
+    }
+
+    /// Get block count
+    pub async fn get_block_count(&self) -> usize {
+        let blocks = self.blocks.read().await;
+        blocks.len()
+    }
+
+    /// Get tip count
+    pub async fn get_tip_count(&self) -> usize {
+        let tips = self.tips.read().await;
+        tips.len()
+    }
+
+    /// Get finalized block count
+    pub async fn get_finalized_count(&self) -> usize {
+        let finalized = self.finalized_blocks.read().await;
+        finalized.len()
+    }
+
+    /// Get blocks at a specific height
+    pub async fn get_blocks_at_height(&self, height: u64) -> Vec<Block> {
+        let blocks = self.blocks.read().await;
+        blocks.values()
+            .filter(|node| node.block.header.height == height)
+            .map(|node| node.block.clone())
+            .collect()
+    }
+
+    /// Get blocks by validator
+    pub async fn get_blocks_by_validator(&self, validator_id: &NodeId) -> Vec<Block> {
+        let blocks = self.blocks.read().await;
+        blocks.values()
+            .filter(|node| node.block.header.validator_id == *validator_id)
+            .map(|node| node.block.clone())
+            .collect()
+    }
+
+    /// Get block statistics
+    pub async fn get_stats(&self) -> BlockDAGStats {
+        let blocks = self.blocks.read().await;
+        let tips = self.tips.read().await;
+        let finalized = self.finalized_blocks.read().await;
+
+        let total_blocks = blocks.len();
+        let tip_count = tips.len();
+        let finalized_count = finalized.len();
+        
+        let max_height = blocks.values()
+            .map(|node| node.block.header.height)
+            .max()
+            .unwrap_or(0);
+
+        let total_transactions = blocks.values()
+            .map(|node| node.block.transactions.len())
+            .sum();
+
+        BlockDAGStats {
+            total_blocks,
+            tip_count,
+            finalized_count,
+            max_height,
+            total_transactions,
+        }
+    }
+}
+
+/// BlockDAG statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockDAGStats {
+    pub total_blocks: usize,
+    pub tip_count: usize,
+    pub finalized_count: usize,
+    pub max_height: u64,
+    pub total_transactions: usize,
+}
+
+impl Block {
+    /// Create a new block
+    pub fn new(
+        round: u64,
+        transactions: Vec<Transaction>,
+        validator_id: NodeId,
+        hashtimer: HashTimer,
+    ) -> Self {
+        let parent_hashes = vec![]; // Will be set by caller
+        let height = 0; // Will be calculated by caller
+        let timestamp_ns = hashtimer.timestamp_ns;
+        
+        let header = BlockHeader {
+            hash: [0u8; 32], // Will be calculated
+            round,
+            height,
+            validator_id,
+            hashtimer,
+            parent_hashes,
+            timestamp_ns,
+        };
+
+        let mut block = Self {
+            header,
+            transactions,
+            signature: None,
+        };
+
+        // Calculate hash
+        block.header.hash = Self::calculate_block_hash(&block);
+        
+        block
+    }
+
+    /// Calculate block hash
+    fn calculate_block_hash(block: &Block) -> BlockHash {
+        let mut hasher = Sha256::new();
+        
+        hasher.update(&block.header.round.to_be_bytes());
+        hasher.update(&block.header.validator_id);
+        for parent_hash in &block.header.parent_hashes {
+            hasher.update(parent_hash);
+        }
+        for tx in &block.transactions {
+            hasher.update(&tx.hash);
+        }
+        hasher.update(&block.header.hashtimer.ippan_time_ns.to_be_bytes());
+        
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result);
+        hash
+    }
+
+    /// Get block hash
+    pub fn hash(&self) -> &BlockHash {
+        &self.header.hash
+    }
+
+    /// Get round number
+    pub fn round(&self) -> u64 {
+        self.header.round
+    }
+
+    /// Get height
+    pub fn height(&self) -> u64 {
+        self.header.height
+    }
+
+    /// Get validator ID
+    pub fn validator_id(&self) -> &NodeId {
+        &self.header.validator_id
+    }
+
+    /// Get HashTimer
+    pub fn hashtimer(&self) -> &HashTimer {
+        &self.header.hashtimer
+    }
+}
+
+impl Transaction {
+    /// Create a new transaction
+    pub fn new(
+        from: NodeId,
+        to: NodeId,
+        amount: u64,
+        fee: u64,
+        nonce: u64,
+        hashtimer: HashTimer,
+    ) -> Self {
+        let mut tx = Self {
+            hash: [0u8; 32], // Will be calculated
+            from,
+            to,
+            amount,
+            fee,
+            nonce,
+            hashtimer,
+            signature: None,
+        };
+
+        // Calculate hash
+        tx.hash = Self::calculate_transaction_hash(&tx);
+        
+        tx
+    }
+
+    /// Calculate transaction hash
+    fn calculate_transaction_hash(tx: &Transaction) -> TransactionHash {
+        let mut hasher = Sha256::new();
+        
+        hasher.update(&tx.from);
+        hasher.update(&tx.to);
+        hasher.update(&tx.amount.to_be_bytes());
+        hasher.update(&tx.fee.to_be_bytes());
+        hasher.update(&tx.nonce.to_be_bytes());
+        hasher.update(&tx.hashtimer.ippan_time_ns.to_be_bytes());
+        
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result);
+        hash
+    }
+
+    /// Get transaction hash
+    pub fn hash(&self) -> &TransactionHash {
+        &self.hash
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::consensus::ippan_time::IppanTimeManager;
+
+    #[tokio::test]
+    async fn test_blockdag_creation() {
+        let time_manager = Arc::new(IppanTimeManager::new(3, 30));
+        let blockdag = BlockDAG::new(time_manager);
+        
+        assert_eq!(blockdag.get_block_count().await, 0);
+        assert_eq!(blockdag.get_tip_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_block_creation() {
+        let time_manager = Arc::new(IppanTimeManager::new(3, 30));
+        let blockdag = BlockDAG::new(time_manager);
+        
+        let validator_id = [1u8; 32];
+        let hashtimer = HashTimer::new([0u8; 32], validator_id);
+        let transactions = vec![];
+        
+        let block = Block::new(1, transactions, validator_id, hashtimer);
+        
+        assert_eq!(block.round(), 1);
+        assert_eq!(block.validator_id(), &validator_id);
+    }
+
+    #[tokio::test]
+    async fn test_transaction_creation() {
+        let from = [1u8; 32];
+        let to = [2u8; 32];
+        let hashtimer = HashTimer::new([0u8; 32], from);
+        
+        let tx = Transaction::new(from, to, 1000, 10, 1, hashtimer);
+        
+        assert_eq!(tx.from, from);
+        assert_eq!(tx.to, to);
+        assert_eq!(tx.amount, 1000);
+        assert_eq!(tx.fee, 10);
+        assert_eq!(tx.nonce, 1);
+    }
+} 

@@ -70,6 +70,25 @@ tower-http = { version = "0.4", features = ["cors"] }
 [dev-dependencies]
 tokio-test = "0.4"
 criterion = "0.5"
+proptest = "1.3"
+quickcheck = "1.0"
+
+# Benchmarking
+[[bench]]
+name = "consensus_benchmarks"
+harness = false
+
+[[bench]]
+name = "storage_benchmarks"
+harness = false
+
+[[bench]]
+name = "wallet_benchmarks"
+harness = false
+
+[[bench]]
+name = "network_benchmarks"
+harness = false
 
 [profile.release]
 opt-level = 3

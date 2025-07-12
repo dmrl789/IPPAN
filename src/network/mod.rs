@@ -1,54 +1,43 @@
-//! Network module for IPPAN node
-//! 
-//! Handles P2P networking, discovery, NAT traversal, and relay functionality.
+//! Network subsystem for IPPAN
+//!
+//! Handles P2P networking, discovery, NAT, relay, and message protocols (to be implemented).
 
-pub mod discovery;
-pub mod nat;
-pub mod p2p;
-pub mod relay;
+use crate::config::NetworkConfig;
+use crate::Result;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-use crate::{error::IppanError, NodeId, Result};
-use serde::{Deserialize, Serialize};
-
-/// Network manager (stub implementation)
 pub struct NetworkManager {
-    config: NetworkConfig,
-}
-
-/// Network configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkConfig {
-    pub listen_addr: String,
-    pub bootstrap_nodes: Vec<String>,
-    pub max_connections: usize,
-    pub connection_timeout: u64,
-    pub enable_nat: bool,
-    pub enable_relay: bool,
-}
-
-impl Default for NetworkConfig {
-    fn default() -> Self {
-        Self {
-            listen_addr: "/ip4/0.0.0.0/tcp/30333".to_string(),
-            bootstrap_nodes: vec!["/ip4/127.0.0.1/tcp/30333/p2p/QmBootstrap1".to_string()],
-            max_connections: 100,
-            connection_timeout: 30,
-            enable_nat: true,
-            enable_relay: false,
-        }
-    }
+    pub config: NetworkConfig,
+    // pub p2p: ...
+    // pub discovery: ...
+    // pub nat: ...
+    // pub relay: ...
+    // pub protocols: ...
+    running: bool,
 }
 
 impl NetworkManager {
+    /// Create a new network manager
     pub async fn new(config: NetworkConfig) -> Result<Self> {
-        Ok(Self { config })
+        // TODO: Initialize P2P, discovery, NAT, relay, protocols
+        Ok(Self {
+            config,
+            running: false,
+        })
     }
-    
-    pub async fn start(&self) -> Result<()> {
+
+    /// Start the network subsystem
+    pub async fn start(&mut self) -> Result<()> {
+        self.running = true;
+        // TODO: Start P2P, discovery, NAT, relay, protocols
         Ok(())
     }
-    
-    pub async fn stop(&self) -> Result<()> {
+
+    /// Stop the network subsystem
+    pub async fn stop(&mut self) -> Result<()> {
+        self.running = false;
+        // TODO: Stop all network tasks
         Ok(())
     }
 }

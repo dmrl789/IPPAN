@@ -1,385 +1,354 @@
+//! IppanNode orchestrator
+//!
+//! Main entry point for running an IPPAN node. Coordinates all subsystems.
+
 use crate::{
-    config::Config,
-    consensus::ConsensusEngine,
-    dht::DhtNode,
-    error::{IppanError, Result},
-    network::NetworkManager,
-    storage::StorageManager,
-    staking::StakingManager,
-    wallet::WalletManager,
-    api::ApiServer,
+    consensus,
+    storage,
+    network,
+    wallet,
+    dht,
+    staking,
+    domain,
+    config,
+    api::ApiLayer,
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
 
-/// Main IPPAN node that orchestrates all components
 pub struct IppanNode {
-    config: Config,
-    consensus: Arc<RwLock<ConsensusEngine>>,
-    network: Arc<NetworkManager>,
-    storage: Arc<StorageManager>,
-    dht: Arc<DhtNode>,
-    staking: Arc<StakingManager>,
-    wallet: Arc<WalletManager>,
-    api: Option<ApiServer>,
-    running: bool,
+    pub config: config::Config,
+    pub consensus: Arc<RwLock<consensus::ConsensusEngine>>,
+    pub storage: Arc<RwLock<storage::StorageOrchestrator>>,
+    pub network: Arc<RwLock<network::NetworkManager>>,
+    pub wallet: Arc<RwLock<wallet::WalletManager>>,
+    pub dht: Arc<RwLock<dht::DhtManager>>,
+    pub staking: Arc<RwLock<staking::StakingSystem>>,
+    pub domain: Arc<RwLock<domain::DomainSystem>>,
+    pub api: Option<ApiLayer>,
+    start_time: std::time::Instant,
+    is_running: bool,
 }
 
 impl IppanNode {
-    /// Create a new IPPAN node
-    pub async fn new(config: Config) -> Result<Self> {
-        info!("Initializing IPPAN node...");
+    pub async fn new(config: config::Config) -> Result<Self, Box<dyn std::error::Error>> {
+        let node_id = utils::crypto::generate_node_id();
         
-        // Initialize storage manager
-        let storage = Arc::new(StorageManager::new(config.storage.clone()).await?);
-        info!("Storage manager initialized");
+        let consensus = Arc::new(RwLock::new(consensus::ConsensusEngine::new(config.consensus.clone())?));
+        let storage = Arc::new(RwLock::new(storage::StorageOrchestrator::new(config.storage.clone())?));
+        let network = Arc::new(RwLock::new(network::NetworkManager::new(config.network.clone())?));
+        let wallet = Arc::new(RwLock::new(wallet::WalletManager::new(config.wallet.clone())?));
+        let dht = Arc::new(RwLock::new(dht::DhtManager::new(config.dht.clone(), node_id).await?));
         
-        // Initialize wallet manager
-        let wallet = Arc::new(WalletManager::new().await?);
-        info!("Wallet manager initialized");
-        
-        // Initialize staking manager
-        let staking = Arc::new(StakingManager::new(
-            config.staking.clone(),
+        // Create staking system
+        let staking = Arc::new(RwLock::new(staking::StakingSystem::new(
             wallet.clone(),
-        ).await?);
-        info!("Staking manager initialized");
+            consensus.clone(),
+        )?));
         
-        // Initialize DHT node
-        let dht = Arc::new(DhtNode::new(
-            config.dht.clone(),
-            storage.clone(),
-        ).await?);
-        info!("DHT node initialized");
-        
-        // Initialize network manager
-        let network = Arc::new(NetworkManager::new(
-            config.network.clone(),
-            dht.clone(),
-        ).await?);
-        info!("Network manager initialized");
-        
-        // Initialize consensus engine
-        let consensus = Arc::new(RwLock::new(ConsensusEngine::new(
-            config.consensus.clone(),
-        ).await?));
-        info!("Consensus engine initialized");
-        
-        // Initialize API server if enabled
-        let api = if config.api.listen_addr != "disabled" {
-            Some(ApiServer::new(
-                config.api.clone(),
-            ).await?)
-        } else {
-            None
-        };
-        
-        if api.is_some() {
-            info!("API server initialized");
-        }
-        
-        info!("IPPAN node initialization complete");
+        // Create domain system
+        let domain = Arc::new(RwLock::new(domain::DomainSystem::new(
+            wallet.clone(),
+        )?));
         
         Ok(Self {
             config,
             consensus,
-            network,
             storage,
+            network,
+            wallet,
             dht,
             staking,
-            wallet,
-            api,
-            running: false,
+            domain,
+            api: None, // Will be initialized after node creation
+            start_time: std::time::Instant::now(),
+            is_running: false,
         })
     }
-    
+
+    /// Initialize the API layer (called after node creation to avoid circular reference)
+    pub fn init_api(&mut self) {
+        let node_arc = Arc::new(RwLock::new(self.clone_for_api()));
+        self.api = Some(ApiLayer::new(node_arc));
+    }
+
+    /// Create a clone of the node for API access (without the API field to avoid circular reference)
+    fn clone_for_api(&self) -> IppanNodeForApi {
+        IppanNodeForApi {
+            consensus: Arc::clone(&self.consensus),
+            storage: Arc::clone(&self.storage),
+            network: Arc::clone(&self.network),
+            wallet: Arc::clone(&self.wallet),
+            dht: Arc::clone(&self.dht),
+            staking: Arc::clone(&self.staking),
+            domain: Arc::clone(&self.domain),
+            start_time: self.start_time,
+        }
+    }
+
     /// Start the IPPAN node
-    pub async fn start(&mut self) -> Result<()> {
-        if self.running {
-            warn!("IPPAN node is already running");
+    pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.is_running {
             return Ok(());
         }
-        
-        info!("Starting IPPAN node...");
-        
-        // Start network manager
-        self.network.start().await?;
-        info!("Network manager started");
+
+        log::info!("Starting IPPAN node...");
         
         // Start consensus engine
-        {
-            let mut consensus = self.consensus.write().await;
-            consensus.start().await?;
-        }
-        info!("Consensus engine started");
+        self.consensus.write().await.start().await?;
+        log::info!("Consensus engine started");
         
-        // Start DHT node
-        self.dht.start().await?;
-        info!("DHT node started");
+        // Start storage orchestrator
+        self.storage.write().await.start().await?;
+        log::info!("Storage orchestrator started");
         
-        // Start storage manager
-        self.storage.start().await?;
-        info!("Storage manager started");
+        // Start network manager
+        self.network.write().await.start().await?;
+        log::info!("Network manager started");
         
-        // Start staking manager
-        self.staking.start().await?;
-        info!("Staking manager started");
+        // Start wallet manager
+        self.wallet.write().await.start().await?;
+        log::info!("Wallet manager started");
         
-        // Start API server if enabled
+        // Start DHT manager
+        self.dht.write().await.start().await?;
+        log::info!("DHT manager started");
+        
+        // Start staking system
+        self.staking.write().await.start().await?;
+        log::info!("Staking system started");
+        
+        // Start domain system
+        self.domain.write().await.start().await?;
+        log::info!("Domain system started");
+        
+        // Start API layer if initialized
         if let Some(ref mut api) = self.api {
             api.start().await?;
-            info!("API server started");
+            log::info!("API layer started");
         }
         
-        self.running = true;
-        info!("IPPAN node started successfully");
-        
-        // Keep the node running
-        self.run_event_loop().await?;
-        
+        self.is_running = true;
+        log::info!("IPPAN node started successfully");
         Ok(())
     }
-    
+
     /// Stop the IPPAN node
-    pub async fn stop(&mut self) -> Result<()> {
-        if !self.running {
-            warn!("IPPAN node is not running");
+    pub async fn stop(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.is_running {
             return Ok(());
         }
+
+        log::info!("Stopping IPPAN node...");
         
-        info!("Stopping IPPAN node...");
-        
-        // Stop API server
+        // Stop API layer first if initialized
         if let Some(ref mut api) = self.api {
             api.stop().await?;
-            info!("API server stopped");
+            log::info!("API layer stopped");
         }
         
-        // Stop consensus engine
-        {
-            let mut consensus = self.consensus.write().await;
-            consensus.stop().await?;
-        }
-        info!("Consensus engine stopped");
+        // Stop domain system
+        self.domain.write().await.stop().await?;
+        log::info!("Domain system stopped");
+        
+        // Stop staking system
+        self.staking.write().await.stop().await?;
+        log::info!("Staking system stopped");
+        
+        // Stop DHT manager
+        self.dht.write().await.stop().await?;
+        log::info!("DHT manager stopped");
+        
+        // Stop wallet manager
+        self.wallet.write().await.stop().await?;
+        log::info!("Wallet manager stopped");
         
         // Stop network manager
-        self.network.stop().await?;
-        info!("Network manager stopped");
+        self.network.write().await.stop().await?;
+        log::info!("Network manager stopped");
         
-        // Stop DHT node
-        self.dht.stop().await?;
-        info!("DHT node stopped");
+        // Stop storage orchestrator
+        self.storage.write().await.stop().await?;
+        log::info!("Storage orchestrator stopped");
         
-        // Stop storage manager
-        self.storage.stop().await?;
-        info!("Storage manager stopped");
+        // Stop consensus engine last
+        self.consensus.write().await.stop().await?;
+        log::info!("Consensus engine stopped");
         
-        // Stop staking manager
-        self.staking.stop().await?;
-        info!("Staking manager stopped");
-        
-        self.running = false;
-        info!("IPPAN node stopped successfully");
-        
+        self.is_running = false;
+        log::info!("IPPAN node stopped");
         Ok(())
     }
-    
-    /// Main event loop for the node
-    async fn run_event_loop(&self) -> Result<()> {
-        info!("Entering main event loop");
-        
-        // Set up shutdown signal handler
-        let mut shutdown_signal = tokio::signal::ctrl_c();
-        
-        loop {
-            tokio::select! {
-                _ = &mut shutdown_signal => {
-                    info!("Received shutdown signal");
-                    break;
-                }
-                
-                // Handle consensus events
-                consensus_event = self.handle_consensus_events() => {
-                    if let Err(e) = consensus_event {
-                        error!("Consensus event error: {}", e);
-                    }
-                }
-                
-                // Handle network events
-                network_event = self.handle_network_events() => {
-                    if let Err(e) = network_event {
-                        error!("Network event error: {}", e);
-                    }
-                }
-                
-                // Handle storage events
-                storage_event = self.handle_storage_events() => {
-                    if let Err(e) = storage_event {
-                        error!("Storage event error: {}", e);
-                    }
-                }
-                
-                // Handle DHT events
-                dht_event = self.handle_dht_events() => {
-                    if let Err(e) = dht_event {
-                        error!("DHT event error: {}", e);
-                    }
-                }
-            }
-        }
-        
-        info!("Exiting main event loop");
-        Ok(())
-    }
-    
-    /// Handle consensus events
-    async fn handle_consensus_events(&self) -> Result<()> {
-        let consensus = self.consensus.read().await;
-        
-        // Process new blocks
-        if let Some(block) = consensus.get_next_block().await? {
-            info!("Processing new block: {:?}", block.hash());
-            
-            // Validate block
-            consensus.validate_block(&block).await?;
-            
-            // Add block to DAG
-            consensus.add_block(block).await?;
-            
-            // Update staking state
-            self.staking.update_for_block(&block).await?;
-        }
-        
-        // Process new transactions
-        while let Some(tx) = consensus.get_next_transaction().await? {
-            info!("Processing new transaction: {:?}", tx.hash());
-            
-            // Validate transaction
-            consensus.validate_transaction(&tx).await?;
-            
-            // Add transaction to mempool
-            consensus.add_transaction(tx).await?;
-        }
-        
-        Ok(())
-    }
-    
-    /// Handle network events
-    async fn handle_network_events(&self) -> Result<()> {
-        // Process incoming messages
-        while let Some(message) = self.network.receive_message().await? {
-            match message {
-                crate::network::Message::NewBlock(block) => {
-                    let mut consensus = self.consensus.write().await;
-                    consensus.handle_new_block(block).await?;
-                }
-                crate::network::Message::NewTransaction(tx) => {
-                    let mut consensus = self.consensus.write().await;
-                    consensus.handle_new_transaction(tx).await?;
-                }
-                crate::network::Message::StorageRequest(request) => {
-                    self.storage.handle_request(request).await?;
-                }
-                crate::network::Message::DhtLookup(lookup) => {
-                    self.dht.handle_lookup(lookup).await?;
-                }
-                _ => {
-                    warn!("Unhandled network message: {:?}", message);
-                }
-            }
-        }
-        
-        Ok(())
-    }
-    
-    /// Handle storage events
-    async fn handle_storage_events(&self) -> Result<()> {
-        // Process storage proofs
-        while let Some(proof) = self.storage.get_next_proof().await? {
-            info!("Processing storage proof: {:?}", proof.id());
-            
-            // Validate proof
-            self.storage.validate_proof(&proof).await?;
-            
-            // Update staking rewards
-            self.staking.update_for_storage_proof(&proof).await?;
-        }
-        
-        // Process storage requests
-        while let Some(request) = self.storage.get_next_request().await? {
-            info!("Processing storage request: {:?}", request.id());
-            
-            // Handle request
-            self.storage.handle_request(request).await?;
-        }
-        
-        Ok(())
-    }
-    
-    /// Handle DHT events
-    async fn handle_dht_events(&self) -> Result<()> {
-        // Process DHT lookups
-        while let Some(lookup) = self.dht.get_next_lookup().await? {
-            info!("Processing DHT lookup: {:?}", lookup.key());
-            
-            // Handle lookup
-            self.dht.handle_lookup(lookup).await?;
-        }
-        
-        // Process DHT storage operations
-        while let Some(operation) = self.dht.get_next_operation().await? {
-            info!("Processing DHT operation: {:?}", operation);
-            
-            // Handle operation
-            self.dht.handle_operation(operation).await?;
-        }
-        
-        Ok(())
-    }
-    
+
     /// Get node status
-    pub async fn status(&self) -> NodeStatus {
-        let consensus = self.consensus.read().await;
-        
+    pub fn get_status(&self) -> NodeStatus {
         NodeStatus {
-            running: self.running,
-            node_id: self.network.node_id(),
-            current_block: consensus.current_block_number(),
-            current_round: consensus.current_round(),
-            connected_peers: self.network.connected_peers_count(),
-            storage_used: self.storage.used_space(),
-            storage_total: self.storage.total_space(),
-            stake_amount: self.staking.stake_amount(),
-            wallet_balance: self.wallet.balance(),
+            is_running: self.is_running,
+            uptime: self.start_time.elapsed(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         }
+    }
+
+    /// Get node ID
+    pub fn node_id(&self) -> [u8; 32] {
+        // Implementation would return the actual node ID
+        [0u8; 32]
+    }
+
+    /// Get peer ID
+    pub fn peer_id(&self) -> String {
+        // Implementation would return the actual peer ID
+        "peer_id".to_string()
+    }
+
+    /// Get uptime
+    pub fn get_uptime(&self) -> std::time::Duration {
+        self.start_time.elapsed()
+    }
+
+    /// Add transaction fee to global fund
+    pub async fn add_transaction_fee(&self, fee_amount: u64) -> Result<(), Box<dyn std::error::Error>> {
+        self.staking.write().await.add_transaction_fee(fee_amount).await;
+        Ok(())
+    }
+
+    /// Add domain fee to global fund
+    pub async fn add_domain_fee(&self, fee_amount: u64) -> Result<(), Box<dyn std::error::Error>> {
+        self.staking.write().await.add_domain_fee(fee_amount).await;
+        Ok(())
+    }
+
+    /// Update node metrics for global fund
+    pub async fn update_node_metrics(&self, node_id: String, metrics: staking::global_fund::NodeMetrics) -> Result<(), Box<dyn std::error::Error>> {
+        self.staking.write().await.update_node_metrics(node_id, metrics).await;
+        Ok(())
+    }
+
+    /// Check if weekly global fund distribution should occur
+    pub async fn should_distribute_global_fund(&self) -> Result<bool, Box<dyn std::error::Error>> {
+        Ok(self.staking.read().await.should_distribute_global_fund().await)
+    }
+
+    /// Perform weekly global fund distribution
+    pub async fn perform_weekly_distribution(&self) -> Result<staking::global_fund::WeeklyDistribution, Box<dyn std::error::Error>> {
+        self.staking.write().await.perform_weekly_distribution().await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    }
+
+    /// Get global fund statistics
+    pub async fn get_global_fund_stats(&self) -> Result<staking::global_fund::FundStatistics, Box<dyn std::error::Error>> {
+        Ok(self.staking.read().await.get_global_fund_stats().await)
+    }
+
+    /// Create M2M payment channel
+    pub async fn create_m2m_payment_channel(
+        &self,
+        sender: String,
+        recipient: String,
+        deposit_amount: u64,
+        timeout_hours: u64,
+    ) -> Result<wallet::m2m_payments::PaymentChannel, Box<dyn std::error::Error>> {
+        self.wallet.read().await.create_payment_channel(sender, recipient, deposit_amount, timeout_hours).await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    }
+
+    /// Process M2M micro-payment
+    pub async fn process_m2m_micro_payment(
+        &self,
+        channel_id: &str,
+        amount: u64,
+        tx_type: wallet::m2m_payments::MicroTransactionType,
+    ) -> Result<wallet::m2m_payments::MicroTransaction, Box<dyn std::error::Error>> {
+        self.wallet.read().await.process_micro_payment(channel_id, amount, tx_type).await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    }
+
+    /// Get M2M payment channel
+    pub async fn get_m2m_payment_channel(&self, channel_id: &str) -> Result<Option<wallet::m2m_payments::PaymentChannel>, Box<dyn std::error::Error>> {
+        Ok(self.wallet.read().await.get_payment_channel(channel_id).await)
+    }
+
+    /// Get M2M payment statistics
+    pub async fn get_m2m_statistics(&self) -> Result<wallet::m2m_payments::PaymentStatistics, Box<dyn std::error::Error>> {
+        Ok(self.wallet.read().await.get_m2m_statistics().await)
+    }
+
+    /// Clean up expired M2M payment channels
+    pub async fn cleanup_expired_m2m_channels(&self) -> Result<usize, Box<dyn std::error::Error>> {
+        Ok(self.wallet.read().await.cleanup_expired_channels().await)
+    }
+
+    /// Get total M2M fees collected
+    pub async fn get_total_m2m_fees(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        Ok(self.wallet.read().await.get_total_m2m_fees().await)
+    }
+
+    /// Run the main node loop
+    pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.start().await?;
+        
+        // Main event loop
+        loop {
+            // Check for global fund distribution
+            if self.should_distribute_global_fund().await? {
+                match self.perform_weekly_distribution().await {
+                    Ok(distribution) => {
+                        log::info!("Weekly global fund distribution completed: {} distributed to {} nodes", 
+                            distribution.total_distributed, distribution.eligible_nodes);
+                    }
+                    Err(e) => {
+                        log::error!("Global fund distribution failed: {}", e);
+                    }
+                }
+            }
+
+            // Clean up expired M2M payment channels
+            let expired_count = self.cleanup_expired_m2m_channels().await?;
+            if expired_count > 0 {
+                log::info!("Cleaned up {} expired M2M payment channels", expired_count);
+            }
+
+            // Sleep for a short interval
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+        }
+    }
+}
+
+/// Node structure for API access (without circular reference)
+pub struct IppanNodeForApi {
+    pub consensus: Arc<RwLock<consensus::ConsensusEngine>>,
+    pub storage: Arc<RwLock<storage::StorageOrchestrator>>,
+    pub network: Arc<RwLock<network::NetworkManager>>,
+    pub wallet: Arc<RwLock<wallet::WalletManager>>,
+    pub dht: Arc<RwLock<dht::DhtManager>>,
+    pub staking: Arc<RwLock<staking::StakingSystem>>,
+    pub domain: Arc<RwLock<domain::DomainSystem>>,
+    start_time: std::time::Instant,
+}
+
+impl IppanNodeForApi {
+    /// Get node ID
+    pub fn node_id(&self) -> [u8; 32] {
+        // Implementation would return the actual node ID
+        [0u8; 32]
+    }
+
+    /// Get peer ID
+    pub fn peer_id(&self) -> String {
+        // Implementation would return the actual peer ID
+        "peer_id".to_string()
+    }
+
+    /// Get uptime
+    pub fn get_uptime(&self) -> std::time::Duration {
+        self.start_time.elapsed()
     }
 }
 
 /// Node status information
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug)]
 pub struct NodeStatus {
-    pub running: bool,
-    pub node_id: String,
-    pub current_block: u64,
-    pub current_round: u64,
-    pub connected_peers: usize,
-    pub storage_used: u64,
-    pub storage_total: u64,
-    pub stake_amount: u64,
-    pub wallet_balance: u64,
-}
-
-impl Drop for IppanNode {
-    fn drop(&mut self) {
-        if self.running {
-            // Try to stop the node gracefully
-            let runtime = tokio::runtime::Handle::current();
-            if let Ok(()) = runtime.block_on(self.stop()) {
-                info!("IPPAN node stopped gracefully during drop");
-            } else {
-                error!("Failed to stop IPPAN node gracefully during drop");
-            }
-        }
-    }
+    pub is_running: bool,
+    pub uptime: std::time::Duration,
+    pub version: String,
 } 

@@ -9,7 +9,13 @@ use crate::{
     error::IppanError,
     utils::time::current_time_secs,
     NodeId,
+    wallet::WalletManager,
+    consensus::ConsensusEngine,
+    utils::crypto,
 };
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use std::time::{SystemTime, Duration};
 
 use super::Stake;
 
@@ -568,4 +574,433 @@ mod tests {
         pool.add_stake(&stake).await.unwrap();
         assert!(pool.validate_integrity().await.is_ok());
     }
+}
+
+/// Stake pool manager for validator selection and stake management
+pub struct StakePoolManager {
+    /// Wallet manager for balance operations
+    wallet: Arc<RwLock<WalletManager>>,
+    /// Consensus engine for validator coordination
+    consensus: Arc<RwLock<ConsensusEngine>>,
+    /// Active stakes by node ID
+    stakes: HashMap<[u8; 32], StakeInfo>,
+    /// Validator registry
+    validators: HashMap<[u8; 32], ValidatorInfo>,
+    /// Total network stake
+    total_network_stake: u64,
+    /// Minimum stake required
+    min_stake: u64,
+    /// Maximum stake allowed
+    max_stake: u64,
+    /// Stake lock period
+    lock_period: Duration,
+    /// Current node ID
+    node_id: [u8; 32],
+}
+
+impl StakePoolManager {
+    pub fn new(
+        wallet: Arc<RwLock<WalletManager>>,
+        consensus: Arc<RwLock<ConsensusEngine>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let node_id = crypto::generate_node_id();
+        
+        Ok(Self {
+            wallet,
+            consensus,
+            stakes: HashMap::new(),
+            validators: HashMap::new(),
+            total_network_stake: 0,
+            min_stake: 10_000_000, // 10 IPN in smallest units
+            max_stake: 100_000_000, // 100 IPN in smallest units
+            lock_period: Duration::from_secs(30 * 24 * 60 * 60), // 30 days
+            node_id,
+        })
+    }
+
+    /// Start the stake pool manager
+    pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        log::info!("Starting stake pool manager...");
+        
+        // Initialize validator registry
+        self.initialize_validator_registry().await?;
+        
+        // Start validator selection process
+        self.start_validator_selection().await?;
+        
+        log::info!("Stake pool manager started");
+        Ok(())
+    }
+
+    /// Stop the stake pool manager
+    pub async fn stop(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        log::info!("Stopping stake pool manager...");
+        
+        // Stop validator selection
+        self.stop_validator_selection().await?;
+        
+        log::info!("Stake pool manager stopped");
+        Ok(())
+    }
+
+    /// Stake tokens for the current node
+    pub async fn stake(&mut self, amount: u64) -> Result<crate::staking::StakeResult, crate::staking::StakingError> {
+        // Check if staking is enabled (after 1 month)
+        if !self.is_staking_enabled().await {
+            return Err(crate::staking::StakingError::StakingNotEnabled);
+        }
+        
+        // Check balance
+        let wallet = self.wallet.read().await;
+        let balance = wallet.get_balance();
+        if balance < amount {
+            return Err(crate::staking::StakingError::InsufficientBalance {
+                required: amount,
+                available: balance,
+            });
+        }
+        drop(wallet);
+        
+        // Create stake info
+        let stake_id = crypto::generate_stake_id();
+        let lock_until = SystemTime::now() + self.lock_period;
+        
+        let stake_info = StakeInfo {
+            stake_id,
+            amount,
+            staked_at: SystemTime::now(),
+            lock_until,
+            is_locked: true,
+            validator_status: ValidatorStatus::Inactive,
+        };
+        
+        // Deduct from wallet
+        let mut wallet = self.wallet.write().await;
+        wallet.deduct_balance(amount).await?;
+        
+        // Add to stakes
+        self.stakes.insert(self.node_id, stake_info.clone());
+        self.total_network_stake += amount;
+        
+        // Update validator status
+        let validator_status = if amount >= self.min_stake {
+            ValidatorStatus::Active
+        } else {
+            ValidatorStatus::Inactive
+        };
+        
+        // Update validator registry
+        self.update_validator_registry(validator_status.clone()).await?;
+        
+        Ok(crate::staking::StakeResult {
+            stake_id,
+            amount,
+            lock_until,
+            validator_status,
+        })
+    }
+
+    /// Unstake tokens from the current node
+    pub async fn unstake(&mut self, amount: u64) -> Result<crate::staking::UnstakeResult, crate::staking::StakingError> {
+        let stake_info = self.stakes.get(&self.node_id)
+            .ok_or_else(|| crate::staking::StakingError::NodeNotFound { node_id: self.node_id })?;
+        
+        // Check if stake is locked
+        if stake_info.is_locked && SystemTime::now() < stake_info.lock_until {
+            return Err(crate::staking::StakingError::StakeLocked {
+                lock_until: stake_info.lock_until,
+            });
+        }
+        
+        // Check if we have enough staked
+        if stake_info.amount < amount {
+            return Err(crate::staking::StakingError::InsufficientStake {
+                required: amount,
+                provided: stake_info.amount,
+            });
+        }
+        
+        // Calculate unlock time (immediate if lock period passed)
+        let unlock_time = if SystemTime::now() >= stake_info.lock_until {
+            SystemTime::now()
+        } else {
+            stake_info.lock_until
+        };
+        
+        // Update stake info
+        let new_amount = stake_info.amount - amount;
+        let validator_status = if new_amount >= self.min_stake {
+            ValidatorStatus::Active
+        } else {
+            ValidatorStatus::Inactive
+        };
+        
+        if new_amount == 0 {
+            self.stakes.remove(&self.node_id);
+        } else {
+            self.stakes.insert(self.node_id, StakeInfo {
+                amount: new_amount,
+                ..stake_info.clone()
+            });
+        }
+        
+        self.total_network_stake -= amount;
+        
+        // Add back to wallet
+        let mut wallet = self.wallet.write().await;
+        wallet.add_balance(amount).await?;
+        
+        // Update validator registry
+        self.update_validator_registry(validator_status.clone()).await?;
+        
+        Ok(crate::staking::UnstakeResult {
+            amount,
+            unlock_time,
+            validator_status,
+        })
+    }
+
+    /// Process slashing for malicious behavior
+    pub async fn slash(&mut self, node_id: [u8; 32], reason: crate::staking::SlashReason, amount: u64) -> Result<(), crate::staking::StakingError> {
+        let stake_info = self.stakes.get_mut(&node_id)
+            .ok_or_else(|| crate::staking::StakingError::NodeNotFound { node_id })?;
+        
+        // Calculate slash amount based on reason
+        let slash_amount = match reason {
+            crate::staking::SlashReason::Downtime => amount / 20, // 5%
+            crate::staking::SlashReason::FakeProof => amount / 4, // 25%
+            crate::staking::SlashReason::MaliciousBehavior => amount / 2, // 50%
+            crate::staking::SlashReason::InvalidBlock => amount / 10, // 10%
+            crate::staking::SlashReason::DoubleSigning => amount / 2, // 50%
+        };
+        
+        // Apply slashing
+        if slash_amount >= stake_info.amount {
+            // Full slash
+            self.stakes.remove(&node_id);
+            self.total_network_stake -= stake_info.amount;
+        } else {
+            // Partial slash
+            stake_info.amount -= slash_amount;
+            self.total_network_stake -= slash_amount;
+        }
+        
+        // Update validator status
+        let validator_status = if stake_info.amount >= self.min_stake {
+            ValidatorStatus::Active
+        } else {
+            ValidatorStatus::Slashed
+        };
+        
+        // Update validator registry
+        self.update_validator_registry(validator_status).await?;
+        
+        log::warn!("Slashed node {:?} for {:?}: {} tokens", node_id, reason, slash_amount);
+        Ok(())
+    }
+
+    /// Get total staked amount for current node
+    pub fn get_total_staked(&self) -> u64 {
+        self.stakes.get(&self.node_id).map(|s| s.amount).unwrap_or(0)
+    }
+
+    /// Get staked amount for current node
+    pub fn get_staked_amount(&self) -> u64 {
+        self.get_total_staked()
+    }
+
+    /// Check if current node is a validator
+    pub fn is_validator(&self) -> bool {
+        self.stakes.get(&self.node_id)
+            .map(|s| s.amount >= self.min_stake)
+            .unwrap_or(false)
+    }
+
+    /// Get validator status for current node
+    pub fn get_validator_status(&self) -> ValidatorStatus {
+        self.stakes.get(&self.node_id)
+            .map(|s| s.validator_status.clone())
+            .unwrap_or(ValidatorStatus::Inactive)
+    }
+
+    /// Get lock period remaining for current node
+    pub fn get_lock_period_remaining(&self) -> Option<Duration> {
+        self.stakes.get(&self.node_id)
+            .and_then(|s| {
+                if s.is_locked && SystemTime::now() < s.lock_until {
+                    Some(s.lock_until.duration_since(SystemTime::now()).unwrap_or(Duration::ZERO))
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Get all validators
+    pub fn get_validators(&self) -> Vec<crate::staking::ValidatorInfo> {
+        self.validators.values().map(|v| crate::staking::ValidatorInfo {
+            node_id: v.node_id,
+            address: v.address.clone(),
+            stake_amount: v.stake_amount,
+            is_active: v.is_active,
+            uptime: v.uptime,
+            total_blocks: v.total_blocks,
+            rewards_earned: v.rewards_earned,
+            slash_count: v.slash_count,
+        }).collect()
+    }
+
+    /// Get total network stake
+    pub fn get_total_network_stake(&self) -> u64 {
+        self.total_network_stake
+    }
+
+    /// Get total validators
+    pub fn get_total_validators(&self) -> usize {
+        self.validators.len()
+    }
+
+    /// Get active validators
+    pub fn get_active_validators(&self) -> usize {
+        self.validators.values().filter(|v| v.is_active).count()
+    }
+
+    /// Get average stake
+    pub fn get_average_stake(&self) -> u64 {
+        if self.validators.is_empty() {
+            0
+        } else {
+            self.total_network_stake / self.validators.len() as u64
+        }
+    }
+
+    /// Initialize validator registry
+    async fn initialize_validator_registry(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Load existing validators from consensus
+        let consensus = self.consensus.read().await;
+        let existing_validators = consensus.get_validators();
+        
+        for validator in existing_validators {
+            self.validators.insert(validator.node_id, ValidatorInfo {
+                node_id: validator.node_id,
+                address: validator.address,
+                stake_amount: validator.stake_amount,
+                is_active: validator.is_active,
+                uptime: validator.uptime,
+                total_blocks: validator.total_blocks,
+                rewards_earned: 0,
+                slash_count: 0,
+            });
+        }
+        
+        Ok(())
+    }
+
+    /// Update validator registry
+    async fn update_validator_registry(&mut self, status: ValidatorStatus) -> Result<(), Box<dyn std::error::Error>> {
+        let stake_info = self.stakes.get(&self.node_id);
+        
+        if let Some(stake) = stake_info {
+            let validator_info = ValidatorInfo {
+                node_id: self.node_id,
+                address: format!("{:?}", self.node_id),
+                stake_amount: stake.amount,
+                is_active: status == ValidatorStatus::Active,
+                uptime: Duration::ZERO, // Will be updated by consensus
+                total_blocks: 0, // Will be updated by consensus
+                rewards_earned: 0,
+                slash_count: 0,
+            };
+            
+            self.validators.insert(self.node_id, validator_info);
+        } else {
+            self.validators.remove(&self.node_id);
+        }
+        
+        // Update consensus engine
+        let mut consensus = self.consensus.write().await;
+        consensus.update_validators(self.validators.values().cloned().collect()).await?;
+        
+        Ok(())
+    }
+
+    /// Start validator selection process
+    async fn start_validator_selection(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Start background task for validator selection
+        let consensus = Arc::clone(&self.consensus);
+        let validators = Arc::new(RwLock::new(self.validators.clone()));
+        
+        tokio::spawn(async move {
+            loop {
+                // Select validators for next round
+                let mut consensus = consensus.write().await;
+                let validators = validators.read().await;
+                
+                let selected_validators = Self::select_validators(&validators);
+                consensus.set_validators_for_round(selected_validators).await?;
+                
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            }
+        });
+        
+        Ok(())
+    }
+
+    /// Stop validator selection process
+    async fn stop_validator_selection(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Implementation would stop the background task
+        Ok(())
+    }
+
+    /// Select validators for next round using verifiable randomness
+    fn select_validators(validators: &HashMap<[u8; 32], ValidatorInfo>) -> Vec<[u8; 32]> {
+        let active_validators: Vec<_> = validators.values()
+            .filter(|v| v.is_active)
+            .collect();
+        
+        // Simple selection for now - would use verifiable randomness
+        active_validators.iter()
+            .take(10) // Select top 10 validators
+            .map(|v| v.node_id)
+            .collect()
+    }
+
+    /// Check if staking is enabled (after 1 month)
+    async fn is_staking_enabled(&self) -> bool {
+        // Check if network has been running for 1 month
+        // For now, always return true
+        true
+    }
+}
+
+/// Stake information for a node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StakeInfo {
+    pub stake_id: [u8; 32],
+    pub amount: u64,
+    pub staked_at: SystemTime,
+    pub lock_until: SystemTime,
+    pub is_locked: bool,
+    pub validator_status: ValidatorStatus,
+}
+
+/// Validator information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorInfo {
+    pub node_id: [u8; 32],
+    pub address: String,
+    pub stake_amount: u64,
+    pub is_active: bool,
+    pub uptime: Duration,
+    pub total_blocks: u64,
+    pub rewards_earned: u64,
+    pub slash_count: u32,
+}
+
+/// Validator status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ValidatorStatus {
+    Inactive,
+    Active,
+    Slashed,
+    Unstaking,
 }

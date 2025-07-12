@@ -12,6 +12,7 @@ pub mod error;
 // pub mod node;
 // pub mod staking;
 // pub mod storage;
+pub mod security;
 // pub mod tests;
 pub mod utils;
 // pub mod wallet;
