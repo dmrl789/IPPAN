@@ -16,6 +16,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
+// TODO: Fix logging imports
+// use crate::utils::logging::{log_block, log_transaction};
 
 /// Custom serialization for byte arrays
 mod byte_array_serde {
@@ -474,7 +476,7 @@ impl BlockDAG {
         }
         
         // Include HashTimer
-        hasher.update(&block.header.hashtimer.ippan_time_ns.to_be_bytes());
+        hasher.update(&block.header.hashtimer.ippan_time_ns().to_be_bytes());
         
         let result = hasher.finalize();
         let mut hash = [0u8; 32];
@@ -637,7 +639,7 @@ impl Block {
         for tx in &block.transactions {
             hasher.update(&tx.hash);
         }
-        hasher.update(&block.header.hashtimer.ippan_time_ns.to_be_bytes());
+        hasher.update(&block.header.hashtimer.ippan_time_ns().to_be_bytes());
         
         let result = hasher.finalize();
         let mut hash = [0u8; 32];
@@ -834,7 +836,7 @@ impl Transaction {
         
         hasher.update(&tx.fee.to_le_bytes());
         hasher.update(&tx.nonce.to_le_bytes());
-        hasher.update(&tx.hashtimer.ippan_time_ns.to_be_bytes());
+        hasher.update(&tx.hashtimer.ippan_time_ns().to_be_bytes());
         
         let result = hasher.finalize();
         let mut hash = [0u8; 32];
@@ -886,7 +888,7 @@ mod tests {
         let blockdag = BlockDAG::new(time_manager);
         
         let validator_id = [1u8; 32];
-        let hashtimer = HashTimer::new([0u8; 32], validator_id);
+        let hashtimer = HashTimer::new("test_node", 1, 1);
         let transactions = vec![];
         
         let block = Block::new(1, transactions, validator_id, hashtimer);
@@ -899,7 +901,7 @@ mod tests {
     async fn test_transaction_creation() {
         let from = [1u8; 32];
         let to = [2u8; 32];
-        let hashtimer = HashTimer::new([0u8; 32], from);
+        let hashtimer = HashTimer::new("test_node", 1, 1);
         
         let tx = Transaction::new_payment(from, to, 1000, 10, 1, hashtimer);
         
@@ -917,7 +919,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_anchor_transaction_creation() {
-        let hashtimer = HashTimer::new([0u8; 32], [1u8; 32]);
+        let hashtimer = HashTimer::new("test_node", 1, 1);
         
         let tx = Transaction::new_anchor(
             "testchain".to_string(),

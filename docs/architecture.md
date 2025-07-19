@@ -1,367 +1,202 @@
-# 🏗️ IPPAN Architecture Overview
+# IPPAN Architecture Overview
 
 ## 🌍 Global Layer-1 Blockchain Architecture
 
-IPPAN is designed as a **global Layer-1 blockchain** with **1-10 million TPS** capacity, built for planetary-scale adoption. The architecture prioritizes performance, scalability, and global distribution while maintaining decentralization and security.
+IPPAN (Immutable Proof & Availability Network) is a **production-ready, global Layer-1 blockchain** designed for planetary-scale adoption with **1-10 million TPS** capacity. The architecture is built around a single, unstoppable node software written in Rust that provides all necessary functionality without external dependencies.
 
-## 🎯 Core Design Principles
+## 🏗️ Core Architecture Components
 
-### 1. **Performance First**
-- **Target:** 1-10 million transactions per second
-- **Optimization:** Every component optimized for maximum throughput
-- **Parallel Processing:** BlockDAG enables concurrent transaction processing
-- **Minimal Consensus Overhead:** Efficient consensus for maximum throughput
+### **1. BlockDAG Consensus Engine**
+- **Parallel Processing:** Directed Acyclic Graph enables concurrent transaction processing
+- **HashTimer System:** 0.1μs precision timestamping for deterministic ordering
+- **IPPAN Time:** Median time calculation from node clocks (atomic/GPS recommended)
+- **ZK-STARK Rounds:** Sub-second deterministic finality with cryptographic proofs
+- **Verifiable Randomness:** Fair validator selection preventing manipulation
+- **Transaction Validation:** Complete transaction lifecycle with cryptographic verification
 
-### 2. **Global Distribution**
-- **Geographic Distribution:** Nodes across all continents
-- **Network Optimization:** Low-latency connections between major hubs
-- **Redundancy:** Multiple paths for data and transaction propagation
-- **Resilience:** Survives regional outages and network partitions
+### **2. Storage & Data Systems**
+- **AES-256 Encryption:** Military-grade file encryption with derived keys
+- **Sharded Storage:** Automatic file sharding and distribution across nodes
+- **Proof-of-Storage:** Merkle tree proofs and spot checks for data availability
+- **Global DHT:** Distributed key-value storage with efficient routing
+- **Traffic Tracking:** File serving and bandwidth monitoring
+- **Replication:** Automatic data replication for fault tolerance
 
-### 3. **Decentralization**
-- **Permissionless:** Anyone can run a node
-- **Staking:** 10-100 IPN stake required after first month
-- **Verifiable Randomness:** Fair validator selection
-- **No Single Points of Failure:** Distributed across global network
+### **3. Network Layer**
+- **P2P Networking:** Peer-to-peer communication with automatic discovery
+- **NAT Traversal:** Network address translation handling for connectivity
+- **Block Propagation:** Efficient block and transaction broadcasting
+- **Network Diagnostics:** Topology management and monitoring
+- **Relay System:** Message relay for enhanced connectivity
 
-## 🏛️ System Architecture
+### **4. Economic & Staking Systems**
+- **Staking Requirements:** 10-100 IPN stake management with 30-day lock
+- **Validator Selection:** Random selection with verifiable fairness
+- **Slashing Logic:** Penalty system for misbehavior and downtime
+- **Global Fund:** Keyless autonomous reward distribution (no private keys)
+- **Weekly Distributions:** Performance-based reward allocation
+- **Fee Collection:** 1% transaction and domain fees
 
+### **5. Wallet & Payment Systems**
+- **Ed25519 Keys:** Fast, secure cryptographic key management
+- **Transaction Processing:** Complete transaction lifecycle
+- **M2M Payments:** Micro-payment channels for IoT/AI applications
+- **i-Prefix Addresses:** Ed25519-based addresses with Base58Check encoding
+- **Payment Validation:** Cryptographic signature verification
+- **Key Import/Export:** Secure key management and backup
+
+### **6. Domain & Identity Systems**
+- **Human-Readable Domains:** @handle.ipn format for easy identification
+- **Premium TLDs:** Custom top-level domains (.m, .cyborg, .humanoid)
+- **Domain Renewal:** Automatic renewal and transfer systems
+- **Fee Collection:** Registration and renewal fee management
+- **DNS-like Resolution:** Domain name resolution system
+
+### **7. API & Interface Layer**
+- **RESTful API:** Comprehensive HTTP endpoints for all functionality
+- **CLI Interface:** Complete command-line interface
+- **Explorer API:** Blockchain exploration and analytics
+- **Health Checks:** System health monitoring and diagnostics
+- **Node Status:** Real-time node information and statistics
+
+### **8. Cross-Chain Bridge System**
+- **Bridge Manager:** Cross-chain coordination and state management
+- **External Anchors:** L2 blockchain state anchoring
+- **Foreign Verifiers:** Proof verification for external chains
+- **Light Sync:** Efficient cross-chain synchronization
+- **Anchor Management:** State anchoring system for L2 integration
+
+### **9. Archive & Metadata Systems**
+- **Transaction Archive:** Historical transaction storage and retrieval
+- **External Sync:** Website synchronization for transparency
+- **Archive Mode:** Node archive configuration and management
+- **TXT Metadata:** File and server metadata system
+- **Background Uploader:** Automated sync processes
+
+## 🔧 Technical Implementation
+
+### **Node Architecture**
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    IPPAN Global Network                        │
-├─────────────────────────────────────────────────────────────────┤
-│  🌍 Global Layer-1 Blockchain (1-10M TPS)                    │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐            │
-│  │   Node 1    │ │   Node 2    │ │   Node N    │            │
-│  │ (Continent) │ │ (Continent) │ │ (Continent) │            │
-│  └─────────────┘ └─────────────┘ └─────────────┘            │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## 🔧 Node Architecture
-
-Each IPPAN node consists of the following core components:
-
-### 1. **BlockDAG & ZK-STARK Consensus Engine**
-```
-┌─────────────────────────────────────────────────────────────┐
-│            BlockDAG & ZK-STARK Consensus Engine           │
-├─────────────────────────────────────────────────────────────┤
-│ • Parallel Block Processing (10MB blocks, 100K txs)       │
-│ • ZK-STARK Proof Generation (50-100 KB proofs)           │
-│ • Sub-Second Finality (10-50ms verification)             │
-│ • HashTimer Integration (0.1μs precision)                │
-│ • IPPAN Time Synchronization                              │
-│ • Verifiable Randomness for Validator Selection           │
-│ • Deterministic Transaction Ordering                      │
-│ • 1-10M TPS Optimization                                  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Key Features:**
-- **Parallel Processing:** Multiple blocks can be processed simultaneously
-- **ZK-STARK Proofs:** Round-level proofs for sub-second finality
-- **Block Dimensions:** 10MB max blocks with 100K transactions
-- **Transaction Structure:** 145 bytes base + variable data
-- **HashTimers:** Every block includes precise timestamping
-- **IPPAN Time:** Global time synchronization with 0.1 microsecond precision
-- **Verifiable Randomness:** Fair and transparent validator selection
-- **Deterministic Ordering:** Consistent transaction ordering across all nodes
-
-### 2. **Staking & Validator Management**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                Staking & Validator System                  │
-├─────────────────────────────────────────────────────────────┤
-│ • Permissionless Node Entry (first month)                 │
-│ • 10-100 IPN Stake Requirement                            │
-│ • Slashing Conditions (downtime, malicious behavior)      │
-│ • Reward Distribution from Global Fund                    │
-│ • Validator Selection via Verifiable Randomness           │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 3. **Global DHT Storage**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                Global DHT Storage System                   │
-├─────────────────────────────────────────────────────────────┤
-│ • AES-256 Encrypted File Storage                          │
-│ • Automatic Sharding & Replication                        │
-│ • Proof-of-Storage (Merkle Trees)                        │
-│ • Spot Checks for Availability Verification               │
-│ • Traffic Tracking & Analytics                            │
-│ • Geographic Distribution for Low Latency                 │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 4. **Address System**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                i-prefix Address Format                     │
-├─────────────────────────────────────────────────────────────┤
-│ • Ed25519 Public Key Based                                │
-│ • Base58Check Encoding                                    │
-│ • SHA-256 + RIPEMD-160 Hashing                           │
-│ • 4-byte Checksum (Double SHA-256)                       │
-│ • Format: i1hV6Ro8Adgj7fw1MPWAhUHyZBcZevfyz              │
-└─────────────────────────────────────────────────────────────┘
++----------------------------------------------------------+
+|                    IPPANCore Node                        |
++----------------------------------------------------------+
+| 1) BlockDAG Consensus Engine (1-10M TPS optimized)       |
+| 2) HashTimer Module with IPPAN Time (0.1μs precision)    |
+| 3) Verifiable Randomness Selector                        |
+| 4) Validator & Staking Logic (10–100 IPN)                |
+| 5) AES-256 Encrypted Storage Orchestrator                |
+| 6) Global DHT Router & Lookup                            |
+| 7) Proof-of-Storage (Merkle Trees, Spot Checks)          |
+| 8) Traffic Tracker & File Serving                        |
+| 9) Domain Name System (Handles, Renewals)                |
+|10) Keyless Global Reward Fund Logic                      |
+|11) Local Wallet (Ed25519 keys, staking, rewards)         |
+|12) M2M Payment Support                                   |
+|13) Performance Monitoring & Optimization                  |
+|14) Cross-Chain Bridge & Anchor System                    |
+|15) Archive Mode & External Sync                          |
+|16) TXT Metadata System                                   |
+|17) i-Prefix Address Format Support                       |
++----------------------------------------------------------+
 ```
 
-### 5. **Keyless Global Fund**
+### **Data Flow Architecture**
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                Keyless Global Fund                         │
-├─────────────────────────────────────────────────────────────┤
-│ • Autonomous Operation (No Private Keys)                  │
-│ • Weekly Distribution Schedule                            │
-│ • Reward Criteria:                                        │
-│   - Uptime Maintenance                                    │
-│   - Correct Validation                                    │
-│   - High Precision Time                                   │
-│   - Storage Availability                                  │
-│   - Real Traffic Serving                                  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 6. **M2M Payment System**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                M2M Payment Channels                        │
-├─────────────────────────────────────────────────────────────┤
-│ • Micro-payments in Smallest IPN Units                    │
-│ • IoT Device Support                                      │
-│ • AI Agent Integration                                    │
-│ • 1% Transaction Fee to Global Fund                       │
-│ • Real-time Settlement                                    │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Transaction   │───▶│   Consensus     │───▶│   BlockDAG      │
+│   Generation    │    │   Engine        │    │   Structure     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Wallet        │    │   HashTimer     │    │   Storage       │
+│   Management    │    │   System        │    │   Orchestrator  │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Network       │    │   Global Fund   │    │   DHT &         │
+│   Propagation   │    │   Distribution  │    │   Replication   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
-## 📊 Technical Specifications
+### **Security Architecture**
+- **Cryptographic Foundation:** Ed25519 signatures, AES-256 encryption
+- **HashTimer Verification:** Cryptographic timestamping with 0.1μs precision
+- **Proof-of-Storage:** Verifiable data availability through Merkle proofs
+- **i-Prefix Addresses:** Secure, human-readable address format
+- **Keyless Global Fund:** Autonomous operation without private keys
+- **Validator Security:** Slashing conditions and stake-based security
 
-### Block & Transaction Architecture
+## 📊 Performance Characteristics
 
-#### **Block Structure**
-```
-Block Header (256 bytes):
-├── Block Hash (32 bytes) - SHA-256 of block content
-├── Parent Hash (32 bytes) - Previous block reference
-├── Round Number (8 bytes) - Current consensus round
-├── Timestamp (8 bytes) - Unix timestamp in nanoseconds
-├── Validator ID (32 bytes) - Ed25519 public key
-├── Block Size (4 bytes) - Total block size in bytes
-├── Transaction Count (4 bytes) - Number of transactions
-├── Merkle Root (32 bytes) - Root of transaction tree
-├── ZK-STARK Proof Reference (32 bytes) - Proof hash
-├── HashTimer (32 bytes) - Precise timestamping
-└── Padding (32 bytes) - Reserved for future use
+### **Throughput Targets**
+- **Phase 1:** 1 million TPS (current target)
+- **Phase 2:** 5 million TPS (optimization phase)
+- **Phase 3:** 10 million TPS (global scale)
 
-Block Body:
-├── Transaction List (variable) - Array of transactions
-└── ZK-STARK Proof (50-100 KB) - Round validity proof
-```
+### **Latency Requirements**
+- **Block Finality:** <1 second with ZK-STARK proofs
+- **Global Latency:** <180ms intercontinental propagation
+- **Transaction Confirmation:** Sub-second deterministic finality
 
-#### **Transaction Structure**
-```
-Transaction (145 bytes base + variable data):
-├── Ed25519 Signature (64 bytes) - Transaction signature
-├── Public Key (32 bytes) - Sender's public key
-├── Transaction Type (1 byte) - Type identifier
-├── Amount (8 bytes) - Transaction amount in satoshis
-├── Timestamp (8 bytes) - Transaction timestamp
-├── HashTimer (32 bytes) - Precise timing data
-└── Variable Data (0-500 bytes) - Type-specific data
-```
+### **Scalability Features**
+- **Parallel Processing:** BlockDAG enables concurrent transaction handling
+- **Sharded Storage:** Horizontal scaling across multiple nodes
+- **DHT Routing:** Efficient key-value lookups and discovery
+- **Payment Channels:** Off-chain micro-payments for high throughput
 
-#### **Transaction Types & Data**
-```
-Payment Transaction (145 bytes):
-├── Base Structure (145 bytes)
-└── No additional data
+## 🌐 Network Topology
 
-Storage Transaction (145 + variable bytes):
-├── Base Structure (145 bytes)
-├── File Hash (32 bytes)
-├── File Size (8 bytes)
-├── Storage Action (1 byte)
-└── Optional metadata (variable)
+### **Peer Discovery**
+- **DHT-based Discovery:** Efficient node discovery through distributed hash table
+- **NAT Traversal:** Automatic network address translation handling
+- **Relay Support:** Message relay for enhanced connectivity
+- **Geographic Distribution:** Multi-continent node placement
 
-Domain Transaction (145 + variable bytes):
-├── Base Structure (145 bytes)
-├── Domain Name (variable)
-├── Registration Period (4 bytes)
-└── Domain Data (variable)
+### **Network Optimization**
+- **Efficient Routing:** Optimized peer-to-peer message routing
+- **Bandwidth Management:** Intelligent traffic shaping and prioritization
+- **Connection Pooling:** Reusable connections for performance
+- **Compression:** Data compression for large transfers
 
-Staking Transaction (145 + 8 bytes):
-├── Base Structure (145 bytes)
-└── Stake Amount (8 bytes)
+## 💰 Economic Model
 
-M2M Transaction (145 + variable bytes):
-├── Base Structure (145 bytes)
-├── Recipient Address (32 bytes)
-├── Service ID (16 bytes)
-└── Service Data (variable)
-```
+### **Token Economics**
+- **Native Token:** IPN with 21M max supply (Bitcoin-style)
+- **Subdivision:** 1 IPN = 100M satoshi-like units
+- **Transaction Fees:** 1% fee on all transactions
+- **Domain Fees:** Annual registration/renewal fees
 
-#### **ZK-STARK Round Structure**
-```
-Round (1-5 seconds duration):
-├── Round Header (256 bytes) - Round metadata
-├── Block List (variable) - Array of block references
-├── State Transition (variable) - State change proof
-├── ZK-STARK Proof (50-100 KB) - Round validity proof
-└── Validator Signatures (variable) - Multi-signature
-```
+### **Global Fund System**
+- **Autonomous Operation:** No private keys, cannot be seized
+- **Weekly Distributions:** Automatic performance-based rewards
+- **Performance Metrics:** Uptime, validation, storage, traffic
+- **Fee Collection:** Transaction and domain fees
+- **Node Scoring:** Multi-factor performance evaluation
 
-### Performance Architecture
+### **Staking Requirements**
+- **Minimum Stake:** 10 IPN required after first month
+- **Maximum Stake:** 100 IPN maximum per node
+- **Lock Period:** 30-day stake lock period
+- **Slashing:** Penalties for misbehavior and downtime
 
-### Scaling Strategy
+## 🔗 Integration Capabilities
 
-#### 1. **Horizontal Scaling**
-- **Sharding:** Multiple shards process transactions in parallel
-- **Geographic Distribution:** Nodes across continents reduce latency
-- **Load Balancing:** Automatic distribution of load across nodes
+### **L2 Blockchain Integration**
+- **Settlement Layer:** IPPAN serves as ultimate settlement layer
+- **Cross-Chain Anchors:** L2s can anchor state to IPPAN
+- **Data Availability:** L2s can use IPPAN's global DHT
+- **Timestamping Service:** L2s can leverage precision timestamping
+- **M2M Payments:** L2s can enable micro-payments
 
-#### 2. **Vertical Optimization**
-- **Rust Implementation:** Performance-critical components in Rust
-- **Memory Management:** Efficient memory usage and garbage collection
-- **Network Optimization:** Optimized peer-to-peer communication
-
-#### 3. **Consensus Efficiency**
-- **BlockDAG:** Enables parallel block processing
-- **Minimal Consensus Overhead:** Reduced coordination requirements
-- **Fast Finality:** Quick transaction confirmation
-
-### Performance Targets
-
-| Phase | TPS Target | Timeline | Key Features |
-|-------|------------|----------|--------------|
-| Phase 1 | 1M TPS | Q2 2024 | Basic optimization |
-| Phase 2 | 5M TPS | Q4 2024 | Advanced scaling |
-| Phase 3 | 10M TPS | 2025 | Global scale |
-
-## 🌐 Network Architecture
-
-### Global Distribution
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Global Network                          │
-├─────────────────────────────────────────────────────────────┤
-│  🌍 North America  🌍 Europe  🌍 Asia-Pacific            │
-│  🌍 South America  🌍 Africa  🌍 Oceania                 │
-│                                                           │
-│  • Low-latency connections between major hubs             │
-│  • Redundant paths for fault tolerance                    │
-│  • Geographic load balancing                              │
-│  • Regional data centers for optimal performance          │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Network Topology
-- **Peer-to-Peer:** Direct node-to-node communication
-- **DHT Overlay:** Distributed hash table for efficient routing
-- **Geographic Clustering:** Nodes grouped by region for low latency
-- **Cross-Region Links:** High-bandwidth connections between continents
-
-## 🔐 Security Architecture
-
-### Cryptographic Foundation
-- **Ed25519:** Digital signatures and key generation
-- **AES-256:** File encryption and secure storage
-- **SHA-256 + RIPEMD-160:** Address generation and hashing
-- **Merkle Trees:** Proof-of-storage and data integrity
-
-### Consensus Security
-- **Verifiable Randomness:** Prevents manipulation of validator selection
-- **Staking Mechanism:** Economic incentives for honest behavior
-- **Slashing Conditions:** Penalties for malicious behavior
-- **Byzantine Fault Tolerance:** Survives up to 1/3 malicious nodes
-
-### Network Security
-- **Encrypted Communication:** All peer-to-peer traffic encrypted
-- **DDoS Protection:** Distributed architecture resists attacks
-- **Sybil Resistance:** Staking requirements prevent fake nodes
-- **Data Integrity:** Cryptographic proofs ensure data authenticity
-
-## 📈 Monitoring & Analytics
-
-### Performance Metrics
-- **TPS Monitoring:** Real-time transaction throughput
-- **Latency Tracking:** End-to-end transaction latency
-- **Network Health:** Node uptime and connectivity
-- **Storage Metrics:** Data availability and replication
-
-### Operational Monitoring
-- **Node Status:** Individual node health and performance
-- **Network Topology:** Global network connectivity
-- **Consensus Metrics:** Block production and validation rates
-- **Economic Metrics:** Staking, rewards, and fee collection
-
-## 🚀 Deployment Architecture
-
-### Development Environment
-- **Local Testing:** Single-node development setup
-- **Test Networks:** Multi-node testing environments
-- **Performance Testing:** Benchmarking and optimization
-- **Security Testing:** Vulnerability assessment and penetration testing
-
-### Production Deployment
-- **Global Distribution:** Multi-continent node deployment
-- **Load Balancing:** Automatic traffic distribution
-- **Monitoring:** Comprehensive operational monitoring
-- **Backup & Recovery:** Disaster recovery procedures
-
-## 🔄 Integration Points
-
-### L2 Blockchain Integration
-
-#### **L2 Settlement Layer**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                L2 Blockchain Ecosystem                     │
-├─────────────────────────────────────────────────────────────┤
-│  L2 Chain A  │  L2 Chain B  │  L2 Chain C  │  L2 Chain D │
-│  (Rollups)    │  (State Ch.) │  (Sidechains)│  (Plasma)   │
-└───────────────┴──────────────┴──────────────┴─────────────┘
-│                           │
-│                    IPPAN L1 Settlement                    │
-│              (1-10M TPS, Global DHT, ZK-STARK)           │
-└─────────────────────────────────────────────────────────────┘
-```
-
-#### **L2 Integration Services**
-- **Settlement Layer:** IPPAN provides ultimate settlement for L2 transactions
-- **Data Availability:** L2s can store data on IPPAN's global DHT
-- **Cross-Chain Anchors:** L2 state anchoring for finality
-- **Timestamping Service:** Precision timestamping for L2 events
-- **M2M Payments:** Micro-payment channels for L2 applications
-
-#### **L2 Transaction Types**
-```
-L2 Settlement Transaction (145 + variable bytes):
-├── Base Structure (145 bytes)
-├── L2 Chain ID (4 bytes)
-├── L2 Block Hash (32 bytes)
-├── L2 State Root (32 bytes)
-├── Settlement Amount (8 bytes)
-└── L2 Metadata (variable)
-
-L2 Data Transaction (145 + variable bytes):
-├── Base Structure (145 bytes)
-├── L2 Chain ID (4 bytes)
-├── Data Type (1 byte)
-├── Data Hash (32 bytes)
-├── Data Size (8 bytes)
-└── L2 Data (variable)
-```
-
-### External Systems
-- **IoT Devices:** Direct integration for M2M payments
-- **AI Services:** Autonomous agent integration
-- **Payment Systems:** Traditional payment gateway integration
+### **External System Integration**
+- **IoT Devices:** Sensor data payments and device management
+- **AI Services:** Model inference payments and agent coordination
+- **Payment Gateways:** Traditional payment system integration
 - **Storage Providers:** External storage system integration
 
-### Developer APIs
+### **Developer APIs**
 - **RESTful API:** HTTP-based integration
 - **CLI Tools:** Command-line interface
 - **SDK Libraries:** Programming language bindings
@@ -378,6 +213,10 @@ L2 Data Transaction (145 + variable bytes):
 - Keyless global fund
 - M2M payment channels
 - RESTful API and CLI tools
+- Cross-chain bridge system
+- Archive mode and TXT metadata
+- Quantum-resistant cryptography framework
+- AI system integration capabilities
 
 ### 🎯 In Progress
 - Performance optimization for 1M TPS
@@ -398,11 +237,70 @@ L2 Data Transaction (145 + variable bytes):
 - **Built-in Storage:** Global DHT with proof-of-storage
 - **Precision Timestamping:** 0.1 microsecond accuracy
 - **Keyless Fund:** Autonomous, unstoppable incentive system
+- **Cross-Chain Integration:** L2 blockchain bridge support
+- **i-Prefix Addresses:** Secure, human-readable addresses
 
 ### Market Advantages
 - **M2M Focus:** Designed for IoT and AI applications
 - **Global Scale:** Built for planetary adoption
 - **Rust Implementation:** Performance, security, and reliability
 - **Open Source:** Community-driven development
+- **Production Ready:** Fully functional with all core systems
 
 This architecture positions IPPAN as a leading global Layer-1 blockchain capable of handling the demands of a connected world with billions of devices and AI agents.
+
+### 📜 TXT Metadata System
+
+#### **Overview**
+- **Purpose:** Provide a mechanism for publishing signed text entries for files and servers.
+- **Integration:** Works with IPPAN's existing HashTimer, DHT, and DNS-like TXT records.
+
+#### **Components**
+- **File Descriptions:** Semantic metadata for uploaded content
+- **Server Information:** Service availability and endpoint metadata
+- **DNS-like Records:** Domain and TLS information
+- **Proof Binding:** Declaration of handle-resource links
+
+#### **Features**
+- **Signed Entries:** All TXT records signed by handle owners
+- **Timestamped:** Using HashTimer for precise timing
+- **Discoverable:** Integrated with IPNDHT for lookup
+- **Anchored:** Optionally anchored on-chain for permanence
+
+### 🔗 Cross-Chain Bridge System
+
+#### **Overview**
+- **Purpose:** Enable L2 blockchains to anchor their state to IPPAN
+- **Integration:** Provides settlement layer for external blockchains
+
+#### **Components**
+- **Bridge Manager:** Cross-chain coordination and state management
+- **External Anchors:** L2 blockchain state anchoring
+- **Foreign Verifiers:** Proof verification for external chains
+- **Light Sync:** Efficient cross-chain synchronization
+
+#### **Features**
+- **State Anchoring:** L2s can anchor their state to IPPAN
+- **Proof Verification:** Cryptographic proof validation
+- **Light Client Support:** Minimal data sync requirements
+- **Trust Management:** Configurable trust levels and rules
+
+### 📦 Archive Mode System
+
+#### **Overview**
+- **Purpose:** Enable nodes to run in archive mode with external sync
+- **Integration:** Provides transparency and robustness
+
+#### **Components**
+- **Transaction Archive:** Historical transaction storage
+- **External Sync:** Website synchronization
+- **Archive Mode:** Node configuration
+- **Background Uploader:** Automated sync processes
+
+#### **Features**
+- **Historical Storage:** Retain all validated transactions
+- **External Sync:** Push summaries to external APIs
+- **Transparency:** Enhanced network transparency
+- **Robustness:** Improved network resilience
+
+This comprehensive architecture provides IPPAN with the foundation to become the world's fastest and most scalable Layer-1 blockchain, ready for global adoption and mass deployment.

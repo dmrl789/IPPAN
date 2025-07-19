@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Verification error types
 #[derive(Debug, thiserror::Error)]
@@ -274,13 +274,13 @@ impl ForeignVerifier {
     /// Get anchor information for a given root
     async fn get_anchor_info_for_root(
         &self,
-        chain_id: &str,
-        root: &str,
+        _chain_id: &str,
+        _root: &str,
     ) -> Option<AnchorInfo> {
         // In a real implementation, this would query the anchor manager
         // For now, return a mock response
         Some(AnchorInfo {
-            timestamp: HashTimer::new([0u8; 32], [0u8; 32]),
+            timestamp: HashTimer::new("foreign_verifier", 0, 0),
             round: 12345,
             height: 1000,
         })
@@ -289,9 +289,9 @@ impl ForeignVerifier {
     /// Verify ZK proof
     pub async fn verify_zk_proof(
         &self,
-        chain_id: &str,
+        _chain_id: &str,
         proof_data: &[u8],
-        public_inputs: &[String],
+        _public_inputs: &[String],
     ) -> Result<VerificationResult> {
         let start_time = std::time::Instant::now();
         
@@ -306,7 +306,7 @@ impl ForeignVerifier {
         };
         
         // Verify the ZK proof
-        let verification_result = self.verify_zk_proof_internal(&zk_proof, public_inputs).await;
+        let verification_result = self.verify_zk_proof_internal(&zk_proof, _public_inputs).await;
         
         // Update statistics
         let verification_time = start_time.elapsed().as_millis() as u64;
@@ -337,7 +337,7 @@ impl ForeignVerifier {
     async fn verify_zk_proof_internal(
         &self,
         proof: &ZkProof,
-        public_inputs: &[String],
+        _public_inputs: &[String],
     ) -> VerificationResult {
         // In a real implementation, this would call into Winterfell or another ZK verifier
         // For now, we'll simulate verification
@@ -359,7 +359,7 @@ impl ForeignVerifier {
         
         VerificationResult {
             success,
-            anchor_timestamp: Some(HashTimer::new([0u8; 32], [0u8; 32])),
+            anchor_timestamp: Some(HashTimer::new("foreign_verifier", 0, 0)),
             anchor_round: Some(12345),
             anchor_height: Some(1000),
             details: if success {
@@ -374,7 +374,7 @@ impl ForeignVerifier {
     /// Verify signature proof
     pub async fn verify_signature_proof(
         &self,
-        chain_id: &str,
+        _chain_id: &str,
         proof_data: &[u8],
         message: &[u8],
     ) -> Result<VerificationResult> {
@@ -445,7 +445,7 @@ impl ForeignVerifier {
         
         VerificationResult {
             success,
-            anchor_timestamp: Some(HashTimer::new([0u8; 32], [0u8; 32])),
+            anchor_timestamp: Some(HashTimer::new("foreign_verifier", 0, 0)),
             anchor_round: Some(12345),
             anchor_height: Some(1000),
             details: if success {

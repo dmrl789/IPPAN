@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPPAN API Interface</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .section-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: bold;
+            color: #333;
+        }
+        .section-content {
+            padding: 20px;
+        }
+        .endpoint {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+        .endpoint h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .endpoint p {
+            margin: 0 0 10px 0;
+            color: #666;
+        }
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        .button:hover {
+            opacity: 0.9;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        .input-group input, .input-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .input-group textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .response {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #667eea;
+        }
+        .response pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 IPPAN API Interface</h1>
+            <p>Test and interact with the IPPAN HTTP API endpoints</p>
+        </div>
+        
+        <div class="content">
+            <div class="grid">
+                <!-- Health & Status -->
+                <div class="section">
+                    <div class="section-header">Health & Status</div>
+                    <div class="section-content">
+                        <div class="endpoint">
+                            <h3>GET /health</h3>
+                            <p>Health check endpoint</p>
+                            <button class="button" onclick="healthCheck()">Health Check</button>
+                            <div id="health-response" class="response" style="display: none;"></div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <h3>GET /status</h3>
+                            <p>Get node status information</p>
+                            <button class="button" onclick="getStatus()">Get Status</button>
+                            <div id="status-response" class="response" style="display: none;"></div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <h3>GET /version</h3>
+                            <p>Get IPPAN version</p>
+                            <button class="button" onclick="getVersion()">Get Version</button>
+                            <div id="version-response" class="response" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Storage -->
+                <div class="section">
+                    <div class="section-header">Storage Operations</div>
+                    <div class="section-content">
+                        <div class="endpoint">
+                            <h3>POST /storage/files</h3>
+                            <p>Store a file</p>
+                            <div class="input-group">
+                                <label>File ID:</label>
+                                <input type="text" id="file-id" value="test_file_001">
+                            </div>
+                            <div class="input-group">
+                                <label>File Name:</label>
+                                <input type="text" id="file-name" value="test.txt">
+                            </div>
+                            <div class="input-group">
+                                <label>File Data:</label>
+                                <textarea id="file-data">Hello, IPPAN! This is a test file.</textarea>
+                            </div>
+                            <div class="input-group">
+                                <label>MIME Type:</label>
+                                <input type="text" id="mime-type" value="text/plain">
+                            </div>
+                            <button class="button" onclick="storeFile()">Store File</button>
+                            <div id="store-response" class="response" style="display: none;"></div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <h3>GET /storage/files/:file_id</h3>
+                            <p>Retrieve a file</p>
+                            <div class="input-group">
+                                <label>File ID:</label>
+                                <input type="text" id="retrieve-file-id" value="test_file_001">
+                            </div>
+                            <button class="button" onclick="retrieveFile()">Retrieve File</button>
+                            <div id="retrieve-response" class="response" style="display: none;"></div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <h3>GET /storage/stats</h3>
+                            <p>Get storage statistics</p>
+                            <button class="button" onclick="getStorageStats()">Get Stats</button>
+                            <div id="stats-response" class="response" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Network -->
+                <div class="section">
+                    <div class="section-header">Network</div>
+                    <div class="section-content">
+                        <div class="endpoint">
+                            <h3>GET /network/peers</h3>
+                            <p>Get connected peers</p>
+                            <button class="button" onclick="getPeers()">Get Peers</button>
+                            <div id="peers-response" class="response" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Consensus -->
+                <div class="section">
+                    <div class="section-header">Consensus</div>
+                    <div class="section-content">
+                        <div class="endpoint">
+                            <h3>GET /consensus/round</h3>
+                            <p>Get current consensus round</p>
+                            <button class="button" onclick="getConsensusRound()">Get Round</button>
+                            <div id="consensus-response" class="response" style="display: none;"></div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <h3>GET /consensus/validators</h3>
+                            <p>Get active validators</p>
+                            <button class="button" onclick="getValidators()">Get Validators</button>
+                            <div id="validators-response" class="response" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Wallet -->
+                <div class="section">
+                    <div class="section-header">Wallet</div>
+                    <div class="section-content">
+                        <div class="endpoint">
+                            <h3>GET /wallet/balance</h3>
+                            <p>Get wallet balance</p>
+                            <button class="button" onclick="getWalletBalance()">Get Balance</button>
+                            <div id="balance-response" class="response" style="display: none;"></div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <h3>GET /wallet/address</h3>
+                            <p>Get wallet address</p>
+                            <button class="button" onclick="getWalletAddress()">Get Address</button>
+                            <div id="address-response" class="response" style="display: none;"></div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <h3>POST /wallet/send</h3>
+                            <p>Send a transaction</p>
+                            <div class="input-group">
+                                <label>To Address:</label>
+                                <input type="text" id="to-address" value="i1recipientaddress123456789">
+                            </div>
+                            <div class="input-group">
+                                <label>Amount:</label>
+                                <input type="number" id="amount" value="100000">
+                            </div>
+                            <div class="input-group">
+                                <label>Fee:</label>
+                                <input type="number" id="fee" value="1000">
+                            </div>
+                            <div class="input-group">
+                                <label>Memo:</label>
+                                <input type="text" id="memo" value="Test transaction">
+                            </div>
+                            <button class="button" onclick="sendTransaction()">Send Transaction</button>
+                            <div id="transaction-response" class="response" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DHT -->
+                <div class="section">
+                    <div class="section-header">DHT (Distributed Hash Table)</div>
+                    <div class="section-content">
+                        <div class="endpoint">
+                            <h3>GET /dht/keys</h3>
+                            <p>Get all DHT keys</p>
+                            <button class="button" onclick="getDhtKeys()">Get Keys</button>
+                            <div id="dht-keys-response" class="response" style="display: none;"></div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <h3>POST /dht/keys/:key</h3>
+                            <p>Store a DHT value</p>
+                            <div class="input-group">
+                                <label>Key:</label>
+                                <input type="text" id="dht-key" value="test_key">
+                            </div>
+                            <div class="input-group">
+                                <label>Value:</label>
+                                <textarea id="dht-value">test_dht_value</textarea>
+                            </div>
+                            <button class="button" onclick="storeDhtValue()">Store Value</button>
+                            <div id="dht-store-response" class="response" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+
+        async function makeRequest(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                const data = await response.json();
+                return {
+                    success: response.ok,
+                    status: response.status,
+                    data: data
+                };
+            } catch (error) {
+                return {
+                    success: false,
+                    status: 0,
+                    data: { error: error.message }
+                };
+            }
+        }
+
+        function showResponse(elementId, result) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            
+            const statusClass = result.success ? 'success' : 'error';
+            const statusText = result.success ? 'Success' : 'Error';
+            
+            element.innerHTML = `
+                <div class="status ${statusClass}">${statusText} (${result.status})</div>
+                <pre>${JSON.stringify(result.data, null, 2)}</pre>
+            `;
+        }
+
+        async function healthCheck() {
+            const result = await makeRequest(`${API_BASE}/health`);
+            showResponse('health-response', result);
+        }
+
+        async function getStatus() {
+            const result = await makeRequest(`${API_BASE}/status`);
+            showResponse('status-response', result);
+        }
+
+        async function getVersion() {
+            const result = await makeRequest(`${API_BASE}/version`);
+            showResponse('version-response', result);
+        }
+
+        async function storeFile() {
+            const fileId = document.getElementById('file-id').value;
+            const fileName = document.getElementById('file-name').value;
+            const fileData = document.getElementById('file-data').value;
+            const mimeType = document.getElementById('mime-type').value;
+            
+            const requestBody = {
+                file_id: fileId,
+                name: fileName,
+                data: btoa(fileData), // Base64 encode
+                mime_type: mimeType,
+                replication_factor: 3,
+                encryption_enabled: true
+            };
+            
+            const result = await makeRequest(`${API_BASE}/storage/files`, {
+                method: 'POST',
+                body: JSON.stringify(requestBody)
+            });
+            
+            showResponse('store-response', result);
+        }
+
+        async function retrieveFile() {
+            const fileId = document.getElementById('retrieve-file-id').value;
+            const result = await makeRequest(`${API_BASE}/storage/files/${fileId}`);
+            showResponse('retrieve-response', result);
+        }
+
+        async function getStorageStats() {
+            const result = await makeRequest(`${API_BASE}/storage/stats`);
+            showResponse('stats-response', result);
+        }
+
+        async function getPeers() {
+            const result = await makeRequest(`${API_BASE}/network/peers`);
+            showResponse('peers-response', result);
+        }
+
+        async function getConsensusRound() {
+            const result = await makeRequest(`${API_BASE}/consensus/round`);
+            showResponse('consensus-response', result);
+        }
+
+        async function getValidators() {
+            const result = await makeRequest(`${API_BASE}/consensus/validators`);
+            showResponse('validators-response', result);
+        }
+
+        async function getWalletBalance() {
+            const result = await makeRequest(`${API_BASE}/wallet/balance`);
+            showResponse('balance-response', result);
+        }
+
+        async function getWalletAddress() {
+            const result = await makeRequest(`${API_BASE}/wallet/address`);
+            showResponse('address-response', result);
+        }
+
+        async function sendTransaction() {
+            const toAddress = document.getElementById('to-address').value;
+            const amount = parseInt(document.getElementById('amount').value);
+            const fee = parseInt(document.getElementById('fee').value);
+            const memo = document.getElementById('memo').value;
+            
+            const requestBody = {
+                to_address: toAddress,
+                amount: amount,
+                fee: fee,
+                memo: memo
+            };
+            
+            const result = await makeRequest(`${API_BASE}/wallet/send`, {
+                method: 'POST',
+                body: JSON.stringify(requestBody)
+            });
+            
+            showResponse('transaction-response', result);
+        }
+
+        async function getDhtKeys() {
+            const result = await makeRequest(`${API_BASE}/dht/keys`);
+            showResponse('dht-keys-response', result);
+        }
+
+        async function storeDhtValue() {
+            const key = document.getElementById('dht-key').value;
+            const value = document.getElementById('dht-value').value;
+            
+            const requestBody = {
+                value: value,
+                ttl: 3600
+            };
+            
+            const result = await makeRequest(`${API_BASE}/dht/keys/${key}`, {
+                method: 'POST',
+                body: JSON.stringify(requestBody)
+            });
+            
+            showResponse('dht-store-response', result);
+        }
+
+        // Auto-run health check on page load
+        window.onload = function() {
+            healthCheck();
+        };
+    </script>
+</body>
+</html> 

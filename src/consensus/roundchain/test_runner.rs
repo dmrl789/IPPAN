@@ -12,15 +12,13 @@ use crate::{
             round_manager::{RoundManagerConfig, ZkRoundManager},
             zk_prover::{ZkProverConfig, ZkProver},
             proof_broadcast::{BroadcastConfig, ProofBroadcaster},
-            tx_verifier::{TxVerifierConfig, TxVerifier},
-            RoundHeader, ZkStarkProof, RoundAggregation, MerkleTree,
+            tx_verifier::{TxVerifierConfig, TxVerifier}, ZkStarkProof, RoundAggregation,
         },
     },
     Result,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// Test configuration for zk-STARK latency simulation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,7 +174,7 @@ impl ZkTestRunner {
         // Verify transactions
         let verification_result = self.verify_transactions(&aggregation).await?;
         
-        let total_time = start_time.elapsed().as_millis() as u64;
+        let _total_time = start_time.elapsed().as_millis() as u64;
 
         // Create benchmark results
         let results = BenchmarkResults {
@@ -203,8 +201,9 @@ impl ZkTestRunner {
             let transactions = self.generate_block_transactions(block_index).await?;
             
             let hashtimer = HashTimer::new(
-                [block_index as u8; 32],
-                [1u8; 32], // validator ID
+                "test_node",
+                block_index as u64,
+                0, // sequence
             );
             
             let block = Block::new(
@@ -226,8 +225,9 @@ impl ZkTestRunner {
         
         for tx_index in 0..self.config.transactions_per_block {
             let hashtimer = HashTimer::new(
-                [block_index as u8; 32],
-                [1u8; 32], // validator ID
+                "test_node",
+                block_index as u64,
+                0, // sequence
             );
             
             let transaction = Transaction::new_payment(
@@ -347,7 +347,7 @@ impl ZkTestRunner {
     }
 
     /// Calculate finality accuracy
-    fn calculate_finality_accuracy(&self, aggregation: &RoundAggregation) -> f64 {
+    fn calculate_finality_accuracy(&self, _aggregation: &RoundAggregation) -> f64 {
         // TODO: Implement actual finality accuracy calculation
         // For now, return a placeholder value
         99.5

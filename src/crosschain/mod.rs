@@ -5,13 +5,12 @@ pub mod sync_light;
 
 use crate::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub use external_anchor::{AnchorTx, ProofType, AnchorManager};
 pub use foreign_verifier::{ForeignVerifier, VerificationError, VerificationResult};
-pub use bridge::{BridgeEndpoint, BridgeRegistry, BridgeConfig};
+pub use bridge::{BridgeEndpoint, BridgeRegistry, BridgeConfig, BridgeStatus};
 pub use sync_light::{LightSyncClient, LightSyncConfig};
 
 /// Cross-chain manager that coordinates all cross-chain functionality
@@ -184,9 +183,9 @@ mod tests {
         let anchor_tx = AnchorTx {
             external_chain_id: "testchain".to_string(),
             external_state_root: "0x1234567890abcdef".to_string(),
-            timestamp: crate::consensus::hashtimer::HashTimer::new([0u8; 32], [0u8; 32]),
+            timestamp: crate::consensus::hashtimer::HashTimer::new("test_node", 1, 1),
             proof_type: Some(ProofType::Signature),
-            proof_data: vec![1, 2, 3, 4],
+            proof_data: vec![1; 64], // Valid signature length
         };
         
         let result = manager.submit_anchor(anchor_tx).await;
@@ -202,6 +201,9 @@ mod tests {
             chain_id: "testchain".to_string(),
             accepted_anchor_types: vec![ProofType::Signature, ProofType::ZK],
             latest_anchor: None,
+            config: BridgeConfig::default(),
+            status: BridgeStatus::Active,
+            last_activity: chrono::Utc::now(),
         };
         
         let result = manager.register_bridge(endpoint).await;

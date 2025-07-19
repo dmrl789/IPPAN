@@ -1,312 +1,555 @@
+//! Sharding for IPPAN storage
+
 use crate::Result;
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use chrono::{DateTime, Utc};
+use sha2::{Sha256, Digest};
 
-/// A storage shard containing a portion of a file
+/// Shard information
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StorageShard {
+pub struct ShardInfo {
     /// Shard ID
-    pub id: u32,
-    /// File hash this shard belongs to
-    pub file_hash: [u8; 32],
-    /// Shard data
-    pub data: Vec<u8>,
-    /// Shard hash
-    pub hash: [u8; 32],
-    /// Shard size in bytes
+    pub shard_id: String,
+    /// File ID
+    pub file_id: String,
+    /// Shard index
+    pub index: u32,
+    /// Shard size (bytes)
     pub size: u64,
-    /// Total number of shards for this file
-    pub total_shards: u32,
-    /// Reed-Solomon parity data (if using erasure coding)
-    pub parity_data: Option<Vec<u8>>,
+    /// Shard data hash
+    pub data_hash: [u8; 32],
+    /// Shard status
+    pub status: ShardStatus,
+    /// Storage nodes holding this shard
+    pub storage_nodes: Vec<String>,
+    /// Created timestamp
+    pub created_at: DateTime<Utc>,
+    /// Last accessed timestamp
+    pub last_accessed: DateTime<Utc>,
 }
 
-/// Shard configuration
+/// Shard status
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ShardStatus {
+    /// Shard is healthy and available
+    Healthy,
+    /// Shard is being replicated
+    Replicating,
+    /// Shard is degraded (some replicas missing)
+    Degraded,
+    /// Shard is lost
+    Lost,
+    /// Shard is being repaired
+    Repairing,
+}
+
+/// Shard placement strategy
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShardConfig {
-    /// Number of data shards
-    pub data_shards: usize,
-    /// Number of parity shards (for erasure coding)
-    pub parity_shards: usize,
-    /// Maximum shard size in bytes
-    pub max_shard_size: usize,
-    /// Whether to use erasure coding
-    pub use_erasure_coding: bool,
+pub enum PlacementStrategy {
+    /// Round-robin placement
+    RoundRobin,
+    /// Hash-based placement
+    HashBased,
+    /// Geographic placement
+    Geographic,
+    /// Load-balanced placement
+    LoadBalanced,
 }
 
-impl Default for ShardConfig {
-    fn default() -> Self {
-        Self {
-            data_shards: 16,
-            parity_shards: 4,
-            max_shard_size: 1024 * 1024, // 1MB
-            use_erasure_coding: true,
-        }
-    }
-}
-
-/// Shard manager for splitting and reconstructing files
+/// Shard manager
 pub struct ShardManager {
-    config: ShardConfig,
+    /// Shard information
+    shards: Arc<RwLock<HashMap<String, ShardInfo>>>,
+    /// Storage nodes
+    storage_nodes: Arc<RwLock<HashMap<String, StorageNodeInfo>>>,
+    /// Placement strategy
+    placement_strategy: PlacementStrategy,
+    /// Replication factor
+    replication_factor: u32,
+    /// Shard size (bytes)
+    shard_size: u64,
+    /// Running flag
+    running: bool,
+}
+
+/// Storage node information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageNodeInfo {
+    /// Node ID
+    pub node_id: String,
+    /// Node address
+    pub address: String,
+    /// Available capacity (bytes)
+    pub available_capacity: u64,
+    /// Used capacity (bytes)
+    pub used_capacity: u64,
+    /// Node status
+    pub status: NodeStatus,
+    /// Geographic location
+    pub location: Option<String>,
+    /// Load score (0.0 to 1.0)
+    pub load_score: f64,
+    /// Last heartbeat
+    pub last_heartbeat: DateTime<Utc>,
+}
+
+/// Node status
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum NodeStatus {
+    /// Node is online and available
+    Online,
+    /// Node is offline
+    Offline,
+    /// Node is maintenance mode
+    Maintenance,
+    /// Node is full
+    Full,
 }
 
 impl ShardManager {
     /// Create a new shard manager
-    pub fn new(config: ShardConfig) -> Self {
-        Self { config }
+    pub fn new(
+        placement_strategy: PlacementStrategy,
+        replication_factor: u32,
+        shard_size: u64,
+    ) -> Self {
+        Self {
+            shards: Arc::new(RwLock::new(HashMap::new())),
+            storage_nodes: Arc::new(RwLock::new(HashMap::new())),
+            placement_strategy,
+            replication_factor,
+            shard_size,
+            running: false,
+        }
     }
 
-    /// Split a file into shards
-    pub fn split_file(&self, file_data: &[u8], file_hash: &[u8; 32]) -> Result<Vec<StorageShard>> {
-        let total_shards = self.config.data_shards + self.config.parity_shards;
-        let mut shards = Vec::new();
-
-        // Calculate shard size
-        let shard_size = (file_data.len() + self.config.data_shards - 1) / self.config.data_shards;
-        let shard_size = shard_size.min(self.config.max_shard_size);
-
-        // Create data shards
-        for i in 0..self.config.data_shards {
-            let start = i * shard_size;
-            let end = (start + shard_size).min(file_data.len());
+    /// Start the shard manager
+    pub async fn start(&mut self) -> Result<()> {
+        log::info!("Starting shard manager");
+        self.running = true;
+        
+        // Start shard health monitoring
+        let shards = self.shards.clone();
+        let storage_nodes = self.storage_nodes.clone();
+        
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             
-            if start >= file_data.len() {
-                break;
+            loop {
+                interval.tick().await;
+                Self::monitor_shard_health(&shards, &storage_nodes).await;
             }
+        });
+        
+        Ok(())
+    }
 
-            let shard_data = file_data[start..end].to_vec();
-            let shard_hash = self.calculate_shard_hash(&shard_data, file_hash, i);
+    /// Stop the shard manager
+    pub async fn stop(&mut self) -> Result<()> {
+        log::info!("Stopping shard manager");
+        self.running = false;
+        Ok(())
+    }
+
+    /// Create shards for a file
+    pub async fn create_shards(
+        &self,
+        file_id: &str,
+        file_size: u64,
+        data: &[u8],
+    ) -> Result<Vec<ShardInfo>> {
+        let shard_count = Self::calculate_shard_count(file_size, self.shard_size);
+        let mut shards = Vec::new();
+        
+        for i in 0..shard_count {
+            let start = (i as u64 * self.shard_size) as usize;
+            let end = std::cmp::min(start + self.shard_size as usize, data.len());
+            let shard_data = &data[start..end];
             
-            let shard = StorageShard {
-                id: i as u32,
-                file_hash: *file_hash,
-                data: shard_data,
-                hash: shard_hash,
-                size: (end - start) as u64,
-                total_shards: total_shards as u32,
-                parity_data: None,
+            let shard_hash = Self::calculate_shard_hash(shard_data);
+            let shard_id = format!("{}_{}", file_id, i);
+            
+            // Select storage nodes for this shard
+            let storage_nodes = self.select_storage_nodes().await?;
+            
+            let shard = ShardInfo {
+                shard_id: shard_id.clone(),
+                file_id: file_id.to_string(),
+                index: i,
+                size: shard_data.len() as u64,
+                data_hash: shard_hash,
+                status: ShardStatus::Healthy,
+                storage_nodes,
+                created_at: Utc::now(),
+                last_accessed: Utc::now(),
             };
             
-            shards.push(shard);
+            shards.push(shard.clone());
+            
+            // Store shard info
+            let mut shards_map = self.shards.write().await;
+            shards_map.insert(shard_id, shard);
         }
-
-        // Add parity shards if erasure coding is enabled
-        if self.config.use_erasure_coding && self.config.parity_shards > 0 {
-            let parity_shards = self.generate_parity_shards(&shards, file_hash)?;
-            shards.extend(parity_shards);
-        }
-
+        
+        log::info!("Created {} shards for file: {}", shard_count, file_id);
         Ok(shards)
     }
 
-    /// Reconstruct a file from shards
-    pub fn reconstruct_file(&self, shards: &[StorageShard]) -> Result<Vec<u8>> {
-        if shards.is_empty() {
-            return Err(crate::IppanError::Storage("No shards provided".to_string()));
+    /// Get shard information
+    pub async fn get_shard_info(&self, shard_id: &str) -> Result<ShardInfo> {
+        let shards = self.shards.read().await;
+        
+        let shard = shards.get(shard_id).ok_or_else(|| {
+            crate::error::IppanError::Storage(
+                format!("Shard not found: {}", shard_id)
+            )
+        })?;
+        
+        Ok(shard.clone())
+    }
+
+    /// Update shard status
+    pub async fn update_shard_status(&self, shard_id: &str, status: ShardStatus) -> Result<()> {
+        let mut shards = self.shards.write().await;
+        
+        if let Some(shard) = shards.get_mut(shard_id) {
+            let status_clone = status.clone();
+            shard.status = status;
+            log::info!("Updated shard status: {} -> {:?}", shard_id, status_clone);
         }
+        
+        Ok(())
+    }
 
-        let file_hash = shards[0].file_hash;
-        let total_shards = shards[0].total_shards;
-
-        // Verify all shards belong to the same file
-        for shard in shards {
-            if shard.file_hash != file_hash {
-                return Err(crate::IppanError::Storage("Shards from different files".to_string()));
+    /// Replicate shard
+    pub async fn replicate_shard(&self, shard_id: &str, target_node_id: &str) -> Result<()> {
+        let mut shards = self.shards.write().await;
+        
+        if let Some(shard) = shards.get_mut(shard_id) {
+            if !shard.storage_nodes.contains(&target_node_id.to_string()) {
+                shard.storage_nodes.push(target_node_id.to_string());
+                shard.status = ShardStatus::Replicating;
+                log::info!("Replicating shard {} to node {}", shard_id, target_node_id);
             }
         }
+        
+        Ok(())
+    }
 
-        // Sort shards by ID
-        let mut sorted_shards = shards.to_vec();
-        sorted_shards.sort_by_key(|s| s.id);
+    /// Register storage node
+    pub async fn register_storage_node(&self, node: StorageNodeInfo) -> Result<()> {
+        let mut nodes = self.storage_nodes.write().await;
+        let node_id = node.node_id.clone();
+        nodes.insert(node_id.clone(), node);
+        log::info!("Registered storage node: {}", node_id);
+        Ok(())
+    }
 
-        // If we have enough data shards, reconstruct directly
-        let data_shards: Vec<_> = sorted_shards
-            .iter()
-            .filter(|s| s.id < self.config.data_shards as u32)
-            .collect();
-
-        if data_shards.len() == self.config.data_shards {
-            return self.reconstruct_from_data_shards(&data_shards);
+    /// Unregister storage node
+    pub async fn unregister_storage_node(&self, node_id: &str) -> Result<()> {
+        let mut nodes = self.storage_nodes.write().await;
+        if nodes.remove(node_id).is_some() {
+            log::info!("Unregistered storage node: {}", node_id);
         }
+        Ok(())
+    }
 
-        // If erasure coding is enabled, try to reconstruct with parity
-        if self.config.use_erasure_coding {
-            return self.reconstruct_with_parity(&sorted_shards);
+    /// Get shard statistics
+    pub async fn get_shard_stats(&self) -> ShardStats {
+        let shards = self.shards.read().await;
+        let nodes = self.storage_nodes.read().await;
+        
+        let total_shards = shards.len();
+        let healthy_shards = shards.values()
+            .filter(|shard| shard.status == ShardStatus::Healthy)
+            .count();
+        
+        let degraded_shards = shards.values()
+            .filter(|shard| shard.status == ShardStatus::Degraded)
+            .count();
+        
+        let lost_shards = shards.values()
+            .filter(|shard| shard.status == ShardStatus::Lost)
+            .count();
+        
+        let total_nodes = nodes.len();
+        let online_nodes = nodes.values()
+            .filter(|node| node.status == NodeStatus::Online)
+            .count();
+        
+        ShardStats {
+            total_shards,
+            healthy_shards,
+            degraded_shards,
+            lost_shards,
+            total_nodes,
+            online_nodes,
+            replication_factor: self.replication_factor,
+            shard_size: self.shard_size,
         }
+    }
 
-        Err(crate::IppanError::Storage("Insufficient shards for reconstruction".to_string()))
+    /// Calculate number of shards needed
+    fn calculate_shard_count(file_size: u64, shard_size: u64) -> u32 {
+        ((file_size + shard_size - 1) / shard_size) as u32
     }
 
     /// Calculate shard hash
-    fn calculate_shard_hash(&self, shard_data: &[u8], file_hash: &[u8; 32], shard_id: usize) -> [u8; 32] {
+    fn calculate_shard_hash(data: &[u8]) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        hasher.update(file_hash);
-        hasher.update(&shard_id.to_le_bytes());
-        hasher.update(shard_data);
-        hasher.finalize().into()
+        hasher.update(data);
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result);
+        hash
     }
 
-    /// Generate parity shards using Reed-Solomon erasure coding
-    fn generate_parity_shards(&self, data_shards: &[StorageShard], file_hash: &[u8; 32]) -> Result<Vec<StorageShard>> {
-        // TODO: Implement Reed-Solomon erasure coding
-        // For now, create simple parity shards by XORing data shards
+    /// Select storage nodes for a shard
+    async fn select_storage_nodes(&self) -> Result<Vec<String>> {
+        let nodes = self.storage_nodes.read().await;
+        let online_nodes: Vec<_> = nodes.values()
+            .filter(|node| node.status == NodeStatus::Online)
+            .collect();
         
-        let mut parity_shards = Vec::new();
+        if online_nodes.len() < self.replication_factor as usize {
+            return Err(crate::error::IppanError::Storage(
+                format!("Not enough online nodes: {} < {}", online_nodes.len(), self.replication_factor)
+            ));
+        }
         
-        for i in 0..self.config.parity_shards {
-            let parity_id = (data_shards.len() + i) as u32;
-            let mut parity_data = Vec::new();
+        let selected_nodes = match self.placement_strategy {
+            PlacementStrategy::RoundRobin => {
+                Self::select_round_robin(&online_nodes, self.replication_factor)
+            }
+            PlacementStrategy::HashBased => {
+                Self::select_hash_based(&online_nodes, self.replication_factor)
+            }
+            PlacementStrategy::Geographic => {
+                Self::select_geographic(&online_nodes, self.replication_factor)
+            }
+            PlacementStrategy::LoadBalanced => {
+                Self::select_load_balanced(&online_nodes, self.replication_factor)
+            }
+        };
+        
+        Ok(selected_nodes.into_iter().map(|node| node.node_id.clone()).collect())
+    }
+
+    /// Round-robin node selection
+    fn select_round_robin<'a>(nodes: &'a [&'a StorageNodeInfo], count: u32) -> Vec<&'a StorageNodeInfo> {
+        let mut selected = Vec::new();
+        let mut index = 0;
+        
+        for _ in 0..count {
+            selected.push(nodes[index % nodes.len()]);
+            index += 1;
+        }
+        
+        selected
+    }
+
+    /// Hash-based node selection
+    fn select_hash_based<'a>(nodes: &'a [&'a StorageNodeInfo], count: u32) -> Vec<&'a StorageNodeInfo> {
+        // Simple hash-based selection
+        let mut selected = Vec::new();
+        let mut hasher = Sha256::new();
+        hasher.update(b"shard_placement");
+        let hash = hasher.finalize();
+        
+        for i in 0..count {
+            let index = (hash[i as usize] as usize) % nodes.len();
+            selected.push(nodes[index]);
+        }
+        
+        selected
+    }
+
+    /// Geographic node selection
+    fn select_geographic<'a>(nodes: &'a [&'a StorageNodeInfo], count: u32) -> Vec<&'a StorageNodeInfo> {
+        // Simple geographic selection (prefer nodes with location info)
+        let mut selected = Vec::new();
+        let mut nodes_with_location: Vec<_> = nodes.iter()
+            .filter(|node| node.location.is_some())
+            .map(|&node| node)
+            .collect();
+        
+        if nodes_with_location.len() < count as usize {
+            nodes_with_location = nodes.iter().map(|&node| node).collect();
+        }
+        
+        for i in 0..count {
+            selected.push(nodes_with_location[i as usize % nodes_with_location.len()]);
+        }
+        
+        selected
+    }
+
+    /// Load-balanced node selection
+    fn select_load_balanced<'a>(nodes: &'a [&'a StorageNodeInfo], count: u32) -> Vec<&'a StorageNodeInfo> {
+        // Sort by load score (lower is better)
+        let mut sorted_nodes: Vec<_> = nodes.iter().map(|&node| node).collect();
+        sorted_nodes.sort_by(|a, b| a.load_score.partial_cmp(&b.load_score).unwrap());
+        
+        sorted_nodes.into_iter().take(count as usize).collect()
+    }
+
+    /// Monitor shard health
+    async fn monitor_shard_health(
+        shards: &Arc<RwLock<HashMap<String, ShardInfo>>>,
+        storage_nodes: &Arc<RwLock<HashMap<String, StorageNodeInfo>>>,
+    ) {
+        let mut shards = shards.write().await;
+        let nodes = storage_nodes.read().await;
+        
+        for shard in shards.values_mut() {
+            let mut healthy_replicas = 0;
             
-            // Find the maximum shard size
-            let max_size = data_shards.iter().map(|s| s.data.len()).max().unwrap_or(0);
-            
-            for byte_pos in 0..max_size {
-                let mut parity_byte = 0u8;
-                for shard in data_shards {
-                    if byte_pos < shard.data.len() {
-                        parity_byte ^= shard.data[byte_pos];
+            for node_id in &shard.storage_nodes {
+                if let Some(node) = nodes.get(node_id) {
+                    if node.status == NodeStatus::Online {
+                        healthy_replicas += 1;
                     }
                 }
-                parity_data.push(parity_byte);
             }
             
-            let parity_hash = self.calculate_shard_hash(&parity_data, file_hash, parity_id as usize);
-            
-            let parity_shard = StorageShard {
-                id: parity_id,
-                file_hash: *file_hash,
-                data: parity_data,
-                hash: parity_hash,
-                size: parity_data.len() as u64,
-                total_shards: (data_shards.len() + self.config.parity_shards) as u32,
-                parity_data: None,
-            };
-            
-            parity_shards.push(parity_shard);
-        }
-        
-        Ok(parity_shards)
-    }
-
-    /// Reconstruct file from data shards only
-    fn reconstruct_from_data_shards(&self, data_shards: &[&StorageShard]) -> Result<Vec<u8>> {
-        let mut file_data = Vec::new();
-        
-        for shard in data_shards {
-            file_data.extend(&shard.data);
-        }
-        
-        Ok(file_data)
-    }
-
-    /// Reconstruct file using parity shards
-    fn reconstruct_with_parity(&self, shards: &[StorageShard]) -> Result<Vec<u8>> {
-        let total_shards = shards[0].total_shards;
-        let mut reconstructed_data = Vec::new();
-        
-        // Reconstruct data from shards
-        for i in 0..shards[0].data.len() {
-            let mut byte = 0u8;
-            for shard in shards {
-                byte ^= shard.data[i];
+            // Update shard status based on replica health
+            if healthy_replicas == 0 {
+                shard.status = ShardStatus::Lost;
+            } else if healthy_replicas < 2 {
+                shard.status = ShardStatus::Degraded;
+            } else {
+                shard.status = ShardStatus::Healthy;
             }
-            reconstructed_data.push(byte);
         }
-        
-        Ok(reconstructed_data)
     }
+}
 
-    /// Verify shard integrity
-    pub fn verify_shard(&self, shard: &StorageShard) -> bool {
-        let expected_hash = self.calculate_shard_hash(&shard.data, &shard.file_hash, shard.id as usize);
-        shard.hash == expected_hash
-    }
-
-    /// Get shard distribution map
-    pub fn get_shard_distribution(&self, shards: &[StorageShard]) -> HashMap<u32, Vec<[u8; 32]>> {
-        let mut distribution = HashMap::new();
-        
-        for shard in shards {
-            distribution.entry(shard.id).or_insert_with(Vec::new);
-            // TODO: Add node IDs that store this shard
-        }
-        
-        distribution
-    }
-
-    /// Create parity shards for redundancy
-    fn create_parity_shards(&self, data_shards: &[StorageShard], parity_count: usize) -> Result<Vec<StorageShard>> {
-        let mut parity_shards = Vec::new();
-        
-        // Simple XOR-based parity (not as robust as Reed-Solomon)
-        for i in 0..parity_count {
-            let mut parity_data = Vec::new();
-            
-            // Calculate parity for each byte position
-            for byte_pos in 0..data_shards[0].data.len() {
-                let mut parity_byte = 0u8;
-                for shard in data_shards {
-                    parity_byte ^= shard.data[byte_pos];
-                }
-                parity_data.push(parity_byte);
-            }
-            
-            let parity_hash = self.calculate_shard_hash(&parity_data, &data_shards[0].file_hash, data_shards.len() + i);
-            
-            parity_shards.push(StorageShard {
-                id: (data_shards.len() + i) as u32,
-                data: parity_data.clone(),
-                hash: parity_hash,
-                size: parity_data.len() as u64,
-                total_shards: (data_shards.len() + parity_count) as u32,
-                file_hash: data_shards[0].file_hash,
-                parity_data: None,
-            });
-        }
-        
-        Ok(parity_shards)
-    }
+/// Shard statistics
+#[derive(Debug, Serialize)]
+pub struct ShardStats {
+    pub total_shards: usize,
+    pub healthy_shards: usize,
+    pub degraded_shards: usize,
+    pub lost_shards: usize,
+    pub total_nodes: usize,
+    pub online_nodes: usize,
+    pub replication_factor: u32,
+    pub shard_size: u64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_file_sharding() {
-        let config = ShardConfig::default();
-        let manager = ShardManager::new(config);
+    #[tokio::test]
+    async fn test_shard_manager_creation() {
+        let manager = ShardManager::new(
+            PlacementStrategy::RoundRobin,
+            3,
+            1024 * 1024,
+        );
         
-        let file_data = b"This is a test file that will be split into multiple shards for distributed storage across the IPPAN network.";
-        let file_hash = [1u8; 32];
-        
-        let shards = manager.split_file(file_data, &file_hash).unwrap();
-        
-        assert_eq!(shards.len(), 20); // 16 data + 4 parity shards
-        
-        // Verify all shards
-        for shard in &shards {
-            assert!(manager.verify_shard(shard));
-        }
+        assert_eq!(manager.replication_factor, 3);
+        assert_eq!(manager.shard_size, 1024 * 1024);
+        assert!(!manager.running);
     }
 
-    #[test]
-    fn test_file_reconstruction() {
-        let config = ShardConfig::default();
-        let manager = ShardManager::new(config);
+    #[tokio::test]
+    async fn test_shard_manager_start_stop() {
+        let mut manager = ShardManager::new(
+            PlacementStrategy::RoundRobin,
+            3,
+            1024 * 1024,
+        );
         
-        let file_data = b"Test file for reconstruction";
-        let file_hash = [2u8; 32];
+        manager.start().await.unwrap();
+        assert!(manager.running);
         
-        let all_shards = manager.split_file(file_data, &file_hash).unwrap();
+        manager.stop().await.unwrap();
+        assert!(!manager.running);
+    }
+
+    #[tokio::test]
+    async fn test_shard_creation() {
+        let manager = ShardManager::new(
+            PlacementStrategy::RoundRobin,
+            3,
+            1024,
+        );
         
-        // Reconstruct using only data shards
-        let data_shards: Vec<_> = all_shards.iter()
-            .filter(|s| s.id < 16)
-            .collect();
+        // Register some storage nodes
+        let node1 = StorageNodeInfo {
+            node_id: "node1".to_string(),
+            address: "127.0.0.1:8080".to_string(),
+            available_capacity: 1024 * 1024 * 1024,
+            used_capacity: 0,
+            status: NodeStatus::Online,
+            location: Some("US".to_string()),
+            load_score: 0.1,
+            last_heartbeat: Utc::now(),
+        };
         
-        let reconstructed = manager.reconstruct_file(&data_shards).unwrap();
-        assert_eq!(file_data, reconstructed.as_slice());
+        let node2 = StorageNodeInfo {
+            node_id: "node2".to_string(),
+            address: "127.0.0.1:8081".to_string(),
+            available_capacity: 1024 * 1024 * 1024,
+            used_capacity: 0,
+            status: NodeStatus::Online,
+            location: Some("EU".to_string()),
+            load_score: 0.2,
+            last_heartbeat: Utc::now(),
+        };
+        
+        let node3 = StorageNodeInfo {
+            node_id: "node3".to_string(),
+            address: "127.0.0.1:8082".to_string(),
+            available_capacity: 1024 * 1024 * 1024,
+            used_capacity: 0,
+            status: NodeStatus::Online,
+            location: Some("ASIA".to_string()),
+            load_score: 0.3,
+            last_heartbeat: Utc::now(),
+        };
+        
+        manager.register_storage_node(node1).await.unwrap();
+        manager.register_storage_node(node2).await.unwrap();
+        manager.register_storage_node(node3).await.unwrap();
+        
+        // Debug: Check how many nodes are registered
+        let stats = manager.get_shard_stats().await;
+        println!("Debug: Total nodes: {}, Online nodes: {}", stats.total_nodes, stats.online_nodes);
+        
+        // Create shards
+        let data = b"Hello, World! This is a test file for sharding.";
+        let shards = manager.create_shards("test_file", data.len() as u64, data).await.unwrap();
+        
+        assert!(!shards.is_empty());
+        
+        let stats = manager.get_shard_stats().await;
+        assert_eq!(stats.total_shards, shards.len());
+    }
+
+    #[tokio::test]
+    async fn test_shard_count_calculation() {
+        let count = ShardManager::calculate_shard_count(2048, 1024);
+        assert_eq!(count, 2);
+        
+        let count = ShardManager::calculate_shard_count(1024, 1024);
+        assert_eq!(count, 1);
+        
+        let count = ShardManager::calculate_shard_count(512, 1024);
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_shard_hash_calculation() {
+        let data = b"test data";
+        let hash = ShardManager::calculate_shard_hash(data);
+        
+        assert_eq!(hash.len(), 32);
+        assert_ne!(hash, [0u8; 32]);
     }
 }

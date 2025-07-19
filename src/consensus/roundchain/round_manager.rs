@@ -3,7 +3,7 @@
 //! Aggregates blocks per round, sorts via HashTimer, and builds Merkle trees of transactions.
 
 use crate::{
-    consensus::{blockdag::Block, hashtimer::HashTimer},
+    consensus::blockdag::Block,
     Result,
 };
 use super::{RoundHeader, MerkleTree, RoundAggregation, RoundStats};
@@ -246,12 +246,18 @@ impl ZkRoundManager {
         let state_root = self.calculate_state_root(&all_transactions);
 
         // Create round header
+        let validator_id = if !self.validators.is_empty() {
+            self.validators[0]
+        } else {
+            [0u8; 32] // Default validator ID if none provided
+        };
+        
         let header = RoundHeader::new(
             self.current_round,
             merkle_tree.root,
             state_root,
             blocks[0].hashtimer_timestamp, // Use first block's timestamp
-            self.validators[0], // Use first validator for now
+            validator_id,
         );
 
         // Generate zk-STARK proof (placeholder for now)
@@ -455,8 +461,8 @@ mod tests {
         manager.start_round(1, validators).await.unwrap();
         
         // Create a test block
-        let hashtimer = HashTimer::new([0u8; 32], [1u8; 32]);
-        let transaction = Transaction::new(
+        let hashtimer = HashTimer::new("test_node", 1, 1);
+        let transaction = Transaction::new_payment(
             [1u8; 32],
             [2u8; 32],
             100,

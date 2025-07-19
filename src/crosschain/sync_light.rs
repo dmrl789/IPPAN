@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Light sync configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,7 +123,7 @@ impl LightSyncClient {
         // In a real implementation, this would query the blockchain state
         // For now, we'll generate mock data
         
-        let hashtimer = HashTimer::new([0u8; 32], [0u8; 32]);
+        let hashtimer = HashTimer::new("sync_light", 0, 0);
         let merkle_root = self.generate_merkle_root(round).await?;
         
         let zk_proof = if self.config.include_zk_proofs {

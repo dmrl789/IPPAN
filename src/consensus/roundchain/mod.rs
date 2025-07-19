@@ -11,7 +11,6 @@ pub mod test_runner;
 pub mod simple_test;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Custom serialization for byte arrays
 mod byte_array_serde {
@@ -193,7 +192,7 @@ impl RoundHeader {
     }
 
     /// Sign the round header
-    pub fn sign(&mut self, private_key: &[u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn sign(&mut self, _private_key: &[u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
         // TODO: Implement Ed25519 or BLS signature
         // For now, we'll use a placeholder
         self.validator_signature = Some([0u8; 64]);
@@ -201,7 +200,7 @@ impl RoundHeader {
     }
 
     /// Verify the round header signature
-    pub fn verify_signature(&self, public_key: &[u8; 32]) -> bool {
+    pub fn verify_signature(&self, _public_key: &[u8; 32]) -> bool {
         // TODO: Implement signature verification
         // For now, return true if signature exists
         self.validator_signature.is_some()
@@ -261,14 +260,15 @@ impl MerkleTree {
 
     /// Generate inclusion proof for a transaction
     pub fn generate_inclusion_proof(&self, transaction_index: usize) -> Option<Vec<[u8; 32]>> {
-        if transaction_index >= self.nodes.len() / 2 {
+        let leaf_count = (self.nodes.len() + 1) / 2;
+        if transaction_index >= leaf_count {
             return None;
         }
         
         let mut proof = Vec::new();
         let mut index = transaction_index;
         let mut level_start = 0;
-        let mut level_size = self.nodes.len() / 2;
+        let mut level_size = leaf_count;
         
         while level_size > 1 {
             let sibling_index = if index % 2 == 0 {
@@ -278,7 +278,10 @@ impl MerkleTree {
             };
             
             if sibling_index < level_start + level_size {
-                proof.push(self.nodes[level_start + sibling_index]);
+                let sibling_pos = level_start + sibling_index;
+                if sibling_pos < self.nodes.len() {
+                    proof.push(self.nodes[sibling_pos]);
+                }
             }
             
             index = index / 2;

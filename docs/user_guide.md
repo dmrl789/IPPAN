@@ -124,6 +124,47 @@ let domain = register_domain("@alice.ipn", &address).await?;
 println!("Domain registered: {}", domain);
 ```
 
+## Using TXT Metadata in IPPAN
+
+### **Overview**
+- **TXT Metadata:** Allows users to publish signed text entries for files and servers.
+- **Use Cases:**
+  - **Files:** Add descriptions to content like PDFs and media.
+  - **Servers:** Announce services such as API endpoints.
+
+### **How to Use**
+- **Publishing TXT Records:**
+  - Use the CLI command `ipn txt publish` to create a new TXT record.
+- **Viewing TXT Records:**
+  - Use the CLI command `ipn txt list @handle` to view records for a handle.
+- **GUI Integration:**
+  - View file descriptions and server info directly in the IPPAN interface.
+
+### **Technical Details**
+- **Signature and Timestamp:**
+  - Each TXT record is signed by the handle's owner and timestamped using HashTimer.
+- **Discovery:**
+  - TXT records are discoverable in IPNDHT and can be optionally anchored on-chain.
+
+## Using Archive Mode in IPPAN
+
+### **Overview**
+- **Archive Mode:** Allows nodes to retain validated transactions and sync them to external endpoints, enhancing transparency and robustness.
+
+### **How to Use**
+- **Enabling Archive Mode:**
+  - Configure archive mode in `node_config.rs` with desired sync targets and intervals.
+- **Managing Archive Mode:**
+  - Use CLI commands `ipn archive status` and `ipn archive push-now` to manage archive operations.
+
+### **Technical Details**
+- **Local Archive Store:**
+  - Stores validated transactions, file manifests, TXT records, and zk-STARK proofs using RocksDB.
+- **Sync Uploader:**
+  - Periodically syncs transactions to configured external APIs.
+- **API Specification:**
+  - Transactions are received and validated at external endpoints as specified in `api_spec.md`.
+
 ## 🌐 Network Participation
 
 ### **Running a Node**

@@ -115,6 +115,18 @@ impl From<crate::crosschain::foreign_verifier::VerificationError> for IppanError
     }
 }
 
+impl From<String> for IppanError {
+    fn from(err: String) -> Self {
+        IppanError::Config(err)
+    }
+}
+
+impl From<hyper::Error> for IppanError {
+    fn from(err: hyper::Error) -> Self {
+        IppanError::Network(format!("Hyper error: {}", err))
+    }
+}
+
 // impl From<sha2::digest::InvalidLength> for IppanError {
 //     fn from(err: sha2::digest::InvalidLength) -> Self {
 //         IppanError::Crypto(format!("Invalid length: {}", err))

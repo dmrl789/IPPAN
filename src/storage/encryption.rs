@@ -1,172 +1,480 @@
-use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit};
-use aes_gcm::aead::{Aead, NewAead};
-use rand::{Rng, RngCore};
-use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
-use crate::Result;
+//! Encryption for IPPAN storage
 
-/// AES-256-GCM encryption manager
-pub struct EncryptionManager {
-    /// Master encryption key
-    key: [u8; 32],
+use crate::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use chrono::{DateTime, Utc};
+use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit};
+use aes_gcm::aead::Aead;
+use rand::RngCore;
+use sha2::{Sha256, Digest};
+
+/// Encryption key
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptionKey {
+    /// Key ID
+    pub key_id: String,
+    /// Key data (encrypted)
+    pub key_data: Vec<u8>,
+    /// Key algorithm
+    pub algorithm: EncryptionAlgorithm,
+    /// Created timestamp
+    pub created_at: DateTime<Utc>,
+    /// Expires at timestamp
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Key status
+    pub status: KeyStatus,
 }
 
-/// Encrypted data with metadata
+/// Encryption algorithm
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EncryptionAlgorithm {
+    /// AES-256-GCM
+    Aes256Gcm,
+    /// ChaCha20-Poly1305
+    ChaCha20Poly1305,
+}
+
+/// Key status
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum KeyStatus {
+    /// Key is active
+    Active,
+    /// Key is inactive
+    Inactive,
+    /// Key is expired
+    Expired,
+    /// Key is revoked
+    Revoked,
+}
+
+/// Encrypted data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EncryptedData {
+    /// Key ID used for encryption
+    pub key_id: String,
+    /// Nonce used for encryption
+    pub nonce: Vec<u8>,
     /// Encrypted data
     pub data: Vec<u8>,
-    /// Nonce used for encryption
-    pub nonce: [u8; 12],
     /// Authentication tag
-    pub tag: [u8; 16],
+    pub tag: Vec<u8>,
+    /// Encryption timestamp
+    pub encrypted_at: DateTime<Utc>,
+}
+
+/// Encryption manager
+pub struct EncryptionManager {
+    /// Encryption keys
+    keys: Arc<RwLock<HashMap<String, EncryptionKey>>>,
+    /// Master key (for key encryption)
+    master_key: Option<Vec<u8>>,
+    /// Key rotation interval (days)
+    key_rotation_interval: u32,
+    /// Running flag
+    running: bool,
 }
 
 impl EncryptionManager {
     /// Create a new encryption manager
-    pub fn new(master_key: &[u8; 32]) -> Self {
-        let key = Key::from_slice(master_key);
-        Self {
-            key: *master_key,
+    pub fn new(key_rotation_interval: u32) -> Result<Self> {
+        Ok(Self {
+            keys: Arc::new(RwLock::new(HashMap::new())),
+            master_key: None,
+            key_rotation_interval,
+            running: false,
+        })
+    }
+
+    /// Start the encryption manager
+    pub async fn start(&mut self) -> Result<()> {
+        log::info!("Starting encryption manager");
+        self.running = true;
+        
+        // Generate master key if not exists
+        if self.master_key.is_none() {
+            self.generate_master_key()?;
         }
+        
+        // Start key rotation task
+        let keys = self.keys.clone();
+        let rotation_interval = self.key_rotation_interval;
+        
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(
+                std::time::Duration::from_secs(rotation_interval as u64 * 24 * 60 * 60)
+            );
+            
+            loop {
+                interval.tick().await;
+                Self::rotate_keys(&keys).await;
+            }
+        });
+        
+        Ok(())
+    }
+
+    /// Stop the encryption manager
+    pub async fn stop(&mut self) -> Result<()> {
+        log::info!("Stopping encryption manager");
+        self.running = false;
+        Ok(())
+    }
+
+    /// Generate a new encryption key
+    pub async fn generate_key(&self, key_id: &str, algorithm: EncryptionAlgorithm) -> Result<()> {
+        let key_data = match algorithm {
+            EncryptionAlgorithm::Aes256Gcm => {
+                let mut key = vec![0u8; 32];
+                rand::thread_rng().fill_bytes(&mut key);
+                key
+            }
+            EncryptionAlgorithm::ChaCha20Poly1305 => {
+                let mut key = vec![0u8; 32];
+                rand::thread_rng().fill_bytes(&mut key);
+                key
+            }
+        };
+        
+        let encrypted_key = self.encrypt_key_data(&key_data)?;
+        
+        let key = EncryptionKey {
+            key_id: key_id.to_string(),
+            key_data: encrypted_key,
+            algorithm,
+            created_at: Utc::now(),
+            expires_at: Some(Utc::now() + chrono::Duration::days(self.key_rotation_interval as i64)),
+            status: KeyStatus::Active,
+        };
+        
+        let mut keys = self.keys.write().await;
+        keys.insert(key_id.to_string(), key);
+        
+        log::info!("Generated encryption key: {}", key_id);
+        Ok(())
     }
 
     /// Encrypt data
-    pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
-        let cipher = Aes256Gcm::new(Key::from_slice(&self.key));
-        let nonce = self.generate_nonce();
-        let nonce = Nonce::from_slice(&nonce);
+    pub async fn encrypt_data(&self, data: &[u8], key_id: &str) -> Result<EncryptedData> {
+        let keys = self.keys.read().await;
         
-        let ciphertext = cipher.encrypt(nonce, data)
-            .map_err(|e| crate::IppanError::Storage(format!("Encryption failed: {}", e)))?;
+        let key = keys.get(key_id).ok_or_else(|| {
+            crate::error::IppanError::Storage(
+                format!("Encryption key not found: {}", key_id)
+            )
+        })?;
         
-        // Prepend nonce to ciphertext
-        let mut result = Vec::new();
-        result.extend_from_slice(&self.generate_nonce());
-        result.extend_from_slice(&ciphertext);
+        if key.status != KeyStatus::Active {
+            return Err(crate::error::IppanError::Storage(
+                format!("Encryption key is not active: {}", key_id)
+            ));
+        }
         
-        Ok(result)
+        let decrypted_key = self.decrypt_key_data(&key.key_data)?;
+        
+        let encrypted_data = match key.algorithm {
+            EncryptionAlgorithm::Aes256Gcm => {
+                self.encrypt_aes256gcm(data, &decrypted_key, key_id)?
+            }
+            EncryptionAlgorithm::ChaCha20Poly1305 => {
+                self.encrypt_chacha20poly1305(data, &decrypted_key, key_id)?
+            }
+        };
+        
+        Ok(encrypted_data)
     }
 
     /// Decrypt data
-    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
-        if ciphertext.len() < 12 {
-            return Err(crate::IppanError::Storage("Invalid ciphertext length".to_string()));
+    pub async fn decrypt_data(&self, encrypted_data: &EncryptedData) -> Result<Vec<u8>> {
+        let keys = self.keys.read().await;
+        
+        let key = keys.get(&encrypted_data.key_id).ok_or_else(|| {
+            crate::error::IppanError::Storage(
+                format!("Encryption key not found: {}", encrypted_data.key_id)
+            )
+        })?;
+        
+        if key.status != KeyStatus::Active {
+            return Err(crate::error::IppanError::Storage(
+                format!("Encryption key is not active: {}", encrypted_data.key_id)
+            ));
         }
         
-        let cipher = Aes256Gcm::new(Key::from_slice(&self.key));
-        let nonce = Nonce::from_slice(&ciphertext[..12]);
-        let data = &ciphertext[12..];
+        let decrypted_key = self.decrypt_key_data(&key.key_data)?;
         
-        let plaintext = cipher.decrypt(nonce, data)
-            .map_err(|e| crate::IppanError::Storage(format!("Decryption failed: {}", e)))?;
-        
-        Ok(plaintext)
-    }
-
-    /// Generate a new random nonce
-    fn generate_nonce(&self) -> [u8; 12] {
-        let mut nonce = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut nonce);
-        nonce
-    }
-
-    /// Encrypt a file in chunks
-    pub fn encrypt_file(&self, data: &[u8], chunk_size: usize) -> Result<Vec<EncryptedData>> {
-        let mut encrypted_chunks = Vec::new();
-        
-        for chunk in data.chunks(chunk_size) {
-            let encrypted = self.encrypt(chunk)?;
-            encrypted_chunks.push(EncryptedData {
-                data: encrypted,
-                nonce: self.generate_nonce(),
-                tag: [0u8; 16],
-            });
-        }
-        
-        Ok(encrypted_chunks)
-    }
-
-    /// Decrypt a file from chunks
-    pub fn decrypt_file(&self, encrypted_chunks: &[EncryptedData]) -> Result<Vec<u8>> {
-        let mut decrypted_data = Vec::new();
-        
-        for chunk in encrypted_chunks {
-            let decrypted = self.decrypt(&chunk.data)?;
-            decrypted_data.extend(decrypted);
-        }
+        let decrypted_data = match key.algorithm {
+            EncryptionAlgorithm::Aes256Gcm => {
+                self.decrypt_aes256gcm(encrypted_data, &decrypted_key)?
+            }
+            EncryptionAlgorithm::ChaCha20Poly1305 => {
+                self.decrypt_chacha20poly1305(encrypted_data, &decrypted_key)?
+            }
+        };
         
         Ok(decrypted_data)
     }
 
-    /// Generate a deterministic encryption key from a file hash
-    pub fn derive_file_key(&self, file_hash: &[u8; 32], salt: &[u8]) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(&self.key);
-        hasher.update(file_hash);
-        hasher.update(salt);
-        hasher.finalize().into()
+    /// Revoke a key
+    pub async fn revoke_key(&self, key_id: &str) -> Result<()> {
+        let mut keys = self.keys.write().await;
+        
+        if let Some(key) = keys.get_mut(key_id) {
+            key.status = KeyStatus::Revoked;
+            log::info!("Revoked encryption key: {}", key_id);
+        }
+        
+        Ok(())
     }
 
-    /// Encrypt with a derived key
-    pub fn encrypt_with_derived_key(&self, data: &[u8], file_hash: &[u8; 32], salt: &[u8]) -> Result<EncryptedData> {
-        let derived_key = self.derive_file_key(file_hash, salt);
-        let derived_encryption = EncryptionManager::new(&derived_key);
-        derived_encryption.encrypt(data).map(|encrypted| EncryptedData {
-            data: encrypted,
-            nonce: self.generate_nonce(),
-            tag: [0u8; 16],
+    /// Get encryption statistics
+    pub async fn get_encryption_stats(&self) -> EncryptionStats {
+        let keys = self.keys.read().await;
+        
+        let total_keys = keys.len();
+        let active_keys = keys.values()
+            .filter(|key| key.status == KeyStatus::Active)
+            .count();
+        
+        let expired_keys = keys.values()
+            .filter(|key| key.status == KeyStatus::Expired)
+            .count();
+        
+        let revoked_keys = keys.values()
+            .filter(|key| key.status == KeyStatus::Revoked)
+            .count();
+        
+        EncryptionStats {
+            total_keys,
+            active_keys,
+            expired_keys,
+            revoked_keys,
+            key_rotation_interval: self.key_rotation_interval,
+        }
+    }
+
+    /// Generate master key
+    fn generate_master_key(&mut self) -> Result<()> {
+        let mut master_key = vec![0u8; 32];
+        rand::thread_rng().fill_bytes(&mut master_key);
+        self.master_key = Some(master_key);
+        Ok(())
+    }
+
+    /// Encrypt key data with master key
+    fn encrypt_key_data(&self, key_data: &[u8]) -> Result<Vec<u8>> {
+        let master_key = self.master_key.as_ref().ok_or_else(|| {
+            crate::error::IppanError::Storage(
+                "Master key not available".to_string()
+            )
+        })?;
+        
+        // Simple XOR encryption for demonstration
+        // In production, use proper key encryption
+        let mut encrypted = Vec::new();
+        for (i, &byte) in key_data.iter().enumerate() {
+            encrypted.push(byte ^ master_key[i % master_key.len()]);
+        }
+        
+        Ok(encrypted)
+    }
+
+    /// Decrypt key data with master key
+    fn decrypt_key_data(&self, encrypted_key_data: &[u8]) -> Result<Vec<u8>> {
+        let master_key = self.master_key.as_ref().ok_or_else(|| {
+            crate::error::IppanError::Storage(
+                "Master key not available".to_string()
+            )
+        })?;
+        
+        // Simple XOR decryption for demonstration
+        let mut decrypted = Vec::new();
+        for (i, &byte) in encrypted_key_data.iter().enumerate() {
+            decrypted.push(byte ^ master_key[i % master_key.len()]);
+        }
+        
+        Ok(decrypted)
+    }
+
+    /// Encrypt data with AES-256-GCM
+    fn encrypt_aes256gcm(&self, data: &[u8], key: &[u8], key_id: &str) -> Result<EncryptedData> {
+        // Ensure key is exactly 32 bytes for AES-256
+        if key.len() != 32 {
+            return Err(crate::error::IppanError::Storage(
+                format!("Invalid key size: {} (expected 32)", key.len())
+            ));
+        }
+        
+        let cipher = Aes256Gcm::new_from_slice(key)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Invalid key: {}", e)))?;
+        
+        // Generate 12-byte nonce for AES-GCM
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        
+        let ciphertext = cipher.encrypt(nonce, data)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Encryption failed: {}", e)))?;
+        
+        // Split ciphertext into data and tag
+        let tag_size = 16;
+        if ciphertext.len() < tag_size {
+            return Err(crate::error::IppanError::Storage(
+                "Invalid ciphertext length".to_string()
+            ));
+        }
+        
+        let data_len = ciphertext.len() - tag_size;
+        let encrypted_data = ciphertext[..data_len].to_vec();
+        let tag = ciphertext[data_len..].to_vec();
+        
+        Ok(EncryptedData {
+            key_id: key_id.to_string(),
+            nonce: nonce_bytes.to_vec(),
+            data: encrypted_data,
+            tag,
+            encrypted_at: Utc::now(),
         })
     }
 
-    /// Decrypt with a derived key
-    pub fn decrypt_with_derived_key(&self, encrypted_data: &EncryptedData, file_hash: &[u8; 32], salt: &[u8]) -> Result<Vec<u8>> {
-        let derived_key = self.derive_file_key(file_hash, salt);
-        let derived_encryption = EncryptionManager::new(&derived_key);
-        derived_encryption.decrypt(&encrypted_data.data)
+    /// Decrypt data with AES-256-GCM
+    fn decrypt_aes256gcm(&self, encrypted_data: &EncryptedData, key: &[u8]) -> Result<Vec<u8>> {
+        // Ensure key is exactly 32 bytes for AES-256
+        if key.len() != 32 {
+            return Err(crate::error::IppanError::Storage(
+                format!("Invalid key size: {} (expected 32)", key.len())
+            ));
+        }
+        
+        // Ensure nonce is exactly 12 bytes
+        if encrypted_data.nonce.len() != 12 {
+            return Err(crate::error::IppanError::Storage(
+                format!("Invalid nonce size: {} (expected 12)", encrypted_data.nonce.len())
+            ));
+        }
+        
+        let cipher = Aes256Gcm::new_from_slice(key)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Invalid key: {}", e)))?;
+        
+        let nonce = Nonce::from_slice(&encrypted_data.nonce);
+        
+        // Combine data and tag
+        let mut ciphertext = encrypted_data.data.clone();
+        ciphertext.extend_from_slice(&encrypted_data.tag);
+        
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_slice())
+            .map_err(|e| crate::error::IppanError::Storage(format!("Decryption failed: {}", e)))?;
+        
+        Ok(plaintext)
     }
+
+    /// Encrypt data with ChaCha20-Poly1305
+    fn encrypt_chacha20poly1305(&self, _data: &[u8], _key: &[u8], _key_id: &str) -> Result<EncryptedData> {
+        // TODO: Implement ChaCha20-Poly1305 encryption
+        // For now, return a placeholder
+        Err(crate::error::IppanError::Storage(
+            "ChaCha20-Poly1305 not implemented yet".to_string()
+        ))
+    }
+
+    /// Decrypt data with ChaCha20-Poly1305
+    fn decrypt_chacha20poly1305(&self, _encrypted_data: &EncryptedData, _key: &[u8]) -> Result<Vec<u8>> {
+        // TODO: Implement ChaCha20-Poly1305 decryption
+        // For now, return a placeholder
+        Err(crate::error::IppanError::Storage(
+            "ChaCha20-Poly1305 not implemented yet".to_string()
+        ))
+    }
+
+    /// Rotate encryption keys
+    async fn rotate_keys(keys: &Arc<RwLock<HashMap<String, EncryptionKey>>>) {
+        let mut keys = keys.write().await;
+        let now = Utc::now();
+        
+        for key in keys.values_mut() {
+            if let Some(expires_at) = key.expires_at {
+                if now >= expires_at {
+                    key.status = KeyStatus::Expired;
+                    log::info!("Key expired: {}", key.key_id);
+                }
+            }
+        }
+    }
+}
+
+/// Encryption statistics
+#[derive(Debug, Serialize)]
+pub struct EncryptionStats {
+    pub total_keys: usize,
+    pub active_keys: usize,
+    pub expired_keys: usize,
+    pub revoked_keys: usize,
+    pub key_rotation_interval: u32,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_encryption_decryption() {
-        let master_key = EncryptionManager::new(&[0u8; 32]).key;
-        let encryption = EncryptionManager::new(&master_key);
+    #[tokio::test]
+    async fn test_encryption_manager_creation() {
+        let manager = EncryptionManager::new(30).unwrap();
         
-        let original_data = b"Hello, IPPAN! This is a test message.";
-        let encrypted = encryption.encrypt(original_data).unwrap();
-        let decrypted = encryption.decrypt(&encrypted).unwrap();
-        
-        assert_eq!(original_data, decrypted.as_slice());
+        assert_eq!(manager.key_rotation_interval, 30);
+        assert!(!manager.running);
     }
 
-    #[test]
-    fn test_file_encryption() {
-        let master_key = EncryptionManager::new(&[0u8; 32]).key;
-        let encryption = EncryptionManager::new(&master_key);
+    #[tokio::test]
+    async fn test_encryption_manager_start_stop() {
+        let mut manager = EncryptionManager::new(30).unwrap();
         
-        let original_data = b"This is a larger file that needs to be encrypted in chunks. It contains multiple sentences and should be split into smaller pieces for processing.";
-        let encrypted_chunks = encryption.encrypt_file(original_data, 32).unwrap();
-        let decrypted_data = encryption.decrypt_file(&encrypted_chunks).unwrap();
+        manager.start().await.unwrap();
+        assert!(manager.running);
         
-        assert_eq!(original_data, decrypted_data.as_slice());
+        manager.stop().await.unwrap();
+        assert!(!manager.running);
     }
 
-    #[test]
-    fn test_derived_key_encryption() {
-        let master_key = EncryptionManager::new(&[0u8; 32]).key;
-        let encryption = EncryptionManager::new(&master_key);
+    #[tokio::test]
+    async fn test_key_generation() {
+        let mut manager = EncryptionManager::new(30).unwrap();
+        manager.start().await.unwrap();
         
-        let file_hash = [1u8; 32];
-        let salt = b"test_salt";
-        let original_data = b"Data encrypted with derived key";
+        manager.generate_key("test_key", EncryptionAlgorithm::Aes256Gcm).await.unwrap();
         
-        let encrypted = encryption.encrypt_with_derived_key(original_data, &file_hash, salt).unwrap();
-        let decrypted = encryption.decrypt_with_derived_key(&encrypted, &file_hash, salt).unwrap();
+        let stats = manager.get_encryption_stats().await;
+        assert_eq!(stats.total_keys, 1);
+        assert_eq!(stats.active_keys, 1);
+    }
+
+    #[tokio::test]
+    async fn test_data_encryption_decryption() {
+        let mut manager = EncryptionManager::new(30).unwrap();
+        manager.start().await.unwrap();
         
-        assert_eq!(original_data, decrypted.as_slice());
+        // Generate a key
+        manager.generate_key("test_key", EncryptionAlgorithm::Aes256Gcm).await.unwrap();
+        
+        // Encrypt data
+        let data = b"Hello, World!";
+        let encrypted = manager.encrypt_data(data, "test_key").await.unwrap();
+        
+        // Decrypt data
+        let decrypted = manager.decrypt_data(&encrypted).await.unwrap();
+        
+        assert_eq!(decrypted, data);
+    }
+
+    #[tokio::test]
+    async fn test_key_revocation() {
+        let mut manager = EncryptionManager::new(30).unwrap();
+        manager.start().await.unwrap();
+        
+        manager.generate_key("test_key", EncryptionAlgorithm::Aes256Gcm).await.unwrap();
+        manager.revoke_key("test_key").await.unwrap();
+        
+        let stats = manager.get_encryption_stats().await;
+        assert_eq!(stats.revoked_keys, 1);
     }
 }

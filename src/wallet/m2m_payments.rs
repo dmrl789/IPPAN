@@ -1,21 +1,14 @@
-use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
+//! M2M (Machine-to-Machine) payment system for IPPAN wallet
+
 use crate::Result;
-use crate::wallet::WalletManager;
-use crate::utils::crypto;
+use crate::utils::address::validate_ippan_address;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use chrono::{DateTime, Utc};
 
-/// M2M Payment System for IoT devices and AI agents
-pub struct M2MPaymentSystem {
-    /// Active payment channels
-    payment_channels: HashMap<String, PaymentChannel>,
-    /// Micro-payment transactions
-    micro_transactions: Vec<MicroTransaction>,
-    /// Payment channel counter
-    channel_counter: u64,
-}
-
-/// Payment channel between two parties
+/// Payment channel for M2M payments
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaymentChannel {
     /// Channel ID
@@ -24,28 +17,32 @@ pub struct PaymentChannel {
     pub sender: String,
     /// Recipient address
     pub recipient: String,
-    /// Total amount deposited
-    pub total_deposit: u64,
-    /// Amount already spent
-    pub spent_amount: u64,
-    /// Available balance
-    pub available_balance: u64,
-    /// Channel state
-    pub state: ChannelState,
-    /// Creation timestamp
-    pub created_at: u64,
-    /// Last update timestamp
-    pub last_updated: u64,
-    /// Channel timeout
-    pub timeout: u64,
+    /// Total deposit amount
+    pub deposit_amount: u64,
+    /// Current balance
+    pub current_balance: u64,
+    /// Channel creation timestamp
+    pub created_at: DateTime<Utc>,
+    /// Channel expiration timestamp
+    pub expires_at: DateTime<Utc>,
+    /// Channel status
+    pub status: ChannelStatus,
+    /// Channel signature
+    pub signature: Option<Vec<u8>>,
+    /// Micro-transactions in this channel
+    pub micro_transactions: Vec<MicroTransaction>,
 }
 
-/// Payment channel state
+/// Channel status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum ChannelState {
+pub enum ChannelStatus {
+    /// Channel is open and active
     Open,
-    Closing,
+    /// Channel is closed
     Closed,
+    /// Channel is expired
+    Expired,
+    /// Channel is disputed
     Disputed,
 }
 
@@ -54,524 +51,432 @@ pub enum ChannelState {
 pub struct MicroTransaction {
     /// Transaction ID
     pub tx_id: String,
-    /// Channel ID
-    pub channel_id: String,
-    /// Amount in smallest units
+    /// Amount
     pub amount: u64,
     /// Transaction type
     pub tx_type: MicroTransactionType,
-    /// Timestamp
-    pub timestamp: u64,
-    /// Fee amount (1% of transaction)
-    pub fee_amount: u64,
-    /// Sender signature
-    pub sender_signature: Option<Vec<u8>>,
-    /// Recipient signature
-    pub recipient_signature: Option<Vec<u8>>,
+    /// Transaction timestamp
+    pub timestamp: DateTime<Utc>,
+    /// Transaction signature
+    pub signature: Option<Vec<u8>>,
+    /// Transaction hash
+    pub hash: String,
+    /// Memo/note
+    pub memo: Option<String>,
 }
 
-/// Micro-transaction types
+/// Micro-transaction type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MicroTransactionType {
-    /// Data transfer payment
-    DataTransfer { bytes_transferred: u64 },
-    /// Compute resource payment
-    ComputeResource { cpu_seconds: f64, memory_mb: f64 },
-    /// Storage payment
-    Storage { bytes_stored: u64, duration_hours: u64 },
-    /// API call payment
-    ApiCall { endpoint: String, complexity: u32 },
-    /// IoT sensor data payment
-    SensorData { sensor_type: String, data_points: u32 },
-    /// AI model inference payment
-    ModelInference { model_name: String, input_tokens: u32 },
-    /// Custom service payment
-    CustomService { service_name: String, units: u32 },
+    /// Payment from sender to recipient
+    Payment,
+    /// Fee payment
+    Fee,
+    /// Refund to sender
+    Refund,
 }
 
-/// Payment channel update
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelUpdate {
-    /// Channel ID
-    pub channel_id: String,
-    /// New balance
-    pub new_balance: u64,
-    /// Transaction amount
-    pub tx_amount: u64,
-    /// Sequence number
-    pub sequence: u64,
-    /// Sender signature
-    pub sender_signature: Vec<u8>,
-    /// Timestamp
-    pub timestamp: u64,
+/// M2M payment system
+pub struct M2MPaymentSystem {
+    /// Active payment channels
+    channels: HashMap<String, PaymentChannel>,
+    /// Closed payment channels
+    closed_channels: HashMap<String, PaymentChannel>,
+    /// Transaction counter
+    tx_counter: u64,
+    /// Channel counter
+    channel_counter: u64,
+    /// M2M fee rate (1%)
+    fee_rate: f64,
+    /// Minimum channel deposit
+    min_deposit: u64,
+    /// Maximum channel deposit
+    max_deposit: u64,
+    /// Default channel timeout (24 hours)
+    default_timeout_hours: u64,
 }
 
 impl M2MPaymentSystem {
     /// Create a new M2M payment system
     pub fn new() -> Self {
         Self {
-            payment_channels: HashMap::new(),
-            micro_transactions: Vec::new(),
+            channels: HashMap::new(),
+            closed_channels: HashMap::new(),
+            tx_counter: 0,
             channel_counter: 0,
+            fee_rate: 0.01, // 1%
+            min_deposit: 100_000, // 0.1 IPN
+            max_deposit: 10_000_000, // 10 IPN
+            default_timeout_hours: 24,
         }
     }
 
     /// Create a new payment channel
-    pub fn create_payment_channel(
+    pub async fn create_payment_channel(
         &mut self,
         sender: String,
         recipient: String,
         deposit_amount: u64,
-        timeout_hours: u64,
+        timeout_hours: Option<u64>,
     ) -> Result<PaymentChannel> {
-        if deposit_amount == 0 {
-            return Err(crate::IppanError::Wallet("Deposit amount must be greater than 0".to_string()));
+        // Validate addresses
+        if !validate_ippan_address(&sender) {
+            return Err(crate::error::IppanError::Validation(
+                format!("Invalid sender address: {}", sender)
+            ));
         }
-
-        self.channel_counter += 1;
-        let channel_id = format!("channel_{}_{}", sender, self.channel_counter);
         
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
+        if !validate_ippan_address(&recipient) {
+            return Err(crate::error::IppanError::Validation(
+                format!("Invalid recipient address: {}", recipient)
+            ));
+        }
+        
+        // Validate deposit amount
+        if deposit_amount < self.min_deposit {
+            return Err(crate::error::IppanError::Validation(
+                format!("Deposit amount must be at least: {}", self.min_deposit)
+            ));
+        }
+        
+        if deposit_amount > self.max_deposit {
+            return Err(crate::error::IppanError::Validation(
+                format!("Deposit amount cannot exceed: {}", self.max_deposit)
+            ));
+        }
+        
+        // Generate channel ID
+        self.channel_counter += 1;
+        let channel_id = format!("m2m_{:016x}", self.channel_counter);
+        
+        let timeout = timeout_hours.unwrap_or(self.default_timeout_hours);
+        let expires_at = Utc::now() + chrono::Duration::hours(timeout as i64);
+        
         let channel = PaymentChannel {
             channel_id: channel_id.clone(),
             sender,
             recipient,
-            total_deposit: deposit_amount,
-            spent_amount: 0,
-            available_balance: deposit_amount,
-            state: ChannelState::Open,
-            created_at: now,
-            last_updated: now,
-            timeout: now + (timeout_hours * 3600),
+            deposit_amount,
+            current_balance: deposit_amount,
+            created_at: Utc::now(),
+            expires_at,
+            status: ChannelStatus::Open,
+            signature: None,
+            micro_transactions: Vec::new(),
         };
-
-        self.payment_channels.insert(channel_id.clone(), channel.clone());
+        
+        self.channels.insert(channel_id.clone(), channel.clone());
         
         Ok(channel)
     }
 
     /// Process a micro-payment within a channel
-    pub fn process_micro_payment(
+    pub async fn process_micro_payment(
         &mut self,
         channel_id: &str,
         amount: u64,
         tx_type: MicroTransactionType,
     ) -> Result<MicroTransaction> {
-        let channel = self.payment_channels.get_mut(channel_id)
-            .ok_or_else(|| crate::IppanError::Wallet("Payment channel not found".to_string()))?;
-
-        if channel.state != ChannelState::Open {
-            return Err(crate::IppanError::Wallet("Payment channel is not open".to_string()));
+        let channel = self.channels.get_mut(channel_id)
+            .ok_or_else(|| crate::error::IppanError::Validation(
+                format!("Payment channel not found: {}", channel_id)
+            ))?;
+        
+        // Check if channel is open
+        if channel.status != ChannelStatus::Open {
+            return Err(crate::error::IppanError::Validation(
+                format!("Channel is not open: {:?}", channel.status)
+            ));
         }
-
-        if amount > channel.available_balance {
-            return Err(crate::IppanError::Wallet("Insufficient balance in payment channel".to_string()));
+        
+        // Check if channel is expired
+        if Utc::now() > channel.expires_at {
+            channel.status = ChannelStatus::Expired;
+            return Err(crate::error::IppanError::Validation(
+                "Channel has expired".to_string()
+            ));
         }
-
-        // Calculate fee (1% of transaction)
-        let fee_amount = amount / 100;
-        let total_amount = amount + fee_amount;
-
-        if total_amount > channel.available_balance {
-            return Err(crate::IppanError::Wallet("Insufficient balance including fees".to_string()));
+        
+        // Validate amount
+        if amount == 0 {
+            return Err(crate::error::IppanError::Validation(
+                "Amount must be greater than 0".to_string()
+            ));
         }
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        // Create micro-transaction
-        let tx_id = format!("micro_tx_{}_{}", channel_id, now);
+        
+        // Check available balance
+        if amount > channel.current_balance {
+            return Err(crate::error::IppanError::Validation(
+                format!("Insufficient balance: required {}, available {}", 
+                    amount, channel.current_balance)
+            ));
+        }
+        
+        // Generate transaction ID
+        self.tx_counter += 1;
+        let tx_id = format!("micro_{:016x}", self.tx_counter);
+        
+        // Create transaction hash
+        let hash_data = format!("{}:{}:{}:{}", channel_id, amount, tx_type as u8, Utc::now().timestamp());
+        let hash = crate::utils::crypto::sha256_hash(hash_data.as_bytes());
+        let hash_string = hex::encode(hash);
+        
         let micro_tx = MicroTransaction {
-            tx_id,
-            channel_id: channel_id.to_string(),
+            tx_id: tx_id.clone(),
             amount,
             tx_type,
-            timestamp: now,
-            fee_amount,
-            sender_signature: None,
-            recipient_signature: None,
+            timestamp: Utc::now(),
+            signature: None,
+            hash: hash_string,
+            memo: None,
         };
-
+        
         // Update channel balance
-        channel.spent_amount += total_amount;
-        channel.available_balance -= total_amount;
-        channel.last_updated = now;
-
-        self.micro_transactions.push(micro_tx.clone());
-
+        channel.current_balance -= amount;
+        channel.micro_transactions.push(micro_tx.clone());
+        
         Ok(micro_tx)
     }
 
     /// Close a payment channel
-    pub fn close_payment_channel(&mut self, channel_id: &str) -> Result<ChannelUpdate> {
-        let channel = self.payment_channels.get_mut(channel_id)
-            .ok_or_else(|| crate::IppanError::Wallet("Payment channel not found".to_string()))?;
-
-        if channel.state != ChannelState::Open {
-            return Err(crate::IppanError::Wallet("Payment channel is not open".to_string()));
+    pub async fn close_payment_channel(&mut self, channel_id: &str) -> Result<PaymentChannel> {
+        if let Some(channel) = self.channels.remove(channel_id) {
+            let mut closed_channel = channel;
+            closed_channel.status = ChannelStatus::Closed;
+            self.closed_channels.insert(channel_id.to_string(), closed_channel.clone());
+            Ok(closed_channel)
+        } else {
+            Err(crate::error::IppanError::Validation(
+                format!("Payment channel not found: {}", channel_id)
+            ))
         }
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        channel.state = ChannelState::Closing;
-        channel.last_updated = now;
-
-        let update = ChannelUpdate {
-            channel_id: channel_id.to_string(),
-            new_balance: channel.available_balance,
-            tx_amount: 0,
-            sequence: 0,
-            sender_signature: Vec::new(),
-            timestamp: now,
-        };
-
-        Ok(update)
     }
 
-    /// Get payment channel information
+    /// Get a payment channel by ID
     pub fn get_payment_channel(&self, channel_id: &str) -> Option<&PaymentChannel> {
-        self.payment_channels.get(channel_id)
+        self.channels.get(channel_id)
+            .or_else(|| self.closed_channels.get(channel_id))
     }
 
     /// Get all payment channels for an address
     pub fn get_channels_for_address(&self, address: &str) -> Vec<&PaymentChannel> {
-        self.payment_channels
-            .values()
-            .filter(|channel| channel.sender == address || channel.recipient == address)
-            .collect()
-    }
-
-    /// Get micro-transactions for a channel
-    pub fn get_channel_transactions(&self, channel_id: &str) -> Vec<&MicroTransaction> {
-        self.micro_transactions
-            .iter()
-            .filter(|tx| tx.channel_id == channel_id)
-            .collect()
-    }
-
-    /// Calculate total fees collected
-    pub fn get_total_fees_collected(&self) -> u64 {
-        self.micro_transactions
-            .iter()
-            .map(|tx| tx.fee_amount)
-            .sum()
-    }
-
-    /// Get payment statistics
-    pub fn get_payment_statistics(&self) -> PaymentStatistics {
-        let total_channels = self.payment_channels.len();
-        let open_channels = self.payment_channels
-            .values()
-            .filter(|c| matches!(c.state, ChannelState::Open))
-            .count();
+        let mut channels = Vec::new();
         
-        let total_transactions = self.micro_transactions.len();
-        let total_volume = self.micro_transactions
-            .iter()
-            .map(|tx| tx.amount)
-            .sum();
-        
-        let total_fees = self.get_total_fees_collected();
-
-        PaymentStatistics {
-            total_channels,
-            open_channels,
-            total_transactions,
-            total_volume,
-            total_fees,
-            average_transaction_size: if total_transactions > 0 {
-                total_volume / total_transactions as u64
-            } else {
-                0
-            },
+        // Check active channels
+        for channel in self.channels.values() {
+            if channel.sender == address || channel.recipient == address {
+                channels.push(channel);
+            }
         }
+        
+        // Check closed channels
+        for channel in self.closed_channels.values() {
+            if channel.sender == address || channel.recipient == address {
+                channels.push(channel);
+            }
+        }
+        
+        channels
+    }
+
+    /// Get active payment channels
+    pub fn get_active_channels(&self) -> Vec<&PaymentChannel> {
+        self.channels.values().collect()
+    }
+
+    /// Get closed payment channels
+    pub fn get_closed_channels(&self) -> Vec<&PaymentChannel> {
+        self.closed_channels.values().collect()
     }
 
     /// Clean up expired channels
     pub fn cleanup_expired_channels(&mut self) -> usize {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        let expired_channels: Vec<String> = self.payment_channels
-            .iter()
-            .filter(|(_, channel)| {
-                matches!(channel.state, ChannelState::Open) && channel.timeout < now
-            })
+        let mut expired_count = 0;
+        let now = Utc::now();
+        
+        let expired_channels: Vec<String> = self.channels.iter()
+            .filter(|(_, channel)| channel.expires_at < now)
             .map(|(id, _)| id.clone())
             .collect();
-
-        for channel_id in &expired_channels {
-            if let Some(channel) = self.payment_channels.get_mut(channel_id) {
-                channel.state = ChannelState::Closed;
+        
+        for channel_id in expired_channels {
+            if let Some(channel) = self.channels.remove(&channel_id) {
+                let mut expired_channel = channel;
+                expired_channel.status = ChannelStatus::Expired;
+                self.closed_channels.insert(channel_id, expired_channel);
+                expired_count += 1;
             }
         }
+        
+        expired_count
+    }
 
-        expired_channels.len()
+    /// Get total fees collected from M2M payments
+    pub fn get_total_fees_collected(&self) -> u64 {
+        let mut total_fees = 0u64;
+        
+        for channel in self.channels.values() {
+            for tx in &channel.micro_transactions {
+                if matches!(tx.tx_type, MicroTransactionType::Fee) {
+                    total_fees += tx.amount;
+                }
+            }
+        }
+        
+        for channel in self.closed_channels.values() {
+            for tx in &channel.micro_transactions {
+                if matches!(tx.tx_type, MicroTransactionType::Fee) {
+                    total_fees += tx.amount;
+                }
+            }
+        }
+        
+        total_fees
+    }
+
+    /// Get payment statistics
+    pub fn get_payment_statistics(&self) -> PaymentStatistics {
+        let total_channels = self.channels.len() + self.closed_channels.len();
+        let active_channels = self.channels.len();
+        let closed_channels = self.closed_channels.len();
+        
+        let total_deposits: u64 = self.channels.values()
+            .map(|c| c.deposit_amount)
+            .sum();
+        
+        let total_balance: u64 = self.channels.values()
+            .map(|c| c.current_balance)
+            .sum();
+        
+        let total_micro_transactions: usize = self.channels.values()
+            .map(|c| c.micro_transactions.len())
+            .sum::<usize>() + self.closed_channels.values()
+            .map(|c| c.micro_transactions.len())
+            .sum::<usize>();
+        
+        PaymentStatistics {
+            total_channels,
+            active_channels,
+            closed_channels,
+            total_deposits,
+            total_balance,
+            total_micro_transactions,
+            total_fees_collected: self.get_total_fees_collected(),
+            fee_rate: self.fee_rate,
+            min_deposit: self.min_deposit,
+            max_deposit: self.max_deposit,
+        }
     }
 }
 
 /// Payment statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct PaymentStatistics {
-    /// Total number of payment channels
     pub total_channels: usize,
-    /// Number of open channels
-    pub open_channels: usize,
-    /// Total number of micro-transactions
-    pub total_transactions: usize,
-    /// Total transaction volume
-    pub total_volume: u64,
-    /// Total fees collected
-    pub total_fees: u64,
-    /// Average transaction size
-    pub average_transaction_size: u64,
-}
-
-/// IoT device payment handler
-pub struct IoTDevicePayment {
-    /// Device ID
-    pub device_id: String,
-    /// Payment channel ID
-    pub channel_id: String,
-    /// Device capabilities
-    pub capabilities: Vec<DeviceCapability>,
-}
-
-/// Device capabilities
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DeviceCapability {
-    /// Temperature sensor
-    TemperatureSensor,
-    /// Humidity sensor
-    HumiditySensor,
-    /// Motion detector
-    MotionDetector,
-    /// Camera
-    Camera,
-    /// Microphone
-    Microphone,
-    /// GPS
-    Gps,
-    /// Actuator
-    Actuator,
-    /// Custom capability
-    Custom(String),
-}
-
-impl IoTDevicePayment {
-    /// Create new IoT device payment handler
-    pub fn new(device_id: String, channel_id: String) -> Self {
-        Self {
-            device_id,
-            channel_id,
-            capabilities: Vec::new(),
-        }
-    }
-
-    /// Add device capability
-    pub fn add_capability(&mut self, capability: DeviceCapability) {
-        self.capabilities.push(capability);
-    }
-
-    /// Process sensor data payment
-    pub fn process_sensor_payment(
-        &self,
-        payment_system: &mut M2MPaymentSystem,
-        sensor_type: String,
-        data_points: u32,
-    ) -> Result<MicroTransaction> {
-        let base_amount = 1; // 1 satoshi per data point
-        let amount = base_amount * data_points as u64;
-
-        payment_system.process_micro_payment(
-            &self.channel_id,
-            amount,
-            MicroTransactionType::SensorData {
-                sensor_type,
-                data_points,
-            },
-        )
-    }
-
-    /// Process compute resource payment
-    pub fn process_compute_payment(
-        &self,
-        payment_system: &mut M2MPaymentSystem,
-        cpu_seconds: f64,
-        memory_mb: f64,
-    ) -> Result<MicroTransaction> {
-        let cpu_amount = (cpu_seconds * 100.0) as u64; // 100 satoshi per CPU second
-        let memory_amount = (memory_mb * 10.0) as u64; // 10 satoshi per MB
-        let amount = cpu_amount + memory_amount;
-
-        payment_system.process_micro_payment(
-            &self.channel_id,
-            amount,
-            MicroTransactionType::ComputeResource {
-                cpu_seconds,
-                memory_mb,
-            },
-        )
-    }
-}
-
-/// AI agent payment handler
-pub struct AIAgentPayment {
-    /// Agent ID
-    pub agent_id: String,
-    /// Payment channel ID
-    pub channel_id: String,
-    /// Agent model
-    pub model_name: String,
-}
-
-impl AIAgentPayment {
-    /// Create new AI agent payment handler
-    pub fn new(agent_id: String, channel_id: String, model_name: String) -> Self {
-        Self {
-            agent_id,
-            channel_id,
-            model_name,
-        }
-    }
-
-    /// Process model inference payment
-    pub fn process_inference_payment(
-        &self,
-        payment_system: &mut M2MPaymentSystem,
-        input_tokens: u32,
-    ) -> Result<MicroTransaction> {
-        let amount = input_tokens as u64 * 2; // 2 satoshi per token
-
-        payment_system.process_micro_payment(
-            &self.channel_id,
-            amount,
-            MicroTransactionType::ModelInference {
-                model_name: self.model_name.clone(),
-                input_tokens,
-            },
-        )
-    }
-
-    /// Process API call payment
-    pub fn process_api_payment(
-        &self,
-        payment_system: &mut M2MPaymentSystem,
-        endpoint: String,
-        complexity: u32,
-    ) -> Result<MicroTransaction> {
-        let amount = complexity as u64 * 5; // 5 satoshi per complexity unit
-
-        payment_system.process_micro_payment(
-            &self.channel_id,
-            amount,
-            MicroTransactionType::ApiCall {
-                endpoint,
-                complexity,
-            },
-        )
-    }
+    pub active_channels: usize,
+    pub closed_channels: usize,
+    pub total_deposits: u64,
+    pub total_balance: u64,
+    pub total_micro_transactions: usize,
+    pub total_fees_collected: u64,
+    pub fee_rate: f64,
+    pub min_deposit: u64,
+    pub max_deposit: u64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_payment_channel_creation() {
-        let mut payment_system = M2MPaymentSystem::new();
-        let channel = payment_system.create_payment_channel(
-            "alice".to_string(),
-            "bob".to_string(),
-            1000,
-            24,
-        ).unwrap();
-
-        assert_eq!(channel.sender, "alice");
-        assert_eq!(channel.recipient, "bob");
-        assert_eq!(channel.total_deposit, 1000);
-        assert_eq!(channel.available_balance, 1000);
-        assert!(matches!(channel.state, ChannelState::Open));
+    #[tokio::test]
+    async fn test_m2m_system_creation() {
+        let system = M2MPaymentSystem::new();
+        
+        assert_eq!(system.fee_rate, 0.01);
+        assert_eq!(system.min_deposit, 100_000);
+        assert_eq!(system.max_deposit, 10_000_000);
     }
 
-    #[test]
-    fn test_micro_payment_processing() {
-        let mut payment_system = M2MPaymentSystem::new();
-        let channel = payment_system.create_payment_channel(
-            "alice".to_string(),
-            "bob".to_string(),
-            1000,
-            24,
-        ).unwrap();
+    #[tokio::test]
+    async fn test_create_payment_channel() {
+        let mut system = M2MPaymentSystem::new();
+        
+        let channel = system.create_payment_channel(
+            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
+            1_000_000, // 1 IPN
+            Some(24),
+        ).await.unwrap();
+        
+        assert_eq!(channel.deposit_amount, 1_000_000);
+        assert_eq!(channel.current_balance, 1_000_000);
+        assert_eq!(channel.status, ChannelStatus::Open);
+    }
 
-        let micro_tx = payment_system.process_micro_payment(
+    #[tokio::test]
+    async fn test_process_micro_payment() {
+        let mut system = M2MPaymentSystem::new();
+        
+        let channel = system.create_payment_channel(
+            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
+            1_000_000,
+            None,
+        ).await.unwrap();
+        
+        let micro_tx = system.process_micro_payment(
             &channel.channel_id,
-            100,
-            MicroTransactionType::DataTransfer { bytes_transferred: 1024 },
-        ).unwrap();
-
-        assert_eq!(micro_tx.amount, 100);
-        assert_eq!(micro_tx.fee_amount, 1); // 1% fee
-        assert_eq!(micro_tx.channel_id, channel.channel_id);
+            100_000, // 0.1 IPN
+            MicroTransactionType::Payment,
+        ).await.unwrap();
+        
+        assert_eq!(micro_tx.amount, 100_000);
+        assert!(matches!(micro_tx.tx_type, MicroTransactionType::Payment));
+        
+        // Check that channel balance was updated
+        let updated_channel = system.get_payment_channel(&channel.channel_id).unwrap();
+        assert_eq!(updated_channel.current_balance, 900_000);
     }
 
-    #[test]
-    fn test_iot_device_payment() {
-        let mut payment_system = M2MPaymentSystem::new();
-        let channel = payment_system.create_payment_channel(
-            "iot_device".to_string(),
-            "data_consumer".to_string(),
-            10000,
-            168, // 1 week
-        ).unwrap();
-
-        let mut iot_payment = IoTDevicePayment::new(
-            "sensor_001".to_string(),
-            channel.channel_id.clone(),
-        );
-        iot_payment.add_capability(DeviceCapability::TemperatureSensor);
-
-        let sensor_tx = iot_payment.process_sensor_payment(
-            &mut payment_system,
-            "temperature".to_string(),
-            10,
-        ).unwrap();
-
-        assert_eq!(sensor_tx.amount, 10); // 1 satoshi per data point
+    #[tokio::test]
+    async fn test_close_payment_channel() {
+        let mut system = M2MPaymentSystem::new();
+        
+        let channel = system.create_payment_channel(
+            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
+            1_000_000,
+            None,
+        ).await.unwrap();
+        
+        let closed_channel = system.close_payment_channel(&channel.channel_id).await.unwrap();
+        assert_eq!(closed_channel.status, ChannelStatus::Closed);
     }
 
-    #[test]
-    fn test_ai_agent_payment() {
-        let mut payment_system = M2MPaymentSystem::new();
-        let channel = payment_system.create_payment_channel(
-            "ai_agent".to_string(),
-            "service_provider".to_string(),
-            50000,
-            168, // 1 week
-        ).unwrap();
-
-        let ai_payment = AIAgentPayment::new(
-            "gpt_agent".to_string(),
-            channel.channel_id.clone(),
-            "gpt-4".to_string(),
-        );
-
-        let inference_tx = ai_payment.process_inference_payment(
-            &mut payment_system,
-            100, // 100 tokens
-        ).unwrap();
-
-        assert_eq!(inference_tx.amount, 200); // 2 satoshi per token
+    #[tokio::test]
+    async fn test_payment_statistics() {
+        let mut system = M2MPaymentSystem::new();
+        
+        // Create a channel
+        let channel = system.create_payment_channel(
+            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
+            1_000_000,
+            None,
+        ).await.unwrap();
+        
+        // Process a micro-payment
+        system.process_micro_payment(
+            &channel.channel_id,
+            100_000,
+            MicroTransactionType::Payment,
+        ).await.unwrap();
+        
+        let stats = system.get_payment_statistics();
+        assert_eq!(stats.total_channels, 1);
+        assert_eq!(stats.active_channels, 1);
+        assert_eq!(stats.total_deposits, 1_000_000);
+        assert_eq!(stats.total_balance, 900_000);
+        assert_eq!(stats.total_micro_transactions, 1);
     }
 } 

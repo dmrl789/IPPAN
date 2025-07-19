@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, warn};
 
 /// Broadcast configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -300,7 +300,7 @@ impl ProofBroadcaster {
     }
 
     /// Send header to a specific peer
-    async fn send_header_to_peer(&self, peer: &Peer, header: &RoundHeader) -> Result<()> {
+    async fn send_header_to_peer(&self, peer: &Peer, _header: &RoundHeader) -> Result<()> {
         // TODO: Implement actual header sending
         // Simulate network transmission
         tokio::time::sleep(std::time::Duration::from_millis(peer.latency_ms)).await;

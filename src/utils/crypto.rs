@@ -220,7 +220,13 @@ pub fn verify_commitment(commitment: &[u8; 32], data: &[u8], randomness: &[u8]) 
 /// Generate a proof of work for a given difficulty
 pub fn generate_proof_of_work(data: &[u8], difficulty: u32) -> (u64, [u8; 32]) {
     let mut nonce = 0u64;
-    let target = 2u64.pow(256 - difficulty);
+    
+    // Use a simpler target calculation to avoid overflow
+    let target = if difficulty <= 64 {
+        2u64.pow(64 - difficulty)
+    } else {
+        1u64 // Very high difficulty
+    };
     
     loop {
         let mut combined = Vec::new();
@@ -253,7 +259,13 @@ pub fn verify_proof_of_work(data: &[u8], nonce: u64, difficulty: u32) -> bool {
         hash[4], hash[5], hash[6], hash[7]
     ]);
     
-    let target = 2u64.pow(256 - difficulty);
+    // Use the same target calculation as generate_proof_of_work
+    let target = if difficulty <= 64 {
+        2u64.pow(64 - difficulty)
+    } else {
+        1u64 // Very high difficulty
+    };
+    
     hash_value < target
 }
 

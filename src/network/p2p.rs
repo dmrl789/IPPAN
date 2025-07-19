@@ -1,24 +1,21 @@
-//! P2P communication module
-//! 
-//! Handles peer-to-peer communication protocols and message handling.
+//! P2P networking for IPPAN
 
-use crate::{error::IppanError, NodeId, Result};
-use libp2p::{
-    core::{upgrade, InboundUpgrade, OutboundUpgrade},
-    swarm::{NegotiatedSubstream, StreamProtocol},
-    PeerId,
-};
+use crate::Result;
+use crate::utils::address::validate_ippan_address;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
-
-/// P2P protocol identifier
-pub const IPPAN_PROTOCOL: &str = "/ippan/1.0.0";
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use chrono::{DateTime, Utc};
 
 /// P2P message types
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum P2pMessage {
+pub enum P2PMessage {
+    /// Handshake message
+    Handshake(HandshakeMessage),
     /// Ping message
     Ping(PingMessage),
     /// Pong response
@@ -27,38 +24,47 @@ pub enum P2pMessage {
     BlockAnnouncement(BlockAnnouncement),
     /// Transaction announcement
     TransactionAnnouncement(TransactionAnnouncement),
-    /// Storage request
-    StorageRequest(StorageRequest),
-    /// Storage response
-    StorageResponse(StorageResponse),
-    /// Peer list exchange
-    PeerList(PeerList),
-    /// Consensus message
-    Consensus(ConsensusMessage),
+    /// Get blocks request
+    GetBlocks(GetBlocksRequest),
+    /// Block data response
+    BlockData(BlockData),
+    /// Get peers request
+    GetPeers(GetPeersRequest),
+    /// Peers response
+    PeersResponse(PeersResponse),
+}
+
+/// Handshake message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeMessage {
+    /// Node ID
+    pub node_id: [u8; 32],
+    /// Node address
+    pub address: String,
+    /// Protocol version
+    pub version: u32,
+    /// Supported features
+    pub features: Vec<String>,
+    /// Timestamp
+    pub timestamp: DateTime<Utc>,
 }
 
 /// Ping message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PingMessage {
-    /// Sender node ID
-    pub sender: NodeId,
-    /// Timestamp
-    pub timestamp: u64,
     /// Nonce for response matching
     pub nonce: u64,
+    /// Timestamp
+    pub timestamp: DateTime<Utc>,
 }
 
 /// Pong response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PongMessage {
-    /// Responder node ID
-    pub responder: NodeId,
-    /// Original ping timestamp
-    pub ping_timestamp: u64,
-    /// Response timestamp
-    pub pong_timestamp: u64,
-    /// Original nonce
+    /// Nonce from ping
     pub nonce: u64,
+    /// Timestamp
+    pub timestamp: DateTime<Utc>,
 }
 
 /// Block announcement
@@ -68,10 +74,8 @@ pub struct BlockAnnouncement {
     pub block_hash: [u8; 32],
     /// Block height
     pub height: u64,
-    /// Sender node ID
-    pub sender: NodeId,
     /// Timestamp
-    pub timestamp: u64,
+    pub timestamp: DateTime<Utc>,
 }
 
 /// Transaction announcement
@@ -80,491 +84,428 @@ pub struct TransactionAnnouncement {
     /// Transaction hash
     pub tx_hash: [u8; 32],
     /// Transaction type
-    pub tx_type: TransactionType,
-    /// Sender node ID
-    pub sender: NodeId,
+    pub tx_type: String,
     /// Timestamp
-    pub timestamp: u64,
+    pub timestamp: DateTime<Utc>,
 }
 
-/// Transaction type
+/// Get blocks request
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TransactionType {
-    /// Payment transaction
-    Payment,
-    /// Staking transaction
-    Staking,
-    /// Domain registration
-    DomainRegistration,
-    /// Storage transaction
-    Storage,
+pub struct GetBlocksRequest {
+    /// Starting height
+    pub start_height: u64,
+    /// Ending height
+    pub end_height: u64,
+    /// Maximum blocks to return
+    pub max_blocks: u32,
 }
 
-/// Storage request
+/// Block data
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StorageRequest {
-    /// File hash
-    pub file_hash: [u8; 32],
-    /// Shard index
-    pub shard_index: u32,
-    /// Requesting node ID
-    pub requester: NodeId,
-    /// Request ID
-    pub request_id: u64,
-}
-
-/// Storage response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StorageResponse {
-    /// File hash
-    pub file_hash: [u8; 32],
-    /// Shard index
-    pub shard_index: u32,
-    /// Shard data
-    pub shard_data: Vec<u8>,
-    /// Proof of storage
-    pub proof: Vec<u8>,
-    /// Response ID
-    pub response_id: u64,
-}
-
-/// Peer list
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeerList {
-    /// Sender node ID
-    pub sender: NodeId,
-    /// Peer entries
-    pub peers: Vec<PeerEntry>,
+pub struct BlockData {
+    /// Block hash
+    pub block_hash: [u8; 32],
+    /// Block height
+    pub height: u64,
+    /// Block data
+    pub data: Vec<u8>,
     /// Timestamp
-    pub timestamp: u64,
+    pub timestamp: DateTime<Utc>,
 }
 
-/// Peer entry
+/// Get peers request
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeerEntry {
-    /// Peer ID
-    pub peer_id: PeerId,
-    /// Node ID
-    pub node_id: NodeId,
-    /// Multiaddrs
-    pub addrs: Vec<String>,
+pub struct GetPeersRequest {
+    /// Maximum peers to return
+    pub max_peers: u32,
+}
+
+/// Peers response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeersResponse {
+    /// List of peer addresses
+    pub peers: Vec<PeerInfo>,
+}
+
+/// Peer information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerInfo {
+    /// Peer address
+    pub address: String,
+    /// Peer port
+    pub port: u16,
     /// Last seen timestamp
-    pub last_seen: u64,
+    pub last_seen: DateTime<Utc>,
+    /// Peer score
+    pub score: f64,
 }
 
-/// Consensus message
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConsensusMessage {
-    /// Message type
-    pub msg_type: ConsensusMessageType,
-    /// Sender node ID
-    pub sender: NodeId,
-    /// Round number
-    pub round: u64,
-    /// Payload
-    pub payload: Vec<u8>,
-    /// Timestamp
-    pub timestamp: u64,
-}
-
-/// Consensus message type
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ConsensusMessageType {
-    /// Block proposal
-    BlockProposal,
-    /// Block vote
-    BlockVote,
-    /// Round change
-    RoundChange,
-    /// View change
-    ViewChange,
-}
-
-/// P2P manager
-pub struct P2pManager {
-    /// Local node ID
-    local_node_id: NodeId,
-    /// Connected peers
-    connected_peers: HashMap<PeerId, PeerConnection>,
-    /// Message handlers
-    message_handlers: HashMap<P2pMessageType, Box<dyn MessageHandler>>,
-    /// Event sender
-    event_sender: mpsc::UnboundedSender<P2pEvent>,
-    /// Event receiver
-    event_receiver: mpsc::UnboundedReceiver<P2pEvent>,
-    /// Configuration
-    config: P2pConfig,
-}
-
-/// Peer connection
-#[derive(Debug, Clone)]
-pub struct PeerConnection {
-    /// Peer ID
-    pub peer_id: PeerId,
-    /// Node ID
-    pub node_id: NodeId,
+/// P2P connection
+#[derive(Debug)]
+pub struct P2PConnection {
+    /// Connection ID
+    pub id: String,
+    /// Remote address
+    pub remote_addr: SocketAddr,
     /// Connection state
     pub state: ConnectionState,
-    /// Last ping time
-    pub last_ping: Option<u64>,
-    /// Last pong time
-    pub last_pong: Option<u64>,
-    /// Latency in milliseconds
-    pub latency: Option<u64>,
-    /// Message count
-    pub message_count: u64,
+    /// Last activity
+    pub last_activity: DateTime<Utc>,
+    /// Connection score
+    pub score: f64,
+    /// TCP stream
+    pub stream: Option<TcpStream>,
 }
 
 /// Connection state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionState {
     /// Connecting
     Connecting,
     /// Connected
     Connected,
+    /// Handshaking
+    Handshaking,
+    /// Ready
+    Ready,
     /// Disconnected
     Disconnected,
 }
 
-/// P2P message type
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub enum P2pMessageType {
-    /// Ping message
-    Ping,
-    /// Pong message
-    Pong,
-    /// Block announcement
-    BlockAnnouncement,
-    /// Transaction announcement
-    TransactionAnnouncement,
-    /// Storage request
-    StorageRequest,
-    /// Storage response
-    StorageResponse,
-    /// Peer list
-    PeerList,
-    /// Consensus message
-    Consensus,
-}
-
-/// P2P events
-#[derive(Debug)]
-pub enum P2pEvent {
-    /// Peer connected
-    PeerConnected(PeerId, NodeId),
-    /// Peer disconnected
-    PeerDisconnected(PeerId),
-    /// Message received
-    MessageReceived(PeerId, P2pMessage),
-    /// Message sent
-    MessageSent(PeerId, P2pMessage),
-    /// Error occurred
-    Error(P2pError),
-}
-
-/// P2P errors
-#[derive(Debug, thiserror::Error)]
-pub enum P2pError {
-    #[error("Connection failed: {0}")]
-    ConnectionFailed(String),
-    #[error("Message serialization failed: {0}")]
-    SerializationFailed(String),
-    #[error("Message deserialization failed: {0}")]
-    DeserializationFailed(String),
-    #[error("Protocol error: {0}")]
-    ProtocolError(String),
-    #[error("Peer not found: {0}")]
-    PeerNotFound(PeerId),
-}
-
-/// Message handler trait
-pub trait MessageHandler: Send + Sync {
-    fn handle_message(&self, peer_id: PeerId, message: P2pMessage) -> Result<()>;
-}
-
-/// P2P configuration
-#[derive(Debug, Clone)]
-pub struct P2pConfig {
-    /// Protocol identifier
-    pub protocol: String,
-    /// Ping interval
-    pub ping_interval: std::time::Duration,
+/// P2P network manager
+pub struct P2PNetwork {
+    /// Node ID
+    node_id: [u8; 32],
+    /// Node address
+    node_address: String,
+    /// Listening address
+    listen_addr: SocketAddr,
+    /// Active connections
+    connections: Arc<RwLock<HashMap<String, P2PConnection>>>,
+    /// Known peers
+    known_peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
+    /// Message sender
+    message_sender: mpsc::Sender<P2PMessage>,
+    /// Message receiver
+    message_receiver: mpsc::Receiver<P2PMessage>,
+    /// Protocol version
+    protocol_version: u32,
+    /// Maximum connections
+    max_connections: usize,
     /// Connection timeout
-    pub connection_timeout: std::time::Duration,
-    /// Max message size
-    pub max_message_size: usize,
-    /// Enable peer exchange
-    pub enable_peer_exchange: bool,
+    connection_timeout: std::time::Duration,
 }
 
-impl Default for P2pConfig {
-    fn default() -> Self {
-        Self {
-            protocol: IPPAN_PROTOCOL.to_string(),
-            ping_interval: std::time::Duration::from_secs(30),
-            connection_timeout: std::time::Duration::from_secs(60),
-            max_message_size: 1024 * 1024, // 1MB
-            enable_peer_exchange: true,
-        }
-    }
-}
-
-impl P2pManager {
-    /// Create a new P2P manager
-    pub fn new(local_node_id: NodeId, config: P2pConfig) -> Self {
-        let (event_sender, event_receiver) = mpsc::unbounded_channel();
+impl P2PNetwork {
+    /// Create a new P2P network
+    pub async fn new(
+        node_id: [u8; 32],
+        node_address: String,
+        listen_addr: SocketAddr,
+    ) -> Result<Self> {
+        let (message_sender, message_receiver) = mpsc::channel(1000);
         
-        Self {
-            local_node_id,
-            connected_peers: HashMap::new(),
-            message_handlers: HashMap::new(),
-            event_sender,
-            event_receiver,
-            config,
-        }
+        Ok(Self {
+            node_id,
+            node_address,
+            listen_addr,
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            known_peers: Arc::new(RwLock::new(HashMap::new())),
+            message_sender,
+            message_receiver,
+            protocol_version: 1,
+            max_connections: 50,
+            connection_timeout: std::time::Duration::from_secs(30),
+        })
     }
-    
-    /// Register a message handler
-    pub fn register_handler(&mut self, msg_type: P2pMessageType, handler: Box<dyn MessageHandler>) {
-        self.message_handlers.insert(msg_type, handler);
-    }
-    
-    /// Start the P2P manager
+
+    /// Start the P2P network
     pub async fn start(&mut self) -> Result<()> {
-        info!("Starting P2P manager");
+        log::info!("Starting P2P network on {}", self.listen_addr);
         
-        // Start ping loop
-        self.start_ping_loop().await?;
+        // Start listening for incoming connections
+        let listener = TcpListener::bind(self.listen_addr).await?;
         
-        // Start event processing loop
-        self.run_event_loop().await?;
+        // Spawn connection handler
+        let connections = self.connections.clone();
+        let known_peers = self.known_peers.clone();
+        let message_sender = self.message_sender.clone();
+        
+        tokio::spawn(async move {
+            loop {
+                match listener.accept().await {
+                    Ok((stream, addr)) => {
+                        let conn_id = format!("conn_{}", addr);
+                        let mut conn = P2PConnection {
+                            id: conn_id.clone(),
+                            remote_addr: addr,
+                            state: ConnectionState::Connected,
+                            last_activity: Utc::now(),
+                            score: 0.0,
+                            stream: Some(stream),
+                        };
+                        
+                        connections.write().await.insert(conn_id.clone(), conn);
+                        
+                        // Handle connection
+                        let connections_clone = connections.clone();
+                        let known_peers_clone = known_peers.clone();
+                        let message_sender_clone = message_sender.clone();
+                        
+                        tokio::spawn(async move {
+                            Self::handle_connection(
+                                conn_id,
+                                connections_clone,
+                                known_peers_clone,
+                                message_sender_clone,
+                            ).await;
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("Failed to accept connection: {}", e);
+                    }
+                }
+            }
+        });
         
         Ok(())
     }
-    
-    /// Start ping loop
-    async fn start_ping_loop(&mut self) -> Result<()> {
-        let mut interval = tokio::time::interval(self.config.ping_interval);
+
+    /// Stop the P2P network
+    pub async fn stop(&mut self) -> Result<()> {
+        log::info!("Stopping P2P network");
         
-        loop {
-            interval.tick().await;
+        // Close all connections
+        let mut connections = self.connections.write().await;
+        connections.clear();
+        
+        Ok(())
+    }
+
+    /// Connect to a peer
+    pub async fn connect_to_peer(&mut self, address: String, port: u16) -> Result<()> {
+        let addr = format!("{}:{}", address, port);
+        let socket_addr = addr.parse::<SocketAddr>().map_err(|e| {
+            crate::error::IppanError::Network(format!("Invalid address format: {}", e))
+        })?;
+        
+        match TcpStream::connect(socket_addr).await {
+            Ok(stream) => {
+                let conn_id = format!("out_{}", addr);
+                let conn = P2PConnection {
+                    id: conn_id.clone(),
+                    remote_addr: socket_addr,
+                    state: ConnectionState::Connected,
+                    last_activity: Utc::now(),
+                    score: 0.0,
+                    stream: Some(stream),
+                };
+                
+                self.connections.write().await.insert(conn_id, conn);
+                
+                // Add to known peers
+                let peer_info = PeerInfo {
+                    address,
+                    port,
+                    last_seen: Utc::now(),
+                    score: 0.0,
+                };
+                
+                self.known_peers.write().await.insert(addr.clone(), peer_info);
+                
+                log::info!("Connected to peer: {}", addr);
+                Ok(())
+            }
+            Err(e) => {
+                log::error!("Failed to connect to peer {}: {}", addr, e);
+                Err(crate::error::IppanError::Network(
+                    format!("Failed to connect to peer: {}", e)
+                ))
+            }
+        }
+    }
+
+    /// Send a message to a peer
+    pub async fn send_message(&self, peer_id: &str, message: P2PMessage) -> Result<()> {
+        let connections = self.connections.read().await;
+        
+        if let Some(conn) = connections.get(peer_id) {
+            if let Some(_stream) = conn.stream.as_ref() {
+                let message_data = serde_json::to_vec(&message)?;
+                // TODO: Implement actual stream writing
+                log::debug!("Would send message to peer: {} bytes", message_data.len());
+                Ok(())
+            } else {
+                Err(crate::error::IppanError::Network(
+                    "Connection stream not available".to_string()
+                ))
+            }
+        } else {
+            Err(crate::error::IppanError::Network(
+                format!("Peer not found: {}", peer_id)
+            ))
+        }
+    }
+
+    /// Broadcast a message to all peers
+    pub async fn broadcast_message(&self, message: P2PMessage) -> Result<()> {
+        let connections = self.connections.read().await;
+        
+        for (peer_id, _) in connections.iter() {
+            if let Err(e) = self.send_message(peer_id, message.clone()).await {
+                log::warn!("Failed to send message to peer {}: {}", peer_id, e);
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Get active connections
+    pub async fn get_active_connections(&self) -> Vec<P2PConnection> {
+        let connections = self.connections.read().await;
+        connections.values()
+            .filter(|conn| conn.state == ConnectionState::Ready)
+            .map(|conn| P2PConnection {
+                id: conn.id.clone(),
+                remote_addr: conn.remote_addr,
+                state: conn.state.clone(),
+                last_activity: conn.last_activity,
+                score: conn.score,
+                stream: None, // Don't clone the stream
+            })
+            .collect()
+    }
+
+    /// Get known peers
+    pub async fn get_known_peers(&self) -> Vec<PeerInfo> {
+        let peers = self.known_peers.read().await;
+        peers.values().cloned().collect()
+    }
+
+    /// Handle incoming connection
+    async fn handle_connection(
+        conn_id: String,
+        connections: Arc<RwLock<HashMap<String, P2PConnection>>>,
+        known_peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
+        message_sender: mpsc::Sender<P2PMessage>,
+    ) {
+        let mut connections = connections.write().await;
+        
+        if let Some(conn) = connections.get_mut(&conn_id) {
+            conn.state = ConnectionState::Handshaking;
             
-            for (peer_id, connection) in &mut self.connected_peers {
-                if connection.state == ConnectionState::Connected {
-                    self.send_ping(*peer_id).await?;
+            // Perform handshake
+            let handshake = HandshakeMessage {
+                node_id: [0u8; 32], // TODO: Use actual node ID
+                address: "127.0.0.1".to_string(),
+                version: 1,
+                features: vec!["blocks".to_string(), "transactions".to_string()],
+                timestamp: Utc::now(),
+            };
+            
+            let message = P2PMessage::Handshake(handshake);
+            
+            if let Some(mut stream) = conn.stream.as_mut() {
+                if let Ok(message_data) = serde_json::to_vec(&message) {
+                    if stream.write_all(&message_data).await.is_ok() {
+                        conn.state = ConnectionState::Ready;
+                        conn.last_activity = Utc::now();
+                        
+                        // Update peer info
+                        let mut peers = known_peers.write().await;
+                        let peer_info = PeerInfo {
+                            address: conn.remote_addr.ip().to_string(),
+                            port: conn.remote_addr.port(),
+                            last_seen: Utc::now(),
+                            score: 1.0,
+                        };
+                        peers.insert(conn.remote_addr.to_string(), peer_info);
+                    }
                 }
             }
         }
     }
-    
-    /// Run event processing loop
-    async fn run_event_loop(&mut self) -> Result<()> {
-        while let Some(event) = self.event_receiver.recv().await {
-            self.handle_event(event).await?;
+
+    /// Handle incoming message
+    async fn handle_message(&self, message: P2PMessage) -> Result<()> {
+        match message {
+            P2PMessage::Handshake(handshake) => {
+                log::info!("Received handshake from peer: {}", handshake.address);
+                // TODO: Validate handshake and respond
+            }
+            P2PMessage::Ping(ping) => {
+                let _pong = P2PMessage::Pong(PongMessage {
+                    nonce: ping.nonce,
+                    timestamp: Utc::now(),
+                });
+                // TODO: Send pong response
+            }
+            P2PMessage::BlockAnnouncement(announcement) => {
+                log::info!("Received block announcement: {:?}", announcement.block_hash);
+                // TODO: Process block announcement
+            }
+            P2PMessage::TransactionAnnouncement(announcement) => {
+                log::info!("Received transaction announcement: {:?}", announcement.tx_hash);
+                // TODO: Process transaction announcement
+            }
+            _ => {
+                log::debug!("Received message: {:?}", message);
+            }
         }
+        
         Ok(())
     }
-    
-    /// Handle P2P event
-    async fn handle_event(&mut self, event: P2pEvent) -> Result<()> {
-        match event {
-            P2pEvent::PeerConnected(peer_id, node_id) => {
-                self.handle_peer_connected(peer_id, node_id).await?;
-            }
-            P2pEvent::PeerDisconnected(peer_id) => {
-                self.handle_peer_disconnected(peer_id).await?;
-            }
-            P2pEvent::MessageReceived(peer_id, message) => {
-                self.handle_message_received(peer_id, message).await?;
-            }
-            P2pEvent::MessageSent(peer_id, message) => {
-                self.handle_message_sent(peer_id, message).await?;
-            }
-            P2pEvent::Error(error) => {
-                self.handle_error(error).await?;
-            }
-        }
-        Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_p2p_network_creation() {
+        let node_id = [1u8; 32];
+        let node_address = "127.0.0.1".to_string();
+        let listen_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        
+        let network = P2PNetwork::new(node_id, node_address, listen_addr).await.unwrap();
+        
+        assert_eq!(network.protocol_version, 1);
+        assert_eq!(network.max_connections, 50);
     }
-    
-    /// Handle peer connected
-    async fn handle_peer_connected(&mut self, peer_id: PeerId, node_id: NodeId) -> Result<()> {
-        let connection = PeerConnection {
-            peer_id,
-            node_id,
-            state: ConnectionState::Connected,
-            last_ping: None,
-            last_pong: None,
-            latency: None,
-            message_count: 0,
+
+    #[tokio::test]
+    async fn test_handshake_message() {
+        let handshake = HandshakeMessage {
+            node_id: [1u8; 32],
+            address: "127.0.0.1".to_string(),
+            version: 1,
+            features: vec!["blocks".to_string()],
+            timestamp: Utc::now(),
         };
         
-        self.connected_peers.insert(peer_id, connection);
-        info!("Peer connected: {} (node: {:?})", peer_id, node_id);
+        let message = P2PMessage::Handshake(handshake);
+        let serialized = serde_json::to_vec(&message).unwrap();
+        let deserialized: P2PMessage = serde_json::from_slice(&serialized).unwrap();
         
-        Ok(())
+        assert!(matches!(deserialized, P2PMessage::Handshake(_)));
     }
-    
-    /// Handle peer disconnected
-    async fn handle_peer_disconnected(&mut self, peer_id: PeerId) -> Result<()> {
-        self.connected_peers.remove(&peer_id);
-        info!("Peer disconnected: {}", peer_id);
-        Ok(())
-    }
-    
-    /// Handle message received
-    async fn handle_message_received(&mut self, peer_id: PeerId, message: P2pMessage) -> Result<()> {
-        // Update message count
-        if let Some(connection) = self.connected_peers.get_mut(&peer_id) {
-            connection.message_count += 1;
-        }
-        
-        // Route message to appropriate handler
-        let msg_type = self.get_message_type(&message);
-        if let Some(handler) = self.message_handlers.get(&msg_type) {
-            handler.handle_message(peer_id, message)?;
-        } else {
-            warn!("No handler registered for message type: {:?}", msg_type);
-        }
-        
-        Ok(())
-    }
-    
-    /// Handle message sent
-    async fn handle_message_sent(&mut self, _peer_id: PeerId, _message: P2pMessage) -> Result<()> {
-        // Update statistics if needed
-        Ok(())
-    }
-    
-    /// Handle error
-    async fn handle_error(&mut self, error: P2pError) -> Result<()> {
-        error!("P2P error: {}", error);
-        Ok(())
-    }
-    
-    /// Send ping to peer
-    async fn send_ping(&mut self, peer_id: PeerId) -> Result<()> {
-        let timestamp = chrono::Utc::now().timestamp_millis() as u64;
-        let nonce = rand::random::<u64>();
-        
-        let ping = P2pMessage::Ping(PingMessage {
-            sender: self.local_node_id,
-            timestamp,
-            nonce,
-        });
-        
-        self.send_message(peer_id, ping).await?;
-        
-        // Update last ping time
-        if let Some(connection) = self.connected_peers.get_mut(&peer_id) {
-            connection.last_ping = Some(timestamp);
-        }
-        
-        Ok(())
-    }
-    
-    /// Send message to peer
-    pub async fn send_message(&mut self, peer_id: PeerId, message: P2pMessage) -> Result<()> {
-        // In a real implementation, you'd serialize and send the message
-        // For now, we'll just log it
-        
-        debug!("Sending message to {}: {:?}", peer_id, message);
-        
-        // Emit message sent event
-        let _ = self.event_sender.send(P2pEvent::MessageSent(peer_id, message));
-        
-        Ok(())
-    }
-    
-    /// Broadcast message to all connected peers
-    pub async fn broadcast_message(&mut self, message: P2pMessage) -> Result<()> {
-        for peer_id in self.connected_peers.keys().cloned().collect::<Vec<_>>() {
-            self.send_message(peer_id, message.clone()).await?;
-        }
-        Ok(())
-    }
-    
-    /// Get message type
-    fn get_message_type(&self, message: &P2pMessage) -> P2pMessageType {
-        match message {
-            P2pMessage::Ping(_) => P2pMessageType::Ping,
-            P2pMessage::Pong(_) => P2pMessageType::Pong,
-            P2pMessage::BlockAnnouncement(_) => P2pMessageType::BlockAnnouncement,
-            P2pMessage::TransactionAnnouncement(_) => P2pMessageType::TransactionAnnouncement,
-            P2pMessage::StorageRequest(_) => P2pMessageType::StorageRequest,
-            P2pMessage::StorageResponse(_) => P2pMessageType::StorageResponse,
-            P2pMessage::PeerList(_) => P2pMessageType::PeerList,
-            P2pMessage::Consensus(_) => P2pMessageType::Consensus,
-        }
-    }
-    
-    /// Get connected peers
-    pub fn connected_peers(&self) -> &HashMap<PeerId, PeerConnection> {
-        &self.connected_peers
-    }
-    
-    /// Get peer connection
-    pub fn get_peer_connection(&self, peer_id: &PeerId) -> Option<&PeerConnection> {
-        self.connected_peers.get(peer_id)
-    }
-    
-    /// Check if peer is connected
-    pub fn is_peer_connected(&self, peer_id: &PeerId) -> bool {
-        self.connected_peers.contains_key(peer_id)
-    }
-    
-    /// Get P2P statistics
-    pub fn get_stats(&self) -> P2pStats {
-        let connected_count = self.connected_peers.len();
-        let total_messages = self.connected_peers.values()
-            .map(|conn| conn.message_count)
-            .sum();
-        
-        P2pStats {
-            connected_peers: connected_count,
-            total_messages,
-            protocol: self.config.protocol.clone(),
-        }
-    }
-}
 
-/// P2P statistics
-#[derive(Debug, Clone)]
-pub struct P2pStats {
-    /// Number of connected peers
-    pub connected_peers: usize,
-    /// Total messages sent/received
-    pub total_messages: u64,
-    /// Protocol identifier
-    pub protocol: String,
-}
-
-/// Default ping handler
-pub struct PingHandler;
-
-impl MessageHandler for PingHandler {
-    fn handle_message(&self, peer_id: PeerId, message: P2pMessage) -> Result<()> {
-        if let P2pMessage::Ping(ping) = message {
-            debug!("Received ping from {} with nonce {}", peer_id, ping.nonce);
-            
-            // In a real implementation, you'd send a pong response
-            // For now, we'll just log it
-        }
-        Ok(())
-    }
-}
-
-/// Default pong handler
-pub struct PongHandler;
-
-impl MessageHandler for PongHandler {
-    fn handle_message(&self, peer_id: PeerId, message: P2pMessage) -> Result<()> {
-        if let P2pMessage::Pong(pong) = message {
-            debug!("Received pong from {} with latency {}ms", 
-                peer_id, 
-                pong.pong_timestamp - pong.ping_timestamp
-            );
-        }
-        Ok(())
+    #[tokio::test]
+    async fn test_ping_pong_message() {
+        let ping = PingMessage {
+            nonce: 12345,
+            timestamp: Utc::now(),
+        };
+        
+        let pong = PongMessage {
+            nonce: 12345,
+            timestamp: Utc::now(),
+        };
+        
+        let ping_message = P2PMessage::Ping(ping);
+        let pong_message = P2PMessage::Pong(pong);
+        
+        assert!(matches!(ping_message, P2PMessage::Ping(_)));
+        assert!(matches!(pong_message, P2PMessage::Pong(_)));
     }
 }

@@ -237,7 +237,6 @@ impl ZkProver {
         &self,
         round_state: &RoundProvingState,
     ) -> Vec<u8> {
-        use sha2::{Sha256, Digest};
         
         // Simulate Winterfell proof structure
         let mut proof = Vec::new();
@@ -272,7 +271,6 @@ impl ZkProver {
         &self,
         round_state: &RoundProvingState,
     ) -> Vec<u8> {
-        use sha2::{Sha256, Digest};
         
         // Simulate custom STARK proof structure optimized for IPPAN
         let mut proof = Vec::new();
@@ -561,8 +559,8 @@ mod tests {
         
         // Create test round state
         let header = RoundHeader::new(1, [1u8; 32], [2u8; 32], 1234567890, [3u8; 32]);
-        let hashtimer = HashTimer::new([0u8; 32], [1u8; 32]);
-        let transaction = Transaction::new(
+        let hashtimer = HashTimer::new("test_node", 1, 1);
+        let transaction = Transaction::new_payment(
             [1u8; 32],
             [2u8; 32],
             100,

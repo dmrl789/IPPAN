@@ -1,23 +1,20 @@
-use crate::Result;
 use crate::crosschain::{
-    CrossChainManager, AnchorTx, ProofType, VerificationResult, BridgeEndpoint,
+    CrossChainManager, AnchorTx, ProofType, BridgeEndpoint,
     LightSyncData, CrossChainReport
 };
 use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
+    extract::{Path, State},
     response::Json,
-    routing::{get, post},
+    routing::{get, post, delete},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// Cross-chain API handler
 pub struct CrossChainApi {
     manager: Arc<CrossChainManager>,
-    server: Option<axum::Server<axum::extract::DefaultBodyLimit, axum::routing::IntoMakeService<Router>>>,
+    server: Option<axum::Server<hyper::server::conn::AddrIncoming, axum::routing::IntoMakeService<Router>>>,
     bind_addr: String,
 }
 
@@ -32,10 +29,10 @@ impl CrossChainApi {
     }
 
     /// Start the cross-chain API server
-    pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let app = self.create_router();
         
-        let addr = self.bind_addr.parse()?;
+        let addr = self.bind_addr.parse().map_err(|e| crate::error::IppanError::Config(format!("Invalid address: {}", e)))?;
         let server = axum::Server::bind(&addr).serve(app.into_make_service());
         
         self.server = Some(server);
@@ -45,9 +42,9 @@ impl CrossChainApi {
     }
 
     /// Stop the cross-chain API server
-    pub async fn stop(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn stop(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         if let Some(server) = self.server.take() {
-            server.await?;
+            server.await.map_err(|e| crate::error::IppanError::Network(format!("Server error: {}", e)))?;
         }
         Ok(())
     }
@@ -93,15 +90,15 @@ impl CrossChainApi {
     /// Get the latest anchor for a chain
     async fn get_latest_anchor(
         State(manager): State<Arc<CrossChainManager>>,
-        Path(chain_id): Path<String>,
+        Path(_chain_id): Path<String>,
     ) -> Json<ApiResponse<GetLatestAnchorResponse>> {
-        match manager.get_latest_anchor(&chain_id).await {
+        match manager.get_latest_anchor(&_chain_id).await {
             Ok(Some(anchor)) => Json(ApiResponse::success(GetLatestAnchorResponse {
-                chain_id,
+                chain_id: _chain_id,
                 last_anchor: Some(anchor),
             })),
             Ok(None) => Json(ApiResponse::success(GetLatestAnchorResponse {
-                chain_id,
+                chain_id: _chain_id,
                 last_anchor: None,
             })),
             Err(e) => Json(ApiResponse::error(format!("Failed to get latest anchor: {}", e))),
@@ -156,9 +153,9 @@ impl CrossChainApi {
     /// Get bridge endpoint information
     async fn get_bridge_endpoint(
         State(manager): State<Arc<CrossChainManager>>,
-        Path(chain_id): Path<String>,
+        Path(_chain_id): Path<String>,
     ) -> Json<ApiResponse<GetBridgeEndpointResponse>> {
-        match manager.get_bridge_endpoint(&chain_id).await {
+        match manager.get_bridge_endpoint(&_chain_id).await {
             Ok(Some(endpoint)) => Json(ApiResponse::success(GetBridgeEndpointResponse {
                 endpoint: Some(endpoint),
             })),
@@ -172,7 +169,7 @@ impl CrossChainApi {
     /// Remove a bridge endpoint
     async fn remove_bridge(
         State(_manager): State<Arc<CrossChainManager>>,
-        Path(chain_id): Path<String>,
+        Path(_chain_id): Path<String>,
     ) -> Json<ApiResponse<RemoveBridgeResponse>> {
         // Note: This would require adding a remove_bridge method to CrossChainManager
         Json(ApiResponse::error("Bridge removal not implemented yet".to_string()))
@@ -215,7 +212,7 @@ impl CrossChainApi {
 
 // Request/Response structures
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitAnchorRequest {
     pub chain_id: String,
     pub state_root: String,
@@ -237,7 +234,7 @@ pub struct GetLatestAnchorResponse {
     pub last_anchor: Option<AnchorTx>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyInclusionRequest {
     pub chain_id: String,
     pub tx_hash: String,
@@ -339,7 +336,7 @@ mod tests {
         let request = SubmitAnchorRequest {
             chain_id: "testchain".to_string(),
             state_root: "0x1234567890abcdef".to_string(),
-            timestamp: crate::consensus::hashtimer::HashTimer::new([0u8; 32], [0u8; 32]),
+            timestamp: crate::consensus::hashtimer::HashTimer::new("test_node", 1, 1),
             proof_type: Some(ProofType::Signature),
             proof_data: vec![1; 64],
         };

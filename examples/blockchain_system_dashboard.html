@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPPAN Blockchain System Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background: #f9f9f9;
+        }
+        .card h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .filter-controls select, .filter-controls input {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .refresh-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .refresh-button:hover {
+            opacity: 0.9;
+        }
+        .contract-item {
+            margin-bottom: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #28a745;
+        }
+        .contract-item.paused {
+            border-left-color: #ffc107;
+        }
+        .contract-item.upgraded {
+            border-left-color: #17a2b8;
+        }
+        .contract-item.failed {
+            border-left-color: #dc3545;
+        }
+        .contract-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .contract-name {
+            font-weight: bold;
+            color: #333;
+            font-family: monospace;
+        }
+        .contract-status {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        .status-active {
+            background: #28a745;
+        }
+        .status-deployed {
+            background: #17a2b8;
+        }
+        .status-paused {
+            background: #ffc107;
+            color: #212529;
+        }
+        .status-upgraded {
+            background: #6f42c1;
+        }
+        .status-failed {
+            background: #dc3545;
+        }
+        .contract-details {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .contract-metrics {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 10px;
+        }
+        .contract-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 5px 15px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .section-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .section-tab {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .section-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .section-tab:hover {
+            background: #f8f9fa;
+        }
+        .section-tab.active:hover {
+            background: #667eea;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .chart-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .transaction-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .transaction-form {
+            display: grid;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .form-group label {
+            font-weight: bold;
+            color: #333;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .transaction-result {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+        .block-info {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #e0e0e0;
+        }
+        .block-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .block-number {
+            font-weight: bold;
+            color: #333;
+            font-size: 18px;
+        }
+        .block-hash {
+            font-family: monospace;
+            color: #666;
+            font-size: 12px;
+        }
+        .block-details {
+            font-size: 14px;
+            color: #666;
+        }
+        .gas-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .gas-low {
+            background: #28a745;
+        }
+        .gas-medium {
+            background: #ffc107;
+        }
+        .gas-high {
+            background: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⛓️ IPPAN Blockchain System Dashboard</h1>
+            <p>Smart contracts, transactions, and blockchain management</p>
+        </div>
+        
+        <div class="content">
+            <div class="controls">
+                <div class="filter-controls">
+                    <select id="contract-type-filter">
+                        <option value="all">All Contract Types</option>
+                        <option value="Token">Token</option>
+                        <option value="NFT">NFT</option>
+                        <option value="DeFi">DeFi</option>
+                        <option value="Governance">Governance</option>
+                        <option value="Oracle">Oracle</option>
+                        <option value="Bridge">Bridge</option>
+                        <option value="Marketplace">Marketplace</option>
+                        <option value="Identity">Identity</option>
+                        <option value="Storage">Storage</option>
+                        <option value="Compute">Compute</option>
+                    </select>
+                    <select id="status-filter">
+                        <option value="all">All Statuses</option>
+                        <option value="Deployed">Deployed</option>
+                        <option value="Active">Active</option>
+                        <option value="Paused">Paused</option>
+                        <option value="Upgraded">Upgraded</option>
+                        <option value="Deprecated">Deprecated</option>
+                        <option value="Failed">Failed</option>
+                    </select>
+                </div>
+                <button class="refresh-button" onclick="refreshData()">🔄 Refresh</button>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-blocks">0</div>
+                    <div class="stat-label">Total Blocks</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="total-transactions">0</div>
+                    <div class="stat-label">Total Transactions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="total-contracts">0</div>
+                    <div class="stat-label">Total Contracts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avg-block-time">0s</div>
+                    <div class="stat-label">Avg Block Time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="gas-price">0 Gwei</div>
+                    <div class="stat-label">Gas Price</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="pending-txs">0</div>
+                    <div class="stat-label">Pending Transactions</div>
+                </div>
+            </div>
+
+            <div class="section-tabs">
+                <div class="section-tab active" onclick="showSection('overview')">Overview</div>
+                <div class="section-tab" onclick="showSection('contracts')">Contracts</div>
+                <div class="section-tab" onclick="showSection('transactions')">Transactions</div>
+                <div class="section-tab" onclick="showSection('blocks')">Blocks</div>
+                <div class="section-tab" onclick="showSection('analytics')">Analytics</div>
+            </div>
+
+            <!-- Overview Section -->
+            <div id="overview-section" class="section-content">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Blockchain Information</h3>
+                        <div id="blockchain-info">
+                            <div class="loading">Loading blockchain information...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Network Metrics</h3>
+                        <div id="network-metrics">
+                            <div class="loading">Loading network metrics...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contracts Section -->
+            <div id="contracts-section" class="section-content" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Smart Contracts</h3>
+                        <div id="smart-contracts-list">
+                            <div class="loading">Loading smart contracts...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Contract Statistics</h3>
+                        <div id="contract-stats">
+                            <div class="loading">Loading contract statistics...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transactions Section -->
+            <div id="transactions-section" class="section-content" style="display: none;">
+                <div class="transaction-panel">
+                    <h3>Execute Transaction</h3>
+                    <div class="transaction-form">
+                        <div class="form-group">
+                            <label for="from-address">From Address:</label>
+                            <input type="text" id="from-address" placeholder="0x1234567890123456789012345678901234567890">
+                        </div>
+                        <div class="form-group">
+                            <label for="to-address">To Address:</label>
+                            <input type="text" id="to-address" placeholder="0x0987654321098765432109876543210987654321">
+                        </div>
+                        <div class="form-group">
+                            <label for="transaction-value">Value (ETH):</label>
+                            <input type="number" id="transaction-value" placeholder="0.1" step="0.001">
+                        </div>
+                        <div class="form-group">
+                            <label for="transaction-data">Data (Hex):</label>
+                            <textarea id="transaction-data" rows="3" placeholder="0x..."></textarea>
+                        </div>
+                        <button class="btn btn-success" onclick="executeTransaction()">Execute Transaction</button>
+                    </div>
+                    <div id="transaction-result" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Blocks Section -->
+            <div id="blocks-section" class="section-content" style="display: none;">
+                <div class="card">
+                    <h3>Latest Blocks</h3>
+                    <div id="latest-blocks">
+                        <div class="loading">Loading latest blocks...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics Section -->
+            <div id="analytics-section" class="section-content" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Transaction Volume</h3>
+                        <div class="chart-container">
+                            <canvas id="transaction-volume-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Gas Usage Trends</h3>
+                        <div class="chart-container">
+                            <canvas id="gas-usage-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>Contract Activity</h3>
+                    <div class="chart-container">
+                        <canvas id="contract-activity-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let blockchainContracts = [];
+        let blockchainStats = {};
+        let blockchainMetrics = {};
+        let latestBlocks = [];
+
+        function formatAddress(address) {
+            if (address.length > 10) {
+                return address.substring(0, 6) + '...' + address.substring(address.length - 4);
+            }
+            return address;
+        }
+
+        function formatTimestamp(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        }
+
+        function formatWeiToEth(wei) {
+            return (wei / 1000000000000000000).toFixed(6);
+        }
+
+        function getStatusClass(status) {
+            switch (status.toLowerCase()) {
+                case 'active': return 'status-active';
+                case 'deployed': return 'status-deployed';
+                case 'paused': return 'status-paused';
+                case 'upgraded': return 'status-upgraded';
+                case 'failed': return 'status-failed';
+                default: return 'status-deployed';
+            }
+        }
+
+        function getContractItemClass(status) {
+            switch (status.toLowerCase()) {
+                case 'paused': return 'contract-item paused';
+                case 'upgraded': return 'contract-item upgraded';
+                case 'failed': return 'contract-item failed';
+                default: return 'contract-item';
+            }
+        }
+
+        function getGasClass(gasUsed, gasLimit) {
+            const percentage = (gasUsed / gasLimit) * 100;
+            if (percentage < 50) return 'gas-low';
+            if (percentage < 80) return 'gas-medium';
+            return 'gas-high';
+        }
+
+        function showSection(section) {
+            // Update active tab
+            document.querySelectorAll('.section-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Show/hide sections
+            document.querySelectorAll('.section-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            
+            document.getElementById(section + '-section').style.display = 'block';
+        }
+
+        function updateBlockchainDisplay() {
+            // Update statistics
+            if (blockchainStats.total_blocks !== undefined) {
+                document.getElementById('total-blocks').textContent = blockchainStats.total_blocks.toLocaleString();
+                document.getElementById('total-transactions').textContent = blockchainStats.total_transactions.toLocaleString();
+                document.getElementById('total-contracts').textContent = blockchainStats.total_contracts.toLocaleString();
+                document.getElementById('avg-block-time').textContent = blockchainStats.average_block_time.toFixed(1) + 's';
+                document.getElementById('gas-price').textContent = (blockchainStats.average_gas_price / 1000000000).toFixed(1) + ' Gwei';
+                document.getElementById('pending-txs').textContent = blockchainStats.pending_transactions.toLocaleString();
+            }
+        }
+
+        function updateBlockchainInfo() {
+            const infoContainer = document.getElementById('blockchain-info');
+            if (Object.keys(blockchainStats).length === 0) {
+                infoContainer.innerHTML = '<div class="empty-state">No blockchain information available</div>';
+            } else {
+                infoContainer.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Total Blocks:</strong> ${blockchainStats.total_blocks || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Total Transactions:</strong> ${blockchainStats.total_transactions || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Total Contracts:</strong> ${blockchainStats.total_contracts || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Average Block Time:</strong> ${(blockchainStats.average_block_time || 0).toFixed(1)}s
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Total Gas Used:</strong> ${(blockchainStats.total_gas_used || 0).toLocaleString()}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Failed Transactions:</strong> ${blockchainStats.failed_transactions || 0}
+                    </div>
+                `;
+            }
+        }
+
+        function updateNetworkMetrics() {
+            const metricsContainer = document.getElementById('network-metrics');
+            if (Object.keys(blockchainMetrics).length === 0) {
+                metricsContainer.innerHTML = '<div class="empty-state">No network metrics available</div>';
+            } else {
+                metricsContainer.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Current Block:</strong> ${blockchainMetrics.current_block_number || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Transactions/Second:</strong> ${(blockchainMetrics.transactions_per_second || 0).toFixed(1)}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Gas Price:</strong> ${(blockchainMetrics.gas_price_gwei || 0)} Gwei
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Network Difficulty:</strong> ${(blockchainMetrics.network_difficulty || 0).toLocaleString()}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Total Supply:</strong> ${formatWeiToEth(blockchainMetrics.total_supply || 0)} ETH
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Circulating Supply:</strong> ${formatWeiToEth(blockchainMetrics.circulating_supply || 0)} ETH
+                    </div>
+                `;
+            }
+        }
+
+        function updateSmartContracts() {
+            const contractsContainer = document.getElementById('smart-contracts-list');
+            if (blockchainContracts.length === 0) {
+                contractsContainer.innerHTML = '<div class="empty-state">No smart contracts available</div>';
+            } else {
+                contractsContainer.innerHTML = blockchainContracts.map(contract => `
+                    <div class="${getContractItemClass(contract.status)}">
+                        <div class="contract-header">
+                            <div class="contract-name">${contract.name}</div>
+                            <div class="contract-status ${getStatusClass(contract.status)}">${contract.status}</div>
+                        </div>
+                        <div class="contract-details">
+                            Address: ${formatAddress(contract.address)} | 
+                            Type: ${contract.type} | 
+                            Version: ${contract.version}
+                        </div>
+                        <div class="contract-metrics">
+                            Total Transactions: ${contract.total_transactions || 0} | 
+                            Gas Used: ${(contract.gas_used || 0).toLocaleString()}
+                        </div>
+                        <div class="contract-actions">
+                            <button class="btn btn-info" onclick="viewContract('${contract.address}')">View</button>
+                            ${contract.status === 'Active' ? '<button class="btn btn-warning" onclick="pauseContract(\'' + contract.address + '\')">Pause</button>' : ''}
+                            ${contract.status === 'Paused' ? '<button class="btn btn-success" onclick="unpauseContract(\'' + contract.address + '\')">Unpause</button>' : ''}
+                            <button class="btn btn-info" onclick="upgradeContract('${contract.address}')">Upgrade</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateContractStats() {
+            const statsContainer = document.getElementById('contract-stats');
+            if (Object.keys(blockchainStats).length === 0) {
+                statsContainer.innerHTML = '<div class="empty-state">No contract statistics available</div>';
+            } else {
+                statsContainer.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Contracts by Type:</strong>
+                        <ul>
+                            ${Object.entries(blockchainStats.contracts_by_type || {}).map(([type, count]) => 
+                                `<li>${type}: ${count}</li>`
+                            ).join('')}
+                        </ul>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Contracts by Status:</strong>
+                        <ul>
+                            ${Object.entries(blockchainStats.contracts_by_status || {}).map(([status, count]) => 
+                                `<li>${status}: ${count}</li>`
+                            ).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+
+        function updateLatestBlocks() {
+            const blocksContainer = document.getElementById('latest-blocks');
+            if (latestBlocks.length === 0) {
+                blocksContainer.innerHTML = '<div class="empty-state">No blocks available</div>';
+            } else {
+                blocksContainer.innerHTML = latestBlocks.map(block => `
+                    <div class="block-info">
+                        <div class="block-header">
+                            <div class="block-number">Block #${block.number}</div>
+                            <div class="block-hash">${formatAddress(block.hash)}</div>
+                        </div>
+                        <div class="block-details">
+                            Timestamp: ${formatTimestamp(block.timestamp)} | 
+                            Transactions: ${block.transactions} | 
+                            Gas Used: <span class="gas-indicator ${getGasClass(block.gas_used, block.gas_limit)}"></span>${(block.gas_used / block.gas_limit * 100).toFixed(1)}%
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateCharts() {
+            // Transaction Volume Chart
+            const volumeCtx = document.getElementById('transaction-volume-chart').getContext('2d');
+            new Chart(volumeCtx, {
+                type: 'line',
+                data: {
+                    labels: ['1h ago', '45m ago', '30m ago', '15m ago', 'Now'],
+                    datasets: [{
+                        label: 'Transactions',
+                        data: [150, 180, 220, 195, 210],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Gas Usage Chart
+            const gasCtx = document.getElementById('gas-usage-chart').getContext('2d');
+            new Chart(gasCtx, {
+                type: 'line',
+                data: {
+                    labels: ['1h ago', '45m ago', '30m ago', '15m ago', 'Now'],
+                    datasets: [{
+                        label: 'Gas Used (M)',
+                        data: [5.2, 6.1, 7.8, 6.5, 7.2],
+                        borderColor: '#fd7e14',
+                        backgroundColor: 'rgba(253, 126, 20, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Contract Activity Chart
+            const activityCtx = document.getElementById('contract-activity-chart').getContext('2d');
+            new Chart(activityCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Token', 'NFT', 'DeFi', 'Governance', 'Oracle'],
+                    datasets: [{
+                        label: 'Active Contracts',
+                        data: [25, 15, 10, 8, 5],
+                        backgroundColor: [
+                            '#667eea',
+                            '#28a745',
+                            '#fd7e14',
+                            '#ffc107',
+                            '#6c757d'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        async function executeTransaction() {
+            const fromAddress = document.getElementById('from-address').value;
+            const toAddress = document.getElementById('to-address').value;
+            const value = document.getElementById('transaction-value').value;
+            const data = document.getElementById('transaction-data').value;
+            
+            if (!fromAddress || !toAddress || !value) {
+                alert('Please fill in all required fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/blockchain/transactions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        from: fromAddress,
+                        to: toAddress,
+                        value: parseFloat(value) * 1000000000000000000, // Convert to Wei
+                        data: data || '0x'
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    const resultContainer = document.getElementById('transaction-result');
+                    resultContainer.style.display = 'block';
+                    resultContainer.innerHTML = `
+                        <h4>Transaction Result</h4>
+                        <p><strong>Transaction Hash:</strong> ${result.transaction_hash}</p>
+                        <p><strong>Block Number:</strong> ${result.block_number}</p>
+                        <p><strong>Gas Used:</strong> ${result.gas_used.toLocaleString()}</p>
+                        <p><strong>Status:</strong> ${result.status}</p>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error executing transaction:', error);
+                alert('Error executing transaction');
+            }
+        }
+
+        async function pauseContract(address) {
+            try {
+                const response = await fetch(`/blockchain/contracts/${address}/pause`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    alert('Contract paused successfully!');
+                    refreshData();
+                }
+            } catch (error) {
+                console.error('Error pausing contract:', error);
+            }
+        }
+
+        async function unpauseContract(address) {
+            try {
+                const response = await fetch(`/blockchain/contracts/${address}/unpause`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    alert('Contract unpaused successfully!');
+                    refreshData();
+                }
+            } catch (error) {
+                console.error('Error unpausing contract:', error);
+            }
+        }
+
+        async function upgradeContract(address) {
+            try {
+                const response = await fetch(`/blockchain/contracts/${address}/upgrade`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        new_bytecode: '0x...',
+                        upgrade_data: '0x...'
+                    })
+                });
+                if (response.ok) {
+                    alert('Contract upgrade initiated!');
+                    refreshData();
+                }
+            } catch (error) {
+                console.error('Error upgrading contract:', error);
+            }
+        }
+
+        async function viewContract(address) {
+            try {
+                const response = await fetch(`/blockchain/contracts/${address}`);
+                if (response.ok) {
+                    const contract = await response.json();
+                    alert(`Contract Details:\nName: ${contract.name}\nType: ${contract.type}\nStatus: ${contract.status}\nVersion: ${contract.version}`);
+                }
+            } catch (error) {
+                console.error('Error viewing contract:', error);
+            }
+        }
+
+        async function refreshData() {
+            try {
+                // Fetch blockchain contracts
+                const contractsResponse = await fetch('/blockchain/contracts');
+                const contractsData = await contractsResponse.json();
+                
+                // Fetch blockchain statistics
+                const statsResponse = await fetch('/blockchain/stats');
+                const statsData = await statsResponse.json();
+                
+                // Fetch blockchain metrics
+                const metricsResponse = await fetch('/blockchain/metrics');
+                const metricsData = await metricsResponse.json();
+                
+                // Fetch latest blocks
+                const blocksResponse = await fetch('/blockchain/blocks');
+                const blocksData = await blocksResponse.json();
+                
+                if (contractsData.success) {
+                    blockchainContracts = contractsData.data || [];
+                }
+                
+                if (statsData.success) {
+                    blockchainStats = statsData.data || {};
+                }
+                
+                if (metricsData.success) {
+                    blockchainMetrics = metricsData.data || {};
+                }
+                
+                if (blocksData.success) {
+                    latestBlocks = blocksData.data || [];
+                }
+                
+                // Update displays
+                updateBlockchainDisplay();
+                updateBlockchainInfo();
+                updateNetworkMetrics();
+                updateSmartContracts();
+                updateContractStats();
+                updateLatestBlocks();
+                updateCharts();
+                
+            } catch (error) {
+                console.error('Error fetching blockchain data:', error);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('contract-type-filter').addEventListener('change', refreshData);
+        document.getElementById('status-filter').addEventListener('change', refreshData);
+
+        // Initial load
+        refreshData();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(refreshData, 30000);
+    </script>
+</body>
+</html> 

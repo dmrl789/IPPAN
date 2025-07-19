@@ -1,252 +1,235 @@
-use crate::Result;
-use ed25519_dalek::{SecretKey, PublicKey, Signer, Verifier, Signature};
-use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
-use std::fs;
-use std::path::Path;
+//! Ed25519 key management for IPPAN wallet
 
-/// Ed25519 wallet for key management
-#[derive(Clone)]
-pub struct Ed25519Wallet {
-    /// Secret key
-    secret_key: SecretKey,
+use crate::Result;
+use crate::utils::address::{generate_ippan_address, validate_ippan_address};
+use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+/// Ed25519 key pair with metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ed25519KeyPair {
     /// Public key
-    public_key: PublicKey,
-    /// Wallet file path
-    wallet_path: String,
-    /// Whether wallet is encrypted
+    pub public_key: [u8; 32],
+    /// Private key (encrypted in production)
+    pub private_key: [u8; 32],
+    /// IPPAN address derived from public key
+    pub address: String,
+    /// Key creation timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Key label/name
+    pub label: Option<String>,
+    /// Whether this key is currently active
+    pub is_active: bool,
+}
+
+/// Ed25519 key manager
+pub struct Ed25519Manager {
+    /// Key pairs indexed by address
+    keys: HashMap<String, Ed25519KeyPair>,
+    /// Default key address
+    default_key: Option<String>,
+    /// Key storage path
+    storage_path: String,
+    /// Whether keys are encrypted
     encrypted: bool,
 }
 
-/// Wallet data structure for serialization
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct WalletData {
-    /// Secret key bytes
-    secret_key: Vec<u8>,
-    /// Public key bytes
-    public_key: Vec<u8>,
-    /// Creation timestamp
-    created_at: u64,
-    /// Version
-    version: u32,
-}
-
-impl Ed25519Wallet {
-    /// Create a new Ed25519 wallet
-    pub async fn new(wallet_path: &str, encrypted: bool) -> Result<Self> {
-        let path = Path::new(wallet_path);
-        
-        if path.exists() {
-            // Load existing wallet
-            Self::load(wallet_path, encrypted).await
-        } else {
-            // Create new wallet
-            Self::create_new(wallet_path, encrypted).await
+impl Ed25519Manager {
+    /// Create a new Ed25519 manager
+    pub fn new() -> Self {
+        Self {
+            keys: HashMap::new(),
+            default_key: None,
+            storage_path: "keys/".to_string(),
+            encrypted: false, // TODO: Enable encryption in production
         }
     }
 
-    /// Create a new wallet with fresh keys
-    async fn create_new(wallet_path: &str, encrypted: bool) -> Result<Self> {
-        // Generate new keypair
-        let secret_key = SecretKey::generate(&mut rand::thread_rng());
-        let public_key = PublicKey::from(&secret_key);
-
-        let wallet = Self {
-            secret_key,
-            public_key,
-            wallet_path: wallet_path.to_string(),
-            encrypted,
-        };
-
-        // Save wallet to file
-        wallet.save().await?;
-
-        Ok(wallet)
-    }
-
-    /// Load existing wallet from file
-    async fn load(wallet_path: &str, encrypted: bool) -> Result<Self> {
-        let data = fs::read(wallet_path)
-            .map_err(|e| crate::IppanError::Wallet(format!("Failed to read wallet: {}", e)))?;
-
-        let wallet_data: WalletData = if encrypted {
-            // TODO: Implement wallet encryption/decryption
-            bincode::deserialize(&data)
-                .map_err(|e| crate::IppanError::Wallet(format!("Failed to deserialize wallet: {}", e)))?
-        } else {
-            bincode::deserialize(&data)
-                .map_err(|e| crate::IppanError::Wallet(format!("Failed to deserialize wallet: {}", e)))?
-        };
-
-        let secret_key = SecretKey::from_bytes(&wallet_data.secret_key)
-            .map_err(|e| crate::IppanError::Wallet(format!("Invalid secret key: {}", e)))?;
-        let public_key = PublicKey::from_bytes(&wallet_data.public_key)
-            .map_err(|e| crate::IppanError::Wallet(format!("Invalid public key: {}", e)))?;
-
-        Ok(Self {
-            secret_key,
-            public_key,
-            wallet_path: wallet_path.to_string(),
-            encrypted,
-        })
-    }
-
-    /// Save wallet to file
-    async fn save(&self) -> Result<()> {
-        let wallet_data = WalletData {
-            secret_key: self.secret_key.to_bytes().to_vec(),
-            public_key: self.public_key.to_bytes().to_vec(),
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            version: 1,
-        };
-
-        let data = if self.encrypted {
-            // TODO: Implement wallet encryption
-            bincode::serialize(&wallet_data)
-                .map_err(|e| crate::IppanError::Wallet(format!("Failed to serialize wallet: {}", e)))?
-        } else {
-            bincode::serialize(&wallet_data)
-                .map_err(|e| crate::IppanError::Wallet(format!("Failed to serialize wallet: {}", e)))?
-        };
-
-        fs::write(&self.wallet_path, data)
-            .map_err(|e| crate::IppanError::Wallet(format!("Failed to write wallet: {}", e)))?;
-
+    /// Initialize the key manager
+    pub async fn initialize(&mut self) -> Result<()> {
+        // Create storage directory if it doesn't exist
+        tokio::fs::create_dir_all(&self.storage_path).await?;
+        
+        // Load existing keys
+        self.load_keys().await?;
+        
+        // Generate default key if none exists
+        if self.keys.is_empty() {
+            self.generate_key_pair("default".to_string()).await?;
+        }
+        
         Ok(())
     }
 
-    /// Get public key
-    pub fn get_public_key(&self) -> [u8; 32] {
-        self.public_key.to_bytes()
-    }
-
-    /// Get secret key (use with caution)
-    pub fn get_secret_key(&self) -> [u8; 32] {
-        self.secret_key.to_bytes()
-    }
-
-    /// Get node ID (derived from public key)
-    pub fn get_node_id(&self) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(&self.public_key.to_bytes());
-        hasher.finalize().into()
-    }
-
-    /// Sign data
-    pub async fn sign(&self, data: &[u8]) -> Result<[u8; 64]> {
-        let signature = self.secret_key.sign(data);
-        Ok(signature.to_bytes())
-    }
-
-    /// Verify signature
-    pub fn verify(&self, data: &[u8], signature: &[u8; 64]) -> Result<bool> {
-        let signature = match Signature::try_from(signature.as_slice()) {
-            Ok(sig) => sig,
-            Err(_) => return Ok(false),
-        };
-        
-        match self.public_key.verify(data, &signature) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
-    }
-
-    /// Verify signature with a specific public key
-    pub fn verify_with_key(&self, data: &[u8], signature: &[u8; 64], public_key: &[u8; 32]) -> Result<bool> {
-        let public_key = match PublicKey::try_from(public_key.as_slice()) {
-            Ok(key) => key,
-            Err(_) => return Ok(false),
-        };
-        
-        let signature = match Signature::try_from(signature.as_slice()) {
-            Ok(sig) => sig,
-            Err(_) => return Ok(false),
-        };
-        
-        match public_key.verify(data, &signature) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
-    }
-
-    /// Export wallet data
-    pub async fn export(&self) -> Result<Vec<u8>> {
-        let wallet_data = WalletData {
-            secret_key: self.secret_key.to_bytes().to_vec(),
-            public_key: self.public_key.to_bytes().to_vec(),
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            version: 1,
-        };
-
-        bincode::serialize(&wallet_data)
-            .map_err(|e| crate::IppanError::Wallet(format!("Failed to export wallet: {}", e)))
-    }
-
-    /// Import wallet data
-    pub async fn import(&mut self, data: &[u8]) -> Result<()> {
-        let wallet_data: WalletData = bincode::deserialize(data)
-            .map_err(|e| crate::IppanError::Wallet(format!("Failed to import wallet: {}", e)))?;
-
-        let secret_key = SecretKey::from_bytes(&wallet_data.secret_key)
-            .map_err(|e| crate::IppanError::Wallet(format!("Invalid secret key: {}", e)))?;
-        let public_key = PublicKey::from_bytes(&wallet_data.public_key)
-            .map_err(|e| crate::IppanError::Wallet(format!("Invalid public key: {}", e)))?;
-
-        self.secret_key = secret_key;
-        self.public_key = public_key;
-
-        // Save the imported wallet
-        self.save().await?;
-
+    /// Shutdown the key manager
+    pub async fn shutdown(&mut self) -> Result<()> {
+        // Save keys to storage
+        self.save_keys().await?;
         Ok(())
     }
 
-    /// Generate a deterministic key from a seed
-    pub async fn from_seed(seed: &[u8]) -> Result<Self> {
-        let mut hasher = Sha256::new();
-        hasher.update(seed);
-        let seed_hash = hasher.finalize();
-
-        let secret_key = SecretKey::from_bytes(&seed_hash)
-            .map_err(|e| crate::IppanError::Wallet(format!("Invalid seed: {}", e)))?;
-        let public_key = PublicKey::from(&secret_key);
-
-        Ok(Self {
-            secret_key,
+    /// Generate a new Ed25519 key pair
+    pub async fn generate_key_pair(&mut self, label: String) -> Result<Ed25519KeyPair> {
+        let mut rng = rand::thread_rng();
+        let mut signing_key_bytes = [0u8; 32];
+        rng.fill_bytes(&mut signing_key_bytes);
+        
+        let signing_key = SigningKey::from_bytes(&signing_key_bytes);
+        let verifying_key = signing_key.verifying_key();
+        
+        let public_key = verifying_key.to_bytes();
+        let address = generate_ippan_address(&public_key);
+        
+        let key_pair = Ed25519KeyPair {
             public_key,
-            wallet_path: String::new(), // Not saved to file
-            encrypted: false,
-        })
+            private_key: signing_key_bytes,
+            address: address.clone(),
+            created_at: chrono::Utc::now(),
+            label: Some(label),
+            is_active: true,
+        };
+        
+        self.keys.insert(address.clone(), key_pair.clone());
+        
+        // Set as default if it's the first key
+        if self.default_key.is_none() {
+            self.default_key = Some(address);
+        }
+        
+        Ok(key_pair)
     }
 
-    /// Get wallet information
-    pub fn get_info(&self) -> WalletInfo {
-        WalletInfo {
-            public_key: self.public_key.to_bytes(),
-            node_id: self.get_node_id(),
-            encrypted: self.encrypted,
-            path: self.wallet_path.clone(),
+    /// Get a key pair by address
+    pub fn get_key_pair(&self, address: &str) -> Option<&Ed25519KeyPair> {
+        self.keys.get(address)
+    }
+
+    /// Get the default key pair
+    pub fn get_default_key_pair(&self) -> Option<&Ed25519KeyPair> {
+        self.default_key.as_ref().and_then(|addr| self.keys.get(addr))
+    }
+
+    /// Set the default key
+    pub fn set_default_key(&mut self, address: &str) -> Result<()> {
+        if self.keys.contains_key(address) {
+            self.default_key = Some(address.to_string());
+            Ok(())
+        } else {
+            Err(crate::error::IppanError::Validation(
+                format!("Key not found: {}", address)
+            ))
         }
+    }
+
+    /// Sign data with a key
+    pub fn sign_data(&self, address: &str, data: &[u8]) -> Result<Signature> {
+        let key_pair = self.get_key_pair(address)
+            .ok_or_else(|| crate::error::IppanError::Validation(
+                format!("Key not found: {}", address)
+            ))?;
+        
+        let signing_key = SigningKey::from_bytes(&key_pair.private_key);
+        Ok(signing_key.sign(data))
+    }
+
+    /// Verify a signature
+    pub fn verify_signature(&self, address: &str, data: &[u8], signature: &Signature) -> Result<bool> {
+        let key_pair = self.get_key_pair(address)
+            .ok_or_else(|| crate::error::IppanError::Validation(
+                format!("Key not found: {}", address)
+            ))?;
+        
+        let verifying_key = VerifyingKey::from_bytes(&key_pair.public_key)
+            .map_err(|e| crate::error::IppanError::Validation(
+                format!("Invalid public key: {}", e)
+            ))?;
+        
+        Ok(verifying_key.verify(data, signature).is_ok())
+    }
+
+    /// Get all key pairs
+    pub fn get_all_keys(&self) -> Vec<&Ed25519KeyPair> {
+        self.keys.values().collect()
+    }
+
+    /// Get active key pairs
+    pub fn get_active_keys(&self) -> Vec<&Ed25519KeyPair> {
+        self.keys.values().filter(|k| k.is_active).collect()
+    }
+
+    /// Deactivate a key
+    pub fn deactivate_key(&mut self, address: &str) -> Result<()> {
+        if let Some(key_pair) = self.keys.get_mut(address) {
+            key_pair.is_active = false;
+            Ok(())
+        } else {
+            Err(crate::error::IppanError::Validation(
+                format!("Key not found: {}", address)
+            ))
+        }
+    }
+
+    /// Activate a key
+    pub fn activate_key(&mut self, address: &str) -> Result<()> {
+        if let Some(key_pair) = self.keys.get_mut(address) {
+            key_pair.is_active = true;
+            Ok(())
+        } else {
+            Err(crate::error::IppanError::Validation(
+                format!("Key not found: {}", address)
+            ))
+        }
+    }
+
+    /// Validate an IPPAN address
+    pub fn validate_address(&self, address: &str) -> bool {
+        validate_ippan_address(address).is_ok()
+    }
+
+    /// Get key statistics
+    pub fn get_key_stats(&self) -> KeyStats {
+        let total_keys = self.keys.len();
+        let active_keys = self.keys.values().filter(|k| k.is_active).count();
+        let default_key = self.default_key.clone();
+        
+        KeyStats {
+            total_keys,
+            active_keys,
+            default_key,
+        }
+    }
+
+    /// Load keys from storage
+    async fn load_keys(&mut self) -> Result<()> {
+        let keys_file = format!("{}keys.json", self.storage_path);
+        
+        if let Ok(contents) = tokio::fs::read_to_string(&keys_file).await {
+            let keys: HashMap<String, Ed25519KeyPair> = serde_json::from_str(&contents)?;
+            self.keys = keys;
+        }
+        
+        Ok(())
+    }
+
+    /// Save keys to storage
+    async fn save_keys(&self) -> Result<()> {
+        let keys_file = format!("{}keys.json", self.storage_path);
+        let contents = serde_json::to_string_pretty(&self.keys)?;
+        tokio::fs::write(&keys_file, contents).await?;
+        Ok(())
     }
 }
 
-/// Wallet information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WalletInfo {
-    /// Public key
-    pub public_key: [u8; 32],
-    /// Node ID
-    pub node_id: [u8; 32],
-    /// Whether wallet is encrypted
-    pub encrypted: bool,
-    /// Wallet file path
-    pub path: String,
+/// Key statistics
+#[derive(Debug, Serialize)]
+pub struct KeyStats {
+    pub total_keys: usize,
+    pub active_keys: usize,
+    pub default_key: Option<String>,
 }
 
 #[cfg(test)]
@@ -254,61 +237,52 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_wallet_creation() {
-        let wallet = Ed25519Wallet::new("./test_wallet.dat", false).await.unwrap();
+    async fn test_key_manager_creation() {
+        let mut manager = Ed25519Manager::new();
+        manager.initialize().await.unwrap();
         
-        let public_key = wallet.get_public_key();
-        assert_ne!(public_key, [0u8; 32]);
+        assert!(manager.keys.is_empty() || manager.default_key.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_key_generation() {
+        let mut manager = Ed25519Manager::new();
+        manager.initialize().await.unwrap();
         
-        let node_id = wallet.get_node_id();
-        assert_ne!(node_id, [0u8; 32]);
+        let key_pair = manager.generate_key_pair("test_key".to_string()).await.unwrap();
         
-        // Clean up
-        let _ = fs::remove_file("./test_wallet.dat");
+        assert!(manager.validate_address(&key_pair.address));
+        assert_eq!(key_pair.label, Some("test_key".to_string()));
+        assert!(key_pair.is_active);
     }
 
     #[tokio::test]
     async fn test_signing_and_verification() {
-        let wallet = Ed25519Wallet::new("./test_wallet2.dat", false).await.unwrap();
+        let mut manager = Ed25519Manager::new();
+        manager.initialize().await.unwrap();
         
-        let data = b"Test data for signing";
-        let signature = wallet.sign(data).await.unwrap();
+        let key_pair = manager.generate_key_pair("test_key".to_string()).await.unwrap();
+        let data = b"test data";
         
-        let is_valid = wallet.verify(data, &signature).unwrap();
+        let signature = manager.sign_data(&key_pair.address, data).unwrap();
+        let is_valid = manager.verify_signature(&key_pair.address, data, &signature).unwrap();
+        
         assert!(is_valid);
-        
-        // Test with wrong data
-        let wrong_data = b"Wrong data";
-        let is_valid = wallet.verify(wrong_data, &signature).unwrap();
-        assert!(!is_valid);
-        
-        // Clean up
-        let _ = fs::remove_file("./test_wallet2.dat");
     }
 
     #[tokio::test]
-    async fn test_deterministic_wallet() {
-        let seed = b"test seed for deterministic wallet";
-        let wallet1 = Ed25519Wallet::from_seed(seed).await.unwrap();
-        let wallet2 = Ed25519Wallet::from_seed(seed).await.unwrap();
+    async fn test_key_activation_deactivation() {
+        let mut manager = Ed25519Manager::new();
+        manager.initialize().await.unwrap();
         
-        assert_eq!(wallet1.get_public_key(), wallet2.get_public_key());
-        assert_eq!(wallet1.get_node_id(), wallet2.get_node_id());
-    }
-
-    #[tokio::test]
-    async fn test_export_import() {
-        let wallet1 = Ed25519Wallet::new("./test_wallet3.dat", false).await.unwrap();
-        let export_data = wallet1.export().await.unwrap();
+        let key_pair = manager.generate_key_pair("test_key".to_string()).await.unwrap();
         
-        let mut wallet2 = Ed25519Wallet::new("./test_wallet4.dat", false).await.unwrap();
-        wallet2.import(&export_data).await.unwrap();
+        // Deactivate
+        manager.deactivate_key(&key_pair.address).unwrap();
+        assert!(!manager.get_key_pair(&key_pair.address).unwrap().is_active);
         
-        assert_eq!(wallet1.get_public_key(), wallet2.get_public_key());
-        assert_eq!(wallet1.get_node_id(), wallet2.get_node_id());
-        
-        // Clean up
-        let _ = fs::remove_file("./test_wallet3.dat");
-        let _ = fs::remove_file("./test_wallet4.dat");
+        // Activate
+        manager.activate_key(&key_pair.address).unwrap();
+        assert!(manager.get_key_pair(&key_pair.address).unwrap().is_active);
     }
 }

@@ -1,282 +1,442 @@
-//! Relay module for NAT traversal
-//! 
-//! Handles peer relay functionality for nodes behind NAT.
+//! Relay service for IPPAN network
 
-use crate::{error::IppanError, Result};
-use libp2p::{
-    core::upgrade,
-    relay::v2::{
-        client::{self, Client},
-        server::{self, Server},
-        Event as RelayEvent, Protocol, Reservation, ReservationId,
-    },
-    swarm::{NetworkBehaviour, NotifyHandler, OneShotHandler, ToSwarm},
-    PeerId, StreamProtocol,
-};
+use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use chrono::{DateTime, Utc};
 
-/// Relay behaviour for NAT traversal
-#[derive(NetworkBehaviour)]
-#[behaviour(out_event = "RelayEvent")]
-pub struct RelayBehaviour {
-    /// Relay client for requesting relay connections
-    pub client: Client,
-    /// Relay server for providing relay services
-    pub server: Server,
+/// Relay message types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RelayMessage {
+    /// Connection request
+    ConnectionRequest(ConnectionRequest),
+    /// Connection response
+    ConnectionResponse(ConnectionResponse),
+    /// Data relay
+    DataRelay(DataRelay),
+    /// Connection close
+    ConnectionClose(ConnectionClose),
 }
 
-/// Relay events
-#[derive(Debug)]
-pub enum RelayEvent {
-    /// Client event
-    Client(client::Event),
-    /// Server event
-    Server(server::Event),
+/// Connection request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionRequest {
+    /// Request ID
+    pub request_id: String,
+    /// Source address
+    pub source_addr: String,
+    /// Target address
+    pub target_addr: String,
+    /// Protocol
+    pub protocol: String,
+    /// Timestamp
+    pub timestamp: DateTime<Utc>,
 }
 
-impl RelayBehaviour {
-    /// Create a new relay behaviour
-    pub fn new() -> Self {
-        Self {
-            client: Client::new(PeerId::random()),
-            server: Server::new(PeerId::random()),
-        }
-    }
-    
-    /// Request a relay reservation
-    pub fn request_reservation(&mut self, relay_peer: PeerId) -> Result<()> {
-        self.client.request_reservation(relay_peer);
-        Ok(())
-    }
-    
-    /// Dial a peer through a relay
-    pub fn dial_peer_via_relay(
-        &mut self,
-        relay_peer: PeerId,
-        remote_peer: PeerId,
-        protocol: StreamProtocol,
-    ) -> Result<()> {
-        self.client.dial_peer_via_relay(relay_peer, remote_peer, protocol);
-        Ok(())
-    }
-    
-    /// Accept a relay reservation
-    pub fn accept_reservation(&mut self, reservation: Reservation) -> Result<()> {
-        self.server.accept_reservation(reservation);
-        Ok(())
-    }
-    
-    /// Reject a relay reservation
-    pub fn reject_reservation(&mut self, reservation: Reservation) -> Result<()> {
-        self.server.reject_reservation(reservation);
-        Ok(())
-    }
+/// Connection response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionResponse {
+    /// Request ID
+    pub request_id: String,
+    /// Success flag
+    pub success: bool,
+    /// Error message
+    pub error: Option<String>,
+    /// Relay address
+    pub relay_addr: Option<String>,
+    /// Timestamp
+    pub timestamp: DateTime<Utc>,
 }
 
-/// Relay manager
-pub struct RelayManager {
-    /// Active relay connections
-    active_relays: HashMap<PeerId, RelayConnection>,
-    /// Pending relay requests
-    pending_requests: HashMap<ReservationId, RelayRequest>,
-    /// Relay configuration
-    config: RelayConfig,
-}
-
-/// Relay connection information
-#[derive(Debug, Clone)]
-pub struct RelayConnection {
-    /// Relay peer ID
-    pub relay_peer: PeerId,
-    /// Remote peer ID
-    pub remote_peer: PeerId,
-    /// Connection direction
+/// Data relay
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DataRelay {
+    /// Connection ID
+    pub connection_id: String,
+    /// Data
+    pub data: Vec<u8>,
+    /// Direction (inbound/outbound)
     pub direction: RelayDirection,
-    /// Connection timestamp
-    pub established_at: chrono::DateTime<chrono::Utc>,
-    /// Protocol being relayed
-    pub protocol: StreamProtocol,
+    /// Timestamp
+    pub timestamp: DateTime<Utc>,
 }
 
 /// Relay direction
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RelayDirection {
-    /// Outbound relay connection
-    Outbound,
-    /// Inbound relay connection
+    /// Inbound data
     Inbound,
+    /// Outbound data
+    Outbound,
 }
 
-/// Relay request
-#[derive(Debug, Clone)]
-pub struct RelayRequest {
-    /// Requesting peer
-    pub peer: PeerId,
-    /// Request timestamp
-    pub requested_at: chrono::DateTime<chrono::Utc>,
-    /// Request protocol
-    pub protocol: Option<StreamProtocol>,
+/// Connection close
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionClose {
+    /// Connection ID
+    pub connection_id: String,
+    /// Reason
+    pub reason: String,
+    /// Timestamp
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Relay connection
+#[derive(Debug)]
+pub struct RelayConnection {
+    /// Connection ID
+    pub id: String,
+    /// Source address
+    pub source_addr: SocketAddr,
+    /// Target address
+    pub target_addr: SocketAddr,
+    /// Connection state
+    pub state: ConnectionState,
+    /// Created timestamp
+    pub created_at: DateTime<Utc>,
+    /// Last activity
+    pub last_activity: DateTime<Utc>,
+    /// Data transferred
+    pub bytes_transferred: u64,
+}
+
+/// Connection state
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConnectionState {
+    /// Connecting
+    Connecting,
+    /// Connected
+    Connected,
+    /// Closed
+    Closed,
+    /// Error
+    Error,
+}
+
+/// Relay service
+pub struct RelayService {
+    /// Active relay connections
+    connections: Arc<RwLock<HashMap<String, RelayConnection>>>,
+    /// Relay configuration
+    config: RelayConfig,
+    /// Message sender
+    message_sender: mpsc::Sender<RelayMessage>,
+    /// Message receiver
+    message_receiver: mpsc::Receiver<RelayMessage>,
+    /// Running flag
+    running: bool,
 }
 
 /// Relay configuration
 #[derive(Debug, Clone)]
 pub struct RelayConfig {
-    /// Maximum relay connections
-    pub max_relay_connections: usize,
-    /// Relay reservation timeout
-    pub reservation_timeout: std::time::Duration,
-    /// Enable relay server
-    pub enable_server: bool,
-    /// Enable relay client
-    pub enable_client: bool,
+    /// Maximum connections
+    pub max_connections: usize,
+    /// Connection timeout
+    pub connection_timeout: std::time::Duration,
+    /// Data buffer size
+    pub buffer_size: usize,
+    /// Enable relay
+    pub enabled: bool,
 }
 
 impl Default for RelayConfig {
     fn default() -> Self {
         Self {
-            max_relay_connections: 100,
-            reservation_timeout: std::time::Duration::from_secs(300), // 5 minutes
-            enable_server: true,
-            enable_client: true,
+            max_connections: 100,
+            connection_timeout: std::time::Duration::from_secs(300), // 5 minutes
+            buffer_size: 8192, // 8KB
+            enabled: true,
         }
     }
 }
 
-impl RelayManager {
-    /// Create a new relay manager
-    pub fn new(config: RelayConfig) -> Self {
-        Self {
-            active_relays: HashMap::new(),
-            pending_requests: HashMap::new(),
-            config,
-        }
-    }
-    
-    /// Handle relay event
-    pub fn handle_event(&mut self, event: RelayEvent) -> Result<()> {
-        match event {
-            RelayEvent::Client(event) => {
-                self.handle_client_event(event)?;
-            }
-            RelayEvent::Server(event) => {
-                self.handle_server_event(event)?;
-            }
-        }
-        Ok(())
-    }
-    
-    /// Handle client events
-    fn handle_client_event(&mut self, event: client::Event) -> Result<()> {
-        match event {
-            client::Event::ReservationReqAccepted { relay_peer } => {
-                info!("Relay reservation accepted by {}", relay_peer);
-            }
-            client::Event::ReservationReqFailed { relay_peer, error } => {
-                warn!("Relay reservation failed with {}: {}", relay_peer, error);
-            }
-            client::Event::OutboundConnectEstablished { relay_peer, remote_peer } => {
-                info!("Relay connection established: {} -> {} via {}", remote_peer, relay_peer, relay_peer);
-                
-                let connection = RelayConnection {
-                    relay_peer,
-                    remote_peer,
-                    direction: RelayDirection::Outbound,
-                    established_at: chrono::Utc::now(),
-                    protocol: StreamProtocol::new("ippan/1.0"),
-                };
-                
-                self.active_relays.insert(remote_peer, connection);
-            }
-            client::Event::OutboundConnectFailed { relay_peer, remote_peer, error } => {
-                warn!("Relay connection failed: {} -> {} via {}: {}", remote_peer, relay_peer, relay_peer, error);
-            }
-        }
-        Ok(())
-    }
-    
-    /// Handle server events
-    fn handle_server_event(&mut self, event: server::Event) -> Result<()> {
-        match event {
-            server::Event::ReservationReqReceived { relay_peer, reservation_id } => {
-                debug!("Relay reservation request from {}: {}", relay_peer, reservation_id);
-                
-                let request = RelayRequest {
-                    peer: relay_peer,
-                    requested_at: chrono::Utc::now(),
-                    protocol: None,
-                };
-                
-                self.pending_requests.insert(reservation_id, request);
-            }
-            server::Event::InboundConnectEstablished { relay_peer, remote_peer } => {
-                info!("Inbound relay connection: {} -> {} via {}", remote_peer, relay_peer, relay_peer);
-                
-                let connection = RelayConnection {
-                    relay_peer,
-                    remote_peer,
-                    direction: RelayDirection::Inbound,
-                    established_at: chrono::Utc::now(),
-                    protocol: StreamProtocol::new("ippan/1.0"),
-                };
-                
-                self.active_relays.insert(remote_peer, connection);
-            }
-            server::Event::InboundConnectFailed { relay_peer, remote_peer, error } => {
-                warn!("Inbound relay connection failed: {} -> {} via {}: {}", remote_peer, relay_peer, relay_peer, error);
-            }
-        }
-        Ok(())
-    }
-    
-    /// Get active relay connections
-    pub fn active_relays(&self) -> &HashMap<PeerId, RelayConnection> {
-        &self.active_relays
-    }
-    
-    /// Get pending relay requests
-    pub fn pending_requests(&self) -> &HashMap<ReservationId, RelayRequest> {
-        &self.pending_requests
-    }
-    
-    /// Clean up expired requests
-    pub fn cleanup_expired_requests(&mut self) {
-        let now = chrono::Utc::now();
-        let timeout = chrono::Duration::from_std(self.config.reservation_timeout).unwrap();
+impl RelayService {
+    /// Create a new relay service
+    pub fn new() -> Self {
+        let (message_sender, message_receiver) = mpsc::channel(1000);
         
-        self.pending_requests.retain(|_, request| {
-            now.signed_duration_since(request.requested_at) < timeout
+        Self {
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            config: RelayConfig::default(),
+            message_sender,
+            message_receiver,
+            running: false,
+        }
+    }
+
+    /// Start the relay service
+    pub async fn start(&mut self) -> Result<()> {
+        log::info!("Starting relay service");
+        self.running = true;
+        
+        // Start relay listener
+        let config = self.config.clone();
+        let connections = self.connections.clone();
+        
+        tokio::spawn(async move {
+            Self::run_relay_listener(config, connections).await;
         });
+        
+        // Start message processing loop
+        let message_sender = self.message_sender.clone();
+        let connections = self.connections.clone();
+        
+        tokio::spawn(async move {
+            // TODO: Implement message processing loop
+            log::info!("Relay message processing loop started");
+        });
+        
+        Ok(())
     }
-    
-    /// Check if we can accept more relay connections
-    pub fn can_accept_relay(&self) -> bool {
-        self.active_relays.len() < self.config.max_relay_connections
+
+    /// Stop the relay service
+    pub async fn stop(&mut self) -> Result<()> {
+        log::info!("Stopping relay service");
+        self.running = false;
+        
+        // Close all connections
+        let mut connections = self.connections.write().await;
+        connections.clear();
+        
+        Ok(())
     }
-    
+
+    /// Create a relay connection
+    pub async fn create_relay_connection(
+        &self,
+        source_addr: SocketAddr,
+        target_addr: SocketAddr,
+    ) -> Result<String> {
+        let connection_id = format!("relay_{}_{}", source_addr, target_addr);
+        
+        let connection = RelayConnection {
+            id: connection_id.clone(),
+            source_addr,
+            target_addr,
+            state: ConnectionState::Connecting,
+            created_at: Utc::now(),
+            last_activity: Utc::now(),
+            bytes_transferred: 0,
+        };
+        
+        let mut connections = self.connections.write().await;
+        
+        if connections.len() >= self.config.max_connections {
+            return Err(crate::error::IppanError::Network(
+                "Maximum relay connections reached".to_string()
+            ));
+        }
+        
+        connections.insert(connection_id.clone(), connection);
+        
+        log::info!("Created relay connection: {} -> {}", source_addr, target_addr);
+        
+        Ok(connection_id)
+    }
+
+    /// Close a relay connection
+    pub async fn close_relay_connection(&self, connection_id: &str) -> Result<()> {
+        let mut connections = self.connections.write().await;
+        
+        if let Some(connection) = connections.get_mut(connection_id) {
+            connection.state = ConnectionState::Closed;
+            log::info!("Closed relay connection: {}", connection_id);
+        }
+        
+        Ok(())
+    }
+
     /// Get relay statistics
-    pub fn get_stats(&self) -> RelayStats {
+    pub async fn get_relay_stats(&self) -> RelayStats {
+        let connections = self.connections.read().await;
+        
+        let total_connections = connections.len();
+        let active_connections = connections.values()
+            .filter(|conn| conn.state == ConnectionState::Connected)
+            .count();
+        
+        let total_bytes = connections.values()
+            .map(|conn| conn.bytes_transferred)
+            .sum();
+        
         RelayStats {
-            active_relays: self.active_relays.len(),
-            pending_requests: self.pending_requests.len(),
-            max_relay_connections: self.config.max_relay_connections,
+            total_connections,
+            active_connections,
+            total_bytes_transferred: total_bytes,
+            max_connections: self.config.max_connections,
+        }
+    }
+
+    /// Run relay listener
+    async fn run_relay_listener(
+        config: RelayConfig,
+        connections: Arc<RwLock<HashMap<String, RelayConnection>>>,
+    ) {
+        let listener = match TcpListener::bind("0.0.0.0:0").await {
+            Ok(listener) => listener,
+            Err(e) => {
+                log::error!("Failed to bind relay listener: {}", e);
+                return;
+            }
+        };
+        
+        log::info!("Relay listener started on {}", listener.local_addr().unwrap());
+        
+        while let Ok((stream, addr)) = listener.accept().await {
+            let connections_clone = connections.clone();
+            let config_clone = config.clone();
+            
+            tokio::spawn(async move {
+                Self::handle_relay_connection(stream, addr, connections_clone, config_clone).await;
+            });
+        }
+    }
+
+    /// Handle relay connection
+    async fn handle_relay_connection(
+        mut stream: TcpStream,
+        addr: SocketAddr,
+        connections: Arc<RwLock<HashMap<String, RelayConnection>>>,
+        config: RelayConfig,
+    ) {
+        log::info!("New relay connection from: {}", addr);
+        
+        let mut buffer = vec![0u8; config.buffer_size];
+        
+        loop {
+            match stream.read(&mut buffer).await {
+                Ok(0) => {
+                    log::debug!("Relay connection closed by peer: {}", addr);
+                    break;
+                }
+                Ok(n) => {
+                    let data = &buffer[..n];
+                    
+                    // Update connection stats
+                    let mut connections = connections.write().await;
+                    for connection in connections.values_mut() {
+                        if connection.source_addr == addr {
+                            connection.bytes_transferred += n as u64;
+                            connection.last_activity = Utc::now();
+                            break;
+                        }
+                    }
+                    
+                    // Echo data back (simple relay)
+                    if let Err(e) = stream.write_all(data).await {
+                        log::error!("Failed to relay data: {}", e);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("Relay connection error: {}", e);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Handle relay message
+    async fn handle_relay_message(
+        message: RelayMessage,
+        _connections: &Arc<RwLock<HashMap<String, RelayConnection>>>,
+    ) {
+        match message {
+            RelayMessage::ConnectionRequest(request) => {
+                log::info!("Received connection request: {} -> {}", 
+                    request.source_addr, request.target_addr);
+                
+                // TODO: Implement connection establishment
+            }
+            
+            RelayMessage::ConnectionResponse(response) => {
+                log::info!("Received connection response: {} (success: {})", 
+                    response.request_id, response.success);
+                
+                // TODO: Handle connection response
+            }
+            
+            RelayMessage::DataRelay(data_relay) => {
+                log::debug!("Received data relay: {} bytes", data_relay.data.len());
+                
+                // TODO: Relay data to target
+            }
+            
+            RelayMessage::ConnectionClose(close) => {
+                log::info!("Received connection close: {} (reason: {})", 
+                    close.connection_id, close.reason);
+                
+                // TODO: Close connection
+            }
         }
     }
 }
 
 /// Relay statistics
-#[derive(Debug, Clone)]
+#[derive(Debug, Serialize)]
 pub struct RelayStats {
-    /// Number of active relay connections
-    pub active_relays: usize,
-    /// Number of pending requests
-    pub pending_requests: usize,
-    /// Maximum relay connections
-    pub max_relay_connections: usize,
+    pub total_connections: usize,
+    pub active_connections: usize,
+    pub total_bytes_transferred: u64,
+    pub max_connections: usize,
 }
 
-impl Default for RelayBehaviour {
-    fn default() -> Self {
-        Self::new()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_relay_service_creation() {
+        let service = RelayService::new();
+        
+        assert_eq!(service.config.max_connections, 100);
+        assert!(service.config.enabled);
+        assert!(!service.running);
+    }
+
+    #[tokio::test]
+    async fn test_relay_service_start_stop() {
+        let mut service = RelayService::new();
+        
+        service.start().await.unwrap();
+        assert!(service.running);
+        
+        service.stop().await.unwrap();
+        assert!(!service.running);
+    }
+
+    #[tokio::test]
+    async fn test_relay_connection_creation() {
+        let service = RelayService::new();
+        
+        let source_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let target_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8081);
+        
+        let connection_id = service.create_relay_connection(source_addr, target_addr).await.unwrap();
+        
+        assert!(!connection_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_relay_message_serialization() {
+        let request = ConnectionRequest {
+            request_id: "req_123".to_string(),
+            source_addr: "127.0.0.1:8080".to_string(),
+            target_addr: "127.0.0.1:8081".to_string(),
+            protocol: "tcp".to_string(),
+            timestamp: Utc::now(),
+        };
+        
+        let message = RelayMessage::ConnectionRequest(request);
+        let serialized = serde_json::to_vec(&message).unwrap();
+        let deserialized: RelayMessage = serde_json::from_slice(&serialized).unwrap();
+        
+        assert!(matches!(deserialized, RelayMessage::ConnectionRequest(_)));
     }
 }

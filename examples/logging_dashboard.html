@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPPAN Logging Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background: #f9f9f9;
+        }
+        .card h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .log-entry {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            border-left: 4px solid #667eea;
+        }
+        .log-entry.error {
+            border-left-color: #dc3545;
+            background: #f8d7da;
+        }
+        .log-entry.warn {
+            border-left-color: #ffc107;
+            background: #fff3cd;
+        }
+        .log-entry.info {
+            border-left-color: #17a2b8;
+            background: #d1ecf1;
+        }
+        .log-timestamp {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .log-level {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .log-level.error {
+            background: #dc3545;
+            color: white;
+        }
+        .log-level.warn {
+            background: #ffc107;
+            color: #212529;
+        }
+        .log-level.info {
+            background: #17a2b8;
+            color: white;
+        }
+        .log-message {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .log-target {
+            font-size: 12px;
+            color: #666;
+        }
+        .log-fields {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .filter-controls select, .filter-controls input {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .refresh-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .refresh-button:hover {
+            opacity: 0.9;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+        }
+        .error-details {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .performance-metrics {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 IPPAN Logging Dashboard</h1>
+            <p>Real-time log monitoring and error tracking</p>
+        </div>
+        
+        <div class="content">
+            <div class="controls">
+                <div class="filter-controls">
+                    <select id="level-filter">
+                        <option value="all">All Levels</option>
+                        <option value="error">Error</option>
+                        <option value="warn">Warning</option>
+                        <option value="info">Info</option>
+                    </select>
+                    <select id="target-filter">
+                        <option value="all">All Targets</option>
+                        <option value="api">API</option>
+                        <option value="storage">Storage</option>
+                        <option value="network">Network</option>
+                        <option value="consensus">Consensus</option>
+                    </select>
+                    <input type="text" id="search-filter" placeholder="Search logs...">
+                </div>
+                <button class="refresh-button" onclick="refreshLogs()">🔄 Refresh</button>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-logs">0</div>
+                    <div class="stat-label">Total Logs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="error-count">0</div>
+                    <div class="stat-label">Errors</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="critical-errors">0</div>
+                    <div class="stat-label">Critical Errors</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="slow-operations">0</div>
+                    <div class="stat-label">Slow Operations</div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <!-- Log Entries -->
+                <div class="card">
+                    <h3>Recent Logs</h3>
+                    <div id="log-entries">
+                        <div class="log-entry">
+                            <div class="log-timestamp">Loading logs...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error Statistics -->
+                <div class="card">
+                    <h3>Error Statistics</h3>
+                    <div id="error-stats">
+                        <div>Loading error statistics...</div>
+                    </div>
+                </div>
+
+                <!-- Critical Errors -->
+                <div class="card">
+                    <h3>Critical Errors</h3>
+                    <div id="critical-errors-list">
+                        <div>Loading critical errors...</div>
+                    </div>
+                </div>
+
+                <!-- Performance Statistics -->
+                <div class="card">
+                    <h3>Performance Statistics</h3>
+                    <div id="performance-stats">
+                        <div>Loading performance statistics...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="grid">
+                <div class="card">
+                    <h3>Log Levels Over Time</h3>
+                    <div class="chart-container">
+                        <canvas id="logLevelsChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>Error Types Distribution</h3>
+                    <div class="chart-container">
+                        <canvas id="errorTypesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let logLevelsChart, errorTypesChart;
+        let allLogs = [];
+
+        function formatTimestamp(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        }
+
+        function getLogLevelClass(level) {
+            switch(level.toLowerCase()) {
+                case 'error': return 'error';
+                case 'warn': return 'warn';
+                case 'info': return 'info';
+                default: return '';
+            }
+        }
+
+        function getLogLevelLabel(level) {
+            switch(level.toLowerCase()) {
+                case 'error': return 'ERROR';
+                case 'warn': return 'WARN';
+                case 'info': return 'INFO';
+                default: return level.toUpperCase();
+            }
+        }
+
+        function renderLogEntry(log) {
+            const levelClass = getLogLevelClass(log.level);
+            const levelLabel = getLogLevelLabel(log.level);
+            
+            let fieldsHtml = '';
+            if (log.fields && Object.keys(log.fields).length > 0) {
+                fieldsHtml = '<div class="log-fields">';
+                for (const [key, value] of Object.entries(log.fields)) {
+                    fieldsHtml += `<strong>${key}:</strong> ${JSON.stringify(value)} `;
+                }
+                fieldsHtml += '</div>';
+            }
+
+            let errorDetailsHtml = '';
+            if (log.error_details) {
+                errorDetailsHtml = `
+                    <div class="error-details">
+                        <strong>Error Type:</strong> ${log.error_details.error_type}<br>
+                        <strong>Error Code:</strong> ${log.error_details.error_code || 'N/A'}<br>
+                        <strong>Severity:</strong> ${log.error_details.severity}<br>
+                        ${log.error_details.stack_trace ? `<strong>Stack Trace:</strong> ${log.error_details.stack_trace}` : ''}
+                    </div>
+                `;
+            }
+
+            let performanceHtml = '';
+            if (log.performance_metrics) {
+                performanceHtml = `
+                    <div class="performance-metrics">
+                        <strong>Duration:</strong> ${log.performance_metrics.duration_ms}ms<br>
+                        ${log.performance_metrics.memory_usage_bytes ? `<strong>Memory:</strong> ${formatBytes(log.performance_metrics.memory_usage_bytes)}<br>` : ''}
+                        ${log.performance_metrics.cpu_usage_percent ? `<strong>CPU:</strong> ${log.performance_metrics.cpu_usage_percent}%` : ''}
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="log-entry ${levelClass}">
+                    <div class="log-timestamp">${formatTimestamp(log.timestamp)}</div>
+                    <span class="log-level ${levelClass}">${levelLabel}</span>
+                    <span class="log-target">${log.target}</span>
+                    <div class="log-message">${log.message}</div>
+                    ${fieldsHtml}
+                    ${errorDetailsHtml}
+                    ${performanceHtml}
+                </div>
+            `;
+        }
+
+        function formatBytes(bytes) {
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            if (bytes === 0) return '0 B';
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function filterLogs() {
+            const levelFilter = document.getElementById('level-filter').value;
+            const targetFilter = document.getElementById('target-filter').value;
+            const searchFilter = document.getElementById('search-filter').value.toLowerCase();
+
+            const filteredLogs = allLogs.filter(log => {
+                const levelMatch = levelFilter === 'all' || log.level.toLowerCase() === levelFilter;
+                const targetMatch = targetFilter === 'all' || log.target.toLowerCase() === targetFilter;
+                const searchMatch = searchFilter === '' || 
+                    log.message.toLowerCase().includes(searchFilter) ||
+                    log.target.toLowerCase().includes(searchFilter);
+
+                return levelMatch && targetMatch && searchMatch;
+            });
+
+            renderLogs(filteredLogs);
+            updateStats(filteredLogs);
+        }
+
+        function renderLogs(logs) {
+            const container = document.getElementById('log-entries');
+            container.innerHTML = logs.map(renderLogEntry).join('');
+        }
+
+        function updateStats(logs) {
+            const totalLogs = logs.length;
+            const errorCount = logs.filter(log => log.level.toLowerCase() === 'error').length;
+            const criticalErrors = logs.filter(log => 
+                log.level.toLowerCase() === 'error' && 
+                log.error_details && 
+                log.error_details.severity === 'critical'
+            ).length;
+            const slowOperations = logs.filter(log => 
+                log.performance_metrics && 
+                log.performance_metrics.duration_ms > 100
+            ).length;
+
+            document.getElementById('total-logs').textContent = totalLogs;
+            document.getElementById('error-count').textContent = errorCount;
+            document.getElementById('critical-errors').textContent = criticalErrors;
+            document.getElementById('slow-operations').textContent = slowOperations;
+        }
+
+        async function refreshLogs() {
+            try {
+                // Fetch logs
+                const logsResponse = await fetch('/logs');
+                const logsData = await logsResponse.json();
+                
+                if (logsData.success) {
+                    allLogs = logsData.data || [];
+                    filterLogs();
+                }
+
+                // Fetch error statistics
+                const errorStatsResponse = await fetch('/logs/errors');
+                const errorStatsData = await errorStatsResponse.json();
+                
+                if (errorStatsData.success) {
+                    renderErrorStats(errorStatsData.data);
+                }
+
+                // Fetch critical errors
+                const criticalErrorsResponse = await fetch('/logs/errors/critical');
+                const criticalErrorsData = await criticalErrorsResponse.json();
+                
+                if (criticalErrorsData.success) {
+                    renderCriticalErrors(criticalErrorsData.data);
+                }
+
+                // Fetch performance statistics
+                const performanceStatsResponse = await fetch('/logs/performance');
+                const performanceStatsData = await performanceStatsResponse.json();
+                
+                if (performanceStatsData.success) {
+                    renderPerformanceStats(performanceStatsData.data);
+                }
+
+                updateCharts();
+                
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+            }
+        }
+
+        function renderErrorStats(errorStats) {
+            const container = document.getElementById('error-stats');
+            let html = '<div style="font-size: 14px;">';
+            
+            for (const [errorType, count] of Object.entries(errorStats)) {
+                if (errorType !== 'total_errors') {
+                    html += `<div style="margin-bottom: 8px;">
+                        <strong>${errorType}:</strong> ${count}
+                    </div>`;
+                }
+            }
+            
+            html += `<div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd;">
+                <strong>Total Errors:</strong> ${errorStats.total_errors || 0}
+            </div>`;
+            html += '</div>';
+            
+            container.innerHTML = html;
+        }
+
+        function renderCriticalErrors(criticalErrors) {
+            const container = document.getElementById('critical-errors-list');
+            
+            if (criticalErrors.length === 0) {
+                container.innerHTML = '<div style="color: #666;">No critical errors</div>';
+                return;
+            }
+
+            let html = '';
+            criticalErrors.forEach(error => {
+                html += `
+                    <div style="margin-bottom: 15px; padding: 10px; background: #f8d7da; border-radius: 4px;">
+                        <div style="font-weight: bold; color: #721c24;">${error.error_type}</div>
+                        <div style="font-size: 12px; color: #666;">${formatTimestamp(error.timestamp)}</div>
+                        <div style="margin-top: 5px;">${error.message}</div>
+                        ${error.error_code ? `<div style="font-size: 12px; color: #666;">Code: ${error.error_code}</div>` : ''}
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function renderPerformanceStats(performanceStats) {
+            const container = document.getElementById('performance-stats');
+            let html = '<div style="font-size: 14px;">';
+            
+            for (const [operation, stats] of Object.entries(performanceStats)) {
+                html += `
+                    <div style="margin-bottom: 15px; padding: 10px; background: #d1ecf1; border-radius: 4px;">
+                        <div style="font-weight: bold;">${operation}</div>
+                        <div>Count: ${stats.count}</div>
+                        <div>Avg Duration: ${stats.avg_duration_ms.toFixed(2)}ms</div>
+                        <div>Min: ${stats.min_duration_ms.toFixed(2)}ms | Max: ${stats.max_duration_ms.toFixed(2)}ms</div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function updateCharts() {
+            // Update log levels chart
+            const levelCounts = {
+                error: allLogs.filter(log => log.level.toLowerCase() === 'error').length,
+                warn: allLogs.filter(log => log.level.toLowerCase() === 'warn').length,
+                info: allLogs.filter(log => log.level.toLowerCase() === 'info').length,
+            };
+
+            if (!logLevelsChart) {
+                const ctx = document.getElementById('logLevelsChart').getContext('2d');
+                logLevelsChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Error', 'Warning', 'Info'],
+                        datasets: [{
+                            data: [levelCounts.error, levelCounts.warn, levelCounts.info],
+                            backgroundColor: ['#dc3545', '#ffc107', '#17a2b8'],
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                    }
+                });
+            } else {
+                logLevelsChart.data.datasets[0].data = [levelCounts.error, levelCounts.warn, levelCounts.info];
+                logLevelsChart.update();
+            }
+
+            // Update error types chart
+            const errorTypes = {};
+            allLogs.filter(log => log.level.toLowerCase() === 'error').forEach(log => {
+                if (log.error_details) {
+                    const errorType = log.error_details.error_type;
+                    errorTypes[errorType] = (errorTypes[errorType] || 0) + 1;
+                }
+            });
+
+            if (!errorTypesChart) {
+                const ctx = document.getElementById('errorTypesChart').getContext('2d');
+                errorTypesChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(errorTypes),
+                        datasets: [{
+                            label: 'Error Count',
+                            data: Object.values(errorTypes),
+                            backgroundColor: '#dc3545',
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            } else {
+                errorTypesChart.data.labels = Object.keys(errorTypes);
+                errorTypesChart.data.datasets[0].data = Object.values(errorTypes);
+                errorTypesChart.update();
+            }
+        }
+
+        // Event listeners
+        document.getElementById('level-filter').addEventListener('change', filterLogs);
+        document.getElementById('target-filter').addEventListener('change', filterLogs);
+        document.getElementById('search-filter').addEventListener('input', filterLogs);
+
+        // Initial load
+        refreshLogs();
+        
+        // Auto-refresh every 10 seconds
+        setInterval(refreshLogs, 10000);
+    </script>
+</body>
+</html> 

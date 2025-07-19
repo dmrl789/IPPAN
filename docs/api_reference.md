@@ -1,261 +1,298 @@
-# 🔌 IPPAN API Reference
+# IPPAN API Reference
 
-This document provides comprehensive API documentation for the IPPAN network, including REST endpoints, WebSocket APIs, and client libraries.
+This document provides comprehensive documentation for the IPPAN HTTP API endpoints.
 
-## Table of Contents
+## Base URL
 
-1. [Overview](#overview)
-2. [Authentication](#authentication)
-3. [REST API](#rest-api)
-4. [WebSocket API](#websocket-api)
-5. [Error Handling](#error-handling)
-6. [Rate Limiting](#rate-limiting)
-7. [Client Libraries](#client-libraries)
-8. [Examples](#examples)
-
-## Overview
-
-The IPPAN API provides programmatic access to all network functionality:
-
-- **Node Management**: Start, stop, and monitor nodes
-- **Storage Operations**: Upload, download, and manage files
-- **Wallet Operations**: Send payments and manage M2M channels
-- **Domain Management**: Register and manage domains
-- **Network Information**: Get network statistics and peer information
-- **Consensus Data**: Access blockchain and consensus information
-
-### Base URL
-
+All API endpoints are available at:
 ```
-http://localhost:3000/api/v1
+http://localhost:8080
 ```
-
-### Content Types
-
-- **Request**: `application/json`
-- **Response**: `application/json`
-- **File Upload**: `multipart/form-data`
 
 ## Authentication
 
-### API Key Authentication
+Currently, the API does not require authentication. In production, this will be implemented using JWT tokens or API keys.
 
-```bash
-# Include API key in headers
-curl -H "Authorization: Bearer YOUR_API_KEY" \
-     http://localhost:3000/api/v1/status
+## Response Format
+
+All API responses follow a consistent JSON format:
+
+```json
+{
+  "success": true,
+  "data": {...},
+  "error": null,
+  "message": "Operation completed successfully"
+}
 ```
 
-### Node Authentication
+## Error Responses
 
-```bash
-# Include node signature in headers
-curl -H "X-Node-Signature: SIGNATURE" \
-     -H "X-Node-ID: NODE_ID" \
-     http://localhost:3000/api/v1/status
+When an error occurs, the response will have:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "Error description",
+  "message": "Operation failed"
+}
 ```
 
-## REST API
+## Health & Status Endpoints
 
-### Node Management
+### GET /health
 
-#### Get Node Status
+Health check endpoint to verify the API is running.
 
-```http
-GET /api/v1/status
+**Response:**
+```json
+{
+  "success": true,
+  "data": "OK",
+  "error": null,
+  "message": "Health check passed"
+}
+```
+
+### GET /status
+
+Get comprehensive node status information.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "version": "0.1.0",
+    "uptime_seconds": 3600,
+    "consensus_round": 1234,
+    "storage_usage": {
+      "used_bytes": 1073741824,
+      "total_bytes": 10737418240,
+      "shard_count": 150
+    },
+    "network_peers": 25,
+    "wallet_balance": 1000000,
+    "dht_keys": 500
+  },
+  "error": null,
+  "message": "Node status retrieved"
+}
+```
+
+### GET /version
+
+Get the current IPPAN version.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": "0.1.0",
+  "error": null,
+  "message": "Version retrieved"
+}
+```
+
+## Storage Endpoints
+
+### POST /storage/files
+
+Store a file in the distributed storage system.
+
+**Request Body:**
+```json
+{
+  "file_id": "unique_file_identifier",
+  "name": "document.pdf",
+  "data": "base64_encoded_file_data",
+  "mime_type": "application/pdf",
+  "replication_factor": 3,
+  "encryption_enabled": true
+}
 ```
 
 **Response:**
 ```json
 {
-  "status": "running",
-  "uptime": 3600,
-  "version": "1.0.0",
-  "node_id": "abc123...",
-  "network": {
-    "connected_peers": 15,
-    "total_peers": 150
+  "success": true,
+  "data": {
+    "file_id": "unique_file_identifier",
+    "size": 1048576,
+    "shard_count": 2,
+    "message": "File stored successfully"
   },
-  "storage": {
+  "error": null,
+  "message": "File stored successfully"
+}
+```
+
+### GET /storage/files/:file_id
+
+Retrieve a file from the distributed storage system.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "file_id": "unique_file_identifier",
+    "name": "document.pdf",
+    "data": "base64_encoded_file_data",
+    "mime_type": "application/pdf",
+    "size": 1048576,
+    "created_at": "2024-01-15T10:30:00Z"
+  },
+  "error": null,
+  "message": "File retrieved successfully"
+}
+```
+
+### DELETE /storage/files/:file_id
+
+Delete a file from the distributed storage system.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": "unique_file_identifier",
+  "error": null,
+  "message": "File deleted successfully"
+}
+```
+
+### GET /storage/stats
+
+Get comprehensive storage statistics.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "total_files": 150,
+    "total_shards": 450,
+    "total_nodes": 25,
+    "online_nodes": 23,
     "used_bytes": 1073741824,
-    "total_bytes": 107374182400,
-    "files_count": 1250
+    "total_bytes": 10737418240,
+    "replication_factor": 3
   },
-  "consensus": {
-    "current_round": 12345,
-    "is_validator": true,
-    "stake_amount": 50000000000
-  }
+  "error": null,
+  "message": "Storage stats retrieved"
 }
 ```
 
-#### Start Node
+## Network Endpoints
 
-```http
-POST /api/v1/node/start
-```
+### GET /network/peers
 
-**Request:**
-```json
-{
-  "config": {
-    "network_port": 8080,
-    "api_port": 3000,
-    "storage_dir": "/path/to/storage"
-  }
-}
-```
+Get the list of connected peers.
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "Node started successfully",
-  "node_id": "abc123..."
-}
-```
-
-#### Stop Node
-
-```http
-POST /api/v1/node/stop
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Node stopped successfully"
-}
-```
-
-### Storage Operations
-
-#### Upload File
-
-```http
-POST /api/v1/storage/upload
-Content-Type: multipart/form-data
-```
-
-**Request:**
-```bash
-curl -X POST http://localhost:3000/api/v1/storage/upload \
-  -F "file=@/path/to/file.txt" \
-  -F "name=my-document" \
-  -F "encrypt=true"
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "file_hash": "abc123...",
-  "file_size": 1024,
-  "encrypted": true,
-  "upload_time": "2024-01-01T12:00:00Z"
-}
-```
-
-#### Download File
-
-```http
-GET /api/v1/storage/download/{file_hash}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "file_data": "base64_encoded_data",
-  "file_name": "my-document.txt",
-  "file_size": 1024,
-  "download_time": "2024-01-01T12:00:00Z"
-}
-```
-
-#### Get File Info
-
-```http
-GET /api/v1/storage/info/{file_hash}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "file_hash": "abc123...",
-  "file_name": "my-document.txt",
-  "file_size": 1024,
-  "upload_time": "2024-01-01T12:00:00Z",
-  "encrypted": true,
-  "available": true,
-  "replicas": 3
-}
-```
-
-#### List Files
-
-```http
-GET /api/v1/storage/list?page=1&limit=10
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "files": [
-    {
-      "file_hash": "abc123...",
-      "file_name": "document1.txt",
-      "file_size": 1024,
-      "upload_time": "2024-01-01T12:00:00Z"
-    }
+  "data": [
+    "peer_id_1",
+    "peer_id_2",
+    "peer_id_3"
   ],
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "total": 1250,
-    "pages": 125
-  }
+  "error": null,
+  "message": "Peer list retrieved"
 }
 ```
 
-### Wallet Operations
+### DELETE /network/peers/:peer_id
 
-#### Get Wallet Balance
-
-```http
-GET /api/v1/wallet/balance
-```
+Disconnect from a specific peer.
 
 **Response:**
 ```json
 {
   "success": true,
-  "balance": {
-    "total": 1000000000000,
-    "available": 950000000000,
-    "staked": 50000000000,
-    "locked": 0
-  },
-  "currency": "IPN",
-  "decimals": 8
+  "data": "peer_id",
+  "error": null,
+  "message": "Peer disconnected"
 }
 ```
 
-#### Send Payment
+## Consensus Endpoints
 
-```http
-POST /api/v1/wallet/send
-```
+### GET /consensus/round
 
-**Request:**
+Get the current consensus round information.
+
+**Response:**
 ```json
 {
-  "to": "recipient_address",
-  "amount": 1000000000,
-  "fee": 10000000,
+  "success": true,
+  "data": 1234,
+  "error": null,
+  "message": "Consensus round retrieved"
+}
+```
+
+### GET /consensus/validators
+
+Get the list of active validators.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    "validator_id_1",
+    "validator_id_2",
+    "validator_id_3"
+  ],
+  "error": null,
+  "message": "Validator list retrieved"
+}
+```
+
+## Wallet Endpoints
+
+### GET /wallet/balance
+
+Get the current wallet balance.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": 1000000,
+  "error": null,
+  "message": "Wallet balance retrieved"
+}
+```
+
+### GET /wallet/address
+
+Get the wallet address.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": "i1exampleaddress123456789",
+  "error": null,
+  "message": "Wallet address retrieved"
+}
+```
+
+### POST /wallet/send
+
+Send a transaction.
+
+**Request Body:**
+```json
+{
+  "to_address": "i1recipientaddress123456789",
+  "amount": 100000,
+  "fee": 1000,
   "memo": "Payment for services"
 }
 ```
@@ -264,57 +301,55 @@ POST /api/v1/wallet/send
 ```json
 {
   "success": true,
-  "transaction_hash": "tx123...",
-  "amount": 1000000000,
-  "fee": 10000000,
-  "timestamp": "2024-01-01T12:00:00Z"
+  "data": "tx_hash_example",
+  "error": null,
+  "message": "Transaction sent successfully"
 }
 ```
 
-#### Get Transaction History
+## DHT (Distributed Hash Table) Endpoints
 
-```http
-GET /api/v1/wallet/history?page=1&limit=10
-```
+### GET /dht/keys
+
+Get all DHT keys.
 
 **Response:**
 ```json
 {
   "success": true,
-  "transactions": [
-    {
-      "hash": "tx123...",
-      "type": "send",
-      "amount": 1000000000,
-      "fee": 10000000,
-      "timestamp": "2024-01-01T12:00:00Z",
-      "status": "confirmed"
-    }
+  "data": [
+    "key_1",
+    "key_2",
+    "key_3"
   ],
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "total": 150,
-    "pages": 15
-  }
+  "error": null,
+  "message": "DHT keys retrieved"
 }
 ```
 
-### M2M Payment Channels
+### GET /dht/keys/:key
 
-#### Create Payment Channel
+Get a specific DHT value.
 
-```http
-POST /api/v1/wallet/channels
-```
-
-**Request:**
+**Response:**
 ```json
 {
-  "recipient": "recipient_address",
-  "amount": 10000000000,
-  "duration_hours": 24,
-  "description": "IoT device payment channel"
+  "success": true,
+  "data": "dht_value_example",
+  "error": null,
+  "message": "DHT value retrieved"
+}
+```
+
+### POST /dht/keys/:key
+
+Store a value in the DHT.
+
+**Request Body:**
+```json
+{
+  "value": "data_to_store",
+  "ttl": 3600
 }
 ```
 
@@ -322,638 +357,141 @@ POST /api/v1/wallet/channels
 ```json
 {
   "success": true,
-  "channel_id": "ch123...",
-  "recipient": "recipient_address",
-  "total_amount": 10000000000,
-  "remaining_amount": 10000000000,
-  "expires_at": "2024-01-02T12:00:00Z"
+  "data": "key",
+  "error": null,
+  "message": "DHT value stored successfully"
 }
 ```
 
-#### Send Micro-Payment
+## Error Codes
 
-```http
-POST /api/v1/wallet/channels/{channel_id}/pay
-```
+The API uses standard HTTP status codes:
 
-**Request:**
-```json
-{
-  "amount": 1000000,
-  "type": "data_transfer",
-  "metadata": {
-    "bytes_transferred": 1024,
-    "service_type": "sensor_data"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "payment_id": "pay123...",
-  "amount": 1000000,
-  "remaining_amount": 9999000000,
-  "timestamp": "2024-01-01T12:00:00Z"
-}
-```
-
-### Domain Management
-
-#### Register Domain
-
-```http
-POST /api/v1/domains
-```
-
-**Request:**
-```json
-{
-  "name": "alice.ipn",
-  "data": "https://alice.com",
-  "duration_years": 1
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "domain": "alice.ipn",
-  "owner": "owner_address",
-  "expires_at": "2025-01-01T12:00:00Z",
-  "registration_fee": 1000000000
-}
-```
-
-#### Get Domain Info
-
-```http
-GET /api/v1/domains/{domain_name}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "domain": "alice.ipn",
-  "owner": "owner_address",
-  "data": "https://alice.com",
-  "created_at": "2024-01-01T12:00:00Z",
-  "expires_at": "2025-01-01T12:00:00Z",
-  "status": "active"
-}
-```
-
-#### Update Domain
-
-```http
-PUT /api/v1/domains/{domain_name}
-```
-
-**Request:**
-```json
-{
-  "data": "https://new-alice.com"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "domain": "alice.ipn",
-  "updated_at": "2024-01-01T12:00:00Z"
-}
-```
-
-### Network Information
-
-#### Get Network Stats
-
-```http
-GET /api/v1/network/stats
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "total_nodes": 1500,
-  "active_nodes": 1200,
-  "total_storage": 1500000000000000,
-  "used_storage": 750000000000000,
-  "total_transactions": 15000000,
-  "average_block_time": 10.5
-}
-```
-
-#### Get Connected Peers
-
-```http
-GET /api/v1/network/peers
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "peers": [
-    {
-      "node_id": "peer123...",
-      "address": "192.168.1.100:8080",
-      "last_seen": "2024-01-01T12:00:00Z",
-      "latency_ms": 50
-    }
-  ],
-  "total_peers": 15
-}
-```
-
-### Consensus Information
-
-#### Get Consensus Status
-
-```http
-GET /api/v1/consensus/status
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "current_round": 12345,
-  "current_block": "block123...",
-  "validators_count": 100,
-  "total_stake": 50000000000000,
-  "ippan_time": "2024-01-01T12:00:00.000100Z"
-}
-```
-
-### L2 Blockchain Integration
-
-#### Submit L2 Settlement
-
-```http
-POST /api/v1/l2/settlement
-```
-
-**Request:**
-```json
-{
-  "l2_chain_id": 12345,
-  "l2_block_hash": "block123...",
-  "l2_state_root": "state123...",
-  "settlement_amount": 1000000000,
-  "metadata": {
-    "l2_chain_name": "L2_Chain_A",
-    "transaction_count": 150
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "transaction_hash": "tx123...",
-  "l2_chain_id": 12345,
-  "settlement_amount": 1000000000,
-  "timestamp": "2024-01-01T12:00:00Z"
-}
-```
-
-#### Store L2 Data
-
-```http
-POST /api/v1/l2/data
-```
-
-**Request:**
-```json
-{
-  "l2_chain_id": 12345,
-  "data_type": "state_update",
-  "data_hash": "data123...",
-  "data_size": 1024,
-  "data": "base64_encoded_data"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "file_hash": "file123...",
-  "l2_chain_id": 12345,
-  "data_type": "state_update",
-  "storage_fee": 500000,
-  "timestamp": "2024-01-01T12:00:00Z"
-}
-```
-
-#### Get L2 Integration Status
-
-```http
-GET /api/v1/l2/status
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "integrated_l2_chains": [
-    {
-      "chain_id": 12345,
-      "chain_name": "L2_Chain_A",
-      "settlement_count": 150,
-      "data_storage_mb": 1024,
-      "last_settlement": "2024-01-01T12:00:00Z"
-    }
-  ],
-  "total_settlements": 1500,
-  "total_data_storage_mb": 10240
-}
-```
-
-#### Get Recent Blocks
-
-```http
-GET /api/v1/consensus/blocks?limit=10
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "blocks": [
-    {
-      "hash": "block123...",
-      "round": 12345,
-      "timestamp": "2024-01-01T12:00:00Z",
-      "transactions_count": 150,
-      "validator": "validator123..."
-    }
-  ]
-}
-```
-
-## WebSocket API
-
-### Connection
-
-```javascript
-const ws = new WebSocket('ws://localhost:3000/ws');
-
-ws.onopen = function() {
-    console.log('Connected to IPPAN WebSocket');
-};
-
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    console.log('Received:', data);
-};
-
-ws.onclose = function() {
-    console.log('Disconnected from IPPAN WebSocket');
-};
-```
-
-### Subscriptions
-
-#### Subscribe to Network Events
-
-```javascript
-ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'network',
-    events: ['peer_connected', 'peer_disconnected']
-}));
-```
-
-#### Subscribe to Storage Events
-
-```javascript
-ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'storage',
-    events: ['file_uploaded', 'file_downloaded']
-}));
-```
-
-#### Subscribe to Consensus Events
-
-```javascript
-ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'consensus',
-    events: ['block_created', 'transaction_confirmed']
-}));
-```
-
-### Event Types
-
-#### Network Events
-
-```json
-{
-  "type": "network_event",
-  "event": "peer_connected",
-  "data": {
-    "node_id": "peer123...",
-    "address": "192.168.1.100:8080",
-    "timestamp": "2024-01-01T12:00:00Z"
-  }
-}
-```
-
-#### Storage Events
-
-```json
-{
-  "type": "storage_event",
-  "event": "file_uploaded",
-  "data": {
-    "file_hash": "abc123...",
-    "file_size": 1024,
-    "uploader": "uploader123...",
-    "timestamp": "2024-01-01T12:00:00Z"
-  }
-}
-```
-
-#### Consensus Events
-
-```json
-{
-  "type": "consensus_event",
-  "event": "block_created",
-  "data": {
-    "block_hash": "block123...",
-    "round": 12345,
-    "validator": "validator123...",
-    "transactions_count": 150,
-    "timestamp": "2024-01-01T12:00:00Z"
-  }
-}
-```
-
-## Error Handling
-
-### Error Response Format
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "INVALID_INPUT",
-    "message": "Invalid input provided",
-    "details": {
-      "field": "amount",
-      "reason": "Amount must be positive"
-    }
-  },
-  "timestamp": "2024-01-01T12:00:00Z"
-}
-```
-
-### Common Error Codes
-
-| Code | Description |
-|------|-------------|
-| `INVALID_INPUT` | Invalid request parameters |
-| `UNAUTHORIZED` | Authentication required |
-| `FORBIDDEN` | Insufficient permissions |
-| `NOT_FOUND` | Resource not found |
-| `RATE_LIMITED` | Too many requests |
-| `INTERNAL_ERROR` | Server error |
-| `NETWORK_ERROR` | Network communication error |
-| `STORAGE_ERROR` | Storage operation failed |
-| `WALLET_ERROR` | Wallet operation failed |
-| `CONSENSUS_ERROR` | Consensus operation failed |
+- `200 OK` - Request successful
+- `400 Bad Request` - Invalid request parameters
+- `404 Not Found` - Resource not found
+- `500 Internal Server Error` - Server error
 
 ## Rate Limiting
 
-### Rate Limit Headers
+Currently, the API does not implement rate limiting. In production, this will be implemented to prevent abuse.
 
-```
-X-RateLimit-Limit: 1000
-X-RateLimit-Remaining: 999
-X-RateLimit-Reset: 1640995200
-```
+## Examples
 
-### Rate Limits
-
-| Endpoint | Limit | Window |
-|----------|-------|--------|
-| General | 1000 | 1 hour |
-| File Upload | 100 | 1 hour |
-| Payment | 50 | 1 hour |
-| Domain Registration | 10 | 1 hour |
-
-## Client Libraries
-
-### JavaScript/TypeScript
+### Store a File
 
 ```bash
-npm install ippan-client
+curl -X POST http://localhost:8080/storage/files \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_id": "my_document",
+    "name": "document.txt",
+    "data": "SGVsbG8sIFdvcmxkIQ==",
+    "mime_type": "text/plain",
+    "replication_factor": 3,
+    "encryption_enabled": true
+  }'
 ```
 
+### Get Node Status
+
+```bash
+curl http://localhost:8080/status
+```
+
+### Send a Transaction
+
+```bash
+curl -X POST http://localhost:8080/wallet/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to_address": "i1recipientaddress123456789",
+    "amount": 100000,
+    "fee": 1000,
+    "memo": "Payment"
+  }'
+```
+
+## SDK Examples
+
+### JavaScript/Node.js
+
 ```javascript
-import { IppanClient } from 'ippan-client';
+const axios = require('axios');
 
-const client = new IppanClient({
-    baseUrl: 'http://localhost:3000/api/v1',
-    apiKey: 'your-api-key'
-});
+const API_BASE = 'http://localhost:8080';
 
-// Upload file
-const result = await client.storage.uploadFile('/path/to/file.txt');
+// Store a file
+async function storeFile(fileId, name, data, mimeType) {
+  const response = await axios.post(`${API_BASE}/storage/files`, {
+    file_id: fileId,
+    name: name,
+    data: Buffer.from(data).toString('base64'),
+    mime_type: mimeType,
+    replication_factor: 3,
+    encryption_enabled: true
+  });
+  return response.data;
+}
 
-// Send payment
-const tx = await client.wallet.sendPayment('recipient', 1000000000);
-
-// Get network stats
-const stats = await client.network.getStats();
+// Get node status
+async function getNodeStatus() {
+  const response = await axios.get(`${API_BASE}/status`);
+  return response.data;
+}
 ```
 
 ### Python
 
-```bash
-pip install ippan-python
-```
-
 ```python
-from ippan import IppanClient
+import requests
+import base64
 
-client = IppanClient(
-    base_url='http://localhost:3000/api/v1',
-    api_key='your-api-key'
-)
+API_BASE = 'http://localhost:8080'
 
-# Upload file
-result = client.storage.upload_file('/path/to/file.txt')
+def store_file(file_id, name, data, mime_type):
+    response = requests.post(f'{API_BASE}/storage/files', json={
+        'file_id': file_id,
+        'name': name,
+        'data': base64.b64encode(data).decode('utf-8'),
+        'mime_type': mime_type,
+        'replication_factor': 3,
+        'encryption_enabled': True
+    })
+    return response.json()
 
-# Send payment
-tx = client.wallet.send_payment('recipient', 1000000000)
-
-# Get network stats
-stats = client.network.get_stats()
+def get_node_status():
+    response = requests.get(f'{API_BASE}/status')
+    return response.json()
 ```
 
-### Rust
+## Development
 
-```toml
-# Cargo.toml
-[dependencies]
-ippan-client = "1.0.0"
+To start the API server in development mode:
+
+```bash
+cargo run --bin ippan
 ```
 
-```rust
-use ippan_client::IppanClient;
+The API will be available at `http://localhost:8080`.
 
-let client = IppanClient::new(
-    "http://localhost:3000/api/v1",
-    "your-api-key"
-);
+## Testing
 
-// Upload file
-let result = client.storage.upload_file("/path/to/file.txt").await?;
+Run the test suite:
 
-// Send payment
-let tx = client.wallet.send_payment("recipient", 1000000000).await?;
-
-// Get network stats
-let stats = client.network.get_stats().await?;
+```bash
+cargo test --lib
 ```
 
-## Examples
+## Contributing
 
-### Complete File Upload Example
+When adding new endpoints:
 
-```javascript
-const fs = require('fs');
-const FormData = require('form-data');
+1. Add the endpoint handler in `src/api/http.rs`
+2. Add comprehensive tests
+3. Update this documentation
+4. Follow the existing response format patterns
 
-async function uploadFile(filePath, fileName) {
-    const form = new FormData();
-    form.append('file', fs.createReadStream(filePath));
-    form.append('name', fileName);
-    form.append('encrypt', 'true');
+## Version History
 
-    const response = await fetch('http://localhost:3000/api/v1/storage/upload', {
-        method: 'POST',
-        body: form,
-        headers: {
-            'Authorization': 'Bearer YOUR_API_KEY'
-        }
-    });
-
-    const result = await response.json();
-    return result.file_hash;
-}
-
-// Usage
-const fileHash = await uploadFile('/path/to/document.txt', 'my-document');
-console.log('File uploaded:', fileHash);
-```
-
-### M2M Payment Channel Example
-
-```javascript
-async function createPaymentChannel(recipient, amount, duration) {
-    const response = await fetch('http://localhost:3000/api/v1/wallet/channels', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer YOUR_API_KEY'
-        },
-        body: JSON.stringify({
-            recipient,
-            amount,
-            duration_hours: duration,
-            description: 'IoT device payment channel'
-        })
-    });
-
-    return await response.json();
-}
-
-async function sendMicroPayment(channelId, amount, metadata) {
-    const response = await fetch(`http://localhost:3000/api/v1/wallet/channels/${channelId}/pay`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer YOUR_API_KEY'
-        },
-        body: JSON.stringify({
-            amount,
-            type: 'data_transfer',
-            metadata
-        })
-    });
-
-    return await response.json();
-}
-
-// Usage
-const channel = await createPaymentChannel('recipient_address', 10000000000, 24);
-console.log('Channel created:', channel.channel_id);
-
-const payment = await sendMicroPayment(channel.channel_id, 1000000, {
-    bytes_transferred: 1024,
-    service_type: 'sensor_data'
-});
-console.log('Payment sent:', payment.payment_id);
-```
-
-### Real-time Monitoring Example
-
-```javascript
-const ws = new WebSocket('ws://localhost:3000/ws');
-
-ws.onopen = function() {
-    // Subscribe to all events
-    ws.send(JSON.stringify({
-        type: 'subscribe',
-        channel: 'network',
-        events: ['peer_connected', 'peer_disconnected']
-    }));
-
-    ws.send(JSON.stringify({
-        type: 'subscribe',
-        channel: 'storage',
-        events: ['file_uploaded', 'file_downloaded']
-    }));
-
-    ws.send(JSON.stringify({
-        type: 'subscribe',
-        channel: 'consensus',
-        events: ['block_created', 'transaction_confirmed']
-    }));
-};
-
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    
-    switch(data.type) {
-        case 'network_event':
-            console.log('Network event:', data.event, data.data);
-            break;
-        case 'storage_event':
-            console.log('Storage event:', data.event, data.data);
-            break;
-        case 'consensus_event':
-            console.log('Consensus event:', data.event, data.data);
-            break;
-    }
-};
-```
-
----
-
-For more information, visit:
-- [IPPAN Documentation](https://docs.ippan.net)
-- [IPPAN GitHub](https://github.com/ippan/ippan)
-- [IPPAN Discord](https://discord.gg/ippan) 
+- **v0.1.0** - Initial API implementation with storage, network, consensus, wallet, and DHT endpoints 

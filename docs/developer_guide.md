@@ -1195,3 +1195,35 @@ For more information, visit:
 - [IPPAN Documentation](https://docs.ippan.net)
 - [IPPAN GitHub](https://github.com/ippan/ippan)
 - [IPPAN Discord](https://discord.gg/ippan) 
+
+## TXT Metadata for Files and Servers
+
+### **Implementation Details**
+- **TXT Metadata Structure:**
+  - Defined in `ipn_metadata.rs` with `IpTxtType` and `IpTxtRecord`.
+- **Discovery and Storage:**
+  - Implemented in `ipn_dht.rs` for storing and retrieving TXT records.
+- **Verification Module:**
+  - Located in `txt_verifier.rs` for signature and timestamp validation.
+- **REST API:**
+  - Developed in `txt_api.rs` to expose endpoints for TXT record management.
+- **GUI Integration:**
+  - Implemented in `gui_integration.rs` for displaying metadata in the user interface.
+- **CLI Commands:**
+  - Added in `cli.rs` for command-line management of TXT records.
+- **On-Chain Transactions:**
+  - Implemented in `txt_announce.rs` for optional on-chain anchoring of TXT records. 
+
+## Archive Mode with Automatic Website Sync
+
+### **Implementation Details**
+- **Archive Mode Configuration:**
+  - Added in `node_config.rs` to enable archive mode and configure sync targets.
+- **Local Archive Store:**
+  - Implemented in `tx_archive.rs` using RocksDB for storing validated transactions, file manifests, TXT records, and zk-STARK proofs.
+- **Sync Uploader:**
+  - Developed in `sync_uploader.rs` to handle background syncing of transactions to external APIs.
+- **CLI Commands:**
+  - Added in `cli.rs` for managing archive mode, including checking status and pushing transactions immediately.
+- **API Specification:**
+  - Updated in `api_spec.md` with the REST endpoint specification for receiving transactions at `ippan.net`. 

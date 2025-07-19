@@ -1,373 +1,266 @@
-//! NAT traversal module
-//! 
-//! Handles UPnP and STUN for NAT traversal.
+//! NAT traversal service for IPPAN network
 
-use crate::{error::IppanError, Result};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info, warn};
+use crate::Result;
+use serde::{Deserialize, Serialize};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use chrono::{DateTime, Utc};
 
-/// NAT manager for handling NAT traversal
-pub struct NatManager {
-    /// NAT configuration
-    config: super::NatConfig,
-    /// UPnP client
-    upnp_client: Option<UpnpClient>,
-    /// STUN client
-    stun_client: Option<StunClient>,
-    /// External address
-    external_addr: Option<SocketAddr>,
-    /// Port mappings
-    port_mappings: Vec<PortMapping>,
-}
-
-/// UPnP client for port forwarding
-struct UpnpClient {
-    /// Gateway address
-    gateway_addr: SocketAddr,
-    /// Control URL
-    control_url: String,
-    /// Service type
-    service_type: String,
-}
-
-/// STUN client for discovering external address
-struct StunClient {
-    /// STUN servers
-    servers: Vec<SocketAddr>,
-    /// External address
-    external_addr: Option<SocketAddr>,
-}
-
-/// Port mapping information
-#[derive(Debug, Clone)]
-pub struct PortMapping {
-    /// Internal port
-    pub internal_port: u16,
+/// NAT traversal service
+pub struct NATService {
+    /// External IP address
+    external_ip: Option<IpAddr>,
     /// External port
-    pub external_port: u16,
-    /// Protocol
-    pub protocol: Protocol,
-    /// Description
-    pub description: String,
-    /// Mapping ID
-    pub mapping_id: String,
+    external_port: Option<u16>,
+    /// NAT type
+    nat_type: NATType,
+    /// UPnP enabled
+    upnp_enabled: bool,
+    /// STUN servers
+    stun_servers: Vec<String>,
+    /// Running flag
+    running: bool,
 }
 
-/// Protocol type
-#[derive(Debug, Clone)]
-pub enum Protocol {
-    /// TCP protocol
-    Tcp,
-    /// UDP protocol
-    Udp,
+/// NAT type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum NATType {
+    /// No NAT
+    Open,
+    /// Full cone NAT
+    FullCone,
+    /// Restricted cone NAT
+    RestrictedCone,
+    /// Port restricted cone NAT
+    PortRestrictedCone,
+    /// Symmetric NAT
+    Symmetric,
+    /// Unknown
+    Unknown,
 }
 
-impl NatManager {
-    /// Create a new NAT manager
-    pub async fn new(config: super::NatConfig) -> Result<Self> {
-        let mut nat_manager = Self {
-            config,
-            upnp_client: None,
-            stun_client: None,
-            external_addr: None,
-            port_mappings: Vec::new(),
-        };
-        
-        // Initialize UPnP if enabled
-        if nat_manager.config.enable_upnp {
-            if let Ok(upnp_client) = UpnpClient::new().await {
-                nat_manager.upnp_client = Some(upnp_client);
-                info!("UPnP client initialized");
-            } else {
-                warn!("Failed to initialize UPnP client");
-            }
+impl NATService {
+    /// Create a new NAT service
+    pub fn new() -> Self {
+        Self {
+            external_ip: None,
+            external_port: None,
+            nat_type: NATType::Unknown,
+            upnp_enabled: false,
+            stun_servers: vec![
+                "stun.l.google.com:19302".to_string(),
+                "stun1.l.google.com:19302".to_string(),
+            ],
+            running: false,
         }
-        
-        // Initialize STUN if enabled
-        if nat_manager.config.enable_stun {
-            let stun_client = StunClient::new();
-            nat_manager.stun_client = Some(stun_client);
-            info!("STUN client initialized");
-        }
-        
-        Ok(nat_manager)
     }
-    
-    /// Start the NAT manager
+
+    /// Start the NAT service
     pub async fn start(&mut self) -> Result<()> {
-        info!("Starting NAT manager");
+        log::info!("Starting NAT traversal service");
+        self.running = true;
         
-        // Discover external address
-        self.discover_external_address().await?;
+        // Discover external IP
+        self.discover_external_ip().await?;
         
-        // Set up port mappings if UPnP is available
-        if let Some(ref mut upnp_client) = self.upnp_client {
-            self.setup_port_mappings(upnp_client).await?;
-        }
+        // Determine NAT type
+        self.determine_nat_type().await?;
         
-        // Start periodic tasks
-        self.start_periodic_tasks().await?;
-        
-        Ok(())
-    }
-    
-    /// Discover external address using STUN
-    async fn discover_external_address(&mut self) -> Result<()> {
-        if let Some(ref mut stun_client) = self.stun_client {
-            match stun_client.discover_external_address().await {
-                Ok(addr) => {
-                    self.external_addr = Some(addr);
-                    info!("Discovered external address: {}", addr);
-                }
-                Err(e) => {
-                    warn!("Failed to discover external address via STUN: {}", e);
-                }
-            }
-        }
-        Ok(())
-    }
-    
-    /// Set up port mappings via UPnP
-    async fn setup_port_mappings(&mut self, upnp_client: &mut UpnpClient) -> Result<()> {
-        // Get local addresses
-        let local_addrs = self.get_local_addresses().await?;
-        
-        for local_addr in local_addrs {
-            if let IpAddr::V4(ipv4) = local_addr.ip() {
-                // Map TCP port
-                if let Ok(mapping) = upnp_client.add_port_mapping(
-                    local_addr.port(),
-                    local_addr.port(),
-                    Protocol::Tcp,
-                    "IPPAN Node TCP",
-                ).await {
-                    self.port_mappings.push(mapping);
-                    info!("Mapped TCP port {} -> {}", local_addr.port(), local_addr.port());
-                }
-                
-                // Map UDP port
-                if let Ok(mapping) = upnp_client.add_port_mapping(
-                    local_addr.port(),
-                    local_addr.port(),
-                    Protocol::Udp,
-                    "IPPAN Node UDP",
-                ).await {
-                    self.port_mappings.push(mapping);
-                    info!("Mapped UDP port {} -> {}", local_addr.port(), local_addr.port());
-                }
-            }
+        // Try UPnP port mapping
+        if self.upnp_enabled {
+            self.try_upnp_mapping().await?;
         }
         
         Ok(())
     }
-    
-    /// Get local network addresses
-    async fn get_local_addresses(&self) -> Result<Vec<SocketAddr>> {
-        let mut addrs = Vec::new();
-        
-        // Get all network interfaces
-        for iface in get_if_addrs::get_if_addrs()? {
-            if !iface.is_loopback() {
-                let addr = SocketAddr::new(iface.addr.ip(), 0);
-                addrs.push(addr);
-            }
-        }
-        
-        Ok(addrs)
-    }
-    
-    /// Start periodic tasks
-    async fn start_periodic_tasks(&mut self) -> Result<()> {
-        let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
-        
-        loop {
-            interval.tick().await;
-            
-            // Refresh external address
-            self.discover_external_address().await?;
-            
-            // Refresh port mappings
-            if let Some(ref mut upnp_client) = self.upnp_client {
-                self.refresh_port_mappings(upnp_client).await?;
-            }
-        }
-    }
-    
-    /// Refresh port mappings
-    async fn refresh_port_mappings(&mut self, upnp_client: &mut UpnpClient) -> Result<()> {
-        for mapping in &self.port_mappings {
-            if let Err(e) = upnp_client.refresh_port_mapping(mapping).await {
-                warn!("Failed to refresh port mapping {}: {}", mapping.mapping_id, e);
-            }
-        }
-        Ok(())
-    }
-    
-    /// Get external address
-    pub fn external_address(&self) -> Option<SocketAddr> {
-        self.external_addr
-    }
-    
-    /// Get port mappings
-    pub fn port_mappings(&self) -> &[PortMapping] {
-        &self.port_mappings
-    }
-    
-    /// Clean up port mappings
-    pub async fn cleanup(&mut self) -> Result<()> {
-        if let Some(ref mut upnp_client) = self.upnp_client {
-            for mapping in &self.port_mappings {
-                if let Err(e) = upnp_client.delete_port_mapping(&mapping.mapping_id).await {
-                    warn!("Failed to delete port mapping {}: {}", mapping.mapping_id, e);
-                }
-            }
-        }
-        Ok(())
-    }
-}
 
-impl UpnpClient {
-    /// Create a new UPnP client
-    async fn new() -> Result<Self> {
-        // Discover UPnP gateway
-        let gateway_addr = Self::discover_gateway().await?;
-        let (control_url, service_type) = Self::get_control_url(&gateway_addr).await?;
+    /// Stop the NAT service
+    pub async fn stop(&mut self) -> Result<()> {
+        log::info!("Stopping NAT traversal service");
+        self.running = false;
         
-        Ok(Self {
-            gateway_addr,
-            control_url,
-            service_type,
-        })
+        // Remove UPnP port mappings
+        if self.upnp_enabled {
+            self.remove_upnp_mapping().await?;
+        }
+        
+        Ok(())
     }
-    
-    /// Discover UPnP gateway
-    async fn discover_gateway() -> Result<SocketAddr> {
-        // Simple UPnP discovery - in a real implementation, you'd use a proper UPnP library
-        // For now, we'll return a default gateway address
-        Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 1900))
+
+    /// Discover external IP address
+    async fn discover_external_ip(&mut self) -> Result<()> {
+        log::info!("Discovering external IP address...");
+        
+        // Try STUN servers
+        for stun_server in &self.stun_servers {
+            if let Ok(ip) = self.query_stun_server(stun_server).await {
+                self.external_ip = Some(ip);
+                log::info!("Discovered external IP: {}", ip);
+                return Ok(());
+            }
+        }
+        
+        // Fallback to HTTP-based IP discovery
+        if let Ok(ip) = self.query_http_ip_service().await {
+            self.external_ip = Some(ip);
+            log::info!("Discovered external IP via HTTP: {}", ip);
+            return Ok(());
+        }
+        
+        log::warn!("Failed to discover external IP address");
+        Ok(())
     }
-    
-    /// Get control URL from gateway
-    async fn get_control_url(gateway_addr: &SocketAddr) -> Result<(String, String)> {
-        // In a real implementation, you'd parse the UPnP device description
-        // For now, return default values
-        Ok((
-            format!("http://{}:2869/upnp/control/WANIPConn1", gateway_addr.ip()),
-            "urn:schemas-upnp-org:service:WANIPConnection:1".to_string(),
+
+    /// Determine NAT type
+    async fn determine_nat_type(&mut self) -> Result<()> {
+        log::info!("Determining NAT type...");
+        
+        // TODO: Implement NAT type detection
+        // This would involve multiple STUN queries with different source ports
+        // and analyzing the responses to determine the NAT behavior
+        
+        self.nat_type = NATType::Unknown;
+        log::info!("NAT type: {:?}", self.nat_type);
+        
+        Ok(())
+    }
+
+    /// Try UPnP port mapping
+    async fn try_upnp_mapping(&mut self) -> Result<()> {
+        log::info!("Attempting UPnP port mapping...");
+        
+        // TODO: Implement UPnP port mapping
+        // This would involve discovering UPnP devices on the network
+        // and requesting port mappings
+        
+        log::info!("UPnP port mapping not implemented yet");
+        Ok(())
+    }
+
+    /// Remove UPnP port mapping
+    async fn remove_upnp_mapping(&mut self) -> Result<()> {
+        log::info!("Removing UPnP port mapping...");
+        
+        // TODO: Implement UPnP port mapping removal
+        
+        Ok(())
+    }
+
+    /// Query STUN server
+    async fn query_stun_server(&self, server: &str) -> Result<IpAddr> {
+        // TODO: Implement STUN query
+        // This would involve sending STUN binding requests
+        // and parsing the responses to extract the mapped address
+        
+        log::debug!("Querying STUN server: {}", server);
+        
+        // For now, return a placeholder
+        Err(crate::error::IppanError::Network(
+            "STUN query not implemented yet".to_string()
         ))
     }
-    
-    /// Add a port mapping
-    async fn add_port_mapping(
-        &self,
-        internal_port: u16,
-        external_port: u16,
-        protocol: Protocol,
-        description: &str,
-    ) -> Result<PortMapping> {
-        // In a real implementation, you'd send a SOAP request to the UPnP gateway
-        // For now, we'll simulate success
+
+    /// Query HTTP IP service
+    async fn query_http_ip_service(&self) -> Result<IpAddr> {
+        // TODO: Implement HTTP-based IP discovery
+        // This would involve making HTTP requests to services like
+        // ipify.org, ipinfo.io, or similar
         
-        let mapping_id = format!("ippan_{}_{}_{}", 
-            internal_port, 
-            external_port, 
-            match protocol {
-                Protocol::Tcp => "tcp",
-                Protocol::Udp => "udp",
-            }
-        );
+        log::debug!("Querying HTTP IP service");
         
-        Ok(PortMapping {
-            internal_port,
-            external_port,
-            protocol,
-            description: description.to_string(),
-            mapping_id,
-        })
+        // For now, return a placeholder
+        Err(crate::error::IppanError::Network(
+            "HTTP IP query not implemented yet".to_string()
+        ))
     }
-    
-    /// Refresh a port mapping
-    async fn refresh_port_mapping(&self, _mapping: &PortMapping) -> Result<()> {
-        // In a real implementation, you'd refresh the mapping via UPnP
-        Ok(())
+
+    /// Get external IP address
+    pub fn get_external_ip(&self) -> Option<IpAddr> {
+        self.external_ip
     }
-    
-    /// Delete a port mapping
-    async fn delete_port_mapping(&self, _mapping_id: &str) -> Result<()> {
-        // In a real implementation, you'd delete the mapping via UPnP
-        Ok(())
+
+    /// Get external port
+    pub fn get_external_port(&self) -> Option<u16> {
+        self.external_port
+    }
+
+    /// Get NAT type
+    pub fn get_nat_type(&self) -> &NATType {
+        &self.nat_type
+    }
+
+    /// Check if UPnP is enabled
+    pub fn is_upnp_enabled(&self) -> bool {
+        self.upnp_enabled
+    }
+
+    /// Enable UPnP
+    pub fn enable_upnp(&mut self) {
+        self.upnp_enabled = true;
+    }
+
+    /// Disable UPnP
+    pub fn disable_upnp(&mut self) {
+        self.upnp_enabled = false;
+    }
+
+    /// Add STUN server
+    pub fn add_stun_server(&mut self, server: String) {
+        self.stun_servers.push(server);
+    }
+
+    /// Get STUN servers
+    pub fn get_stun_servers(&self) -> &[String] {
+        &self.stun_servers
     }
 }
 
-impl StunClient {
-    /// Create a new STUN client
-    fn new() -> Self {
-        let servers = vec![
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 19302), // Google STUN
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 3478),  // Cloudflare STUN
-        ];
-        
-        Self {
-            servers,
-            external_addr: None,
-        }
-    }
-    
-    /// Discover external address using STUN
-    async fn discover_external_address(&mut self) -> Result<SocketAddr> {
-        for server in &self.servers {
-            match self.query_stun_server(*server).await {
-                Ok(addr) => {
-                    self.external_addr = Some(addr);
-                    return Ok(addr);
-                }
-                Err(e) => {
-                    debug!("STUN query failed for {}: {}", server, e);
-                }
-            }
-        }
-        
-        Err(IppanError::NetworkError("Failed to discover external address via STUN".to_string()))
-    }
-    
-    /// Query a STUN server
-    async fn query_stun_server(&self, server: SocketAddr) -> Result<SocketAddr> {
-        // In a real implementation, you'd implement the STUN protocol
-        // For now, we'll simulate a successful response
-        
-        // Simulate network delay
-        sleep(Duration::from_millis(100)).await;
-        
-        // Return a simulated external address
-        Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1)), 12345))
-    }
-    
-    /// Get external address
-    pub fn external_address(&self) -> Option<SocketAddr> {
-        self.external_addr
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl std::fmt::Display for Protocol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Protocol::Tcp => write!(f, "TCP"),
-            Protocol::Udp => write!(f, "UDP"),
-        }
+    #[tokio::test]
+    async fn test_nat_service_creation() {
+        let service = NATService::new();
+        
+        assert_eq!(service.nat_type, NATType::Unknown);
+        assert!(!service.upnp_enabled);
+        assert!(!service.stun_servers.is_empty());
     }
-}
 
-impl std::fmt::Display for PortMapping {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}:{} -> {}:{} ({})",
-            self.external_port,
-            self.protocol,
-            self.internal_port,
-            self.protocol,
-            self.description
-        )
+    #[tokio::test]
+    async fn test_nat_service_start_stop() {
+        let mut service = NATService::new();
+        
+        service.start().await.unwrap();
+        assert!(service.running);
+        
+        service.stop().await.unwrap();
+        assert!(!service.running);
+    }
+
+    #[tokio::test]
+    async fn test_upnp_control() {
+        let mut service = NATService::new();
+        
+        assert!(!service.is_upnp_enabled());
+        
+        service.enable_upnp();
+        assert!(service.is_upnp_enabled());
+        
+        service.disable_upnp();
+        assert!(!service.is_upnp_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_stun_server_management() {
+        let mut service = NATService::new();
+        
+        let initial_count = service.get_stun_servers().len();
+        
+        service.add_stun_server("stun.example.com:3478".to_string());
+        
+        assert_eq!(service.get_stun_servers().len(), initial_count + 1);
     }
 }

@@ -5,6 +5,7 @@
 use crate::{Result, IppanError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub mod blockdag;
 pub mod hashtimer;
@@ -13,11 +14,12 @@ pub mod randomness;
 pub mod round;
 pub mod roundchain;
 
-use blockdag::{Block, BlockDAG, Transaction};
+pub use blockdag::*;
+
 use hashtimer::HashTimer;
 use ippan_time::IppanTimeManager;
 
-use round::RoundManager;
+use round::{RoundManager, RoundTimeoutConfig};
 
 /// Custom serialization for byte arrays
 mod byte_array_serde {
@@ -82,7 +84,6 @@ impl Default for ConsensusConfig {
 }
 
 /// Consensus engine for IPPAN blockchain
-#[derive(Debug)]
 pub struct ConsensusEngine {
     /// BlockDAG for managing the blockchain
     blockdag: BlockDAG,
@@ -109,7 +110,15 @@ impl ConsensusEngine {
         
         Self {
             blockdag,
-            round_manager: RoundManager::new(config.max_validators),
+            round_manager: RoundManager::new(
+                Arc::new("placeholder".to_string()),
+                RoundTimeoutConfig {
+                    proposal_timeout_ms: 30000,
+                    validation_timeout_ms: 60000,
+                    finalization_timeout_ms: 90000,
+                    max_round_duration_ms: 120000,
+                }
+            ),
             time_manager,
             config,
             validators: HashMap::new(),
@@ -120,7 +129,7 @@ impl ConsensusEngine {
     pub fn add_validator(&mut self, node_id: [u8; 32], stake: u64) -> Result<()> {
         if stake >= self.config.min_stake {
             self.validators.insert(node_id, stake);
-            self.round_manager.add_validator(node_id, stake);
+            self.round_manager.add_validator(format!("{:?}", node_id), stake);
         }
         Ok(())
     }
@@ -128,7 +137,7 @@ impl ConsensusEngine {
     /// Remove a validator
     pub fn remove_validator(&mut self, node_id: &[u8; 32]) -> Result<()> {
         self.validators.remove(node_id);
-        self.round_manager.remove_validator(node_id);
+        self.round_manager.remove_validator(format!("{:?}", node_id));
         Ok(())
     }
 
@@ -143,14 +152,16 @@ impl ConsensusEngine {
         transactions: Vec<Transaction>,
         validator_id: [u8; 32],
     ) -> Result<Block> {
-        let round = self.round_manager.current_round();
+        let round = self.round_manager.get_current_round_number();
         let ippan_time = self.time_manager.median_time_ns();
         
         // Create HashTimer for the block
-        let hashtimer = HashTimer::with_ippan_time(
-            [0u8; 32], // Will be calculated
-            validator_id,
+        let hashtimer = HashTimer::with_timestamp(
             ippan_time,
+            &format!("{:?}", validator_id),
+            round,
+            0, // sequence
+            0, // drift_ns
         );
         
         let block = Block::new(
@@ -166,7 +177,7 @@ impl ConsensusEngine {
     /// Validate a block
     pub fn validate_block(&self, block: &Block) -> Result<bool> {
         // Check if validator is authorized for this round
-        if !self.round_manager.is_validator_authorized(&block.header.validator_id, block.header.round) {
+        if !self.round_manager.is_validator_authorized(&format!("{:?}", block.header.validator_id), block.header.round) {
             return Ok(false);
         }
 
@@ -244,7 +255,7 @@ impl ConsensusEngine {
         }
 
         // Check if the block's IPPAN Time is close to our median
-        let drift_ns = self.time_manager.get_time_drift_ns(block.header.hashtimer.ippan_time_ns);
+        let drift_ns = self.time_manager.get_time_drift_ns(block.header.hashtimer.ippan_time_ns());
         let max_drift_ns = self.config.max_time_drift * 1_000_000_000;
         
         Ok(drift_ns.abs() <= max_drift_ns as i64)
@@ -269,7 +280,7 @@ impl ConsensusEngine {
         }
 
         // Check if the transaction's IPPAN Time is close to our median
-        let drift_ns = self.time_manager.get_time_drift_ns(tx.hashtimer.ippan_time_ns);
+        let drift_ns = self.time_manager.get_time_drift_ns(tx.hashtimer.ippan_time_ns());
         let max_drift_ns = self.config.max_time_drift * 1_000_000_000;
         
         Ok(drift_ns.abs() <= max_drift_ns as i64)
@@ -295,7 +306,7 @@ impl ConsensusEngine {
 
     /// Get current round
     pub fn current_round(&self) -> u64 {
-        self.round_manager.current_round()
+        self.round_manager.get_current_round_number()
     }
 
     /// Get current validators

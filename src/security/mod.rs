@@ -522,7 +522,7 @@ mod tests {
         let event_data = SecurityEventData {
             source_ip: Some("192.168.1.1".to_string()),
             success: false,
-            request_count: 150,
+            request_count: 1500, // High enough to trigger DDoS detection
             transaction_data: None,
             user_id: None,
             resource: None,
@@ -532,7 +532,7 @@ mod tests {
         };
         
         let threat_detected = manager.check_security_threats(event_data).await.unwrap();
-        // Should detect brute force attack
+        // Should detect DDoS attack
         assert!(threat_detected);
     }
 

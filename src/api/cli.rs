@@ -125,7 +125,7 @@ impl CliHandler {
         proof_data: Option<String>,
         fee: u64,
     ) -> Result<()> {
-        let proof_type_enum = proof_type.as_ref().map(|pt| match pt.as_str() {
+        let proof_type_enum = proof_type.as_ref().map(|pt| Ok(match pt.as_str() {
             "none" => ProofType::None,
             "signature" => ProofType::Signature,
             "zk" => ProofType::ZK,
@@ -134,7 +134,7 @@ impl CliHandler {
             _ => return Err(crate::error::IppanError::Validation(
                 format!("Invalid proof type: {}", pt)
             )),
-        }).transpose()?;
+        })).transpose()?;
 
         let proof_data_bytes = proof_data
             .map(|pd| hex::decode(pd))
@@ -146,12 +146,12 @@ impl CliHandler {
         let anchor_tx = AnchorTx {
             external_chain_id: chain_id,
             external_state_root: state_root,
-            timestamp: HashTimer::new([0u8; 32], [0u8; 32]),
+            timestamp: HashTimer::new("cli_node", 0, 0),
             proof_type: proof_type_enum,
             proof_data: proof_data_bytes.unwrap_or_default(),
         };
 
-        let anchor_id = self.manager.submit_anchor(anchor_tx).await?;
+        let anchor_id = self.manager.submit_anchor(anchor_tx.clone()).await?;
         println!("✅ Anchor submitted successfully!");
         println!("   Anchor ID: {}", anchor_id);
         println!("   Chain ID: {}", anchor_tx.external_chain_id);
@@ -316,7 +316,7 @@ mod tests {
             "testchain".to_string(),
             "0x1234567890abcdef".to_string(),
             Some("signature".to_string()),
-            Some("0102030405060708".to_string()),
+            Some("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40".to_string()), // 64 bytes
             1000000,
         ).await;
         

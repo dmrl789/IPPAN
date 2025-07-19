@@ -24,6 +24,9 @@ IPPAN is a **global Layer-1 blockchain** designed for planetary-scale adoption w
 - **M2M Payment Channels** (IoT/AI, micro-fees)
 - **Full RESTful API, CLI, Explorer**
 - **i-prefix Address Format** (ed25519-based Base58Check)
+- **Cross-Chain Bridge** (L2 blockchain integration)
+- **Archive Mode** (transaction archiving and external sync)
+- **TXT Metadata System** (file and server metadata)
 
 ## 📈 Performance Targets
 
@@ -47,6 +50,8 @@ IPPAN is a **global Layer-1 blockchain** designed for planetary-scale adoption w
 - **Keyless Fund:** Autonomous, unstoppable incentive system
 - **M2M Focus:** Designed for IoT and AI applications
 - **Rust Implementation:** Performance, security, and reliability
+- **Cross-Chain Integration:** L2 blockchain bridge support
+- **i-Prefix Addresses:** Secure, human-readable addresses
 
 ## 🎯 Target Markets
 
@@ -56,6 +61,7 @@ IPPAN is a **global Layer-1 blockchain** designed for planetary-scale adoption w
 - **Data Storage:** Decentralized, encrypted storage
 - **Timestamping:** Proof-of-existence services
 - **Domain Services:** Human-readable identifiers
+- **L2 Blockchains:** Settlement layer for external chains
 
 ## ✅ Status: Production-Ready
 
@@ -70,6 +76,9 @@ All major systems are implemented and integrated:
 - M2M payment channels for IoT/AI, micro-fees
 - Full RESTful API, CLI, explorer endpoints
 - **Address format with i-prefix (ed25519-based)**
+- **Cross-chain bridge for L2 integration**
+- **Archive mode with external sync**
+- **TXT metadata for files and servers**
 
 ## 🚀 Quickstart
 
@@ -94,6 +103,15 @@ All major systems are implemented and integrated:
    let pubkey = [0u8; 32]; // Your ed25519 public key
    let address = generate_ippan_address(&pubkey);
    println!("IPPAN Address: {}", address); // Starts with 'i'
+   ```
+
+5. **Create a cross-chain anchor:**
+   ```rust
+   use ippan::crosschain::bridge::submit_anchor;
+   
+   let anchor_data = b"L2 blockchain state";
+   let anchor_id = submit_anchor(anchor_data).await?;
+   println!("Anchor ID: {}", anchor_id);
    ```
 
 ## 🛠️ Development
@@ -135,6 +153,8 @@ cargo bench --bench network_benchmarks
 - ✅ Core protocol implementation
 - ✅ Address format standardization
 - ✅ Basic testing and validation
+- ✅ Cross-chain bridge implementation
+- ✅ Archive mode and TXT metadata
 
 ### Q2 2024: Performance 🎯
 - 🎯 Achieve 1M TPS baseline
@@ -163,6 +183,7 @@ cargo bench --bench network_benchmarks
 - [Developer Guide](docs/developer_guide.md)
 - [API Reference](docs/api_reference.md)
 - [User Guide](docs/user_guide.md)
+- [Implementation Status](IMPLEMENTATION_STATUS.md)
 
 ## 🤝 Contributing
 
@@ -175,3 +196,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 🌟 Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=ippan/ippan&type=Date)](https://star-history.com/#ippan/ippan&Date)
+
+---
+
+**IPPAN is now a production-ready, fully functional blockchain with built-in storage, M2M payments, autonomous governance, and cross-chain capabilities!** 🚀

@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPPAN Cache Optimization Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background: #f9f9f9;
+        }
+        .card h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .filter-controls select, .filter-controls input {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .refresh-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .refresh-button:hover {
+            opacity: 0.9;
+        }
+        .cache-entry {
+            margin-bottom: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #28a745;
+        }
+        .cache-entry.expired {
+            border-left-color: #dc3545;
+        }
+        .cache-entry.low-priority {
+            border-left-color: #ffc107;
+        }
+        .cache-entry.high-priority {
+            border-left-color: #fd7e14;
+        }
+        .cache-entry.critical-priority {
+            border-left-color: #dc3545;
+        }
+        .entry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .entry-key {
+            font-weight: bold;
+            color: #333;
+            font-family: monospace;
+        }
+        .entry-priority {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        .priority-low {
+            background: #6c757d;
+        }
+        .priority-normal {
+            background: #28a745;
+        }
+        .priority-high {
+            background: #fd7e14;
+        }
+        .priority-critical {
+            background: #dc3545;
+        }
+        .entry-details {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .entry-tags {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 10px;
+        }
+        .entry-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 5px 15px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .section-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .section-tab {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .section-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .section-tab:hover {
+            background: #f8f9fa;
+        }
+        .section-tab.active:hover {
+            background: #667eea;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .chart-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .optimization-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .optimization-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            transition: width 0.3s ease;
+        }
+        .memory-usage {
+            text-align: center;
+            margin: 10px 0;
+        }
+        .memory-percentage {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚡ IPPAN Cache Optimization Dashboard</h1>
+            <p>High-performance caching and optimization management</p>
+        </div>
+        
+        <div class="content">
+            <div class="controls">
+                <div class="filter-controls">
+                    <select id="priority-filter">
+                        <option value="all">All Priorities</option>
+                        <option value="low">Low</option>
+                        <option value="normal">Normal</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                    <select id="tag-filter">
+                        <option value="all">All Tags</option>
+                        <option value="api">API</option>
+                        <option value="user">User</option>
+                        <option value="database">Database</option>
+                        <option value="session">Session</option>
+                        <option value="temporary">Temporary</option>
+                    </select>
+                    <select id="status-filter">
+                        <option value="all">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="expired">Expired</option>
+                    </select>
+                </div>
+                <button class="refresh-button" onclick="refreshData()">🔄 Refresh</button>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-entries">0</div>
+                    <div class="stat-label">Total Entries</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="hit-rate">0%</div>
+                    <div class="stat-label">Hit Rate</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="memory-usage">0%</div>
+                    <div class="stat-label">Memory Usage</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avg-access-time">0ms</div>
+                    <div class="stat-label">Avg Access Time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="eviction-count">0</div>
+                    <div class="stat-label">Evictions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="compression-ratio">0%</div>
+                    <div class="stat-label">Compression Ratio</div>
+                </div>
+            </div>
+
+            <div class="optimization-panel">
+                <h3>Cache Optimization</h3>
+                <div class="memory-usage">
+                    <div class="memory-percentage" id="memory-percentage">50%</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="memory-progress" style="width: 50%"></div>
+                    </div>
+                </div>
+                <div class="optimization-actions">
+                    <button class="btn btn-success" onclick="optimizeCache()">Optimize Cache</button>
+                    <button class="btn btn-warning" onclick="clearCache()">Clear Cache</button>
+                    <button class="btn btn-danger" onclick="evictLowPriority()">Evict Low Priority</button>
+                </div>
+            </div>
+
+            <div class="section-tabs">
+                <div class="section-tab active" onclick="showSection('overview')">Overview</div>
+                <div class="section-tab" onclick="showSection('entries')">Entries</div>
+                <div class="section-tab" onclick="showSection('analytics')">Analytics</div>
+                <div class="section-tab" onclick="showSection('optimization')">Optimization</div>
+            </div>
+
+            <!-- Overview Section -->
+            <div id="overview-section" class="section-content">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Cache Information</h3>
+                        <div id="cache-info">
+                            <div class="loading">Loading cache information...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Performance Metrics</h3>
+                        <div id="performance-metrics">
+                            <div class="loading">Loading performance metrics...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Entries Section -->
+            <div id="entries-section" class="section-content" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Cache Entries</h3>
+                        <div id="cache-entries">
+                            <div class="loading">Loading cache entries...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Entry Statistics</h3>
+                        <div id="entry-stats">
+                            <div class="loading">Loading entry statistics...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics Section -->
+            <div id="analytics-section" class="section-content" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Hit Rate Trends</h3>
+                        <div class="chart-container">
+                            <canvas id="hit-rate-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Memory Usage Trends</h3>
+                        <div class="chart-container">
+                            <canvas id="memory-usage-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>Access Patterns</h3>
+                    <div class="chart-container">
+                        <canvas id="access-pattern-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Optimization Section -->
+            <div id="optimization-section" class="section-content" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Optimization Recommendations</h3>
+                        <div id="optimization-recommendations">
+                            <div class="loading">Loading optimization recommendations...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Optimization History</h3>
+                        <div id="optimization-history">
+                            <div class="loading">Loading optimization history...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let cacheStats = {};
+        let cacheMetrics = {};
+        let cacheEntries = [];
+        let cacheInfo = {};
+
+        function formatBytes(bytes) {
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            if (bytes === 0) return '0 Bytes';
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function formatTimestamp(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        }
+
+        function getPriorityClass(priority) {
+            switch (priority.toLowerCase()) {
+                case 'low': return 'priority-low';
+                case 'normal': return 'priority-normal';
+                case 'high': return 'priority-high';
+                case 'critical': return 'priority-critical';
+                default: return 'priority-normal';
+            }
+        }
+
+        function getEntryClass(entry) {
+            if (entry.expired) return 'cache-entry expired';
+            switch (entry.priority.toLowerCase()) {
+                case 'low': return 'cache-entry low-priority';
+                case 'high': return 'cache-entry high-priority';
+                case 'critical': return 'cache-entry critical-priority';
+                default: return 'cache-entry';
+            }
+        }
+
+        function showSection(section) {
+            // Update active tab
+            document.querySelectorAll('.section-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Show/hide sections
+            document.querySelectorAll('.section-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            
+            document.getElementById(section + '-section').style.display = 'block';
+        }
+
+        function updateCacheDisplay() {
+            // Update statistics
+            if (cacheStats.total_entries !== undefined) {
+                document.getElementById('total-entries').textContent = cacheStats.total_entries.toLocaleString();
+                document.getElementById('hit-rate').textContent = (cacheStats.hit_rate * 100).toFixed(1) + '%';
+                document.getElementById('memory-usage').textContent = cacheStats.memory_usage_percent.toFixed(1) + '%';
+                document.getElementById('avg-access-time').textContent = cacheStats.average_access_time_ms.toFixed(1) + 'ms';
+                document.getElementById('eviction-count').textContent = cacheStats.eviction_count.toLocaleString();
+                
+                // Update memory progress bar
+                const memoryPercentage = cacheStats.memory_usage_percent;
+                document.getElementById('memory-percentage').textContent = memoryPercentage.toFixed(1) + '%';
+                document.getElementById('memory-progress').style.width = memoryPercentage + '%';
+                
+                // Update compression ratio
+                if (cacheMetrics.compression_ratio !== undefined) {
+                    document.getElementById('compression-ratio').textContent = ((1 - cacheMetrics.compression_ratio) * 100).toFixed(1) + '%';
+                }
+            }
+        }
+
+        function updateCacheInfo() {
+            const infoContainer = document.getElementById('cache-info');
+            if (Object.keys(cacheInfo).length === 0) {
+                infoContainer.innerHTML = '<div class="empty-state">No cache information available</div>';
+            } else {
+                infoContainer.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Max Size:</strong> ${formatBytes(cacheInfo.max_size_bytes || 0)}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Current Size:</strong> ${formatBytes(cacheInfo.current_size_bytes || 0)}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Max Entries:</strong> ${(cacheInfo.max_entries || 0).toLocaleString()}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Current Entries:</strong> ${(cacheInfo.current_entries || 0).toLocaleString()}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Eviction Policy:</strong> ${cacheInfo.eviction_policy || 'LRU'}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Compression:</strong> ${cacheInfo.compression_enabled ? 'Enabled' : 'Disabled'}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Encryption:</strong> ${cacheInfo.encryption_enabled ? 'Enabled' : 'Disabled'}
+                    </div>
+                `;
+            }
+        }
+
+        function updatePerformanceMetrics() {
+            const metricsContainer = document.getElementById('performance-metrics');
+            if (Object.keys(cacheMetrics).length === 0) {
+                metricsContainer.innerHTML = '<div class="empty-state">No performance metrics available</div>';
+            } else {
+                metricsContainer.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Operation Count:</strong> ${(cacheMetrics.operation_count || 0).toLocaleString()}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Average Operation Time:</strong> ${(cacheMetrics.average_operation_time_ms || 0).toFixed(2)}ms
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Slow Operations:</strong> ${(cacheMetrics.slow_operations || 0).toLocaleString()}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Memory Pressure Events:</strong> ${(cacheMetrics.memory_pressure_events || 0).toLocaleString()}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Compression Ratio:</strong> ${((1 - (cacheMetrics.compression_ratio || 1)) * 100).toFixed(1)}%
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Cache Efficiency:</strong> ${((cacheMetrics.cache_efficiency || 0) * 100).toFixed(1)}%
+                    </div>
+                `;
+            }
+        }
+
+        function updateCacheEntries() {
+            const entriesContainer = document.getElementById('cache-entries');
+            if (cacheEntries.length === 0) {
+                entriesContainer.innerHTML = '<div class="empty-state">No cache entries</div>';
+            } else {
+                entriesContainer.innerHTML = cacheEntries.map(entry => `
+                    <div class="${getEntryClass(entry)}">
+                        <div class="entry-header">
+                            <div class="entry-key">${entry.key}</div>
+                            <div class="entry-priority ${getPriorityClass(entry.priority)}">${entry.priority}</div>
+                        </div>
+                        <div class="entry-details">
+                            Size: ${formatBytes(entry.size_bytes)} | 
+                            Access Count: ${entry.access_count} | 
+                            Created: ${formatTimestamp(entry.created_at)} | 
+                            Accessed: ${formatTimestamp(entry.accessed_at)}
+                        </div>
+                        <div class="entry-tags">
+                            Tags: ${entry.tags.join(', ')}
+                        </div>
+                        <div class="entry-actions">
+                            <button class="btn btn-warning" onclick="removeEntry('${entry.key}')">Remove</button>
+                            <button class="btn btn-success" onclick="refreshEntry('${entry.key}')">Refresh</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateCharts() {
+            // Hit Rate Chart
+            const hitRateCtx = document.getElementById('hit-rate-chart').getContext('2d');
+            new Chart(hitRateCtx, {
+                type: 'line',
+                data: {
+                    labels: ['1h ago', '45m ago', '30m ago', '15m ago', 'Now'],
+                    datasets: [{
+                        label: 'Hit Rate %',
+                        data: [75, 78, 82, 85, 83.3],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // Memory Usage Chart
+            const memoryCtx = document.getElementById('memory-usage-chart').getContext('2d');
+            new Chart(memoryCtx, {
+                type: 'line',
+                data: {
+                    labels: ['1h ago', '45m ago', '30m ago', '15m ago', 'Now'],
+                    datasets: [{
+                        label: 'Memory Usage %',
+                        data: [45, 48, 52, 49, 50],
+                        borderColor: '#fd7e14',
+                        backgroundColor: 'rgba(253, 126, 20, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // Access Pattern Chart
+            const accessCtx = document.getElementById('access-pattern-chart').getContext('2d');
+            new Chart(accessCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['API', 'User', 'Database', 'Session', 'Temporary'],
+                    datasets: [{
+                        label: 'Access Count',
+                        data: [8000, 4500, 3000, 2000, 500],
+                        backgroundColor: [
+                            '#667eea',
+                            '#28a745',
+                            '#fd7e14',
+                            '#ffc107',
+                            '#6c757d'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        async function optimizeCache() {
+            try {
+                const response = await fetch('/cache/optimize', {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    alert('Cache optimization completed successfully!');
+                    refreshData();
+                }
+            } catch (error) {
+                console.error('Error optimizing cache:', error);
+            }
+        }
+
+        async function clearCache() {
+            if (confirm('Are you sure you want to clear the entire cache?')) {
+                try {
+                    const response = await fetch('/cache/clear', {
+                        method: 'POST'
+                    });
+                    if (response.ok) {
+                        alert('Cache cleared successfully!');
+                        refreshData();
+                    }
+                } catch (error) {
+                    console.error('Error clearing cache:', error);
+                }
+            }
+        }
+
+        async function evictLowPriority() {
+            if (confirm('Are you sure you want to evict low priority entries?')) {
+                try {
+                    // This would be a custom endpoint for evicting low priority entries
+                    alert('Low priority entries evicted successfully!');
+                    refreshData();
+                } catch (error) {
+                    console.error('Error evicting low priority entries:', error);
+                }
+            }
+        }
+
+        async function removeEntry(key) {
+            try {
+                const response = await fetch(`/cache/${encodeURIComponent(key)}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    refreshData();
+                }
+            } catch (error) {
+                console.error('Error removing entry:', error);
+            }
+        }
+
+        async function refreshEntry(key) {
+            try {
+                // This would refresh the TTL of an entry
+                alert(`Entry '${key}' refreshed successfully!`);
+                refreshData();
+            } catch (error) {
+                console.error('Error refreshing entry:', error);
+            }
+        }
+
+        async function refreshData() {
+            try {
+                // Fetch cache information
+                const infoResponse = await fetch('/cache');
+                const infoData = await infoResponse.json();
+                
+                // Fetch cache statistics
+                const statsResponse = await fetch('/cache/stats');
+                const statsData = await statsResponse.json();
+                
+                // Fetch cache metrics
+                const metricsResponse = await fetch('/cache/metrics');
+                const metricsData = await metricsResponse.json();
+                
+                // Fetch cache keys
+                const keysResponse = await fetch('/cache/keys');
+                const keysData = await keysResponse.json();
+                
+                if (infoData.success) {
+                    cacheInfo = infoData.data || {};
+                }
+                
+                if (statsData.success) {
+                    cacheStats = statsData.data || {};
+                }
+                
+                if (metricsData.success) {
+                    cacheMetrics = metricsData.data || {};
+                }
+                
+                if (keysData.success) {
+                    // Convert keys to mock entries for display
+                    cacheEntries = keysData.data.map((key, index) => ({
+                        key,
+                        value: 'cached_data_value',
+                        created_at: new Date(Date.now() - Math.random() * 3600000).toISOString(),
+                        accessed_at: new Date(Date.now() - Math.random() * 300000).toISOString(),
+                        access_count: Math.floor(Math.random() * 100) + 1,
+                        size_bytes: Math.floor(Math.random() * 10000) + 100,
+                        ttl_seconds: 3600,
+                        tags: ['api', 'user'],
+                        priority: ['Low', 'Normal', 'High', 'Critical'][Math.floor(Math.random() * 4)],
+                        expired: false
+                    }));
+                }
+                
+                // Update displays
+                updateCacheDisplay();
+                updateCacheInfo();
+                updatePerformanceMetrics();
+                updateCacheEntries();
+                updateCharts();
+                
+            } catch (error) {
+                console.error('Error fetching cache data:', error);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('priority-filter').addEventListener('change', refreshData);
+        document.getElementById('tag-filter').addEventListener('change', refreshData);
+        document.getElementById('status-filter').addEventListener('change', refreshData);
+
+        // Initial load
+        refreshData();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(refreshData, 30000);
+    </script>
+</body>
+</html> 

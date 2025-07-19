@@ -1,0 +1,14 @@
+[
+  {
+    "round_number": 1,
+    "block_count": 10,
+    "transaction_count": 50,
+    "proof_size": 32,
+    "proving_time_ms": 500,
+    "verification_time_ms": 5,
+    "propagation_latency_ms": 278,
+    "finality_accuracy": 99.5,
+    "inclusion_success_rate": 0.0,
+    "timestamp_auditability_rate": 0.0
+  }
+]

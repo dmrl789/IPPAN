@@ -298,7 +298,7 @@ impl AnchorManager {
         let mut chain_count = 0;
         let mut proof_type_distribution = HashMap::new();
         
-        for (chain_id, chain_anchors) in anchors.iter() {
+        for (_chain_id, chain_anchors) in anchors.iter() {
             chain_count += 1;
             total_anchors += chain_anchors.len();
             
@@ -344,7 +344,7 @@ mod tests {
         let anchor_tx = AnchorTx {
             external_chain_id: "testchain".to_string(),
             external_state_root: "0x1234567890abcdef".to_string(),
-            timestamp: HashTimer::new([0u8; 32], [0u8; 32]),
+            timestamp: HashTimer::new("test_node", 1, 1),
             proof_type: Some(ProofType::Signature),
             proof_data: vec![1; 64], // Valid signature length
         };
@@ -364,7 +364,7 @@ mod tests {
         let valid_anchor = AnchorTx {
             external_chain_id: "testchain".to_string(),
             external_state_root: "0x1234567890abcdef".to_string(),
-            timestamp: HashTimer::new([0u8; 32], [0u8; 32]),
+            timestamp: HashTimer::new("test_node", 1, 1),
             proof_type: Some(ProofType::Signature),
             proof_data: vec![1; 64],
         };
@@ -376,7 +376,7 @@ mod tests {
         let invalid_anchor = AnchorTx {
             external_chain_id: "testchain".to_string(),
             external_state_root: "0xabcdef1234567890".to_string(),
-            timestamp: HashTimer::new([0u8; 32], [0u8; 32]),
+            timestamp: HashTimer::new("test_node", 1, 1),
             proof_type: Some(ProofType::Merkle),
             proof_data: vec![1; 32],
         };
@@ -392,7 +392,7 @@ mod tests {
         let anchor_tx = AnchorTx {
             external_chain_id: "testchain".to_string(),
             external_state_root: "0x1234567890abcdef".to_string(),
-            timestamp: HashTimer::new([0u8; 32], [0u8; 32]),
+            timestamp: HashTimer::new("test_node", 1, 1),
             proof_type: Some(ProofType::Signature),
             proof_data: vec![1; 64],
         };

@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPPAN Quantum System Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background: #f9f9f9;
+        }
+        .card h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .filter-controls select, .filter-controls input {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .refresh-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .refresh-button:hover {
+            opacity: 0.9;
+        }
+        .job-item {
+            margin-bottom: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #28a745;
+        }
+        .job-item.pending {
+            border-left-color: #ffc107;
+        }
+        .job-item.running {
+            border-left-color: #17a2b8;
+        }
+        .job-item.failed {
+            border-left-color: #dc3545;
+        }
+        .job-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .job-name {
+            font-weight: bold;
+            color: #333;
+            font-family: monospace;
+        }
+        .job-status {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        .status-pending {
+            background: #ffc107;
+            color: #212529;
+        }
+        .status-running {
+            background: #17a2b8;
+        }
+        .status-completed {
+            background: #28a745;
+        }
+        .status-failed {
+            background: #dc3545;
+        }
+        .job-details {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .job-metrics {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 10px;
+        }
+        .job-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 5px 15px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .section-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .section-tab {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .section-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .section-tab:hover {
+            background: #f8f9fa;
+        }
+        .section-tab.active:hover {
+            background: #667eea;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .chart-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .quantum-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .quantum-form {
+            display: grid;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .form-group label {
+            font-weight: bold;
+            color: #333;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .quantum-result {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+        .keypair-info {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #e0e0e0;
+        }
+        .keypair-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .keypair-id {
+            font-weight: bold;
+            color: #333;
+            font-size: 18px;
+        }
+        .keypair-algorithm {
+            font-family: monospace;
+            color: #666;
+            font-size: 12px;
+        }
+        .keypair-details {
+            font-size: 14px;
+            color: #666;
+        }
+        .qkd-session-info {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #e0e0e0;
+        }
+        .qkd-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .qkd-id {
+            font-weight: bold;
+            color: #333;
+            font-size: 18px;
+        }
+        .qkd-protocol {
+            font-family: monospace;
+            color: #666;
+            font-size: 12px;
+        }
+        .qkd-details {
+            font-size: 14px;
+            color: #666;
+        }
+        .quantum-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .quantum-low {
+            background: #28a745;
+        }
+        .quantum-medium {
+            background: #ffc107;
+        }
+        .quantum-high {
+            background: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚛️ IPPAN Quantum System Dashboard</h1>
+            <p>Quantum computing, cryptography, and key distribution management</p>
+        </div>
+        
+        <div class="content">
+            <div class="controls">
+                <div class="filter-controls">
+                    <select id="algorithm-filter">
+                        <option value="all">All Algorithms</option>
+                        <option value="Shor">Shor's Algorithm</option>
+                        <option value="Grover">Grover's Algorithm</option>
+                        <option value="QuantumFourierTransform">Quantum Fourier Transform</option>
+                        <option value="QuantumPhaseEstimation">Quantum Phase Estimation</option>
+                        <option value="QuantumWalk">Quantum Walk</option>
+                        <option value="QuantumMachineLearning">Quantum Machine Learning</option>
+                        <option value="QuantumOptimization">Quantum Optimization</option>
+                        <option value="QuantumSimulation">Quantum Simulation</option>
+                        <option value="QuantumCryptography">Quantum Cryptography</option>
+                        <option value="QuantumKeyDistribution">Quantum Key Distribution</option>
+                    </select>
+                    <select id="status-filter">
+                        <option value="all">All Statuses</option>
+                        <option value="Idle">Idle</option>
+                        <option value="Running">Running</option>
+                        <option value="Completed">Completed</option>
+                        <option value="Failed">Failed</option>
+                        <option value="Error">Error</option>
+                    </select>
+                </div>
+                <button class="refresh-button" onclick="refreshData()">🔄 Refresh</button>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-jobs">0</div>
+                    <div class="stat-label">Total Jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="completed-jobs">0</div>
+                    <div class="stat-label">Completed Jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="active-jobs">0</div>
+                    <div class="stat-label">Active Jobs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="quantum-advantage">0</div>
+                    <div class="stat-label">Quantum Advantage</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="key-pairs">0</div>
+                    <div class="stat-label">Key Pairs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="qkd-sessions">0</div>
+                    <div class="stat-label">QKD Sessions</div>
+                </div>
+            </div>
+
+            <div class="section-tabs">
+                <div class="section-tab active" onclick="showSection('overview')">Overview</div>
+                <div class="section-tab" onclick="showSection('jobs')">Quantum Jobs</div>
+                <div class="section-tab" onclick="showSection('keypairs')">Key Pairs</div>
+                <div class="section-tab" onclick="showSection('qkd')">QKD Sessions</div>
+                <div class="section-tab" onclick="showSection('analytics')">Analytics</div>
+            </div>
+
+            <!-- Overview Section -->
+            <div id="overview-section" class="section-content">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Quantum System Information</h3>
+                        <div id="quantum-info">
+                            <div class="loading">Loading quantum system information...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Quantum Metrics</h3>
+                        <div id="quantum-metrics">
+                            <div class="loading">Loading quantum metrics...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Jobs Section -->
+            <div id="jobs-section" class="section-content" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Quantum Jobs</h3>
+                        <div id="quantum-jobs-list">
+                            <div class="loading">Loading quantum jobs...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Job Statistics</h3>
+                        <div id="job-stats">
+                            <div class="loading">Loading job statistics...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Key Pairs Section -->
+            <div id="keypairs-section" class="section-content" style="display: none;">
+                <div class="quantum-panel">
+                    <h3>Generate Quantum Key Pair</h3>
+                    <div class="quantum-form">
+                        <div class="form-group">
+                            <label for="keypair-algorithm">Algorithm:</label>
+                            <select id="keypair-algorithm">
+                                <option value="LatticeBased">Lattice-Based</option>
+                                <option value="CodeBased">Code-Based</option>
+                                <option value="Multivariate">Multivariate</option>
+                                <option value="HashBased">Hash-Based</option>
+                                <option value="IsogenyBased">Isogeny-Based</option>
+                                <option value="Supersingular">Supersingular</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="keypair-size">Key Size (bits):</label>
+                            <input type="number" id="keypair-size" value="256" min="128" max="4096">
+                        </div>
+                        <button class="btn btn-success" onclick="generateKeyPair()">Generate Key Pair</button>
+                    </div>
+                    <div id="keypair-result" style="display: none;"></div>
+                </div>
+                
+                <div class="card">
+                    <h3>Quantum Key Pairs</h3>
+                    <div id="quantum-keypairs-list">
+                        <div class="loading">Loading quantum key pairs...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- QKD Sessions Section -->
+            <div id="qkd-section" class="section-content" style="display: none;">
+                <div class="quantum-panel">
+                    <h3>Start QKD Session</h3>
+                    <div class="quantum-form">
+                        <div class="form-group">
+                            <label for="qkd-protocol">Protocol:</label>
+                            <select id="qkd-protocol">
+                                <option value="BB84">BB84</option>
+                                <option value="BBM92">BBM92</option>
+                                <option value="E91">E91</option>
+                                <option value="SARG04">SARG04</option>
+                                <option value="DecoyState">Decoy State</option>
+                                <option value="ContinuousVariable">Continuous Variable</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="alice-id">Alice ID:</label>
+                            <input type="text" id="alice-id" placeholder="alice_node_001">
+                        </div>
+                        <div class="form-group">
+                            <label for="bob-id">Bob ID:</label>
+                            <input type="text" id="bob-id" placeholder="bob_node_002">
+                        </div>
+                        <div class="form-group">
+                            <label for="key-length">Key Length (bits):</label>
+                            <input type="number" id="key-length" value="256" min="128" max="4096">
+                        </div>
+                        <button class="btn btn-success" onclick="startQKDSession()">Start QKD Session</button>
+                    </div>
+                    <div id="qkd-result" style="display: none;"></div>
+                </div>
+                
+                <div class="card">
+                    <h3>QKD Sessions</h3>
+                    <div id="qkd-sessions-list">
+                        <div class="loading">Loading QKD sessions...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analytics Section -->
+            <div id="analytics-section" class="section-content" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Job Performance</h3>
+                        <div class="chart-container">
+                            <canvas id="job-performance-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Algorithm Distribution</h3>
+                        <div class="chart-container">
+                            <canvas id="algorithm-distribution-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>Quantum Advantage Analysis</h3>
+                    <div class="chart-container">
+                        <canvas id="quantum-advantage-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let quantumJobs = [];
+        let quantumKeyPairs = [];
+        let qkdSessions = [];
+        let quantumStats = {};
+        let quantumMetrics = {};
+
+        function formatTimestamp(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        }
+
+        function getStatusClass(status) {
+            switch (status.toLowerCase()) {
+                case 'idle': return 'status-pending';
+                case 'running': return 'status-running';
+                case 'completed': return 'status-completed';
+                case 'failed': return 'status-failed';
+                case 'error': return 'status-failed';
+                default: return 'status-pending';
+            }
+        }
+
+        function getJobItemClass(status) {
+            switch (status.toLowerCase()) {
+                case 'running': return 'job-item running';
+                case 'failed': return 'job-item failed';
+                case 'error': return 'job-item failed';
+                default: return 'job-item';
+            }
+        }
+
+        function getQuantumClass(value, max) {
+            const percentage = (value / max) * 100;
+            if (percentage < 50) return 'quantum-low';
+            if (percentage < 80) return 'quantum-medium';
+            return 'quantum-high';
+        }
+
+        function showSection(section) {
+            // Update active tab
+            document.querySelectorAll('.section-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Show/hide sections
+            document.querySelectorAll('.section-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            
+            document.getElementById(section + '-section').style.display = 'block';
+        }
+
+        function updateQuantumDisplay() {
+            // Update statistics
+            if (quantumStats.total_jobs !== undefined) {
+                document.getElementById('total-jobs').textContent = quantumStats.total_jobs.toLocaleString();
+                document.getElementById('completed-jobs').textContent = quantumStats.completed_jobs.toLocaleString();
+                document.getElementById('active-jobs').textContent = quantumStats.active_jobs.toLocaleString();
+                document.getElementById('quantum-advantage').textContent = quantumStats.quantum_advantage_count.toLocaleString();
+                document.getElementById('key-pairs').textContent = quantumStats.key_pairs_generated.toLocaleString();
+                document.getElementById('qkd-sessions').textContent = quantumStats.qkd_sessions_completed.toLocaleString();
+            }
+        }
+
+        function updateQuantumInfo() {
+            const infoContainer = document.getElementById('quantum-info');
+            if (Object.keys(quantumStats).length === 0) {
+                infoContainer.innerHTML = '<div class="empty-state">No quantum system information available</div>';
+            } else {
+                infoContainer.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Total Jobs:</strong> ${quantumStats.total_jobs || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Completed Jobs:</strong> ${quantumStats.completed_jobs || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Active Jobs:</strong> ${quantumStats.active_jobs || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Total Qubits:</strong> ${quantumStats.total_qubits || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Available Qubits:</strong> ${quantumStats.available_qubits || 0}
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Quantum Advantage:</strong> ${quantumStats.quantum_advantage_count || 0}
+                    </div>
+                `;
+            }
+        }
+
+        function updateQuantumMetrics() {
+            const metricsContainer = document.getElementById('quantum-metrics');
+            if (Object.keys(quantumMetrics).length === 0) {
+                metricsContainer.innerHTML = '<div class="empty-state">No quantum metrics available</div>';
+            } else {
+                metricsContainer.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>CPU Usage:</strong> ${(quantumMetrics.cpu_usage_percent || 0).toFixed(1)}%
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Memory Usage:</strong> ${(quantumMetrics.memory_usage_percent || 0).toFixed(1)}%
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Quantum Processor:</strong> ${(quantumMetrics.quantum_processor_usage_percent || 0).toFixed(1)}%
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Average Fidelity:</strong> ${((quantumMetrics.average_fidelity || 0) * 100).toFixed(1)}%
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Error Rate:</strong> ${((quantumMetrics.error_rate || 0) * 100).toFixed(3)}%
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Coherence Time:</strong> ${(quantumMetrics.coherence_time_ms || 0).toFixed(1)}ms
+                    </div>
+                `;
+            }
+        }
+
+        function updateQuantumJobs() {
+            const jobsContainer = document.getElementById('quantum-jobs-list');
+            if (quantumJobs.length === 0) {
+                jobsContainer.innerHTML = '<div class="empty-state">No quantum jobs available</div>';
+            } else {
+                jobsContainer.innerHTML = quantumJobs.map(job => `
+                    <div class="${getJobItemClass(job.status)}">
+                        <div class="job-header">
+                            <div class="job-name">${job.algorithm}</div>
+                            <div class="job-status ${getStatusClass(job.status)}">${job.status}</div>
+                        </div>
+                        <div class="job-details">
+                            Job ID: ${job.id} | 
+                            Qubits: ${job.config?.qubits || 'N/A'} | 
+                            Created: ${formatTimestamp(job.created_at)}
+                        </div>
+                        <div class="job-metrics">
+                            ${job.result ? `Execution Time: ${job.result.execution_time_ms}ms | Fidelity: ${(job.result.fidelity * 100).toFixed(1)}% | Success: ${(job.result.success_probability * 100).toFixed(1)}%` : 'No results yet'}
+                        </div>
+                        <div class="job-actions">
+                            <button class="btn btn-info" onclick="viewJob('${job.id}')">View</button>
+                            ${job.status === 'Idle' ? '<button class="btn btn-success" onclick="executeJob(\'' + job.id + '\')">Execute</button>' : ''}
+                            <button class="btn btn-danger" onclick="deleteJob('${job.id}')">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateJobStats() {
+            const statsContainer = document.getElementById('job-stats');
+            if (Object.keys(quantumStats).length === 0) {
+                statsContainer.innerHTML = '<div class="empty-state">No job statistics available</div>';
+            } else {
+                statsContainer.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Jobs by Algorithm:</strong>
+                        <ul>
+                            ${Object.entries(quantumStats.algorithms_by_type || {}).map(([algorithm, count]) => 
+                                `<li>${algorithm}: ${count}</li>`
+                            ).join('')}
+                        </ul>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Jobs by Status:</strong>
+                        <ul>
+                            ${Object.entries(quantumStats.jobs_by_status || {}).map(([status, count]) => 
+                                `<li>${status}: ${count}</li>`
+                            ).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+
+        function updateQuantumKeyPairs() {
+            const keypairsContainer = document.getElementById('quantum-keypairs-list');
+            if (quantumKeyPairs.length === 0) {
+                keypairsContainer.innerHTML = '<div class="empty-state">No quantum key pairs available</div>';
+            } else {
+                keypairsContainer.innerHTML = quantumKeyPairs.map(keypair => `
+                    <div class="keypair-info">
+                        <div class="keypair-header">
+                            <div class="keypair-id">Key Pair ${keypair.id}</div>
+                            <div class="keypair-algorithm">${keypair.algorithm}</div>
+                        </div>
+                        <div class="keypair-details">
+                            Key Size: ${keypair.key_size} bits | 
+                            Created: ${formatTimestamp(keypair.created_at)} | 
+                            ${keypair.is_compromised ? '<span style="color: #dc3545;">Compromised</span>' : '<span style="color: #28a745;">Secure</span>'}
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateQKDSessions() {
+            const sessionsContainer = document.getElementById('qkd-sessions-list');
+            if (qkdSessions.length === 0) {
+                sessionsContainer.innerHTML = '<div class="empty-state">No QKD sessions available</div>';
+            } else {
+                sessionsContainer.innerHTML = qkdSessions.map(session => `
+                    <div class="qkd-session-info">
+                        <div class="qkd-header">
+                            <div class="qkd-id">QKD Session ${session.id}</div>
+                            <div class="qkd-protocol">${session.protocol}</div>
+                        </div>
+                        <div class="qkd-details">
+                            Alice: ${session.alice_id} | Bob: ${session.bob_id} | 
+                            Key Length: ${session.key_length} bits | 
+                            Status: ${session.status} | 
+                            Created: ${formatTimestamp(session.created_at)}
+                        </div>
+                        <div class="qkd-details">
+                            Bit Error Rate: ${(session.bit_error_rate * 100).toFixed(2)}% | 
+                            Quantum Bit Error Rate: ${(session.quantum_bit_error_rate * 100).toFixed(3)}% | 
+                            Secret Key Rate: ${session.secret_key_rate.toFixed(1)} bits/s
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateCharts() {
+            // Job Performance Chart
+            const performanceCtx = document.getElementById('job-performance-chart').getContext('2d');
+            new Chart(performanceCtx, {
+                type: 'line',
+                data: {
+                    labels: ['1h ago', '45m ago', '30m ago', '15m ago', 'Now'],
+                    datasets: [{
+                        label: 'Execution Time (ms)',
+                        data: [5000, 4500, 6000, 3500, 4000],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Algorithm Distribution Chart
+            const algorithmCtx = document.getElementById('algorithm-distribution-chart').getContext('2d');
+            new Chart(algorithmCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Shor', 'Grover', 'QFT', 'QPE', 'QML'],
+                    datasets: [{
+                        data: [25, 20, 15, 10, 30],
+                        backgroundColor: [
+                            '#667eea',
+                            '#28a745',
+                            '#fd7e14',
+                            '#ffc107',
+                            '#6c757d'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true
+                }
+            });
+
+            // Quantum Advantage Chart
+            const advantageCtx = document.getElementById('quantum-advantage-chart').getContext('2d');
+            new Chart(advantageCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Shor', 'Grover', 'QFT', 'QPE', 'QML'],
+                    datasets: [{
+                        label: 'Quantum Advantage',
+                        data: [true, false, true, true, false],
+                        backgroundColor: [
+                            '#28a745',
+                            '#dc3545',
+                            '#28a745',
+                            '#28a745',
+                            '#dc3545'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1
+                        }
+                    }
+                }
+            });
+        }
+
+        async function generateKeyPair() {
+            const algorithm = document.getElementById('keypair-algorithm').value;
+            const keySize = parseInt(document.getElementById('keypair-size').value);
+            
+            try {
+                const response = await fetch('/quantum/keypairs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        algorithm: algorithm,
+                        key_size: keySize
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    const resultContainer = document.getElementById('keypair-result');
+                    resultContainer.style.display = 'block';
+                    resultContainer.innerHTML = `
+                        <h4>Key Pair Generated</h4>
+                        <p><strong>Key Pair ID:</strong> ${result.keypair_id}</p>
+                        <p><strong>Algorithm:</strong> ${algorithm}</p>
+                        <p><strong>Key Size:</strong> ${keySize} bits</p>
+                    `;
+                    refreshData();
+                }
+            } catch (error) {
+                console.error('Error generating key pair:', error);
+                alert('Error generating key pair');
+            }
+        }
+
+        async function startQKDSession() {
+            const protocol = document.getElementById('qkd-protocol').value;
+            const aliceId = document.getElementById('alice-id').value;
+            const bobId = document.getElementById('bob-id').value;
+            const keyLength = parseInt(document.getElementById('key-length').value);
+            
+            if (!aliceId || !bobId) {
+                alert('Please fill in Alice and Bob IDs');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/quantum/qkd/sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        protocol: protocol,
+                        alice_id: aliceId,
+                        bob_id: bobId,
+                        key_length: keyLength
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    const resultContainer = document.getElementById('qkd-result');
+                    resultContainer.style.display = 'block';
+                    resultContainer.innerHTML = `
+                        <h4>QKD Session Started</h4>
+                        <p><strong>Session ID:</strong> ${result.session_id}</p>
+                        <p><strong>Protocol:</strong> ${protocol}</p>
+                        <p><strong>Alice:</strong> ${aliceId}</p>
+                        <p><strong>Bob:</strong> ${bobId}</p>
+                        <p><strong>Key Length:</strong> ${keyLength} bits</p>
+                    `;
+                    refreshData();
+                }
+            } catch (error) {
+                console.error('Error starting QKD session:', error);
+                alert('Error starting QKD session');
+            }
+        }
+
+        async function executeJob(jobId) {
+            try {
+                const response = await fetch(`/quantum/jobs/${jobId}/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+                
+                if (response.ok) {
+                    alert('Quantum job execution started!');
+                    refreshData();
+                }
+            } catch (error) {
+                console.error('Error executing job:', error);
+                alert('Error executing quantum job');
+            }
+        }
+
+        async function viewJob(jobId) {
+            try {
+                const response = await fetch(`/quantum/jobs/${jobId}`);
+                if (response.ok) {
+                    const job = await response.json();
+                    alert(`Job Details:\nID: ${job.id}\nAlgorithm: ${job.algorithm}\nStatus: ${job.status}\nCreated: ${job.created_at}`);
+                }
+            } catch (error) {
+                console.error('Error viewing job:', error);
+            }
+        }
+
+        async function deleteJob(jobId) {
+            if (confirm('Are you sure you want to delete this quantum job?')) {
+                try {
+                    const response = await fetch(`/quantum/jobs/${jobId}`, {
+                        method: 'DELETE'
+                    });
+                    if (response.ok) {
+                        alert('Quantum job deleted successfully!');
+                        refreshData();
+                    }
+                } catch (error) {
+                    console.error('Error deleting job:', error);
+                }
+            }
+        }
+
+        async function refreshData() {
+            try {
+                // Fetch quantum jobs
+                const jobsResponse = await fetch('/quantum/jobs');
+                const jobsData = await jobsResponse.json();
+                
+                // Fetch quantum key pairs
+                const keypairsResponse = await fetch('/quantum/keypairs');
+                const keypairsData = await keypairsResponse.json();
+                
+                // Fetch QKD sessions
+                const sessionsResponse = await fetch('/quantum/qkd/sessions');
+                const sessionsData = await sessionsResponse.json();
+                
+                // Fetch quantum statistics
+                const statsResponse = await fetch('/quantum/stats');
+                const statsData = await statsResponse.json();
+                
+                // Fetch quantum metrics
+                const metricsResponse = await fetch('/quantum/metrics');
+                const metricsData = await metricsResponse.json();
+                
+                if (jobsData.success) {
+                    quantumJobs = jobsData.data || [];
+                }
+                
+                if (keypairsData.success) {
+                    quantumKeyPairs = keypairsData.data || [];
+                }
+                
+                if (sessionsData.success) {
+                    qkdSessions = sessionsData.data || [];
+                }
+                
+                if (statsData.success) {
+                    quantumStats = statsData.data || {};
+                }
+                
+                if (metricsData.success) {
+                    quantumMetrics = metricsData.data || {};
+                }
+                
+                // Update displays
+                updateQuantumDisplay();
+                updateQuantumInfo();
+                updateQuantumMetrics();
+                updateQuantumJobs();
+                updateJobStats();
+                updateQuantumKeyPairs();
+                updateQKDSessions();
+                updateCharts();
+                
+            } catch (error) {
+                console.error('Error fetching quantum data:', error);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('algorithm-filter').addEventListener('change', refreshData);
+        document.getElementById('status-filter').addEventListener('change', refreshData);
+
+        // Initial load
+        refreshData();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(refreshData, 30000);
+    </script>
+</body>
+</html> 

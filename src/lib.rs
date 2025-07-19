@@ -3,8 +3,11 @@
 //! A fully decentralized Layer-1 blockchain with built-in global DHT storage.
 
 pub mod config;
-pub mod consensus;
 pub mod api;
+pub mod blockchain;
+pub mod consensus;
+pub mod quantum;
+pub mod iot;
 // pub mod dht;
 // pub mod domain;
 pub mod error;
@@ -17,6 +20,7 @@ pub mod crosschain;
 // pub mod tests;
 pub mod utils;
 // pub mod wallet; // TODO: Fix compilation errors before enabling
+pub mod monitoring;
 
 // Re-export commonly used types
 pub use config::Config;

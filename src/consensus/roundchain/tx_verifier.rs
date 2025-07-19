@@ -7,12 +7,12 @@
 //! Exposes endpoint: GET /verify_tx/:hash → { included: true, round: R, timestamp: T }
 
 use crate::Result;
-use super::{RoundHeader, ZkStarkProof, MerkleTree, TransactionVerification, RoundAggregation};
+use super::{RoundHeader, ZkStarkProof, TransactionVerification, RoundAggregation};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Transaction verifier configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -465,8 +465,8 @@ mod tests {
         
         // Create test round aggregation
         let header = RoundHeader::new(1, [1u8; 32], [2u8; 32], 1234567890, [3u8; 32]);
-        let hashtimer = HashTimer::new([0u8; 32], [1u8; 32]);
-        let transaction = Transaction::new(
+        let hashtimer = HashTimer::new("test_node", 1, 1);
+        let transaction = Transaction::new_payment(
             [1u8; 32],
             [2u8; 32],
             100,
@@ -486,7 +486,7 @@ mod tests {
                 transaction_count: 1,
             },
             transaction_hashes: vec![transaction.hash],
-            merkle_tree: MerkleTree::new(vec![transaction.hash]),
+            merkle_tree: crate::consensus::roundchain::MerkleTree::new(vec![transaction.hash]),
         };
         
         verifier.add_round_aggregation(aggregation).await;

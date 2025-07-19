@@ -1,335 +1,469 @@
+//! Storage proofs for IPPAN
+
 use crate::Result;
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
+use chrono::{DateTime, Utc};
+use sha2::{Sha256, Digest};
 
-/// Merkle tree node
+/// Proof of storage
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MerkleNode {
-    /// Node hash
-    pub hash: [u8; 32],
-    /// Left child (if not leaf)
-    pub left: Option<Box<MerkleNode>>,
-    /// Right child (if not leaf)
-    pub right: Option<Box<MerkleNode>>,
-    /// Data chunk (if leaf)
-    pub data: Option<Vec<u8>>,
-    /// Chunk index (if leaf)
-    pub index: Option<usize>,
+pub struct StorageProof {
+    /// Proof ID
+    pub proof_id: String,
+    /// File ID
+    pub file_id: String,
+    /// Shard ID
+    pub shard_id: String,
+    /// Node ID that generated the proof
+    pub node_id: String,
+    /// Proof type
+    pub proof_type: ProofType,
+    /// Proof data
+    pub proof_data: Vec<u8>,
+    /// Challenge data
+    pub challenge_data: Vec<u8>,
+    /// Proof timestamp
+    pub timestamp: DateTime<Utc>,
+    /// Proof signature
+    pub signature: Option<Vec<u8>>,
 }
 
-/// Merkle proof for a specific chunk
+/// Proof type
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MerkleProof {
-    /// Chunk index
-    pub chunk_index: usize,
-    /// Chunk data
-    pub chunk_data: Vec<u8>,
-    /// Sibling hashes for path to root
-    pub siblings: Vec<[u8; 32]>,
-    /// Path direction (true = right, false = left)
-    pub path: Vec<bool>,
+pub enum ProofType {
+    /// Proof of retrievability
+    ProofOfRetrievability,
+    /// Proof of storage
+    ProofOfStorage,
+    /// Proof of space
+    ProofOfSpace,
+    /// Proof of time
+    ProofOfTime,
 }
 
-/// Proof of storage verification result
+/// Challenge request
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProofResult {
-    /// Whether the proof is valid
-    pub valid: bool,
-    /// File hash
-    pub file_hash: [u8; 32],
-    /// Merkle root
-    pub merkle_root: [u8; 32],
-    /// Verification timestamp
-    pub timestamp: u64,
-    /// Error message if invalid
-    pub error: Option<String>,
+pub struct ChallengeRequest {
+    /// Challenge ID
+    pub challenge_id: String,
+    /// File ID
+    pub file_id: String,
+    /// Shard ID
+    pub shard_id: String,
+    /// Node ID to challenge
+    pub node_id: String,
+    /// Challenge type
+    pub challenge_type: ChallengeType,
+    /// Challenge parameters
+    pub parameters: HashMap<String, String>,
+    /// Challenge timestamp
+    pub timestamp: DateTime<Utc>,
 }
 
-/// Proof of storage manager
-pub struct ProofOfStorage {
-    /// Merkle tree for the file
-    merkle_tree: Option<MerkleNode>,
-    /// File hash
-    file_hash: [u8; 32],
-    /// Chunk size in bytes
-    chunk_size: usize,
+/// Challenge type
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChallengeType {
+    /// Random data challenge
+    RandomData,
+    /// Merkle tree challenge
+    MerkleTree,
+    /// Time-based challenge
+    TimeBased,
+    /// Space-based challenge
+    SpaceBased,
 }
 
-impl ProofOfStorage {
-    /// Create a new proof of storage instance
-    pub fn new(file_hash: [u8; 32], chunk_size: usize) -> Self {
+/// Proof manager
+pub struct ProofManager {
+    /// Storage proofs
+    proofs: Arc<RwLock<HashMap<String, StorageProof>>>,
+    /// Challenge requests
+    challenges: Arc<RwLock<HashMap<String, ChallengeRequest>>>,
+    /// Challenge interval (seconds)
+    challenge_interval: u64,
+    /// Proof verification threshold
+    verification_threshold: f64,
+    /// Running flag
+    running: bool,
+}
+
+impl ProofManager {
+    /// Create a new proof manager
+    pub fn new(challenge_interval: u64, verification_threshold: f64) -> Self {
         Self {
-            merkle_tree: None,
-            file_hash,
-            chunk_size,
+            proofs: Arc::new(RwLock::new(HashMap::new())),
+            challenges: Arc::new(RwLock::new(HashMap::new())),
+            challenge_interval,
+            verification_threshold,
+            running: false,
         }
     }
 
-    /// Build Merkle tree from file data
-    pub fn build_tree(&mut self, file_data: &[u8]) -> Result<[u8; 32]> {
-        let chunks = self.chunk_data(file_data);
-        let leaves = self.create_leaves(&chunks);
-        let root = self.build_tree_from_leaves(&leaves)?;
-        self.merkle_tree = Some(root.clone());
+    /// Start the proof manager
+    pub async fn start(&mut self) -> Result<()> {
+        log::info!("Starting proof manager");
+        self.running = true;
         
-        Ok(root.hash)
-    }
-
-    /// Generate proof for a specific chunk
-    pub fn generate_proof(&self, chunk_index: usize) -> Result<MerkleProof> {
-        let tree = self.merkle_tree.as_ref()
-            .ok_or_else(|| crate::IppanError::Storage("Merkle tree not built".to_string()))?;
+        // Start challenge generation loop
+        let challenges = self.challenges.clone();
+        let proofs = self.proofs.clone();
+        let challenge_interval = self.challenge_interval;
         
-        let mut proof = MerkleProof {
-            chunk_index,
-            chunk_data: Vec::new(),
-            siblings: Vec::new(),
-            path: Vec::new(),
-        };
-        
-        self.generate_proof_recursive(tree, chunk_index, &mut proof)?;
-        Ok(proof)
-    }
-
-    /// Verify a Merkle proof
-    pub fn verify_proof(&self, proof: &MerkleProof, expected_root: &[u8; 32]) -> Result<bool> {
-        let mut current_hash = self.hash_chunk(&proof.chunk_data);
-        
-        for (i, &sibling_hash) in proof.siblings.iter().enumerate() {
-            let is_right = proof.path.get(i).copied().unwrap_or(false);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(challenge_interval));
             
-            if is_right {
-                // Current is left child
-                let mut hasher = Sha256::new();
-                hasher.update(&current_hash);
-                hasher.update(&sibling_hash);
-                current_hash = hasher.finalize().into();
-            } else {
-                // Current is right child
-                let mut hasher = Sha256::new();
-                hasher.update(&sibling_hash);
-                hasher.update(&current_hash);
-                current_hash = hasher.finalize().into();
+            loop {
+                interval.tick().await;
+                Self::generate_challenges(&challenges, &proofs).await;
             }
-        }
-        
-        Ok(current_hash == *expected_root)
-    }
-
-    /// Perform spot check verification
-    pub fn spot_check(&self, chunks: &[Vec<u8>], sample_indices: &[usize]) -> Result<Vec<ProofResult>> {
-        let mut results = Vec::new();
-        
-        for &index in sample_indices {
-            if index >= chunks.len() {
-                results.push(ProofResult {
-                    valid: false,
-                    file_hash: self.file_hash,
-                    merkle_root: [0; 32],
-                    timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                    error: Some("Chunk index out of bounds".to_string()),
-                });
-                continue;
-            }
-            
-            let proof = self.generate_proof(index)?;
-            let is_valid = self.verify_proof(&proof, &self.get_root_hash()?)?;
-            
-            results.push(ProofResult {
-                valid: is_valid,
-                file_hash: self.file_hash,
-                merkle_root: self.get_root_hash()?,
-                timestamp: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                error: None,
-            });
-        }
-        
-        Ok(results)
-    }
-
-    /// Get random sample indices for spot checking
-    pub fn get_random_samples(&self, total_chunks: usize, sample_count: usize) -> Vec<usize> {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let mut samples = Vec::new();
-        
-        for _ in 0..sample_count {
-            let index = rng.gen_range(0..total_chunks);
-            samples.push(index);
-        }
-        
-        samples.sort();
-        samples.dedup();
-        samples
-    }
-
-    /// Chunk data into fixed-size pieces
-    fn chunk_data(&self, data: &[u8]) -> Vec<Vec<u8>> {
-        data.chunks(self.chunk_size)
-            .map(|chunk| chunk.to_vec())
-            .collect()
-    }
-
-    /// Create leaf nodes from chunks
-    fn create_leaves(&self, chunks: &[Vec<u8>]) -> Vec<MerkleNode> {
-        chunks.iter().enumerate().map(|(index, chunk)| {
-            MerkleNode {
-                hash: self.hash_chunk(chunk),
-                left: None,
-                right: None,
-                data: Some(chunk.clone()),
-                index: Some(index),
-            }
-        }).collect()
-    }
-
-    /// Build tree from leaves
-    fn build_tree_from_leaves(&self, leaves: &[MerkleNode]) -> Result<MerkleNode> {
-        if leaves.is_empty() {
-            return Err(crate::IppanError::Storage("No leaves provided".to_string()));
-        }
-        
-        if leaves.len() == 1 {
-            return Ok(leaves[0].clone());
-        }
-        
-        let mut current_level: Vec<MerkleNode> = leaves.to_vec();
-        
-        while current_level.len() > 1 {
-            let mut next_level = Vec::new();
-            
-            for chunk in current_level.chunks(2) {
-                if chunk.len() == 1 {
-                    next_level.push(chunk[0].clone());
-                } else {
-                    let left = Box::new(chunk[0].clone());
-                    let right = Box::new(chunk[1].clone());
-                    
-                    let mut hasher = Sha256::new();
-                    hasher.update(&left.hash);
-                    hasher.update(&right.hash);
-                    let hash = hasher.finalize().into();
-                    
-                    next_level.push(MerkleNode {
-                        hash,
-                        left: Some(left),
-                        right: Some(right),
-                        data: None,
-                        index: None,
-                    });
-                }
-            }
-            
-            current_level = next_level;
-        }
-        
-        Ok(current_level[0].clone())
-    }
-
-    /// Generate proof recursively
-    fn generate_proof_recursive(&self, node: &MerkleNode, target_index: usize, proof: &mut MerkleProof) -> Result<()> {
-        if let Some(index) = node.index {
-            if index == target_index {
-                proof.chunk_data = node.data.clone().unwrap_or_default();
-                return Ok(());
-            }
-        }
-        
-        if let (Some(left), Some(right)) = (&node.left, &node.right) {
-            // Check if target is in left subtree
-            if self.index_in_subtree(left, target_index) {
-                proof.path.push(false); // Go left
-                proof.siblings.push(right.hash);
-                self.generate_proof_recursive(left, target_index, proof)?;
-            } else {
-                proof.path.push(true); // Go right
-                proof.siblings.push(left.hash);
-                self.generate_proof_recursive(right, target_index, proof)?;
-            }
-        }
+        });
         
         Ok(())
     }
 
-    /// Check if index is in subtree
-    fn index_in_subtree(&self, node: &MerkleNode, target_index: usize) -> bool {
-        if let Some(index) = node.index {
-            return index == target_index;
-        }
-        
-        if let (Some(left), Some(right)) = (&node.left, &node.right) {
-            return self.index_in_subtree(left, target_index) || self.index_in_subtree(right, target_index);
-        }
-        
-        false
+    /// Stop the proof manager
+    pub async fn stop(&mut self) -> Result<()> {
+        log::info!("Stopping proof manager");
+        self.running = false;
+        Ok(())
     }
 
-    /// Hash a chunk
-    fn hash_chunk(&self, chunk: &[u8]) -> [u8; 32] {
+    /// Generate a proof of storage
+    pub async fn generate_proof(
+        &self,
+        file_id: &str,
+        shard_id: &str,
+        node_id: &str,
+        proof_type: ProofType,
+        data: &[u8],
+    ) -> Result<StorageProof> {
+        let proof_id = format!("proof_{}_{}_{}", file_id, shard_id, node_id);
+        
+        let proof_data = match proof_type {
+            ProofType::ProofOfRetrievability => {
+                self.generate_por_proof(data)?
+            }
+            ProofType::ProofOfStorage => {
+                self.generate_pos_proof(data)?
+            }
+            ProofType::ProofOfSpace => {
+                self.generate_space_proof(data)?
+            }
+            ProofType::ProofOfTime => {
+                self.generate_time_proof(data)?
+            }
+        };
+        
+        let proof = StorageProof {
+            proof_id: proof_id.clone(),
+            file_id: file_id.to_string(),
+            shard_id: shard_id.to_string(),
+            node_id: node_id.to_string(),
+            proof_type,
+            proof_data,
+            challenge_data: Vec::new(), // Will be set by challenge
+            timestamp: Utc::now(),
+            signature: None, // TODO: Add signature
+        };
+        
+        // Store proof
+        let mut proofs = self.proofs.write().await;
+        proofs.insert(proof_id.clone(), proof.clone());
+        
+        log::info!("Generated proof: {}", proof_id);
+        Ok(proof)
+    }
+
+    /// Verify a storage proof
+    pub async fn verify_proof(&self, proof: &StorageProof, challenge_data: &[u8]) -> Result<bool> {
+        let verification_result = match proof.proof_type {
+            ProofType::ProofOfRetrievability => {
+                self.verify_por_proof(&proof.proof_data, challenge_data)?
+            }
+            ProofType::ProofOfStorage => {
+                self.verify_pos_proof(&proof.proof_data, challenge_data)?
+            }
+            ProofType::ProofOfSpace => {
+                self.verify_space_proof(&proof.proof_data, challenge_data)?
+            }
+            ProofType::ProofOfTime => {
+                self.verify_time_proof(&proof.proof_data, challenge_data)?
+            }
+        };
+        
+        log::info!("Proof verification result: {} -> {}", proof.proof_id, verification_result);
+        Ok(verification_result)
+    }
+
+    /// Create a challenge
+    pub async fn create_challenge(
+        &self,
+        file_id: &str,
+        shard_id: &str,
+        node_id: &str,
+        challenge_type: ChallengeType,
+    ) -> Result<ChallengeRequest> {
+        let challenge_id = format!("challenge_{}_{}_{}", file_id, shard_id, node_id);
+        
+        let challenge = ChallengeRequest {
+            challenge_id: challenge_id.clone(),
+            file_id: file_id.to_string(),
+            shard_id: shard_id.to_string(),
+            node_id: node_id.to_string(),
+            challenge_type,
+            parameters: HashMap::new(),
+            timestamp: Utc::now(),
+        };
+        
+        // Store challenge
+        let mut challenges = self.challenges.write().await;
+        challenges.insert(challenge_id.clone(), challenge.clone());
+        
+        log::info!("Created challenge: {}", challenge_id);
+        Ok(challenge)
+    }
+
+    /// Get proof statistics
+    pub async fn get_proof_stats(&self) -> ProofStats {
+        let proofs = self.proofs.read().await;
+        let challenges = self.challenges.read().await;
+        
+        let total_proofs = proofs.len();
+        let total_challenges = challenges.len();
+        
+        let por_proofs = proofs.values()
+            .filter(|proof| matches!(proof.proof_type, ProofType::ProofOfRetrievability))
+            .count();
+        
+        let pos_proofs = proofs.values()
+            .filter(|proof| matches!(proof.proof_type, ProofType::ProofOfStorage))
+            .count();
+        
+        ProofStats {
+            total_proofs,
+            total_challenges,
+            por_proofs,
+            pos_proofs,
+            challenge_interval: self.challenge_interval,
+            verification_threshold: self.verification_threshold,
+        }
+    }
+
+    /// Generate proof of retrievability
+    fn generate_por_proof(&self, data: &[u8]) -> Result<Vec<u8>> {
+        // Simple POR proof using hash
         let mut hasher = Sha256::new();
-        hasher.update(chunk);
-        hasher.finalize().into()
+        hasher.update(data);
+        let hash = hasher.finalize();
+        Ok(hash.to_vec())
     }
 
-    /// Get root hash
-    fn get_root_hash(&self) -> Result<[u8; 32]> {
-        self.merkle_tree.as_ref()
-            .map(|tree| tree.hash)
-            .ok_or_else(|| crate::IppanError::Storage("Merkle tree not built".to_string()))
+    /// Generate proof of storage
+    fn generate_pos_proof(&self, data: &[u8]) -> Result<Vec<u8>> {
+        // Simple POS proof using Keccak256
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        let hash = hasher.finalize();
+        Ok(hash.to_vec())
     }
+
+    /// Generate proof of space
+    fn generate_space_proof(&self, data: &[u8]) -> Result<Vec<u8>> {
+        // Simple space proof (simulated)
+        let mut proof = Vec::new();
+        proof.extend_from_slice(&(data.len() as u64).to_le_bytes());
+        proof.extend_from_slice(data);
+        Ok(proof)
+    }
+
+    /// Generate proof of time
+    fn generate_time_proof(&self, data: &[u8]) -> Result<Vec<u8>> {
+        // Simple time proof (simulated)
+        let mut proof = Vec::new();
+        proof.extend_from_slice(&Utc::now().timestamp().to_le_bytes());
+        proof.extend_from_slice(data);
+        Ok(proof)
+    }
+
+    /// Verify proof of retrievability
+    fn verify_por_proof(&self, proof_data: &[u8], challenge_data: &[u8]) -> Result<bool> {
+        // Simple verification
+        let mut hasher = Sha256::new();
+        hasher.update(challenge_data);
+        let expected_hash = hasher.finalize();
+        
+        Ok(proof_data == expected_hash.as_slice())
+    }
+
+    /// Verify proof of storage
+    fn verify_pos_proof(&self, proof_data: &[u8], challenge_data: &[u8]) -> Result<bool> {
+        // Simple verification
+        let mut hasher = Sha256::new();
+        hasher.update(challenge_data);
+        let expected_hash = hasher.finalize();
+        
+        Ok(proof_data == expected_hash.as_slice())
+    }
+
+    /// Verify proof of space
+    fn verify_space_proof(&self, proof_data: &[u8], challenge_data: &[u8]) -> Result<bool> {
+        // Simple verification
+        if proof_data.len() < 8 {
+            return Ok(false);
+        }
+        
+        let size_bytes = &proof_data[..8];
+        let size = u64::from_le_bytes(size_bytes.try_into().unwrap());
+        
+        Ok(size >= challenge_data.len() as u64)
+    }
+
+    /// Verify proof of time
+    fn verify_time_proof(&self, proof_data: &[u8], _challenge_data: &[u8]) -> Result<bool> {
+        // Simple verification
+        if proof_data.len() < 8 {
+            return Ok(false);
+        }
+        
+        let timestamp_bytes = &proof_data[..8];
+        let timestamp = i64::from_le_bytes(timestamp_bytes.try_into().unwrap());
+        let now = Utc::now().timestamp();
+        
+        // Check if proof is recent (within 1 hour)
+        Ok((now - timestamp).abs() < 3600)
+    }
+
+    /// Generate challenges
+    async fn generate_challenges(
+        challenges: &Arc<RwLock<HashMap<String, ChallengeRequest>>>,
+        proofs: &Arc<RwLock<HashMap<String, StorageProof>>>,
+    ) {
+        // TODO: Implement challenge generation logic
+        log::debug!("Generating challenges...");
+        
+        let challenges = challenges.read().await;
+        let proofs = proofs.read().await;
+        
+        log::debug!("Active challenges: {}, Active proofs: {}", challenges.len(), proofs.len());
+    }
+}
+
+/// Proof statistics
+#[derive(Debug, Serialize)]
+pub struct ProofStats {
+    pub total_proofs: usize,
+    pub total_challenges: usize,
+    pub por_proofs: usize,
+    pub pos_proofs: usize,
+    pub challenge_interval: u64,
+    pub verification_threshold: f64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_merkle_tree_building() {
-        let file_hash = [1u8; 32];
-        let mut proof = ProofOfStorage::new(file_hash, 1024);
+    #[tokio::test]
+    async fn test_proof_manager_creation() {
+        let manager = ProofManager::new(300, 0.8);
         
-        let data = b"This is test data for building a Merkle tree to verify storage proofs in the IPPAN network.";
-        let root = proof.build_tree(data).unwrap();
-        
-        assert_ne!(root, [0u8; 32]);
+        assert_eq!(manager.challenge_interval, 300);
+        assert_eq!(manager.verification_threshold, 0.8);
+        assert!(!manager.running);
     }
 
-    #[test]
-    fn test_proof_generation_and_verification() {
-        let file_hash = [2u8; 32];
-        let mut proof = ProofOfStorage::new(file_hash, 16);
+    #[tokio::test]
+    async fn test_proof_manager_start_stop() {
+        let mut manager = ProofManager::new(300, 0.8);
         
-        let data = b"Test data for proof verification";
-        let root = proof.build_tree(data).unwrap();
+        manager.start().await.unwrap();
+        assert!(manager.running);
         
-        let proof_data = proof.generate_proof(0).unwrap();
-        let is_valid = proof.verify_proof(&proof_data, &root).unwrap();
+        manager.stop().await.unwrap();
+        assert!(!manager.running);
+    }
+
+    #[tokio::test]
+    async fn test_proof_generation() {
+        let manager = ProofManager::new(300, 0.8);
         
+        let data = b"test data for proof generation";
+        let proof = manager.generate_proof(
+            "test_file",
+            "test_shard",
+            "test_node",
+            ProofType::ProofOfRetrievability,
+            data,
+        ).await.unwrap();
+        
+        assert_eq!(proof.file_id, "test_file");
+        assert_eq!(proof.shard_id, "test_shard");
+        assert_eq!(proof.node_id, "test_node");
+        assert!(matches!(proof.proof_type, ProofType::ProofOfRetrievability));
+    }
+
+    #[tokio::test]
+    async fn test_proof_verification() {
+        let manager = ProofManager::new(300, 0.8);
+        
+        let data = b"test data for verification";
+        let proof = manager.generate_proof(
+            "test_file",
+            "test_shard",
+            "test_node",
+            ProofType::ProofOfRetrievability,
+            data,
+        ).await.unwrap();
+        
+        let is_valid = manager.verify_proof(&proof, data).await.unwrap();
         assert!(is_valid);
     }
 
-    #[test]
-    fn test_spot_checking() {
-        let file_hash = [3u8; 32];
-        let mut proof = ProofOfStorage::new(file_hash, 8);
+    #[tokio::test]
+    async fn test_challenge_creation() {
+        let manager = ProofManager::new(300, 0.8);
         
-        let data = b"Data for spot checking";
-        proof.build_tree(data).unwrap();
+        let challenge = manager.create_challenge(
+            "test_file",
+            "test_shard",
+            "test_node",
+            ChallengeType::RandomData,
+        ).await.unwrap();
         
-        let chunks = proof.chunk_data(data);
-        let samples = proof.get_random_samples(chunks.len(), 3);
-        let results = proof.spot_check(&chunks, &samples).unwrap();
+        assert_eq!(challenge.file_id, "test_file");
+        assert_eq!(challenge.shard_id, "test_shard");
+        assert_eq!(challenge.node_id, "test_node");
+        assert!(matches!(challenge.challenge_type, ChallengeType::RandomData));
+    }
+
+    #[tokio::test]
+    async fn test_proof_stats() {
+        let manager = ProofManager::new(300, 0.8);
         
-        assert_eq!(results.len(), 3);
-        for result in results {
-            assert!(result.valid);
-        }
+        // Generate some proofs
+        let data = b"test data";
+        manager.generate_proof(
+            "file1",
+            "shard1",
+            "node1",
+            ProofType::ProofOfRetrievability,
+            data,
+        ).await.unwrap();
+        
+        manager.generate_proof(
+            "file2",
+            "shard2",
+            "node2",
+            ProofType::ProofOfStorage,
+            data,
+        ).await.unwrap();
+        
+        let stats = manager.get_proof_stats().await;
+        assert_eq!(stats.total_proofs, 2);
+        assert_eq!(stats.por_proofs, 1);
+        assert_eq!(stats.pos_proofs, 1);
     }
 }
