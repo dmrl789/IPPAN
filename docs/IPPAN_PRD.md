@@ -48,29 +48,58 @@ IPPAN is now a fully functional, production-ready protocol for:
 - HashTimers embed **IPPAN Time**, calculated as the median time of node clocks (atomic clocks, GPS recommended)
 - Precision: **0.1 microsecond**
 
-### ✅ 3.2 BlockDAG & ZK-STARK Consensus
-- **BlockDAG Structure:** Blocks connected in Directed Acyclic Graph for parallel processing
-- **ZK-STARK Rounds:** Sub-second deterministic finality despite intercontinental latency
-- **Round Structure:** 
-  - Round duration: 1-5 seconds
-  - ZK-STARK proof size: 50-100 KB
-  - Verification time: 10-50ms
-- **Block Dimensions:**
-  - Max block size: 10 MB
-  - Max transactions per block: 100,000
-  - Block header: 256 bytes
-  - Transaction size: 100-500 bytes average
-- **Transaction Structure:**
-  - Ed25519 signature (64 bytes)
-  - Public key (32 bytes)
-  - Transaction type (1 byte)
-  - Amount (8 bytes)
-  - Timestamp (8 bytes)
-  - HashTimer (32 bytes)
-  - Total: ~145 bytes base + variable data
-- **Deterministic Ordering:** Via HashTimers with 0.1μs precision
-- **Validator Selection:** Verifiable randomness prevents manipulation
-- **Optimized for 1-10 million TPS** through parallel processing and ZK-STARK consensus
+### ✅ 3.2 BlockDAG & zk-STARK Consensus in IPPAN
+
+#### 📐 BlockDAG Structure
+
+* **Model**: Directed Acyclic Graph (DAG)
+* **Function**: Enables concurrent block creation across nodes (parallelism)
+* **Local Chains**: Each node maintains its own chain of blocks
+* **Global Agreement**: Achieved via cryptographically anchored Rounds
+
+#### 🔐 zk-STARK-Backed Rounds
+
+* **Purpose**: Finalize multiple DAG branches with deterministic proof
+* **Round Duration**: 100 ms to 500 ms (adaptive, depending on load)
+* **Proof Type**: zk-STARK
+* **Proof Size**: ~50–100 KB per round
+* **Proof Generation Time**: ~0.5–2 seconds (parallelizable)
+* **Verification Time**: 10–50 ms
+* **Latency Tolerance**: Finality sustained under NY ↔ Tokyo RTT (~180 ms)
+
+#### 📦 Block Dimensions (IPPAN Specification)
+
+* **Max Block Size**: 32 KB (lightweight for rapid propagation)
+* **Typical Block Size**: 4–32 KB
+* **Max Transactions per Block**: ~500–2,000 (depends on tx size)
+* **Block Header Size**: ~128 bytes
+* **Block Content**: References transaction hashes only (no inlined payload)
+
+#### 🧾 Transaction Structure
+
+* **Signature**: Ed25519 (64 bytes)
+* **Public Key**: 32 bytes
+* **Transaction Type**: 1 byte (e.g., payment, file, TXT, etc.)
+* **Amount/Data Length**: 8 bytes
+* **Timestamp**: 8 bytes (microsecond precision)
+* **HashTimer**: 32 bytes (ordering anchor)
+* **Optional Payload**: e.g., file ref, TXT string, domain, etc.
+
+> **Total Base Size**: ~145 bytes
+> **With Payload**: Typically ~200–500 bytes depending on type
+
+#### ⏱️ Deterministic Transaction Ordering
+
+* **Mechanism**: `HashTimer` (cryptographic time anchor)
+* **Precision**: ≤ 0.1 μs
+* **Usage**: Ensures transactions and blocks are globally sortable without relying on system clocks
+
+#### 🎯 Optimized for 1-10 Million TPS
+
+* **Parallel Processing**: BlockDAG enables concurrent transaction handling
+* **Validator Selection**: Verifiable randomness prevents manipulation
+* **Sub-Second Finality**: Despite intercontinental latency
+* **Adaptive Rounds**: Duration adjusts based on network load
 
 ### ✅ 3.3 Staking & Node Rules
 - Nodes are permissionless for the first month
@@ -176,7 +205,7 @@ IPPAN is now a fully functional, production-ready protocol for:
 
 #### **Block Structure**
 ```
-Block Header (256 bytes):
+Block Header (~128 bytes):
 ├── Block Hash (32 bytes)
 ├── Parent Hash (32 bytes)
 ├── Round Number (8 bytes)
@@ -185,12 +214,11 @@ Block Header (256 bytes):
 ├── Block Size (4 bytes)
 ├── Transaction Count (4 bytes)
 ├── Merkle Root (32 bytes)
-├── ZK-STARK Proof Reference (32 bytes)
 ├── HashTimer (32 bytes)
-└── Padding (32 bytes)
+└── Padding (~8 bytes)
 
 Block Body:
-├── Transaction List (variable)
+├── Transaction Hash References (variable)
 └── ZK-STARK Proof (50-100 KB)
 ```
 
@@ -218,8 +246,8 @@ Transaction (145 bytes base + variable data):
 
 #### **ZK-STARK Round Structure**
 ```
-Round (1-5 seconds):
-├── Round Header (256 bytes)
+Round (100-500 ms, adaptive):
+├── Round Header (~128 bytes)
 ├── Block List (variable)
 ├── State Transition (variable)
 ├── ZK-STARK Proof (50-100 KB)
