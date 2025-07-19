@@ -2,14 +2,10 @@
 //! 
 //! Provides median time calculation across network nodes
 
-use crate::{Result, NodeId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
-use sha2::{Digest, Sha256};
+
 
 /// IPPAN Time precision in microseconds (0.1 microseconds)
 pub const IPPAN_TIME_PRECISION: u64 = 100; // 0.1 microseconds

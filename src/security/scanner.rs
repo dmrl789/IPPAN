@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use anyhow::Result;
 
 /// Security threat types
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum SecurityThreat {
     BruteForceAttack,
     DDoS,
@@ -427,8 +427,10 @@ impl SecurityScanner {
             events.push(event.clone());
             
             // Trim old events if we exceed the limit
-            if events.len() > self.config.max_events_history {
-                events.drain(0..events.len() - self.config.max_events_history);
+            let current_len = events.len();
+            if current_len > self.config.max_events_history {
+                let to_remove = current_len - self.config.max_events_history;
+                events.drain(0..to_remove);
             }
         }
         

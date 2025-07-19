@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use std::thread;
-use tokio::sync::Semaphore;
+
 
 /// Cache implementation for frequently accessed data
 pub struct Cache<K, V> {
@@ -74,13 +74,14 @@ where
 
     /// Evict least recently used entries
     fn evict_lru(&self, data: &mut HashMap<K, CacheEntry<V>>) {
-        let mut entries: Vec<_> = data.iter().collect();
-        entries.sort_by_key(|(_, entry)| entry.access_count);
+        // Collect keys to remove
+        let mut entries: Vec<_> = data.iter().map(|(k, v)| (k.clone(), v.access_count)).collect();
+        entries.sort_by_key(|(_, count)| *count);
         
         // Remove 20% of least used entries
         let to_remove = (entries.len() / 5).max(1);
         for (key, _) in entries.iter().take(to_remove) {
-            data.remove(*key);
+            data.remove(key);
         }
     }
 
@@ -185,13 +186,14 @@ impl ConnectionPool {
 
     /// Evict oldest connections
     fn evict_oldest(&self, connections: &mut HashMap<String, PooledConnection>) {
-        let mut entries: Vec<_> = connections.iter().collect();
-        entries.sort_by_key(|(_, conn)| conn.last_used);
+        // Collect keys to remove
+        let mut entries: Vec<_> = connections.iter().map(|(k, v)| (k.clone(), v.last_used)).collect();
+        entries.sort_by_key(|(_, time)| *time);
         
         // Remove 20% of oldest connections
         let to_remove = (entries.len() / 5).max(1);
         for (key, _) in entries.iter().take(to_remove) {
-            connections.remove(*key);
+            connections.remove(key);
         }
     }
 
@@ -440,8 +442,8 @@ impl OptimizationManager {
     /// Add a cache to the manager
     pub fn add_cache<K, V>(&self, name: String, cache: Cache<K, V>)
     where
-        K: 'static,
-        V: 'static,
+        K: 'static + Send + Sync,
+        V: 'static + Send + Sync,
     {
         let mut caches = self.caches.lock().unwrap();
         caches.insert(name, Box::new(cache));

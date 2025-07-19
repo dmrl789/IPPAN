@@ -2,17 +2,8 @@
 //!
 //! Rounds are a logical/consensus concept for validator selection and block production, and are NOT part of the DAG structure.
 
-use crate::{
-    error::IppanError,
-    NodeId,
-    BlockHash,
-};
-use crate::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use std::collections::HashMap;
 
 
 /// Round state enumeration
@@ -51,17 +42,17 @@ pub struct RoundManager {
     pub current_round: Round,
     /// Validators and their stakes
     validators: HashMap<[u8; 32], u64>,
-    /// Maximum number of validators per round
-    max_validators: usize,
+    // Maximum number of validators per round
+    // max_validators: usize, // TODO: Use when implementing validator limits
 }
 
 impl RoundManager {
     /// Create a new round manager
-    pub fn new(max_validators: usize) -> Self {
+    pub fn new(_max_validators: usize) -> Self {
         Self {
             current_round: Round::new(0),
             validators: HashMap::new(),
-            max_validators,
+            // max_validators, // TODO: Use when implementing validator limits
         }
     }
 

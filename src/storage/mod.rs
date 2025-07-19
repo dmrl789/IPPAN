@@ -4,8 +4,8 @@
 
 use crate::config::StorageConfig;
 use crate::Result;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+// use std::sync::Arc; // TODO: Use when implementing async storage
+// use tokio::sync::RwLock; // TODO: Use when implementing async storage
 
 pub struct StorageManager {
     pub config: StorageConfig,

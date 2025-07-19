@@ -114,8 +114,10 @@ impl SecurityManager {
             audit_results.push(audit_result.clone());
             
             // Trim old results if we exceed the limit
-            if audit_results.len() > self.config.max_audit_history {
-                audit_results.drain(0..audit_results.len() - self.config.max_audit_history);
+            let current_len = audit_results.len();
+            if current_len > self.config.max_audit_history {
+                let to_remove = current_len - self.config.max_audit_history;
+                audit_results.drain(0..to_remove);
             }
         }
         
@@ -226,8 +228,10 @@ impl SecurityManager {
             events.push(event);
             
             // Trim old events if we exceed the limit
-            if events.len() > self.config.max_event_history {
-                events.drain(0..events.len() - self.config.max_event_history);
+            let current_len = events.len();
+            if current_len > self.config.max_event_history {
+                let to_remove = current_len - self.config.max_event_history;
+                events.drain(0..to_remove);
             }
         }
         
@@ -296,7 +300,7 @@ impl SecurityManager {
             medium_threats,
             low_threats,
             blocked_attacks,
-            active_threats: self.scanner.get_metrics().active_threats,
+            active_threats: self.scanner.get_metrics().active_threats as u32,
             threat_distribution,
         }
     }

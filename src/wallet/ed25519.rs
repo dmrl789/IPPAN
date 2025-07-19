@@ -143,7 +143,7 @@ impl Ed25519Wallet {
 
     /// Verify signature
     pub fn verify(&self, data: &[u8], signature: &[u8; 64]) -> Result<bool> {
-        let signature = match Signature::from_bytes(signature) {
+        let signature = match Signature::try_from(signature.as_slice()) {
             Ok(sig) => sig,
             Err(_) => return Ok(false),
         };
@@ -156,12 +156,12 @@ impl Ed25519Wallet {
 
     /// Verify signature with a specific public key
     pub fn verify_with_key(&self, data: &[u8], signature: &[u8; 64], public_key: &[u8; 32]) -> Result<bool> {
-        let public_key = match PublicKey::from_bytes(public_key) {
+        let public_key = match PublicKey::try_from(public_key.as_slice()) {
             Ok(key) => key,
             Err(_) => return Ok(false),
         };
         
-        let signature = match Signature::from_bytes(signature) {
+        let signature = match Signature::try_from(signature.as_slice()) {
             Ok(sig) => sig,
             Err(_) => return Ok(false),
         };

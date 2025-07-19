@@ -41,7 +41,7 @@ pub struct PaymentChannel {
 }
 
 /// Payment channel state
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ChannelState {
     Open,
     Closing,

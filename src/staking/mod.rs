@@ -304,7 +304,7 @@ pub enum StakingError {
     #[error("Insufficient balance: required {required}, available {available}")]
     InsufficientBalance { required: u64, available: u64 },
     
-    #[error("Stake is locked until {lock_until}")]
+    #[error("Stake is locked until {lock_until:?}")]
     StakeLocked { lock_until: std::time::SystemTime },
     
     #[error("Node not found: {node_id:?}")]

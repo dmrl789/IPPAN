@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use crate::error::IppanError;
 use crate::Result;
+use std::path::Path;
 
 /// Configuration for the IPPAN node
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,13 +181,36 @@ impl Config {
             let content = std::fs::read_to_string(&config_path)
                 .map_err(|e| IppanError::Config(format!("Failed to read config file: {}", e)))?;
             
-            serde_json::from_str(&content)
-                .map_err(|e| IppanError::Config(format!("Failed to parse config file: {}", e)))
+            let mut config: Config = serde_json::from_str(&content)
+                .map_err(|e| IppanError::Config(format!("Failed to parse config file: {}", e)))?;
+            
+            // Apply environment variable overrides
+            config.apply_environment_overrides()?;
+            
+            // Validate configuration
+            config.validate()?;
+            
+            Ok(config)
         } else {
-            let config = Self::default();
+            let mut config = Self::default();
+            config.apply_environment_overrides()?;
+            config.validate()?;
             config.save()?;
             Ok(config)
         }
+    }
+    
+    /// Load configuration from a specific path
+    pub fn load_from_path(path: &Path) -> Result<Self> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| IppanError::Config(format!("Failed to read config file: {}", e)))?;
+        
+        let mut config: Config = serde_json::from_str(&content)
+            .map_err(|e| IppanError::Config(format!("Failed to parse config file: {}", e)))?;
+        
+        config.apply_environment_overrides()?;
+        config.validate()?;
+        Ok(config)
     }
     
     /// Save configuration to file
@@ -208,6 +232,175 @@ impl Config {
         Ok(())
     }
     
+    /// Save configuration to a specific path
+    pub fn save_to_path(&self, path: &Path) -> Result<()> {
+        let content = serde_json::to_string_pretty(self)
+            .map_err(|e| IppanError::Config(format!("Failed to serialize config: {}", e)))?;
+        
+        std::fs::write(path, content)
+            .map_err(|e| IppanError::Config(format!("Failed to write config file: {}", e)))?;
+        
+        Ok(())
+    }
+    
+    /// Apply environment variable overrides
+    fn apply_environment_overrides(&mut self) -> Result<()> {
+        // Network overrides
+        if let Ok(addr) = std::env::var("IPPAN_NETWORK_LISTEN_ADDR") {
+            self.network.listen_addr = addr;
+        }
+        if let Ok(max_conn) = std::env::var("IPPAN_NETWORK_MAX_CONNECTIONS") {
+            self.network.max_connections = max_conn.parse()
+                .map_err(|e| IppanError::Config(format!("Invalid max_connections: {}", e)))?;
+        }
+        
+        // Storage overrides
+        if let Ok(db_path) = std::env::var("IPPAN_STORAGE_DB_PATH") {
+            self.storage.db_path = PathBuf::from(db_path);
+        }
+        if let Ok(max_size) = std::env::var("IPPAN_STORAGE_MAX_SIZE") {
+            self.storage.max_storage_size = max_size.parse()
+                .map_err(|e| IppanError::Config(format!("Invalid max_storage_size: {}", e)))?;
+        }
+        
+        // Consensus overrides
+        if let Ok(block_time) = std::env::var("IPPAN_CONSENSUS_BLOCK_TIME") {
+            self.consensus.block_time = block_time.parse()
+                .map_err(|e| IppanError::Config(format!("Invalid block_time: {}", e)))?;
+        }
+        if let Ok(validators) = std::env::var("IPPAN_CONSENSUS_VALIDATORS_PER_ROUND") {
+            self.consensus.validators_per_round = validators.parse()
+                .map_err(|e| IppanError::Config(format!("Invalid validators_per_round: {}", e)))?;
+        }
+        
+        // API overrides
+        if let Ok(api_addr) = std::env::var("IPPAN_API_LISTEN_ADDR") {
+            self.api.listen_addr = api_addr;
+        }
+        
+        // Logging overrides
+        if let Ok(log_level) = std::env::var("IPPAN_LOG_LEVEL") {
+            self.logging.level = log_level;
+        }
+        if let Ok(log_file) = std::env::var("IPPAN_LOG_FILE") {
+            self.logging.file_path = Some(PathBuf::from(log_file));
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate configuration
+    fn validate(&self) -> Result<()> {
+        // Validate network configuration
+        if self.network.max_connections == 0 {
+            return Err(IppanError::Config("max_connections must be greater than 0".to_string()));
+        }
+        if self.network.connection_timeout == 0 {
+            return Err(IppanError::Config("connection_timeout must be greater than 0".to_string()));
+        }
+        
+        // Validate storage configuration
+        if self.storage.max_storage_size == 0 {
+            return Err(IppanError::Config("max_storage_size must be greater than 0".to_string()));
+        }
+        if self.storage.shard_size == 0 {
+            return Err(IppanError::Config("shard_size must be greater than 0".to_string()));
+        }
+        if self.storage.replication_factor == 0 {
+            return Err(IppanError::Config("replication_factor must be greater than 0".to_string()));
+        }
+        
+        // Validate consensus configuration
+        if self.consensus.block_time == 0 {
+            return Err(IppanError::Config("block_time must be greater than 0".to_string()));
+        }
+        if self.consensus.max_block_size == 0 {
+            return Err(IppanError::Config("max_block_size must be greater than 0".to_string()));
+        }
+        if self.consensus.validators_per_round == 0 {
+            return Err(IppanError::Config("validators_per_round must be greater than 0".to_string()));
+        }
+        if self.consensus.round_timeout == 0 {
+            return Err(IppanError::Config("round_timeout must be greater than 0".to_string()));
+        }
+        
+        // Validate staking configuration
+        if self.staking.min_stake_amount == 0 {
+            return Err(IppanError::Config("min_stake_amount must be greater than 0".to_string()));
+        }
+        if self.staking.max_stake_amount <= self.staking.min_stake_amount {
+            return Err(IppanError::Config("max_stake_amount must be greater than min_stake_amount".to_string()));
+        }
+        
+        // Validate API configuration
+        if self.api.rate_limit == 0 {
+            return Err(IppanError::Config("rate_limit must be greater than 0".to_string()));
+        }
+        
+        Ok(())
+    }
+    
+    /// Merge with another configuration (override values)
+    pub fn merge(&mut self, other: &Config) {
+        // Merge network config
+        if !other.network.listen_addr.is_empty() {
+            self.network.listen_addr = other.network.listen_addr.clone();
+        }
+        if other.network.max_connections > 0 {
+            self.network.max_connections = other.network.max_connections;
+        }
+        if other.network.connection_timeout > 0 {
+            self.network.connection_timeout = other.network.connection_timeout;
+        }
+        self.network.enable_nat = other.network.enable_nat;
+        self.network.enable_relay = other.network.enable_relay;
+        
+        // Merge storage config
+        if other.storage.max_storage_size > 0 {
+            self.storage.max_storage_size = other.storage.max_storage_size;
+        }
+        if other.storage.shard_size > 0 {
+            self.storage.shard_size = other.storage.shard_size;
+        }
+        if other.storage.replication_factor > 0 {
+            self.storage.replication_factor = other.storage.replication_factor;
+        }
+        self.storage.enable_encryption = other.storage.enable_encryption;
+        
+        // Merge consensus config
+        if other.consensus.block_time > 0 {
+            self.consensus.block_time = other.consensus.block_time;
+        }
+        if other.consensus.max_block_size > 0 {
+            self.consensus.max_block_size = other.consensus.max_block_size;
+        }
+        if other.consensus.validators_per_round > 0 {
+            self.consensus.validators_per_round = other.consensus.validators_per_round;
+        }
+        if other.consensus.round_timeout > 0 {
+            self.consensus.round_timeout = other.consensus.round_timeout;
+        }
+        
+        // Merge API config
+        if !other.api.listen_addr.is_empty() {
+            self.api.listen_addr = other.api.listen_addr.clone();
+        }
+        if other.api.rate_limit > 0 {
+            self.api.rate_limit = other.api.rate_limit;
+        }
+        self.api.enable_cors = other.api.enable_cors;
+        self.api.enable_auth = other.api.enable_auth;
+        
+        // Merge logging config
+        if !other.logging.level.is_empty() {
+            self.logging.level = other.logging.level.clone();
+        }
+        if other.logging.file_path.is_some() {
+            self.logging.file_path = other.logging.file_path.clone();
+        }
+        self.logging.enable_console = other.logging.enable_console;
+    }
+    
     /// Get configuration file path
     fn get_config_path() -> Result<PathBuf> {
         let mut path = dirs::config_dir()
@@ -215,6 +408,31 @@ impl Config {
         path.push("ippan");
         path.push("config.json");
         Ok(path)
+    }
+    
+    /// Get configuration as JSON string
+    pub fn to_json(&self) -> Result<String> {
+        serde_json::to_string_pretty(self)
+            .map_err(|e| IppanError::Config(format!("Failed to serialize config: {}", e)))
+    }
+    
+    /// Create configuration from JSON string
+    pub fn from_json(json: &str) -> Result<Self> {
+        let mut config: Config = serde_json::from_str(json)
+            .map_err(|e| IppanError::Config(format!("Failed to parse config JSON: {}", e)))?;
+        
+        config.apply_environment_overrides()?;
+        config.validate()?;
+        Ok(config)
+    }
+    
+    /// Check if configuration has changed (for hot-reloading)
+    pub fn has_changed(&self, other: &Config) -> bool {
+        self.network.listen_addr != other.network.listen_addr ||
+        self.network.max_connections != other.network.max_connections ||
+        self.consensus.block_time != other.consensus.block_time ||
+        self.api.listen_addr != other.api.listen_addr ||
+        self.logging.level != other.logging.level
     }
 }
 

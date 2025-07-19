@@ -2,25 +2,26 @@
 //! 
 //! A fully decentralized Layer-1 blockchain with built-in global DHT storage.
 
-// pub mod api;
 pub mod config;
 pub mod consensus;
+pub mod api;
 // pub mod dht;
 // pub mod domain;
 pub mod error;
-// pub mod network;
-// pub mod node;
-// pub mod staking;
-// pub mod storage;
+pub mod network;
+pub mod node;
+// pub mod staking; // TODO: Fix compilation errors before enabling
+pub mod storage;
 pub mod security;
+pub mod crosschain;
 // pub mod tests;
 pub mod utils;
-// pub mod wallet;
+// pub mod wallet; // TODO: Fix compilation errors before enabling
 
 // Re-export commonly used types
 pub use config::Config;
 pub use error::IppanError;
-// pub use node::IppanNode;
+pub use node::IppanNode;
 
 // Common types used throughout the codebase
 pub type Result<T> = std::result::Result<T, IppanError>;

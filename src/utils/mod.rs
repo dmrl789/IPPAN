@@ -2,6 +2,7 @@
 //! 
 //! This module provides common utilities used throughout the IPPAN codebase.
 
+pub mod address;
 pub mod config;
 pub mod crypto;
 pub mod logging;
@@ -9,6 +10,7 @@ pub mod time;
 pub mod performance;
 pub mod optimization;
 
+pub use address::*;
 pub use config::*;
 pub use crypto::*;
 pub use logging::*;

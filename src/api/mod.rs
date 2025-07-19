@@ -3,8 +3,9 @@
 //! Handles HTTP API, CLI, and explorer interfaces
 
 pub mod cli;
-pub mod explorer;
-pub mod http;
+pub mod crosschain;
+// pub mod explorer;
+// pub mod http;
 
 use crate::node::IppanNode;
 use std::sync::Arc;
@@ -13,16 +14,18 @@ use tokio::sync::RwLock;
 /// API layer that provides HTTP, CLI, and explorer interfaces
 pub struct ApiLayer {
     node: Arc<RwLock<IppanNode>>,
-    http_server: Option<http::HttpServer>,
-    explorer: Option<explorer::ExplorerApi>,
+    // TODO: Re-enable when modules are ready
+    // http_server: Option<http::HttpServer>,
+    // explorer: Option<explorer::ExplorerApi>,
 }
 
 impl ApiLayer {
     pub fn new(node: Arc<RwLock<IppanNode>>) -> Self {
         Self {
             node,
-            http_server: None,
-            explorer: None,
+            // TODO: Re-enable when modules are ready
+            // http_server: None,
+            // explorer: None,
         }
     }
 
@@ -30,15 +33,16 @@ impl ApiLayer {
     pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Starting API layer...");
         
+        // TODO: Re-enable when modules are ready
         // Start HTTP server
-        let node_clone = Arc::clone(&self.node);
-        self.http_server = Some(http::HttpServer::new(node_clone));
-        self.http_server.as_mut().unwrap().start().await?;
+        // let node_clone = Arc::clone(&self.node);
+        // self.http_server = Some(http::HttpServer::new(node_clone));
+        // self.http_server.as_mut().unwrap().start().await?;
         
         // Start explorer API
-        let node_clone = Arc::clone(&self.node);
-        self.explorer = Some(explorer::ExplorerApi::new(node_clone));
-        self.explorer.as_mut().unwrap().start().await?;
+        // let node_clone = Arc::clone(&self.node);
+        // self.explorer = Some(explorer::ExplorerApi::new(node_clone));
+        // self.explorer.as_mut().unwrap().start().await?;
         
         log::info!("API layer started successfully");
         Ok(())
@@ -48,13 +52,14 @@ impl ApiLayer {
     pub async fn stop(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Stopping API layer...");
         
-        if let Some(mut server) = self.http_server.take() {
-            server.stop().await?;
-        }
+        // TODO: Re-enable when modules are ready
+        // if let Some(mut server) = self.http_server.take() {
+        //     server.stop().await?;
+        // }
         
-        if let Some(mut explorer) = self.explorer.take() {
-            explorer.stop().await?;
-        }
+        // if let Some(mut explorer) = self.explorer.take() {
+        //     explorer.stop().await?;
+        // }
         
         log::info!("API layer stopped");
         Ok(())

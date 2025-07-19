@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -72,7 +71,7 @@ pub struct AuditSummary {
 /// Security auditor for IPPAN codebase
 pub struct SecurityAuditor {
     rules: Vec<SecurityRule>,
-    patterns: HashMap<String, Vec<String>>,
+    // patterns: HashMap<String, Vec<String>>, // TODO: Use when implementing pattern caching
     config: AuditorConfig,
 }
 
@@ -121,7 +120,7 @@ impl SecurityAuditor {
     pub fn new(config: AuditorConfig) -> Self {
         let mut auditor = Self {
             rules: Vec::new(),
-            patterns: HashMap::new(),
+            // patterns: HashMap::new(), // TODO: Use when implementing pattern caching
             config,
         };
         
@@ -317,23 +316,25 @@ impl SecurityAuditor {
     /// Collect source files for scanning
     async fn collect_source_files(&self, root_path: &Path) -> Result<Vec<std::path::PathBuf>> {
         let mut files = Vec::new();
+        let mut dirs_to_scan = vec![root_path.to_path_buf()];
         
-        let mut entries = fs::read_dir(root_path).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            
-            if path.is_file() {
-                if let Some(extension) = path.extension() {
-                    if extension == "rs" || extension == "toml" || extension == "md" {
-                        if !self.is_excluded(&path) {
-                            files.push(path);
+        while let Some(current_dir) = dirs_to_scan.pop() {
+            let mut entries = fs::read_dir(&current_dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                
+                if path.is_file() {
+                    if let Some(extension) = path.extension() {
+                        if extension == "rs" || extension == "toml" || extension == "md" {
+                            if !self.is_excluded(&path) {
+                                files.push(path);
+                            }
                         }
                     }
-                }
-            } else if path.is_dir() {
-                if !self.is_excluded(&path) {
-                    let sub_files = self.collect_source_files(&path).await?;
-                    files.extend(sub_files);
+                } else if path.is_dir() {
+                    if !self.is_excluded(&path) {
+                        dirs_to_scan.push(path);
+                    }
                 }
             }
         }
@@ -476,7 +477,7 @@ impl SecurityAuditor {
         
         if critical_count > 0 {
             recommendations.push(format!(
-                "CRITICAL: Address {} critical vulnerabilities immediately".to_string(),
+                "CRITICAL: Address {} critical vulnerabilities immediately",
                 critical_count
             ));
         }
@@ -488,7 +489,7 @@ impl SecurityAuditor {
         
         if high_count > 0 {
             recommendations.push(format!(
-                "HIGH: Fix {} high-severity vulnerabilities as soon as possible".to_string(),
+                "HIGH: Fix {} high-severity vulnerabilities as soon as possible",
                 high_count
             ));
         }

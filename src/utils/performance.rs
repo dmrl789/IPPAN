@@ -103,10 +103,12 @@ impl PerformanceProfiler {
 
         metrics.push(metric);
 
-        // Trim old metrics if we exceed the limit
-        if metrics.len() > self.config.max_metrics_history {
-            metrics.drain(0..metrics.len() - self.config.max_metrics_history);
-        }
+                    // Trim old metrics if we exceed the limit
+            let current_len = metrics.len();
+            if current_len > self.config.max_metrics_history {
+                let to_remove = current_len - self.config.max_metrics_history;
+                metrics.drain(0..to_remove);
+            }
     }
 
     /// Get memory usage in bytes
@@ -181,7 +183,7 @@ impl PerformanceProfiler {
 
         ThroughputStats {
             total_operations: total_ops,
-            average_duration_ns,
+            average_duration_ns: avg_duration_ns,
             operations_per_second: ops_per_sec,
             min_duration_ns: relevant_metrics.iter().map(|m| m.duration_ns).min().unwrap_or(0),
             max_duration_ns: relevant_metrics.iter().map(|m| m.duration_ns).max().unwrap_or(0),
@@ -211,7 +213,7 @@ impl PerformanceProfiler {
             
             let mut operation_stats = HashMap::new();
             for operation in operations {
-                operation_stats.insert(operation, self.get_throughput_stats(&subsystem, &operation));
+                operation_stats.insert(operation.clone(), self.get_throughput_stats(&subsystem, &operation));
             }
             
             subsystem_stats.insert(subsystem, operation_stats);

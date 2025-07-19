@@ -11,6 +11,7 @@ pub mod hashtimer;
 pub mod ippan_time;
 pub mod randomness;
 pub mod round;
+pub mod roundchain;
 
 use blockdag::{Block, BlockDAG, Transaction};
 use hashtimer::HashTimer;
@@ -20,35 +21,37 @@ use round::RoundManager;
 
 /// Custom serialization for byte arrays
 mod byte_array_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    // TODO: Implement when needed for signature serialization
+    // use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(bytes: &Option<[u8; 64]>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match bytes {
-            Some(b) => b.serialize(serializer),
-            None => serializer.serialize_none(),
-        }
-    }
+    // TODO: Implement when needed for signature serialization
+    // pub fn serialize<S>(bytes: &Option<[u8; 64]>, serializer: S) -> Result<S::Ok, S::Error>
+    // where
+    //     S: Serializer,
+    // {
+    //     match bytes {
+    //         Some(b) => b.serialize(serializer),
+    //         None => serializer.serialize_none(),
+    //     }
+    // }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[u8; 64]>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let bytes: Option<Vec<u8>> = Option::deserialize(deserializer)?;
-        match bytes {
-            Some(b) => {
-                if b.len() != 64 {
-                    return Err(serde::de::Error::custom("Invalid signature length"));
-                }
-                let mut signature = [0u8; 64];
-                signature.copy_from_slice(&b);
-                Ok(Some(signature))
-            }
-            None => Ok(None),
-        }
-    }
+    // pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[u8; 64]>, D::Error>
+    // where
+    //     D: Deserializer<'de>,
+    // {
+    //     let bytes: Option<Vec<u8>> = Option::deserialize(deserializer)?;
+    //     match bytes {
+    //         Some(b) => {
+    //             if b.len() != 64 {
+    //                 return Err(serde::de::Error::custom("Invalid signature length"));
+    //             }
+    //             let mut signature = [0u8; 64];
+    //             signature.copy_from_slice(&b);
+    //             Ok(Some(signature))
+    //         }
+    //         None => Ok(None),
+    //     }
+    // }
 }
 
 /// Consensus engine configuration
@@ -196,8 +199,23 @@ impl ConsensusEngine {
         }
 
         // Basic transaction validation
-        if tx.amount == 0 {
-            return Ok(false);
+        match &tx.tx_type {
+            crate::consensus::blockdag::TransactionType::Payment(payment) => {
+                if payment.amount == 0 {
+                    return Ok(false);
+                }
+            }
+            crate::consensus::blockdag::TransactionType::Anchor(_) => {
+                // Anchor transactions don't have amounts
+            }
+            crate::consensus::blockdag::TransactionType::Staking(staking) => {
+                if staking.amount == 0 {
+                    return Ok(false);
+                }
+            }
+            crate::consensus::blockdag::TransactionType::Storage(_) => {
+                // Storage transactions don't have amounts
+            }
         }
 
         // TODO: Add signature validation

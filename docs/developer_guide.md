@@ -1,6 +1,10 @@
 # 👨‍💻 IPPAN Developer Guide
 
-Welcome to the IPPAN Developer Guide! This document provides comprehensive information for developers who want to understand, extend, or contribute to the IPPAN ecosystem.
+Welcome to the IPPAN Developer Guide! This document provides comprehensive information for developers who want to understand, extend, or contribute to the **global Layer-1 blockchain** with **1-10 million TPS** capacity.
+
+## 🚀 Global L1 Blockchain Development
+
+IPPAN is designed as a **global Layer-1 blockchain** targeting **1-10 million transactions per second** for planetary-scale adoption. This guide covers development practices optimized for high-performance, scalable blockchain development.
 
 ## Table of Contents
 
@@ -11,9 +15,10 @@ Welcome to the IPPAN Developer Guide! This document provides comprehensive infor
 5. [API Development](#api-development)
 6. [Testing](#testing)
 7. [Performance Optimization](#performance-optimization)
-8. [Security Guidelines](#security-guidelines)
-9. [Contributing](#contributing)
-10. [Deployment](#deployment)
+8. [1-10M TPS Development](#1-10m-tps-development)
+9. [Security Guidelines](#security-guidelines)
+10. [Contributing](#contributing)
+11. [Deployment](#deployment)
 
 ## Architecture Overview
 
@@ -180,7 +185,7 @@ graph TD
 
 ### Consensus Engine
 
-The consensus engine implements the BlockDAG protocol with HashTimers:
+The consensus engine implements the BlockDAG protocol with ZK-STARK proofs and HashTimers:
 
 ```rust
 use ippan::consensus::{ConsensusEngine, ConsensusConfig, Block, Transaction};
@@ -193,8 +198,11 @@ let mut consensus = ConsensusEngine::new(config)?;
 let transactions = vec![transaction1, transaction2];
 let block = consensus.create_block(transactions, parent_hash)?;
 
-// Validate block
-consensus.validate_block(&block)?;
+// Generate ZK-STARK proof for round
+let zk_proof = consensus.generate_zk_proof(&round_state)?;
+
+// Validate block with ZK-STARK proof
+consensus.validate_block(&block, &zk_proof)?;
 
 // Add block to DAG
 consensus.add_block(block)?;
@@ -494,6 +502,402 @@ async fn process_transactions(transactions: Vec<Transaction>) -> Result<()> {
     
     Ok(())
 }
+```
+
+## 1-10M TPS Development
+
+### 🎯 Performance Targets
+
+IPPAN targets **1-10 million transactions per second** through the following phases:
+
+#### Phase 1: 1M TPS (Q2 2024)
+- **Goal:** Achieve 1 million TPS baseline
+- **Focus:** Core optimization and parallel processing
+- **Metrics:** Transaction throughput, latency, finality
+
+#### Phase 2: 5M TPS (Q4 2024)
+- **Goal:** Scale to 5 million TPS
+- **Focus:** Advanced sharding and network optimization
+- **Metrics:** Cross-shard communication, load balancing
+
+#### Phase 3: 10M TPS (2025)
+- **Goal:** Reach 10 million TPS for global scale
+- **Focus:** Global distribution and advanced optimizations
+- **Metrics:** Global network performance, geographic distribution
+
+### 🚀 Development Guidelines for High TPS
+
+#### 1. **Parallel Processing**
+```rust
+// Use async/await for concurrent operations
+pub async fn process_transactions_parallel(
+    transactions: Vec<Transaction>
+) -> Result<Vec<TransactionResult>> {
+    let futures: Vec<_> = transactions
+        .into_iter()
+        .map(|tx| process_single_transaction(tx))
+        .collect();
+    
+    futures::future::join_all(futures).await
+}
+```
+
+#### 2. **Memory Optimization**
+```rust
+// Use efficient data structures
+use std::collections::HashMap;
+use parking_lot::RwLock; // More efficient than std::sync::RwLock
+
+// Pre-allocate vectors when possible
+let mut results = Vec::with_capacity(expected_size);
+```
+
+#### 3. **Network Optimization**
+```rust
+// Optimize network communication
+pub async fn broadcast_transaction(
+    transaction: &Transaction,
+    peers: &[PeerId]
+) -> Result<()> {
+    // Use efficient serialization
+    let data = bincode::serialize(transaction)?;
+    
+    // Parallel peer communication
+    let futures: Vec<_> = peers
+        .iter()
+        .map(|peer| send_to_peer(peer, &data))
+        .collect();
+    
+    futures::future::join_all(futures).await;
+    Ok(())
+}
+```
+
+#### 4. **Database Optimization**
+```rust
+// Use efficient database operations
+pub async fn batch_insert_transactions(
+    transactions: Vec<Transaction>
+) -> Result<()> {
+    // Batch operations for better performance
+    let batch_size = 1000;
+    
+    for chunk in transactions.chunks(batch_size) {
+        database.batch_insert(chunk).await?;
+    }
+    
+    Ok(())
+}
+```
+
+### 📊 Performance Monitoring
+
+#### Key Metrics
+- **TPS (Transactions Per Second):** Current throughput
+- **Latency:** End-to-end transaction time
+- **Finality:** Time to transaction confirmation
+- **Memory Usage:** RAM consumption per node
+- **Network I/O:** Bandwidth utilization
+- **CPU Usage:** Processing overhead
+
+#### Monitoring Tools
+```rust
+// Performance monitoring
+use std::time::Instant;
+
+pub async fn monitor_transaction_processing() {
+    let start = Instant::now();
+    
+    // Process transactions
+    let result = process_transactions(transactions).await?;
+    
+    let duration = start.elapsed();
+    metrics::histogram!("transaction_processing_time", duration.as_millis() as f64);
+    metrics::counter!("transactions_processed", result.len() as u64);
+}
+```
+
+### 🔧 Optimization Techniques
+
+#### 1. **Consensus Optimization**
+- **BlockDAG:** Enable parallel block processing
+- **Minimal Coordination:** Reduce consensus overhead
+- **Fast Finality:** Quick transaction confirmation
+
+#### 2. **Storage Optimization**
+- **Sharding:** Distribute data across multiple shards
+- **Caching:** Implement intelligent caching strategies
+- **Compression:** Compress data for network efficiency
+
+#### 3. **Network Optimization**
+- **Geographic Distribution:** Nodes across continents
+- **Load Balancing:** Automatic traffic distribution
+- **Connection Pooling:** Reuse network connections
+
+#### 4. **Memory Management**
+- **Object Pooling:** Reuse objects to reduce allocation
+- **Garbage Collection:** Optimize memory cleanup
+- **Memory Mapping:** Use memory-mapped files for large datasets
+
+### 🧪 Performance Testing
+
+#### Load Testing
+```bash
+# Run load tests
+cargo test --test load_tests -- --nocapture
+
+# Benchmark specific components
+cargo bench --bench transaction_processing
+cargo bench --bench consensus_engine
+cargo bench --bench storage_operations
+```
+
+#### Stress Testing
+```rust
+#[tokio::test]
+async fn stress_test_transaction_processing() {
+    let mut transactions = Vec::new();
+    
+    // Generate 1M test transactions
+    for i in 0..1_000_000 {
+        transactions.push(create_test_transaction(i));
+    }
+    
+    let start = Instant::now();
+    let results = process_transactions_parallel(transactions).await.unwrap();
+    let duration = start.elapsed();
+    
+    let tps = results.len() as f64 / duration.as_secs_f64();
+    println!("Achieved {} TPS", tps);
+    
+    assert!(tps >= 1_000_000.0, "Failed to achieve 1M TPS");
+}
+```
+
+### 🌍 Global Scale Considerations
+
+#### Geographic Distribution
+- **Multi-Continent Deployment:** Nodes across all continents
+- **Latency Optimization:** Low-latency connections between hubs
+- **Regional Data Centers:** Optimize for local performance
+
+#### Network Resilience
+- **Redundant Paths:** Multiple network routes
+- **Fault Tolerance:** Survive regional outages
+- **Load Balancing:** Distribute load across regions
+
+#### Scalability Planning
+- **Horizontal Scaling:** Add more nodes for capacity
+- **Vertical Scaling:** Optimize individual node performance
+- **Sharding Strategy:** Distribute load across shards
+
+### 🔗 L2 Blockchain Integration
+
+#### **L2 Settlement Integration**
+```rust
+use ippan::crosschain::l2_integration::{L2Settlement, L2DataAvailability};
+
+// Create L2 settlement transaction
+let l2_settlement = L2Settlement {
+    l2_chain_id: 12345,
+    l2_block_hash: l2_block_hash,
+    l2_state_root: l2_state_root,
+    settlement_amount: 1000000000,
+    metadata: l2_metadata,
+};
+
+// Submit L2 settlement to IPPAN
+let tx_hash = consensus.submit_l2_settlement(l2_settlement).await?;
+println!("L2 settlement submitted: {}", tx_hash);
+```
+
+#### **L2 Data Availability**
+```rust
+// Store L2 data on IPPAN's global DHT
+let l2_data = L2DataAvailability {
+    l2_chain_id: 12345,
+    data_type: L2DataType::StateUpdate,
+    data_hash: data_hash,
+    data_size: data.len() as u64,
+    data: data,
+};
+
+// Upload L2 data to IPPAN storage
+let storage_result = storage.store_l2_data(l2_data).await?;
+println!("L2 data stored: {}", storage_result.file_hash);
+```
+
+#### **L2 Cross-Chain Anchors**
+```rust
+use ippan::crosschain::anchor::CrossChainAnchor;
+
+// Create cross-chain anchor for L2
+let anchor = CrossChainAnchor {
+    source_chain: "L2_Chain_A",
+    target_chain: "IPPAN",
+    state_hash: l2_state_hash,
+    timestamp: current_time_ns(),
+    proof: l2_proof,
+};
+
+// Submit anchor to IPPAN
+let anchor_tx = consensus.submit_anchor(anchor).await?;
+println!("L2 anchor submitted: {}", anchor_tx);
+```
+
+#### **L2 M2M Payment Integration**
+```rust
+// Enable M2M payments for L2 applications
+let l2_m2m_channel = M2MChannel {
+    l2_chain_id: 12345,
+    recipient: l2_recipient,
+    amount: 10000000000,
+    duration_hours: 24,
+    description: "L2 IoT device payments",
+};
+
+// Create M2M channel for L2
+let channel = wallet.create_l2_m2m_channel(l2_m2m_channel).await?;
+println!("L2 M2M channel created: {}", channel.channel_id);
+```
+
+#### **L2 Timestamping Service**
+```rust
+use ippan::consensus::hashtimer::create_l2_hashtimer;
+
+// Create precision timestamp for L2 event
+let l2_hashtimer = create_l2_hashtimer(
+    &l2_event_hash,
+    &l2_chain_id,
+    &node_id
+)?;
+
+println!("L2 event timestamped: {} ns", l2_hashtimer.ippan_time_ns);
+```
+
+#### **L2 Integration Configuration**
+```rust
+// Configure L2 integration
+let l2_config = L2IntegrationConfig {
+    settlement_enabled: true,
+    data_availability_enabled: true,
+    anchor_enabled: true,
+    m2m_enabled: true,
+    timestamping_enabled: true,
+    max_l2_chains: 1000,
+    settlement_fee: 1000000, // 1 IPN cent
+    data_storage_fee: 500000, // 0.5 IPN cent
+};
+```
+
+### 🔐 ZK-STARK Development
+
+#### **ZK-STARK Proof Generation**
+```rust
+use ippan::consensus::roundchain::zk_prover::{ZkProver, ZkProverConfig};
+
+// Configure ZK-STARK prover
+let config = ZkProverConfig {
+    proof_size_target: 50_000, // 50 KB target
+    verification_time_target: 50, // 50ms target
+    security_level: 128, // 128-bit security
+};
+
+let mut zk_prover = ZkProver::new(config);
+
+// Set round state for proof generation
+zk_prover.set_round_state(&round_state)?;
+zk_prover.set_block_list(&block_list)?;
+zk_prover.set_state_transition(&state_transition)?;
+
+// Generate ZK-STARK proof
+let proof = zk_prover.generate_proof().await?;
+
+println!("ZK-STARK proof generated: {} bytes", proof.len());
+```
+
+#### **ZK-STARK Proof Verification**
+```rust
+use ippan::consensus::roundchain::zk_prover::ZkStarkProof;
+
+// Verify ZK-STARK proof
+let is_valid = zk_prover.verify_proof(&proof, &round_state)?;
+
+if is_valid {
+    println!("ZK-STARK proof verified successfully");
+} else {
+    println!("ZK-STARK proof verification failed");
+}
+```
+
+#### **Round Structure with ZK-STARK**
+```rust
+use ippan::consensus::roundchain::{
+    RoundHeader, ZkStarkProof, RoundAggregation
+};
+
+// Create round with ZK-STARK proof
+let round_header = RoundHeader {
+    round_number: 12345,
+    timestamp: current_time_ns(),
+    validator_id: validator_public_key,
+    block_count: block_list.len() as u32,
+    zk_proof_reference: zk_proof.hash(),
+};
+
+let round_aggregation = RoundAggregation {
+    header: round_header,
+    block_list,
+    zk_proof,
+    validator_signatures: vec![],
+};
+```
+
+#### **Performance Optimization for ZK-STARK**
+```rust
+// Parallel proof generation
+pub async fn generate_parallel_proofs(
+    round_states: Vec<RoundState>
+) -> Result<Vec<ZkStarkProof>> {
+    let futures: Vec<_> = round_states
+        .into_iter()
+        .map(|state| generate_single_proof(state))
+        .collect();
+    
+    futures::future::join_all(futures).await
+}
+
+// Optimized verification
+pub async fn verify_proofs_batch(
+    proofs: Vec<ZkStarkProof>
+) -> Result<Vec<bool>> {
+    let mut results = Vec::with_capacity(proofs.len());
+    
+    for proof in proofs {
+        let start = Instant::now();
+        let is_valid = verify_single_proof(&proof).await?;
+        let duration = start.elapsed();
+        
+        // Ensure verification time is under 50ms
+        assert!(duration.as_millis() < 50, "ZK-STARK verification too slow");
+        
+        results.push(is_valid);
+    }
+    
+    Ok(results)
+}
+```
+
+#### **ZK-STARK Configuration**
+```rust
+// High-performance ZK-STARK configuration
+let high_perf_config = ZkProverConfig {
+    proof_size_target: 100_000, // 100 KB for higher security
+    verification_time_target: 25, // 25ms for faster finality
+    security_level: 256, // 256-bit security
+    parallel_proving: true, // Enable parallel proof generation
+    optimized_verification: true, // Use optimized verification
+};
 ```
 
 ## Security Guidelines

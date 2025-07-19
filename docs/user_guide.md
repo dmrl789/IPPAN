@@ -1,601 +1,441 @@
-# 📖 IPPAN User Guide
+# 👥 IPPAN User Guide
 
-Welcome to IPPAN (Immutable Proof & Availability Network)! This guide will help you get started with using IPPAN for decentralized storage and blockchain operations.
+## 🌍 Global Layer-1 Blockchain for Everyone
 
-## Table of Contents
+Welcome to IPPAN, the **global Layer-1 blockchain** designed for planetary-scale adoption with **1-10 million TPS** capacity. This guide helps you understand and use IPPAN for your needs.
 
-1. [What is IPPAN?](#what-is-ippan)
-2. [Installation](#installation)
-3. [Quick Start](#quick-start)
-4. [Configuration](#configuration)
-5. [Basic Operations](#basic-operations)
-6. [Storage Operations](#storage-operations)
-7. [Wallet Operations](#wallet-operations)
-8. [Domain Management](#domain-management)
-9. [API Usage](#api-usage)
-10. [Troubleshooting](#troubleshooting)
+## 🚀 What is IPPAN?
 
-## What is IPPAN?
+IPPAN (Immutable Proof & Availability Network) is a **global Layer-1 blockchain** that:
 
-IPPAN is a fully decentralized Layer-1 blockchain with built-in global DHT storage. It provides:
+- **Processes 1-10 million transactions per second** for mass adoption
+- **Provides global storage** with built-in DHT and proof-of-storage
+- **Offers precision timestamping** with 0.1 microsecond accuracy
+- **Enables M2M payments** for IoT devices and AI agents
+- **Features human-readable domains** like `@alice.ipn`
+- **Runs autonomously** with a keyless global fund
 
-- **Immutable Proof**: Prove when any data existed with tenth-of-a-microsecond precision
-- **Decentralized Storage**: Trustless, incentivized storage across the network
-- **M2M Payments**: Direct payments between devices and AI agents
-- **Human-Readable Domains**: Register handles like `@alice.ipn`
-- **Global Fund**: Autonomous reward distribution to network participants
+## 🎯 Key Features
 
-### Key Features
+### 🌟 High Performance
+- **1-10M TPS:** Unprecedented throughput for global scale
+- **Low Latency:** Fast transaction confirmation
+- **Global Distribution:** Nodes across all continents
+- **Parallel Processing:** Concurrent transaction handling
 
-- **HashTimers**: Precise timestamping with 0.1 microsecond accuracy
-- **BlockDAG**: Scalable consensus with deterministic ordering
-- **AES-256 Encryption**: Secure, encrypted storage
-- **Staking System**: Permissionless node participation
-- **M2M Payments**: Micro-payments for IoT and AI services
+### 🔐 Security & Reliability
+- **Ed25519 Cryptography:** Secure digital signatures
+- **AES-256 Encryption:** Encrypted file storage
+- **ZK-STARK Proofs:** Sub-second finality with cryptographic guarantees
+- **Proof-of-Storage:** Verifiable data availability
+- **Byzantine Fault Tolerance:** Survives malicious nodes
 
-## Installation
+### 💰 Economic Model
+- **IPN Token:** Native cryptocurrency (21M max supply)
+- **Staking Rewards:** Earn by running nodes
+- **1% Transaction Fees:** Automatic fee collection
+- **Keyless Global Fund:** Autonomous reward distribution
 
-### Prerequisites
+## 🏗️ Getting Started
 
-- **Rust**: Version 1.70 or higher
-- **Operating System**: Linux, macOS, or Windows
-- **Network**: Internet connection for node discovery
-- **Storage**: At least 10GB available space
-
-### Installing Rust
-
-```bash
-# Install Rust using rustup
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Reload your shell
-source ~/.bashrc
-
-# Verify installation
-rustc --version
-cargo --version
-```
-
-### Installing IPPAN
+### 1. **Install IPPAN**
 
 ```bash
 # Clone the repository
 git clone https://github.com/ippan/ippan.git
 cd ippan
 
-# Build IPPAN
+# Build the project
 cargo build --release
 
-# Install IPPAN globally
-cargo install --path .
+# Run a node
+cargo run --release
 ```
 
-### Verifying Installation
+### 2. **Generate Your First Address**
+
+```rust
+use ippan::utils::address::generate_ippan_address;
+use ed25519_dalek::SigningKey;
+
+// Generate a new keypair
+let mut rng = rand::thread_rng();
+let signing_key = SigningKey::generate(&mut rng);
+let verifying_key = signing_key.verifying_key();
+
+// Generate your IPPAN address
+let address = generate_ippan_address(&verifying_key.to_bytes());
+println!("Your IPPAN address: {}", address);
+// Output: i1hV6Ro8Adgj7fw1MPWAhUHyZBcZevfyz
+```
+
+### 3. **Connect to the Network**
 
 ```bash
-# Check IPPAN version
-ippan --version
+# Start your node
+./target/release/ippan
 
-# Check available commands
-ippan --help
+# Check node status
+curl http://localhost:8080/api/v1/status
+
+# View network peers
+curl http://localhost:8080/api/v1/peers
 ```
 
-## Quick Start
+## 💳 Using IPPAN
 
-### 1. Generate Your Keys
+### **Making Transactions**
+
+```rust
+use ippan::wallet::payments::create_payment_transaction;
+
+// Create a payment transaction
+let transaction = create_payment_transaction(
+    &from_address,
+    &to_address,
+    amount_in_satoshi,
+    &signing_key
+)?;
+
+// Submit to network
+network.broadcast_transaction(&transaction).await?;
+```
+
+### **Storing Files**
+
+```rust
+use ippan::storage::orchestrator::upload_file;
+
+// Upload a file to IPPAN storage
+let file_hash = upload_file("document.txt", &file_data).await?;
+println!("File stored with hash: {}", file_hash);
+
+// Download the file
+let downloaded_data = download_file(&file_hash).await?;
+```
+
+### **Registering Domains**
+
+```rust
+use ippan::domain::registry::register_domain;
+
+// Register a human-readable domain
+let domain = register_domain("@alice.ipn", &address).await?;
+println!("Domain registered: {}", domain);
+```
+
+## 🌐 Network Participation
+
+### **Running a Node**
+
+#### Minimum Requirements
+- **CPU:** 4+ cores (8+ recommended)
+- **RAM:** 8GB (16GB recommended)
+- **Storage:** 100GB SSD (1TB recommended)
+- **Network:** 100 Mbps (1 Gbps recommended)
+- **Stake:** 10-100 IPN after first month
+
+#### Setup Steps
+
+1. **Install Dependencies**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt update
+   sudo apt install build-essential curl git
+   
+   # Install Rust
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source ~/.cargo/env
+   ```
+
+2. **Build and Run**
+   ```bash
+   git clone https://github.com/ippan/ippan.git
+   cd ippan
+   cargo build --release
+   ./target/release/ippan
+   ```
+
+3. **Configure Staking**
+   ```bash
+   # After first month, stake IPN tokens
+   ippan-cli stake --amount 50 --address your_address
+   ```
+
+### **Earning Rewards**
+
+Nodes earn rewards from the Global Fund for:
+- **Uptime:** Maintaining 99%+ availability
+- **Validation:** Correctly validating blocks and transactions
+- **Time Precision:** Providing accurate IPPAN Time
+- **Storage:** Proving file availability
+- **Traffic:** Serving real file requests
+
+## 🔧 Advanced Usage
+
+### **M2M Payments**
+
+```rust
+// IoT device making micro-payment
+let micro_payment = create_micro_payment(
+    &device_address,
+    &service_address,
+    amount_in_smallest_units
+).await?;
+
+// AI agent payment
+let ai_payment = create_ai_payment(
+    &ai_agent_address,
+    &compute_provider_address,
+    compute_cost
+).await?;
+```
+
+### **Precision Timestamping**
+
+```rust
+use ippan::consensus::hashtimer::create_hashtimer;
+
+// Create a HashTimer for proof-of-existence
+let hashtimer = create_hashtimer(
+    &data_hash,
+    &node_id
+)?;
+
+println!("Timestamp: {} ns", hashtimer.ippan_time_ns);
+```
+
+### **ZK-STARK Round Verification**
+
+```rust
+use ippan::consensus::roundchain::zk_prover::verify_round_proof;
+
+// Verify ZK-STARK proof for a round
+let is_valid = verify_round_proof(&round_header, &zk_proof).await?;
+
+if is_valid {
+    println!("Round verified with ZK-STARK proof");
+    println!("Finality achieved in {} ms", verification_time);
+} else {
+    println!("Round verification failed");
+}
+```
+
+### **L2 Blockchain Integration**
+
+```rust
+use ippan::crosschain::l2_integration::L2Integration;
+
+// Initialize L2 integration
+let l2_integration = L2Integration::new(l2_chain_id)?;
+
+// Submit L2 settlement to IPPAN
+let settlement_tx = l2_integration.submit_settlement(
+    l2_block_hash,
+    l2_state_root,
+    settlement_amount
+).await?;
+
+println!("L2 settlement submitted: {}", settlement_tx);
+
+// Store L2 data on IPPAN
+let data_tx = l2_integration.store_data(
+    l2_data,
+    L2DataType::StateUpdate
+).await?;
+
+println!("L2 data stored: {}", data_tx);
+```
+
+### **Storage Proofs**
+
+```rust
+use ippan::storage::proofs::generate_storage_proof;
+
+// Generate proof that file is stored
+let proof = generate_storage_proof(&file_hash).await?;
+
+// Verify storage proof
+let is_valid = verify_storage_proof(&file_hash, &proof).await?;
+```
+
+## 📊 Technical Specifications
+
+### **Block & Transaction Details**
+
+#### **Block Structure**
+- **Max Block Size:** 10 MB
+- **Max Transactions per Block:** 100,000
+- **Block Header:** 256 bytes
+- **ZK-STARK Proof:** 50-100 KB per round
+- **Round Duration:** 1-5 seconds
+
+#### **Transaction Structure**
+- **Base Size:** 145 bytes
+- **Ed25519 Signature:** 64 bytes
+- **Public Key:** 32 bytes
+- **Transaction Type:** 1 byte
+- **Amount:** 8 bytes (IPN in satoshis)
+- **Timestamp:** 8 bytes
+- **HashTimer:** 32 bytes
+- **Variable Data:** 0-500 bytes
+
+#### **Transaction Types**
+- **Payment (0x01):** Standard IPN transfer
+- **Storage (0x02):** File upload/download operations
+- **Domain (0x03):** Domain registration/renewal
+- **Staking (0x04):** Stake/unstake operations
+- **Anchor (0x05):** Cross-chain anchor transactions
+- **M2M (0x06):** Machine-to-machine payments
+- **L2 Settlement (0x07):** L2 blockchain settlement transactions
+- **L2 Data (0x08):** L2 data availability and storage
+
+#### **ZK-STARK Performance**
+- **Proof Generation:** 1-5 seconds per round
+- **Proof Verification:** 10-50ms
+- **Proof Size:** 50-100 KB
+- **Security Level:** 128-256 bit
+- **Finality:** Sub-second deterministic
+
+### **Network Performance**
+- **Target TPS:** 1-10 million transactions/second
+- **Block Time:** 1-5 seconds
+- **Finality:** Sub-second with ZK-STARK
+- **Latency:** <100ms intercontinental
+- **Throughput:** 10MB blocks with 100K transactions
+
+## 📊 Monitoring & Analytics
+
+### **Node Dashboard**
+
+Access your node's dashboard at `http://localhost:8080/dashboard`:
+
+- **Performance Metrics:** TPS, latency, memory usage
+- **Network Status:** Peer connections, sync status
+- **Economic Data:** Staking, rewards, fees
+- **Storage Stats:** File availability, proof generation
+
+### **Network Explorer**
+
+Visit the IPPAN Explorer at `https://explorer.ippan.io`:
+
+- **Global Network:** View all nodes and their status
+- **Transaction History:** Search and verify transactions
+- **Address Lookup:** Check balances and transaction history
+- **Domain Registry:** Browse registered domains
+
+### **API Access**
 
 ```bash
-# Generate a new wallet
-ippan wallet generate
+# Get network statistics
+curl https://api.ippan.io/v1/network/stats
 
-# This will create:
-# - Private key file: ~/.ippan/keys/private.key
-# - Public key file: ~/.ippan/keys/public.key
-# - Node ID: ~/.ippan/keys/node_id.txt
+# Check address balance
+curl https://api.ippan.io/v1/address/i1hV6Ro8Adgj7fw1MPWAhUHyZBcZevfyz
+
+# Get transaction details
+curl https://api.ippan.io/v1/tx/transaction_hash
 ```
 
-### 2. Start Your Node
+## 🛠️ Troubleshooting
 
-```bash
-# Start IPPAN node
-ippan node start
-
-# The node will:
-# - Connect to the IPPAN network
-# - Begin participating in consensus
-# - Start providing storage services
-# - Begin earning rewards
-```
-
-### 3. Check Node Status
-
-```bash
-# View node status
-ippan node status
-
-# View network information
-ippan network info
-
-# View wallet balance
-ippan wallet balance
-```
-
-## Configuration
-
-### Configuration File
-
-IPPAN uses a TOML configuration file located at `~/.ippan/config.toml`:
-
-```toml
-[network]
-# Network listening port
-port = 8080
-
-# Bootstrap nodes for network discovery
-bootstrap_nodes = [
-    "node1.ippan.net:8080",
-    "node2.ippan.net:8080"
-]
-
-[storage]
-# Storage directory
-data_dir = "~/.ippan/storage"
-
-# Maximum storage space (in bytes)
-max_storage = 107374182400  # 100GB
-
-[consensus]
-# Minimum stake required (in IPN)
-min_stake = 10
-
-# Maximum stake allowed (in IPN)
-max_stake = 100
-
-[api]
-# API server port
-port = 3000
-
-# Enable CORS
-enable_cors = true
-```
-
-### Environment Variables
-
-You can also configure IPPAN using environment variables:
-
-```bash
-export IPPAN_NETWORK_PORT=8080
-export IPPAN_STORAGE_DIR="/path/to/storage"
-export IPPAN_API_PORT=3000
-export IPPAN_LOG_LEVEL=info
-```
-
-## Basic Operations
-
-### Node Management
-
-```bash
-# Start node
-ippan node start
-
-# Stop node
-ippan node stop
-
-# Restart node
-ippan node restart
-
-# View node logs
-ippan node logs
-
-# Update node
-ippan node update
-```
-
-### Network Operations
-
-```bash
-# View connected peers
-ippan network peers
-
-# View network statistics
-ippan network stats
-
-# Ping a specific node
-ippan network ping <node_id>
-
-# View network topology
-ippan network topology
-```
-
-### Consensus Operations
-
-```bash
-# View current consensus state
-ippan consensus status
-
-# View validators
-ippan consensus validators
-
-# View recent blocks
-ippan consensus blocks
-
-# View IPPAN Time
-ippan consensus time
-```
-
-## Storage Operations
-
-### Uploading Files
-
-```bash
-# Upload a single file
-ippan storage upload /path/to/file.txt
-
-# Upload with custom name
-ippan storage upload /path/to/file.txt --name "my-document"
-
-# Upload directory
-ippan storage upload /path/to/directory --recursive
-
-# Upload with encryption
-ippan storage upload /path/to/file.txt --encrypt
-```
-
-### Downloading Files
-
-```bash
-# Download by hash
-ippan storage download <file_hash>
-
-# Download to specific location
-ippan storage download <file_hash> --output /path/to/save
-
-# Download with verification
-ippan storage download <file_hash> --verify
-```
-
-### Storage Management
-
-```bash
-# View storage usage
-ippan storage usage
-
-# View stored files
-ippan storage list
-
-# Delete a file
-ippan storage delete <file_hash>
-
-# Generate storage proof
-ippan storage proof <file_hash>
-```
-
-### File Information
-
-```bash
-# Get file info
-ippan storage info <file_hash>
-
-# Check file availability
-ippan storage check <file_hash>
-
-# View file history
-ippan storage history <file_hash>
-```
-
-## Wallet Operations
-
-### Balance and Transactions
-
-```bash
-# View wallet balance
-ippan wallet balance
-
-# View transaction history
-ippan wallet history
-
-# Send IPN to another address
-ippan wallet send <address> <amount>
-
-# View pending transactions
-ippan wallet pending
-```
-
-### Staking Operations
-
-```bash
-# Stake IPN
-ippan wallet stake <amount>
-
-# Unstake IPN
-ippan wallet unstake <amount>
-
-# View staking status
-ippan wallet staking
-
-# View staking rewards
-ippan wallet rewards
-```
-
-### M2M Payments
-
-```bash
-# Create payment channel
-ippan wallet channel create <recipient> <amount> <duration>
-
-# Send micro-payment
-ippan wallet channel pay <channel_id> <amount>
-
-# View payment channels
-ippan wallet channel list
-
-# Close payment channel
-ippan wallet channel close <channel_id>
-```
-
-## Domain Management
-
-### Registering Domains
-
-```bash
-# Register a domain
-ippan domain register <name>.ipn
-
-# Register with custom data
-ippan domain register <name>.ipn --data "my-website.com"
-
-# Register premium TLD
-ippan domain register <name>.m --premium
-```
-
-### Managing Domains
-
-```bash
-# View domain info
-ippan domain info <name>.ipn
-
-# Update domain data
-ippan domain update <name>.ipn --data "new-data"
-
-# Transfer domain
-ippan domain transfer <name>.ipn <new-owner>
-
-# Renew domain
-ippan domain renew <name>.ipn
-```
-
-### Domain Operations
-
-```bash
-# List your domains
-ippan domain list
-
-# Check domain availability
-ippan domain check <name>.ipn
-
-# View domain history
-ippan domain history <name>.ipn
-
-# Delete domain
-ippan domain delete <name>.ipn
-```
-
-## API Usage
-
-### REST API
-
-IPPAN provides a REST API for programmatic access:
-
-```bash
-# Start API server
-ippan api start
-
-# API endpoints:
-# GET /api/v1/status - Node status
-# GET /api/v1/network - Network information
-# GET /api/v1/storage - Storage information
-# GET /api/v1/wallet - Wallet information
-# POST /api/v1/storage/upload - Upload file
-# GET /api/v1/storage/download/{hash} - Download file
-# POST /api/v1/wallet/send - Send transaction
-# GET /api/v1/domain/{name} - Domain information
-```
-
-### Example API Usage
-
-```bash
-# Get node status
-curl http://localhost:3000/api/v1/status
-
-# Upload a file
-curl -X POST http://localhost:3000/api/v1/storage/upload \
-  -F "file=@/path/to/file.txt"
-
-# Send a transaction
-curl -X POST http://localhost:3000/api/v1/wallet/send \
-  -H "Content-Type: application/json" \
-  -d '{"to": "address", "amount": 1000}'
-```
-
-### WebSocket API
-
-For real-time updates:
-
-```javascript
-const ws = new WebSocket('ws://localhost:3000/ws');
-
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    console.log('Received:', data);
-};
-
-// Subscribe to network events
-ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'network'
-}));
-```
-
-## Troubleshooting
-
-### Common Issues
+### **Common Issues**
 
 #### Node Won't Start
-
 ```bash
-# Check if port is in use
-netstat -tulpn | grep 8080
+# Check system requirements
+free -h  # Check RAM
+df -h    # Check disk space
+nproc    # Check CPU cores
 
-# Check configuration
-ippan config validate
+# Check network connectivity
+ping 8.8.8.8
+curl -I https://api.ippan.io
+```
+
+#### Low Performance
+```bash
+# Check system resources
+htop
+iotop
+nethogs
+
+# Optimize settings
+# Edit config/default.toml
+# Increase memory limits
+# Optimize network settings
+```
+
+#### Sync Issues
+```bash
+# Check peer connections
+curl http://localhost:8080/api/v1/peers
+
+# Restart sync
+ippan-cli sync --restart
 
 # Check logs
-ippan node logs --level debug
+tail -f logs/ippan.log
 ```
 
-#### Network Connection Issues
+### **Performance Optimization**
 
-```bash
-# Check network connectivity
-ippan network test
+#### For High TPS
+- **Use SSD storage** for faster I/O
+- **Increase RAM** for better caching
+- **Optimize network** with low-latency connections
+- **Use multiple CPU cores** for parallel processing
 
-# Reset network connections
-ippan network reset
+#### For Global Distribution
+- **Deploy across continents** for low latency
+- **Use CDN** for static content delivery
+- **Implement load balancing** for traffic distribution
+- **Monitor geographic performance** metrics
 
-# View network diagnostics
-ippan network diagnose
-```
+## 🔮 Future Features
 
-#### Storage Issues
+### **Phase 1: 1M TPS (Q2 2024)**
+- ✅ Core protocol implementation
+- ✅ Basic optimization
+- 🎯 Achieve 1M TPS baseline
 
-```bash
-# Check storage space
-df -h ~/.ippan/storage
+### **Phase 2: 5M TPS (Q4 2024)**
+- 🎯 Advanced sharding
+- 🎯 Network optimization
+- 🎯 Global deployment
 
-# Verify storage integrity
-ippan storage verify
+### **Phase 3: 10M TPS (2025)**
+- 🎯 Global scale optimization
+- 🎯 Mass adoption features
+- 🎯 Ecosystem expansion
 
-# Rebuild storage index
-ippan storage rebuild
-```
+## 📚 Additional Resources
 
-#### Wallet Issues
+### **Documentation**
+- [Product Requirements Document](IPPAN_PRD.md)
+- [Architecture Overview](architecture.md)
+- [Developer Guide](developer_guide.md)
+- [API Reference](api_reference.md)
 
-```bash
-# Check wallet status
-ippan wallet status
+### **Community**
+- **Discord:** [Join our community](https://discord.gg/ippan)
+- **GitHub:** [Contribute to IPPAN](https://github.com/ippan/ippan)
+- **Twitter:** [Follow updates](https://twitter.com/ippan_network)
+- **Blog:** [Read latest news](https://blog.ippan.io)
 
-# Verify wallet integrity
-ippan wallet verify
+### **Support**
+- **Documentation:** [docs.ippan.io](https://docs.ippan.io)
+- **FAQ:** [faq.ippan.io](https://faq.ippan.io)
+- **Support:** [support@ippan.io](mailto:support@ippan.io)
 
-# Backup wallet
-ippan wallet backup
-```
+## 🎉 Getting Help
 
-### Getting Help
+If you need assistance:
 
-```bash
-# View help for any command
-ippan <command> --help
+1. **Check the documentation** first
+2. **Search existing issues** on GitHub
+3. **Ask in Discord** for community help
+4. **Create an issue** for bugs or feature requests
+5. **Contact support** for urgent issues
 
-# View detailed help
-ippan <command> --help --verbose
-
-# Check IPPAN version
-ippan --version
-
-# View system information
-ippan system info
-```
-
-### Logs and Debugging
-
-```bash
-# View real-time logs
-ippan logs --follow
-
-# View logs with specific level
-ippan logs --level debug
-
-# View logs for specific component
-ippan logs --component network
-
-# Export logs to file
-ippan logs --output logs.txt
-```
-
-### Performance Monitoring
-
-```bash
-# View performance metrics
-ippan metrics
-
-# Monitor resource usage
-ippan monitor
-
-# View system statistics
-ippan stats
-```
-
-## Advanced Usage
-
-### Running as a Service
-
-```bash
-# Create systemd service
-sudo tee /etc/systemd/system/ippan.service << EOF
-[Unit]
-Description=IPPAN Node
-After=network.target
-
-[Service]
-Type=simple
-User=ippan
-ExecStart=/usr/local/bin/ippan node start
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Enable and start service
-sudo systemctl enable ippan
-sudo systemctl start ippan
-```
-
-### Backup and Recovery
-
-```bash
-# Backup wallet
-ippan wallet backup --output wallet.backup
-
-# Backup configuration
-ippan config backup --output config.backup
-
-# Backup storage data
-ippan storage backup --output storage.backup
-
-# Restore from backup
-ippan wallet restore wallet.backup
-```
-
-### Security Best Practices
-
-1. **Keep Private Keys Secure**: Never share your private keys
-2. **Regular Updates**: Keep IPPAN updated to latest version
-3. **Firewall Configuration**: Configure firewall to allow IPPAN ports
-4. **Monitoring**: Set up monitoring for your node
-5. **Backups**: Regular backups of wallet and configuration
-
-## Support and Community
-
-- **Documentation**: [docs.ippan.net](https://docs.ippan.net)
-- **GitHub**: [github.com/ippan/ippan](https://github.com/ippan/ippan)
-- **Discord**: [discord.gg/ippan](https://discord.gg/ippan)
-- **Telegram**: [t.me/ippan](https://t.me/ippan)
-- **Email**: support@ippan.net
-
----
-
-**Happy IPPANing! 🚀** 
+Welcome to the future of global blockchain technology! 🌍🚀 

@@ -4,7 +4,6 @@
 
 use crate::{
     consensus::ippan_time::IppanTimeManager,
-    error::IppanError,
     NodeId,
 };
 use crate::Result;

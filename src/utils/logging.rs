@@ -3,9 +3,7 @@
 //! This module provides logging functionality using tracing.
 
 use tracing::{Level};
-use tracing_subscriber::{fmt, EnvFilter};
-use serde::{Serialize, Deserialize};
-use std::path::PathBuf;
+use tracing_subscriber::EnvFilter;
 
 pub fn init_logging() {
     tracing_subscriber::fmt()

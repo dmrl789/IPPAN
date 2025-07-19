@@ -12,10 +12,10 @@ use crate::{
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Custom serialization for byte arrays
 mod byte_array_serde {
@@ -81,17 +81,98 @@ pub struct Block {
     pub signature: Option<[u8; 64]>,
 }
 
-/// Transaction structure
+/// Transaction types
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Transaction {
-    /// Transaction hash
-    pub hash: TransactionHash,
+pub enum TransactionType {
+    /// Payment transaction
+    Payment(PaymentData),
+    /// Anchor transaction from external chains
+    Anchor(AnchorData),
+    /// Staking transaction
+    Staking(StakingData),
+    /// Storage transaction
+    Storage(StorageData),
+}
+
+/// Payment transaction data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentData {
     /// Sender address
     pub from: NodeId,
     /// Recipient address
     pub to: NodeId,
     /// Amount in smallest units
     pub amount: u64,
+}
+
+/// Anchor transaction data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnchorData {
+    /// External chain identifier
+    pub external_chain_id: String,
+    /// External state root
+    pub external_state_root: String,
+    /// Proof type
+    pub proof_type: Option<crate::crosschain::external_anchor::ProofType>,
+    /// Proof data
+    pub proof_data: Vec<u8>,
+}
+
+/// Staking transaction data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StakingData {
+    /// Staker address
+    pub staker: NodeId,
+    /// Validator address
+    pub validator: NodeId,
+    /// Stake amount
+    pub amount: u64,
+    /// Staking action
+    pub action: StakingAction,
+}
+
+/// Staking actions
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum StakingAction {
+    /// Stake tokens
+    Stake,
+    /// Unstake tokens
+    Unstake,
+    /// Claim rewards
+    ClaimRewards,
+}
+
+/// Storage transaction data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageData {
+    /// Storage provider
+    pub provider: NodeId,
+    /// File hash
+    pub file_hash: [u8; 32],
+    /// Storage action
+    pub action: StorageAction,
+    /// Data size
+    pub data_size: u64,
+}
+
+/// Storage actions
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum StorageAction {
+    /// Store data
+    Store,
+    /// Retrieve data
+    Retrieve,
+    /// Delete data
+    Delete,
+}
+
+/// Transaction structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Transaction {
+    /// Transaction hash
+    pub hash: TransactionHash,
+    /// Transaction type
+    pub tx_type: TransactionType,
     /// Transaction fee
     pub fee: u64,
     /// Nonce to prevent replay attacks
@@ -128,14 +209,14 @@ pub struct BlockDAG {
     /// Finalized blocks
     finalized_blocks: Arc<RwLock<HashSet<BlockHash>>>,
     /// IPPAN Time manager for timing validation
-    time_manager: Arc<IppanTimeManager>,
+    // time_manager: Arc<IppanTimeManager>, // TODO: Use when implementing time validation
     /// Maximum number of tips to maintain
     max_tips: usize,
 }
 
 impl BlockDAG {
     /// Create a new BlockDAG
-    pub fn new(time_manager: Arc<IppanTimeManager>) -> Self {
+    pub fn new(_time_manager: Arc<IppanTimeManager>) -> Self {
         let genesis_hash = Self::calculate_genesis_hash();
         
         Self {
@@ -143,7 +224,7 @@ impl BlockDAG {
             genesis_hash,
             tips: Arc::new(RwLock::new(HashSet::new())),
             finalized_blocks: Arc::new(RwLock::new(HashSet::new())),
-            time_manager,
+            // time_manager, // TODO: Use when implementing time validation
             max_tips: 100,
         }
     }
@@ -158,7 +239,7 @@ impl BlockDAG {
         }
 
         // Create DAG node
-        let mut node = BlockDAGNode {
+        let node = BlockDAGNode {
             block: block.clone(),
             children: HashSet::new(),
             finalized: false,
@@ -246,11 +327,6 @@ impl BlockDAG {
 
     /// Validate transaction
     fn validate_transaction(&self, tx: &Transaction) -> Result<bool> {
-        // Basic validation
-        if tx.amount == 0 {
-            return Ok(false);
-        }
-
         // Validate HashTimer
         if !tx.hashtimer.matches_content(&tx.hash) {
             return Ok(false);
@@ -259,6 +335,30 @@ impl BlockDAG {
         // Validate timing
         if !tx.hashtimer.is_valid(30) {
             return Ok(false);
+        }
+
+        // Validate transaction type specific data
+        match &tx.tx_type {
+            TransactionType::Payment(data) => {
+                if data.amount == 0 {
+                    return Ok(false);
+                }
+            }
+            TransactionType::Anchor(data) => {
+                if data.external_chain_id.is_empty() || data.external_state_root.is_empty() {
+                    return Ok(false);
+                }
+            }
+            TransactionType::Staking(data) => {
+                if data.amount == 0 {
+                    return Ok(false);
+                }
+            }
+            TransactionType::Storage(data) => {
+                if data.data_size == 0 {
+                    return Ok(false);
+                }
+            }
         }
 
         Ok(true)
@@ -572,8 +672,8 @@ impl Block {
 }
 
 impl Transaction {
-    /// Create a new transaction
-    pub fn new(
+    /// Create a new payment transaction
+    pub fn new_payment(
         from: NodeId,
         to: NodeId,
         amount: u64,
@@ -581,32 +681,159 @@ impl Transaction {
         nonce: u64,
         hashtimer: HashTimer,
     ) -> Self {
-        let mut tx = Self {
-            hash: [0u8; 32], // Will be calculated
+        let payment_data = PaymentData {
             from,
             to,
             amount,
+        };
+        
+        let tx = Self {
+            hash: [0u8; 32], // Will be calculated
+            tx_type: TransactionType::Payment(payment_data),
             fee,
             nonce,
             hashtimer,
             signature: None,
         };
-
-        // Calculate hash
-        tx.hash = Self::calculate_transaction_hash(&tx);
         
-        tx
+        let hash = Self::calculate_transaction_hash(&tx);
+        Self {
+            hash,
+            ..tx
+        }
+    }
+
+    /// Create a new anchor transaction
+    pub fn new_anchor(
+        external_chain_id: String,
+        external_state_root: String,
+        proof_type: Option<crate::crosschain::external_anchor::ProofType>,
+        proof_data: Vec<u8>,
+        fee: u64,
+        nonce: u64,
+        hashtimer: HashTimer,
+    ) -> Self {
+        let anchor_data = AnchorData {
+            external_chain_id,
+            external_state_root,
+            proof_type,
+            proof_data,
+        };
+        
+        let tx = Self {
+            hash: [0u8; 32], // Will be calculated
+            tx_type: TransactionType::Anchor(anchor_data),
+            fee,
+            nonce,
+            hashtimer,
+            signature: None,
+        };
+        
+        let hash = Self::calculate_transaction_hash(&tx);
+        Self {
+            hash,
+            ..tx
+        }
+    }
+
+    /// Create a new staking transaction
+    pub fn new_staking(
+        staker: NodeId,
+        validator: NodeId,
+        amount: u64,
+        action: StakingAction,
+        fee: u64,
+        nonce: u64,
+        hashtimer: HashTimer,
+    ) -> Self {
+        let staking_data = StakingData {
+            staker,
+            validator,
+            amount,
+            action,
+        };
+        
+        let tx = Self {
+            hash: [0u8; 32], // Will be calculated
+            tx_type: TransactionType::Staking(staking_data),
+            fee,
+            nonce,
+            hashtimer,
+            signature: None,
+        };
+        
+        let hash = Self::calculate_transaction_hash(&tx);
+        Self {
+            hash,
+            ..tx
+        }
+    }
+
+    /// Create a new storage transaction
+    pub fn new_storage(
+        provider: NodeId,
+        file_hash: [u8; 32],
+        action: StorageAction,
+        data_size: u64,
+        fee: u64,
+        nonce: u64,
+        hashtimer: HashTimer,
+    ) -> Self {
+        let storage_data = StorageData {
+            provider,
+            file_hash,
+            action,
+            data_size,
+        };
+        
+        let tx = Self {
+            hash: [0u8; 32], // Will be calculated
+            tx_type: TransactionType::Storage(storage_data),
+            fee,
+            nonce,
+            hashtimer,
+            signature: None,
+        };
+        
+        let hash = Self::calculate_transaction_hash(&tx);
+        Self {
+            hash,
+            ..tx
+        }
     }
 
     /// Calculate transaction hash
     fn calculate_transaction_hash(tx: &Transaction) -> TransactionHash {
         let mut hasher = Sha256::new();
         
-        hasher.update(&tx.from);
-        hasher.update(&tx.to);
-        hasher.update(&tx.amount.to_be_bytes());
-        hasher.update(&tx.fee.to_be_bytes());
-        hasher.update(&tx.nonce.to_be_bytes());
+        // Hash transaction type and data
+        match &tx.tx_type {
+            TransactionType::Payment(data) => {
+                hasher.update(&data.from);
+                hasher.update(&data.to);
+                hasher.update(&data.amount.to_le_bytes());
+            }
+            TransactionType::Anchor(data) => {
+                hasher.update(data.external_chain_id.as_bytes());
+                hasher.update(data.external_state_root.as_bytes());
+                hasher.update(&data.proof_data);
+            }
+            TransactionType::Staking(data) => {
+                hasher.update(&data.staker);
+                hasher.update(&data.validator);
+                hasher.update(&data.amount.to_le_bytes());
+                hasher.update(&(data.action as u8).to_le_bytes());
+            }
+            TransactionType::Storage(data) => {
+                hasher.update(&data.provider);
+                hasher.update(&data.file_hash);
+                hasher.update(&data.data_size.to_le_bytes());
+                hasher.update(&(data.action as u8).to_le_bytes());
+            }
+        }
+        
+        hasher.update(&tx.fee.to_le_bytes());
+        hasher.update(&tx.nonce.to_le_bytes());
         hasher.update(&tx.hashtimer.ippan_time_ns.to_be_bytes());
         
         let result = hasher.finalize();
@@ -618,6 +845,24 @@ impl Transaction {
     /// Get transaction hash
     pub fn hash(&self) -> &TransactionHash {
         &self.hash
+    }
+
+    /// Get transaction type
+    pub fn tx_type(&self) -> &TransactionType {
+        &self.tx_type
+    }
+
+    /// Check if transaction is an anchor transaction
+    pub fn is_anchor(&self) -> bool {
+        matches!(self.tx_type, TransactionType::Anchor(_))
+    }
+
+    /// Get anchor data if this is an anchor transaction
+    pub fn get_anchor_data(&self) -> Option<&AnchorData> {
+        match &self.tx_type {
+            TransactionType::Anchor(data) => Some(data),
+            _ => None,
+        }
     }
 }
 
@@ -656,12 +901,40 @@ mod tests {
         let to = [2u8; 32];
         let hashtimer = HashTimer::new([0u8; 32], from);
         
-        let tx = Transaction::new(from, to, 1000, 10, 1, hashtimer);
+        let tx = Transaction::new_payment(from, to, 1000, 10, 1, hashtimer);
         
-        assert_eq!(tx.from, from);
-        assert_eq!(tx.to, to);
-        assert_eq!(tx.amount, 1000);
+        match &tx.tx_type {
+            TransactionType::Payment(data) => {
+                assert_eq!(data.from, from);
+                assert_eq!(data.to, to);
+                assert_eq!(data.amount, 1000);
+            }
+            _ => panic!("Expected payment transaction"),
+        }
         assert_eq!(tx.fee, 10);
         assert_eq!(tx.nonce, 1);
+    }
+
+    #[tokio::test]
+    async fn test_anchor_transaction_creation() {
+        let hashtimer = HashTimer::new([0u8; 32], [1u8; 32]);
+        
+        let tx = Transaction::new_anchor(
+            "testchain".to_string(),
+            "0x1234567890abcdef".to_string(),
+            Some(crate::crosschain::external_anchor::ProofType::Signature),
+            vec![1; 64],
+            10,
+            1,
+            hashtimer,
+        );
+        
+        assert!(tx.is_anchor());
+        if let Some(anchor_data) = tx.get_anchor_data() {
+            assert_eq!(anchor_data.external_chain_id, "testchain");
+            assert_eq!(anchor_data.external_state_root, "0x1234567890abcdef");
+        } else {
+            panic!("Expected anchor data");
+        }
     }
 } 

@@ -158,10 +158,10 @@ impl GlobalFund {
 
         // Calculate distribution amounts
         let mut node_rewards: HashMap<String, u64> = HashMap::new();
-        for (node_id, score) in eligible_nodes {
+        for (node_id, score) in &eligible_nodes {
             let reward_ratio = score / total_score;
             let reward_amount = (self.total_funds as f64 * reward_ratio) as u64;
-            node_rewards.insert(node_id, reward_amount);
+            node_rewards.insert(node_id.clone(), reward_amount);
         }
 
         // Create distribution record

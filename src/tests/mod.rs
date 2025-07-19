@@ -2,6 +2,7 @@
 //! 
 //! Comprehensive testing for all subsystems
 
+pub mod address_tests;
 pub mod integration;
 pub mod unit;
 

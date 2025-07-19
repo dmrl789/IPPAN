@@ -7,7 +7,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit};
 use aes_gcm::aead::Aead;
 use rand::{Rng, RngCore};
-use serde::{Serialize, Deserialize};
+
 
 /// Generate a random Ed25519 keypair
 pub fn generate_keypair() -> (SigningKey, VerifyingKey) {

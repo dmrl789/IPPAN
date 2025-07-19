@@ -466,7 +466,7 @@ impl ExplorerHandler {
     }
 }
 
-//! Explorer API for blockchain exploration and analytics
+/// Explorer API for blockchain exploration and analytics
 pub struct ExplorerApi {
     node: Arc<RwLock<IppanNode>>,
     server: Option<axum::Server<axum::extract::DefaultBodyLimit, axum::routing::IntoMakeService<Router>>>,

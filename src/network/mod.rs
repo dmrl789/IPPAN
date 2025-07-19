@@ -1,11 +1,11 @@
 //! Network subsystem for IPPAN
 //!
-//! Handles P2P networking, discovery, NAT, relay, and message protocols (to be implemented).
+//! Handles P2P networking, peer discovery, and message routing (to be implemented).
 
 use crate::config::NetworkConfig;
 use crate::Result;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+// use std::sync::Arc; // TODO: Use when implementing async networking
+// use tokio::sync::RwLock; // TODO: Use when implementing async networking
 
 pub struct NetworkManager {
     pub config: NetworkConfig,

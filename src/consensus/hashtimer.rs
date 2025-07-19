@@ -2,9 +2,7 @@
 //! 
 //! Provides precise timestamping with 0.1 microsecond precision
 
-use crate::{Result, NodeId};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// HashTimer provides precise timing for blocks and transactions

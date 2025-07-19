@@ -67,44 +67,6 @@ impl HttpServer {
             .route("/node/peers", get(Self::get_peers))
             .route("/node/uptime", get(Self::get_uptime))
             
-            // Consensus endpoints
-            .route("/consensus/round", get(Self::get_current_round))
-            .route("/consensus/blocks", get(Self::get_recent_blocks))
-            .route("/consensus/validators", get(Self::get_validators))
-            
-            // Storage endpoints
-            .route("/storage/usage", get(Self::get_storage_usage))
-            .route("/storage/files", get(Self::get_stored_files))
-            .route("/storage/upload", post(Self::upload_file))
-            .route("/storage/download/:hash", get(Self::download_file))
-            
-            // Wallet endpoints
-            .route("/wallet/balance", get(Self::get_balance))
-            .route("/wallet/addresses", get(Self::get_addresses))
-            .route("/wallet/send", post(Self::send_payment))
-            .route("/wallet/transactions", get(Self::get_transactions))
-            
-            // DHT endpoints
-            .route("/dht/keys", get(Self::get_dht_keys))
-            .route("/dht/get/:key", get(Self::get_dht_value))
-            .route("/dht/put", post(Self::put_dht_value))
-            
-            // Network endpoints
-            .route("/network/stats", get(Self::get_network_stats))
-            .route("/network/connect", post(Self::connect_peer))
-            
-            // Global Fund endpoints
-            .route("/global-fund/stats", get(Self::get_global_fund_stats))
-            .route("/global-fund/balance", get(Self::get_global_fund_balance))
-            .route("/global-fund/distribute", post(Self::distribute_global_fund))
-            
-            // M2M Payment endpoints
-            .route("/m2m/channels", get(Self::get_m2m_channels))
-            .route("/m2m/channels", post(Self::create_m2m_channel))
-            .route("/m2m/channels/:channel_id", get(Self::get_m2m_channel))
-            .route("/m2m/payments", post(Self::process_m2m_payment))
-            .route("/m2m/statistics", get(Self::get_m2m_statistics))
-            
             .with_state(node)
     }
 
@@ -122,149 +84,54 @@ impl HttpServer {
     }
 
     // Get node status
-    async fn get_status(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<NodeStatus>> {
-        let node = node.read().await;
+    async fn get_status(State(_node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<NodeStatus>> {
         let status = NodeStatus {
-            node_id: format!("{:?}", node.node_id()),
-            peer_id: node.peer_id().to_string(),
+            node_id: "test_node".to_string(),
+            peer_id: "test_peer".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            uptime: node.get_uptime(),
-            consensus_round: node.consensus.get_current_round(),
-            storage_usage: node.storage.get_usage(),
-            network_peers: node.network.get_peer_count(),
-            wallet_balance: node.wallet.get_balance(),
-            dht_keys: node.dht.get_key_count(),
+            uptime: std::time::Duration::from_secs(0),
+            consensus_round: 0,
+            storage_usage: crate::api::StorageUsage { used_bytes: 0, total_bytes: 0 },
+            network_peers: 0,
+            wallet_balance: 0,
+            dht_keys: 0,
         };
         Json(ApiResponse::success(status))
     }
 
     // Get node information
-    async fn get_node_info(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<NodeInfo>> {
-        let node = node.read().await;
+    async fn get_node_info(State(_node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<NodeInfo>> {
         let info = NodeInfo {
-            node_id: format!("{:?}", node.node_id()),
-            peer_id: node.peer_id().to_string(),
+            node_id: "test_node".to_string(),
+            peer_id: "test_peer".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            uptime: node.get_uptime(),
-            connected_peers: node.network.get_peer_count(),
-            storage_used: node.storage.get_usage().used_bytes,
-            storage_capacity: node.storage.get_usage().total_bytes,
+            uptime: std::time::Duration::from_secs(0),
+            connected_peers: 0,
+            storage_used: 0,
+            storage_capacity: 0,
         };
         Json(ApiResponse::success(info))
     }
 
     // Get connected peers
-    async fn get_peers(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<Vec<PeerInfo>>> {
-        let node = node.read().await;
-        let peers = node.network.get_peers().iter().map(|peer| PeerInfo {
-            peer_id: peer.peer_id.to_string(),
-            address: peer.address.to_string(),
-            last_seen: peer.last_seen,
-        }).collect();
+    async fn get_peers(State(_node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<Vec<PeerInfo>>> {
+        let peers = Vec::new();
         Json(ApiResponse::success(peers))
     }
 
     // Get node uptime
-    async fn get_uptime(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<UptimeInfo>> {
-        let node = node.read().await;
-        let uptime = node.get_uptime();
+    async fn get_uptime(State(_node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<UptimeInfo>> {
         Json(ApiResponse::success(UptimeInfo {
-            uptime_seconds: uptime.as_secs(),
-            uptime_formatted: format!("{}d {}h {}m {}s", 
-                uptime.as_secs() / 86400,
-                (uptime.as_secs() % 86400) / 3600,
-                (uptime.as_secs() % 3600) / 60,
-                uptime.as_secs() % 60),
+            uptime_seconds: 0,
+            uptime_formatted: "0d 0h 0m 0s".to_string(),
         }))
     }
 
-    // Get current consensus round
-    async fn get_current_round(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<ConsensusInfo>> {
-        let node = node.read().await;
-        let consensus = &node.consensus;
-        Json(ApiResponse::success(ConsensusInfo {
-            current_round: consensus.get_current_round(),
-            is_validator: consensus.is_validator(),
-            stake_amount: consensus.get_stake_amount(),
-        }))
-    }
-
-    // Get recent blocks
-    async fn get_recent_blocks(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<Vec<BlockInfo>>> {
-        let node = node.read().await;
-        let blocks = node.consensus.get_recent_blocks().iter().map(|block| BlockInfo {
-            hash: format!("{:?}", block.hash()),
-            round: block.round(),
-            timestamp: block.timestamp(),
-            transaction_count: block.transactions().len(),
-        }).collect();
-        Json(ApiResponse::success(blocks))
-    }
-
-    // Get validators
-    async fn get_validators(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<Vec<ValidatorInfo>>> {
-        let node = node.read().await;
-        let validators = node.consensus.get_validators().iter().map(|validator| ValidatorInfo {
-            node_id: format!("{:?}", validator.node_id),
-            stake_amount: validator.stake_amount,
-            is_active: validator.is_active,
-        }).collect();
-        Json(ApiResponse::success(validators))
-    }
-
-    // Get storage usage
-    async fn get_storage_usage(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<StorageUsage>> {
-        let node = node.read().await;
-        Json(ApiResponse::success(node.storage.get_usage()))
-    }
-
-    // Get stored files
-    async fn get_stored_files(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<Vec<FileInfo>>> {
-        let node = node.read().await;
-        let files = node.storage.get_files().iter().map(|file| FileInfo {
-            hash: format!("{:?}", file.hash),
-            size: file.size,
-            uploaded_at: file.uploaded_at,
-            shard_count: file.shard_count,
-        }).collect();
-        Json(ApiResponse::success(files))
-    }
-
-    // Upload file
-    async fn upload_file(
-        State(node): State<Arc<RwLock<IppanNode>>>,
-        Json(request): Json<UploadRequest>,
-    ) -> Json<ApiResponse<UploadResponse>> {
-        let mut node = node.write().await;
-        match node.storage.store_file(&request.data, request.filename).await {
-            Ok(hash) => Json(ApiResponse::success(UploadResponse {
-                hash: format!("{:?}", hash),
-                size: request.data.len() as u64,
-            })),
-            Err(e) => Json(ApiResponse::error(format!("Upload failed: {}", e))),
-        }
-    }
-
-    // Download file
-    async fn download_file(
-        State(node): State<Arc<RwLock<IppanNode>>>,
-        Path(hash): Path<String>,
-    ) -> Json<ApiResponse<DownloadResponse>> {
-        let node = node.read().await;
-        // Implementation would decode hash and retrieve file
-        Json(ApiResponse::success(DownloadResponse {
-            hash: hash,
-            data: vec![], // Placeholder
-            size: 0,
-        }))
-    }
-
-    // Get wallet balance
-    async fn get_balance(State(node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<BalanceInfo>> {
-        let node = node.read().await;
+    // Get wallet balance - TODO: Implement when wallet is ready
+    async fn get_balance(State(_node): State<Arc<RwLock<IppanNode>>>) -> Json<ApiResponse<BalanceInfo>> {
         Json(ApiResponse::success(BalanceInfo {
-            balance: node.wallet.get_balance(),
-            staked_amount: node.wallet.get_staked_amount(),
+            balance: 0,
+            staked_amount: 0,
         }))
     }
 

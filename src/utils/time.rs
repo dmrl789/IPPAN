@@ -4,7 +4,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH, Duration, Instant};
 use chrono::{DateTime, Utc, TimeZone};
-use serde::{Serialize, Deserialize};
+
 
 /// IPPAN Time precision in microseconds
 pub const IPPAN_TIME_PRECISION: u64 = 100; // 0.1 microseconds

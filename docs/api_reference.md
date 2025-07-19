@@ -491,6 +491,92 @@ GET /api/v1/consensus/status
 }
 ```
 
+### L2 Blockchain Integration
+
+#### Submit L2 Settlement
+
+```http
+POST /api/v1/l2/settlement
+```
+
+**Request:**
+```json
+{
+  "l2_chain_id": 12345,
+  "l2_block_hash": "block123...",
+  "l2_state_root": "state123...",
+  "settlement_amount": 1000000000,
+  "metadata": {
+    "l2_chain_name": "L2_Chain_A",
+    "transaction_count": 150
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "transaction_hash": "tx123...",
+  "l2_chain_id": 12345,
+  "settlement_amount": 1000000000,
+  "timestamp": "2024-01-01T12:00:00Z"
+}
+```
+
+#### Store L2 Data
+
+```http
+POST /api/v1/l2/data
+```
+
+**Request:**
+```json
+{
+  "l2_chain_id": 12345,
+  "data_type": "state_update",
+  "data_hash": "data123...",
+  "data_size": 1024,
+  "data": "base64_encoded_data"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "file_hash": "file123...",
+  "l2_chain_id": 12345,
+  "data_type": "state_update",
+  "storage_fee": 500000,
+  "timestamp": "2024-01-01T12:00:00Z"
+}
+```
+
+#### Get L2 Integration Status
+
+```http
+GET /api/v1/l2/status
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "integrated_l2_chains": [
+    {
+      "chain_id": 12345,
+      "chain_name": "L2_Chain_A",
+      "settlement_count": 150,
+      "data_storage_mb": 1024,
+      "last_settlement": "2024-01-01T12:00:00Z"
+    }
+  ],
+  "total_settlements": 1500,
+  "total_data_storage_mb": 10240
+}
+```
+
 #### Get Recent Blocks
 
 ```http

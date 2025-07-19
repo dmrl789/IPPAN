@@ -92,11 +92,26 @@ pub enum IppanError {
     
     #[error("Anyhow error: {0}")]
     Anyhow(#[from] anyhow::Error),
+    
+    #[error("Feature disabled: {0}")]
+    FeatureDisabled(String),
+    
+    #[error("Not found: {0}")]
+    NotFound(String),
+    
+    #[error("Verification error: {0}")]
+    Verification(String),
 }
 
 impl From<ed25519_dalek::ed25519::Error> for IppanError {
     fn from(err: ed25519_dalek::ed25519::Error) -> Self {
         IppanError::Crypto(format!("Ed25519 error: {}", err))
+    }
+}
+
+impl From<crate::crosschain::foreign_verifier::VerificationError> for IppanError {
+    fn from(err: crate::crosschain::foreign_verifier::VerificationError) -> Self {
+        IppanError::Verification(format!("{}", err))
     }
 }
 
