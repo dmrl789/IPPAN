@@ -33,7 +33,7 @@ pub enum IoTDeviceType {
 }
 
 /// IoT device status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum IoTDeviceStatus {
     Online,
     Offline,
@@ -54,7 +54,7 @@ pub enum EdgeNodeType {
 }
 
 /// Sensor data types
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum SensorDataType {
     Temperature,
     Humidity,
@@ -296,6 +296,7 @@ impl AdvancedIoTSystem {
         }
         
         let device_id = format!("iot_device_{}", Utc::now().timestamp_millis());
+        let config_clone = config.clone();
         
         let device = IoTDevice {
             id: device_id.clone(),
@@ -319,7 +320,7 @@ impl AdvancedIoTSystem {
         let mut stats = self.stats.write().await;
         stats.total_devices += 1;
         stats.online_devices += 1;
-        *stats.devices_by_type.entry(config.device_type.clone()).or_insert(0) += 1;
+        *stats.devices_by_type.entry(config_clone.device_type.clone()).or_insert(0) += 1;
         *stats.devices_by_status.entry(IoTDeviceStatus::Online).or_insert(0) += 1;
         
         Ok(device_id)

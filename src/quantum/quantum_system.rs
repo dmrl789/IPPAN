@@ -25,7 +25,7 @@ pub enum QuantumAlgorithm {
 }
 
 /// Quantum computing status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum QuantumStatus {
     Idle,
     Running,
@@ -217,6 +217,7 @@ impl AdvancedQuantumSystem {
         }
         
         let job_id = format!("quantum_job_{}", Utc::now().timestamp_millis());
+        let algorithm_clone = algorithm.clone();
         
         let job = QuantumJob {
             id: job_id.clone(),
@@ -238,7 +239,7 @@ impl AdvancedQuantumSystem {
         let mut stats = self.stats.write().await;
         stats.total_jobs += 1;
         stats.active_jobs += 1;
-        *stats.algorithms_by_type.entry(algorithm).or_insert(0) += 1;
+        *stats.algorithms_by_type.entry(algorithm_clone).or_insert(0) += 1;
         *stats.jobs_by_status.entry(QuantumStatus::Idle).or_insert(0) += 1;
         
         Ok(job_id)

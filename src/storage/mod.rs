@@ -47,7 +47,7 @@ impl StorageManager {
         
         let shard_manager = Arc::new(RwLock::new(
             ShardManager::new(
-                shards::PlacementStrategy::RoundRobin,
+                shards::PlacementStrategy::HashBased,
                 config.replication_factor.try_into().unwrap(),
                 config.shard_size.try_into().unwrap(),
             )

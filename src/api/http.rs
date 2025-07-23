@@ -833,7 +833,7 @@ async fn get_logs_by_level(
             })
         ],
         _ => vec![]
-    ];
+    };
     
     Json(ApiResponse {
         success: true,

@@ -1,16 +1,15 @@
 use ippan::{
     node::IppanNode,
     config::Config,
-    utils::logging::{init_logging, LoggingConfig},
-    log_node_start,
+    utils::logging::{LoggerConfig, StructuredLogger},
 };
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging system
-    let logging_config = LoggingConfig::from_env();
-    logging_config.validate()?;
-    init_logging(&logging_config)?;
+    let logging_config = LoggerConfig::default();
+    let logger = StructuredLogger::new(logging_config);
+    logger.init()?;
 
     log::info!("Starting IPPAN node");
 
@@ -20,9 +19,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create and start the node
     let mut node = IppanNode::new(config).await?;
-    
-    // Log node start
-    log_node_start!(format!("{:?}", node.node_id()));
     
     // Start the node
     node.start().await?;
