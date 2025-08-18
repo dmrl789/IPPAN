@@ -3,6 +3,7 @@
 //! This module provides cryptographic functions used throughout the IPPAN codebase.
 
 use sha2::{Sha256, Digest};
+use sha3::Sha3_256;
 use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit};
 use aes_gcm::aead::Aead;
@@ -69,6 +70,20 @@ pub fn sha256_hash(data: &[u8]) -> [u8; 32] {
     hasher.update(data);
     let result = hasher.finalize();
     result.into()
+}
+
+/// Calculate SHA3-256 hash (backup hash function)
+pub fn sha3_256_hash(data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha3_256::new();
+    hasher.update(data);
+    let result = hasher.finalize();
+    result.into()
+}
+
+/// Calculate double SHA3-256 hash
+pub fn double_sha3_256_hash(data: &[u8]) -> [u8; 32] {
+    let first = sha3_256_hash(data);
+    sha3_256_hash(&first)
 }
 
 /// Calculate double SHA-256 hash

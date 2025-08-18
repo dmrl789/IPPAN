@@ -1,0 +1,14 @@
+[package]
+name = "neuro-executor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+neuro-core = { path = "../neuro-core" }
+neuro-ledger = { path = "../neuro-ledger" }
+neuro-proto = { path = "../neuro-proto" }
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"
+anyhow = "1.0"
+tonic = "0.10"

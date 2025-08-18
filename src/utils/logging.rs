@@ -22,7 +22,7 @@ pub struct LogEntry {
     pub message: String,
     pub fields: HashMap<String, serde_json::Value>,
     pub error_details: Option<ErrorDetails>,
-    pub performance_metrics: Option<PerformanceMetrics>,
+    pub performance_metrics: Option<LogPerformanceMetrics>,
 }
 
 /// Log level enumeration
@@ -56,7 +56,7 @@ pub enum ErrorSeverity {
 
 /// Performance metrics for logging
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PerformanceMetrics {
+pub struct LogPerformanceMetrics {
     pub duration_ms: f64,
     pub memory_usage_bytes: Option<u64>,
     pub cpu_usage_percent: Option<f64>,
@@ -82,7 +82,7 @@ pub struct ErrorTracker {
 /// Performance tracking system
 #[derive(Debug, Clone)]
 pub struct PerformanceTracker {
-    pub slow_operations: Vec<PerformanceMetrics>,
+    pub slow_operations: Vec<LogPerformanceMetrics>,
     pub operation_stats: HashMap<String, OperationStats>,
 }
 
@@ -252,7 +252,7 @@ impl StructuredLogger {
         duration_ms: f64,
         fields: HashMap<String, serde_json::Value>,
     ) {
-        let performance_metrics = PerformanceMetrics {
+        let performance_metrics = LogPerformanceMetrics {
             duration_ms,
             memory_usage_bytes: None,
             cpu_usage_percent: None,
@@ -349,7 +349,7 @@ impl StructuredLogger {
     }
 
     /// Get slow operations
-    pub async fn get_slow_operations(&self) -> Vec<PerformanceMetrics> {
+    pub async fn get_slow_operations(&self) -> Vec<LogPerformanceMetrics> {
         let performance_tracker = self.performance_tracker.read().await;
         performance_tracker.slow_operations.clone()
     }

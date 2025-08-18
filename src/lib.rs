@@ -17,10 +17,15 @@ pub mod node;
 pub mod storage;
 pub mod security;
 pub mod crosschain;
+pub mod dns;
+pub mod transaction_types; // NEW - User-facing transaction types
 // pub mod tests;
 pub mod utils;
 // pub mod wallet; // TODO: Fix compilation errors before enabling
 pub mod monitoring;
+pub mod performance_test;
+pub mod testing_framework;
+pub mod security_audit;
 
 // Re-export commonly used types
 pub use config::Config;

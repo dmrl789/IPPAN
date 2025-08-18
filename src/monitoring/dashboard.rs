@@ -40,7 +40,7 @@ impl DashboardServer {
 
     /// Dashboard HTML page
     async fn dashboard_html() -> Html<&'static str> {
-        Html(include_str!("dashboard.html"))
+        Html(DASHBOARD_HTML)
     }
 
     /// Get all metrics as JSON

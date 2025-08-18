@@ -4,7 +4,7 @@ use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 use chrono::{DateTime, Utc};
 use sha2::{Sha256, Digest};
 

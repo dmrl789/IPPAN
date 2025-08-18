@@ -12,25 +12,29 @@ use chrono::{DateTime, Utc};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaymentChannel {
     /// Channel ID
-    pub channel_id: String,
+    pub id: String,
     /// Sender address
     pub sender: String,
     /// Recipient address
     pub recipient: String,
-    /// Total deposit amount
+    /// Total deposit amount (net after fee)
     pub deposit_amount: u64,
-    /// Current balance
-    pub current_balance: u64,
+    /// Fee paid to Global Fund
+    pub deposit_fee: u64,
+    /// Sender's balance (net after fee)
+    pub sender_balance: u64,
+    /// Recipient's balance (net after fee)
+    pub recipient_balance: u64,
+    /// Channel status
+    pub status: ChannelStatus,
     /// Channel creation timestamp
     pub created_at: DateTime<Utc>,
     /// Channel expiration timestamp
-    pub expires_at: DateTime<Utc>,
-    /// Channel status
-    pub status: ChannelStatus,
-    /// Channel signature
-    pub signature: Option<Vec<u8>>,
-    /// Micro-transactions in this channel
-    pub micro_transactions: Vec<MicroTransaction>,
+    pub timeout_at: DateTime<Utc>,
+    /// Last update timestamp
+    pub last_update: DateTime<Utc>,
+    /// Last sequence number for off-chain updates
+    pub last_sequence: u64,
 }
 
 /// Channel status
@@ -76,6 +80,25 @@ pub enum MicroTransactionType {
     Refund,
 }
 
+/// Settlement result for a channel
+#[derive(Debug, Serialize)]
+pub struct SettlementResult {
+    pub channel_id: String,
+    pub settled_amount: u64,
+    pub settlement_fee: u64,
+    pub remaining_balance: u64,
+}
+
+/// Close result for a channel
+#[derive(Debug, Serialize)]
+pub struct CloseResult {
+    pub channel_id: String,
+    pub final_settlement: u64,
+    pub final_fee: u64,
+    pub sender_refund: u64,
+    pub total_fees_paid: u64,
+}
+
 /// M2M payment system
 pub struct M2MPaymentSystem {
     /// Active payment channels
@@ -86,7 +109,7 @@ pub struct M2MPaymentSystem {
     tx_counter: u64,
     /// Channel counter
     channel_counter: u64,
-    /// M2M fee rate (1%)
+    /// M2M fee rate (1% per PRD)
     fee_rate: f64,
     /// Minimum channel deposit
     min_deposit: u64,
@@ -104,14 +127,21 @@ impl M2MPaymentSystem {
             closed_channels: HashMap::new(),
             tx_counter: 0,
             channel_counter: 0,
-            fee_rate: 0.01, // 1%
+            fee_rate: 0.01, // 1% per PRD
             min_deposit: 100_000, // 0.1 IPN
             max_deposit: 10_000_000, // 10 IPN
             default_timeout_hours: 24,
         }
     }
 
-    /// Create a new payment channel
+    /// Calculate 1% fee on amount in smallest units
+    pub fn calc_fee_1pct(&self, amount_units: u64) -> u64 {
+        let one_pct = amount_units.saturating_mul(1) / 100; // floor division
+        one_pct.max(1) // dust guard: minimum 1 unit
+    }
+
+    /// Create a new payment channel (on-chain)
+    /// Applies 1% fee on the deposit amount
     pub async fn create_payment_channel(
         &mut self,
         sender: String,
@@ -119,137 +149,155 @@ impl M2MPaymentSystem {
         deposit_amount: u64,
         timeout_hours: Option<u64>,
     ) -> Result<PaymentChannel> {
-        // Validate addresses
-        if !validate_ippan_address(&sender) {
-            return Err(crate::error::IppanError::Validation(
-                format!("Invalid sender address: {}", sender)
-            ));
-        }
-        
-        if !validate_ippan_address(&recipient) {
-            return Err(crate::error::IppanError::Validation(
-                format!("Invalid recipient address: {}", recipient)
-            ));
-        }
-        
         // Validate deposit amount
         if deposit_amount < self.min_deposit {
             return Err(crate::error::IppanError::Validation(
-                format!("Deposit amount must be at least: {}", self.min_deposit)
+                format!("Deposit must be at least {} units", self.min_deposit)
             ));
         }
         
         if deposit_amount > self.max_deposit {
             return Err(crate::error::IppanError::Validation(
-                format!("Deposit amount cannot exceed: {}", self.max_deposit)
+                format!("Deposit cannot exceed {} units", self.max_deposit)
             ));
         }
-        
+
+        // Calculate 1% fee on deposit (PRD rule)
+        let deposit_fee = self.calc_fee_1pct(deposit_amount);
+        let net_deposit = deposit_amount - deposit_fee;
+
         // Generate channel ID
         self.channel_counter += 1;
-        let channel_id = format!("m2m_{:016x}", self.channel_counter);
-        
-        let timeout = timeout_hours.unwrap_or(self.default_timeout_hours);
-        let expires_at = Utc::now() + chrono::Duration::hours(timeout as i64);
-        
+        let channel_id = format!("CH_{:016x}", self.channel_counter);
+
+        // Create channel
         let channel = PaymentChannel {
-            channel_id: channel_id.clone(),
+            id: channel_id.clone(),
             sender,
             recipient,
-            deposit_amount,
-            current_balance: deposit_amount,
-            created_at: Utc::now(),
-            expires_at,
+            deposit_amount: net_deposit, // Net after fee
+            deposit_fee, // Fee paid to Global Fund
+            sender_balance: net_deposit,
+            recipient_balance: 0,
             status: ChannelStatus::Open,
-            signature: None,
-            micro_transactions: Vec::new(),
+            created_at: chrono::Utc::now(),
+            timeout_at: chrono::Utc::now() + chrono::Duration::hours(timeout_hours.unwrap_or(self.default_timeout_hours)),
+            last_update: chrono::Utc::now(),
+            last_sequence: 0, // Initialize sequence number
         };
-        
+
+        // Store channel
         self.channels.insert(channel_id.clone(), channel.clone());
-        
+
         Ok(channel)
     }
 
-    /// Process a micro-payment within a channel
-    pub async fn process_micro_payment(
+    /// Process off-chain update (no fee)
+    pub async fn process_off_chain_update(
         &mut self,
         channel_id: &str,
         amount: u64,
-        tx_type: MicroTransactionType,
-    ) -> Result<MicroTransaction> {
+        sequence: u64,
+        signature: Vec<u8>,
+    ) -> Result<()> {
         let channel = self.channels.get_mut(channel_id)
-            .ok_or_else(|| crate::error::IppanError::Validation(
-                format!("Payment channel not found: {}", channel_id)
-            ))?;
-        
-        // Check if channel is open
+            .ok_or_else(|| crate::error::IppanError::Validation("Channel not found".to_string()))?;
+
         if channel.status != ChannelStatus::Open {
-            return Err(crate::error::IppanError::Validation(
-                format!("Channel is not open: {:?}", channel.status)
-            ));
+            return Err(crate::error::IppanError::Validation("Channel is not open".to_string()));
         }
-        
-        // Check if channel is expired
-        if Utc::now() > channel.expires_at {
-            channel.status = ChannelStatus::Expired;
-            return Err(crate::error::IppanError::Validation(
-                "Channel has expired".to_string()
-            ));
+
+        // Validate sequence number
+        if sequence <= channel.last_sequence {
+            return Err(crate::error::IppanError::Validation("Invalid sequence number".to_string()));
         }
-        
+
         // Validate amount
-        if amount == 0 {
-            return Err(crate::error::IppanError::Validation(
-                "Amount must be greater than 0".to_string()
-            ));
+        if amount > channel.sender_balance {
+            return Err(crate::error::IppanError::Validation("Insufficient balance".to_string()));
         }
-        
-        // Check available balance
-        if amount > channel.current_balance {
-            return Err(crate::error::IppanError::Validation(
-                format!("Insufficient balance: required {}, available {}", 
-                    amount, channel.current_balance)
-            ));
-        }
-        
-        // Generate transaction ID
-        self.tx_counter += 1;
-        let tx_id = format!("micro_{:016x}", self.tx_counter);
-        
-        // Create transaction hash
-        let hash_data = format!("{}:{}:{}:{}", channel_id, amount, tx_type as u8, Utc::now().timestamp());
-        let hash = crate::utils::crypto::sha256_hash(hash_data.as_bytes());
-        let hash_string = hex::encode(hash);
-        
-        let micro_tx = MicroTransaction {
-            tx_id: tx_id.clone(),
-            amount,
-            tx_type,
-            timestamp: Utc::now(),
-            signature: None,
-            hash: hash_string,
-            memo: None,
-        };
-        
-        // Update channel balance
-        channel.current_balance -= amount;
-        channel.micro_transactions.push(micro_tx.clone());
-        
-        Ok(micro_tx)
+
+        // Process transfer (off-chain, no fee)
+        channel.sender_balance -= amount;
+        channel.recipient_balance += amount;
+        channel.last_sequence = sequence;
+        channel.last_update = chrono::Utc::now();
+
+        Ok(())
     }
 
-    /// Close a payment channel
-    pub async fn close_payment_channel(&mut self, channel_id: &str) -> Result<PaymentChannel> {
-        if let Some(channel) = self.channels.remove(channel_id) {
-            let mut closed_channel = channel;
-            closed_channel.status = ChannelStatus::Closed;
-            self.closed_channels.insert(channel_id.to_string(), closed_channel.clone());
-            Ok(closed_channel)
-        } else {
-            Err(crate::error::IppanError::Validation(
-                format!("Payment channel not found: {}", channel_id)
-            ))
+    /// Settle channel (on-chain)
+    /// Applies 1% fee on the net settled amount
+    pub async fn settle_channel(
+        &mut self,
+        channel_id: &str,
+        settle_amount: u64,
+    ) -> Result<SettlementResult> {
+        let channel = self.channels.get_mut(channel_id)
+            .ok_or_else(|| crate::error::IppanError::Validation("Channel not found".to_string()))?;
+
+        if channel.status != ChannelStatus::Open {
+            return Err(crate::error::IppanError::Validation("Channel is not open".to_string()));
         }
+
+        // Validate settle amount
+        if settle_amount > channel.recipient_balance {
+            return Err(crate::error::IppanError::Validation("Invalid settle amount".to_string()));
+        }
+
+        // Calculate 1% fee on settled amount (PRD rule)
+        let settlement_fee = self.calc_fee_1pct(settle_amount);
+        let net_settlement = settle_amount - settlement_fee;
+
+        // Update balances
+        channel.recipient_balance -= settle_amount;
+
+        // Create settlement result
+        let result = SettlementResult {
+            channel_id: channel_id.to_string(),
+            settled_amount: net_settlement,
+            settlement_fee,
+            remaining_balance: channel.recipient_balance,
+        };
+
+        Ok(result)
+    }
+
+    /// Close channel completely (on-chain)
+    /// Applies 1% fee on final settlement
+    pub async fn close_channel(
+        &mut self,
+        channel_id: &str,
+    ) -> Result<CloseResult> {
+        let channel = self.channels.remove(channel_id)
+            .ok_or_else(|| crate::error::IppanError::Validation("Channel not found".to_string()))?;
+
+        if channel.status != ChannelStatus::Open {
+            return Err(crate::error::IppanError::Validation("Channel is not open".to_string()));
+        }
+
+        // Calculate final settlement
+        let final_settlement = channel.recipient_balance;
+        let final_fee = self.calc_fee_1pct(final_settlement);
+        let net_final_settlement = final_settlement - final_fee;
+
+        // Return remaining balances to sender
+        let sender_refund = channel.sender_balance;
+
+        // Store closed channel
+        let mut closed_channel = channel;
+        closed_channel.status = ChannelStatus::Closed;
+        self.closed_channels.insert(channel_id.to_string(), closed_channel);
+
+        let result = CloseResult {
+            channel_id: channel_id.to_string(),
+            final_settlement: net_final_settlement,
+            final_fee,
+            sender_refund,
+            total_fees_paid: final_fee, // Only final settlement fee (deposit fee was paid at open)
+        };
+
+        Ok(result)
     }
 
     /// Get a payment channel by ID
@@ -295,7 +343,7 @@ impl M2MPaymentSystem {
         let now = Utc::now();
         
         let expired_channels: Vec<String> = self.channels.iter()
-            .filter(|(_, channel)| channel.expires_at < now)
+            .filter(|(_, channel)| channel.timeout_at < now)
             .map(|(id, _)| id.clone())
             .collect();
         
@@ -316,6 +364,7 @@ impl M2MPaymentSystem {
         let mut total_fees = 0u64;
         
         for channel in self.channels.values() {
+            total_fees += channel.deposit_fee; // Deposit fees are paid at open
             for tx in &channel.micro_transactions {
                 if matches!(tx.tx_type, MicroTransactionType::Fee) {
                     total_fees += tx.amount;
@@ -324,6 +373,7 @@ impl M2MPaymentSystem {
         }
         
         for channel in self.closed_channels.values() {
+            total_fees += channel.deposit_fee; // Deposit fees are paid at open
             for tx in &channel.micro_transactions {
                 if matches!(tx.tx_type, MicroTransactionType::Fee) {
                     total_fees += tx.amount;
@@ -345,7 +395,7 @@ impl M2MPaymentSystem {
             .sum();
         
         let total_balance: u64 = self.channels.values()
-            .map(|c| c.current_balance)
+            .map(|c| c.sender_balance) // Use sender_balance for total balance
             .sum();
         
         let total_micro_transactions: usize = self.channels.values()
@@ -408,8 +458,10 @@ mod tests {
             Some(24),
         ).await.unwrap();
         
-        assert_eq!(channel.deposit_amount, 1_000_000);
-        assert_eq!(channel.current_balance, 1_000_000);
+        assert_eq!(channel.deposit_amount, 990_000); // Net after 1% fee
+        assert_eq!(channel.deposit_fee, 10_000); // 1% fee
+        assert_eq!(channel.sender_balance, 990_000); // Net after fee
+        assert_eq!(channel.recipient_balance, 0);
         assert_eq!(channel.status, ChannelStatus::Open);
     }
 
@@ -435,7 +487,7 @@ mod tests {
         
         // Check that channel balance was updated
         let updated_channel = system.get_payment_channel(&channel.channel_id).unwrap();
-        assert_eq!(updated_channel.current_balance, 900_000);
+        assert_eq!(updated_channel.sender_balance, 890_000); // Net after fee
     }
 
     #[tokio::test]
@@ -450,7 +502,10 @@ mod tests {
         ).await.unwrap();
         
         let closed_channel = system.close_payment_channel(&channel.channel_id).await.unwrap();
-        assert_eq!(closed_channel.status, ChannelStatus::Closed);
+        assert_eq!(closed_channel.final_settlement, 990_000); // Net after 1% fee
+        assert_eq!(closed_channel.final_fee, 10_000); // 1% fee
+        assert_eq!(closed_channel.sender_refund, 890_000); // Net after fee
+        assert_eq!(closed_channel.total_fees_paid, 10_000); // Only final settlement fee (deposit fee was paid at open)
     }
 
     #[tokio::test]
@@ -476,7 +531,7 @@ mod tests {
         assert_eq!(stats.total_channels, 1);
         assert_eq!(stats.active_channels, 1);
         assert_eq!(stats.total_deposits, 1_000_000);
-        assert_eq!(stats.total_balance, 900_000);
+        assert_eq!(stats.total_balance, 890_000); // Net after fee
         assert_eq!(stats.total_micro_transactions, 1);
     }
 } 

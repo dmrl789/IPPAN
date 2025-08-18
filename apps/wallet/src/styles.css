@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.app{font-family:Inter,system-ui,Arial,sans-serif;min-height:100vh;display:flex;flex-direction:column}
+.wallet-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #eee}
+.tabs{display:flex;gap:12px;padding:8px 16px;border-bottom:1px solid #eee}
+.tabs a{color:#333;text-decoration:none;padding:6px 8px;border-radius:6px}
+.tabs a:hover{background:#f4f4f4}
+.tabs button{color:#333;background:none;border:none;padding:6px 8px;border-radius:6px;cursor:pointer}
+.tabs button:hover{background:#f4f4f4}
+.tabs button.active{background:#007bff;color:white}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center}
+.modal{background:#fff;border-radius:10px;min-width:560px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,0.2)}
+.modal-header{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #eee}
+.modal-body{padding:16px}
+.form{display:grid;gap:12px}
+.form label{display:grid;gap:6px}
+.form input{padding:8px 10px;border:1px solid #ddd;border-radius:6px}
+.actions{display:flex;justify-content:flex-end}
+.fee{font-size:12px;color:#555}
+.space-y-3>*+*{margin-top:12px}
+.space-y-2>*+*{margin-top:8px}
+.flex{display:flex}
+.gap-2{gap:8px}
+.items-center{align-items:center}
+.w-full{width:100%}
+.rounded-xl{border-radius:12px}
+.border{border:1px solid #ddd}
+.px-3{padding-left:12px;padding-right:12px}
+.py-2{padding-top:8px;padding-bottom:8px}
+.px-2{padding-left:8px;padding-right:8px}
+.p-3{padding:12px}
+.text-sm{font-size:14px}
+.font-medium{font-weight:500}
+.font-semibold{font-weight:600}
+.text-green-600{color:#059669}
+.text-red-600{color:#dc2626}
+.text-orange-600{color:#ea580c}
+.text-gray-600{color:#4b5563}
+.text-xs{font-size:12px}
+.opacity-70{opacity:0.7}
+.self-center{align-self:center}
+.disabled\:opacity-50:disabled{opacity:0.5}
+.flex-wrap{flex-wrap:wrap}
+.rounded-full{border-radius:9999px}
+.px-3{padding-left:12px;padding-right:12px}
+.py-1{padding-top:4px;padding-bottom:4px}
+.mb-1{margin-bottom:4px}

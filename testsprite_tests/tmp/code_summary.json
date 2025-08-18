@@ -1,0 +1,577 @@
+{
+  "tech_stack": [
+    "Rust",
+    "Tokio",
+    "Axum",
+    "Serde",
+    "Ed25519",
+    "SHA2",
+    "AES",
+    "Chrono",
+    "Tracing",
+    "Config",
+    "Clap"
+  ],
+  "features": [
+    {
+      "name": "Node Status API",
+      "description": "Get node status information including version, uptime, consensus round, storage usage, network peers, wallet balance, and DHT keys",
+      "files": ["src/api/http.rs", "src/api/mod.rs"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Node Status API",
+          "version": "1.0.0",
+          "description": "API for getting IPPAN node status information"
+        },
+        "paths": {
+          "/status": {
+            "get": {
+              "summary": "Get node status",
+              "responses": {
+                "200": {
+                  "description": "Node status information",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "version": {"type": "string"},
+                          "uptime": {"type": "string"},
+                          "consensus_round": {"type": "integer"},
+                          "storage_usage": {
+                            "type": "object",
+                            "properties": {
+                              "used_bytes": {"type": "integer"},
+                              "total_bytes": {"type": "integer"},
+                              "shard_count": {"type": "integer"}
+                            }
+                          },
+                          "network_peers": {"type": "integer"},
+                          "wallet_balance": {"type": "integer"},
+                          "dht_keys": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Health Check API",
+      "description": "Health check endpoint for monitoring node health",
+      "files": ["src/api/http.rs"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Health Check API",
+          "version": "1.0.0",
+          "description": "Health check endpoint for IPPAN node"
+        },
+        "paths": {
+          "/health": {
+            "get": {
+              "summary": "Health check",
+              "responses": {
+                "200": {
+                  "description": "Node is healthy",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "status": {"type": "string", "example": "healthy"},
+                          "timestamp": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Storage API",
+      "description": "File storage operations including store, retrieve, delete, and statistics",
+      "files": ["src/api/http.rs", "src/storage/mod.rs", "src/storage/distributed.rs"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Storage API",
+          "version": "1.0.0",
+          "description": "API for file storage operations"
+        },
+        "paths": {
+          "/storage/files": {
+            "post": {
+              "summary": "Store a file",
+              "requestBody": {
+                "content": {
+                  "multipart/form-data": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "file": {"type": "string", "format": "binary"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "File stored successfully",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "file_id": {"type": "string"},
+                          "size": {"type": "integer"},
+                          "shards": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/storage/files/{file_id}": {
+            "get": {
+              "summary": "Retrieve a file",
+              "parameters": [
+                {
+                  "name": "file_id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "File content",
+                  "content": {
+                    "application/octet-stream": {
+                      "schema": {"type": "string", "format": "binary"}
+                    }
+                  }
+                }
+              }
+            },
+            "delete": {
+              "summary": "Delete a file",
+              "parameters": [
+                {
+                  "name": "file_id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "File deleted successfully"
+                }
+              }
+            }
+          },
+          "/storage/stats": {
+            "get": {
+              "summary": "Get storage statistics",
+              "responses": {
+                "200": {
+                  "description": "Storage statistics",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "total_files": {"type": "integer"},
+                          "total_size": {"type": "integer"},
+                          "available_space": {"type": "integer"},
+                          "shard_count": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Network API",
+      "description": "Network management including peer discovery, connection management, and peer information",
+      "files": ["src/api/http.rs", "src/network/mod.rs", "src/network/p2p.rs", "src/network/discovery.rs"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Network API",
+          "version": "1.0.0",
+          "description": "API for network management"
+        },
+        "paths": {
+          "/network/peers": {
+            "get": {
+              "summary": "Get connected peers",
+              "responses": {
+                "200": {
+                  "description": "List of connected peers",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "peer_id": {"type": "string"},
+                            "address": {"type": "string"},
+                            "connection_time": {"type": "string"}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/network/peers/{peer_id}": {
+            "delete": {
+              "summary": "Disconnect from a peer",
+              "parameters": [
+                {
+                  "name": "peer_id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "Peer disconnected successfully"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Consensus API",
+      "description": "Consensus information including current round, validators, and consensus state",
+      "files": ["src/api/http.rs", "src/consensus/mod.rs", "src/consensus/roundchain/mod.rs"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Consensus API",
+          "version": "1.0.0",
+          "description": "API for consensus information"
+        },
+        "paths": {
+          "/consensus/round": {
+            "get": {
+              "summary": "Get current consensus round",
+              "responses": {
+                "200": {
+                  "description": "Current consensus round information",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "round_number": {"type": "integer"},
+                          "start_time": {"type": "string"},
+                          "end_time": {"type": "string"},
+                          "status": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/consensus/validators": {
+            "get": {
+              "summary": "Get current validators",
+              "responses": {
+                "200": {
+                  "description": "List of current validators",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "validator_id": {"type": "string"},
+                            "stake": {"type": "integer"},
+                            "reputation": {"type": "number"}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Wallet API",
+      "description": "Wallet operations including balance checking, address generation, and transaction sending",
+      "files": ["src/api/http.rs", "src/wallet/mod.rs", "src/wallet/payments.rs"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Wallet API",
+          "version": "1.0.0",
+          "description": "API for wallet operations"
+        },
+        "paths": {
+          "/wallet/balance": {
+            "get": {
+              "summary": "Get wallet balance",
+              "responses": {
+                "200": {
+                  "description": "Wallet balance",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "balance": {"type": "integer"},
+                          "currency": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/wallet/address": {
+            "get": {
+              "summary": "Get wallet address",
+              "responses": {
+                "200": {
+                  "description": "Wallet address",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "address": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/wallet/send": {
+            "post": {
+              "summary": "Send a transaction",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "to_address": {"type": "string"},
+                        "amount": {"type": "integer"},
+                        "fee": {"type": "integer"}
+                      },
+                      "required": ["to_address", "amount"]
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "Transaction sent successfully",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "transaction_id": {"type": "string"},
+                          "status": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "DHT API",
+      "description": "Distributed Hash Table operations for key-value storage and retrieval",
+      "files": ["src/api/http.rs", "src/dht/mod.rs", "src/dht/routing.rs"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN DHT API",
+          "version": "1.0.0",
+          "description": "API for DHT operations"
+        },
+        "paths": {
+          "/dht/keys": {
+            "get": {
+              "summary": "Get all DHT keys",
+              "responses": {
+                "200": {
+                  "description": "List of DHT keys",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/dht/keys/{key}": {
+            "get": {
+              "summary": "Get DHT value by key",
+              "parameters": [
+                {
+                  "name": "key",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "DHT value",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "value": {"type": "string"},
+                          "timestamp": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "post": {
+              "summary": "Put DHT value by key",
+              "parameters": [
+                {
+                  "name": "key",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ],
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "value": {"type": "string"}
+                      },
+                      "required": ["value"]
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "Value stored successfully"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Monitoring API",
+      "description": "System monitoring and performance metrics",
+      "files": ["src/api/http.rs", "src/monitoring/mod.rs", "src/monitoring/metrics.rs"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Monitoring API",
+          "version": "1.0.0",
+          "description": "API for system monitoring"
+        },
+        "paths": {
+          "/monitoring/metrics": {
+            "get": {
+              "summary": "Get system metrics",
+              "responses": {
+                "200": {
+                  "description": "System metrics",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "cpu_usage": {"type": "number"},
+                          "memory_usage": {"type": "number"},
+                          "disk_usage": {"type": "number"},
+                          "network_throughput": {"type": "number"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/monitoring/performance": {
+            "get": {
+              "summary": "Get performance metrics",
+              "responses": {
+                "200": {
+                  "description": "Performance metrics",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "response_time": {"type": "number"},
+                          "throughput": {"type": "number"},
+                          "error_rate": {"type": "number"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+

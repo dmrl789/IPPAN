@@ -79,6 +79,27 @@ impl HashTimer {
         }
     }
 
+    /// Create a new HashTimer with optimized performance (for high-frequency operations)
+    pub fn new_optimized(node_id: &str, round: u64, sequence: u64) -> Self {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
+        
+        // Use optimized hash computation
+        let hash = Self::compute_hash_optimized(now, node_id, round, sequence);
+        
+        HashTimer {
+            timestamp_ns: now,
+            hash,
+            node_id: node_id.to_string(),
+            round,
+            sequence,
+            drift_ns: 0,
+            precision_ns: 100,
+        }
+    }
+
     /// Create HashTimer with specific timestamp
     pub fn with_timestamp(
         timestamp_ns: u64,
@@ -102,9 +123,43 @@ impl HashTimer {
 
     /// Compute hash for HashTimer
     fn compute_hash(timestamp_ns: u64, node_id: &str, round: u64, sequence: u64) -> String {
+        // Use constant-length input to the hash function to reduce timing side channels
+        let input = Self::build_constant_length_input(timestamp_ns, node_id, round, sequence);
         let mut hasher = Sha256::new();
-        hasher.update(format!("{}:{}:{}:{}", timestamp_ns, node_id, round, sequence).as_bytes());
+        hasher.update(&input);
         format!("{:x}", hasher.finalize())
+    }
+
+    /// Compute hash for HashTimer with optimized performance
+    fn compute_hash_optimized(timestamp_ns: u64, node_id: &str, round: u64, sequence: u64) -> String {
+        // Optimized path still uses constant-length input bytes
+        let input = Self::build_constant_length_input(timestamp_ns, node_id, round, sequence);
+        let mut hasher = Sha256::new();
+        hasher.update(&input);
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// Build a constant-length byte array for hashing to reduce data-dependent timing
+    fn build_constant_length_input(timestamp_ns: u64, node_id: &str, round: u64, sequence: u64) -> [u8; 56] {
+        // Layout: [ts(8)] [node_hash(32)] [round(8)] [seq(8)] = 56 bytes
+        let mut bytes = [0u8; 56];
+
+        // timestamp_ns (u64, little-endian)
+        bytes[0..8].copy_from_slice(&timestamp_ns.to_le_bytes());
+
+        // node_id hashed to 32 bytes to achieve fixed length
+        let mut node_hasher = Sha256::new();
+        node_hasher.update(node_id.as_bytes());
+        let node_hash = node_hasher.finalize();
+        bytes[8..40].copy_from_slice(&node_hash);
+
+        // round (u64, little-endian)
+        bytes[40..48].copy_from_slice(&round.to_le_bytes());
+
+        // sequence (u64, little-endian)
+        bytes[48..56].copy_from_slice(&sequence.to_le_bytes());
+
+        bytes
     }
 
     /// Check if HashTimer matches content hash

@@ -4,6 +4,8 @@
 
 pub mod cli;
 pub mod crosschain;
+pub mod dns_cli;
+pub mod user_cli; // NEW - User-facing transaction CLI
 pub mod http;
 // pub mod explorer;
 

@@ -2,10 +2,7 @@
 
 use crate::Result;
 use serde::{Deserialize, Serialize};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
+use std::net::IpAddr;
 
 /// NAT traversal service
 pub struct NATService {

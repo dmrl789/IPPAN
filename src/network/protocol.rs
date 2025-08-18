@@ -178,7 +178,7 @@ pub struct ProtocolManager {
     /// Message sender
     message_sender: mpsc::Sender<ProtocolMessage>,
     /// Message receiver
-    message_receiver: Option<mpsc::Receiver<ProtocolMessage>>,
+    _message_receiver: Option<mpsc::Receiver<ProtocolMessage>>,
     /// Running flag
     running: bool,
 }
@@ -191,7 +191,7 @@ impl ProtocolManager {
         Self {
             handlers: Arc::new(RwLock::new(HashMap::new())),
             message_sender,
-            message_receiver: Some(message_receiver),
+            _message_receiver: Some(message_receiver),
             running: false,
         }
     }
@@ -202,8 +202,8 @@ impl ProtocolManager {
         self.running = true;
         
         // Start message processing loop
-        let message_sender = self.message_sender.clone();
-        let handlers = self.handlers.clone();
+        let _message_sender = self.message_sender.clone();
+        let _handlers = self.handlers.clone();
         
         tokio::spawn(async move {
             // TODO: Implement message processing loop
@@ -260,6 +260,7 @@ impl ProtocolManager {
     }
 
     /// Process protocol message
+    #[allow(dead_code)]
     async fn process_message(
         message: ProtocolMessage,
         handlers: &Arc<RwLock<HashMap<String, Box<dyn ProtocolHandler>>>>,

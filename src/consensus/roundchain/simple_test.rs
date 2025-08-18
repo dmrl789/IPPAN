@@ -1,12 +1,14 @@
 //! Simple test for zk-STARK roundchain integration
 
-use crate::consensus::roundchain::{
-    round_manager::{ZkRoundManager, RoundManagerConfig},
-    zk_prover::{ZkProver, ZkProverConfig},
-    proof_broadcast::{ProofBroadcaster, BroadcastConfig},
-    tx_verifier::{TxVerifier, TxVerifierConfig},
-    RoundHeader, RoundAggregation, MerkleTree, ZkStarkProof,
-};
+use crate::consensus::roundchain::*;
+use crate::consensus::roundchain::RoundHeader;
+use crate::consensus::roundchain::MerkleTree;
+use crate::consensus::roundchain::ZkStarkProof;
+use crate::consensus::roundchain::round_manager::RoundManagerConfig;
+use crate::consensus::roundchain::zk_prover::ZkProverConfig;
+use crate::consensus::roundchain::proof_broadcast::BroadcastConfig;
+use crate::consensus::roundchain::tx_verifier::TxVerifierConfig;
+use crate::consensus::roundchain::RoundAggregation;
 
 #[test]
 fn test_round_header_creation() {

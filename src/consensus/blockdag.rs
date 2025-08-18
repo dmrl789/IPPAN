@@ -94,6 +94,8 @@ pub enum TransactionType {
     Staking(StakingData),
     /// Storage transaction
     Storage(StorageData),
+    /// DNS zone update transaction
+    DnsZoneUpdate(DnsZoneUpdateData),
 }
 
 /// Payment transaction data
@@ -166,6 +168,17 @@ pub enum StorageAction {
     Retrieve,
     /// Delete data
     Delete,
+}
+
+/// DNS zone update transaction data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsZoneUpdateData {
+    /// Domain name
+    pub domain: String,
+    /// Zone update operations
+    pub ops: Vec<crate::dns::apply::ZoneOp>,
+    /// Update timestamp in microseconds
+    pub updated_at_us: u64,
 }
 
 /// Transaction structure
@@ -358,6 +371,11 @@ impl BlockDAG {
             }
             TransactionType::Storage(data) => {
                 if data.data_size == 0 {
+                    return Ok(false);
+                }
+            }
+            TransactionType::DnsZoneUpdate(data) => {
+                if data.domain.is_empty() || data.ops.is_empty() {
                     return Ok(false);
                 }
             }
@@ -804,6 +822,37 @@ impl Transaction {
         }
     }
 
+    /// Create a new DNS zone update transaction
+    pub fn new_dns_zone_update(
+        domain: String,
+        ops: Vec<crate::dns::apply::ZoneOp>,
+        updated_at_us: u64,
+        fee: u64,
+        nonce: u64,
+        hashtimer: HashTimer,
+    ) -> Self {
+        let dns_data = DnsZoneUpdateData {
+            domain,
+            ops,
+            updated_at_us,
+        };
+        
+        let tx = Self {
+            hash: [0u8; 32], // Will be calculated
+            tx_type: TransactionType::DnsZoneUpdate(dns_data),
+            fee,
+            nonce,
+            hashtimer,
+            signature: None,
+        };
+        
+        let hash = Self::calculate_transaction_hash(&tx);
+        Self {
+            hash,
+            ..tx
+        }
+    }
+
     /// Calculate transaction hash
     fn calculate_transaction_hash(tx: &Transaction) -> TransactionHash {
         let mut hasher = Sha256::new();
@@ -831,6 +880,15 @@ impl Transaction {
                 hasher.update(&data.file_hash);
                 hasher.update(&data.data_size.to_le_bytes());
                 hasher.update(&(data.action as u8).to_le_bytes());
+            }
+            TransactionType::DnsZoneUpdate(data) => {
+                hasher.update(data.domain.as_bytes());
+                hasher.update(&data.updated_at_us.to_le_bytes());
+                // Hash the operations
+                for op in &data.ops {
+                    let op_bytes = serde_json::to_vec(op).unwrap_or_default();
+                    hasher.update(&op_bytes);
+                }
             }
         }
         
@@ -863,6 +921,19 @@ impl Transaction {
     pub fn get_anchor_data(&self) -> Option<&AnchorData> {
         match &self.tx_type {
             TransactionType::Anchor(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    /// Check if transaction is a DNS zone update transaction
+    pub fn is_dns_zone_update(&self) -> bool {
+        matches!(self.tx_type, TransactionType::DnsZoneUpdate(_))
+    }
+
+    /// Get DNS zone update data if this is a DNS zone update transaction
+    pub fn get_dns_zone_update_data(&self) -> Option<&DnsZoneUpdateData> {
+        match &self.tx_type {
+            TransactionType::DnsZoneUpdate(data) => Some(data),
             _ => None,
         }
     }

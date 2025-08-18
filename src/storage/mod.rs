@@ -15,7 +15,7 @@ pub mod proofs;
 pub mod orchestrator;
 
 use distributed::DistributedStorage;
-use encryption::{EncryptionManager, EncryptedData};
+use encryption::EncryptionManager;
 use shards::ShardManager;
 use proofs::ProofManager;
 use orchestrator::StorageOrchestrator;
@@ -143,137 +143,57 @@ impl StorageManager {
     }
 
     /// Store a file
-    pub async fn store_file(
-        &self,
-        file_id: &str,
-        name: &str,
-        data: &[u8],
-        mime_type: &str,
-        replication_factor: u32,
-    ) -> Result<String> {
-        let data_to_store = if self.config.enable_encryption {
-            // Generate encryption key if needed
-            let encryption_manager = self.encryption_manager.read().await;
-            let key_id = format!("key_{}", file_id);
-            encryption_manager.generate_key(&key_id, encryption::EncryptionAlgorithm::Aes256Gcm).await?;
-            
-            // Encrypt data
-            let encrypted_data = encryption_manager.encrypt_data(data, &key_id).await?;
-            encrypted_data.data
-        } else {
-            // Store data without encryption
-            data.to_vec()
+    pub async fn store_file(&self, file_id: String, name: String, data: Vec<u8>, mime_type: String) -> Result<String> {
+        let request = distributed::StoreFileRequest {
+            file_id,
+            name,
+            data,
+            mime_type,
+            replication_factor: 3,
+            encryption_key_id: None,
         };
         
-        // Create shards
-        let shard_manager = self.shard_manager.read().await;
-        let shards = shard_manager.create_shards(file_id, data.len() as u64, &data_to_store).await?;
-        
-        // Store in distributed storage
-        let distributed = self.distributed_storage.read().await;
-        let store_request = distributed::StoreFileRequest {
-            file_id: file_id.to_string(),
-            name: name.to_string(),
-            data: data_to_store,
-            mime_type: mime_type.to_string(),
-            replication_factor,
-            encryption_key_id: if self.config.enable_encryption { Some(format!("key_{}", file_id)) } else { None },
-        };
-        
-        let stored_file_id = distributed.store_file(store_request).await?;
-        
-        log::info!("Stored file: {} with {} shards", stored_file_id, shards.len());
-        Ok(stored_file_id)
+        self.distributed_storage.read().await.store_file(request).await
     }
 
     /// Retrieve a file
-    pub async fn retrieve_file(&self, file_id: &str) -> Result<Vec<u8>> {
-        // Retrieve from distributed storage
-        let distributed = self.distributed_storage.read().await;
-        let retrieve_request = distributed::RetrieveFileRequest {
-            file_id: file_id.to_string(),
-            shard_index: None,
+    pub async fn retrieve_file(&self, file_id: String) -> Result<Vec<u8>> {
+        let request = distributed::RetrieveFileRequest {
+            file_id,
         };
         
-        let encrypted_data = distributed.retrieve_file(retrieve_request).await?;
-        
-        if self.config.enable_encryption {
-            // TODO: Get encryption key ID from metadata
-            let key_id = format!("key_{}", file_id);
-            
-            // Decrypt data
-            let encryption_manager = self.encryption_manager.read().await;
-            let decrypted_data = encryption_manager.decrypt_data(&EncryptedData {
-                key_id: key_id.clone(),
-                nonce: Vec::new(), // TODO: Get from metadata
-                data: encrypted_data,
-                tag: Vec::new(), // TODO: Get from metadata
-                encrypted_at: chrono::Utc::now(),
-            }).await?;
-            
-            log::info!("Retrieved file: {} ({} bytes)", file_id, decrypted_data.len());
-            Ok(decrypted_data)
-        } else {
-            // Return data without decryption
-            log::info!("Retrieved file: {} ({} bytes)", file_id, encrypted_data.len());
-            Ok(encrypted_data)
-        }
+        self.distributed_storage.read().await.retrieve_file(request).await
     }
 
     /// Delete a file
-    pub async fn delete_file(&self, file_id: &str) -> Result<()> {
-        // Delete from distributed storage
-        let distributed = self.distributed_storage.read().await;
-        let delete_request = distributed::DeleteFileRequest {
-            file_id: file_id.to_string(),
-        };
-        
-        distributed.delete_file(delete_request).await?;
-        
-        // TODO: Revoke encryption key
-        let encryption_manager = self.encryption_manager.read().await;
-        let key_id = format!("key_{}", file_id);
-        encryption_manager.revoke_key(&key_id).await?;
-        
-        log::info!("Deleted file: {}", file_id);
-        Ok(())
+    pub async fn delete_file(&self, file_id: String) -> Result<()> {
+        self.distributed_storage.read().await.delete_file(&file_id).await
     }
 
     /// Get storage statistics
-    pub async fn get_storage_stats(&self) -> StorageStats {
-        let distributed_stats = {
-            let distributed = self.distributed_storage.read().await;
-            distributed.get_storage_stats().await
-        };
+    pub async fn get_stats(&self) -> Result<StorageStats> {
+        let distributed_stats = self.distributed_storage.read().await.get_stats().await?;
         
-        let encryption_stats = {
-            let encryption = self.encryption_manager.read().await;
-            encryption.get_encryption_stats().await
-        };
+        // Get encryption stats
+        let encryption_stats = self.encryption_manager.read().await.get_encryption_stats().await;
         
-        let shard_stats = {
-            let shards = self.shard_manager.read().await;
-            shards.get_shard_stats().await
-        };
+        // Get shard stats
+        let shard_stats = self.shard_manager.read().await.get_shard_stats().await;
         
-        let proof_stats = {
-            let proofs = self.proof_manager.read().await;
-            proofs.get_proof_stats().await
-        };
+        // Get proof stats
+        let proof_stats = self.proof_manager.read().await.get_proof_stats().await;
         
-        let orchestrator_stats = {
-            let orchestrator = self.orchestrator.read().await;
-            orchestrator.get_orchestrator_stats().await
-        };
+        // Get orchestrator stats
+        let orchestrator_stats = self.orchestrator.read().await.get_orchestrator_stats().await;
         
-        StorageStats {
+        Ok(StorageStats {
             distributed: distributed_stats,
             encryption: encryption_stats,
             shards: shard_stats,
             proofs: proof_stats,
             orchestrator: orchestrator_stats,
             running: self.running,
-        }
+        })
     }
 }
 
@@ -421,23 +341,22 @@ mod tests {
         }
         
         // Debug: Check stats
-        let stats = manager.get_storage_stats().await;
-        println!("Debug: Distributed nodes: {}, Shard nodes: {}", stats.distributed.total_nodes, stats.shards.total_nodes);
+        let stats = manager.get_stats().await.unwrap();
+        println!("Debug: Distributed nodes: {}, Shard nodes: {}", stats.distributed.node_count, stats.shards.total_nodes);
         
         // Store file
         let data = b"Hello, World! This is a test file.";
         let file_id = manager.store_file(
-            "test_file",
-            "test.txt",
-            data,
-            "text/plain",
-            3,
+            "test_file".to_string(),
+            "test.txt".to_string(),
+            data.to_vec(),
+            "text/plain".to_string(),
         ).await.unwrap();
         
         assert_eq!(file_id, "test_file");
         
         // Retrieve file
-        let retrieved_data = manager.retrieve_file("test_file").await.unwrap();
+        let retrieved_data = manager.retrieve_file("test_file".to_string()).await.unwrap();
         assert_eq!(retrieved_data, data);
     }
 }

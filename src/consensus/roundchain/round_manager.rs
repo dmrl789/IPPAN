@@ -370,6 +370,15 @@ impl ZkRoundManager {
                     hasher.update(&storage.file_hash);
                     hasher.update(storage.data_size.to_le_bytes());
                 }
+                crate::consensus::blockdag::TransactionType::DnsZoneUpdate(dns) => {
+                    hasher.update(dns.domain.as_bytes());
+                    hasher.update(dns.updated_at_us.to_le_bytes());
+                    // Hash operations
+                    for op in &dns.ops {
+                        let op_bytes = serde_json::to_vec(op).unwrap_or_default();
+                        hasher.update(&op_bytes);
+                    }
+                }
             }
         }
         

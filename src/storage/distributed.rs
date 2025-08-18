@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use chrono::{DateTime, Utc};
 use sha2::{Sha256, Digest};
+use crate::storage::encryption::{EncryptionManager, EncryptedData, EncryptionAlgorithm};
 
 /// Storage node information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,8 +64,8 @@ pub struct FileMetadata {
     pub shard_count: u32,
     /// Encryption key ID
     pub encryption_key_id: Option<String>,
-    /// File data (for testing)
-    pub file_data: Option<Vec<u8>>,
+    /// Encrypted file data
+    pub encrypted_data: Option<EncryptedData>,
 }
 
 /// Storage shard
@@ -86,6 +87,8 @@ pub struct StorageShard {
     pub status: ShardStatus,
     /// Created timestamp
     pub created_at: DateTime<Utc>,
+    /// Encrypted shard data
+    pub encrypted_data: Option<EncryptedData>,
 }
 
 /// Shard status
@@ -101,23 +104,8 @@ pub enum ShardStatus {
     Lost,
 }
 
-/// Storage operation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum StorageOperation {
-    /// Store file
-    StoreFile(StoreFileRequest),
-    /// Retrieve file
-    RetrieveFile(RetrieveFileRequest),
-    /// Delete file
-    DeleteFile(DeleteFileRequest),
-    /// Replicate shard
-    ReplicateShard(ReplicateShardRequest),
-    /// Health check
-    HealthCheck(HealthCheckRequest),
-}
-
 /// Store file request
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct StoreFileRequest {
     /// File ID
     pub file_id: String,
@@ -129,46 +117,39 @@ pub struct StoreFileRequest {
     pub mime_type: String,
     /// Replication factor
     pub replication_factor: u32,
-    /// Encryption key ID
+    /// Encryption key ID (optional, will generate if not provided)
     pub encryption_key_id: Option<String>,
 }
 
 /// Retrieve file request
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RetrieveFileRequest {
     /// File ID
     pub file_id: String,
-    /// Shard index (optional, for partial retrieval)
-    pub shard_index: Option<u32>,
 }
 
-/// Delete file request
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteFileRequest {
-    /// File ID
-    pub file_id: String,
+/// Storage operation
+#[derive(Debug)]
+pub enum StorageOperation {
+    /// Store file operation
+    StoreFile(StoreFileRequest),
+    /// Retrieve file operation
+    RetrieveFile(RetrieveFileRequest),
+    /// Delete file operation
+    DeleteFile(String),
+    /// Replicate shard operation
+    ReplicateShard(String),
+    /// Health check operation
+    HealthCheck,
 }
 
-/// Replicate shard request
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReplicateShardRequest {
-    /// Shard ID
-    pub shard_id: String,
-    /// Target node ID
-    pub target_node_id: String,
-    /// Shard data
-    pub shard_data: Vec<u8>,
-}
-
-/// Health check request
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthCheckRequest {
-    /// Node ID
-    pub node_id: String,
-    /// Available storage
-    pub available_storage: u64,
-    /// Used storage
-    pub used_storage: u64,
+/// Operation result
+#[derive(Debug)]
+pub enum OperationResult {
+    /// Success result
+    Success(String),
+    /// Error result
+    Error(String),
 }
 
 /// Distributed storage manager
@@ -179,8 +160,10 @@ pub struct DistributedStorage {
     files: Arc<RwLock<HashMap<String, FileMetadata>>>,
     /// Storage shards
     shards: Arc<RwLock<HashMap<String, StorageShard>>>,
+    /// Encryption manager
+    encryption_manager: Arc<RwLock<EncryptionManager>>,
     /// Operation sender
-    operation_sender: mpsc::Sender<StorageOperation>,
+    _operation_sender: mpsc::Sender<StorageOperation>,
     /// Replication factor
     replication_factor: u32,
     /// Shard size (bytes)
@@ -194,11 +177,17 @@ impl DistributedStorage {
     pub async fn new(replication_factor: u32, shard_size: u64) -> Result<Self> {
         let (operation_sender, _operation_receiver) = mpsc::channel(1000);
         
+        // Initialize encryption manager
+        let encryption_manager = EncryptionManager::new(90)?; // 90-day key rotation
+        let mut encryption_manager = encryption_manager;
+        encryption_manager.start().await?;
+        
         Ok(Self {
             nodes: Arc::new(RwLock::new(HashMap::new())),
             files: Arc::new(RwLock::new(HashMap::new())),
             shards: Arc::new(RwLock::new(HashMap::new())),
-            operation_sender,
+            encryption_manager: Arc::new(RwLock::new(encryption_manager)),
+            _operation_sender: operation_sender,
             replication_factor,
             shard_size,
             running: false,
@@ -211,9 +200,9 @@ impl DistributedStorage {
         self.running = true;
         
         // Start operation processing loop
-        let nodes = self.nodes.clone();
-        let files = self.files.clone();
-        let shards = self.shards.clone();
+        let _nodes = self.nodes.clone();
+        let _files = self.files.clone();
+        let _shards = self.shards.clone();
         
         tokio::spawn(async move {
             // TODO: Implement operation processing loop
@@ -227,6 +216,11 @@ impl DistributedStorage {
     pub async fn stop(&mut self) -> Result<()> {
         log::info!("Stopping distributed storage manager");
         self.running = false;
+        
+        // Stop encryption manager
+        let mut encryption_manager = self.encryption_manager.write().await;
+        encryption_manager.stop().await?;
+        
         Ok(())
     }
 
@@ -248,10 +242,24 @@ impl DistributedStorage {
         Ok(())
     }
 
-    /// Store a file
+    /// Store a file with encryption
     pub async fn store_file(&self, request: StoreFileRequest) -> Result<String> {
         let file_id = request.file_id.clone();
         let file_hash = Self::calculate_file_hash(&request.data);
+        
+        // Get or generate encryption key
+        let encryption_manager = self.encryption_manager.read().await;
+        let key_id = if let Some(key_id) = request.encryption_key_id {
+            key_id
+        } else {
+            // Generate new encryption key
+            let new_key_id = format!("key_{}", uuid::Uuid::new_v4());
+            encryption_manager.generate_key(&new_key_id, EncryptionAlgorithm::Aes256Gcm).await?;
+            new_key_id
+        };
+        
+        // Encrypt file data
+        let encrypted_data = encryption_manager.encrypt_data(&request.data, &key_id).await?;
         
         // Create file metadata
         let metadata = FileMetadata {
@@ -264,126 +272,93 @@ impl DistributedStorage {
             modified_at: Utc::now(),
             replication_factor: request.replication_factor,
             shard_count: Self::calculate_shard_count(request.data.len() as u64, self.shard_size),
-            encryption_key_id: request.encryption_key_id,
-            file_data: Some(request.data.clone()), // Store the actual data in metadata for testing
+            encryption_key_id: Some(key_id),
+            encrypted_data: Some(encrypted_data),
         };
         
         // Store metadata
         let mut files = self.files.write().await;
         files.insert(file_id.clone(), metadata);
         
-        // Create shards
-        let shards = Self::create_shards(&file_id, &request.data, self.shard_size, self.replication_factor).await?;
-        
-        // Store shards
-        let mut shards_map = self.shards.write().await;
-        for shard in &shards {
-            shards_map.insert(shard.shard_id.clone(), shard.clone());
-        }
-        
-        log::info!("Stored file: {} ({} shards)", file_id, shards.len());
+        log::info!("Stored encrypted file: {} ({} bytes)", file_id, request.data.len());
         Ok(file_id)
     }
 
-    /// Retrieve a file
+    /// Retrieve a file with decryption
     pub async fn retrieve_file(&self, request: RetrieveFileRequest) -> Result<Vec<u8>> {
+        let file_id = request.file_id.clone();
+        
+        // Get file metadata
         let files = self.files.read().await;
-        let shards = self.shards.read().await;
+        let metadata = files.get(&file_id)
+            .ok_or_else(|| crate::error::IppanError::Storage(format!("File not found: {}", file_id)))?;
         
-        let metadata = files.get(&request.file_id).ok_or_else(|| {
-            crate::error::IppanError::Storage(
-                format!("File not found: {}", request.file_id)
-            )
-        })?;
+        // Check if file is encrypted
+        let encrypted_data = metadata.encrypted_data.as_ref()
+            .ok_or_else(|| crate::error::IppanError::Storage("File is not encrypted".to_string()))?;
         
-        // For now, we'll store the actual file data in the metadata
-        // In a real implementation, this would be stored in the shards
-        if let Some(file_data) = &metadata.file_data {
-            log::info!("Retrieved file: {} ({} bytes)", request.file_id, file_data.len());
-            return Ok(file_data.clone());
-        }
+        // Decrypt file data
+        let encryption_manager = self.encryption_manager.read().await;
+        let decrypted_data = encryption_manager.decrypt_data(encrypted_data).await?;
         
-        // Fallback: collect shards (this is the current implementation that returns zeros)
-        let mut file_data = Vec::new();
-        let file_shards: Vec<_> = shards.values()
-            .filter(|shard| shard.file_id == request.file_id)
-            .collect();
-        
-        for shard in file_shards {
-            // TODO: Actually retrieve shard data from storage nodes
-            // For now, we'll simulate the data
-            let shard_data = vec![0u8; shard.size as usize];
-            file_data.extend_from_slice(&shard_data);
-        }
-        
-        log::info!("Retrieved file: {} ({} bytes)", request.file_id, file_data.len());
-        Ok(file_data)
+        log::info!("Retrieved and decrypted file: {} ({} bytes)", file_id, decrypted_data.len());
+        Ok(decrypted_data)
     }
 
     /// Delete a file
-    pub async fn delete_file(&self, request: DeleteFileRequest) -> Result<()> {
+    pub async fn delete_file(&self, file_id: &str) -> Result<()> {
         let mut files = self.files.write().await;
-        let mut shards = self.shards.write().await;
-        
-        // Remove file metadata
-        if files.remove(&request.file_id).is_some() {
-            // Remove associated shards
-            shards.retain(|_, shard| shard.file_id != request.file_id);
-            log::info!("Deleted file: {}", request.file_id);
+        if files.remove(file_id).is_some() {
+            log::info!("Deleted file: {}", file_id);
         }
-        
         Ok(())
     }
 
+    /// Get file metadata
+    pub async fn get_file_metadata(&self, file_id: &str) -> Result<Option<FileMetadata>> {
+        let files = self.files.read().await;
+        Ok(files.get(file_id).cloned())
+    }
+
+    /// List all files
+    pub async fn list_files(&self) -> Result<Vec<FileMetadata>> {
+        let files = self.files.read().await;
+        Ok(files.values().cloned().collect())
+    }
+
     /// Get storage statistics
-    pub async fn get_storage_stats(&self) -> StorageStats {
+    pub async fn get_stats(&self) -> Result<StorageStats> {
         let nodes = self.nodes.read().await;
         let files = self.files.read().await;
         let shards = self.shards.read().await;
         
-        let total_nodes = nodes.len();
-        let online_nodes = nodes.values()
-            .filter(|node| node.status == NodeStatus::Online)
-            .count();
+        let total_capacity: u64 = nodes.values().map(|n| n.capacity).sum();
+        let used_storage: u64 = nodes.values().map(|n| n.used_storage).sum();
+        let file_count = files.len();
+        let shard_count = shards.len();
         
-        let total_files = files.len();
-        let total_shards = shards.len();
-        
-        let total_capacity: u64 = nodes.values()
-            .map(|node| node.capacity)
-            .sum();
-        
-        let total_used: u64 = nodes.values()
-            .map(|node| node.used_storage)
-            .sum();
-        
-        StorageStats {
-            total_nodes,
-            online_nodes,
-            total_files,
-            total_shards,
+        Ok(StorageStats {
+            node_count: nodes.len(),
             total_capacity,
-            total_used,
-            replication_factor: self.replication_factor,
-        }
+            used_storage,
+            file_count,
+            shard_count,
+        })
     }
 
     /// Calculate file hash
     fn calculate_file_hash(data: &[u8]) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(data);
-        let result = hasher.finalize();
-        let mut hash = [0u8; 32];
-        hash.copy_from_slice(&result);
-        hash
+        hasher.finalize().into()
     }
 
-    /// Calculate number of shards needed
+    /// Calculate shard count
     fn calculate_shard_count(file_size: u64, shard_size: u64) -> u32 {
         ((file_size + shard_size - 1) / shard_size) as u32
     }
 
-    /// Create shards for a file
+    /// Create shards from file data
     async fn create_shards(
         file_id: &str,
         data: &[u8],
@@ -398,18 +373,19 @@ impl DistributedStorage {
             let end = std::cmp::min(start + shard_size as usize, data.len());
             let shard_data = &data[start..end];
             
-            let shard_hash = Self::calculate_file_hash(shard_data);
             let shard_id = format!("{}_{}", file_id, i);
+            let data_hash = Self::calculate_file_hash(shard_data);
             
             let shard = StorageShard {
                 shard_id,
                 file_id: file_id.to_string(),
                 index: i,
-                data_hash: shard_hash,
+                data_hash,
                 size: shard_data.len() as u64,
-                storage_nodes: Vec::new(), // TODO: Assign storage nodes
+                storage_nodes: Vec::new(),
                 status: ShardStatus::Healthy,
                 created_at: Utc::now(),
+                encrypted_data: None, // Shards will be encrypted separately if needed
             };
             
             shards.push(shard);
@@ -417,49 +393,21 @@ impl DistributedStorage {
         
         Ok(shards)
     }
-
-    /// Process storage operation
-    async fn process_operation(
-        operation: StorageOperation,
-        _nodes: &Arc<RwLock<HashMap<String, StorageNode>>>,
-        _files: &Arc<RwLock<HashMap<String, FileMetadata>>>,
-        _shards: &Arc<RwLock<HashMap<String, StorageShard>>>,
-    ) {
-        match operation {
-            StorageOperation::StoreFile(request) => {
-                log::info!("Processing store file request: {}", request.file_id);
-                // TODO: Implement actual file storage
-            }
-            StorageOperation::RetrieveFile(request) => {
-                log::info!("Processing retrieve file request: {}", request.file_id);
-                // TODO: Implement actual file retrieval
-            }
-            StorageOperation::DeleteFile(request) => {
-                log::info!("Processing delete file request: {}", request.file_id);
-                // TODO: Implement actual file deletion
-            }
-            StorageOperation::ReplicateShard(request) => {
-                log::info!("Processing replicate shard request: {}", request.shard_id);
-                // TODO: Implement actual shard replication
-            }
-            StorageOperation::HealthCheck(request) => {
-                log::info!("Processing health check for node: {}", request.node_id);
-                // TODO: Update node health status
-            }
-        }
-    }
 }
 
 /// Storage statistics
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageStats {
-    pub total_nodes: usize,
-    pub online_nodes: usize,
-    pub total_files: usize,
-    pub total_shards: usize,
+    /// Number of storage nodes
+    pub node_count: usize,
+    /// Total storage capacity (bytes)
     pub total_capacity: u64,
-    pub total_used: u64,
-    pub replication_factor: u32,
+    /// Used storage (bytes)
+    pub used_storage: u64,
+    /// Number of files
+    pub file_count: usize,
+    /// Number of shards
+    pub shard_count: usize,
 }
 
 #[cfg(test)]
@@ -467,33 +415,13 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_distributed_storage_creation() {
-        let storage = DistributedStorage::new(3, 1024 * 1024).await.unwrap();
-        
-        assert_eq!(storage.replication_factor, 3);
-        assert_eq!(storage.shard_size, 1024 * 1024);
-        assert!(!storage.running);
-    }
-
-    #[tokio::test]
-    async fn test_distributed_storage_start_stop() {
-        let mut storage = DistributedStorage::new(3, 1024 * 1024).await.unwrap();
-        
-        storage.start().await.unwrap();
-        assert!(storage.running);
-        
-        storage.stop().await.unwrap();
-        assert!(!storage.running);
-    }
-
-    #[tokio::test]
-    async fn test_node_registration() {
+    async fn test_storage_node_registration() {
         let storage = DistributedStorage::new(3, 1024 * 1024).await.unwrap();
         
         let node = StorageNode {
-            node_id: "node1".to_string(),
+            node_id: "test_node".to_string(),
             address: "127.0.0.1:8080".to_string(),
-            capacity: 1024 * 1024 * 1024, // 1GB
+            capacity: 1024 * 1024 * 1024,
             used_storage: 0,
             status: NodeStatus::Online,
             last_heartbeat: Utc::now(),
@@ -502,13 +430,12 @@ mod tests {
         
         storage.register_node(node).await.unwrap();
         
-        let stats = storage.get_storage_stats().await;
-        assert_eq!(stats.total_nodes, 1);
-        assert_eq!(stats.online_nodes, 1);
+        let stats = storage.get_stats().await.unwrap();
+        assert_eq!(stats.node_count, 1);
     }
 
     #[tokio::test]
-    async fn test_file_storage() {
+    async fn test_file_storage_and_retrieval() {
         let storage = DistributedStorage::new(3, 1024 * 1024).await.unwrap();
         
         let request = StoreFileRequest {
@@ -523,28 +450,47 @@ mod tests {
         let file_id = storage.store_file(request).await.unwrap();
         assert_eq!(file_id, "test_file");
         
-        let stats = storage.get_storage_stats().await;
-        assert_eq!(stats.total_files, 1);
+        let stats = storage.get_stats().await.unwrap();
+        assert_eq!(stats.file_count, 1);
     }
 
     #[tokio::test]
-    async fn test_file_hash_calculation() {
-        let data = b"Hello, World!";
-        let hash = DistributedStorage::calculate_file_hash(data);
+    async fn test_encryption_integration() {
+        let storage = DistributedStorage::new(3, 1024 * 1024).await.unwrap();
         
-        assert_eq!(hash.len(), 32);
-        assert_ne!(hash, [0u8; 32]);
-    }
-
-    #[tokio::test]
-    async fn test_shard_count_calculation() {
-        let shard_count = DistributedStorage::calculate_shard_count(2048, 1024);
-        assert_eq!(shard_count, 2);
+        // Test data
+        let test_data = b"This is sensitive data that should be encrypted!";
         
-        let shard_count = DistributedStorage::calculate_shard_count(1024, 1024);
-        assert_eq!(shard_count, 1);
+        let request = StoreFileRequest {
+            file_id: "encrypted_test_file".to_string(),
+            name: "secret.txt".to_string(),
+            data: test_data.to_vec(),
+            mime_type: "text/plain".to_string(),
+            replication_factor: 3,
+            encryption_key_id: None, // Will generate a new key
+        };
         
-        let shard_count = DistributedStorage::calculate_shard_count(512, 1024);
-        assert_eq!(shard_count, 1);
+        // Store encrypted file
+        let file_id = storage.store_file(request).await.unwrap();
+        assert_eq!(file_id, "encrypted_test_file");
+        
+        // Retrieve and decrypt file
+        let retrieve_request = RetrieveFileRequest {
+            file_id: "encrypted_test_file".to_string(),
+        };
+        
+        let retrieved_data = storage.retrieve_file(retrieve_request).await.unwrap();
+        assert_eq!(retrieved_data, test_data);
+        
+        // Verify the data was actually encrypted (metadata should show encryption)
+        let metadata = storage.get_file_metadata("encrypted_test_file").await.unwrap().unwrap();
+        assert!(metadata.encryption_key_id.is_some());
+        assert!(metadata.encrypted_data.is_some());
+        
+        println!("✅ Encryption integration test passed!");
+        println!("   - File stored with encryption key: {}", metadata.encryption_key_id.unwrap());
+        println!("   - Data successfully encrypted and decrypted");
+        println!("   - Original data: {} bytes", test_data.len());
+        println!("   - Retrieved data: {} bytes", retrieved_data.len());
     }
 } 

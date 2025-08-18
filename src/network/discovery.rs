@@ -3,7 +3,7 @@
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, Duration};
@@ -128,13 +128,13 @@ pub struct DiscoveryService {
     /// Discovery interval
     discovery_interval: Duration,
     /// Peer timeout
-    peer_timeout: Duration,
+    _peer_timeout: Duration,
     /// Maximum peers
     max_peers: usize,
     /// Message sender
     message_sender: mpsc::Sender<DiscoveryMessage>,
     /// Message receiver
-    message_receiver: mpsc::Receiver<DiscoveryMessage>,
+    _message_receiver: mpsc::Receiver<DiscoveryMessage>,
     /// Running flag
     running: bool,
 }
@@ -152,10 +152,10 @@ impl DiscoveryService {
             known_peers: Arc::new(RwLock::new(HashMap::new())),
             bootstrap_peers,
             discovery_interval: Duration::from_secs(60), // 1 minute
-            peer_timeout: Duration::from_secs(300), // 5 minutes
+            _peer_timeout: Duration::from_secs(300), // 5 minutes
             max_peers: 100,
             message_sender,
-            message_receiver,
+            _message_receiver: message_receiver,
             running: false,
         })
     }
@@ -185,8 +185,8 @@ impl DiscoveryService {
         });
         
         // Start message processing loop
-        let message_sender = self.message_sender.clone();
-        let known_peers = self.known_peers.clone();
+        let _message_sender = self.message_sender.clone();
+        let _known_peers = self.known_peers.clone();
         
         tokio::spawn(async move {
             // TODO: Implement message processing loop
@@ -345,6 +345,7 @@ impl DiscoveryService {
     }
 
     /// Handle discovery message
+    #[allow(dead_code)]
     async fn handle_discovery_message(
         message: DiscoveryMessage,
         known_peers: &Arc<RwLock<HashMap<String, PeerInfo>>>,
@@ -419,6 +420,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_discovery_service_creation() {
+        use std::net::{IpAddr, Ipv4Addr};
         let node_id = [1u8; 32];
         let bootstrap_peers = vec![
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),

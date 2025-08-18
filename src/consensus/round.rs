@@ -83,7 +83,7 @@ pub struct RoundTimeoutConfig {
 pub struct RoundManager {
     current_round: Arc<RwLock<Option<Round>>>,
     round_history: Arc<RwLock<Vec<Round>>>,
-    validator_manager: Arc<String>, // TODO: Replace with ValidatorManager
+    _validator_manager: Arc<String>, // TODO: Replace with ValidatorManager
     timeout_config: RoundTimeoutConfig,
     round_tx: mpsc::Sender<RoundEvent>,
     round_rx: mpsc::Receiver<RoundEvent>,
@@ -268,7 +268,7 @@ impl RoundManager {
         RoundManager {
             current_round: Arc::new(RwLock::new(None)),
             round_history: Arc::new(RwLock::new(Vec::new())),
-            validator_manager,
+            _validator_manager: validator_manager,
             timeout_config,
             round_tx,
             round_rx,

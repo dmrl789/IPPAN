@@ -6,9 +6,21 @@ authors = ["IPPAN Team"]
 description = "Immutable Proof & Availability Network - A fully decentralized Layer-1 blockchain with built-in global DHT storage"
 license = "MIT"
 
+[workspace]
+members = [
+  "crates/neuro-core",
+  "crates/neuro-ledger",
+  "crates/neuro-api",
+  "crates/neuro-proto",
+  "crates/neuro-executor",
+  "apps/neuro-cli",
+]
+resolver = "2"
+
 [dependencies]
 # Core dependencies
 tokio = { version = "1.0", features = ["full"] }
+dashmap = "5.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bincode = "1.3"
@@ -21,6 +33,14 @@ aes = "0.8"
 aes-gcm = "0.10"
 rand = "0.8"
 rand_core = "0.6"
+sha3 = "0.10"
+
+# TLS/DTLS for secure P2P communications
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
+rustls-pemfile = "1.0"
+rustls-native-certs = "0.7"
+webpki-roots = "0.25"
+tokio-rustls = "0.24"
 
 # Networking (simplified for initial build)
 # libp2p = { version = "0.52", features = ["tokio", "macros"] }
@@ -66,9 +86,16 @@ thiserror = "1.0"
 
 # HTTP and API
 axum = "0.6"
+base64 = "0.21"
 hyper = "0.14"
 tower = "0.4"
 tower-http = { version = "0.4", features = ["cors"] }
+chacha20poly1305 = "0.10.1"
+reqwest = { version = "0.12.22", features = ["json"] }
+lettre = { version = "0.11.18", default-features = false, features = ["tokio1", "tokio1-native-tls"] }
+
+# System info
+sysinfo = "0.29"
 
 # Development dependencies
 [dev-dependencies]
@@ -96,17 +123,12 @@ name = "network_benchmarks"
 harness = false
 
 # Examples
-[[example]]
-name = "two_nodes_demo"
-path = "examples/two_nodes_demo.rs"
+# [[example]]
+# name = "two_nodes_demo"
+# path = "examples/two_nodes_demo.rs"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-
-serde = { version = "1.0", features = ["derive"] }
-chrono = { version = "0.4", features = ["serde"] }
-sysinfo = "0.29"
-base64 = "0.21"

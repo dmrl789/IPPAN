@@ -17,6 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod byte_array_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    #[allow(dead_code)]
     pub fn serialize<S>(bytes: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -24,6 +25,7 @@ mod byte_array_serde {
         bytes.serialize(serializer)
     }
 
+    #[allow(dead_code)]
     pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
     where
         D: Deserializer<'de>,

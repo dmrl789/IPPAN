@@ -66,6 +66,12 @@ impl IppanNode {
             block_time: config.consensus.block_time,
             max_time_drift: config.consensus.round_timeout, // Use round_timeout as drift
             min_nodes_for_time: 3, // Default value, adjust as needed
+            bft_timeout_ms: 30000, // Default BFT timeout
+            bft_min_votes_required: 14, // 2/3 of 21 validators
+            bft_malicious_node_threshold: 7, // 1/3 of 21 validators
+            reputation_decay_rate: 0.95, // Default reputation decay
+            manipulation_detection_enabled: true, // Enable manipulation detection
+            consensus_recovery_enabled: true, // Enable consensus recovery
         };
         
         let consensus = Arc::new(RwLock::new(consensus::ConsensusEngine::new(consensus_config)));

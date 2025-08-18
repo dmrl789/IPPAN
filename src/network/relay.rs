@@ -3,7 +3,7 @@
 use crate::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio::net::{TcpListener, TcpStream};
@@ -127,7 +127,7 @@ pub struct RelayService {
     /// Message sender
     message_sender: mpsc::Sender<RelayMessage>,
     /// Message receiver
-    message_receiver: mpsc::Receiver<RelayMessage>,
+    _message_receiver: mpsc::Receiver<RelayMessage>,
     /// Running flag
     running: bool,
 }
@@ -165,7 +165,7 @@ impl RelayService {
             connections: Arc::new(RwLock::new(HashMap::new())),
             config: RelayConfig::default(),
             message_sender,
-            message_receiver,
+            _message_receiver: message_receiver,
             running: false,
         }
     }
@@ -184,8 +184,8 @@ impl RelayService {
         });
         
         // Start message processing loop
-        let message_sender = self.message_sender.clone();
-        let connections = self.connections.clone();
+        let _message_sender = self.message_sender.clone();
+        let _connections = self.connections.clone();
         
         tokio::spawn(async move {
             // TODO: Implement message processing loop
@@ -343,6 +343,7 @@ impl RelayService {
     }
 
     /// Handle relay message
+    #[allow(dead_code)]
     async fn handle_relay_message(
         message: RelayMessage,
         _connections: &Arc<RwLock<HashMap<String, RelayConnection>>>,
@@ -415,6 +416,7 @@ mod tests {
     async fn test_relay_connection_creation() {
         let service = RelayService::new();
         
+        use std::net::{IpAddr, Ipv4Addr};
         let source_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let target_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8081);
         

@@ -278,8 +278,8 @@ impl ZkTestRunner {
         
         Ok(BroadcastResult {
             propagation_latency_ms: broadcast_time,
-            peers_reached: self.broadcaster.get_online_peer_count().await,
-            total_peers: self.broadcaster.get_peer_count().await,
+            _peers_reached: self.broadcaster.get_online_peer_count().await,
+            _total_peers: self.broadcaster.get_peer_count().await,
         })
     }
 
@@ -447,8 +447,8 @@ impl ZkTestRunner {
 #[derive(Debug)]
 struct BroadcastResult {
     propagation_latency_ms: u64,
-    peers_reached: usize,
-    total_peers: usize,
+    _peers_reached: usize,
+    _total_peers: usize,
 }
 
 /// Verification result

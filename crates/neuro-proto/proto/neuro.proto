@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package neuro;
+
+service JobMarket {
+  rpc PostJob(PostJobRequest) returns (PostJobResponse);
+  rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse);
+  rpc SubmitPoI(SubmitPoIRequest) returns (SubmitPoIResponse);
+}
+
+message PostJobRequest {
+  bytes model_ref = 1;
+  bytes input_commit = 2;
+  uint32 max_latency_ms = 3;
+  string region = 4;
+  uint64 max_price_ipn = 5;
+  uint64 escrow_ipn = 6;
+  PrivacyMode privacy = 7;
+  uint32 bid_window_ms = 8;
+}
+
+message PostJobResponse {
+  bytes job_id = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+message PlaceBidRequest {
+  bytes job_id = 1;
+  bytes executor_id = 2;
+  uint64 price_ipn = 3;
+  uint32 est_latency_ms = 4;
+  bool tee = 5;
+}
+
+message PlaceBidResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message SubmitPoIRequest {
+  bytes job_id = 1;
+  bytes model_ref = 2;
+  bytes output_commit = 3;
+  uint32 runtime_ms = 4;
+  bytes attestation = 5;
+  bytes zk_proof = 6;
+}
+
+message SubmitPoIResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+enum PrivacyMode {
+  OPEN = 0;
+  TEE = 1;
+  ZK = 2;
+}
