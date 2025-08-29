@@ -1,2 +1,0 @@
-fn(axum::extract::State<AppState>) -> impl std::future::Future<Output = Json<serde_json::Value>> {health_handler}
-fn(axum::extract::State<AppState>) -> impl std::future::Future<Output = Json<serde_json::Value>> {health_handler}: Handler<_, _>

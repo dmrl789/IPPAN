@@ -1,4 +1,0 @@
-(dyn Executor + std::marker::Send + 'static)
-Unique<(dyn Executor + std::marker::Send + 'static)>
-Box<(dyn Executor + std::marker::Send + 'static)>
-swarm::connection::pool::ExecSwitch

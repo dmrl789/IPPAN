@@ -1,0 +1,57 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo
+Cargo.lock
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+
+# Test artifacts
+/testsprite_tests/tmp/
+*.csv
+*.json
+
+# Docker
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+
+# Large binary files
+*.bin
+*.dat
+*.db
+
+# Documentation builds
+/docs/_build/
+
+# Coverage reports
+coverage/
+*.profraw
+
+# Benchmark results
+target/criterion/
+
+# Backup files
+*.bak
+*.backup

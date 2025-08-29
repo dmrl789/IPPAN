@@ -1,6 +1,0 @@
-(dyn std::future::Future<Output = ()> + std::marker::Send + 'static)
-Unique<(dyn std::future::Future<Output = ()> + std::marker::Send + 'static)>
-Box<(dyn std::future::Future<Output = ()> + std::marker::Send + 'static)>
-Pin<Box<(dyn std::future::Future<Output = ()> + std::marker::Send + 'static)>>
-FuturesUnordered<Pin<Box<(dyn std::future::Future<Output = ()> + std::marker::Send + 'static)>>>
-swarm::connection::pool::ExecSwitch

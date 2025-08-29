@@ -1,2 +1,0 @@
-fn(axum::extract::State<AppState>) -> impl std::future::Future<Output = (StatusCode, std::string::String)> {metrics_handler}
-fn(axum::extract::State<AppState>) -> impl std::future::Future<Output = (StatusCode, std::string::String)> {metrics_handler}: Handler<_, _>
