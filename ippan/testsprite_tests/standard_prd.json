@@ -1,0 +1,81 @@
+{
+  "project_name": "IPPAN Blockchain",
+  "version": "1.0.0",
+  "description": "High Performance Blockchain designed to achieve 10M TPS throughput",
+  "tech_stack": {
+    "language": "Rust",
+    "framework": "Tokio, Axum",
+    "database": "In-memory KV store",
+    "other": ["libp2p", "Ed25519", "Blake3", "Prometheus", "jemallocator"]
+  },
+  "features": [
+    {
+      "name": "Node HTTP API",
+      "description": "HTTP API endpoints for blockchain node operations",
+      "endpoints": [
+        {
+          "path": "/health",
+          "method": "GET",
+          "description": "Node health status"
+        },
+        {
+          "path": "/metrics",
+          "method": "GET",
+          "description": "Prometheus metrics"
+        },
+        {
+          "path": "/tx",
+          "method": "POST",
+          "description": "Submit transaction"
+        }
+      ]
+    },
+    {
+      "name": "Wallet CLI",
+      "description": "Command-line wallet management",
+      "commands": [
+        "new - Create wallet",
+        "addr - Show address",
+        "send - Send transaction",
+        "balance - Show balance",
+        "list - List wallets"
+      ]
+    },
+    {
+      "name": "Load Generator",
+      "description": "High-performance load testing",
+      "parameters": [
+        "tps - Transactions per second",
+        "accounts - Number of accounts",
+        "duration - Test duration",
+        "nodes - Target nodes"
+      ]
+    },
+    {
+      "name": "P2P Networking",
+      "description": "Peer-to-peer networking",
+      "protocols": ["gossipsub", "kademlia", "mdns"]
+    },
+    {
+      "name": "Blockchain Core",
+      "description": "Core blockchain functionality",
+      "components": ["mempool", "blocks", "rounds", "state"]
+    }
+  ],
+  "performance_requirements": {
+    "throughput": "10M TPS sustained for 300s",
+    "latency": "p50 ≤ 350ms, p95 ≤ 600ms",
+    "block_size": "16KB target (max 32KB)",
+    "transaction_size": "≤ 185 bytes"
+  },
+  "architecture": {
+    "components": [
+      "IPPAN Time - Network median time with 2ms drift guard",
+      "HashTimers - Deterministic transaction ordering",
+      "Mempool - Sharded priority queues",
+      "Block Builder - 16KB micro-blocks every 10-50ms",
+      "Rounds - 100-250ms cadence with 2f+1 finality",
+      "P2P - libp2p with gossipsub, Kademlia, mDNS"
+    ]
+  }
+}

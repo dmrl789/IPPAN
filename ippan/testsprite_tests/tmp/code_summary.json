@@ -1,0 +1,276 @@
+{
+  "tech_stack": [
+    "Rust",
+    "Tokio",
+    "Axum",
+    "libp2p",
+    "Ed25519",
+    "Blake3",
+    "Prometheus",
+    "jemallocator"
+  ],
+  "features": [
+    {
+      "name": "Node HTTP API",
+      "description": "HTTP API endpoints for blockchain node operations",
+      "files": [
+        "crates/node/src/main.rs",
+        "crates/node/src/lib.rs"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Node API",
+          "version": "1.0.0",
+          "description": "High Performance Blockchain Node API"
+        },
+        "paths": {
+          "/health": {
+            "get": {
+              "summary": "Node health status",
+              "description": "Returns node health information including status, peers, and mempool size",
+              "responses": {
+                "200": {
+                  "description": "Health status",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "status": {"type": "string"},
+                          "peers": {"type": "number"},
+                          "mempool_size": {"type": "number"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/metrics": {
+            "get": {
+              "summary": "Prometheus metrics",
+              "description": "Returns Prometheus-formatted metrics for monitoring",
+              "responses": {
+                "200": {
+                  "description": "Metrics data",
+                  "content": {
+                    "text/plain": {
+                      "schema": {"type": "string"}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/tx": {
+            "post": {
+              "summary": "Submit transaction",
+              "description": "Submit a transaction to the mempool (accepts binary or hex format)",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/octet-stream": {
+                    "schema": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  },
+                  "text/plain": {
+                    "schema": {
+                      "type": "string",
+                      "description": "Hex-encoded transaction"
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "Transaction accepted",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "status": {"type": "string"},
+                          "tx_id": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                },
+                "400": {
+                  "description": "Invalid transaction"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Wallet CLI",
+      "description": "Command-line wallet management with Ed25519 cryptography",
+      "files": [
+        "crates/wallet-cli/src/main.rs"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Wallet CLI",
+          "version": "1.0.0",
+          "description": "Wallet management commands"
+        },
+        "paths": {
+          "/wallet/new": {
+            "post": {
+              "summary": "Create new wallet",
+              "description": "Generate new Ed25519 keypair and wallet",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "name": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/wallet/addr": {
+            "get": {
+              "summary": "Show wallet address",
+              "description": "Display wallet address in base58i format"
+            }
+          },
+          "/wallet/send": {
+            "post": {
+              "summary": "Send transaction",
+              "description": "Create and send a signed transaction",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "to": {"type": "string"},
+                        "amount": {"type": "integer"},
+                        "node": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Load Generator",
+      "description": "High-performance load testing tool for generating transactions",
+      "files": [
+        "crates/loadgen-cli/src/main.rs"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Load Generator",
+          "version": "1.0.0",
+          "description": "Load testing and performance benchmarking"
+        },
+        "paths": {
+          "/loadgen/start": {
+            "post": {
+              "summary": "Start load generation",
+              "description": "Start generating transactions at specified TPS",
+              "requestBody": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "tps": {"type": "integer"},
+                        "accounts": {"type": "integer"},
+                        "duration": {"type": "integer"},
+                        "nodes": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "P2P Networking",
+      "description": "libp2p-based peer-to-peer networking with gossipsub and Kademlia",
+      "files": [
+        "crates/node/src/lib.rs"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN P2P Network",
+          "version": "1.0.0",
+          "description": "Peer-to-peer networking layer"
+        },
+        "paths": {
+          "/p2p/peers": {
+            "get": {
+              "summary": "List connected peers",
+              "description": "Get list of connected P2P peers"
+            }
+          },
+          "/p2p/connect": {
+            "post": {
+              "summary": "Connect to peer",
+              "description": "Connect to a specific peer address"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Blockchain Core",
+      "description": "Core blockchain functionality including mempool, blocks, and rounds",
+      "files": [
+        "crates/common/src/types.rs",
+        "crates/common/src/crypto.rs",
+        "crates/common/src/time.rs",
+        "crates/common/src/merkle.rs"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "IPPAN Blockchain Core",
+          "version": "1.0.0",
+          "description": "Core blockchain data structures and operations"
+        },
+        "paths": {
+          "/block/latest": {
+            "get": {
+              "summary": "Get latest block",
+              "description": "Retrieve the latest block information"
+            }
+          },
+          "/mempool/status": {
+            "get": {
+              "summary": "Mempool status",
+              "description": "Get mempool size and transaction count"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

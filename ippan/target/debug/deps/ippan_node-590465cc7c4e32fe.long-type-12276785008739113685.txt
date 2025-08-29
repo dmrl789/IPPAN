@@ -1,0 +1,3 @@
+(dyn transport::boxed::Abstract<(PeerId, StreamMuxerBox)> + std::marker::Send + Unpin + 'static)
+Unique<(dyn transport::boxed::Abstract<(PeerId, StreamMuxerBox)> + std::marker::Send + Unpin + 'static)>
+Box<(dyn transport::boxed::Abstract<(PeerId, StreamMuxerBox)> + std::marker::Send + Unpin + 'static)>

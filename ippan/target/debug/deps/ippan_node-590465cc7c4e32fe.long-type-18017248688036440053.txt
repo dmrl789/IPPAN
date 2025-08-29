@@ -1,0 +1,2 @@
+fn(axum::extract::State<AppState>, axum::body::Bytes) -> impl std::future::Future<Output = (StatusCode, std::string::String)> {tx_handler}
+fn(axum::extract::State<AppState>, axum::body::Bytes) -> impl std::future::Future<Output = (StatusCode, std::string::String)> {tx_handler}: Handler<_, _>

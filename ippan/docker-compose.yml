@@ -1,0 +1,189 @@
+version: '3.8'
+
+services:
+  # IPPAN Node
+  ippan-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: node
+    container_name: ippan-node
+    ports:
+      - "8080:8080"  # HTTP API
+      - "8081:8081"  # P2P
+    environment:
+      - RUST_LOG=info
+      - IPPAN_HTTP_PORT=8080
+      - IPPAN_P2P_PORT=8081
+      - IPPAN_SHARDS=4
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: ["cargo", "run", "--release", "-p", "ippan-node", "--", "--http-port", "8080", "--p2p-port", "8081", "--shards", "4"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Load Generator
+  loadgen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: loadgen
+    container_name: ippan-loadgen
+    depends_on:
+      ippan-node:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=info
+      - LOAD_TPS=1000
+      - LOAD_ACCOUNTS=100
+      - LOAD_DURATION=60
+      - NODE_URL=http://ippan-node:8080
+    volumes:
+      - ./results:/app/results
+    command: ["cargo", "run", "--release", "-p", "ippan-loadgen-cli", "--", "--tps", "1000", "--accounts", "100", "--duration", "60", "--nodes", "http://ippan-node:8080"]
+    profiles:
+      - load-test
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ippan-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ippan-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+  # Multi-node test setup
+  ippan-node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: node
+    container_name: ippan-node-1
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - RUST_LOG=info
+      - IPPAN_HTTP_PORT=8080
+      - IPPAN_P2P_PORT=8081
+      - IPPAN_SHARDS=4
+    volumes:
+      - ./data/node1:/app/data
+      - ./logs/node1:/app/logs
+    command: ["cargo", "run", "--release", "-p", "ippan-node", "--", "--http-port", "8080", "--p2p-port", "8081", "--shards", "4"]
+    profiles:
+      - multi-node
+
+  ippan-node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: node
+    container_name: ippan-node-2
+    ports:
+      - "8082:8080"
+      - "8083:8081"
+    environment:
+      - RUST_LOG=info
+      - IPPAN_HTTP_PORT=8080
+      - IPPAN_P2P_PORT=8081
+      - IPPAN_SHARDS=4
+    volumes:
+      - ./data/node2:/app/data
+      - ./logs/node2:/app/logs
+    command: ["cargo", "run", "--release", "-p", "ippan-node", "--", "--http-port", "8080", "--p2p-port", "8081", "--shards", "4", "--bootstrap-peers", "ippan-node-1:8081"]
+    depends_on:
+      - ippan-node-1
+    profiles:
+      - multi-node
+
+  ippan-node-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: node
+    container_name: ippan-node-3
+    ports:
+      - "8084:8080"
+      - "8085:8081"
+    environment:
+      - RUST_LOG=info
+      - IPPAN_HTTP_PORT=8080
+      - IPPAN_P2P_PORT=8081
+      - IPPAN_SHARDS=4
+    volumes:
+      - ./data/node3:/app/data
+      - ./logs/node3:/app/logs
+    command: ["cargo", "run", "--release", "-p", "ippan-node", "--", "--http-port", "8080", "--p2p-port", "8081", "--shards", "4", "--bootstrap-peers", "ippan-node-1:8081,ippan-node-2:8081"]
+    depends_on:
+      - ippan-node-1
+      - ippan-node-2
+    profiles:
+      - multi-node
+
+  # Multi-node load generator
+  multi-loadgen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: loadgen
+    container_name: ippan-multi-loadgen
+    depends_on:
+      - ippan-node-1
+      - ippan-node-2
+      - ippan-node-3
+    environment:
+      - RUST_LOG=info
+      - LOAD_TPS=5000
+      - LOAD_ACCOUNTS=500
+      - LOAD_DURATION=120
+      - NODE_URLS=http://ippan-node-1:8080,http://ippan-node-2:8080,http://ippan-node-3:8080
+    volumes:
+      - ./results:/app/results
+    command: ["cargo", "run", "--release", "-p", "ippan-loadgen-cli", "--", "--tps", "5000", "--accounts", "500", "--duration", "120", "--nodes", "http://ippan-node-1:8080,http://ippan-node-2:8080,http://ippan-node-3:8080"]
+    profiles:
+      - multi-node
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: ippan-network

@@ -1,0 +1,32 @@
+[package]
+name = "ippan-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Common crate
+ippan-common = { path = "../common" }
+ippan-node = { path = "../node" }
+
+# Core dependencies
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Cryptography
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+
+# Benchmarking
+criterion = { workspace = true }
+bincode = { workspace = true }
+
+# Utilities
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+[[bench]]
+name = "throughput"
+harness = false

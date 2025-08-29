@@ -1,0 +1,165 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "IPPAN Blockchain Dashboard",
+    "tags": ["ippan", "blockchain"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Transaction Throughput",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ippan_transactions_processed_total[5m])",
+            "legendFormat": "TPS"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "yAxes": [
+          {"label": "Transactions per Second", "min": 0}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Block Production Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ippan_blocks_created_total[5m])",
+            "legendFormat": "Blocks/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "yAxes": [
+          {"label": "Blocks per Second", "min": 0}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Mempool Size",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "ippan_mempool_size",
+            "legendFormat": "Pending Transactions"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "yAxes": [
+          {"label": "Transaction Count", "min": 0}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Round Finalization Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ippan_rounds_finalized_total[5m])",
+            "legendFormat": "Rounds/sec"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "yAxes": [
+          {"label": "Rounds per Second", "min": 0}
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Transaction Latency (P50)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, rate(ippan_transaction_latency_seconds_bucket[5m]))",
+            "legendFormat": "P50 Latency"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "yAxes": [
+          {"label": "Seconds", "min": 0}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Transaction Latency (P95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(ippan_transaction_latency_seconds_bucket[5m]))",
+            "legendFormat": "P95 Latency"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "yAxes": [
+          {"label": "Seconds", "min": 0}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Active Peers",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "ippan_p2p_active_peers",
+            "legendFormat": "Peers"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 24},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "green", "value": 1}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Current Round",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "ippan_current_round",
+            "legendFormat": "Round"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 24}
+      },
+      {
+        "id": 9,
+        "title": "Total Transactions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "ippan_transactions_processed_total",
+            "legendFormat": "Total TX"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 24}
+      },
+      {
+        "id": 10,
+        "title": "Total Blocks",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "ippan_blocks_created_total",
+            "legendFormat": "Total Blocks"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 24}
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "5s"
+  }
+}

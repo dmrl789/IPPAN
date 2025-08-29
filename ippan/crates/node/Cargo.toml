@@ -1,0 +1,65 @@
+[package]
+name = "ippan-node"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Common crate
+ippan-common = { path = "../common" }
+
+# Core dependencies
+tokio = { workspace = true }
+axum = { workspace = true }
+hyper = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Cryptography
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+blake3 = { workspace = true }
+blake2 = { workspace = true }
+base58 = { workspace = true }
+
+# P2P networking
+libp2p = { workspace = true }
+
+# Concurrency and utilities
+dashmap = { workspace = true }
+crossbeam = { workspace = true }
+parking_lot = { workspace = true }
+ahash = { workspace = true }
+
+# Metrics and observability
+prometheus = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Serialization and utilities
+bytes = { workspace = true }
+hex = { workspace = true }
+bincode = { workspace = true }
+bitvec = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Memory allocation (Linux/macOS only)
+jemallocator = { version = "0.5", optional = true }
+
+# Additional utilities
+chrono = { workspace = true }
+uuid = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"

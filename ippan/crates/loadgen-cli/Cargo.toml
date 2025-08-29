@@ -1,0 +1,16 @@
+[package]
+name = "ippan-loadgen-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ippan-common = { path = "../common" }
+clap = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { workspace = true }
+futures = "0.3"
+rand = { workspace = true }
+hex = { workspace = true }
+bincode = { workspace = true }

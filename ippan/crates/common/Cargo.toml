@@ -1,0 +1,33 @@
+[package]
+name = "ippan-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Cryptography
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+blake3 = { workspace = true }
+blake2 = { workspace = true }
+base58 = { workspace = true }
+bs58 = { workspace = true }
+
+# Serialization
+bincode = { workspace = true }
+hex = { workspace = true }
+bytes = { workspace = true }
+
+# Utilities
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+serde_bytes = "0.11"
+
+[dev-dependencies]
+tokio = { workspace = true }
