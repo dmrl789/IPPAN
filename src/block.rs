@@ -33,7 +33,7 @@ impl Block {
         block_time_us: u64,
         builder_id: Hash,
         transactions: Vec<Transaction>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         // Validate parent refs
         if parent_refs.len() > MAX_PARENT_REFS {
             return Err(Error::Block(format!(
@@ -47,7 +47,7 @@ impl Block {
         let tx_hashes: Vec<Hash> = transactions
             .iter()
             .map(|tx| tx.compute_id())
-            .collect::<Result<Vec<Hash>, Error>>()?;
+            .collect::<Result<Vec<Hash>>>()?;
 
         // Compute merkle root
         let merkle_root = Self::compute_merkle_root(&tx_hashes)?;
@@ -72,7 +72,7 @@ impl Block {
         })
     }
 
-    pub fn compute_id(&self) -> Result<Hash, Error> {
+    pub fn compute_id(&self) -> Result<Hash> {
         Self::compute_block_id(
             &self.header.parent_refs,
             self.header.round_id,
@@ -86,7 +86,7 @@ impl Block {
         round_id: u64,
         block_time_us: u64,
         merkle_root: &Hash,
-    ) -> Result<Hash, Error> {
+    ) -> Result<Hash> {
         let mut data = Vec::new();
         
         // Parent refs
@@ -106,7 +106,7 @@ impl Block {
         Ok(crypto::hash(&data))
     }
 
-    fn compute_merkle_root(tx_hashes: &[Hash]) -> Result<Hash, Error> {
+    fn compute_merkle_root(tx_hashes: &[Hash]) -> Result<Hash> {
         if tx_hashes.is_empty() {
             return Ok([0u8; 32]);
         }
@@ -130,7 +130,7 @@ impl Block {
         Ok(current_level[0])
     }
 
-    pub fn verify(&self) -> Result<bool, Error> {
+    pub fn verify(&self) -> Result<bool> {
         // Check parent refs count
         if self.header.parent_refs.len() > MAX_PARENT_REFS {
             return Err(Error::Block("Too many parent references".to_string()));
@@ -160,19 +160,19 @@ impl Block {
         Ok(true)
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+    pub fn serialize(&self) -> Result<Vec<u8>> {
         bincode::serialize(self).map_err(|e| Error::Serialization(e.to_string()))
     }
 
-    pub fn deserialize(data: &[u8]) -> Result<Self, Error> {
+    pub fn deserialize(data: &[u8]) -> Result<Self> {
         bincode::deserialize(data).map_err(|e| Error::Serialization(e.to_string()))
     }
 
-    pub fn size(&self) -> Result<usize, Error> {
+    pub fn size(&self) -> Result<usize> {
         Ok(self.serialize()?.len())
     }
 
-    pub fn get_sort_key(&self) -> Result<(Hash, Hash), Error> {
+    pub fn get_sort_key(&self) -> Result<(Hash, Hash)> {
         let block_id = self.compute_id()?;
         Ok((self.header.hash_timer, block_id))
     }
@@ -186,6 +186,7 @@ impl Block {
     }
 }
 
+#[derive(Clone)]
 pub struct BlockBuilder {
     target_size: usize,
     max_size: usize,
@@ -213,7 +214,7 @@ impl BlockBuilder {
         block_time_us: u64,
         builder_id: Hash,
         transactions: Vec<Transaction>,
-    ) -> Result<Block, Error> {
+    ) -> Result<Block> {
         // Check if we have enough transactions to meet minimum size
         let mut selected_txs = Vec::new();
         let mut current_size = 0;
@@ -239,7 +240,7 @@ impl BlockBuilder {
         Block::new(parent_refs, round_id, block_time_us, builder_id, selected_txs)
     }
 
-    pub fn estimate_block_size(&self, transactions: &[Transaction]) -> Result<usize, Error> {
+    pub fn estimate_block_size(&self, transactions: &[Transaction]) -> Result<usize> {
         let mut total_size = 0;
         
         // Estimate header size (fixed)

@@ -54,7 +54,7 @@ impl ShardMempool {
         }
     }
 
-    pub async fn add_transaction(&self, tx: Transaction) -> Result<bool, Error> {
+    pub async fn add_transaction(&self, tx: Transaction) -> Result<bool> {
         // Check if we're at capacity
         let current_size = *self.size.read().await;
         if current_size >= MAX_MEMPOOL_SIZE_PER_SHARD {
@@ -181,7 +181,7 @@ impl Mempool {
         (account_hash[0] as usize) % self.shard_count
     }
 
-    pub async fn add_transaction(&self, tx: Transaction) -> Result<bool, Error> {
+    pub async fn add_transaction(&self, tx: Transaction) -> Result<bool> {
         // Verify transaction first
         tx.verify()?;
 

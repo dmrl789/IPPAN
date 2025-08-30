@@ -9,13 +9,68 @@ pub const MAX_TRANSACTION_SIZE: usize = 185;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub version: u8,
+    #[serde(with = "serde_bytes")]
     pub from_pub: PublicKeyBytes,
+    #[serde(with = "serde_bytes")]
     pub to_addr: PublicKeyBytes, // Using public key as address for simplicity
     pub amount: u64,
     pub nonce: u64,
     pub ippan_time_us: u64,
+    #[serde(with = "serde_bytes")]
     pub hash_timer: Hash,
+    #[serde(with = "serde_signature")]
     pub signature: SignatureBytes,
+}
+
+// Serde support for byte arrays
+mod serde_bytes {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        bytes.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = Vec::deserialize(deserializer)?;
+        if bytes.len() != 32 {
+            return Err(serde::de::Error::custom("Expected 32 bytes"));
+        }
+        let mut array = [0u8; 32];
+        array.copy_from_slice(&bytes);
+        Ok(array)
+    }
+}
+
+mod serde_signature {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        bytes.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = Vec::deserialize(deserializer)?;
+        if bytes.len() != 64 {
+            return Err(serde::de::Error::custom("Expected 64 bytes"));
+        }
+        let mut array = [0u8; 64];
+        array.copy_from_slice(&bytes);
+        Ok(array)
+    }
 }
 
 impl Transaction {

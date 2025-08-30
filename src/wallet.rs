@@ -143,7 +143,7 @@ impl WalletManager {
         if wallets.len() == 1 {
             *self.default_wallet.write().await = Some(name);
         }
-
+        
         Ok(())
     }
 
@@ -161,7 +161,7 @@ impl WalletManager {
         if wallets.len() == 1 {
             *self.default_wallet.write().await = Some(name);
         }
-
+        
         Ok(())
     }
 
@@ -193,7 +193,7 @@ impl WalletManager {
             })?
         };
 
-        let mut wallets = self.wallets.write().await;
+        let wallets = self.wallets.write().await;
         
         if !wallets.contains_key(&wallet_name) {
             return Err(crate::Error::Wallet(format!("Wallet '{}' not found", wallet_name)));

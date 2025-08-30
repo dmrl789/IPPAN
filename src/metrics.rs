@@ -7,7 +7,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
-#[derive(Clone)]
 pub struct Metrics {
     // Transaction metrics
     pub ingress_tx_total: Counter,
@@ -89,12 +88,12 @@ impl Metrics {
         // Block metrics
         let blocks_created_total = Counter::default();
         let blocks_finalized_total = Counter::default();
-        let block_size_bytes = Histogram::new(vec![
+                  let block_size_bytes = Histogram::new(vec![
             1024.0, 4096.0, 8192.0, 16384.0, 32768.0, 65536.0
-        ]);
-        let block_creation_duration_ms = Histogram::new(vec![
+        ].into_iter());
+                  let block_creation_duration_ms = Histogram::new(vec![
             1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0
-        ]);
+        ].into_iter());
         
         registry.register("ippan_blocks_created_total", "Total blocks created", blocks_created_total.clone());
         registry.register("ippan_blocks_finalized_total", "Total blocks finalized", blocks_finalized_total.clone());
@@ -104,12 +103,12 @@ impl Metrics {
         // Round metrics
         let rounds_started_total = Counter::default();
         let rounds_finalized_total = Counter::default();
-        let round_duration_ms = Histogram::new(vec![
+                  let round_duration_ms = Histogram::new(vec![
             50.0, 100.0, 200.0, 300.0, 400.0, 500.0, 750.0, 1000.0
-        ]);
-        let round_transaction_count = Histogram::new(vec![
+        ].into_iter());
+                  let round_transaction_count = Histogram::new(vec![
             1.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0
-        ]);
+        ].into_iter());
         
         registry.register("ippan_rounds_started_total", "Total rounds started", rounds_started_total.clone());
         registry.register("ippan_rounds_finalized_total", "Total rounds finalized", rounds_finalized_total.clone());
@@ -135,15 +134,15 @@ impl Metrics {
         registry.register("ippan_state_root_updates_total", "Total state root updates", state_root_updates_total.clone());
         
         // Performance metrics
-        let transaction_processing_duration_ms = Histogram::new(vec![
+                  let transaction_processing_duration_ms = Histogram::new(vec![
             0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0
-        ]);
-        let block_processing_duration_ms = Histogram::new(vec![
+        ].into_iter());
+                  let block_processing_duration_ms = Histogram::new(vec![
             1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0
-        ]);
-        let round_processing_duration_ms = Histogram::new(vec![
+        ].into_iter());
+                  let round_processing_duration_ms = Histogram::new(vec![
             10.0, 25.0, 50.0, 100.0, 200.0, 300.0, 400.0, 500.0, 750.0, 1000.0
-        ]);
+        ].into_iter());
         
         registry.register("ippan_transaction_processing_duration_ms", "Transaction processing duration", transaction_processing_duration_ms.clone());
         registry.register("ippan_block_processing_duration_ms", "Block processing duration", block_processing_duration_ms.clone());
@@ -206,12 +205,12 @@ impl Metrics {
     }
 
     pub fn update_mempool_size(&self, size: usize) {
-        self.mempool_size.set(size as f64);
+        self.mempool_size.set(size as i64);
     }
 
     pub fn update_mempool_shard_size(&self, shard_index: usize, size: usize) {
         if shard_index < self.mempool_size_per_shard.len() {
-            self.mempool_size_per_shard[shard_index].set(size as f64);
+            self.mempool_size_per_shard[shard_index].set(size as i64);
         }
     }
 
@@ -236,7 +235,7 @@ impl Metrics {
     }
 
     pub fn update_peers_connected(&self, count: usize) {
-        self.peers_connected.set(count as f64);
+        self.peers_connected.set(count as i64);
     }
 
     pub fn record_message_received(&self) {
@@ -248,11 +247,11 @@ impl Metrics {
     }
 
     pub fn update_accounts_total(&self, count: usize) {
-        self.accounts_total.set(count as f64);
+        self.accounts_total.set(count as i64);
     }
 
     pub fn update_total_balance(&self, balance: u64) {
-        self.total_balance.set(balance as f64);
+        self.total_balance.set(balance as i64);
     }
 
     pub fn record_state_root_update(&self) {
@@ -284,9 +283,9 @@ impl Metrics {
     }
 
     pub fn get_prometheus_metrics(&self) -> String {
-        let mut buffer = Vec::new();
+        let mut buffer = String::new();
         encode(&mut buffer, &self.registry).unwrap();
-        String::from_utf8(buffer).unwrap()
+        buffer
     }
 }
 

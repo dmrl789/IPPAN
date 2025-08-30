@@ -1,0 +1,11 @@
+C:\Users\yuyby\Downloads\ippanbasic\ippan\target\debug\deps\winreg-579f79d73b458ae1.d: C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\lib.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\common.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\enums.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_key.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_key_metadata.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_value.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\types.rs
+
+C:\Users\yuyby\Downloads\ippanbasic\ippan\target\debug\deps\libwinreg-579f79d73b458ae1.rmeta: C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\lib.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\common.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\enums.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_key.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_key_metadata.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_value.rs C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\types.rs
+
+C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\lib.rs:
+C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\common.rs:
+C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\enums.rs:
+C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_key.rs:
+C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_key_metadata.rs:
+C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\reg_value.rs:
+C:\Users\yuyby\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winreg-0.50.0\src\types.rs:

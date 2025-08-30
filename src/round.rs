@@ -14,6 +14,7 @@ pub const MAX_ROUND_CADENCE_MS: u64 = 250;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoundBlock {
     pub block: Block,
+    #[serde(with = "serde_signature_map")]
     pub signatures: HashMap<Hash, SignatureBytes>, // verifier_id -> signature
 }
 
@@ -23,10 +24,90 @@ pub struct Round {
     pub start_time_us: u64,
     pub end_time_us: u64,
     pub blocks: Vec<RoundBlock>,
+    #[serde(with = "serde_hash_vec")]
     pub verifier_set: Vec<Hash>, // List of verifier public key hashes
     pub finality_threshold: usize, // 2f+1 signatures required
     pub finalized: bool,
+    #[serde(with = "serde_signature_map")]
     pub finality_signatures: HashMap<Hash, SignatureBytes>, // verifier_id -> finality signature
+}
+
+// Serde support for HashMap with byte arrays
+mod serde_signature_map {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+
+    pub fn serialize<S>(map: &HashMap<Hash, SignatureBytes>, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let vec: Vec<(Vec<u8>, Vec<u8>)> = map
+            .iter()
+            .map(|(k, v)| (k.to_vec(), v.to_vec()))
+            .collect();
+        vec.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> std::result::Result<HashMap<Hash, SignatureBytes>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let vec: Vec<(Vec<u8>, Vec<u8>)> = Vec::deserialize(deserializer)?;
+        let mut map = HashMap::new();
+        
+        for (k, v) in vec {
+            if k.len() != 32 {
+                return Err(serde::de::Error::custom("Expected 32 bytes for hash"));
+            }
+            if v.len() != 64 {
+                return Err(serde::de::Error::custom("Expected 64 bytes for signature"));
+            }
+            
+            let mut key = [0u8; 32];
+            key.copy_from_slice(&k);
+            let mut value = [0u8; 64];
+            value.copy_from_slice(&v);
+            
+            map.insert(key, value);
+        }
+        
+        Ok(map)
+    }
+}
+
+// Serde support for Vec<Hash>
+mod serde_hash_vec {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(vec: &Vec<Hash>, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let vec_bytes: Vec<Vec<u8>> = vec.iter().map(|h| h.to_vec()).collect();
+        vec_bytes.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> std::result::Result<Vec<Hash>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let vec_bytes: Vec<Vec<u8>> = Vec::deserialize(deserializer)?;
+        let mut result = Vec::new();
+        
+        for bytes in vec_bytes {
+            if bytes.len() != 32 {
+                return Err(serde::de::Error::custom("Expected 32 bytes for hash"));
+            }
+            
+            let mut hash = [0u8; 32];
+            hash.copy_from_slice(&bytes);
+            result.push(hash);
+        }
+        
+        Ok(result)
+    }
 }
 
 impl Round {
@@ -49,7 +130,7 @@ impl Round {
         }
     }
 
-    pub fn add_block(&mut self, block: Block) -> Result<(), Error> {
+    pub fn add_block(&mut self, block: Block) -> Result<()> {
         // Verify block belongs to this round
         if block.header.round_id != self.round_id {
             return Err(Error::Round(format!(
@@ -75,7 +156,7 @@ impl Round {
         block_id: &Hash,
         verifier_id: Hash,
         signature: SignatureBytes,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         // Find the block
         for round_block in &mut self.blocks {
             if round_block.block.compute_id()? == *block_id {
@@ -91,7 +172,7 @@ impl Round {
         &mut self,
         verifier_id: Hash,
         signature: SignatureBytes,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool> {
         // Verify the verifier is in the verifier set
         if !self.verifier_set.contains(&verifier_id) {
             return Err(Error::Round("Verifier not in verifier set".to_string()));
@@ -169,12 +250,12 @@ impl RoundManager {
         }
 
         // Create new round
-        *current_round = Some(Round::new(round_id, start_time_us, verifier_set));
+        *current_round = Some(Round::new(round_id, start_time_us, verifier_set.clone()));
         
         info!("Started round {} with {} verifiers", round_id, verifier_set.len());
     }
 
-    pub async fn add_block_to_current_round(&self, block: Block) -> Result<(), Error> {
+    pub async fn add_block_to_current_round(&self, block: Block) -> Result<()> {
         let mut current_round = self.current_round.write().await;
         
         if let Some(round) = current_round.as_mut() {
@@ -184,12 +265,12 @@ impl RoundManager {
         }
     }
 
-    pub async fn sign_block(&self, block_id: &Hash) -> Result<SignatureBytes, Error> {
+    pub async fn sign_block(&self, block_id: &Hash) -> Result<SignatureBytes> {
         let verifier_id = crypto::hash(&self.verifier_keypair.public_key);
         
         // Create signature message
         let mut message = Vec::new();
-        message.extend_from_slice(&block_id);
+        message.extend_from_slice(block_id);
         message.extend_from_slice(&verifier_id);
         
         let signature = self.verifier_keypair.sign(&message)?;
@@ -203,7 +284,7 @@ impl RoundManager {
         Ok(signature)
     }
 
-    pub async fn sign_finality(&self) -> Result<Option<SignatureBytes>, Error> {
+    pub async fn sign_finality(&self) -> Result<Option<SignatureBytes>> {
         let verifier_id = crypto::hash(&self.verifier_keypair.public_key);
         
         let mut current_round = self.current_round.write().await;
@@ -227,7 +308,7 @@ impl RoundManager {
         Ok(None)
     }
 
-    pub async fn add_finality_signature(&self, verifier_id: Hash, signature: SignatureBytes) -> Result<bool, Error> {
+    pub async fn add_finality_signature(&self, verifier_id: Hash, signature: SignatureBytes) -> Result<bool> {
         let mut current_round = self.current_round.write().await;
         
         if let Some(round) = current_round.as_mut() {

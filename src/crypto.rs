@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature, Signer, Verifier};
+use ed25519_dalek::{SigningKey as Keypair, VerifyingKey as PublicKey, SecretKey, Signature, Signer, Verifier};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -7,6 +7,55 @@ use sha2::{Digest, Sha256};
 pub type Hash = [u8; 32];
 pub type PublicKeyBytes = [u8; 32];
 pub type SignatureBytes = [u8; 64];
+
+// Serde support for byte arrays
+mod serde_bytes {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        bytes.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = Vec::deserialize(deserializer)?;
+        if bytes.len() != 32 {
+            return Err(serde::de::Error::custom("Expected 32 bytes"));
+        }
+        let mut array = [0u8; 32];
+        array.copy_from_slice(&bytes);
+        Ok(array)
+    }
+}
+
+mod serde_signature {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        bytes.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = Vec::deserialize(deserializer)?;
+        if bytes.len() != 64 {
+            return Err(serde::de::Error::custom("Expected 64 bytes"));
+        }
+        let mut array = [0u8; 64];
+        array.copy_from_slice(&bytes);
+        Ok(array)
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyPair {
@@ -18,30 +67,36 @@ impl KeyPair {
     pub fn generate() -> Self {
         let keypair = Keypair::generate(&mut OsRng);
         Self {
-            public_key: keypair.public.to_bytes(),
-            secret_key: keypair.secret.to_bytes().to_vec(),
+            public_key: keypair.verifying_key().to_bytes(),
+            secret_key: keypair.to_bytes().to_vec(),
         }
     }
 
     pub fn from_secret_key(secret_key_bytes: &[u8]) -> Result<Self, crate::Error> {
-        let secret_key = SecretKey::from_bytes(secret_key_bytes)
-            .map_err(|e| crate::Error::Crypto(format!("Invalid secret key: {}", e)))?;
-        let public_key = PublicKey::from(&secret_key);
+        if secret_key_bytes.len() != 32 {
+            return Err(crate::Error::Crypto("Invalid secret key length".to_string()));
+        }
+        
+        let secret_key_array: [u8; 32] = secret_key_bytes.try_into()
+            .map_err(|_| crate::Error::Crypto("Invalid secret key format".to_string()))?;
+        
+        let keypair = Keypair::from_bytes(&secret_key_array);
         
         Ok(Self {
-            public_key: public_key.to_bytes(),
+            public_key: keypair.verifying_key().to_bytes(),
             secret_key: secret_key_bytes.to_vec(),
         })
     }
 
     pub fn sign(&self, message: &[u8]) -> Result<SignatureBytes, crate::Error> {
-        let secret_key = SecretKey::from_bytes(&self.secret_key)
-            .map_err(|e| crate::Error::Crypto(format!("Invalid secret key: {}", e)))?;
-        let keypair = Keypair {
-            public: PublicKey::from(&secret_key),
-            secret: secret_key,
-        };
+        if self.secret_key.len() != 32 {
+            return Err(crate::Error::Crypto("Invalid secret key length".to_string()));
+        }
         
+        let secret_key_array: [u8; 32] = self.secret_key.as_slice().try_into()
+            .map_err(|_| crate::Error::Crypto("Invalid secret key format".to_string()))?;
+        
+        let keypair = Keypair::from_bytes(&secret_key_array);
         let signature = keypair.sign(message);
         Ok(signature.to_bytes())
     }
@@ -49,7 +104,7 @@ impl KeyPair {
     pub fn verify(public_key: &PublicKeyBytes, message: &[u8], signature: &SignatureBytes) -> Result<bool, crate::Error> {
         let public_key = PublicKey::from_bytes(public_key)
             .map_err(|e| crate::Error::Crypto(format!("Invalid public key: {}", e)))?;
-        let signature = Signature::from_bytes(signature)
+        let signature = Signature::try_from(signature.as_slice())
             .map_err(|e| crate::Error::Crypto(format!("Invalid signature: {}", e)))?;
         
         Ok(public_key.verify(message, &signature).is_ok())
@@ -66,7 +121,7 @@ impl KeyPair {
 
         let mut results = Vec::with_capacity(public_keys.len());
         
-        for (i, (pk, msg, sig)) in public_keys.iter().zip(messages.iter()).zip(signatures.iter()).enumerate() {
+        for (i, ((pk, msg), sig)) in public_keys.iter().zip(messages.iter()).zip(signatures.iter()).enumerate() {
             match Self::verify(pk, msg, sig) {
                 Ok(valid) => results.push(valid),
                 Err(e) => {
@@ -119,7 +174,7 @@ pub fn derive_address(public_key: &PublicKeyBytes) -> String {
     let mut address_bytes = vec![b'i'];
     address_bytes.extend_from_slice(&hash[..20]); // Use first 20 bytes
     
-    base58::encode(&address_bytes)
+    bs58::encode(&address_bytes).into_string()
 }
 
 #[cfg(test)]

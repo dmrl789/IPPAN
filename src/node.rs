@@ -1,10 +1,10 @@
-use crate::block::{Block, BlockBuilder};
-use crate::crypto::{KeyPair, Hash};
+use crate::block::BlockBuilder;
+use crate::crypto::KeyPair;
 use crate::error::{Error, Result};
 use crate::mempool::Mempool;
 use crate::metrics::Metrics;
 use crate::network::{NetworkManager, NetworkMessage};
-use crate::round::{RoundManager, select_verifier_set};
+use crate::round::RoundManager;
 use crate::state::StateManager;
 use crate::time::IppanTime;
 use crate::transaction::Transaction;
@@ -16,15 +16,16 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum::serve;
 use libp2p::identity;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tokio::time::interval;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
+#[derive(Clone)]
 pub struct Node {
     // Core components
     ippan_time: Arc<IppanTime>,
@@ -36,11 +37,11 @@ pub struct Node {
     
     // Network
     network_manager: Arc<RwLock<Option<NetworkManager>>>,
-    network_keypair: identity::Keypair,
+    network_keypair: Arc<identity::Keypair>,
     
     // Block building
-    block_builder: BlockBuilder,
-    builder_keypair: KeyPair,
+    block_builder: Arc<BlockBuilder>,
+    builder_keypair: Arc<KeyPair>,
     
     // Configuration
     http_port: u16,
@@ -74,7 +75,7 @@ pub struct SubmitTransactionResponse {
 }
 
 impl Node {
-    pub async fn new(http_port: u16, p2p_port: u16, shard_count: usize) -> Result<Self, Error> {
+    pub async fn new(http_port: u16, p2p_port: u16, shard_count: usize) -> Result<Self> {
         info!("Initializing IPPAN node...");
         
         // Generate keypairs
@@ -90,7 +91,7 @@ impl Node {
         let metrics = Arc::new(Metrics::new(shard_count));
         
         // Create block builder
-        let block_builder = BlockBuilder::new();
+        let block_builder = Arc::new(BlockBuilder::new());
         
         // Initialize network manager (will be started later)
         let network_manager = Arc::new(RwLock::new(None));
@@ -103,9 +104,9 @@ impl Node {
             wallet_manager,
             metrics,
             network_manager,
-            network_keypair,
+            network_keypair: Arc::new(network_keypair),
             block_builder,
-            builder_keypair,
+            builder_keypair: Arc::new(builder_keypair),
             http_port,
             p2p_port,
             shard_count,
@@ -114,7 +115,7 @@ impl Node {
         })
     }
 
-    pub async fn start(&self) -> Result<(), Error> {
+    pub async fn start(&self) -> Result<()> {
         info!("Starting IPPAN node...");
         
         // Start network
@@ -135,23 +136,22 @@ impl Node {
         Ok(())
     }
 
-    async fn start_network(&self) -> Result<(), Error> {
+    async fn start_network(&self) -> Result<()> {
         info!("Starting network manager...");
         
-        let network_manager = NetworkManager::new(self.network_keypair.clone(), self.metrics.clone()).await?;
+        let network_manager = NetworkManager::new(self.network_keypair.as_ref().clone(), self.metrics.clone()).await?;
+        let listen_addr = format!("0.0.0.0:{}", self.p2p_port);
         
-        // Start network in background
-        let network_manager_clone = network_manager.clone();
-        let listen_addr = format!("/ip4/0.0.0.0/tcp/{}", self.p2p_port);
+        // Store network manager first
+        *self.network_manager.write().await = Some(network_manager.clone());
         
+        // Start network in background task
+        let mut network_manager_clone = network_manager.clone();
         tokio::spawn(async move {
             if let Err(e) = network_manager_clone.start(&listen_addr).await {
                 error!("Network manager failed: {}", e);
             }
         });
-        
-        // Store network manager
-        *self.network_manager.write().await = Some(network_manager);
         
         Ok(())
     }
@@ -162,7 +162,6 @@ impl Node {
         let builder_keypair = self.builder_keypair.clone();
         let ippan_time = self.ippan_time.clone();
         let metrics = self.metrics.clone();
-        let network_manager = self.network_manager.clone();
         let current_round_id = self.current_round_id.clone();
         
         tokio::spawn(async move {
@@ -200,11 +199,6 @@ impl Node {
                     
                     // Record metrics
                     metrics.record_block_created(block_size, duration.as_millis() as f64);
-                    
-                    // Publish block to network
-                    if let Some(network) = network_manager.read().await.as_ref() {
-                        let _ = network.publish_block(block).await;
-                    }
                     
                     info!("Built block with {} transactions in {:?}", transactions.len(), duration);
                 }
@@ -291,153 +285,120 @@ impl Node {
         });
     }
 
-    async fn start_http_server(&self) -> Result<(), Error> {
+    async fn start_http_server(&self) -> Result<()> {
         let app = Router::new()
-            .route("/health", get(Self::health_handler))
-            .route("/metrics", get(Self::metrics_handler))
-            .route("/tx", post(Self::submit_transaction_handler))
-            .with_state(self.clone());
+            .route("/health", get(health_handler))
+            .route("/metrics", get(metrics_handler))
+            .route("/tx", post(submit_transaction_handler))
+            .with_state(Arc::new(self.clone()));
         
         let addr = format!("0.0.0.0:{}", self.http_port);
         info!("Starting HTTP server on {}", addr);
         
-        axum::Server::bind(&addr.parse()?)
-            .serve(app.into_make_service())
-            .await?;
+        let listener = tokio::net::TcpListener::bind(&addr).await?;
+        serve(listener, app).await?;
         
         Ok(())
     }
 
-    async fn health_handler(State(node): State<Arc<Self>>) -> Json<HealthResponse> {
-        let peers = if let Some(network) = node.network_manager.read().await.as_ref() {
-            network.get_peer_count().await
-        } else {
-            0
-        };
-        
-        let mempool_size = node.mempool.get_total_size().await;
-        let round_id = *node.current_round_id.read().await;
-        
-        Json(HealthResponse {
-            status: "healthy".to_string(),
-            peers,
-            mempool_size,
-            round_id,
-            uptime_seconds: 0, // TODO: Track uptime
-        })
-    }
-
-    async fn metrics_handler(State(node): State<Arc<Self>>) -> (StatusCode, String) {
-        let metrics = node.metrics.get_prometheus_metrics();
-        (StatusCode::OK, metrics)
-    }
-
-    async fn submit_transaction_handler(
-        State(node): State<Arc<Self>>,
-        Json(request): Json<SubmitTransactionRequest>,
-    ) -> Json<SubmitTransactionResponse> {
-        // Decode transaction from hex
-        let tx_data = match hex::decode(&request.transaction) {
-            Ok(data) => data,
-            Err(e) => {
-                return Json(SubmitTransactionResponse {
-                    success: false,
-                    message: format!("Invalid hex encoding: {}", e),
-                    tx_id: None,
-                });
-            }
-        };
-        
-        // Deserialize transaction
-        let transaction = match Transaction::deserialize(&tx_data) {
-            Ok(tx) => tx,
-            Err(e) => {
-                return Json(SubmitTransactionResponse {
-                    success: false,
-                    message: format!("Invalid transaction: {}", e),
-                    tx_id: None,
-                });
-            }
-        };
-        
-        // Verify transaction
-        if let Err(e) = transaction.verify() {
-            return Json(SubmitTransactionResponse {
-                success: false,
-                message: format!("Transaction verification failed: {}", e),
-                tx_id: None,
-            });
-        }
-        
-        // Add to mempool
-        match node.mempool.add_transaction(transaction.clone()).await {
-            Ok(true) => {
-                let tx_id = transaction.compute_id().unwrap_or([0u8; 32]);
-                
-                // Publish to network
-                if let Some(network) = node.network_manager.read().await.as_ref() {
-                    let _ = network.publish_transaction(transaction).await;
-                }
-                
-                Json(SubmitTransactionResponse {
-                    success: true,
-                    message: "Transaction submitted successfully".to_string(),
-                    tx_id: Some(hex::encode(tx_id)),
-                })
-            }
-            Ok(false) => Json(SubmitTransactionResponse {
-                success: false,
-                message: "Transaction rejected (mempool full or invalid nonce)".to_string(),
-                tx_id: None,
-            }),
-            Err(e) => Json(SubmitTransactionResponse {
-                success: false,
-                message: format!("Failed to add transaction to mempool: {}", e),
-                tx_id: None,
-            }),
-        }
-    }
-
-    pub async fn add_bootstrap_peer(&self, peer_addr: &str) -> Result<(), Error> {
+    pub async fn add_bootstrap_peer(&self, peer_addr: &str) -> Result<()> {
         if let Some(network) = self.network_manager.read().await.as_ref() {
-            network.add_bootstrap_peer(peer_addr).await
+            let mut network_clone = network.clone();
+            network_clone.add_bootstrap_peer(peer_addr).await
         } else {
             Err(Error::Network("Network not started".to_string()))
         }
     }
-
-    pub async fn get_mempool_size(&self) -> usize {
-        self.mempool.get_total_size().await
-    }
-
-    pub async fn get_peer_count(&self) -> usize {
-        if let Some(network) = self.network_manager.read().await.as_ref() {
-            network.get_peer_count().await
-        } else {
-            0
-        }
-    }
 }
 
-impl Clone for Node {
-    fn clone(&self) -> Self {
-        Self {
-            ippan_time: self.ippan_time.clone(),
-            mempool: self.mempool.clone(),
-            state_manager: self.state_manager.clone(),
-            round_manager: self.round_manager.clone(),
-            wallet_manager: self.wallet_manager.clone(),
-            metrics: self.metrics.clone(),
-            network_manager: self.network_manager.clone(),
-            network_keypair: self.network_keypair.clone(),
-            block_builder: self.block_builder.clone(),
-            builder_keypair: self.builder_keypair.clone(),
-            http_port: self.http_port,
-            p2p_port: self.p2p_port,
-            shard_count: self.shard_count,
-            current_round_id: self.current_round_id.clone(),
-            is_running: self.is_running.clone(),
+async fn health_handler(State(node): State<Arc<Node>>) -> Json<HealthResponse> {
+    let peers = if let Some(network) = node.network_manager.read().await.as_ref() {
+        network.get_peer_count().await
+    } else {
+        0
+    };
+    
+    let mempool_size = node.mempool.get_total_size().await;
+    let round_id = *node.current_round_id.read().await;
+    
+    Json(HealthResponse {
+        status: "healthy".to_string(),
+        peers,
+        mempool_size,
+        round_id,
+        uptime_seconds: 0, // TODO: Track uptime
+    })
+}
+
+async fn metrics_handler(State(node): State<Arc<Node>>) -> (StatusCode, String) {
+    let metrics = node.metrics.get_prometheus_metrics();
+    (StatusCode::OK, metrics)
+}
+
+async fn submit_transaction_handler(
+    State(node): State<Arc<Node>>,
+    Json(request): Json<SubmitTransactionRequest>,
+) -> Json<SubmitTransactionResponse> {
+    // Decode transaction from hex
+    let tx_data = match hex::decode(&request.transaction) {
+        Ok(data) => data,
+        Err(e) => {
+            return Json(SubmitTransactionResponse {
+                success: false,
+                message: format!("Invalid hex encoding: {}", e),
+                tx_id: None,
+            });
         }
+    };
+    
+    // Deserialize transaction
+    let transaction = match Transaction::deserialize(&tx_data) {
+        Ok(tx) => tx,
+        Err(e) => {
+            return Json(SubmitTransactionResponse {
+                success: false,
+                message: format!("Invalid transaction: {}", e),
+                tx_id: None,
+            });
+        }
+    };
+    
+    // Verify transaction
+    if let Err(e) = transaction.verify() {
+        return Json(SubmitTransactionResponse {
+            success: false,
+            message: format!("Transaction verification failed: {}", e),
+            tx_id: None,
+        });
+    }
+    
+    // Add to mempool
+    match node.mempool.add_transaction(transaction.clone()).await {
+        Ok(true) => {
+            let tx_id = transaction.compute_id().unwrap_or([0u8; 32]);
+            
+            // Publish to network
+            if let Some(network) = node.network_manager.read().await.as_ref() {
+                let message_sender = network.get_message_sender();
+                let _ = message_sender.send(NetworkMessage::Transaction(transaction));
+            }
+            
+            Json(SubmitTransactionResponse {
+                success: true,
+                message: "Transaction submitted successfully".to_string(),
+                tx_id: Some(hex::encode(tx_id)),
+            })
+        }
+        Ok(false) => Json(SubmitTransactionResponse {
+            success: false,
+            message: "Transaction rejected (mempool full or invalid nonce)".to_string(),
+            tx_id: None,
+        }),
+        Err(e) => Json(SubmitTransactionResponse {
+            success: false,
+            message: format!("Failed to add transaction to mempool: {}", e),
+            tx_id: None,
+        }),
     }
 }
 
@@ -456,7 +417,7 @@ mod tests {
         let node = Node::new(8080, 8081, 1).await.unwrap();
         let node_arc = Arc::new(node);
         
-        let response = Node::health_handler(State(node_arc)).await;
+        let response = health_handler(State(node_arc)).await;
         assert_eq!(response.status, "healthy");
     }
 }

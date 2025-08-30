@@ -61,3 +61,18 @@ impl From<serde_json::Error> for Error {
         Error::Serialization(err.to_string())
     }
 }
+
+// Basic error conversions for common types
+impl From<libp2p::multiaddr::Error> for Error {
+    fn from(err: libp2p::multiaddr::Error) -> Self {
+        Error::Network(err.to_string())
+    }
+}
+
+// Basic error conversions for common types
+
+impl From<std::fmt::Error> for Error {
+    fn from(err: std::fmt::Error) -> Self {
+        Error::Serialization(err.to_string())
+    }
+}

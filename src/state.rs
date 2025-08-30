@@ -98,7 +98,7 @@ impl StateManager {
         state.nonce = nonce;
     }
 
-    pub async fn apply_transaction(&self, tx: &Transaction) -> Result<bool, Error> {
+    pub async fn apply_transaction(&self, tx: &Transaction) -> Result<bool> {
         let from_pub_hash = crate::crypto::hash(&tx.from_pub);
         let to_pub_hash = crate::crypto::hash(&tx.to_addr);
 
@@ -144,7 +144,7 @@ impl StateManager {
         Ok(true)
     }
 
-    pub async fn apply_block(&self, block: &Block, transactions: &[Transaction]) -> Result<usize, Error> {
+    pub async fn apply_block(&self, block: &Block, transactions: &[Transaction]) -> Result<usize> {
         let mut applied_count = 0;
 
         // Sort transactions by HashTimer for deterministic ordering
@@ -155,7 +155,7 @@ impl StateManager {
                 let sort_key = tx.get_sort_key()?;
                 Ok((sort_key, i))
             })
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
         tx_with_timers.sort_by_key(|(sort_key, _)| *sort_key);
 
@@ -180,7 +180,7 @@ impl StateManager {
         Ok(applied_count)
     }
 
-    pub async fn apply_finalized_round(&self, blocks: &[&Block], transactions: &[Transaction]) -> Result<usize, Error> {
+    pub async fn apply_finalized_round(&self, blocks: &[&Block], transactions: &[Transaction]) -> Result<usize> {
         let mut total_applied = 0;
 
         // Sort blocks by HashTimer for deterministic ordering
@@ -191,7 +191,7 @@ impl StateManager {
                 let sort_key = block.get_sort_key()?;
                 Ok((sort_key, i))
             })
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
         block_with_timers.sort_by_key(|(sort_key, _)| *sort_key);
 
@@ -211,7 +211,8 @@ impl StateManager {
                 })
                 .collect();
 
-            let applied = self.apply_block(block, &block_txs).await?;
+            let block_txs_owned: Vec<Transaction> = block_txs.iter().map(|tx| (*tx).clone()).collect();
+            let applied = self.apply_block(block, &block_txs_owned).await?;
             total_applied += applied;
         }
 
@@ -222,10 +223,12 @@ impl StateManager {
     async fn update_state_root(&self) {
         // Simple state root computation - hash of all account states
         let mut accounts_vec: Vec<_> = self.accounts.iter().collect();
-        accounts_vec.sort_by_key(|(pub_hash, _)| **pub_hash);
+        accounts_vec.sort_by_key(|entry| *entry.key());
 
         let mut hasher = crate::crypto::blake3_hash(&[]);
-        for (pub_hash, state) in accounts_vec {
+        for entry in accounts_vec {
+            let pub_hash = entry.key();
+            let state = entry.value();
             let mut data = Vec::new();
             data.extend_from_slice(pub_hash);
             data.extend_from_slice(&state.balance.to_le_bytes());
@@ -240,7 +243,7 @@ impl StateManager {
         *self.state_root.read().await
     }
 
-    pub async fn create_snapshot(&self, round_id: u64, timestamp_us: u64) -> Result<StateSnapshot, Error> {
+    pub async fn create_snapshot(&self, round_id: u64, timestamp_us: u64) -> Result<StateSnapshot> {
         let accounts: HashMap<Hash, AccountState> = self
             .accounts
             .iter()
@@ -267,7 +270,7 @@ impl StateManager {
         Ok(snapshot)
     }
 
-    async fn save_snapshot_to_disk(&self, snapshot: &StateSnapshot, path: &str) -> Result<(), Error> {
+    async fn save_snapshot_to_disk(&self, snapshot: &StateSnapshot, path: &str) -> Result<()> {
         let data = bincode::serialize(snapshot)
             .map_err(|e| Error::Serialization(e.to_string()))?;
 
@@ -277,7 +280,7 @@ impl StateManager {
         Ok(())
     }
 
-    pub async fn load_snapshot_from_disk(&self, path: &str) -> Result<StateSnapshot, Error> {
+    pub async fn load_snapshot_from_disk(&self, path: &str) -> Result<StateSnapshot> {
         let data = tokio::fs::read(path).await
             .map_err(|e| Error::Io(e))?;
 
