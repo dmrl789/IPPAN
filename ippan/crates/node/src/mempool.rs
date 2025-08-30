@@ -52,7 +52,7 @@ impl Mempool {
             shards: shard_queues,
             account_nonces: DashMap::new(),
             shard_count: shards,
-            max_size_per_shard: 100_000, // 100K transactions per shard
+            max_size_per_shard: 1_000_000, // 1M transactions per shard for high-TPS
         }
     }
 

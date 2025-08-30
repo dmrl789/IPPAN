@@ -56,5 +56,10 @@ async fn main() -> anyhow::Result<()> {
     // Start the node
     node.start().await?;
 
+    // Keep the node running
+    tracing::info!("Node is running. Press Ctrl+C to stop.");
+    tokio::signal::ctrl_c().await?;
+    tracing::info!("Shutting down node...");
+
     Ok(())
 }

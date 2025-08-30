@@ -8,6 +8,9 @@ use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+mod high_performance;
+use high_performance::HighPerformanceLoadGenerator;
+
 /// IPPAN Load Generator CLI
 #[derive(Parser)]
 #[command(name = "ippan-loadgen")]
@@ -40,6 +43,18 @@ struct Cli {
     /// Pre-fund accounts with initial balance
     #[arg(short, long, default_value = "1000000")]
     initial_balance: u64,
+    
+    /// Enable high-performance mode for 10M+ TPS testing
+    #[arg(long)]
+    high_performance: bool,
+    
+    /// Concurrency limit for high-performance mode
+    #[arg(long, default_value = "1000")]
+    concurrency: usize,
+    
+    /// Batch size for high-performance mode
+    #[arg(long, default_value = "1000")]
+    batch_size: usize,
 }
 
 /// Load test account
@@ -69,18 +84,16 @@ struct LoadTestResults {
 
 /// Transaction sender with load balancing
 struct LoadBalancedSender {
-    clients: Vec<Client>,
+    node_urls: Vec<String>,
+    client: Client,
     current_index: Arc<RwLock<usize>>,
 }
 
 impl LoadBalancedSender {
     fn new(node_urls: Vec<String>) -> Self {
-        let clients = node_urls.into_iter()
-            .map(|_| Client::new())
-            .collect();
-        
         Self {
-            clients,
+            node_urls,
+            client: Client::new(),
             current_index: Arc::new(RwLock::new(0)),
         }
     }
@@ -93,12 +106,14 @@ impl LoadBalancedSender {
         
         // Round-robin load balancing
         let mut index = self.current_index.write().await;
-        let client = &self.clients[*index];
-        *index = (*index + 1) % self.clients.len();
+        let node_url = &self.node_urls[*index];
+        *index = (*index + 1) % self.node_urls.len();
         drop(index);
         
-        let response = client
-            .post("/tx")
+        let url = format!("{}/tx", node_url);
+        
+        let response = self.client
+            .post(&url)
             .body(tx_data)
             .header("Content-Type", "application/octet-stream")
             .send()
@@ -240,7 +255,7 @@ impl LoadGenerator {
         };
         
         // Sign transaction
-        tx.sig = account.keypair.sign(&bincode::serialize(&tx)?)?;
+        tx.sig = account.keypair.sign(&tx.message_to_sign()?)?;
         
         // Send transaction
         self.sender.send_transaction(&tx).await
@@ -298,15 +313,29 @@ async fn main() -> Result<()> {
         });
     }
     
-    // Create load generator
-    let mut generator = LoadGenerator::new(accounts, node_urls);
-    
-    // Pre-fund accounts
-    generator.pre_fund_accounts(cli.initial_balance).await?;
-    
-    // Run load test
+    // Run load test based on mode
     let duration = Duration::from_secs(cli.duration);
-    let results = generator.run_load_test(cli.tps, duration).await?;
+    let results = if cli.high_performance {
+        println!("🔥 Using High-Performance Mode for 10M+ TPS testing");
+        
+        // Create high-performance load generator
+        let generator = HighPerformanceLoadGenerator::new(
+            cli.accounts,
+            node_urls,
+            cli.concurrency,
+            cli.batch_size,
+        );
+        
+        generator.run_load_test(cli.tps, duration).await?
+    } else {
+        // Create standard load generator
+        let mut generator = LoadGenerator::new(accounts, node_urls);
+        
+        // Pre-fund accounts
+        generator.pre_fund_accounts(cli.initial_balance).await?;
+        
+        generator.run_load_test(cli.tps, duration).await?
+    };
     
     // Print results
     println!("\n📊 Load Test Results:");

@@ -83,12 +83,24 @@ impl Node {
 
         tracing::info!("Starting HTTP server on {}", addr);
 
-        tokio::spawn(async move {
-            let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-            if let Err(e) = serve(listener, router).await {
-                tracing::error!("HTTP server error: {}", e);
+        // Start the server in a separate task
+        let server_task = tokio::spawn(async move {
+            match tokio::net::TcpListener::bind(addr).await {
+                Ok(listener) => {
+                    tracing::info!("HTTP server bound successfully to {}", addr);
+                    match serve(listener, router).await {
+                        Ok(_) => tracing::info!("HTTP server stopped normally"),
+                        Err(e) => tracing::error!("HTTP server error: {}", e),
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to bind HTTP server to {}: {}", addr, e);
+                }
             }
         });
+
+        // Wait a bit to ensure the server starts
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         Ok(())
     }

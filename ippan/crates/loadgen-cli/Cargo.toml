@@ -14,3 +14,4 @@ futures = "0.3"
 rand = { workspace = true }
 hex = { workspace = true }
 bincode = { workspace = true }
+futures-util = "0.3"

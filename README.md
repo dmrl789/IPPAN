@@ -20,6 +20,19 @@ A high-throughput blockchain implementation designed to validate up to 10M TPS w
 
 ## 📁 Project Structure
 
+This repository contains two different project structures:
+
+### Root Directory (Single Package)
+```
+ippanbasic/
+├── Cargo.toml                 # Single package manifest
+├── src/                       # Main source code
+├── examples/                  # Example programs
+├── benches/                   # Performance benchmarks
+└── tests/                     # Integration tests
+```
+
+### IPPAN Subdirectory (Workspace)
 ```
 ippan/
 ├── Cargo.toml                 # Workspace manifest
@@ -40,11 +53,33 @@ ippan/
 - Rust 1.70+ (stable)
 - Windows/Linux/macOS
 
-### Build
+### Option 1: Root Directory (Single Package)
 ```bash
-# Clone and build
+# Clone and build from root
 git clone <repository>
+cd ippanbasic
+cargo build --release
+
+# Run the main binary
+cargo run --release
+
+# Run examples
+cargo run --example hash_timer_demo
+cargo run --example peer_discovery_demo
+
+# Run benchmarks
+cargo bench
+
+# Run tests
+cargo test
+```
+
+### Option 2: IPPAN Workspace (Recommended)
+```bash
+# Navigate to the workspace directory
 cd ippan
+
+# Build all crates
 cargo build --release
 
 # Run tests
@@ -54,10 +89,11 @@ cargo test
 cargo bench
 ```
 
-### Start Node
+### Start Node (Workspace)
 ```bash
-# Start IPPAN node
-cargo run -p ippan-node -- --http-port 8080 --p2p-port 8081 --shards 4
+# Start IPPAN node from the workspace directory
+cd ippan
+cargo run --release -p ippan-node -- --http-port 8080 --p2p-port 8081 --shards 4
 
 # Check health
 curl http://localhost:8080/health
@@ -66,25 +102,38 @@ curl http://localhost:8080/health
 curl http://localhost:8080/metrics
 ```
 
-### Wallet Operations
+### Wallet Operations (Workspace)
 ```bash
 # Create wallet
-cargo run -p ippan-wallet-cli -- new --name mywallet --password secret
+cargo run --release -p ippan-wallet-cli -- new --name mywallet --password secret
 
 # Show address
-cargo run -p ippan-wallet-cli -- addr --name mywallet
+cargo run --release -p ippan-wallet-cli -- addr --name mywallet
 
 # Send transaction
-cargo run -p ippan-wallet-cli -- send --name mywallet --to i... --amount 1000 --node http://localhost:8080
+cargo run --release -p ippan-wallet-cli -- send --name mywallet --to i... --amount 1000 --node http://localhost:8080
 ```
 
-### Load Testing
+### Load Testing (Workspace)
 ```bash
 # Generate load (1000 TPS for 60 seconds)
-cargo run -p ippan-loadgen-cli -- --tps 1000 --accounts 100 --duration 60 --nodes http://localhost:8080
+cargo run --release -p ippan-loadgen-cli -- --tps 1000 --accounts 100 --duration 60 --nodes http://localhost:8080
 
 # High-performance test
-cargo run -p ippan-loadgen-cli -- --tps 10000 --accounts 1000 --duration 300 --output results.csv
+cargo run --release -p ippan-loadgen-cli -- --tps 10000 --accounts 1000 --duration 300 --output results.csv
+```
+
+### Cluster Management
+```bash
+# Run a cluster of nodes (Windows PowerShell)
+cd ippan
+.\run_cluster.ps1 -NodeCount 4 -LogLevel "warn"
+
+# Run tests
+.\run_tests.ps1
+
+# Monitor performance
+.\monitor_performance.ps1
 ```
 
 ## 📊 Performance Targets
@@ -129,22 +178,37 @@ cargo run -p ippan-loadgen-cli -- --tps 10000 --accounts 1000 --duration 300 --o
 
 ### Unit Tests
 ```bash
+# Root directory
+cargo test
+
+# Workspace
+cd ippan
 cargo test -p ippan-common
 cargo test -p ippan-node
 ```
 
 ### Integration Tests
 ```bash
-# E2E test with single node
-cargo test --test e2e_test
+# Root directory
+cargo test --test integration_tests
 
-# Performance benchmarks
+# Workspace
+cargo test -p ippan-node
+```
+
+### Performance Tests
+```bash
+# Root directory
+cargo bench
+
+# Workspace
 cargo bench -p ippan-bench
 ```
 
 ### Load Testing
 ```bash
-# Validate 10M TPS target
+# Validate 10M TPS target (workspace)
+cd ippan
 cargo run -p ippan-loadgen-cli -- --tps 10000000 --accounts 10000 --duration 300
 ```
 
@@ -195,3 +259,10 @@ cargo run -p ippan-loadgen-cli -- --tps 10000000 --accounts 10000 --duration 300
 **Status**: MVP Complete ✅  
 **Target**: 10M TPS validation  
 **Next**: Production hardening and full P2P integration
+
+## ⚠️ Important Notes
+
+- **Package Structure**: This repository contains both a single-package structure (root) and a workspace structure (`ippan/` subdirectory)
+- **Running Commands**: Make sure you're in the correct directory when running cargo commands
+- **Workspace Commands**: Use `-p <package-name>` when running commands in the workspace directory
+- **Cluster Scripts**: The PowerShell scripts are located in the `ippan/` directory

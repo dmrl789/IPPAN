@@ -1895,6 +1895,7 @@ dependencies = [
  "bincode",
  "clap",
  "futures",
+ "futures-util",
  "hex",
  "ippan-common",
  "rand 0.8.5",

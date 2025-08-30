@@ -45,6 +45,24 @@ cargo run --release -p ippan-loadgen-cli -- --tps 1000000 --accounts 200000 --du
 cargo bench -p ippan-bench
 ```
 
+### Cluster Management
+```bash
+# Run a cluster of nodes (Windows PowerShell)
+.\run_cluster.ps1 -NodeCount 4 -LogLevel "warn"
+
+# Run tests
+.\run_tests.ps1
+
+# Monitor performance
+.\monitor_performance.ps1
+
+# Simple test
+.\simple_test.ps1
+
+# 10M TPS test
+.\test_10m_tps.ps1
+```
+
 ### API Endpoints
 - `GET /health` - Node health status
 - `GET /metrics` - Prometheus metrics
@@ -74,6 +92,11 @@ ippan/
 ├── Cargo.toml              # Workspace configuration
 ├── rust-toolchain.toml     # Stable Rust
 ├── docs/                   # Documentation
+├── run_cluster.ps1         # Cluster management script
+├── run_tests.ps1           # Test runner script
+├── monitor_performance.ps1 # Performance monitoring
+├── simple_test.ps1         # Simple test script
+├── test_10m_tps.ps1        # 10M TPS test script
 └── crates/
     ├── common/             # Shared types & crypto
     ├── node/               # Validator node
@@ -128,6 +151,15 @@ curl http://localhost:8080/health
 curl http://localhost:8080/metrics
 ```
 
+### Docker Support
+```bash
+# Build and run with Docker
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+```
+
 ## License
 
  MIT License - see LICENSE file for details.
@@ -145,3 +177,10 @@ curl http://localhost:8080/metrics
 - Issues: GitHub Issues
 - Documentation: `docs/` directory
 - Performance: Run `cargo bench` for metrics
+
+## ⚠️ Important Notes
+
+- **Workspace Structure**: This is a Cargo workspace with multiple crates
+- **Package Commands**: Use `-p <package-name>` when running cargo commands
+- **Scripts**: PowerShell scripts are available for cluster management and testing
+- **Docker**: Docker Compose configuration is provided for containerized deployment
