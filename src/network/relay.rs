@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, RwLock};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use chrono::{DateTime, Utc};
@@ -125,9 +125,9 @@ pub struct RelayService {
     /// Relay configuration
     config: RelayConfig,
     /// Message sender
-    message_sender: mpsc::Sender<RelayMessage>,
+    message_sender: broadcast::Sender<RelayMessage>,
     /// Message receiver
-    _message_receiver: mpsc::Receiver<RelayMessage>,
+    _message_receiver: broadcast::Receiver<RelayMessage>,
     /// Running flag
     running: bool,
 }
@@ -159,7 +159,7 @@ impl Default for RelayConfig {
 impl RelayService {
     /// Create a new relay service
     pub fn new() -> Self {
-        let (message_sender, message_receiver) = mpsc::channel(1000);
+        let (message_sender, message_receiver) = broadcast::channel(1000);
         
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
@@ -184,12 +184,15 @@ impl RelayService {
         });
         
         // Start message processing loop
-        let _message_sender = self.message_sender.clone();
-        let _connections = self.connections.clone();
+        let message_sender = self.message_sender.clone();
+        let connections = self.connections.clone();
         
         tokio::spawn(async move {
-            // TODO: Implement message processing loop
-            log::info!("Relay message processing loop started");
+            let mut message_receiver = message_sender.subscribe();
+            
+            while let Ok(message) = message_receiver.recv().await {
+                Self::handle_relay_message(message, &connections).await;
+            }
         });
         
         Ok(())
@@ -343,10 +346,9 @@ impl RelayService {
     }
 
     /// Handle relay message
-    #[allow(dead_code)]
-    async fn handle_relay_message(
+    pub async fn handle_relay_message(
         message: RelayMessage,
-        _connections: &Arc<RwLock<HashMap<String, RelayConnection>>>,
+        connections: &Arc<RwLock<HashMap<String, RelayConnection>>>,
     ) {
         match message {
             RelayMessage::ConnectionRequest(request) => {

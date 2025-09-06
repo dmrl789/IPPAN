@@ -684,7 +684,7 @@ impl ConfigManager {
                 enable_zk_proofs: true,
                 proof_timeout_seconds: 30,
                 block_time_seconds: 5,
-                max_block_size_bytes: 1048576, // 1MB
+                max_block_size_bytes: 24576, // 24KB soft target (clamped to 32KB hard limit)
             },
             api: ApiConfig {
                 http_enabled: true,

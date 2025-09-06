@@ -1,9 +1,17 @@
 #!/bin/bash
 
 # IPPAN Production Deployment Script
-# This script deploys IPPAN to production with comprehensive checks and monitoring
+# This script deploys IPPAN to production with comprehensive monitoring and security
 
 set -euo pipefail
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+DEPLOYMENT_ENV="${DEPLOYMENT_ENV:-production}"
+DOCKER_REGISTRY="${DOCKER_REGISTRY:-ippan}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+NAMESPACE="${NAMESPACE:-ippan-production}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -12,374 +20,311 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-IPPAN_VERSION="1.0.0"
-DEPLOYMENT_ENV="production"
-DOCKER_REGISTRY="ippan"
-NAMESPACE="ippan"
-
-# Logging function
-log() {
-    echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
+# Logging functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-    exit 1
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
-warning() {
+log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
-success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
 }
 
 # Check prerequisites
 check_prerequisites() {
-    log "Checking prerequisites..."
+    log_info "Checking prerequisites..."
     
     # Check if Docker is installed and running
     if ! command -v docker &> /dev/null; then
-        error "Docker is not installed"
+        log_error "Docker is not installed"
+        exit 1
     fi
     
     if ! docker info &> /dev/null; then
-        error "Docker is not running"
+        log_error "Docker is not running"
+        exit 1
+    fi
+    
+    # Check if Docker Compose is installed
+    if ! command -v docker-compose &> /dev/null; then
+        log_error "Docker Compose is not installed"
+        exit 1
     fi
     
     # Check if kubectl is installed (for Kubernetes deployment)
-    if command -v kubectl &> /dev/null; then
-        KUBERNETES_AVAILABLE=true
-        log "Kubernetes deployment available"
-    else
-        KUBERNETES_AVAILABLE=false
-        warning "Kubernetes not available, using Docker Compose"
+    if ! command -v kubectl &> /dev/null; then
+        log_warning "kubectl is not installed - Kubernetes deployment will be skipped"
     fi
     
-    # Check if required ports are available
-    local ports=(8080 3000 9090 3001 9093 80 443)
-    for port in "${ports[@]}"; do
-        if netstat -tuln | grep -q ":$port "; then
-            warning "Port $port is already in use"
-        fi
-    done
+    # Check if required environment variables are set
+    if [[ -z "${BACKUP_ENCRYPTION_KEY:-}" ]]; then
+        log_warning "BACKUP_ENCRYPTION_KEY is not set - using default (not recommended for production)"
+        export BACKUP_ENCRYPTION_KEY="default-backup-key-change-in-production"
+    fi
     
-    success "Prerequisites check completed"
+    log_success "Prerequisites check completed"
 }
 
-# Build IPPAN Docker image
-build_image() {
-    log "Building IPPAN Docker image..."
+# Build Docker images
+build_images() {
+    log_info "Building Docker images..."
     
-    # Build the image
-    docker build -t $DOCKER_REGISTRY/ippan:$IPPAN_VERSION -t $DOCKER_REGISTRY/ippan:latest .
+    cd "$PROJECT_ROOT"
     
-    if [ $? -eq 0 ]; then
-        success "IPPAN Docker image built successfully"
-    else
-        error "Failed to build IPPAN Docker image"
-    fi
+    # Build the main IPPAN image
+    log_info "Building IPPAN node image..."
+    docker build -f Dockerfile.optimized -t "$DOCKER_REGISTRY/ippan:$IMAGE_TAG" .
+    
+    # Build frontend image
+    log_info "Building frontend image..."
+    docker build -f apps/unified-ui/Dockerfile -t "$DOCKER_REGISTRY/ippan-frontend:$IMAGE_TAG" apps/unified-ui/
+    
+    # Tag images for production
+    docker tag "$DOCKER_REGISTRY/ippan:$IMAGE_TAG" "$DOCKER_REGISTRY/ippan:production"
+    docker tag "$DOCKER_REGISTRY/ippan-frontend:$IMAGE_TAG" "$DOCKER_REGISTRY/ippan-frontend:production"
+    
+    log_success "Docker images built successfully"
 }
 
-# Run security scan
-security_scan() {
-    log "Running security scan..."
+# Generate SSL certificates
+generate_ssl_certificates() {
+    log_info "Generating SSL certificates..."
     
-    # Run cargo audit
-    if command -v cargo-audit &> /dev/null; then
-        cargo audit
-        if [ $? -ne 0 ]; then
-            warning "Security vulnerabilities found in dependencies"
-        fi
+    SSL_DIR="$PROJECT_ROOT/ssl"
+    mkdir -p "$SSL_DIR"
+    
+    # Generate self-signed certificate for development
+    # In production, you should use Let's Encrypt or a proper CA
+    if [[ ! -f "$SSL_DIR/ippan.crt" ]] || [[ ! -f "$SSL_DIR/ippan.key" ]]; then
+        log_info "Generating self-signed SSL certificate..."
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout "$SSL_DIR/ippan.key" \
+            -out "$SSL_DIR/ippan.crt" \
+            -subj "/C=US/ST=State/L=City/O=IPPAN/CN=ippan.network"
+        
+        chmod 600 "$SSL_DIR/ippan.key"
+        chmod 644 "$SSL_DIR/ippan.crt"
     fi
     
-    # Run Docker security scan
-    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-        -v "$(pwd):/workspace" \
-        aquasec/trivy image $DOCKER_REGISTRY/ippan:$IPPAN_VERSION
-    
-    success "Security scan completed"
+    log_success "SSL certificates generated"
 }
 
 # Deploy with Docker Compose
 deploy_docker_compose() {
-    log "Deploying with Docker Compose..."
+    log_info "Deploying with Docker Compose..."
     
-    # Create production environment file
-    cat > .env.production << EOF
-# IPPAN Production Environment Variables
-IPPAN_VERSION=$IPPAN_VERSION
-DEPLOYMENT_ENV=$DEPLOYMENT_ENV
-
-# Network Configuration
-IPPAN_NETWORK_PORT=8080
-IPPAN_API_PORT=3000
-
-# Storage Configuration
-IPPAN_STORAGE_DIR=/data
-IPPAN_KEYS_DIR=/keys
-IPPAN_LOG_DIR=/logs
-
-# Security Configuration
-BACKUP_ENCRYPTION_KEY=$(openssl rand -hex 32)
-
-# Monitoring Configuration
-SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
-EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-}
-EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-}
-EMAIL_USERNAME=${EMAIL_USERNAME:-}
-EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
-EOF
+    cd "$PROJECT_ROOT"
     
-    # Deploy with docker-compose
-    docker-compose -f deployments/production/docker-compose.yml --env-file .env.production up -d
+    # Stop existing containers
+    log_info "Stopping existing containers..."
+    docker-compose -f docker-compose.production.yml down --remove-orphans || true
     
-    if [ $? -eq 0 ]; then
-        success "Docker Compose deployment completed"
+    # Start new containers
+    log_info "Starting new containers..."
+    docker-compose -f docker-compose.production.yml up -d
+    
+    # Wait for services to be healthy
+    log_info "Waiting for services to be healthy..."
+    sleep 30
+    
+    # Check service health
+    if docker-compose -f docker-compose.production.yml ps | grep -q "Up (healthy)"; then
+        log_success "Docker Compose deployment completed successfully"
     else
-        error "Docker Compose deployment failed"
+        log_error "Some services are not healthy"
+        docker-compose -f docker-compose.production.yml ps
+        exit 1
     fi
 }
 
 # Deploy with Kubernetes
 deploy_kubernetes() {
-    log "Deploying with Kubernetes..."
+    if ! command -v kubectl &> /dev/null; then
+        log_warning "kubectl not available - skipping Kubernetes deployment"
+        return
+    fi
+    
+    log_info "Deploying with Kubernetes..."
     
     # Create namespace
-    kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
     
-    # Create secrets
-    kubectl create secret generic ippan-secrets \
-        --namespace=$NAMESPACE \
-        --from-literal=node-id=$(openssl rand -hex 32) \
-        --from-literal=private-key=$(openssl genrsa 2048 | base64) \
-        --dry-run=client -o yaml | kubectl apply -f -
+    # Apply Kubernetes manifests
+    kubectl apply -f "$PROJECT_ROOT/deployments/kubernetes/ippan-production.yaml"
     
-    # Deploy IPPAN
-    kubectl apply -f deployments/kubernetes/ippan-deployment.yaml
+    # Wait for deployment to be ready
+    log_info "Waiting for deployment to be ready..."
+    kubectl wait --for=condition=available --timeout=300s deployment/ippan-node -n "$NAMESPACE"
     
-    # Deploy monitoring
-    kubectl apply -f deployments/kubernetes/monitoring/
+    # Check pod status
+    kubectl get pods -n "$NAMESPACE"
     
-    # Wait for deployment
-    kubectl rollout status deployment/ippan-node -n $NAMESPACE --timeout=300s
-    
-    if [ $? -eq 0 ]; then
-        success "Kubernetes deployment completed"
-    else
-        error "Kubernetes deployment failed"
-    fi
-}
-
-# Health check
-health_check() {
-    log "Performing health check..."
-    
-    local max_attempts=30
-    local attempt=1
-    
-    while [ $attempt -le $max_attempts ]; do
-        log "Health check attempt $attempt/$max_attempts"
-        
-        # Check if API is responding
-        if curl -f http://localhost:3000/api/v1/status &> /dev/null; then
-            success "IPPAN API is responding"
-            
-            # Check node status
-            local status=$(curl -s http://localhost:3000/api/v1/status | jq -r '.status')
-            if [ "$status" = "running" ]; then
-                success "IPPAN node is running"
-                return 0
-            else
-                warning "IPPAN node status: $status"
-            fi
-        else
-            warning "IPPAN API not responding yet"
-        fi
-        
-        sleep 10
-        ((attempt++))
-    done
-    
-    error "Health check failed after $max_attempts attempts"
-}
-
-# Performance test
-performance_test() {
-    log "Running performance tests..."
-    
-    # Test API response time
-    local response_time=$(curl -w "%{time_total}" -o /dev/null -s http://localhost:3000/api/v1/status)
-    log "API response time: ${response_time}s"
-    
-    if (( $(echo "$response_time < 1.0" | bc -l) )); then
-        success "API response time is acceptable"
-    else
-        warning "API response time is slow: ${response_time}s"
-    fi
-    
-    # Test storage operations
-    local test_file="/tmp/ippan-test-$(date +%s).txt"
-    echo "IPPAN performance test file" > "$test_file"
-    
-    local upload_start=$(date +%s.%N)
-    curl -X POST http://localhost:3000/api/v1/storage/upload \
-        -F "file=@$test_file" \
-        -F "name=performance-test" &> /dev/null
-    local upload_end=$(date +%s.%N)
-    
-    local upload_time=$(echo "$upload_end - $upload_start" | bc -l)
-    log "File upload time: ${upload_time}s"
-    
-    rm -f "$test_file"
-    
-    success "Performance tests completed"
+    log_success "Kubernetes deployment completed successfully"
 }
 
 # Setup monitoring
 setup_monitoring() {
-    log "Setting up monitoring..."
+    log_info "Setting up monitoring..."
     
-    # Create monitoring directories
-    mkdir -p monitoring/prometheus
-    mkdir -p monitoring/grafana/dashboards
-    mkdir -p monitoring/grafana/datasources
-    mkdir -p monitoring/alerts
+    # Wait for monitoring services to be ready
+    sleep 60
     
-    # Copy monitoring configurations
-    cp deployments/monitoring/prometheus.yml monitoring/prometheus/
-    cp deployments/monitoring/alerts.yml monitoring/alerts/
+    # Check if Prometheus is accessible
+    if curl -f http://localhost:9090/-/healthy &> /dev/null; then
+        log_success "Prometheus is running"
+    else
+        log_warning "Prometheus is not accessible"
+    fi
     
-    # Create Grafana dashboard
-    cat > monitoring/grafana/dashboards/ippan-dashboard.json << 'EOF'
-{
-  "dashboard": {
-    "title": "IPPAN Node Dashboard",
-    "panels": [
-      {
-        "title": "Node Status",
-        "type": "stat",
-        "targets": [
-          {
-            "expr": "ippan_node_status",
-            "legendFormat": "Status"
-          }
-        ]
-      },
-      {
-        "title": "Connected Peers",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "ippan_network_connected_peers",
-            "legendFormat": "Peers"
-          }
-        ]
-      },
-      {
-        "title": "Storage Usage",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "(ippan_storage_used_bytes / ippan_storage_total_bytes) * 100",
-            "legendFormat": "Usage %"
-          }
-        ]
-      }
-    ]
-  }
-}
-EOF
+    # Check if Grafana is accessible
+    if curl -f http://localhost:3001/api/health &> /dev/null; then
+        log_success "Grafana is running"
+        log_info "Grafana dashboard: http://localhost:3001 (admin/admin123)"
+    else
+        log_warning "Grafana is not accessible"
+    fi
     
-    success "Monitoring setup completed"
+    # Check if Alertmanager is accessible
+    if curl -f http://localhost:9093/-/healthy &> /dev/null; then
+        log_success "Alertmanager is running"
+    else
+        log_warning "Alertmanager is not accessible"
+    fi
 }
 
-# Backup configuration
-backup_config() {
-    log "Creating backup configuration..."
+# Setup backup
+setup_backup() {
+    log_info "Setting up backup..."
     
-    # Create backup script
-    cat > scripts/backup.sh << 'EOF'
+    # Create backup directory
+    mkdir -p "$PROJECT_ROOT/backups"
+    
+    # Set up backup script
+    cat > "$PROJECT_ROOT/scripts/backup.sh" << 'EOF'
 #!/bin/bash
-
 # IPPAN Backup Script
-BACKUP_DIR="/backups/ippan-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$BACKUP_DIR"
 
-# Backup data
-docker exec ippan-node tar czf - /data > "$BACKUP_DIR/data.tar.gz"
+BACKUP_DIR="/backups"
+DATA_DIR="/data"
+KEYS_DIR="/keys"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="ippan_backup_${TIMESTAMP}.tar.gz"
 
-# Backup keys
-docker exec ippan-node tar czf - /keys > "$BACKUP_DIR/keys.tar.gz"
+# Create backup
+tar -czf "${BACKUP_DIR}/${BACKUP_FILE}" \
+    -C "$DATA_DIR" . \
+    -C "$KEYS_DIR" .
 
-# Backup logs
-docker exec ippan-node tar czf - /logs > "$BACKUP_DIR/logs.tar.gz"
+# Encrypt backup if encryption key is provided
+if [[ -n "${BACKUP_ENCRYPTION_KEY:-}" ]]; then
+    openssl enc -aes-256-cbc -salt -in "${BACKUP_DIR}/${BACKUP_FILE}" \
+        -out "${BACKUP_DIR}/${BACKUP_FILE}.enc" \
+        -k "$BACKUP_ENCRYPTION_KEY"
+    rm "${BACKUP_DIR}/${BACKUP_FILE}"
+    BACKUP_FILE="${BACKUP_FILE}.enc"
+fi
 
-# Backup configuration
-cp -r config/ "$BACKUP_DIR/"
+# Clean up old backups (keep last 30 days)
+find "$BACKUP_DIR" -name "ippan_backup_*.tar.gz*" -mtime +30 -delete
 
-echo "Backup completed: $BACKUP_DIR"
+echo "Backup completed: ${BACKUP_FILE}"
 EOF
     
-    chmod +x scripts/backup.sh
+    chmod +x "$PROJECT_ROOT/scripts/backup.sh"
     
-    success "Backup configuration created"
+    log_success "Backup setup completed"
+}
+
+# Health check
+health_check() {
+    log_info "Performing health check..."
+    
+    # Check if IPPAN node is responding
+    if curl -f http://localhost:80/health &> /dev/null; then
+        log_success "IPPAN node is healthy"
+    else
+        log_error "IPPAN node is not responding"
+        return 1
+    fi
+    
+    # Check if API is responding
+    if curl -f http://localhost:3000/api/v1/status &> /dev/null; then
+        log_success "IPPAN API is healthy"
+    else
+        log_error "IPPAN API is not responding"
+        return 1
+    fi
+    
+    # Check if P2P port is open
+    if nc -z localhost 8080; then
+        log_success "IPPAN P2P port is open"
+    else
+        log_error "IPPAN P2P port is not accessible"
+        return 1
+    fi
+    
+    log_success "Health check completed successfully"
 }
 
 # Main deployment function
 main() {
-    log "Starting IPPAN production deployment..."
+    log_info "Starting IPPAN production deployment..."
+    log_info "Environment: $DEPLOYMENT_ENV"
+    log_info "Docker Registry: $DOCKER_REGISTRY"
+    log_info "Image Tag: $IMAGE_TAG"
     
     # Check prerequisites
     check_prerequisites
     
-    # Build image
-    build_image
+    # Generate SSL certificates
+    generate_ssl_certificates
     
-    # Security scan
-    security_scan
+    # Build images
+    build_images
+    
+    # Deploy based on environment
+    case "${DEPLOYMENT_TYPE:-docker-compose}" in
+        "docker-compose")
+            deploy_docker_compose
+            ;;
+        "kubernetes")
+            deploy_kubernetes
+            ;;
+        "both")
+            deploy_docker_compose
+            deploy_kubernetes
+            ;;
+        *)
+            log_error "Invalid deployment type: ${DEPLOYMENT_TYPE}"
+            exit 1
+            ;;
+    esac
     
     # Setup monitoring
     setup_monitoring
     
-    # Backup configuration
-    backup_config
+    # Setup backup
+    setup_backup
     
-    # Deploy based on available tools
-    if [ "$KUBERNETES_AVAILABLE" = true ]; then
-        deploy_kubernetes
-    else
-        deploy_docker_compose
-    fi
-    
-    # Health check
+    # Perform health check
     health_check
     
-    # Performance test
-    performance_test
-    
-    success "IPPAN production deployment completed successfully!"
-    
-    # Display deployment information
-    echo
-    echo "=== IPPAN Production Deployment Summary ==="
-    echo "Version: $IPPAN_VERSION"
-    echo "Environment: $DEPLOYMENT_ENV"
-    echo "API Endpoint: http://localhost:3000"
-    echo "P2P Port: 8080"
-    echo "Monitoring: http://localhost:3001 (Grafana)"
-    echo "Metrics: http://localhost:9090 (Prometheus)"
-    echo "Alerts: http://localhost:9093 (Alertmanager)"
-    echo
-    echo "Useful commands:"
-    echo "  View logs: docker logs ippan-node"
-    echo "  Check status: curl http://localhost:3000/api/v1/status"
-    echo "  Backup: ./scripts/backup.sh"
-    echo "  Stop: docker-compose -f deployments/production/docker-compose.yml down"
-    echo
+    log_success "IPPAN production deployment completed successfully!"
+    log_info "Access points:"
+    log_info "  - Frontend: http://localhost:80"
+    log_info "  - API: http://localhost:3000"
+    log_info "  - P2P: localhost:8080"
+    log_info "  - Prometheus: http://localhost:9090"
+    log_info "  - Grafana: http://localhost:3001 (admin/admin123)"
+    log_info "  - Alertmanager: http://localhost:9093"
 }
 
 # Run main function
-main "$@" 
+main "$@"

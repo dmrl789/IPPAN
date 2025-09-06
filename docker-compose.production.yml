@@ -1,0 +1,266 @@
+version: '3.8'
+
+services:
+  # Main IPPAN Node
+  ippan-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.optimized
+    container_name: ippan-node
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # P2P network port
+      - "3000:3000"  # API port
+      - "80:80"      # HTTP frontend
+      - "443:443"    # HTTPS frontend
+    volumes:
+      - ippan_data:/data
+      - ippan_keys:/keys
+      - ippan_logs:/logs
+      - ./config:/config:ro
+      - ./ssl:/ssl:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_PORT=8080
+      - IPPAN_API_PORT=3000
+      - IPPAN_STORAGE_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - NODE_ENV=production
+      - RUST_BACKTRACE=1
+    networks:
+      - ippan_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ippan-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./deployments/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deployments/monitoring/ippan_rules.yml:/etc/prometheus/ippan_rules.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ippan-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployments/monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./deployments/monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    networks:
+      - ippan_network
+    depends_on:
+      - prometheus
+
+  # Alertmanager
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: ippan-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - alertmanager_data:/alertmanager
+      - ./deployments/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    networks:
+      - ippan_network
+    depends_on:
+      - prometheus
+
+  # Node Exporter for system metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: ippan-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - ippan_network
+
+  # Nginx Exporter for load balancer metrics
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: ippan-nginx-exporter
+    restart: unless-stopped
+    ports:
+      - "9113:9113"
+    command:
+      - '-nginx.scrape-uri=http://ippan-node:80/nginx_status'
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    container_name: ippan-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - ippan_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backup Service
+  backup:
+    image: alpine:latest
+    container_name: ippan-backup
+    restart: unless-stopped
+    volumes:
+      - ippan_data:/data:ro
+      - ippan_keys:/keys:ro
+      - backup_data:/backups
+      - ./scripts:/scripts:ro
+    environment:
+      - BACKUP_SCHEDULE=0 2 * * *  # Daily at 2 AM
+      - BACKUP_RETENTION_DAYS=30
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
+    command: |
+      sh -c '
+        apk add --no-cache dcron openssl &&
+        echo "$$BACKUP_SCHEDULE /scripts/backup.sh" | crontab - &&
+        crond -f
+      '
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+  # Log Aggregation with Fluentd
+  fluentd:
+    image: fluent/fluentd:v1.16-debian-1
+    container_name: ippan-fluentd
+    restart: unless-stopped
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    volumes:
+      - ./deployments/monitoring/fluentd.conf:/fluentd/etc/fluent.conf:ro
+      - fluentd_data:/var/log/fluentd
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+  # Elasticsearch for log storage
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: ippan-elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    networks:
+      - ippan_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Kibana for log visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: ippan-kibana
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - ippan_network
+    depends_on:
+      - elasticsearch
+
+volumes:
+  ippan_data:
+    driver: local
+  ippan_keys:
+    driver: local
+  ippan_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  redis_data:
+    driver: local
+  backup_data:
+    driver: local
+  fluentd_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+
+networks:
+  ippan_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

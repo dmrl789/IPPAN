@@ -228,14 +228,14 @@ impl ZkRoundManager {
             block.index = i;
         }
 
-        // Extract all transactions
-        let mut all_transactions = Vec::new();
+        // Extract all transaction hashes
         let mut transaction_hashes = Vec::new();
         
         for block in &blocks {
-            for tx in &block.block.transactions {
-                all_transactions.push(tx.clone());
-                transaction_hashes.push(tx.hash);
+            // Note: Blocks now only contain transaction hashes, not full transactions
+            // The actual transactions are stored separately and validated when needed
+            for tx_hash in &block.block.tx_hashes {
+                transaction_hashes.push(*tx_hash);
             }
         }
 
@@ -243,7 +243,7 @@ impl ZkRoundManager {
         let merkle_tree = MerkleTree::new(transaction_hashes.clone());
 
         // Calculate state root (simplified for now)
-        let state_root = self.calculate_state_root(&all_transactions);
+        let state_root = self.calculate_state_root(&transaction_hashes);
 
         // Create round header
         let validator_id = if !self.validators.is_empty() {
@@ -261,13 +261,13 @@ impl ZkRoundManager {
         );
 
         // Generate zk-STARK proof (placeholder for now)
-        let zk_proof = self.generate_zk_proof(&header, &all_transactions).await?;
+        let zk_proof = self.generate_zk_proof(&header, &transaction_hashes).await?;
 
         // Create round aggregation
         let aggregation = RoundAggregation {
             header,
             zk_proof,
-            transaction_hashes,
+            transaction_hashes: transaction_hashes.clone(),
             merkle_tree,
         };
 
@@ -281,8 +281,35 @@ impl ZkRoundManager {
             "Round {} aggregated: {} blocks, {} transactions, proof size: {} bytes",
             self.current_round,
             blocks.len(),
-            all_transactions.len(),
+            transaction_hashes.len(),
             aggregation.zk_proof.proof_size
+        );
+
+        // Log proof size metrics
+        if aggregation.zk_proof.proof_size > 100_000 {
+            tracing::warn!(
+                "Large proof size: {} bytes for round {} with {} transactions",
+                aggregation.zk_proof.proof_size,
+                self.current_round,
+                transaction_hashes.len()
+            );
+        }
+
+        // Log block size distribution
+        let mut total_block_size = 0;
+        let mut max_block_size = 0;
+        for block in &blocks {
+            let block_size = block.block.header.block_size_bytes as usize;
+            total_block_size += block_size;
+            max_block_size = max_block_size.max(block_size);
+        }
+        
+        tracing::debug!(
+            "Round {} block size stats: total {} bytes, max {} bytes, avg {} bytes",
+            self.current_round,
+            total_block_size,
+            max_block_size,
+            total_block_size / blocks.len().max(1)
         );
 
         Ok(aggregation)
@@ -292,14 +319,14 @@ impl ZkRoundManager {
     async fn generate_zk_proof(
         &self,
         header: &RoundHeader,
-        transactions: &[crate::consensus::blockdag::Transaction],
+        transaction_hashes: &[crate::TransactionHash],
     ) -> Result<super::ZkStarkProof> {
         let start_time = std::time::Instant::now();
         
         // TODO: Integrate with actual zk-STARK prover (Winterfell or custom)
         // For now, create a placeholder proof
         
-        let proof_data = self.create_placeholder_proof(header, transactions);
+        let proof_data = self.create_placeholder_proof(header, transaction_hashes);
         let proving_time = start_time.elapsed().as_millis() as u64;
         let proof_size = proof_data.len();
         
@@ -309,7 +336,7 @@ impl ZkRoundManager {
             proving_time_ms: proving_time,
             verification_time_ms: 10, // Placeholder
             round_number: header.round_number,
-            transaction_count: transactions.len() as u32,
+            transaction_count: transaction_hashes.len() as u32,
         })
     }
 
@@ -317,7 +344,7 @@ impl ZkRoundManager {
     fn create_placeholder_proof(
         &self,
         header: &RoundHeader,
-        transactions: &[crate::consensus::blockdag::Transaction],
+        transaction_hashes: &[crate::TransactionHash],
     ) -> Vec<u8> {
         use sha2::{Sha256, Digest};
         
@@ -330,56 +357,29 @@ impl ZkRoundManager {
         hasher.update(header.validator_id);
         
         // Include transaction count
-        hasher.update((transactions.len() as u32).to_le_bytes());
+        hasher.update((transaction_hashes.len() as u32).to_le_bytes());
         
         // Include first few transaction hashes
-        for tx in transactions.iter().take(10) {
-            hasher.update(tx.hash);
+        for tx_hash in transaction_hashes.iter().take(10) {
+            hasher.update(tx_hash);
         }
         
         let result = hasher.finalize();
         result.to_vec()
     }
 
-    /// Calculate state root from transactions
-    fn calculate_state_root(&self, transactions: &[crate::consensus::blockdag::Transaction]) -> [u8; 32] {
+    /// Calculate state root from transaction hashes
+    fn calculate_state_root(&self, transaction_hashes: &[crate::TransactionHash]) -> [u8; 32] {
         use sha2::{Sha256, Digest};
         
         let mut hasher = Sha256::new();
         hasher.update("STATE_ROOT".as_bytes());
         
-        for tx in transactions {
-            hasher.update(tx.hash);
-            match &tx.tx_type {
-                crate::consensus::blockdag::TransactionType::Payment(payment) => {
-                    hasher.update(payment.from);
-                    hasher.update(payment.to);
-                    hasher.update(payment.amount.to_le_bytes());
-                }
-                crate::consensus::blockdag::TransactionType::Anchor(anchor) => {
-                    hasher.update(anchor.external_chain_id.as_bytes());
-                    hasher.update(anchor.external_state_root.as_bytes());
-                }
-                crate::consensus::blockdag::TransactionType::Staking(staking) => {
-                    hasher.update(staking.staker);
-                    hasher.update(staking.validator);
-                    hasher.update(staking.amount.to_le_bytes());
-                }
-                crate::consensus::blockdag::TransactionType::Storage(storage) => {
-                    hasher.update(storage.provider);
-                    hasher.update(&storage.file_hash);
-                    hasher.update(storage.data_size.to_le_bytes());
-                }
-                crate::consensus::blockdag::TransactionType::DnsZoneUpdate(dns) => {
-                    hasher.update(dns.domain.as_bytes());
-                    hasher.update(dns.updated_at_us.to_le_bytes());
-                    // Hash operations
-                    for op in &dns.ops {
-                        let op_bytes = serde_json::to_vec(op).unwrap_or_default();
-                        hasher.update(&op_bytes);
-                    }
-                }
-            }
+        for tx_hash in transaction_hashes {
+            hasher.update(tx_hash);
+            // Note: We can't access transaction details from hashes alone
+            // In a real implementation, we would need to fetch the actual transactions
+            // For now, we just hash the transaction hashes themselves
         }
         
         let result = hasher.finalize();
@@ -480,7 +480,8 @@ mod tests {
             hashtimer.clone(),
         );
         
-        let block = Block::new(1, vec![transaction], [1u8; 32], hashtimer);
+        let tx_hashes: Vec<[u8; 32]> = vec![transaction.hash];
+        let block = Block::new(1, tx_hashes, [1u8; 32], hashtimer).unwrap();
         
         let added = manager.add_block(block).await.unwrap();
         assert!(added);

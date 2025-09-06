@@ -145,11 +145,20 @@ impl ZkProver {
         // Validate proof size
         if proof.proof_size > self.config.target_proof_size {
             warn!(
-                "Proof size {} bytes exceeds target {} bytes",
+                "Proof size {} bytes exceeds target {} bytes for round {}",
                 proof.proof_size,
-                self.config.target_proof_size
+                self.config.target_proof_size,
+                proof.round_number
             );
         }
+
+        // Log proof size metrics
+        debug!(
+            "ZK-STARK proof generated: {} bytes, {} ms proving time, {} transactions",
+            proof.proof_size,
+            proving_time,
+            proof.transaction_count
+        );
 
         // Validate proving time
         if proving_time > self.config.max_proving_time_ms {
@@ -355,6 +364,18 @@ impl ZkProver {
                         let op_bytes = serde_json::to_vec(op).unwrap_or_default();
                         hasher.update(&op_bytes);
                     }
+                }
+                crate::consensus::blockdag::TransactionType::L2Commit(l2_commit) => {
+                    hasher.update(l2_commit.l2_id.as_bytes());
+                    hasher.update(l2_commit.epoch.to_le_bytes());
+                    hasher.update(&l2_commit.state_root);
+                    hasher.update(&l2_commit.da_hash);
+                }
+                crate::consensus::blockdag::TransactionType::L2Exit(l2_exit) => {
+                    hasher.update(l2_exit.l2_id.as_bytes());
+                    hasher.update(l2_exit.epoch.to_le_bytes());
+                    hasher.update(&l2_exit.account);
+                    hasher.update(l2_exit.amount.to_le_bytes());
                 }
             }
         }

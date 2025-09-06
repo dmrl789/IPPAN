@@ -1,0 +1,164 @@
+version: '3.8'
+
+services:
+  # IPPAN Backend Node
+  ippan-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ippan-node-dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # API and P2P port
+      - "3000:3000"  # Alternative API port for frontend
+    volumes:
+      - ippan_dev_data:/data
+      - ippan_dev_keys:/keys
+      - ippan_dev_logs:/logs
+      - ./config:/config:ro
+    environment:
+      - RUST_LOG=debug
+      - IPPAN_NETWORK_PORT=8080
+      - IPPAN_API_PORT=8080
+      - IPPAN_STORAGE_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - IPPAN_ENVIRONMENT=development
+    networks:
+      - ippan_dev_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Unified Frontend UI
+  ippan-ui:
+    build:
+      context: ./apps/unified-ui
+      dockerfile: Dockerfile
+    container_name: ippan-ui-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Frontend dev server
+    volumes:
+      - ./apps/unified-ui:/app
+      - /app/node_modules  # Anonymous volume for node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - VITE_API_VERSION=v1
+      - VITE_NETWORK_NAME=IPPAN-DEV
+      - VITE_ENABLE_ANALYTICS=false
+    networks:
+      - ippan_dev_network
+    depends_on:
+      - ippan-node
+    command: npm run dev
+
+  # Wallet Frontend
+  ippan-wallet:
+    build:
+      context: ./apps/wallet
+      dockerfile: Dockerfile
+    container_name: ippan-wallet-dev
+    restart: unless-stopped
+    ports:
+      - "3001:3000"  # Wallet frontend
+    volumes:
+      - ./apps/wallet:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - VITE_API_VERSION=v1
+      - VITE_NETWORK_NAME=IPPAN-DEV
+    networks:
+      - ippan_dev_network
+    depends_on:
+      - ippan-node
+    command: npm run dev
+
+  # Neuro UI
+  ippan-neuro:
+    build:
+      context: ./neuro-ui
+      dockerfile: Dockerfile
+    container_name: ippan-neuro-dev
+    restart: unless-stopped
+    ports:
+      - "3002:3000"  # Neuro UI
+    volumes:
+      - ./neuro-ui:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - VITE_API_VERSION=v1
+      - VITE_NETWORK_NAME=IPPAN-DEV
+    networks:
+      - ippan_dev_network
+    depends_on:
+      - ippan-node
+    command: npm run dev
+
+  # Development Database (PostgreSQL for development)
+  ippan-db:
+    image: postgres:15-alpine
+    container_name: ippan-db-dev
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=ippan_dev
+      - POSTGRES_USER=ippan
+      - POSTGRES_PASSWORD=dev_password
+    volumes:
+      - ippan_dev_db:/var/lib/postgresql/data
+      - ./scripts/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - ippan_dev_network
+
+  # Redis for caching and session storage
+  ippan-redis:
+    image: redis:7-alpine
+    container_name: ippan-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - ippan_dev_redis:/data
+    networks:
+      - ippan_dev_network
+
+  # Development proxy (nginx)
+  ippan-proxy:
+    image: nginx:alpine
+    container_name: ippan-proxy-dev
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./deployments/nginx/dev.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - ippan_dev_network
+    depends_on:
+      - ippan-node
+      - ippan-ui
+
+volumes:
+  ippan_dev_data:
+    driver: local
+  ippan_dev_keys:
+    driver: local
+  ippan_dev_logs:
+    driver: local
+  ippan_dev_db:
+    driver: local
+  ippan_dev_redis:
+    driver: local
+
+networks:
+  ippan_dev_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

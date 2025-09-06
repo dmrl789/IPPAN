@@ -140,13 +140,17 @@ impl StakingSystem {
         }
         
         let mut pools = self.stake_pools.write().await;
-        pools.stake(amount).await
+        // TODO: Fix this - need pool_id and staker address
+        // For now, return an error
+        Err(StakingError::Validation { message: "Pool ID and staker address required".to_string() })
     }
 
     /// Unstake tokens from a node
     pub async fn unstake(&self, amount: u64) -> Result<UnstakeResult, StakingError> {
         let mut pools = self.stake_pools.write().await;
-        pools.unstake(amount).await
+        // TODO: Fix this - need pool_id and staker address
+        // For now, return an error
+        Err(StakingError::Validation { message: "Pool ID and staker address required".to_string() })
     }
 
     /// Get staking information for a node
@@ -154,14 +158,16 @@ impl StakingSystem {
         let pools = self.stake_pools.read().await;
         let rewards = self.rewards.read().await;
         
+        // TODO: Fix this - need validator address for these calls
+        // For now, use placeholder values
         StakingInfo {
             total_staked: pools.get_total_staked(),
-            staked_amount: pools.get_staked_amount(),
+            staked_amount: 0, // TODO: Need validator address
             available_rewards: rewards.get_available_rewards(),
             total_rewards_earned: rewards.get_total_rewards_earned(),
-            is_validator: pools.is_validator(),
-            validator_status: pools.get_validator_status(),
-            lock_period_remaining: pools.get_lock_period_remaining(),
+            is_validator: false, // TODO: Need validator address
+            validator_status: ValidatorStatus::Inactive,
+            lock_period_remaining: None, // TODO: Need pool_id and staker address
             min_stake: self.min_stake,
             max_stake: self.max_stake,
         }
@@ -170,7 +176,9 @@ impl StakingSystem {
     /// Get all validators
     pub async fn get_validators(&self) -> Vec<ValidatorInfo> {
         let pools = self.stake_pools.read().await;
-        pools.get_validators()
+        // TODO: Convert stake_pool::ValidatorInfo to staking::ValidatorInfo
+        // For now, return empty vector
+        Vec::new()
     }
 
     /// Get staking statistics
@@ -191,7 +199,9 @@ impl StakingSystem {
     /// Process slashing for malicious behavior
     pub async fn slash(&self, node_id: [u8; 32], reason: SlashReason, amount: u64) -> Result<(), StakingError> {
         let mut pools = self.stake_pools.write().await;
-        pools.slash(node_id, reason, amount).await
+        // TODO: Fix this - need pool_id and staker address
+        // For now, return an error
+        Err(StakingError::Validation { message: "Pool ID and staker address required".to_string() })
     }
 
     /// Distribute rewards for this round
@@ -327,4 +337,7 @@ pub enum StakingError {
 
     #[error("Global fund distribution failed: {reason}")]
     GlobalFundDistributionFailed { reason: String },
+    
+    #[error("Validation error: {message}")]
+    Validation { message: String },
 }

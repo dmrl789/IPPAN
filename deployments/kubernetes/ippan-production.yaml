@@ -1,0 +1,452 @@
+---
+# IPPAN Production Kubernetes Deployment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ippan-production
+  labels:
+    name: ippan-production
+
+---
+# IPPAN Node Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ippan-node
+  namespace: ippan-production
+  labels:
+    app: ippan-node
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: ippan-node
+  template:
+    metadata:
+      labels:
+        app: ippan-node
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: ippan-node
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ippan
+        image: ippan/ippan:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: p2p
+          protocol: TCP
+        - containerPort: 3000
+          name: api
+          protocol: TCP
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 443
+          name: https
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info"
+        - name: IPPAN_CONFIG_PATH
+          value: "/config/default.toml"
+        - name: IPPAN_DATA_DIR
+          value: "/data"
+        - name: IPPAN_KEYS_DIR
+          value: "/keys"
+        - name: IPPAN_LOG_DIR
+          value: "/logs"
+        - name: NODE_ENV
+          value: "production"
+        - name: RUST_BACKTRACE
+          value: "1"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+            ephemeral-storage: "10Gi"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+            ephemeral-storage: "20Gi"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config
+          readOnly: true
+        - name: data-volume
+          mountPath: /data
+        - name: keys-volume
+          mountPath: /keys
+          readOnly: true
+        - name: logs-volume
+          mountPath: /logs
+        - name: ssl-volume
+          mountPath: /ssl
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: config-volume
+        configMap:
+          name: ippan-config
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: ippan-data-pvc
+      - name: keys-volume
+        secret:
+          secretName: ippan-keys
+      - name: logs-volume
+        emptyDir: {}
+      - name: ssl-volume
+        secret:
+          secretName: ippan-ssl
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: "ippan.io/node"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - ippan-node
+              topologyKey: kubernetes.io/hostname
+
+---
+# IPPAN Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ippan-service
+  namespace: ippan-production
+  labels:
+    app: ippan-node
+spec:
+  type: ClusterIP
+  selector:
+    app: ippan-node
+  ports:
+  - name: p2p
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: api
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 443
+    protocol: TCP
+
+---
+# IPPAN Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ippan-ingress
+  namespace: ippan-production
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - ippan.network
+    - api.ippan.network
+    secretName: ippan-tls
+  rules:
+  - host: ippan.network
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ippan-service
+            port:
+              number: 80
+  - host: api.ippan.network
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ippan-service
+            port:
+              number: 3000
+
+---
+# IPPAN ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ippan-config
+  namespace: ippan-production
+data:
+  default.toml: |
+    [network]
+    listen_addr = "0.0.0.0:8080"
+    bootstrap_nodes = []
+    max_connections = 1000
+    connection_timeout = 30
+    enable_nat = true
+    enable_relay = true
+    enable_dht = true
+    dht_bootstrap_interval = 300
+
+    [storage]
+    db_path = "/data/ippan.db"
+    max_storage_size = 1073741824000  # 1TB
+    shard_size = 1048576  # 1MB
+    replication_factor = 3
+    enable_encryption = true
+    proof_interval = 3600
+    backup_interval = 86400
+
+    [consensus]
+    block_time = 1000
+    max_block_size = 1048576  # 1MB
+    validator_count = 21
+    stake_threshold = 1000000000  # 10 IPN
+    enable_byzantine_tolerance = true
+    max_byzantine_validators = 6
+
+    [api]
+    listen_addr = "0.0.0.0:3000"
+    cors_origins = ["*"]
+    rate_limit = 10000
+    timeout = 30
+    enable_metrics = true
+    metrics_path = "/metrics"
+
+    [performance]
+    enable_lockfree = true
+    enable_memory_pool = true
+    enable_batch_processing = true
+    enable_caching = true
+    cache_size = 1073741824  # 1GB
+    batch_size = 1000
+    thread_pool_size = 8
+
+    [security]
+    enable_tls = true
+    enable_mutual_auth = true
+    enable_key_rotation = true
+    key_rotation_interval = 86400
+    enable_audit_logging = true
+
+    [logging]
+    level = "info"
+    format = "json"
+    output = "stdout"
+    enable_structured_logging = true
+
+---
+# IPPAN PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ippan-data-pvc
+  namespace: ippan-production
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Ti
+  storageClassName: fast-ssd
+
+---
+# IPPAN Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ippan-keys
+  namespace: ippan-production
+type: Opaque
+data:
+  # Base64 encoded keys will be added here
+  node.key: ""
+  validator.key: ""
+  master.key: ""
+
+---
+# IPPAN SSL Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ippan-ssl
+  namespace: ippan-production
+type: kubernetes.io/tls
+data:
+  # Base64 encoded SSL certificates will be added here
+  tls.crt: ""
+  tls.key: ""
+
+---
+# IPPAN ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ippan-node
+  namespace: ippan-production
+
+---
+# IPPAN RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: ippan-production
+  name: ippan-node
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ippan-node
+  namespace: ippan-production
+subjects:
+- kind: ServiceAccount
+  name: ippan-node
+  namespace: ippan-production
+roleRef:
+  kind: Role
+  name: ippan-node
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# IPPAN HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ippan-hpa
+  namespace: ippan-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ippan-node
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+
+---
+# IPPAN PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ippan-pdb
+  namespace: ippan-production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ippan-node

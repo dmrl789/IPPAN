@@ -14,6 +14,7 @@ pub mod discovery;
 pub mod nat;
 pub mod relay;
 pub mod protocol;
+pub mod security;
 
 use p2p::P2PNetwork;
 use discovery::DiscoveryService;

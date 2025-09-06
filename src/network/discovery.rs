@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, RwLock};
 use tokio::time::{interval, Duration};
 use chrono::{DateTime, Utc};
 
@@ -117,12 +117,142 @@ pub enum PeerStatus {
     Connected,
 }
 
+/// Peerstore for managing peer information
+pub struct Peerstore {
+    /// Known peers
+    peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
+    /// Peer scores
+    scores: Arc<RwLock<HashMap<String, f64>>>,
+    /// Peer bans
+    bans: Arc<RwLock<HashMap<String, DateTime<Utc>>>>,
+    /// Maximum peers
+    max_peers: usize,
+}
+
+impl Peerstore {
+    /// Create a new peerstore
+    pub fn new(max_peers: usize) -> Self {
+        Self {
+            peers: Arc::new(RwLock::new(HashMap::new())),
+            scores: Arc::new(RwLock::new(HashMap::new())),
+            bans: Arc::new(RwLock::new(HashMap::new())),
+            max_peers,
+        }
+    }
+
+    /// Add a peer to the peerstore
+    pub async fn add_peer(&self, peer_info: PeerInfo) -> Result<()> {
+        let key = format!("{}:{}", peer_info.address, peer_info.port);
+        
+        let mut peers = self.peers.write().await;
+        let mut scores = self.scores.write().await;
+        
+        if peers.len() < self.max_peers {
+            peers.insert(key.clone(), peer_info.clone());
+            scores.insert(key, 1.0); // Default score
+            log::debug!("Added peer to peerstore: {}:{}", peer_info.address, peer_info.port);
+        } else {
+            log::warn!("Peerstore full, cannot add new peer");
+        }
+        
+        Ok(())
+    }
+
+    /// Remove a peer from the peerstore
+    pub async fn remove_peer(&self, address: &str, port: u16) -> Result<()> {
+        let key = format!("{}:{}", address, port);
+        
+        let mut peers = self.peers.write().await;
+        let mut scores = self.scores.write().await;
+        let mut bans = self.bans.write().await;
+        
+        peers.remove(&key);
+        scores.remove(&key);
+        bans.remove(&key);
+        
+        log::debug!("Removed peer from peerstore: {}:{}", address, port);
+        Ok(())
+    }
+
+    /// Update peer score
+    pub async fn update_peer_score(&self, address: &str, port: u16, score: f64) -> Result<()> {
+        let key = format!("{}:{}", address, port);
+        let mut scores = self.scores.write().await;
+        
+        scores.insert(key, score.max(0.0).min(1.0)); // Clamp between 0 and 1
+        log::debug!("Updated peer score: {}:{} -> {}", address, port, score);
+        
+        Ok(())
+    }
+
+    /// Ban a peer
+    pub async fn ban_peer(&self, address: &str, port: u16, duration_minutes: i64) -> Result<()> {
+        let key = format!("{}:{}", address, port);
+        let mut bans = self.bans.write().await;
+        
+        let ban_until = Utc::now() + chrono::Duration::minutes(duration_minutes);
+        bans.insert(key, ban_until);
+        
+        log::info!("Banned peer: {}:{} until {}", address, port, ban_until);
+        Ok(())
+    }
+
+    /// Check if peer is banned
+    pub async fn is_peer_banned(&self, address: &str, port: u16) -> bool {
+        let key = format!("{}:{}", address, port);
+        let bans = self.bans.read().await;
+        
+        if let Some(ban_until) = bans.get(&key) {
+            if Utc::now() < *ban_until {
+                return true;
+            }
+        }
+        
+        false
+    }
+
+    /// Get peer score
+    pub async fn get_peer_score(&self, address: &str, port: u16) -> f64 {
+        let key = format!("{}:{}", address, port);
+        let scores = self.scores.read().await;
+        
+        scores.get(&key).copied().unwrap_or(0.0)
+    }
+
+    /// Get all peers
+    pub async fn get_all_peers(&self) -> Vec<PeerInfo> {
+        let peers = self.peers.read().await;
+        peers.values().cloned().collect()
+    }
+
+    /// Get peers with minimum score
+    pub async fn get_peers_with_min_score(&self, min_score: f64) -> Vec<PeerInfo> {
+        let peers = self.peers.read().await;
+        let scores = self.scores.read().await;
+        
+        peers.iter()
+            .filter(|(key, _)| {
+                scores.get(*key).copied().unwrap_or(0.0) >= min_score
+            })
+            .map(|(_, peer)| peer.clone())
+            .collect()
+    }
+
+    /// Clean up expired bans
+    pub async fn cleanup_expired_bans(&self) {
+        let mut bans = self.bans.write().await;
+        let now = Utc::now();
+        
+        bans.retain(|_, ban_until| *ban_until > now);
+    }
+}
+
 /// Discovery service
 pub struct DiscoveryService {
     /// Node ID
     node_id: [u8; 32],
-    /// Known peers
-    known_peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
+    /// Peerstore for managing peers
+    peerstore: Arc<Peerstore>,
     /// Bootstrap peers
     bootstrap_peers: Vec<SocketAddr>,
     /// Discovery interval
@@ -132,9 +262,9 @@ pub struct DiscoveryService {
     /// Maximum peers
     max_peers: usize,
     /// Message sender
-    message_sender: mpsc::Sender<DiscoveryMessage>,
+    message_sender: broadcast::Sender<DiscoveryMessage>,
     /// Message receiver
-    _message_receiver: mpsc::Receiver<DiscoveryMessage>,
+    _message_receiver: broadcast::Receiver<DiscoveryMessage>,
     /// Running flag
     running: bool,
 }
@@ -145,11 +275,11 @@ impl DiscoveryService {
         node_id: [u8; 32],
         bootstrap_peers: Vec<SocketAddr>,
     ) -> Result<Self> {
-        let (message_sender, message_receiver) = mpsc::channel(1000);
+        let (message_sender, message_receiver) = broadcast::channel(1000);
         
         Ok(Self {
             node_id,
-            known_peers: Arc::new(RwLock::new(HashMap::new())),
+            peerstore: Arc::new(Peerstore::new(100)), // Initialize with a default max_peers
             bootstrap_peers,
             discovery_interval: Duration::from_secs(60), // 1 minute
             _peer_timeout: Duration::from_secs(300), // 5 minutes
@@ -167,7 +297,7 @@ impl DiscoveryService {
         
         // Start discovery loop
         let discovery_interval = self.discovery_interval;
-        let known_peers = self.known_peers.clone();
+        let peerstore = self.peerstore.clone();
         let bootstrap_peers = self.bootstrap_peers.clone();
         
         tokio::spawn(async move {
@@ -177,20 +307,23 @@ impl DiscoveryService {
                 interval.tick().await;
                 
                 // Discover new peers
-                Self::discover_peers(&known_peers, &bootstrap_peers).await;
+                Self::discover_peers(&peerstore, &bootstrap_peers).await;
                 
                 // Clean up stale peers
-                Self::cleanup_stale_peers(&known_peers).await;
+                Self::cleanup_stale_peers(&peerstore).await;
             }
         });
         
         // Start message processing loop
-        let _message_sender = self.message_sender.clone();
-        let _known_peers = self.known_peers.clone();
+        let message_sender = self.message_sender.clone();
+        let peerstore = self.peerstore.clone();
         
         tokio::spawn(async move {
-            // TODO: Implement message processing loop
-            log::info!("Discovery message processing loop started");
+            let mut message_receiver = message_sender.subscribe();
+            
+            while let Ok(message) = message_receiver.recv().await {
+                Self::handle_discovery_message(message, &peerstore).await;
+            }
         });
         
         Ok(())
@@ -240,49 +373,27 @@ impl DiscoveryService {
 
     /// Add a peer manually
     pub async fn add_peer(&self, peer_info: PeerInfo) -> Result<()> {
-        let mut peers = self.known_peers.write().await;
-        
-        if peers.len() < self.max_peers {
-            let key = format!("{}:{}", peer_info.address, peer_info.port);
-            peers.insert(key, peer_info.clone());
-            log::info!("Added peer: {}:{}", peer_info.address, peer_info.port);
-        } else {
-            log::warn!("Maximum peers reached, cannot add new peer");
-        }
-        
-        Ok(())
+        self.peerstore.add_peer(peer_info).await
     }
 
     /// Remove a peer
     pub async fn remove_peer(&self, address: &str, port: u16) -> Result<()> {
-        let mut peers = self.known_peers.write().await;
-        let key = format!("{}:{}", address, port);
-        
-        if peers.remove(&key).is_some() {
-            log::info!("Removed peer: {}:{}", address, port);
-        }
-        
-        Ok(())
+        self.peerstore.remove_peer(address, port).await
     }
 
     /// Get known peers
     pub async fn get_known_peers(&self) -> Vec<PeerInfo> {
-        let peers = self.known_peers.read().await;
-        peers.values().cloned().collect()
+        self.peerstore.get_all_peers().await
     }
 
     /// Get reachable peers
     pub async fn get_reachable_peers(&self) -> Vec<PeerInfo> {
-        let peers = self.known_peers.read().await;
-        peers.values()
-            .filter(|peer| peer.status == PeerStatus::Reachable || peer.status == PeerStatus::Connected)
-            .cloned()
-            .collect()
+        self.peerstore.get_peers_with_min_score(0.5).await // Assuming a minimum score of 0.5 for reachable
     }
 
     /// Get peer count
     pub async fn get_peer_count(&self) -> usize {
-        let peers = self.known_peers.read().await;
+        let peers = self.peerstore.get_all_peers().await;
         peers.len()
     }
 
@@ -295,67 +406,58 @@ impl DiscoveryService {
 
     /// Discover new peers
     async fn discover_peers(
-        known_peers: &Arc<RwLock<HashMap<String, PeerInfo>>>,
+        peerstore: &Arc<Peerstore>,
         bootstrap_peers: &[SocketAddr],
     ) {
         // TODO: Implement peer discovery logic
         log::debug!("Discovering new peers...");
         
         // For now, just add bootstrap peers if not already known
-        let mut peers = known_peers.write().await;
-        
         for bootstrap_peer in bootstrap_peers {
-            let key = format!("{}:{}", bootstrap_peer.ip(), bootstrap_peer.port());
+            let peer_info = PeerInfo {
+                node_id: [0u8; 32], // Unknown node ID
+                address: bootstrap_peer.ip().to_string(),
+                port: bootstrap_peer.port(),
+                features: vec!["bootstrap".to_string()],
+                last_seen: Utc::now(),
+                score: 0.5,
+                status: PeerStatus::Unknown,
+            };
             
-            if !peers.contains_key(&key) {
-                let peer_info = PeerInfo {
-                    node_id: [0u8; 32], // Unknown node ID
-                    address: bootstrap_peer.ip().to_string(),
-                    port: bootstrap_peer.port(),
-                    features: vec!["bootstrap".to_string()],
-                    last_seen: Utc::now(),
-                    score: 0.5,
-                    status: PeerStatus::Unknown,
-                };
-                
-                peers.insert(key, peer_info);
+            if let Err(e) = peerstore.add_peer(peer_info).await {
+                log::warn!("Failed to add bootstrap peer: {}", e);
+            } else {
                 log::info!("Added bootstrap peer: {}:{}", bootstrap_peer.ip(), bootstrap_peer.port());
             }
         }
     }
 
     /// Clean up stale peers
-    async fn cleanup_stale_peers(known_peers: &Arc<RwLock<HashMap<String, PeerInfo>>>) {
-        let mut peers = known_peers.write().await;
+    async fn cleanup_stale_peers(peerstore: &Arc<Peerstore>) {
+        let peers = peerstore.get_all_peers().await;
         let now = Utc::now();
         let timeout = chrono::Duration::minutes(10); // 10 minutes
         
-        let stale_keys: Vec<String> = peers.iter()
-            .filter(|(_, peer)| {
-                let time_diff = now - peer.last_seen;
-                time_diff > timeout
-            })
-            .map(|(key, _)| key.clone())
-            .collect();
-        
-        for key in stale_keys {
-            peers.remove(&key);
-            log::debug!("Removed stale peer: {}", key);
+        for peer in peers {
+            let time_diff = now - peer.last_seen;
+            if time_diff > timeout {
+                if let Err(e) = peerstore.remove_peer(&peer.address, peer.port).await {
+                    log::warn!("Failed to remove stale peer: {}", e);
+                } else {
+                    log::debug!("Removed stale peer: {}:{}", peer.address, peer.port);
+                }
+            }
         }
     }
 
     /// Handle discovery message
-    #[allow(dead_code)]
-    async fn handle_discovery_message(
+    pub async fn handle_discovery_message(
         message: DiscoveryMessage,
-        known_peers: &Arc<RwLock<HashMap<String, PeerInfo>>>,
+        peerstore: &Arc<Peerstore>,
     ) {
         match message {
             DiscoveryMessage::PeerAnnouncement(announcement) => {
                 log::info!("Received peer announcement from: {}:{}", announcement.address, announcement.port);
-                
-                let mut peers = known_peers.write().await;
-                let key = format!("{}:{}", announcement.address, announcement.port);
                 
                 let peer_info = PeerInfo {
                     node_id: announcement.node_id,
@@ -367,7 +469,9 @@ impl DiscoveryService {
                     status: PeerStatus::Reachable,
                 };
                 
-                peers.insert(key, peer_info);
+                if let Err(e) = peerstore.add_peer(peer_info).await {
+                    log::warn!("Failed to add peer from announcement: {}", e);
+                }
             }
             
             DiscoveryMessage::PeerRequest(request) => {
@@ -379,13 +483,9 @@ impl DiscoveryService {
             DiscoveryMessage::PeerResponse(response) => {
                 log::debug!("Received peer response with {} peers", response.peers.len());
                 
-                let mut peers = known_peers.write().await;
-                
                 for peer_info in response.peers {
-                    let key = format!("{}:{}", peer_info.address, peer_info.port);
-                    
-                    if !peers.contains_key(&key) {
-                        peers.insert(key, peer_info);
+                    if let Err(e) = peerstore.add_peer(peer_info).await {
+                        log::warn!("Failed to add peer from response: {}", e);
                     }
                 }
             }
@@ -399,16 +499,9 @@ impl DiscoveryService {
             DiscoveryMessage::Pong(pong) => {
                 log::debug!("Received pong from: {:?}", pong.node_id);
                 
-                // Update peer status
-                let mut peers = known_peers.write().await;
-                
-                for peer in peers.values_mut() {
-                    if peer.node_id == pong.node_id {
-                        peer.status = PeerStatus::Reachable;
-                        peer.last_seen = Utc::now();
-                        break;
-                    }
-                }
+                // Update peer status - this would need to be implemented with a way to identify the peer
+                // For now, we'll just log it
+                log::debug!("Peer {} is reachable", hex::encode(pong.node_id));
             }
         }
     }

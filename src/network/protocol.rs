@@ -202,12 +202,17 @@ impl ProtocolManager {
         self.running = true;
         
         // Start message processing loop
-        let _message_sender = self.message_sender.clone();
-        let _handlers = self.handlers.clone();
+        let message_receiver = self._message_receiver.take().ok_or_else(|| {
+            crate::error::IppanError::Network("Message receiver already taken".to_string())
+        })?;
+        let handlers = self.handlers.clone();
         
         tokio::spawn(async move {
-            // TODO: Implement message processing loop
-            log::info!("Protocol message processing loop started");
+            let mut message_receiver = message_receiver;
+            
+            while let Some(message) = message_receiver.recv().await {
+                Self::process_message(message, &handlers).await;
+            }
         });
         
         Ok(())
@@ -260,8 +265,7 @@ impl ProtocolManager {
     }
 
     /// Process protocol message
-    #[allow(dead_code)]
-    async fn process_message(
+    pub async fn process_message(
         message: ProtocolMessage,
         handlers: &Arc<RwLock<HashMap<String, Box<dyn ProtocolHandler>>>>,
     ) {

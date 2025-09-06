@@ -1,1 +1,59 @@
-/target
+# IPPAN .gitignore
+
+# Build artifacts
+target/
+Cargo.lock
+*.lock
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data directories
+data/
+keys/
+temp/
+
+# Node modules
+node_modules/
+npm-debug.log*
+
+# Test artifacts
+testsprite_tests/tmp/
+*.json
+*.html
+
+# Large binary files
+*.bin
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Cache directories
+.cache/
+.parcel-cache/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Backup files
+*.bak
+*.backup
+
+# Temporary files
+tmp/
+temp/
+*.tmp

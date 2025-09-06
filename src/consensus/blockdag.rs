@@ -5,7 +5,7 @@
 //! Provides Directed Acyclic Graph structure for blocks with deterministic ordering
 
 use crate::{
-    consensus::{hashtimer::HashTimer, ippan_time::IppanTimeManager},
+    consensus::{hashtimer::{HashTimer, IppanTimeManager}, limits::MAX_BLOCK_SIZE_BYTES},
     error::IppanError,
     NodeId, BlockHash, TransactionHash,
 };
@@ -18,6 +18,15 @@ use tokio::sync::RwLock;
 use tracing::{debug, info};
 // TODO: Fix logging imports
 // use crate::utils::logging::{log_block, log_transaction};
+
+/// Block-related errors
+#[derive(thiserror::Error, Debug)]
+pub enum BlockError {
+    #[error("block too large: {size} bytes (max {max})")]
+    TooLarge { size: usize, max: usize },
+    #[error("invalid block structure: {reason}")]
+    InvalidStructure { reason: String },
+}
 
 /// Custom serialization for byte arrays
 mod byte_array_serde {
@@ -67,20 +76,85 @@ pub struct BlockHeader {
     pub hashtimer: HashTimer,
     /// Parent block hashes (for DAG structure)
     pub parent_hashes: Vec<BlockHash>,
+    /// Parent round numbers (corresponding to parent_hashes)
+    pub parent_rounds: Vec<u64>,
     /// Block creation timestamp in nanoseconds
     pub timestamp_ns: u64,
+    /// Block size in bytes (populated by Block::new)
+    pub block_size_bytes: u32,
+    /// Transaction count
+    pub tx_count: u32,
+    /// Merkle root of transactions
+    pub merkle_root: [u8; 32],
 }
 
-/// Block containing transactions and metadata
+impl BlockHeader {
+    /// Estimate serialized size of the header
+    pub fn estimate_size_bytes(&self) -> usize {
+        // Sum of fields: 32+8+8+32+32+8+4+4+32 = 160 bytes
+        // Plus variable size for parent_hashes and parent_rounds
+        let parent_size = self.parent_hashes.len() * 32 + self.parent_rounds.len() * 8;
+        160 + parent_size
+    }
+}
+
+/// Block containing transaction hashes and metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     /// Block header
     pub header: BlockHeader,
-    /// Transactions in this block
-    pub transactions: Vec<Transaction>,
+    /// Transaction hashes in this block (references only, no inlined payload)
+    pub tx_hashes: Vec<TransactionHash>,
     /// Block signature (optional, for future use)
     #[serde(with = "byte_array_serde")]
     pub signature: Option<[u8; 64]>,
+}
+
+impl Block {
+    /// Estimate serialized size: header + tx refs (no payloads inlined)
+    pub fn estimate_size_bytes(&self) -> usize {
+        let header_bytes = self.header.estimate_size_bytes();
+        // 32 bytes per tx hash; add small vec overhead if needed
+        header_bytes + (self.tx_hashes.len() * 32)
+    }
+
+    /// Calculate merkle root from transaction hashes
+    fn calculate_merkle_root(tx_hashes: &[TransactionHash]) -> [u8; 32] {
+        if tx_hashes.is_empty() {
+            // Empty merkle root
+            [0u8; 32]
+        } else if tx_hashes.len() == 1 {
+            // Single transaction, hash it
+            let mut hasher = Sha256::new();
+            hasher.update(&tx_hashes[0]);
+            let result = hasher.finalize();
+            let mut root = [0u8; 32];
+            root.copy_from_slice(&result);
+            root
+        } else {
+            // Multiple transactions, build merkle tree
+            let mut current_level = tx_hashes.to_vec();
+            while current_level.len() > 1 {
+                let mut next_level = Vec::new();
+                for chunk in current_level.chunks(2) {
+                    let mut hasher = Sha256::new();
+                    hasher.update(&chunk[0]);
+                    if chunk.len() == 2 {
+                        hasher.update(&chunk[1]);
+                    } else {
+                        // Odd number, duplicate the last element
+                        hasher.update(&chunk[0]);
+                    }
+                    let result = hasher.finalize();
+                    let mut hash = [0u8; 32];
+                    hash.copy_from_slice(&result);
+                    next_level.push(hash);
+                }
+                current_level = next_level;
+            }
+            current_level[0]
+        }
+    }
 }
 
 /// Transaction types
@@ -96,6 +170,13 @@ pub enum TransactionType {
     Storage(StorageData),
     /// DNS zone update transaction
     DnsZoneUpdate(DnsZoneUpdateData),
+    /// Program call transaction (smart contracts)
+    #[cfg(feature = "contracts")]
+    ProgramCall(ProgramCallData),
+    /// L2 commit transaction
+    L2Commit(L2CommitData),
+    /// L2 exit transaction
+    L2Exit(L2ExitData),
 }
 
 /// Payment transaction data
@@ -117,7 +198,10 @@ pub struct AnchorData {
     /// External state root
     pub external_state_root: String,
     /// Proof type
-    pub proof_type: Option<crate::crosschain::external_anchor::ProofType>,
+    #[cfg(feature = "crosschain")]
+    pub proof_type: Option<crate::crosschain::types::ProofType>,
+    #[cfg(not(feature = "crosschain"))]
+    pub proof_type: Option<String>,
     /// Proof data
     pub proof_data: Vec<u8>,
 }
@@ -179,6 +263,58 @@ pub struct DnsZoneUpdateData {
     pub ops: Vec<crate::dns::apply::ZoneOp>,
     /// Update timestamp in microseconds
     pub updated_at_us: u64,
+}
+
+/// Program call transaction data
+#[cfg(feature = "contracts")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProgramCallData {
+    /// Program ID
+    pub program_id: [u8; 32],
+    /// Entry point name
+    pub entrypoint: String,
+    /// Call data (opaque, bounded)
+    pub calldata: Vec<u8>,
+    /// Capability references granted by the signer
+    pub caps: Vec<crate::blockchain::smart_contract_system::CapabilityRef>,
+    /// Gas or syscall budget
+    pub budget: u64,
+}
+
+/// L2 commit transaction data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct L2CommitData {
+    /// L2 identifier
+    pub l2_id: String,
+    /// L2 epoch/batch number
+    pub epoch: u64,
+    /// State root after applying batch
+    pub state_root: [u8; 32],
+    /// Data availability hash
+    pub da_hash: [u8; 32],
+    /// Proof type
+    pub proof_type: String,
+    /// Proof bytes
+    pub proof: Vec<u8>,
+    /// Optional inline data
+    pub inline_data: Option<Vec<u8>>,
+}
+
+/// L2 exit transaction data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct L2ExitData {
+    /// L2 identifier
+    pub l2_id: String,
+    /// L2 epoch this exit is based on
+    pub epoch: u64,
+    /// Proof of inclusion
+    pub proof_of_inclusion: Vec<u8>,
+    /// Recipient account on L1
+    pub account: [u8; 32],
+    /// Amount or asset payload
+    pub amount: u128,
+    /// Nonce to prevent replay attacks
+    pub nonce: u64,
 }
 
 /// Transaction structure
@@ -289,8 +425,18 @@ impl BlockDAG {
 
     /// Validate a block
     pub async fn validate_block(&self, block: &Block) -> Result<bool> {
-        // Check basic structure
-        if block.transactions.is_empty() {
+        // Check basic structure - blocks can be empty (genesis)
+        // if block.tx_hashes.is_empty() {
+        //     return Ok(false);
+        // }
+
+        // Validate block size
+        if block.header.block_size_bytes as usize > MAX_BLOCK_SIZE_BYTES {
+            tracing::warn!(
+                "Block validation failed: size {} bytes exceeds maximum {} bytes",
+                block.header.block_size_bytes,
+                MAX_BLOCK_SIZE_BYTES
+            );
             return Ok(false);
         }
 
@@ -299,11 +445,10 @@ impl BlockDAG {
             return Ok(false);
         }
 
-        // Validate transactions
-        for tx in &block.transactions {
-            if !self.validate_transaction(tx)? {
-                return Ok(false);
-            }
+        // Validate merkle root
+        let expected_merkle_root = Block::calculate_merkle_root(&block.tx_hashes);
+        if block.header.merkle_root != expected_merkle_root {
+            return Ok(false);
         }
 
         // Validate parent hashes exist (except for genesis)
@@ -379,6 +524,40 @@ impl BlockDAG {
                     return Ok(false);
                 }
             }
+            #[cfg(feature = "contracts")]
+            TransactionType::ProgramCall(data) => {
+                if data.program_id == [0u8; 32] || data.entrypoint.is_empty() || data.calldata.is_empty() {
+                    return Ok(false);
+                }
+                // Additional validation: check budget limits
+                if data.budget > 1_000_000 { // 1M gas limit
+                    return Ok(false);
+                }
+                // Check calldata size limit
+                if data.calldata.len() > 1024 * 1024 { // 1MB limit
+                    return Ok(false);
+                }
+            }
+            TransactionType::L2Commit(data) => {
+                if data.l2_id.is_empty() || data.epoch == 0 || data.proof.is_empty() {
+                    return Ok(false);
+                }
+                // Check proof size limit
+                if data.proof.len() > 16384 { // 16KB limit
+                    return Ok(false);
+                }
+                // Check inline data size if present
+                if let Some(ref inline_data) = data.inline_data {
+                    if inline_data.len() > 16384 {
+                        return Ok(false);
+                    }
+                }
+            }
+            TransactionType::L2Exit(data) => {
+                if data.l2_id.is_empty() || data.epoch == 0 || data.proof_of_inclusion.is_empty() || data.amount == 0 {
+                    return Ok(false);
+                }
+            }
         }
 
         Ok(true)
@@ -388,7 +567,7 @@ impl BlockDAG {
     fn calculate_block_score(&self, block: &Block) -> u64 {
         // Score based on HashTimer precision and IPPAN Time
         let hashtimer_score = block.header.hashtimer.ippan_time_micros();
-        let transaction_count = block.transactions.len() as u64;
+        let transaction_count = block.tx_hashes.len() as u64;
         
         // Higher score for more precise timing and more transactions
         hashtimer_score + (transaction_count * 1000)
@@ -489,8 +668,8 @@ impl BlockDAG {
         }
         
         // Include transaction hashes
-        for tx in &block.transactions {
-            hasher.update(&tx.hash);
+        for tx_hash in &block.tx_hashes {
+            hasher.update(tx_hash);
         }
         
         // Include HashTimer
@@ -588,7 +767,7 @@ impl BlockDAG {
             .unwrap_or(0);
 
         let total_transactions = blocks.values()
-            .map(|node| node.block.transactions.len())
+            .map(|node| node.block.tx_hashes.len())
             .sum();
 
         BlockDAGStats {
@@ -612,16 +791,20 @@ pub struct BlockDAGStats {
 }
 
 impl Block {
-    /// Create a new block
+    /// Create a new block with size enforcement
     pub fn new(
         round: u64,
-        transactions: Vec<Transaction>,
+        tx_hashes: Vec<TransactionHash>,
         validator_id: NodeId,
         hashtimer: HashTimer,
-    ) -> Self {
+    ) -> Result<Self> {
         let parent_hashes = vec![]; // Will be set by caller
+        let parent_rounds = vec![]; // Will be set by caller
         let height = 0; // Will be calculated by caller
         let timestamp_ns = hashtimer.timestamp_ns;
+        
+        // Calculate merkle root from transaction hashes
+        let merkle_root = Self::calculate_merkle_root(&tx_hashes);
         
         let header = BlockHeader {
             hash: [0u8; 32], // Will be calculated
@@ -630,19 +813,55 @@ impl Block {
             validator_id,
             hashtimer,
             parent_hashes,
+            parent_rounds,
             timestamp_ns,
+            block_size_bytes: 0, // Will be calculated
+            tx_count: tx_hashes.len() as u32,
+            merkle_root,
         };
 
         let mut block = Self {
             header,
-            transactions,
+            tx_hashes,
             signature: None,
         };
+
+        // Calculate and enforce size limit
+        let estimated_size = block.estimate_size_bytes();
+        if estimated_size > MAX_BLOCK_SIZE_BYTES {
+            // Log block size violation
+            tracing::warn!(
+                "Block size violation: {} bytes exceeds maximum {} bytes",
+                estimated_size,
+                MAX_BLOCK_SIZE_BYTES
+            );
+            return Err(IppanError::Validation(format!("Block too large: {} bytes (max {})", estimated_size, MAX_BLOCK_SIZE_BYTES)));
+        }
+
+        // Set the actual size in the header
+        block.header.block_size_bytes = estimated_size as u32;
+
+        // Log block size metrics
+        tracing::debug!(
+            "Block created: {} bytes, {} transactions, round {}",
+            estimated_size,
+            block.header.tx_count,
+            block.header.round
+        );
+
+        // Warn if block is close to size limit
+        if estimated_size > (MAX_BLOCK_SIZE_BYTES * 3 / 4) {
+            tracing::warn!(
+                "Block size warning: {} bytes is within 25% of maximum {} bytes",
+                estimated_size,
+                MAX_BLOCK_SIZE_BYTES
+            );
+        }
 
         // Calculate hash
         block.header.hash = Self::calculate_block_hash(&block);
         
-        block
+        Ok(block)
     }
 
     /// Calculate block hash
@@ -654,10 +873,14 @@ impl Block {
         for parent_hash in &block.header.parent_hashes {
             hasher.update(parent_hash);
         }
-        for tx in &block.transactions {
-            hasher.update(&tx.hash);
+        for parent_round in &block.header.parent_rounds {
+            hasher.update(&parent_round.to_be_bytes());
+        }
+        for tx_hash in &block.tx_hashes {
+            hasher.update(tx_hash);
         }
         hasher.update(&block.header.hashtimer.ippan_time_ns().to_be_bytes());
+        hasher.update(&block.header.merkle_root);
         
         let result = hasher.finalize();
         let mut hash = [0u8; 32];
@@ -727,7 +950,7 @@ impl Transaction {
     pub fn new_anchor(
         external_chain_id: String,
         external_state_root: String,
-        proof_type: Option<crate::crosschain::external_anchor::ProofType>,
+        proof_type: Option<crate::crosschain::types::ProofType>,
         proof_data: Vec<u8>,
         fee: u64,
         nonce: u64,
@@ -853,6 +1076,42 @@ impl Transaction {
         }
     }
 
+    /// Create a new program call transaction
+    #[cfg(feature = "contracts")]
+    pub fn new_program_call(
+        program_id: [u8; 32],
+        entrypoint: String,
+        calldata: Vec<u8>,
+        caps: Vec<crate::blockchain::smart_contract_system::CapabilityRef>,
+        budget: u64,
+        fee: u64,
+        nonce: u64,
+        hashtimer: HashTimer,
+    ) -> Self {
+        let program_call_data = ProgramCallData {
+            program_id,
+            entrypoint,
+            calldata,
+            caps,
+            budget,
+        };
+        
+        let tx = Self {
+            hash: [0u8; 32], // Will be calculated
+            tx_type: TransactionType::ProgramCall(program_call_data),
+            fee,
+            nonce,
+            hashtimer,
+            signature: None,
+        };
+        
+        let hash = Self::calculate_transaction_hash(&tx);
+        Self {
+            hash,
+            ..tx
+        }
+    }
+
     /// Calculate transaction hash
     fn calculate_transaction_hash(tx: &Transaction) -> TransactionHash {
         let mut hasher = Sha256::new();
@@ -889,6 +1148,40 @@ impl Transaction {
                     let op_bytes = serde_json::to_vec(op).unwrap_or_default();
                     hasher.update(&op_bytes);
                 }
+            }
+            #[cfg(feature = "contracts")]
+            TransactionType::ProgramCall(data) => {
+                hasher.update(&data.program_id);
+                hasher.update(data.entrypoint.as_bytes());
+                hasher.update(&data.calldata);
+                // Serialize capabilities for hashing
+                for cap in &data.caps {
+                    hasher.update(&cap.kind.to_le_bytes());
+                    hasher.update(&cap.target);
+                    for perm in &cap.permissions {
+                        hasher.update(perm.as_bytes());
+                    }
+                }
+                hasher.update(&data.budget.to_le_bytes());
+            }
+            TransactionType::L2Commit(data) => {
+                hasher.update(data.l2_id.as_bytes());
+                hasher.update(&data.epoch.to_le_bytes());
+                hasher.update(&data.state_root);
+                hasher.update(&data.da_hash);
+                hasher.update(data.proof_type.as_bytes());
+                hasher.update(&data.proof);
+                if let Some(ref inline_data) = data.inline_data {
+                    hasher.update(inline_data);
+                }
+            }
+            TransactionType::L2Exit(data) => {
+                hasher.update(data.l2_id.as_bytes());
+                hasher.update(&data.epoch.to_le_bytes());
+                hasher.update(&data.proof_of_inclusion);
+                hasher.update(&data.account);
+                hasher.update(&data.amount.to_le_bytes());
+                hasher.update(&data.nonce.to_le_bytes());
             }
         }
         
@@ -937,16 +1230,31 @@ impl Transaction {
             _ => None,
         }
     }
+
+    /// Check if transaction is a program call transaction
+    #[cfg(feature = "contracts")]
+    pub fn is_program_call(&self) -> bool {
+        matches!(self.tx_type, TransactionType::ProgramCall(_))
+    }
+
+    /// Get program call data if this is a program call transaction
+    #[cfg(feature = "contracts")]
+    pub fn get_program_call_data(&self) -> Option<&ProgramCallData> {
+        match &self.tx_type {
+            TransactionType::ProgramCall(data) => Some(data),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::consensus::ippan_time::IppanTimeManager;
+    use crate::consensus::hashtimer::IppanTimeManager;
 
     #[tokio::test]
     async fn test_blockdag_creation() {
-        let time_manager = Arc::new(IppanTimeManager::new(3, 30));
+        let time_manager = Arc::new(IppanTimeManager::new("test_node", 30));
         let blockdag = BlockDAG::new(time_manager);
         
         assert_eq!(blockdag.get_block_count().await, 0);
@@ -955,14 +1263,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_block_creation() {
-        let time_manager = Arc::new(IppanTimeManager::new(3, 30));
+        let time_manager = Arc::new(IppanTimeManager::new("test_node", 30));
         let blockdag = BlockDAG::new(time_manager);
         
         let validator_id = [1u8; 32];
         let hashtimer = HashTimer::new("test_node", 1, 1);
-        let transactions = vec![];
+        let tx_hashes = vec![];
         
-        let block = Block::new(1, transactions, validator_id, hashtimer);
+        let block = Block::new(1, tx_hashes, validator_id, hashtimer).unwrap();
         
         assert_eq!(block.round(), 1);
         assert_eq!(block.validator_id(), &validator_id);
@@ -995,7 +1303,7 @@ mod tests {
         let tx = Transaction::new_anchor(
             "testchain".to_string(),
             "0x1234567890abcdef".to_string(),
-            Some(crate::crosschain::external_anchor::ProofType::Signature),
+            Some(crate::crosschain::types::ProofType::External),
             vec![1; 64],
             10,
             1,

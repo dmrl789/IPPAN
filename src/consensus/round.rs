@@ -638,12 +638,12 @@ impl Default for Round {
 mod tests {
     use super::*;
     use crate::{
-        consensus::ippan_time::IppanTimeManager,
+        consensus::ippan_time::IppanTime,
     };
     
     #[tokio::test]
     async fn test_round_creation() {
-        let time_manager = Arc::new(IppanTimeManager::new(5, 1000));
+        let time_manager = Arc::new(IppanTime::new(crate::consensus::ippan_time::TimeConfig::default()));
         // Note: RandomnessEngine and StakingManager are not available in this context
         // so we'll skip those for now
         
@@ -660,7 +660,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_round_start() {
-        let time_manager = Arc::new(IppanTimeManager::new(5, 1000));
+        let time_manager = Arc::new(IppanTime::new(crate::consensus::ippan_time::TimeConfig::default()));
         // Note: RandomnessEngine and StakingManager are not available in this context
         // so we'll skip those for now
         

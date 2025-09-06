@@ -2,12 +2,60 @@
 
 ## Overview
 
-IPPAN (InterPlanetary Network) provides a comprehensive API for blockchain operations, distributed storage, DNS management, and quantum-resistant cryptography. This document describes the available API endpoints, request/response formats, and usage examples.
+IPPAN (InterPlanetary Network) provides a comprehensive API for blockchain operations, distributed storage, DNS management, quantum-resistant cryptography, and high-performance operations. This document describes the available API endpoints, request/response formats, and usage examples.
+
+## 🚀 Performance Features
+
+- **1-10 Million TPS**: Optimized for high-throughput operations
+- **Lock-Free Data Structures**: High-performance concurrent operations
+- **Memory Pooling**: Zero-copy operations with efficient memory reuse
+- **Batch Processing**: Parallel batch processing with configurable thread pools
+- **Multi-Level Caching**: L1/L2 cache hierarchy for optimal data access
+- **High-Performance Serialization**: Optimized data serialization/deserialization
+
+## 🔒 Security Features
+
+- **Quantum-Resistant Cryptography**: Post-quantum cryptographic algorithms
+- **Ed25519 Signatures**: High-performance digital signatures
+- **Key Management**: Secure key storage with automatic rotation
+- **Network Security**: TLS/SSL with mutual authentication
+- **Rate Limiting**: API rate limiting and DDoS protection
+- **Audit Logging**: Complete audit trail for all operations
 
 ## Base URL
 
 ```
 http://localhost:8080/api/v1
+```
+
+## Canonical JSON Schema
+
+All IPPAN API responses follow the canonical JSON schema specification. See [JSON Schema Specification](./JSON_SCHEMA_SPECIFICATION.md) for complete details.
+
+### Key Schema Features
+
+- **Stringified Big Integers**: All large numbers are strings to avoid JavaScript 53-bit limitations
+- **HashTimer v1**: Complete timing structure with nanosecond precision
+- **Deterministic Ordering**: Canonical ordering for transactions and blocks
+- **16-byte Node IDs**: Proper 32 hex character node identifiers
+- **32-byte Digests**: All hashes are 64 hex characters
+
+### Example Schema Response
+
+```json
+{
+  "version": "v1",
+  "round_id": "8784975040",
+  "state": "finalized",
+  "time": { 
+    "start_ns": "1756995008000000000", 
+    "end_ns": "1756995008250000000" 
+  },
+  "block_count": 8,
+  "zk_stark_proof": "b597133e7c45d8c0b3b0c9a2b1f0f9aa9c00aa11bb22cc33dd44ee55ff667788",
+  "merkle_root": "c5d42a59e1ae68e1c2a9ff00bb11aa22cc33dd44ee55ff66778899aabbccddee",
+  "blocks": [...]
+}
 ```
 
 ## Authentication
@@ -72,7 +120,164 @@ Get the current status of a transaction.
 }
 ```
 
-#### 1.3 Get Account Balance
+#### 1.3 Get Block Information
+**GET** `/blocks/{block_hash}`
+
+Get detailed information about a specific block including parent relationships.
+
+**Response:**
+```json
+{
+  "block_id": "block-54",
+  "producer": {
+    "node_id": "76687a7e80849ea0c7c0a0d9f4d0a3b1",
+    "label": "validator-1"
+  },
+  "status": "finalized",
+  "tx_count": 54,
+  "header_digest": "3440434551535e626ca478b18893979da2dbb5bbbfc4cf07dd15eb23f9310209",
+  "parents": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ],
+  "parent_rounds": ["8784975037", "8784975039"],
+  "hashtimer": {
+    "version": "v1",
+    "time": { 
+      "t_ns": "1756995008183000000", 
+      "precision_ns": 100, 
+      "drift_ns": "-116" 
+    },
+    "position": { 
+      "round": "8784975040", 
+      "seq": 1, 
+      "kind": "Block" 
+    },
+    "node_id": "76687a7e80849ea0c7c0a0d9f4d0a3b1",
+    "payload_digest": "a847df59a9e8a893351ba4d26508cdefa2b4c6d8e0f1a2b3c4d5e6f708192a3b",
+    "hash_timer_digest": "1f5b7c3a2e0d4c9b8a76f5e4d3c2b1a0ffeeddccbbaa99887766554433221100"
+  },
+  "txs": [...]
+}
+```
+
+#### 1.4 Get Block Parents
+**GET** `/blocks/{block_hash}/parents`
+
+Get the parent blocks of a specific block.
+
+**Response:**
+```json
+{
+  "block_hash": "3440434551535e626ca478b18893979da2dbb5bbbfc4cf07dd15eb23f9310209",
+  "parents": [
+    {
+      "parent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "parent_round": "8784975037",
+      "parent_height": 12343
+    },
+    {
+      "parent_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "parent_round": "8784975039",
+      "parent_height": 12344
+    }
+  ]
+}
+```
+
+#### 1.5 Get Block Ancestors
+**GET** `/blocks/{block_hash}/ancestors?max_depth=10`
+
+Get all ancestor blocks up to a specified depth.
+
+**Query Parameters:**
+- `max_depth` (optional): Maximum depth to traverse (default: 10, max: 100)
+
+**Response:**
+```json
+{
+  "block_hash": "3440434551535e626ca478b18893979da2dbb5bbbfc4cf07dd15eb23f9310209",
+  "ancestors": [
+    {
+      "ancestor_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ancestor_round": "8784975037",
+      "ancestor_height": 12343,
+      "depth": 1
+    },
+    {
+      "ancestor_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "ancestor_round": "8784975035",
+      "ancestor_height": 12341,
+      "depth": 2
+    }
+  ]
+}
+```
+
+#### 1.6 Get Block Descendants
+**GET** `/blocks/{block_hash}/descendants?max_depth=10`
+
+Get all descendant blocks up to a specified depth.
+
+**Query Parameters:**
+- `max_depth` (optional): Maximum depth to traverse (default: 10, max: 100)
+
+**Response:**
+```json
+{
+  "block_hash": "3440434551535e626ca478b18893979da2dbb5bbbfc4cf07dd15eb23f9310209",
+  "descendants": [
+    {
+      "descendant_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "descendant_round": "8784975041",
+      "descendant_height": 12346,
+      "depth": 1
+    }
+  ]
+}
+```
+
+#### 1.7 Get Round Information
+**GET** `/rounds/{round_id}`
+
+Get information about a specific consensus round including all blocks.
+
+**Response:**
+```json
+{
+  "version": "v1",
+  "round_id": "8784975040",
+  "state": "finalized",
+  "time": { 
+    "start_ns": "1756995008000000000", 
+    "end_ns": "1756995008250000000" 
+  },
+  "block_count": 8,
+  "zk_stark_proof": "b597133e7c45d8c0b3b0c9a2b1f0f9aa9c00aa11bb22cc33dd44ee55ff667788",
+  "merkle_root": "c5d42a59e1ae68e1c2a9ff00bb11aa22cc33dd44ee55ff66778899aabbccddee",
+  "blocks": [
+    {
+      "block_id": "block-54",
+      "producer": {
+        "node_id": "76687a7e80849ea0c7c0a0d9f4d0a3b1",
+        "label": "validator-1"
+      },
+      "status": "finalized",
+      "tx_count": 54,
+      "header_digest": "3440434551535e626ca478b18893979da2dbb5bbbfc4cf07dd15eb23f9310209",
+      "parents": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ],
+      "parent_rounds": ["8784975037", "8784975039"],
+      "hashtimer": {...},
+      "txs": [...]
+    }
+  ]
+}
+```
+
+#### 1.8 Get Account Balance
 **GET** `/accounts/{address}/balance`
 
 Get the current balance of an account.

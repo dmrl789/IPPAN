@@ -485,7 +485,7 @@ impl Default for ConsensusConfig {
     fn default() -> Self {
         Self {
             block_time: 10, // 10 seconds
-            max_block_size: 1024 * 1024, // 1 MB
+            max_block_size: 24 * 1024, // 24 KB soft target (clamped to 32 KB hard limit)
             validators_per_round: 21,
             hashtimer_precision: 100, // 0.1 microseconds
             time_sync_interval: 60, // 1 minute

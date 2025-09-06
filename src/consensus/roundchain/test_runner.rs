@@ -206,12 +206,13 @@ impl ZkTestRunner {
                 0, // sequence
             );
             
+            let tx_hashes: Vec<[u8; 32]> = transactions.iter().map(|tx| tx.hash).collect();
             let block = Block::new(
                 round_number,
-                transactions,
+                tx_hashes,
                 [1u8; 32], // validator ID
                 hashtimer,
-            );
+            )?;
             
             blocks.push(block);
         }

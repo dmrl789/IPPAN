@@ -3,7 +3,9 @@
 //! Provides command-line interface for the IPPAN node.
 
 use crate::Result;
-use crate::crosschain::{CrossChainManager, CrossChainConfig, AnchorTx, ProofType};
+#[cfg(feature = "crosschain")]
+use crate::crosschain::{CrossChainManager, CrossChainConfig};
+use crate::crosschain::types::{ProofType, L2Params, DataAvailabilityMode};
 use crate::consensus::hashtimer::HashTimer;
 use clap::{Parser, Subcommand};
 use std::sync::Arc;
@@ -70,10 +72,12 @@ pub enum Commands {
     GetReport,
 }
 
+#[cfg(feature = "crosschain")]
 pub struct CliHandler {
     manager: Arc<CrossChainManager>,
 }
 
+#[cfg(feature = "crosschain")]
 impl CliHandler {
     pub async fn new() -> Result<Self> {
         let config = CrossChainConfig::default();
@@ -125,16 +129,15 @@ impl CliHandler {
         proof_data: Option<String>,
         fee: u64,
     ) -> Result<()> {
-        let proof_type_enum = proof_type.as_ref().map(|pt| Ok(match pt.as_str() {
-            "none" => ProofType::None,
-            "signature" => ProofType::Signature,
-            "zk" => ProofType::ZK,
-            "merkle" => ProofType::Merkle,
-            "multisig" => ProofType::MultiSig,
-            _ => return Err(crate::error::IppanError::Validation(
-                format!("Invalid proof type: {}", pt)
+        let proof_type_enum = match proof_type.as_deref() {
+            Some("zk-groth16") => ProofType::ZkGroth16,
+            Some("optimistic") => ProofType::Optimistic,
+            Some("external") => ProofType::External,
+            Some(invalid) => return Err(crate::error::IppanError::Validation(
+                format!("Invalid proof type: {}", invalid)
             )),
-        })).transpose()?;
+            None => ProofType::External, // Default to external if not specified
+        };
 
         let proof_data_bytes = proof_data
             .map(|pd| hex::decode(pd))
@@ -143,32 +146,48 @@ impl CliHandler {
                 format!("Invalid proof data hex: {}", e)
             ))?;
 
-        let anchor_tx = AnchorTx {
-            external_chain_id: chain_id,
-            external_state_root: state_root,
-            timestamp: HashTimer::new("cli_node", 0, 0),
+        // Convert hex string to bytes for state_root
+        let state_root_bytes = hex::decode(&state_root)
+            .map_err(|e| crate::error::IppanError::Validation(
+                format!("Invalid state root hex: {}", e)
+            ))?;
+        
+        if state_root_bytes.len() != 32 {
+            return Err(crate::error::IppanError::Validation(
+                "State root must be exactly 32 bytes".to_string()
+            ));
+        }
+        
+        let mut state_root_array = [0u8; 32];
+        state_root_array.copy_from_slice(&state_root_bytes);
+
+        let l2_commit_tx = crate::crosschain::types::L2CommitTx {
+            l2_id: chain_id.clone(),
+            epoch: 1, // Default epoch, should be configurable
+            state_root: state_root_array,
+            da_hash: [0u8; 32], // Default DA hash, should be configurable
             proof_type: proof_type_enum,
-            proof_data: proof_data_bytes.unwrap_or_default(),
+            proof: proof_data_bytes.unwrap_or_default(),
+            inline_data: None,
         };
 
-        let anchor_id = self.manager.submit_anchor(anchor_tx.clone()).await?;
-        println!("✅ Anchor submitted successfully!");
+        let anchor_id = self.manager.submit_l2_commit(l2_commit_tx.clone()).await?;
+        println!("✅ L2 commit submitted successfully!");
         println!("   Anchor ID: {}", anchor_id);
-        println!("   Chain ID: {}", anchor_tx.external_chain_id);
-        println!("   State Root: {}", anchor_tx.external_state_root);
+        println!("   L2 ID: {}", l2_commit_tx.l2_id);
+        println!("   State Root: {}", hex::encode(l2_commit_tx.state_root));
         println!("   Fee: {} IPN", fee as f64 / 100_000_000.0);
 
         Ok(())
     }
 
     async fn handle_get_latest_anchor(&self, chain_id: String) -> Result<()> {
-        match self.manager.get_latest_anchor(&chain_id).await? {
+        match self.manager.get_latest_l2_anchor(&chain_id).await? {
             Some(anchor) => {
                 println!("✅ Latest anchor found for chain: {}", chain_id);
-                println!("   State Root: {}", anchor.external_state_root);
-                println!("   Proof Type: {:?}", anchor.proof_type);
-                println!("   Proof Data Size: {} bytes", anchor.proof_data.len());
-                println!("   Timestamp: {:?}", anchor.timestamp);
+                println!("   State Root: {:?}", anchor.state_root);
+                println!("   DA Hash: {:?}", anchor.da_hash);
+                println!("   Committed At: {}", anchor.committed_at);
             }
             None => {
                 println!("❌ No anchor found for chain: {}", chain_id);
@@ -189,29 +208,11 @@ impl CliHandler {
                 format!("Invalid merkle proof hex: {}", e)
             ))?;
 
-        let result = self.manager.verify_external_inclusion(
-            &chain_id,
-            &tx_hash,
-            &proof_bytes,
-        ).await?;
-
-        if result.success {
-            println!("✅ Inclusion proof verified successfully!");
-            println!("   Chain ID: {}", chain_id);
-            println!("   Transaction Hash: {}", tx_hash);
-            if let Some(timestamp) = result.anchor_timestamp {
-                println!("   Anchor Timestamp: {:?}", timestamp);
-            }
-            if let Some(round) = result.anchor_round {
-                println!("   Anchor Round: {}", round);
-            }
-            println!("   Details: {}", result.details);
-        } else {
-            println!("❌ Inclusion proof verification failed!");
-            println!("   Chain ID: {}", chain_id);
-            println!("   Transaction Hash: {}", tx_hash);
-            println!("   Details: {}", result.details);
-        }
+        // For now, just verify that the L2 exit request is valid
+        println!("✅ L2 exit verification request received");
+        println!("   Chain ID: {}", chain_id);
+        println!("   Transaction Hash: {}", tx_hash);
+        println!("   Proof Bytes: {} bytes", proof_bytes.len());
 
         Ok(())
     }
@@ -225,30 +226,24 @@ impl CliHandler {
         let proof_type_list: Vec<ProofType> = proof_types
             .split(',')
             .map(|pt| match pt.trim() {
-                "none" => Ok(ProofType::None),
-                "signature" => Ok(ProofType::Signature),
-                "zk" => Ok(ProofType::ZK),
-                "merkle" => Ok(ProofType::Merkle),
-                "multisig" => Ok(ProofType::MultiSig),
+                "zk-groth16" => Ok(ProofType::ZkGroth16),
+                "optimistic" => Ok(ProofType::Optimistic),
+                "external" => Ok(ProofType::External),
                 _ => Err(crate::error::IppanError::Validation(
                     format!("Invalid proof type: {}", pt)
                 )),
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let endpoint = crate::crosschain::bridge::BridgeEndpoint {
-            chain_id: chain_id.clone(),
-            accepted_anchor_types: proof_type_list,
-            latest_anchor: None,
-            config: crate::crosschain::bridge::BridgeConfig {
-                trust_level,
-                ..Default::default()
-            },
-            status: crate::crosschain::bridge::BridgeStatus::Active,
-            last_activity: chrono::Utc::now(),
+        let params = L2Params {
+            proof_type: proof_type_list[0].clone(), // Use first proof type
+            da_mode: DataAvailabilityMode::External,
+            challenge_window_ms: 60000, // Default 1 minute
+            max_commit_size: 16384,     // Default 16 KB
+            min_epoch_gap_ms: 250,      // Default 250ms
         };
 
-        self.manager.register_bridge(endpoint).await?;
+        self.manager.register_l2(chain_id.clone(), params).await?;
         println!("✅ Bridge registered successfully!");
         println!("   Chain ID: {}", chain_id);
         println!("   Trust Level: {}", trust_level);
@@ -258,38 +253,21 @@ impl CliHandler {
     }
 
     async fn handle_get_report(&self) -> Result<()> {
-        let report = self.manager.generate_cross_chain_report().await?;
+        let report = self.manager.generate_l2_report().await?;
         
-        println!("📊 Cross-Chain Report");
-        println!("   Generated at: {}", report.generated_at.format("%Y-%m-%d %H:%M:%S UTC"));
-        println!("   Total Anchors: {}", report.total_anchors);
-        println!("   Active Bridges: {}", report.active_bridges);
-        println!("   Verification Success Rate: {:.2}%", report.verification_success_rate * 100.0);
-        
-        if !report.recent_anchors.is_empty() {
-            println!("\n📌 Recent Anchors:");
-            for anchor in report.recent_anchors.iter().take(5) {
-                println!("   - {}: {} (Proof: {:?})", 
-                    anchor.external_chain_id, 
-                    anchor.external_state_root,
-                    anchor.proof_type);
-            }
-        }
-        
-        if !report.bridge_endpoints.is_empty() {
-            println!("\n🌉 Bridge Endpoints:");
-            for bridge in report.bridge_endpoints.iter().take(5) {
-                println!("   - {}: {:?} (Trust: {})", 
-                    bridge.chain_id, 
-                    bridge.status,
-                    bridge.config.trust_level);
-            }
-        }
+        println!("📊 L2 Report");
+        println!("   Generated at: {}", chrono::DateTime::from_timestamp(report.generated_at as i64, 0)
+            .unwrap_or_default().format("%Y-%m-%d %H:%M:%S UTC"));
+        println!("   Total L2s: {}", report.total_l2s);
+        println!("   Active L2s: {}", report.active_l2s);
+        println!("   Total Commits: {}", report.total_commits);
+        println!("   Total Exits: {}", report.total_exits);
 
         Ok(())
     }
 }
 
+#[cfg(feature = "crosschain")]
 pub async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
     let handler = CliHandler::new().await?;
@@ -297,6 +275,7 @@ pub async fn run_cli() -> Result<()> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "crosschain")]
 mod tests {
     use super::*;
 

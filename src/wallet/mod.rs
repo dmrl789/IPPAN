@@ -30,8 +30,8 @@ impl WalletManager {
     pub async fn new(config: Config) -> Result<Self> {
         let m2m_payments = Arc::new(RwLock::new(m2m_payments::M2MPaymentSystem::new()));
         let keys = Arc::new(RwLock::new(ed25519::Ed25519Manager::new()));
-        let payments = Arc::new(RwLock::new(payments::PaymentProcessor::new()));
-        let staking = Arc::new(RwLock::new(stake::StakeManager::new()));
+        let payments = Arc::new(RwLock::new(payments::PaymentProcessor::new()?));
+        let staking = Arc::new(RwLock::new(stake::StakeManager::new()?));
 
         Ok(Self {
             config,
@@ -92,7 +92,7 @@ impl WalletManager {
         timeout_hours: u64,
     ) -> Result<m2m_payments::PaymentChannel> {
         let mut m2m = self.m2m_payments.write().await;
-        m2m.create_payment_channel(sender, recipient, deposit_amount, timeout_hours)
+        m2m.create_payment_channel(sender, recipient, deposit_amount, Some(timeout_hours)).await
     }
 
     /// Process a micro-payment
@@ -103,7 +103,9 @@ impl WalletManager {
         tx_type: m2m_payments::MicroTransactionType,
     ) -> Result<m2m_payments::MicroTransaction> {
         let mut m2m = self.m2m_payments.write().await;
-        m2m.process_micro_payment(channel_id, amount, tx_type)
+        // TODO: Fix this - method doesn't exist
+        // For now, return an error
+        Err(crate::error::IppanError::Validation("Method not implemented".to_string()))
     }
 
     /// Get payment channel information

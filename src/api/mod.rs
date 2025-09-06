@@ -7,6 +7,7 @@ pub mod crosschain;
 pub mod dns_cli;
 pub mod user_cli; // NEW - User-facing transaction CLI
 pub mod http;
+// pub mod v1; // NEW - REST API v1 endpoints (temporarily disabled due to Axum compatibility issues)
 // pub mod explorer;
 
 use crate::node::IppanNode;

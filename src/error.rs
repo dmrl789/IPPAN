@@ -73,6 +73,10 @@ pub enum IppanError {
     Rustls(String),
     #[error("Invalid DNS name: {0}")]
     InvalidDnsName(String),
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+    #[error("Security violation: {0}")]
+    Security(String),
 }
 
 impl From<ed25519_dalek::ed25519::Error> for IppanError {
@@ -81,8 +85,9 @@ impl From<ed25519_dalek::ed25519::Error> for IppanError {
     }
 }
 
-impl From<crate::crosschain::foreign_verifier::VerificationError> for IppanError {
-    fn from(err: crate::crosschain::foreign_verifier::VerificationError) -> Self {
+#[cfg(feature = "crosschain")]
+impl From<crate::crosschain::foreign_verifier::VerifyError> for IppanError {
+    fn from(err: crate::crosschain::foreign_verifier::VerifyError) -> Self {
         IppanError::Verification(format!("{}", err))
     }
 }

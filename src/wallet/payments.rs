@@ -1,4 +1,4 @@
-//! Payment processing for IPPAN wallet
+//! Payment management for IPPAN wallet
 
 use crate::Result;
 use crate::utils::address::validate_ippan_address;
@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use chrono::{DateTime, Utc};
+use sled;
+use std::path::PathBuf;
 
 /// Payment transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,19 +62,51 @@ pub struct PaymentProcessor {
     min_fee: u64,
     /// Maximum transaction amount
     max_amount: u64,
+    /// Database for persistence
+    db: sled::Db,
 }
 
 impl PaymentProcessor {
     /// Create a new payment processor
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        Self::new_with_db_path(None)
+    }
+
+    /// Create a new payment processor with custom database path (for testing)
+    pub fn new_with_db_path(custom_path: Option<PathBuf>) -> Result<Self> {
+        let db_path = if let Some(path) = custom_path {
+            path
+        } else {
+            Self::get_db_path()?
+        };
+        
+        let db = sled::open(&db_path)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open payment database: {}", e)))?;
+        
+        Ok(Self {
             pending_transactions: HashMap::new(),
             confirmed_transactions: HashMap::new(),
             failed_transactions: HashMap::new(),
             tx_counter: 0,
             min_fee: 1000, // 0.001 IPN
             max_amount: 1_000_000_000_000, // 1M IPN
-        }
+            db,
+        })
+    }
+
+    /// Get database path
+    fn get_db_path() -> Result<PathBuf> {
+        let mut path = dirs::data_dir()
+            .ok_or_else(|| crate::error::IppanError::Storage("Could not determine data directory".to_string()))?;
+        path.push("ippan");
+        path.push("wallet");
+        path.push("payments");
+        
+        // Create directory if it doesn't exist
+        std::fs::create_dir_all(&path)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to create payment database directory: {}", e)))?;
+        
+        Ok(path)
     }
 
     /// Initialize the payment processor
@@ -99,13 +133,13 @@ impl PaymentProcessor {
         memo: Option<String>,
     ) -> Result<PaymentTransaction> {
         // Validate addresses
-        if !validate_ippan_address(&from) {
+        if validate_ippan_address(&from).is_err() {
             return Err(crate::error::IppanError::Validation(
                 format!("Invalid sender address: {}", from)
             ));
         }
         
-        if !validate_ippan_address(&to) {
+        if validate_ippan_address(&to).is_err() {
             return Err(crate::error::IppanError::Validation(
                 format!("Invalid recipient address: {}", to)
             ));
@@ -298,13 +332,123 @@ impl PaymentProcessor {
 
     /// Load transactions from storage
     async fn load_transactions(&mut self) -> Result<()> {
-        // TODO: Implement transaction loading from persistent storage
+        log::info!("Loading payment transactions from persistent storage...");
+        
+        // Load pending transactions
+        if let Ok(pending_tree) = self.db.open_tree("pending_transactions") {
+            for result in pending_tree.iter() {
+                let (key, value) = result
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to read pending transaction: {}", e)))?;
+                
+                let tx_id = String::from_utf8(key.to_vec())
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Invalid transaction ID: {}", e)))?;
+                
+                let transaction: PaymentTransaction = bincode::deserialize(&value)
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize pending transaction: {}", e)))?;
+                
+                self.pending_transactions.insert(tx_id, transaction);
+            }
+        }
+        
+        // Load confirmed transactions
+        if let Ok(confirmed_tree) = self.db.open_tree("confirmed_transactions") {
+            for result in confirmed_tree.iter() {
+                let (key, value) = result
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to read confirmed transaction: {}", e)))?;
+                
+                let tx_id = String::from_utf8(key.to_vec())
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Invalid transaction ID: {}", e)))?;
+                
+                let transaction: PaymentTransaction = bincode::deserialize(&value)
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize confirmed transaction: {}", e)))?;
+                
+                self.confirmed_transactions.insert(tx_id, transaction);
+            }
+        }
+        
+        // Load failed transactions
+        if let Ok(failed_tree) = self.db.open_tree("failed_transactions") {
+            for result in failed_tree.iter() {
+                let (key, value) = result
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to read failed transaction: {}", e)))?;
+                
+                let tx_id = String::from_utf8(key.to_vec())
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Invalid transaction ID: {}", e)))?;
+                
+                let transaction: PaymentTransaction = bincode::deserialize(&value)
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize failed transaction: {}", e)))?;
+                
+                self.failed_transactions.insert(tx_id, transaction);
+            }
+        }
+        
+        // Load transaction counter
+        if let Ok(Some(counter_value)) = self.db.get("tx_counter") {
+            self.tx_counter = bincode::deserialize(&counter_value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize transaction counter: {}", e)))?;
+        }
+        
+        log::info!("Loaded {} pending, {} confirmed, {} failed transactions", 
+            self.pending_transactions.len(), self.confirmed_transactions.len(), 
+            self.failed_transactions.len());
+        
         Ok(())
     }
 
     /// Save transactions to storage
     async fn save_transactions(&self) -> Result<()> {
-        // TODO: Implement transaction saving to persistent storage
+        log::info!("Saving payment transactions to persistent storage...");
+        
+        // Save pending transactions
+        let pending_tree = self.db.open_tree("pending_transactions")
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open pending transactions tree: {}", e)))?;
+        
+        for (tx_id, transaction) in &self.pending_transactions {
+            let key = tx_id.as_bytes();
+            let value = bincode::serialize(transaction)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize pending transaction: {}", e)))?;
+            pending_tree.insert(key, value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save pending transaction: {}", e)))?;
+        }
+        
+        // Save confirmed transactions
+        let confirmed_tree = self.db.open_tree("confirmed_transactions")
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open confirmed transactions tree: {}", e)))?;
+        
+        for (tx_id, transaction) in &self.confirmed_transactions {
+            let key = tx_id.as_bytes();
+            let value = bincode::serialize(transaction)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize confirmed transaction: {}", e)))?;
+            confirmed_tree.insert(key, value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save confirmed transaction: {}", e)))?;
+        }
+        
+        // Save failed transactions
+        let failed_tree = self.db.open_tree("failed_transactions")
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open failed transactions tree: {}", e)))?;
+        
+        for (tx_id, transaction) in &self.failed_transactions {
+            let key = tx_id.as_bytes();
+            let value = bincode::serialize(transaction)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize failed transaction: {}", e)))?;
+            failed_tree.insert(key, value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save failed transaction: {}", e)))?;
+        }
+        
+        // Save transaction counter
+        let counter_value = bincode::serialize(&self.tx_counter)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize transaction counter: {}", e)))?;
+        self.db.insert("tx_counter", counter_value)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save transaction counter: {}", e)))?;
+        
+        // Flush database to ensure data is written to disk
+        self.db.flush()
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to flush database: {}", e)))?;
+        
+        log::info!("Saved {} pending, {} confirmed, {} failed transactions", 
+            self.pending_transactions.len(), self.confirmed_transactions.len(), 
+            self.failed_transactions.len());
+        
         Ok(())
     }
 }
@@ -325,10 +469,31 @@ pub struct PaymentStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::address::generate_ippan_address;
+    use ed25519_dalek::SigningKey;
+    use rand::RngCore;
+
+    fn generate_test_addresses() -> (String, String) {
+        // Generate valid test addresses
+        let mut rng = rand::thread_rng();
+        let mut key1_bytes = [0u8; 32];
+        let mut key2_bytes = [0u8; 32];
+        rng.fill_bytes(&mut key1_bytes);
+        rng.fill_bytes(&mut key2_bytes);
+        
+        let key1 = SigningKey::from_bytes(&key1_bytes);
+        let key2 = SigningKey::from_bytes(&key2_bytes);
+        
+        let addr1 = generate_ippan_address(&key1.verifying_key().to_bytes());
+        let addr2 = generate_ippan_address(&key2.verifying_key().to_bytes());
+        
+        (addr1, addr2)
+    }
 
     #[tokio::test]
     async fn test_payment_processor_creation() {
-        let mut processor = PaymentProcessor::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_payments_{}", rand::random::<u64>()));
+        let mut processor = PaymentProcessor::new_with_db_path(Some(test_db_path)).unwrap();
         processor.initialize().await.unwrap();
         
         assert_eq!(processor.min_fee, 1000);
@@ -337,12 +502,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_payment() {
-        let mut processor = PaymentProcessor::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_payments_{}", rand::random::<u64>()));
+        let mut processor = PaymentProcessor::new_with_db_path(Some(test_db_path)).unwrap();
         processor.initialize().await.unwrap();
         
+        let (from_addr, to_addr) = generate_test_addresses();
+        
         let payment = processor.create_payment(
-            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
+            from_addr,
+            to_addr,
             1000000, // 1 IPN
             1000,    // 0.001 IPN fee
             Some("Test payment".to_string()),
@@ -356,12 +524,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_address() {
-        let mut processor = PaymentProcessor::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_payments_{}", rand::random::<u64>()));
+        let mut processor = PaymentProcessor::new_with_db_path(Some(test_db_path)).unwrap();
         processor.initialize().await.unwrap();
+        
+        let (_, to_addr) = generate_test_addresses();
         
         let result = processor.create_payment(
             "invalid_address".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
+            to_addr,
             1000000,
             1000,
             None,
@@ -372,12 +543,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_confirm_payment() {
-        let mut processor = PaymentProcessor::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_payments_{}", rand::random::<u64>()));
+        let mut processor = PaymentProcessor::new_with_db_path(Some(test_db_path)).unwrap();
         processor.initialize().await.unwrap();
         
+        let (from_addr, to_addr) = generate_test_addresses();
+        
         let payment = processor.create_payment(
-            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
+            from_addr,
+            to_addr,
             1000000,
             1000,
             None,
@@ -391,13 +565,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_payment_stats() {
-        let mut processor = PaymentProcessor::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_payments_{}", rand::random::<u64>()));
+        let mut processor = PaymentProcessor::new_with_db_path(Some(test_db_path)).unwrap();
         processor.initialize().await.unwrap();
+        
+        let (from_addr, to_addr) = generate_test_addresses();
         
         // Create and confirm a payment
         let payment = processor.create_payment(
-            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
+            from_addr,
+            to_addr,
             1000000,
             1000,
             None,

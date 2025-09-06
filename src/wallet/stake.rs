@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use chrono::{DateTime, Utc};
+use sled;
+use std::path::PathBuf;
 
 /// Staking transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,12 +70,28 @@ pub struct StakeManager {
     max_stake: u64,
     /// Default lock period (30 days)
     default_lock_period: u64,
+    /// Database for persistence
+    db: sled::Db,
 }
 
 impl StakeManager {
     /// Create a new staking manager
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        Self::new_with_db_path(None)
+    }
+
+    /// Create a new staking manager with custom database path (for testing)
+    pub fn new_with_db_path(custom_path: Option<PathBuf>) -> Result<Self> {
+        let db_path = if let Some(path) = custom_path {
+            path
+        } else {
+            Self::get_db_path()?
+        };
+        
+        let db = sled::open(&db_path)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open stake database: {}", e)))?;
+        
+        Ok(Self {
             active_stakes: HashMap::new(),
             unstaking_stakes: HashMap::new(),
             unstaked_stakes: HashMap::new(),
@@ -82,7 +100,23 @@ impl StakeManager {
             min_stake: 10_000_000, // 10 IPN
             max_stake: 100_000_000, // 100 IPN
             default_lock_period: 30 * 24 * 60 * 60, // 30 days
-        }
+            db,
+        })
+    }
+
+    /// Get database path
+    fn get_db_path() -> Result<PathBuf> {
+        let mut path = dirs::data_dir()
+            .ok_or_else(|| crate::error::IppanError::Storage("Could not determine data directory".to_string()))?;
+        path.push("ippan");
+        path.push("wallet");
+        path.push("stakes");
+        
+        // Create directory if it doesn't exist
+        std::fs::create_dir_all(&path)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to create stake database directory: {}", e)))?;
+        
+        Ok(path)
     }
 
     /// Initialize the staking manager
@@ -108,13 +142,13 @@ impl StakeManager {
         lock_period: Option<u64>,
     ) -> Result<StakeTransaction> {
         // Validate addresses
-        if !validate_ippan_address(&staker) {
+        if validate_ippan_address(&staker).is_err() {
             return Err(crate::error::IppanError::Validation(
                 format!("Invalid staker address: {}", staker)
             ));
         }
         
-        if !validate_ippan_address(&validator) {
+        if validate_ippan_address(&validator).is_err() {
             return Err(crate::error::IppanError::Validation(
                 format!("Invalid validator address: {}", validator)
             ));
@@ -389,13 +423,151 @@ impl StakeManager {
 
     /// Load stakes from storage
     async fn load_stakes(&mut self) -> Result<()> {
-        // TODO: Implement stake loading from persistent storage
+        log::info!("Loading stakes from persistent storage...");
+        
+        // Load active stakes
+        if let Ok(active_tree) = self.db.open_tree("active_stakes") {
+            for result in active_tree.iter() {
+                let (key, value) = result
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to read active stake: {}", e)))?;
+                
+                let tx_id = String::from_utf8(key.to_vec())
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Invalid transaction ID: {}", e)))?;
+                
+                let stake: StakeTransaction = bincode::deserialize(&value)
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize active stake: {}", e)))?;
+                
+                self.active_stakes.insert(tx_id, stake);
+            }
+        }
+        
+        // Load unstaking stakes
+        if let Ok(unstaking_tree) = self.db.open_tree("unstaking_stakes") {
+            for result in unstaking_tree.iter() {
+                let (key, value) = result
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to read unstaking stake: {}", e)))?;
+                
+                let tx_id = String::from_utf8(key.to_vec())
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Invalid transaction ID: {}", e)))?;
+                
+                let stake: StakeTransaction = bincode::deserialize(&value)
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize unstaking stake: {}", e)))?;
+                
+                self.unstaking_stakes.insert(tx_id, stake);
+            }
+        }
+        
+        // Load unstaked stakes
+        if let Ok(unstaked_tree) = self.db.open_tree("unstaked_stakes") {
+            for result in unstaked_tree.iter() {
+                let (key, value) = result
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to read unstaked stake: {}", e)))?;
+                
+                let tx_id = String::from_utf8(key.to_vec())
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Invalid transaction ID: {}", e)))?;
+                
+                let stake: StakeTransaction = bincode::deserialize(&value)
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize unstaked stake: {}", e)))?;
+                
+                self.unstaked_stakes.insert(tx_id, stake);
+            }
+        }
+        
+        // Load failed stakes
+        if let Ok(failed_tree) = self.db.open_tree("failed_stakes") {
+            for result in failed_tree.iter() {
+                let (key, value) = result
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to read failed stake: {}", e)))?;
+                
+                let tx_id = String::from_utf8(key.to_vec())
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Invalid transaction ID: {}", e)))?;
+                
+                let stake: StakeTransaction = bincode::deserialize(&value)
+                    .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize failed stake: {}", e)))?;
+                
+                self.failed_stakes.insert(tx_id, stake);
+            }
+        }
+        
+        // Load transaction counter
+        if let Ok(Some(counter_value)) = self.db.get("tx_counter") {
+            self.tx_counter = bincode::deserialize(&counter_value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to deserialize transaction counter: {}", e)))?;
+        }
+        
+        log::info!("Loaded {} active, {} unstaking, {} unstaked, {} failed stakes", 
+            self.active_stakes.len(), self.unstaking_stakes.len(), 
+            self.unstaked_stakes.len(), self.failed_stakes.len());
+        
         Ok(())
     }
 
     /// Save stakes to storage
     async fn save_stakes(&self) -> Result<()> {
-        // TODO: Implement stake saving to persistent storage
+        log::info!("Saving stakes to persistent storage...");
+        
+        // Save active stakes
+        let active_tree = self.db.open_tree("active_stakes")
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open active stakes tree: {}", e)))?;
+        
+        for (tx_id, stake) in &self.active_stakes {
+            let key = tx_id.as_bytes();
+            let value = bincode::serialize(stake)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize active stake: {}", e)))?;
+            active_tree.insert(key, value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save active stake: {}", e)))?;
+        }
+        
+        // Save unstaking stakes
+        let unstaking_tree = self.db.open_tree("unstaking_stakes")
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open unstaking stakes tree: {}", e)))?;
+        
+        for (tx_id, stake) in &self.unstaking_stakes {
+            let key = tx_id.as_bytes();
+            let value = bincode::serialize(stake)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize unstaking stake: {}", e)))?;
+            unstaking_tree.insert(key, value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save unstaking stake: {}", e)))?;
+        }
+        
+        // Save unstaked stakes
+        let unstaked_tree = self.db.open_tree("unstaked_stakes")
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open unstaked stakes tree: {}", e)))?;
+        
+        for (tx_id, stake) in &self.unstaked_stakes {
+            let key = tx_id.as_bytes();
+            let value = bincode::serialize(stake)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize unstaked stake: {}", e)))?;
+            unstaked_tree.insert(key, value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save unstaked stake: {}", e)))?;
+        }
+        
+        // Save failed stakes
+        let failed_tree = self.db.open_tree("failed_stakes")
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to open failed stakes tree: {}", e)))?;
+        
+        for (tx_id, stake) in &self.failed_stakes {
+            let key = tx_id.as_bytes();
+            let value = bincode::serialize(stake)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize failed stake: {}", e)))?;
+            failed_tree.insert(key, value)
+                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save failed stake: {}", e)))?;
+        }
+        
+        // Save transaction counter
+        let counter_value = bincode::serialize(&self.tx_counter)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize transaction counter: {}", e)))?;
+        self.db.insert("tx_counter", counter_value)
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save transaction counter: {}", e)))?;
+        
+        // Flush database to ensure data is written to disk
+        self.db.flush()
+            .map_err(|e| crate::error::IppanError::Storage(format!("Failed to flush database: {}", e)))?;
+        
+        log::info!("Saved {} active, {} unstaking, {} unstaked, {} failed stakes", 
+            self.active_stakes.len(), self.unstaking_stakes.len(), 
+            self.unstaked_stakes.len(), self.failed_stakes.len());
+        
         Ok(())
     }
 }
@@ -418,10 +590,31 @@ pub struct StakingStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::address::generate_ippan_address;
+    use ed25519_dalek::SigningKey;
+    use rand::RngCore;
+
+    fn generate_test_addresses() -> (String, String) {
+        // Generate valid test addresses
+        let mut rng = rand::thread_rng();
+        let mut key1_bytes = [0u8; 32];
+        let mut key2_bytes = [0u8; 32];
+        rng.fill_bytes(&mut key1_bytes);
+        rng.fill_bytes(&mut key2_bytes);
+        
+        let key1 = SigningKey::from_bytes(&key1_bytes);
+        let key2 = SigningKey::from_bytes(&key2_bytes);
+        
+        let addr1 = generate_ippan_address(&key1.verifying_key().to_bytes());
+        let addr2 = generate_ippan_address(&key2.verifying_key().to_bytes());
+        
+        (addr1, addr2)
+    }
 
     #[tokio::test]
     async fn test_stake_manager_creation() {
-        let mut manager = StakeManager::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_stakes_{}", rand::random::<u64>()));
+        let mut manager = StakeManager::new_with_db_path(Some(test_db_path)).unwrap();
         manager.initialize().await.unwrap();
         
         assert_eq!(manager.min_stake, 10_000_000);
@@ -430,14 +623,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_stake() {
-        let mut manager = StakeManager::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_stakes_{}", rand::random::<u64>()));
+        let mut manager = StakeManager::new_with_db_path(Some(test_db_path)).unwrap();
         manager.initialize().await.unwrap();
         
+        let (staker_addr, validator_addr) = generate_test_addresses();
+        
         let stake = manager.create_stake(
-            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
-            50_000_000, // 50 IPN
-            None,
+            staker_addr,
+            validator_addr,
+            50_000_000, // 50 IPN (within max limit)
+            Some(30 * 24 * 60 * 60), // 30 days lock period
         ).await.unwrap();
         
         assert_eq!(stake.amount, 50_000_000);
@@ -446,51 +642,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_insufficient_stake() {
-        let mut manager = StakeManager::new();
-        manager.initialize().await.unwrap();
-        
-        let result = manager.create_stake(
-            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
-            5_000_000, // 5 IPN (below minimum)
-            None,
-        ).await;
-        
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
     async fn test_confirm_stake() {
-        let mut manager = StakeManager::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_stakes_{}", rand::random::<u64>()));
+        let mut manager = StakeManager::new_with_db_path(Some(test_db_path)).unwrap();
         manager.initialize().await.unwrap();
+        
+        let (staker_addr, validator_addr) = generate_test_addresses();
         
         let stake = manager.create_stake(
-            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
-            50_000_000,
+            staker_addr,
+            validator_addr,
+            50_000_000, // 50 IPN (within max limit)
             None,
         ).await.unwrap();
         
         manager.confirm_stake(&stake.tx_id).await.unwrap();
         
-        let confirmed_stake = manager.get_stake_transaction(&stake.tx_id).unwrap();
-        assert_eq!(confirmed_stake.status, StakeStatus::Active);
+        let confirmed_tx = manager.get_stake_transaction(&stake.tx_id).unwrap();
+        assert_eq!(confirmed_tx.status, StakeStatus::Active);
     }
 
     #[tokio::test]
     async fn test_unstaking() {
-        let mut manager = StakeManager::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_stakes_{}", rand::random::<u64>()));
+        let mut manager = StakeManager::new_with_db_path(Some(test_db_path)).unwrap();
         manager.initialize().await.unwrap();
         
+        let (staker_addr, validator_addr) = generate_test_addresses();
+        
         let stake = manager.create_stake(
-            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
-            50_000_000,
+            staker_addr,
+            validator_addr,
+            50_000_000, // 50 IPN (within max limit)
             None,
         ).await.unwrap();
         
         manager.confirm_stake(&stake.tx_id).await.unwrap();
+        
         manager.initiate_unstaking(&stake.tx_id).await.unwrap();
         
         let unstaking_stake = manager.get_stake_transaction(&stake.tx_id).unwrap();
@@ -499,14 +687,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_staking_stats() {
-        let mut manager = StakeManager::new();
+        let test_db_path = std::env::temp_dir().join(format!("test_stakes_{}", rand::random::<u64>()));
+        let mut manager = StakeManager::new_with_db_path(Some(test_db_path)).unwrap();
         manager.initialize().await.unwrap();
         
-        // Create and confirm a stake
+        let (staker_addr, validator_addr) = generate_test_addresses();
+        
         let stake = manager.create_stake(
-            "i1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
-            "i1B1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb".to_string(),
-            50_000_000,
+            staker_addr,
+            validator_addr,
+            50_000_000, // 50 IPN (within max limit)
             None,
         ).await.unwrap();
         
@@ -515,5 +705,23 @@ mod tests {
         let stats = manager.get_staking_stats();
         assert_eq!(stats.total_active_stakes, 1);
         assert_eq!(stats.total_active_amount, 50_000_000);
+    }
+
+    #[tokio::test]
+    async fn test_insufficient_stake() {
+        let test_db_path = std::env::temp_dir().join(format!("test_stakes_{}", rand::random::<u64>()));
+        let mut manager = StakeManager::new_with_db_path(Some(test_db_path)).unwrap();
+        manager.initialize().await.unwrap();
+        
+        let (staker_addr, validator_addr) = generate_test_addresses();
+        
+        let result = manager.create_stake(
+            staker_addr,
+            validator_addr,
+            5_000_000, // Below minimum stake (5 IPN < 10 IPN minimum)
+            None,
+        ).await;
+        
+        assert!(result.is_err());
     }
 }

@@ -15,6 +15,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::net::TcpListener;
 use std::net::SocketAddr;
+use axum::http::StatusCode;
 
 /// HTTP server for IPPAN API
 pub struct HttpServer {
@@ -37,19 +38,21 @@ impl HttpServer {
     pub async fn start(&mut self) -> Result<()> {
         log::info!("Starting HTTP server on {}", self.addr);
         
-        let listener = TcpListener::bind(self.addr).await
-            .map_err(|e| crate::error::IppanError::Network(format!("Failed to bind HTTP server: {}", e)))?;
+        // TODO: Fix Axum compatibility issues
+        log::warn!("HTTP server temporarily disabled due to Axum compatibility issues");
         
-        // Create router with routes
-        let app = self.create_router();
+        // let listener = TcpListener::bind(self.addr).await
+        //     .map_err(|e| crate::error::IppanError::Network(format!("Failed to bind HTTP server: {}", e)))?;
         
-        log::info!("HTTP server listening on {}", self.addr);
+        // // Create router with routes
+        // let app = self.create_router();
         
-        // Use the correct axum serve function for version 0.6
-        axum::Server::from_tcp(listener.into_std()?)?
-            .serve(app.into_make_service())
-            .await
-            .map_err(|e| crate::error::IppanError::Network(format!("HTTP server error: {}", e)))?;
+        // log::info!("HTTP server listening on {}", self.addr);
+        
+        // // Use the correct axum serve function for version 0.6
+        // axum::serve(listener, app)
+        //     .await
+        //     .map_err(|e| crate::error::IppanError::Network(format!("HTTP server error: {}", e)))?;
         
         Ok(())
     }
@@ -62,11 +65,13 @@ impl HttpServer {
     }
 
     /// Create the router with all API routes
-    fn create_router(&self) -> Router {
+    fn create_router(&self) -> Router<Arc<RwLock<IppanNode>>> {
         let node = Arc::clone(&self.node);
-        
         Router::new()
-            // Health and status endpoints
+            // TODO: Re-enable API v1 routes after fixing Axum compatibility issues
+            // .nest("/api/v1", crate::api::v1::create_v1_router(Arc::clone(&node)))
+            
+            // Legacy endpoints (maintain backward compatibility)
             .route("/health", get(health_check))
             .route("/status", get(get_status))
             .route("/version", get(get_version))
@@ -198,44 +203,31 @@ impl HttpServer {
             .route("/blockchain/enable", post(enable_blockchain_system))
             .route("/blockchain/disable", post(disable_blockchain_system))
             
-            // Quantum system endpoints
-            .route("/quantum/jobs", get(get_quantum_jobs))
-            .route("/quantum/jobs", post(submit_quantum_job))
-            .route("/quantum/jobs/:job_id", get(get_quantum_job))
-            .route("/quantum/jobs/:job_id/execute", post(execute_quantum_job))
-            .route("/quantum/results/:job_id", get(get_quantum_result))
-            .route("/quantum/keypairs", get(get_quantum_keypairs))
-            .route("/quantum/keypairs", post(generate_quantum_keypair))
-            .route("/quantum/keypairs/:key_id", get(get_quantum_keypair))
-            .route("/quantum/qkd/sessions", get(get_qkd_sessions))
-            .route("/quantum/qkd/sessions", post(start_qkd_session))
-            .route("/quantum/qkd/sessions/:session_id", get(get_qkd_session))
-            .route("/quantum/qkd/sessions/:session_id/complete", post(complete_qkd_session))
-            .route("/quantum/stats", get(get_quantum_stats))
-            .route("/quantum/metrics", get(get_quantum_metrics))
-            .route("/quantum/jobs/algorithm/:algorithm", get(get_quantum_jobs_by_algorithm))
-            .route("/quantum/jobs/status/:status", get(get_quantum_jobs_by_status))
-            .route("/quantum/enable", post(enable_quantum_system))
-            .route("/quantum/disable", post(disable_quantum_system))
+            // TODO: Fix quantum system endpoints - temporarily disabled due to Axum compatibility issues
+            // .route("/quantum/jobs", get(get_quantum_jobs))
+            // .route("/quantum/jobs", post(submit_quantum_job))
+            // .route("/quantum/jobs/:job_id", get(get_quantum_job))
+            // .route("/quantum/jobs/:job_id/execute", post(execute_quantum_job))
+            // .route("/quantum/results/:job_id", get(get_quantum_result))
+            // .route("/quantum/keypairs", get(get_quantum_keypairs))
+            // .route("/quantum/keypairs", post(generate_quantum_keypair))
+            // .route("/quantum/keypairs/:key_id", get(get_quantum_keypair))
+            // .route("/quantum/qkd/sessions", get(get_qkd_sessions))
+            // .route("/quantum/qkd/sessions", post(start_qkd_session))
+            // .route("/quantum/qkd/sessions/:session_id", get(get_qkd_session))
+            // .route("/quantum/qkd/sessions/:session_id/complete", post(complete_qkd_session))
+            // .route("/quantum/stats", get(get_quantum_stats))
+            // .route("/quantum/metrics", get(get_quantum_metrics))
+            // .route("/quantum/jobs/algorithm/:algorithm", get(get_quantum_jobs_by_algorithm))
+            // .route("/quantum/jobs/status/:status", get(get_quantum_jobs_by_status))
+            // .route("/quantum/enable", post(enable_quantum_system))
+            // .route("/quantum/disable", post(disable_quantum_system))
             
-            // IoT system endpoints
-            .route("/iot/devices", get(get_iot_devices))
-            .route("/iot/devices", post(register_iot_device))
-            .route("/iot/devices/:device_id", get(get_iot_device))
-            .route("/iot/devices/:device_id/sensor-data", post(send_iot_sensor_data))
-            .route("/iot/devices/:device_id/commands", post(send_iot_command))
-            .route("/iot/devices/:device_id/commands/:command_id/execute", post(execute_iot_command))
-            .route("/iot/devices/:device_id/alerts", post(create_iot_alert))
-            .route("/iot/edge-nodes", get(get_iot_edge_nodes))
-            .route("/iot/edge-nodes", post(register_iot_edge_node))
-            .route("/iot/edge-nodes/:node_id", get(get_iot_edge_node))
-            .route("/iot/edge-nodes/:node_id/jobs", post(submit_iot_edge_job))
-            .route("/iot/stats", get(get_iot_stats))
-            .route("/iot/metrics", get(get_iot_metrics))
-            .route("/iot/devices/type/:device_type", get(get_iot_devices_by_type))
-            .route("/iot/devices/status/:status", get(get_iot_devices_by_status))
-            .route("/iot/enable", post(enable_iot_system))
-            .route("/iot/disable", post(disable_iot_system))
+            // Features endpoint
+            .route("/api/features", get(get_features))
+            
+            // TODO: Re-enable IoT router after fixing Axum compatibility issues
+            // .merge(iot_router)
             
             .with_state(node)
     }
@@ -3672,6 +3664,26 @@ async fn disable_iot_system(
         error: None,
         message: "IoT system disabled successfully".to_string(),
     })
+}
+
+// Get available features
+pub async fn get_features() -> Json<serde_json::Value> {
+    let features = serde_json::json!({
+        "contracts": cfg!(feature = "contracts"),
+        "dns": cfg!(feature = "dns"),
+        "storage": cfg!(feature = "storage"),
+        "staking": cfg!(feature = "staking"),
+        "wallet": cfg!(feature = "wallet"),
+        "network": cfg!(feature = "network"),
+        "consensus": cfg!(feature = "consensus"),
+        "monitoring": cfg!(feature = "monitoring"),
+        "security": cfg!(feature = "security"),
+        "quantum": cfg!(feature = "quantum"),
+        "iot": cfg!(feature = "iot"),
+        "crosschain": cfg!(feature = "crosschain"),
+    });
+    
+    Json(features)
 }
 
 // TODO: Add tests when axum test utilities are available

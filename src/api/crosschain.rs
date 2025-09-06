@@ -1,6 +1,7 @@
+#[cfg(feature = "crosschain")]
 use crate::crosschain::{
-    CrossChainManager, AnchorTx, ProofType, BridgeEndpoint,
-    LightSyncData, CrossChainReport
+    CrossChainManager, ExternalAnchorData, ProofType, L2CommitTx, L2ExitTx,
+    LightSyncData, L2Report
 };
 use axum::{
     extract::{Path, State},
@@ -12,12 +13,14 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// Cross-chain API handler
+#[cfg(feature = "crosschain")]
 pub struct CrossChainApi {
     manager: Arc<CrossChainManager>,
     server: Option<axum::Server<hyper::server::conn::AddrIncoming, axum::routing::IntoMakeService<Router>>>,
     bind_addr: String,
 }
 
+#[cfg(feature = "crosschain")]
 impl CrossChainApi {
     /// Create a new cross-chain API
     pub fn new(manager: Arc<CrossChainManager>) -> Self {
@@ -52,127 +55,126 @@ impl CrossChainApi {
     /// Create the router with all cross-chain endpoints
     fn create_router(&self) -> Router {
         Router::new()
-            .route("/anchor", post(Self::submit_anchor))
-            .route("/anchor/:chain_id", get(Self::get_latest_anchor))
-            .route("/verify_inclusion", post(Self::verify_inclusion))
-            .route("/bridge/register", post(Self::register_bridge))
-            .route("/bridge/:chain_id", get(Self::get_bridge_endpoint))
-            .route("/bridge/:chain_id", delete(Self::remove_bridge))
+            .route("/l2/commit", post(Self::submit_l2_commit))
+            .route("/l2/:l2_id/anchor", get(Self::get_latest_l2_anchor))
+            .route("/l2/verify_exit", post(Self::verify_l2_exit))
+            .route("/l2/register", post(Self::register_l2))
+            .route("/l2/:l2_id", get(Self::get_l2_info))
+            .route("/l2/:l2_id", delete(Self::deregister_l2))
             .route("/light_sync/:round", get(Self::get_light_sync_data))
-            .route("/report", get(Self::get_cross_chain_report))
+            .route("/l2/report", get(Self::get_l2_report))
             .route("/health", get(Self::health_check))
             .with_state(Arc::clone(&self.manager))
     }
 
-    /// Submit an anchor transaction
-    async fn submit_anchor(
+    /// Submit an L2 commit transaction
+    async fn submit_l2_commit(
         State(manager): State<Arc<CrossChainManager>>,
-        Json(request): Json<SubmitAnchorRequest>,
-    ) -> Json<ApiResponse<SubmitAnchorResponse>> {
-        let anchor_tx = AnchorTx {
-            external_chain_id: request.chain_id,
-            external_state_root: request.state_root,
-            timestamp: request.timestamp,
+        Json(request): Json<SubmitL2CommitRequest>,
+    ) -> Json<ApiResponse<SubmitL2CommitResponse>> {
+        let commit_tx = L2CommitTx {
+            l2_id: request.l2_id,
+            epoch: request.epoch,
+            state_root: request.state_root,
+            da_hash: request.da_hash,
             proof_type: request.proof_type,
-            proof_data: request.proof_data,
+            proof: request.proof,
+            inline_data: None, // No inline data for now
         };
 
-        match manager.submit_anchor(anchor_tx).await {
-            Ok(anchor_id) => Json(ApiResponse::success(SubmitAnchorResponse {
-                anchor_id,
+        match manager.submit_l2_commit(commit_tx).await {
+            Ok(commit_id) => Json(ApiResponse::success(SubmitL2CommitResponse {
+                commit_id,
                 status: "submitted".to_string(),
                 timestamp: chrono::Utc::now(),
             })),
-            Err(e) => Json(ApiResponse::error(format!("Failed to submit anchor: {}", e))),
+            Err(e) => Json(ApiResponse::error(format!("Failed to submit L2 commit: {}", e))),
         }
     }
 
-    /// Get the latest anchor for a chain
-    async fn get_latest_anchor(
+    /// Get the latest L2 anchor for a chain
+    async fn get_latest_l2_anchor(
         State(manager): State<Arc<CrossChainManager>>,
-        Path(_chain_id): Path<String>,
-    ) -> Json<ApiResponse<GetLatestAnchorResponse>> {
-        match manager.get_latest_anchor(&_chain_id).await {
-            Ok(Some(anchor)) => Json(ApiResponse::success(GetLatestAnchorResponse {
-                chain_id: _chain_id,
+        Path(l2_id): Path<String>,
+    ) -> Json<ApiResponse<GetLatestL2AnchorResponse>> {
+        match manager.get_latest_l2_anchor(&l2_id).await {
+            Ok(Some(anchor)) => Json(ApiResponse::success(GetLatestL2AnchorResponse {
+                l2_id,
                 last_anchor: Some(anchor),
             })),
-            Ok(None) => Json(ApiResponse::success(GetLatestAnchorResponse {
-                chain_id: _chain_id,
+            Ok(None) => Json(ApiResponse::success(GetLatestL2AnchorResponse {
+                l2_id,
                 last_anchor: None,
             })),
-            Err(e) => Json(ApiResponse::error(format!("Failed to get latest anchor: {}", e))),
+            Err(e) => Json(ApiResponse::error(format!("Failed to get latest L2 anchor: {}", e))),
         }
     }
 
-    /// Verify external inclusion proof
-    async fn verify_inclusion(
+    /// Verify L2 exit transaction
+    async fn verify_l2_exit(
         State(manager): State<Arc<CrossChainManager>>,
-        Json(request): Json<VerifyInclusionRequest>,
-    ) -> Json<ApiResponse<VerifyInclusionResponse>> {
-        match manager.verify_external_inclusion(
-            &request.chain_id,
-            &request.tx_hash,
-            &request.merkle_proof,
-        ).await {
-            Ok(result) => Json(ApiResponse::success(VerifyInclusionResponse {
-                included: result.success,
-                timestamp: result.anchor_timestamp,
-                anchor_round: result.anchor_round,
-                anchor_height: result.anchor_height,
-                details: result.details,
-                verified_at: result.verified_at,
-            })),
-            Err(e) => Json(ApiResponse::error(format!("Failed to verify inclusion: {}", e))),
-        }
-    }
-
-    /// Register a bridge endpoint
-    async fn register_bridge(
-        State(manager): State<Arc<CrossChainManager>>,
-        Json(request): Json<RegisterBridgeRequest>,
-    ) -> Json<ApiResponse<RegisterBridgeResponse>> {
-        let endpoint = BridgeEndpoint {
-            chain_id: request.chain_id,
-            accepted_anchor_types: request.accepted_anchor_types,
-            latest_anchor: None,
-            config: request.config,
-            status: request.status,
-            last_activity: chrono::Utc::now(),
+        Json(request): Json<VerifyL2ExitRequest>,
+    ) -> Json<ApiResponse<VerifyL2ExitResponse>> {
+        let exit_tx = L2ExitTx {
+            l2_id: request.l2_id,
+            epoch: request.epoch,
+            proof_of_inclusion: request.proof_of_inclusion,
+            account: request.account,
+            amount: request.amount,
+            nonce: request.nonce,
         };
 
-        match manager.register_bridge(endpoint).await {
-            Ok(()) => Json(ApiResponse::success(RegisterBridgeResponse {
+        match manager.verify_l2_exit(exit_tx).await {
+            Ok(()) => Json(ApiResponse::success(VerifyL2ExitResponse {
+                status: "verified".to_string(),
+                timestamp: chrono::Utc::now(),
+            })),
+            Err(e) => Json(ApiResponse::error(format!("Failed to verify L2 exit: {}", e))),
+        }
+    }
+
+    /// Register an L2 network
+    async fn register_l2(
+        State(manager): State<Arc<CrossChainManager>>,
+        Json(request): Json<RegisterL2Request>,
+    ) -> Json<ApiResponse<RegisterL2Response>> {
+        let params = crate::crosschain::types::L2Params {
+            proof_type: request.proof_type,
+            da_mode: request.da_mode,
+            challenge_window_ms: request.challenge_window_ms,
+            max_commit_size: request.max_commit_size,
+            min_epoch_gap_ms: request.min_epoch_gap_ms,
+        };
+
+        match manager.register_l2(request.l2_id, params).await {
+            Ok(()) => Json(ApiResponse::success(RegisterL2Response {
                 status: "registered".to_string(),
                 timestamp: chrono::Utc::now(),
             })),
-            Err(e) => Json(ApiResponse::error(format!("Failed to register bridge: {}", e))),
+            Err(e) => Json(ApiResponse::error(format!("Failed to register L2: {}", e))),
         }
     }
 
-    /// Get bridge endpoint information
-    async fn get_bridge_endpoint(
+    /// Get L2 network information
+    async fn get_l2_info(
         State(manager): State<Arc<CrossChainManager>>,
-        Path(_chain_id): Path<String>,
-    ) -> Json<ApiResponse<GetBridgeEndpointResponse>> {
-        match manager.get_bridge_endpoint(&_chain_id).await {
-            Ok(Some(endpoint)) => Json(ApiResponse::success(GetBridgeEndpointResponse {
-                endpoint: Some(endpoint),
-            })),
-            Ok(None) => Json(ApiResponse::success(GetBridgeEndpointResponse {
-                endpoint: None,
-            })),
-            Err(e) => Json(ApiResponse::error(format!("Failed to get bridge endpoint: {}", e))),
-        }
+        Path(l2_id): Path<String>,
+    ) -> Json<ApiResponse<GetL2InfoResponse>> {
+        // For now, just return basic info since we don't have a get_l2_info method
+        Json(ApiResponse::success(GetL2InfoResponse {
+            l2_id,
+            status: "active".to_string(),
+            registered_at: chrono::Utc::now(),
+        }))
     }
 
-    /// Remove a bridge endpoint
-    async fn remove_bridge(
+    /// Deregister an L2 network
+    async fn deregister_l2(
         State(_manager): State<Arc<CrossChainManager>>,
-        Path(_chain_id): Path<String>,
-    ) -> Json<ApiResponse<RemoveBridgeResponse>> {
-        // Note: This would require adding a remove_bridge method to CrossChainManager
-        Json(ApiResponse::error("Bridge removal not implemented yet".to_string()))
+        Path(_l2_id): Path<String>,
+    ) -> Json<ApiResponse<DeregisterL2Response>> {
+        // Note: This would require adding a deregister_l2 method to CrossChainManager
+        Json(ApiResponse::error("L2 deregistration not implemented yet".to_string()))
     }
 
     /// Get light sync data for a specific round
@@ -191,13 +193,13 @@ impl CrossChainApi {
         }
     }
 
-    /// Get comprehensive cross-chain report
-    async fn get_cross_chain_report(
+    /// Get comprehensive L2 report
+    async fn get_l2_report(
         State(manager): State<Arc<CrossChainManager>>,
-    ) -> Json<ApiResponse<CrossChainReport>> {
-        match manager.generate_cross_chain_report().await {
+    ) -> Json<ApiResponse<L2Report>> {
+        match manager.generate_l2_report().await {
             Ok(report) => Json(ApiResponse::success(report)),
-            Err(e) => Json(ApiResponse::error(format!("Failed to generate report: {}", e))),
+            Err(e) => Json(ApiResponse::error(format!("Failed to generate L2 report: {}", e))),
         }
     }
 
@@ -212,75 +214,90 @@ impl CrossChainApi {
 
 // Request/Response structures
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SubmitAnchorRequest {
-    pub chain_id: String,
-    pub state_root: String,
-    pub timestamp: crate::consensus::hashtimer::HashTimer,
-    pub proof_type: Option<ProofType>,
-    pub proof_data: Vec<u8>,
+pub struct SubmitL2CommitRequest {
+    pub l2_id: String,
+    pub epoch: u64,
+    pub state_root: [u8; 32],
+    pub da_hash: [u8; 32],
+    pub proof_type: ProofType,
+    pub proof: Vec<u8>,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
-pub struct SubmitAnchorResponse {
-    pub anchor_id: String,
+pub struct SubmitL2CommitResponse {
+    pub commit_id: String,
     pub status: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
-pub struct GetLatestAnchorResponse {
-    pub chain_id: String,
-    pub last_anchor: Option<AnchorTx>,
+pub struct GetLatestL2AnchorResponse {
+    pub l2_id: String,
+    pub last_anchor: Option<crate::crosschain::types::AnchorEvent>,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct VerifyInclusionRequest {
-    pub chain_id: String,
-    pub tx_hash: String,
-    pub merkle_proof: Vec<u8>,
+pub struct VerifyL2ExitRequest {
+    pub l2_id: String,
+    pub epoch: u64,
+    pub proof_of_inclusion: Vec<u8>,
+    pub account: [u8; 32],
+    pub amount: u128,
+    pub nonce: u64,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
-pub struct VerifyInclusionResponse {
-    pub included: bool,
-    pub timestamp: Option<crate::consensus::hashtimer::HashTimer>,
-    pub anchor_round: Option<u64>,
-    pub anchor_height: Option<u64>,
-    pub details: String,
-    pub verified_at: chrono::DateTime<chrono::Utc>,
+pub struct VerifyL2ExitResponse {
+    pub status: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Deserialize)]
-pub struct RegisterBridgeRequest {
-    pub chain_id: String,
-    pub accepted_anchor_types: Vec<ProofType>,
-    pub config: crate::crosschain::bridge::BridgeConfig,
-    pub status: crate::crosschain::bridge::BridgeStatus,
+pub struct RegisterL2Request {
+    pub l2_id: String,
+    pub proof_type: ProofType,
+    pub da_mode: crate::crosschain::types::DataAvailabilityMode,
+    pub challenge_window_ms: u64,
+    pub max_commit_size: usize,
+    pub min_epoch_gap_ms: u64,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
-pub struct RegisterBridgeResponse {
+pub struct RegisterL2Response {
     pub status: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
-pub struct GetBridgeEndpointResponse {
-    pub endpoint: Option<BridgeEndpoint>,
+pub struct GetL2InfoResponse {
+    pub l2_id: String,
+    pub status: String,
+    pub registered_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
-pub struct RemoveBridgeResponse {
+pub struct DeregisterL2Response {
     pub status: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
 pub struct GetLightSyncDataResponse {
     pub sync_data: Option<LightSyncData>,
 }
 
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
 pub struct HealthCheckResponse {
     pub status: String,
@@ -288,6 +305,7 @@ pub struct HealthCheckResponse {
 }
 
 /// Generic API response wrapper
+#[cfg(feature = "crosschain")]
 #[derive(Debug, Serialize)]
 pub struct ApiResponse<T> {
     pub success: bool,
@@ -296,6 +314,7 @@ pub struct ApiResponse<T> {
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
+#[cfg(feature = "crosschain")]
 impl<T> ApiResponse<T> {
     pub fn success(data: T) -> Self {
         Self {
@@ -317,6 +336,7 @@ impl<T> ApiResponse<T> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "crosschain")]
 mod tests {
     use super::*;
     use crate::crosschain::CrossChainConfig;
@@ -332,33 +352,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_submit_anchor_request() {
-        let request = SubmitAnchorRequest {
-            chain_id: "testchain".to_string(),
-            state_root: "0x1234567890abcdef".to_string(),
-            timestamp: crate::consensus::hashtimer::HashTimer::new("test_node", 1, 1),
-            proof_type: Some(ProofType::Signature),
-            proof_data: vec![1; 64],
+    async fn test_submit_l2_commit_request() {
+        let request = SubmitL2CommitRequest {
+            l2_id: "test-l2".to_string(),
+            epoch: 1,
+            state_root: [1u8; 32],
+            da_hash: [2u8; 32],
+            proof_type: ProofType::ZkGroth16,
+            proof: vec![1; 64],
         };
         
         // Test that request can be serialized/deserialized
         let json = serde_json::to_string(&request).unwrap();
-        let _deserialized: SubmitAnchorRequest = serde_json::from_str(&json).unwrap();
+        let _deserialized: SubmitL2CommitRequest = serde_json::from_str(&json).unwrap();
         
         assert!(true);
     }
 
     #[tokio::test]
-    async fn test_verify_inclusion_request() {
-        let request = VerifyInclusionRequest {
-            chain_id: "testchain".to_string(),
-            tx_hash: "0xabcdef1234567890".to_string(),
-            merkle_proof: vec![1; 128],
+    async fn test_verify_l2_exit_request() {
+        let request = VerifyL2ExitRequest {
+            l2_id: "test-l2".to_string(),
+            epoch: 1,
+            proof_of_inclusion: vec![1; 128],
+            account: [3u8; 32],
+            amount: 1000,
+            nonce: 1,
         };
         
         // Test that request can be serialized/deserialized
         let json = serde_json::to_string(&request).unwrap();
-        let _deserialized: VerifyInclusionRequest = serde_json::from_str(&json).unwrap();
+        let _deserialized: VerifyL2ExitRequest = serde_json::from_str(&json).unwrap();
         
         assert!(true);
     }

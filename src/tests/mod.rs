@@ -3,7 +3,11 @@
 //! Comprehensive testing for all subsystems
 
 pub mod address_tests;
+pub mod block_parents_tests;
 pub mod integration;
+pub mod performance_integration;
+pub mod security_integration;
+pub mod end_to_end_integration;
 pub mod unit;
 
 use crate::config::Config;
@@ -56,6 +60,54 @@ impl TestRunner {
                 results.integration_tests_passed = false;
                 results.integration_test_error = Some(e.to_string());
                 log::error!("❌ Integration tests failed: {}", e);
+            }
+        }
+
+        // Run performance integration tests
+        log::info!("🚀 Running performance integration tests...");
+        let performance_start = Instant::now();
+        match performance_integration::run_performance_integration_tests().await {
+            Ok(_) => {
+                results.performance_tests_passed = true;
+                results.performance_test_duration = performance_start.elapsed();
+                log::info!("✅ Performance integration tests passed in {:?}", results.performance_test_duration);
+            }
+            Err(e) => {
+                results.performance_tests_passed = false;
+                results.performance_test_error = Some(e.to_string());
+                log::error!("❌ Performance integration tests failed: {}", e);
+            }
+        }
+
+        // Run security integration tests
+        log::info!("🔒 Running security integration tests...");
+        let security_start = Instant::now();
+        match security_integration::run_security_integration_tests().await {
+            Ok(_) => {
+                results.security_tests_passed = true;
+                results.security_test_duration = security_start.elapsed();
+                log::info!("✅ Security integration tests passed in {:?}", results.security_test_duration);
+            }
+            Err(e) => {
+                results.security_tests_passed = false;
+                results.security_test_error = Some(e.to_string());
+                log::error!("❌ Security integration tests failed: {}", e);
+            }
+        }
+
+        // Run end-to-end integration tests
+        log::info!("🎯 Running end-to-end integration tests...");
+        let e2e_start = Instant::now();
+        match end_to_end_integration::run_end_to_end_integration_tests().await {
+            Ok(_) => {
+                results.e2e_tests_passed = true;
+                results.e2e_test_duration = e2e_start.elapsed();
+                log::info!("✅ End-to-end integration tests passed in {:?}", results.e2e_test_duration);
+            }
+            Err(e) => {
+                results.e2e_tests_passed = false;
+                results.e2e_test_error = Some(e.to_string());
+                log::error!("❌ End-to-end integration tests failed: {}", e);
             }
         }
 
@@ -130,6 +182,18 @@ pub struct TestResults {
     pub integration_test_duration: std::time::Duration,
     pub integration_test_error: Option<String>,
     
+    pub performance_tests_passed: bool,
+    pub performance_test_duration: std::time::Duration,
+    pub performance_test_error: Option<String>,
+    
+    pub security_tests_passed: bool,
+    pub security_test_duration: std::time::Duration,
+    pub security_test_error: Option<String>,
+    
+    pub e2e_tests_passed: bool,
+    pub e2e_test_duration: std::time::Duration,
+    pub e2e_test_error: Option<String>,
+    
     pub total_duration: std::time::Duration,
 }
 
@@ -143,13 +207,26 @@ impl TestResults {
             integration_tests_passed: false,
             integration_test_duration: std::time::Duration::ZERO,
             integration_test_error: None,
+            performance_tests_passed: false,
+            performance_test_duration: std::time::Duration::ZERO,
+            performance_test_error: None,
+            security_tests_passed: false,
+            security_test_duration: std::time::Duration::ZERO,
+            security_test_error: None,
+            e2e_tests_passed: false,
+            e2e_test_duration: std::time::Duration::ZERO,
+            e2e_test_error: None,
             total_duration: std::time::Duration::ZERO,
         }
     }
 
     /// Check if all tests passed
     pub fn all_tests_passed(&self) -> bool {
-        self.unit_tests_passed && self.integration_tests_passed
+        self.unit_tests_passed && 
+        self.integration_tests_passed && 
+        self.performance_tests_passed && 
+        self.security_tests_passed && 
+        self.e2e_tests_passed
     }
 
     /// Get summary string
@@ -157,23 +234,47 @@ impl TestResults {
         let mut summary = String::new();
         
         summary.push_str("📊 Test Results Summary:\n");
+        
+        // Unit Tests
         summary.push_str(&format!("  Unit Tests: {}\n", 
             if self.unit_tests_passed { "✅ PASSED" } else { "❌ FAILED" }));
-        
         if let Some(ref error) = self.unit_test_error {
             summary.push_str(&format!("    Error: {}\n", error));
         }
-        
         summary.push_str(&format!("    Duration: {:?}\n", self.unit_test_duration));
         
+        // Integration Tests
         summary.push_str(&format!("  Integration Tests: {}\n", 
             if self.integration_tests_passed { "✅ PASSED" } else { "❌ FAILED" }));
-        
         if let Some(ref error) = self.integration_test_error {
             summary.push_str(&format!("    Error: {}\n", error));
         }
-        
         summary.push_str(&format!("    Duration: {:?}\n", self.integration_test_duration));
+        
+        // Performance Tests
+        summary.push_str(&format!("  Performance Tests: {}\n", 
+            if self.performance_tests_passed { "✅ PASSED" } else { "❌ FAILED" }));
+        if let Some(ref error) = self.performance_test_error {
+            summary.push_str(&format!("    Error: {}\n", error));
+        }
+        summary.push_str(&format!("    Duration: {:?}\n", self.performance_test_duration));
+        
+        // Security Tests
+        summary.push_str(&format!("  Security Tests: {}\n", 
+            if self.security_tests_passed { "✅ PASSED" } else { "❌ FAILED" }));
+        if let Some(ref error) = self.security_test_error {
+            summary.push_str(&format!("    Error: {}\n", error));
+        }
+        summary.push_str(&format!("    Duration: {:?}\n", self.security_test_duration));
+        
+        // End-to-End Tests
+        summary.push_str(&format!("  End-to-End Tests: {}\n", 
+            if self.e2e_tests_passed { "✅ PASSED" } else { "❌ FAILED" }));
+        if let Some(ref error) = self.e2e_test_error {
+            summary.push_str(&format!("    Error: {}\n", error));
+        }
+        summary.push_str(&format!("    Duration: {:?}\n", self.e2e_test_duration));
+        
         summary.push_str(&format!("  Total Duration: {:?}\n", self.total_duration));
         
         if self.all_tests_passed() {

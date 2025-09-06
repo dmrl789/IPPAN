@@ -1,587 +1,374 @@
 # IPPAN Deployment Guide
 
-## Overview
+## 🚀 Production Deployment Guide
 
-This guide provides comprehensive instructions for deploying IPPAN (InterPlanetary Network) nodes in various environments, from development to production.
+This guide covers deploying IPPAN to production environments with enterprise-grade infrastructure, comprehensive monitoring, and high-performance optimizations.
 
-## Prerequisites
+## 📋 Prerequisites
 
 ### System Requirements
+- **CPU**: 8+ cores (16+ recommended for high-throughput)
+- **RAM**: 16GB+ (32GB+ recommended for production)
+- **Storage**: 1TB+ SSD (10TB+ recommended for full node)
+- **Network**: 1Gbps+ bandwidth
 
-- **CPU**: 4+ cores (8+ recommended for production)
-- **RAM**: 8GB minimum (16GB+ recommended for production)
-- **Storage**: 100GB+ SSD (1TB+ recommended for production)
-- **Network**: 100Mbps+ connection (1Gbps+ recommended)
-- **OS**: Linux (Ubuntu 20.04+ recommended), macOS, or Windows
+### Software Requirements
+- **Docker**: 20.10+
+- **Kubernetes**: 1.24+
+- **kubectl**: Latest version
+- **Helm**: 3.8+ (optional)
 
-### Software Dependencies
+## 🏗️ Deployment Options
 
-- **Rust**: 1.70+ (latest stable recommended)
-- **Docker**: 20.10+ (for containerized deployment)
-- **Git**: Latest version
-- **OpenSSL**: 1.1.1+ (for cryptography)
-
-## Installation Methods
-
-### 1. From Source (Recommended)
+### Option 1: Docker Compose (Recommended for Small-Medium Deployments)
 
 ```bash
-# Clone the repository
+# Clone repository
 git clone https://github.com/ippan/ippan.git
 cd ippan
 
-# Install Rust (if not already installed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
+# Quick deployment with automated setup
+./scripts/deploy-production.sh
 
-# Build the project
-cargo build --release
+# Or manual deployment
+docker build -f Dockerfile.optimized -t ippan:latest .
+docker-compose -f docker-compose.production.yml up -d
 
-# Install the binary
-cargo install --path .
+# Check status
+docker-compose -f docker-compose.production.yml ps
+
+# Health check
+./scripts/health-check.sh
 ```
 
-### 2. Using Docker
+### Option 2: Kubernetes (Recommended for Large-Scale Production)
 
 ```bash
-# Pull the official image
-docker pull ippan/ippan:latest
+# Deploy to Kubernetes
+kubectl apply -f deployments/kubernetes/ippan-production.yaml
 
-# Run a node
+# Verify deployment
+kubectl get pods -l app=ippan-node -n ippan-production
+kubectl get services -n ippan-production
+kubectl get ingress -n ippan-production
+
+# Check auto-scaling
+kubectl get hpa -n ippan-production
+
+# Monitor deployment
+kubectl logs -l app=ippan-node -n ippan-production -f
+```
+
+### Option 3: Manual Docker Deployment
+
+```bash
+# Build image
+docker build -f Dockerfile.production -t ippan:latest .
+
+# Run container
 docker run -d \
   --name ippan-node \
+  -p 80:80 \
   -p 8080:8080 \
-  -p 8081:8081 \
-  -v /data/ippan:/data \
-  ippan/ippan:latest
+  -p 3000:3000 \
+  -v ippan-data:/data \
+  -v ippan-keys:/keys \
+  -v ippan-logs:/logs \
+  -e RUST_LOG=info \
+  -e NODE_ENV=production \
+  ippan:latest
 ```
 
-### 3. Using Package Managers
+## 🔧 Configuration
 
-#### Ubuntu/Debian
-```bash
-# Add repository
-curl -fsSL https://packages.ippan.network/gpg | sudo gpg --dearmor -o /usr/share/keyrings/ippan-archive-keyring.gpg
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/ippan-archive-keyring.gpg] https://packages.ippan.network/ubuntu focal main" | sudo tee /etc/apt/sources.list.d/ippan.list
+### Environment Variables
 
-# Install
-sudo apt update
-sudo apt install ippan
-```
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `RUST_LOG` | Log level | `info` | No |
+| `IPPAN_CONFIG_PATH` | Config file path | `/config/default.toml` | No |
+| `IPPAN_DATA_DIR` | Data directory | `/data` | No |
+| `IPPAN_KEYS_DIR` | Keys directory | `/keys` | No |
+| `IPPAN_LOG_DIR` | Logs directory | `/logs` | No |
+| `NODE_ENV` | Environment | `production` | No |
 
-## Configuration
+### Configuration File
 
-### 1. Basic Configuration
-
-Create a configuration file at `~/.ippan/config.toml`:
+The main configuration is in `/config/default.toml`:
 
 ```toml
 [network]
-# Network mode: mainnet, testnet, or devnet
-mode = "mainnet"
-
-# Node identity
-node_id = "your-node-id-here"
-
-# Listen addresses
 listen_addr = "0.0.0.0:8080"
-p2p_listen_addr = "0.0.0.0:8081"
-
-# Bootstrap nodes (for initial peer discovery)
-bootstrap_nodes = [
-    "node1.ippan.network:8081",
-    "node2.ippan.network:8081",
-    "node3.ippan.network:8081"
-]
-
-[consensus]
-# Consensus algorithm: roundchain, blockdag
-algorithm = "roundchain"
-
-# Block time in seconds
-block_time = 3
-
-# Maximum transactions per block
-max_transactions_per_block = 10000
+bootstrap_nodes = []
+max_connections = 1000
+connection_timeout = 30
+enable_nat = true
+enable_relay = true
 
 [storage]
-# Storage mode: local, distributed, or hybrid
-mode = "distributed"
-
-# Local storage path
-data_dir = "/data/ippan"
-
-# Replication factor for distributed storage
+db_path = "/data/ippan.db"
+max_storage_size = 107374182400  # 100GB
+shard_size = 1048576  # 1MB
 replication_factor = 3
-
-# Encryption settings
-encryption_enabled = true
-encryption_algorithm = "aes256-gcm"
-
-[quantum]
-# Quantum-resistant cryptography settings
-enabled = true
-default_algorithm = "kyber"
-security_level = "level3"
-hybrid_encryption = true
-
-[api]
-# API server settings
-enabled = true
-bind_addr = "0.0.0.0:8080"
-max_connections = 1000
-rate_limit_requests_per_minute = 1000
-
-[security]
-# Security settings
-tls_enabled = true
-tls_cert_path = "/path/to/cert.pem"
-tls_key_path = "/path/to/key.pem"
-
-# Firewall settings
-allowed_ips = ["0.0.0.0/0"]
-blocked_ips = []
-
-[monitoring]
-# Monitoring and logging
-log_level = "info"
-log_file = "/var/log/ippan/node.log"
-metrics_enabled = true
-metrics_port = 9090
-
-# Health check settings
-health_check_interval = 30
-health_check_timeout = 5
-```
-
-### 2. Environment-Specific Configurations
-
-#### Development Environment
-```toml
-[network]
-mode = "devnet"
-bootstrap_nodes = ["localhost:8081"]
+enable_encryption = true
+proof_interval = 3600
 
 [consensus]
-block_time = 1
-max_transactions_per_block = 1000
+block_time = 1000
+max_block_size = 1048576  # 1MB
+validator_count = 21
+stake_threshold = 1000000000  # 10 IPN
 
 [api]
-rate_limit_requests_per_minute = 10000
-```
-
-#### Production Environment
-```toml
-[network]
-mode = "mainnet"
-bootstrap_nodes = [
-    "mainnet-node1.ippan.network:8081",
-    "mainnet-node2.ippan.network:8081",
-    "mainnet-node3.ippan.network:8081"
-]
-
-[consensus]
-block_time = 3
-max_transactions_per_block = 10000
-
-[security]
-tls_enabled = true
-allowed_ips = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
-
-[monitoring]
-log_level = "warn"
-metrics_enabled = true
-```
-
-## Deployment Scenarios
-
-### 1. Single Node Deployment
-
-```bash
-# Create data directory
-sudo mkdir -p /data/ippan
-sudo chown $USER:$USER /data/ippan
-
-# Start the node
-ippan --config ~/.ippan/config.toml
-```
-
-### 2. Multi-Node Cluster
-
-#### Using Docker Compose
-
-Create `docker-compose.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  ippan-node-1:
-    image: ippan/ippan:latest
-    container_name: ippan-node-1
-    ports:
-      - "8080:8080"
-      - "8081:8081"
-    volumes:
-      - ./config/node1.toml:/etc/ippan/config.toml
-      - node1-data:/data
-    environment:
-      - RUST_LOG=info
-    restart: unless-stopped
-
-  ippan-node-2:
-    image: ippan/ippan:latest
-    container_name: ippan-node-2
-    ports:
-      - "8082:8080"
-      - "8083:8081"
-    volumes:
-      - ./config/node2.toml:/etc/ippan/config.toml
-      - node2-data:/data
-    environment:
-      - RUST_LOG=info
-    restart: unless-stopped
-
-  ippan-node-3:
-    image: ippan/ippan:latest
-    container_name: ippan-node-3
-    ports:
-      - "8084:8080"
-      - "8085:8081"
-    volumes:
-      - ./config/node3.toml:/etc/ippan/config.toml
-      - node3-data:/data
-    environment:
-      - RUST_LOG=info
-    restart: unless-stopped
-
-volumes:
-  node1-data:
-  node2-data:
-  node3-data:
-```
-
-#### Using Kubernetes
-
-Create `ippan-deployment.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ippan-node
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: ippan-node
-  template:
-    metadata:
-      labels:
-        app: ippan-node
-    spec:
-      containers:
-      - name: ippan
-        image: ippan/ippan:latest
-        ports:
-        - containerPort: 8080
-        - containerPort: 8081
-        volumeMounts:
-        - name: config
-          mountPath: /etc/ippan
-        - name: data
-          mountPath: /data
-        env:
-        - name: RUST_LOG
-          value: "info"
-      volumes:
-      - name: config
-        configMap:
-          name: ippan-config
-      - name: data
-        persistentVolumeClaim:
-          claimName: ippan-data-pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ippan-service
-spec:
-  selector:
-    app: ippan-node
-  ports:
-  - name: api
-    port: 8080
-    targetPort: 8080
-  - name: p2p
-    port: 8081
-    targetPort: 8081
-  type: LoadBalancer
-```
-
-### 3. Cloud Deployment
-
-#### AWS Deployment
-
-```bash
-# Create EC2 instance
-aws ec2 run-instances \
-  --image-id ami-0c02fb55956c7d316 \
-  --instance-type t3.large \
-  --key-name your-key-pair \
-  --security-group-ids sg-12345678 \
-  --subnet-id subnet-12345678 \
-  --user-data file://user-data.sh
-```
-
-User data script (`user-data.sh`):
-```bash
-#!/bin/bash
-yum update -y
-yum install -y docker git
-
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source ~/.cargo/env
-
-# Clone and build IPPAN
-git clone https://github.com/ippan/ippan.git
-cd ippan
-cargo build --release
-
-# Create configuration
-mkdir -p ~/.ippan
-cat > ~/.ippan/config.toml << EOF
-[network]
-mode = "mainnet"
-node_id = "$(uuidgen)"
 listen_addr = "0.0.0.0:8080"
-p2p_listen_addr = "0.0.0.0:8081"
-EOF
+cors_origins = ["*"]
+rate_limit = 1000
+timeout = 30
 
-# Start IPPAN
-nohup ./target/release/ippan --config ~/.ippan/config.toml > /var/log/ippan.log 2>&1 &
+[logging]
+level = "info"
+format = "json"
+output = "stdout"
 ```
 
-#### Google Cloud Deployment
+## 📊 Monitoring Setup
 
-```bash
-# Create instance
-gcloud compute instances create ippan-node \
-  --zone=us-central1-a \
-  --machine-type=e2-standard-2 \
-  --image-family=ubuntu-2004-lts \
-  --image-project=ubuntu-os-cloud \
-  --metadata-from-file startup-script=startup-script.sh
-```
-
-Startup script (`startup-script.sh`):
-```bash
-#!/bin/bash
-apt-get update
-apt-get install -y docker.io git
-
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source ~/.cargo/env
-
-# Build and run IPPAN
-git clone https://github.com/ippan/ippan.git
-cd ippan
-cargo build --release
-
-# Create systemd service
-cat > /etc/systemd/system/ippan.service << EOF
-[Unit]
-Description=IPPAN Node
-After=network.target
-
-[Service]
-Type=simple
-User=ippan
-WorkingDirectory=/opt/ippan
-ExecStart=/opt/ippan/target/release/ippan --config /opt/ippan/config.toml
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl enable ippan
-systemctl start ippan
-```
-
-## Security Hardening
-
-### 1. Firewall Configuration
-
-```bash
-# UFW (Ubuntu)
-sudo ufw allow 8080/tcp  # API
-sudo ufw allow 8081/tcp  # P2P
-sudo ufw allow 9090/tcp  # Metrics
-sudo ufw enable
-
-# iptables
-sudo iptables -A INPUT -p tcp --dport 8080 -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 8081 -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 9090 -j ACCEPT
-```
-
-### 2. TLS/SSL Configuration
-
-```bash
-# Generate self-signed certificate
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
-
-# Or use Let's Encrypt
-sudo certbot certonly --standalone -d your-domain.com
-```
-
-### 3. User and Permissions
-
-```bash
-# Create dedicated user
-sudo useradd -r -s /bin/false ippan
-sudo mkdir -p /data/ippan
-sudo chown ippan:ippan /data/ippan
-```
-
-## Monitoring and Logging
-
-### 1. Log Management
-
-```bash
-# Configure log rotation
-sudo cat > /etc/logrotate.d/ippan << EOF
-/var/log/ippan/*.log {
-    daily
-    missingok
-    rotate 30
-    compress
-    delaycompress
-    notifempty
-    create 644 ippan ippan
-}
-EOF
-```
-
-### 2. Metrics Collection
+### Prometheus Configuration
 
 ```yaml
-# Prometheus configuration
+# deployments/monitoring/prometheus.yml
 global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: 'ippan'
+  - job_name: 'ippan-nodes'
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['ippan-service:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
 ```
 
-### 3. Health Checks
+### Grafana Dashboard
+
+Import the IPPAN dashboard from `deployments/monitoring/grafana-dashboard.json`.
+
+### Alerting Rules
+
+```yaml
+# deployments/monitoring/ippan_rules.yml
+groups:
+- name: ippan_alerts
+  rules:
+  - alert: HighErrorRate
+    expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High error rate detected"
+```
+
+## 🔒 Security Configuration
+
+### SSL/TLS Setup
 
 ```bash
-# Health check script
-#!/bin/bash
-curl -f http://localhost:8080/health || exit 1
+# Generate SSL certificates
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/ippan.key \
+  -out /etc/ssl/certs/ippan.crt
+
+# Update nginx configuration
+# Add SSL configuration to deployments/nginx/nginx.conf
 ```
 
-## Backup and Recovery
+### Firewall Configuration
 
-### 1. Data Backup
+```bash
+# Allow required ports
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw allow 8080/tcp
+ufw allow 3000/tcp
+
+# Enable firewall
+ufw enable
+```
+
+### Rate Limiting
+
+Configure rate limiting in nginx:
+
+```nginx
+# deployments/nginx/nginx.conf
+limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+
+location /api/ {
+    limit_req zone=api burst=20 nodelay;
+    # ... rest of configuration
+}
+```
+
+## 📈 Scaling
+
+### Horizontal Scaling (Kubernetes)
+
+```bash
+# Scale deployment
+kubectl scale deployment ippan-node --replicas=5
+
+# Set up auto-scaling
+kubectl autoscale deployment ippan-node --cpu-percent=70 --min=3 --max=10
+```
+
+### Vertical Scaling
+
+Update resource limits in Kubernetes deployment:
+
+```yaml
+resources:
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
+    memory: "4Gi"
+    cpu: "2000m"
+```
+
+## 🔄 Backup & Recovery
+
+### Automated Backups
 
 ```bash
 # Create backup script
+cat > /usr/local/bin/ippan-backup.sh << 'EOF'
 #!/bin/bash
-BACKUP_DIR="/backup/ippan"
 DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/backups/ippan"
+mkdir -p $BACKUP_DIR
 
-# Stop node
-systemctl stop ippan
+# Backup database
+kubectl exec -it deployment/ippan-node -- tar czf - /data > $BACKUP_DIR/ippan-data-$DATE.tar.gz
 
-# Create backup
-tar -czf "$BACKUP_DIR/ippan_$DATE.tar.gz" /data/ippan
+# Backup configuration
+kubectl get configmap ippan-config -o yaml > $BACKUP_DIR/ippan-config-$DATE.yaml
 
-# Start node
-systemctl start ippan
+# Cleanup old backups (keep 30 days)
+find $BACKUP_DIR -name "*.tar.gz" -mtime +30 -delete
+find $BACKUP_DIR -name "*.yaml" -mtime +30 -delete
+EOF
 
-# Clean old backups (keep last 7 days)
-find $BACKUP_DIR -name "ippan_*.tar.gz" -mtime +7 -delete
+chmod +x /usr/local/bin/ippan-backup.sh
+
+# Schedule daily backups
+echo "0 2 * * * /usr/local/bin/ippan-backup.sh" | crontab -
 ```
 
-### 2. Disaster Recovery
+### Disaster Recovery
 
 ```bash
-# Recovery script
-#!/bin/bash
-BACKUP_FILE="$1"
-DATA_DIR="/data/ippan"
-
-# Stop node
-systemctl stop ippan
+# Restore from backup
+kubectl delete deployment ippan-node
+kubectl apply -f deployments/kubernetes/ippan-deployment.yaml
 
 # Restore data
-rm -rf $DATA_DIR/*
-tar -xzf $BACKUP_FILE -C /
-
-# Start node
-systemctl start ippan
+tar xzf /backups/ippan/ippan-data-20240101_020000.tar.gz -C /tmp/
+kubectl cp /tmp/data ippan-node-pod:/data
 ```
 
-## Troubleshooting
+## 🚨 Troubleshooting
 
 ### Common Issues
 
-1. **Node won't start**
-   ```bash
-   # Check logs
-   journalctl -u ippan -f
-   
-   # Check configuration
-   ippan --config ~/.ippan/config.toml --check-config
-   ```
+#### 1. Pod Not Starting
+```bash
+# Check pod status
+kubectl describe pod <pod-name>
 
-2. **Network connectivity issues**
-   ```bash
-   # Test P2P connectivity
-   telnet node1.ippan.network 8081
-   
-   # Check firewall
-   sudo ufw status
-   ```
+# Check logs
+kubectl logs <pod-name>
+```
 
-3. **High memory usage**
-   ```bash
-   # Monitor memory usage
-   htop
-   
-   # Check for memory leaks
-   valgrind --tool=memcheck ippan
-   ```
+#### 2. High Memory Usage
+```bash
+# Check resource usage
+kubectl top pods -l app=ippan-node
+
+# Adjust resource limits
+kubectl edit deployment ippan-node
+```
+
+#### 3. Network Issues
+```bash
+# Check service endpoints
+kubectl get endpoints ippan-service
+
+# Test connectivity
+kubectl exec -it <pod-name> -- curl http://localhost:8080/health
+```
 
 ### Performance Tuning
 
-```toml
-[performance]
-# Increase worker threads
-worker_threads = 8
-
-# Optimize memory usage
-max_memory_mb = 8192
-
-# Enable connection pooling
-connection_pool_size = 100
-
-# Optimize storage
-storage_buffer_size = 1048576
+#### Database Optimization
+```bash
+# Optimize database
+kubectl exec -it <pod-name> -- sqlite3 /data/ippan.db "VACUUM;"
+kubectl exec -it <pod-name> -- sqlite3 /data/ippan.db "ANALYZE;"
 ```
 
-## Support
+#### Memory Optimization
+```bash
+# Adjust Rust memory settings
+export RUST_LOG=info
+export MALLOC_ARENA_MAX=2
+```
 
-For deployment support:
+## 📞 Support
 
-- **Documentation**: https://docs.ippan.network/deployment
-- **GitHub Issues**: https://github.com/ippan/ippan/issues
-- **Discord**: https://discord.gg/ippan
-- **Email**: deployment-support@ippan.network
+### Health Checks
+
+```bash
+# Check application health
+curl http://localhost:8080/health
+
+# Check metrics
+curl http://localhost:8080/metrics
+```
+
+### Logs
+
+```bash
+# View logs
+kubectl logs -l app=ippan-node -f
+
+# View specific pod logs
+kubectl logs <pod-name> --tail=100
+```
+
+### Monitoring
+
+Access monitoring dashboards:
+- **Grafana**: http://localhost:3000
+- **Prometheus**: http://localhost:9090
+- **AlertManager**: http://localhost:9093
+
+## 🎯 Production Checklist
+
+- [ ] SSL certificates configured
+- [ ] Firewall rules applied
+- [ ] Monitoring setup complete
+- [ ] Backup strategy implemented
+- [ ] Load testing completed
+- [ ] Security audit passed
+- [ ] Documentation updated
+- [ ] Support team trained
+- [ ] Rollback plan tested
+- [ ] Performance benchmarks met
+
+## 📚 Additional Resources
+
+- [Architecture Overview](architecture.md)
+- [API Reference](api_reference.md)
+- [Security Guide](SECURITY_GUIDE.md)
+- [Monitoring Guide](MONITORING_GUIDE.md)
+- [Troubleshooting Guide](TROUBLESHOOTING_GUIDE.md)

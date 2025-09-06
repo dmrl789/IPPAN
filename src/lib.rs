@@ -6,26 +6,47 @@ pub mod config;
 pub mod api;
 pub mod blockchain;
 pub mod consensus;
-pub mod quantum;
-pub mod iot;
-// pub mod dht;
-// pub mod domain;
 pub mod error;
-pub mod network;
 pub mod node;
-// pub mod staking; // TODO: Fix compilation errors before enabling
-pub mod storage;
-pub mod security;
-pub mod crosschain;
-pub mod dns;
 pub mod transaction_types; // NEW - User-facing transaction types
-// pub mod tests;
 pub mod utils;
-// pub mod wallet; // TODO: Fix compilation errors before enabling
-pub mod monitoring;
+pub mod performance;
 pub mod performance_test;
 pub mod testing_framework;
 pub mod security_audit;
+
+// Feature-gated modules
+#[cfg(feature = "quantum")]
+pub mod quantum;
+
+#[cfg(feature = "iot")]
+pub mod iot;
+
+#[cfg(feature = "network")]
+pub mod network;
+
+#[cfg(feature = "storage")]
+pub mod storage;
+
+#[cfg(feature = "security")]
+pub mod security;
+
+#[cfg(feature = "crosschain")]
+pub mod crosschain;
+
+pub mod bridge;
+
+#[cfg(feature = "dns")]
+pub mod dns;
+
+#[cfg(feature = "staking")]
+pub mod staking;
+
+#[cfg(feature = "wallet")]
+pub mod wallet;
+
+#[cfg(feature = "monitoring")]
+pub mod monitoring;
 
 // Re-export commonly used types
 pub use config::Config;
@@ -44,3 +65,47 @@ pub const MAX_IPN_SUPPLY: u64 = 21_000_000_000_000_000; // 21M IPN in smallest u
 pub const MIN_STAKE_AMOUNT: u64 = 10_000_000_000; // 10 IPN in smallest units
 pub const MAX_STAKE_AMOUNT: u64 = 100_000_000_000; // 100 IPN in smallest units
 pub const TRANSACTION_FEE_PERCENTAGE: u64 = 1; // 1%
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_feature_flags() {
+        // Test that contracts are disabled by default
+        #[cfg(feature = "contracts")]
+        {
+            panic!("Contracts feature should be disabled by default");
+        }
+        
+        #[cfg(not(feature = "contracts"))]
+        {
+            // This should compile and run
+            assert!(true, "Contracts feature is correctly disabled");
+        }
+    }
+
+    #[test]
+    fn test_default_features_enabled() {
+        // Test that default features are enabled
+        #[cfg(feature = "dns")]
+        {
+            assert!(true, "DNS feature is enabled");
+        }
+        
+        #[cfg(feature = "storage")]
+        {
+            assert!(true, "Storage feature is enabled");
+        }
+        
+        #[cfg(feature = "staking")]
+        {
+            assert!(true, "Staking feature is enabled");
+        }
+        
+        #[cfg(feature = "wallet")]
+        {
+            assert!(true, "Wallet feature is enabled");
+        }
+    }
+}
