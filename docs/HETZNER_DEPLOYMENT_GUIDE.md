@@ -147,7 +147,7 @@ sudo ufw enable
 ### 3.1 Clone Repository
 ```bash
 # Clone IPPAN repository
-git clone https://github.com/your-org/ippan.git
+git clone https://github.com/dmrl789/IPPAN.git
 cd ippan
 
 # Make scripts executable

@@ -163,7 +163,7 @@ final_message: |
   
   Next Steps:
   1. Connect as ippan user: ssh ippan@YOUR_SERVER_IP
-  2. Clone IPPAN repository
+  2. Clone IPPAN repository: git clone https://github.com/dmrl789/IPPAN.git
   3. Configure environment variables
   4. Deploy IPPAN services
   

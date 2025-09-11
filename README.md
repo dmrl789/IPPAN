@@ -27,7 +27,7 @@ A high-performance, quantum-resistant blockchain with advanced features includin
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/ippan.git
+git clone https://github.com/dmrl789/IPPAN.git
 cd ippan
 
 # Build project
@@ -270,7 +270,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 - **Documentation**: https://docs.ippan.net
-- **GitHub Issues**: https://github.com/your-org/ippan/issues
+- **GitHub Issues**: https://github.com/dmrl789/IPPAN/issues
 - **Discord**: https://discord.gg/ippan
 - **Email**: support@ippan.net
 
