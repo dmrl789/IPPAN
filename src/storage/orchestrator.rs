@@ -148,6 +148,7 @@ pub struct OperationResult {
 }
 
 /// Storage orchestrator
+#[derive(Debug)]
 pub struct StorageOrchestrator {
     /// Pending operations
     pending_operations: Arc<RwLock<HashMap<String, StorageOperation>>>,

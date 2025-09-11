@@ -7,26 +7,41 @@ pub mod crosschain;
 pub mod dns_cli;
 pub mod user_cli; // NEW - User-facing transaction CLI
 pub mod http;
+pub mod simple_http;
+pub mod real_rest_api; // NEW - Real REST API implementation
 // pub mod v1; // NEW - REST API v1 endpoints (temporarily disabled due to Axum compatibility issues)
 // pub mod explorer;
 
 use crate::node::IppanNode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// API layer that provides HTTP, CLI, and explorer interfaces
 pub struct ApiLayer {
-    node: Arc<RwLock<IppanNode>>,
+    node: Arc<RwLock<Option<Arc<RwLock<IppanNode>>>>>,
     http_server: Option<http::HttpServer>,
+    simple_http_server: Option<simple_http::SimpleHttpServer>,
     // TODO: Re-enable when modules are ready
     // explorer: Option<explorer::ExplorerApi>,
 }
 
+impl Default for ApiLayer {
+    fn default() -> Self {
+        Self {
+            node: Arc::new(RwLock::new(None)), // Will be properly initialized later
+            http_server: None,
+            simple_http_server: None,
+        }
+    }
+}
+
 impl ApiLayer {
-    pub fn new(node: Arc<RwLock<IppanNode>>) -> Self {
+    pub fn new(node: Arc<RwLock<Option<Arc<RwLock<IppanNode>>>>>) -> Self {
         Self {
             node,
             http_server: None,
+            simple_http_server: None,
             // TODO: Re-enable when modules are ready
             // explorer: None,
         }
@@ -36,16 +51,31 @@ impl ApiLayer {
     pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Starting API layer...");
         
-        // Start HTTP server
+        // Start simple HTTP server
         let node_clone = Arc::clone(&self.node);
-        self.http_server = Some(http::HttpServer::new(node_clone));
-        self.http_server.as_mut().unwrap().start().await?;
+        let addr = "127.0.0.1:3000".parse().unwrap();
         
-        // TODO: Re-enable when modules are ready
-        // Start explorer API
-        // let node_clone = Arc::clone(&self.node);
-        // self.explorer = Some(explorer::ExplorerApi::new(node_clone));
-        // self.explorer.as_mut().unwrap().start().await?;
+        // Extract the node from the Option wrapper
+        let node_guard = node_clone.read().await;
+        if let Some(node_arc) = node_guard.as_ref() {
+            let inner_node = Arc::clone(node_arc);
+            self.simple_http_server = Some(simple_http::SimpleHttpServer::new(inner_node, addr));
+        } else {
+            return Err("Node not initialized".into());
+        }
+        
+        // Start the server in a separate task
+        let server = self.simple_http_server.as_ref().unwrap();
+        let server_clone = simple_http::SimpleHttpServer {
+            node: Arc::clone(&server.node),
+            addr: server.addr,
+        };
+        
+        tokio::spawn(async move {
+            if let Err(e) = server_clone.start().await {
+                log::error!("Simple HTTP server error: {}", e);
+            }
+        });
         
         log::info!("API layer started successfully");
         Ok(())
@@ -70,10 +100,17 @@ impl ApiLayer {
 
     /// Get node status for API responses
     pub async fn get_node_status(&self) -> NodeStatus {
-        let node = self.node.read().await;
+        let node_guard = self.node.read().await;
+        let uptime = if let Some(node_arc) = node_guard.as_ref() {
+            let inner_node = node_arc.read().await;
+            inner_node.get_uptime()
+        } else {
+            Duration::from_secs(0) // Default uptime if node is not initialized
+        };
+        
         NodeStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            uptime: node.get_uptime(),
+            uptime,
             consensus_round: 0, // TODO: Implement consensus round access
             storage_usage: StorageUsage {
                 used_bytes: 0,

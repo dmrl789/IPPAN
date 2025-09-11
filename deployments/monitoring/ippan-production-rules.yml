@@ -1,0 +1,269 @@
+groups:
+  - name: ippan-node
+    rules:
+      # Node availability
+      - alert: IPPANNodeDown
+        expr: up{job="ippan-node"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: ippan-node
+        annotations:
+          summary: "IPPAN node is down"
+          description: "IPPAN node {{ $labels.instance }} has been down for more than 1 minute."
+
+      # High CPU usage
+      - alert: IPPANHighCPU
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: ippan-node
+        annotations:
+          summary: "High CPU usage on IPPAN node"
+          description: "IPPAN node {{ $labels.instance }} CPU usage is above 80% for more than 5 minutes."
+
+      # High memory usage
+      - alert: IPPANHighMemory
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: ippan-node
+        annotations:
+          summary: "High memory usage on IPPAN node"
+          description: "IPPAN node {{ $labels.instance }} memory usage is above 85% for more than 5 minutes."
+
+      # Disk space low
+      - alert: IPPANDiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          service: ippan-node
+        annotations:
+          summary: "Low disk space on IPPAN node"
+          description: "IPPAN node {{ $labels.instance }} disk space is below 10% for more than 5 minutes."
+
+      # Network connectivity issues
+      - alert: IPPANNetworkDown
+        expr: up{job="ippan-network"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: network
+        annotations:
+          summary: "IPPAN network connectivity down"
+          description: "IPPAN network service {{ $labels.instance }} has been down for more than 2 minutes."
+
+  - name: ippan-consensus
+    rules:
+      # Consensus round stuck
+      - alert: IPPANConsensusStuck
+        expr: ippan_consensus_round_duration_seconds > 10
+        for: 30s
+        labels:
+          severity: critical
+          service: consensus
+        annotations:
+          summary: "IPPAN consensus round stuck"
+          description: "IPPAN consensus round on {{ $labels.instance }} has been running for more than 10 seconds."
+
+      # Low validator participation
+      - alert: IPPANLowValidatorParticipation
+        expr: ippan_consensus_active_validators / ippan_consensus_total_validators < 0.67
+        for: 2m
+        labels:
+          severity: warning
+          service: consensus
+        annotations:
+          summary: "Low validator participation"
+          description: "IPPAN consensus has less than 67% validator participation for more than 2 minutes."
+
+      # High block propagation time
+      - alert: IPPANHighBlockPropagation
+        expr: ippan_consensus_block_propagation_seconds > 5
+        for: 1m
+        labels:
+          severity: warning
+          service: consensus
+        annotations:
+          summary: "High block propagation time"
+          description: "IPPAN block propagation time is above 5 seconds for more than 1 minute."
+
+  - name: ippan-storage
+    rules:
+      # Storage space low
+      - alert: IPPANStorageSpaceLow
+        expr: ippan_storage_available_bytes / ippan_storage_total_bytes < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: storage
+        annotations:
+          summary: "IPPAN storage space low"
+          description: "IPPAN storage space is below 10% for more than 5 minutes."
+
+      # High storage latency
+      - alert: IPPANHighStorageLatency
+        expr: ippan_storage_operation_duration_seconds > 1
+        for: 2m
+        labels:
+          severity: warning
+          service: storage
+        annotations:
+          summary: "High storage operation latency"
+          description: "IPPAN storage operations are taking more than 1 second for more than 2 minutes."
+
+      # Storage replication issues
+      - alert: IPPANStorageReplicationDown
+        expr: ippan_storage_replication_factor < 3
+        for: 5m
+        labels:
+          severity: critical
+          service: storage
+        annotations:
+          summary: "IPPAN storage replication down"
+          description: "IPPAN storage replication factor is below 3 for more than 5 minutes."
+
+  - name: ippan-api
+    rules:
+      # High API response time
+      - alert: IPPANHighAPIResponseTime
+        expr: ippan_api_request_duration_seconds > 2
+        for: 2m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "High API response time"
+          description: "IPPAN API response time is above 2 seconds for more than 2 minutes."
+
+      # High API error rate
+      - alert: IPPANHighAPIErrorRate
+        expr: rate(ippan_api_requests_total{status=~"5.."}[5m]) / rate(ippan_api_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: "High API error rate"
+          description: "IPPAN API error rate is above 5% for more than 2 minutes."
+
+      # API rate limiting triggered
+      - alert: IPPANAPIRateLimited
+        expr: ippan_api_rate_limited_requests_total > 100
+        for: 1m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "API rate limiting triggered"
+          description: "IPPAN API rate limiting has been triggered more than 100 times in the last minute."
+
+  - name: ippan-wallet
+    rules:
+      # Wallet balance low
+      - alert: IPPANWalletBalanceLow
+        expr: ippan_wallet_balance_satoshis < 1000000000
+        for: 5m
+        labels:
+          severity: warning
+          service: wallet
+        annotations:
+          summary: "IPPAN wallet balance low"
+          description: "IPPAN wallet balance is below 10 IPN for more than 5 minutes."
+
+      # High transaction fees
+      - alert: IPPANHighTransactionFees
+        expr: ippan_wallet_transaction_fee_satoshis > 10000000
+        for: 5m
+        labels:
+          severity: warning
+          service: wallet
+        annotations:
+          summary: "High transaction fees"
+          description: "IPPAN transaction fees are above 0.1 IPN for more than 5 minutes."
+
+  - name: ippan-staking
+    rules:
+      # Staking rewards not distributed
+      - alert: IPPANStakingRewardsNotDistributed
+        expr: time() - ippan_staking_last_reward_distribution_timestamp > 86400
+        for: 1h
+        labels:
+          severity: warning
+          service: staking
+        annotations:
+          summary: "Staking rewards not distributed"
+          description: "IPPAN staking rewards have not been distributed for more than 24 hours."
+
+      # Low staking participation
+      - alert: IPPANLowStakingParticipation
+        expr: ippan_staking_total_staked_amount / ippan_staking_total_supply < 0.1
+        for: 1h
+        labels:
+          severity: warning
+          service: staking
+        annotations:
+          summary: "Low staking participation"
+          description: "IPPAN staking participation is below 10% for more than 1 hour."
+
+  - name: ippan-security
+    rules:
+      # High failed authentication attempts
+      - alert: IPPANHighFailedAuth
+        expr: rate(ippan_security_failed_auth_attempts_total[5m]) > 10
+        for: 1m
+        labels:
+          severity: critical
+          service: security
+        annotations:
+          summary: "High failed authentication attempts"
+          description: "IPPAN has more than 10 failed authentication attempts per minute for more than 1 minute."
+
+      # Suspicious network activity
+      - alert: IPPANSuspiciousNetworkActivity
+        expr: rate(ippan_network_suspicious_connections_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "Suspicious network activity detected"
+          description: "IPPAN has detected more than 5 suspicious network connections per minute for more than 1 minute."
+
+  - name: ippan-performance
+    rules:
+      # Low transaction throughput
+      - alert: IPPANLowTransactionThroughput
+        expr: rate(ippan_consensus_transactions_processed_total[5m]) < 100
+        for: 5m
+        labels:
+          severity: warning
+          service: performance
+        annotations:
+          summary: "Low transaction throughput"
+          description: "IPPAN transaction throughput is below 100 TPS for more than 5 minutes."
+
+      # High memory usage
+      - alert: IPPANHighMemoryUsage
+        expr: ippan_memory_usage_bytes / ippan_memory_total_bytes > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          service: performance
+        annotations:
+          summary: "High memory usage"
+          description: "IPPAN memory usage is above 90% for more than 5 minutes."
+
+      # High CPU usage
+      - alert: IPPANHighCPUUsage
+        expr: ippan_cpu_usage_percent > 90
+        for: 5m
+        labels:
+          severity: critical
+          service: performance
+        annotations:
+          summary: "High CPU usage"
+          description: "IPPAN CPU usage is above 90% for more than 5 minutes."

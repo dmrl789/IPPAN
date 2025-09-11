@@ -1,0 +1,115 @@
+# TestSprite Configuration for IPPAN
+# Integrates with the guardrails defined in testsprite.prd.yaml
+
+meta:
+  name: "IPPAN TestSprite Configuration"
+  version: "1.0.0"
+  prd_reference: "./testsprite.prd.yaml"
+
+# Test execution settings
+execution:
+  use_prd: "./testsprite.prd.yaml"
+  workflow: "WF-DEV-CHANGE"  # Default workflow for test execution
+  
+  # Model selection for test generation
+  model_selection:
+    simple_tests: ["gpt-4o-mini", "o4-mini"]  # For basic API tests
+    complex_tests: ["gpt-5", "gpt-5-thinking"]  # For complex integration tests
+    
+  # File processing limits (from guardrails)
+  limits:
+    max_file_size_kb: 500
+    max_changed_files: 10
+    max_hunk_size_lines: 120
+
+# Test plan configurations
+test_plans:
+  frontend:
+    file: "testsprite_frontend_test_plan.json"
+    workflow: "WF-DEV-CHANGE"
+    model: "simple_tests"  # UI tests are typically straightforward
+    scope: "React UI components and user interactions"
+    
+  backend:
+    file: "testsprite_backend_test_plan.json"
+    workflow: "WF-DEV-CHANGE"
+    model: "simple_tests"  # API tests are typically straightforward
+    scope: "REST API endpoints and backend functionality"
+
+# Output requirements (from guardrails)
+outputs:
+  required:
+    - "task_brief.md"
+    - "patch_summary.md"
+    - "next_steps.md"
+  conditional:
+    - "deviation_notes.md"  # Only when diverging from standard practices
+
+# Test categories and their specific settings
+test_categories:
+  functional:
+    workflow: "WF-DEV-CHANGE"
+    model: "simple_tests"
+    priority: "High"
+    
+  security:
+    workflow: "WF-DEV-CHANGE"
+    model: "complex_tests"  # Security tests need more sophisticated analysis
+    priority: "High"
+    
+  error_handling:
+    workflow: "WF-DEV-CHANGE"
+    model: "simple_tests"
+    priority: "High"
+    
+  ui:
+    workflow: "WF-DEV-CHANGE"
+    model: "simple_tests"
+    priority: "Medium"
+
+# IPPAN-specific test settings
+ippan_specific:
+  # Quantum-resistant cryptography tests
+  quantum_crypto:
+    workflow: "WF-DEV-CHANGE"
+    model: "complex_tests"
+    requires_deviation_notes: true  # Custom crypto implementations
+    
+  # ZK-STARK proof tests
+  zk_stark:
+    workflow: "WF-DEV-CHANGE"
+    model: "complex_tests"
+    requires_deviation_notes: true  # Custom proof systems
+    
+  # Cross-chain bridge tests
+  cross_chain:
+    workflow: "WF-DEV-CHANGE"
+    model: "complex_tests"
+    requires_deviation_notes: true  # Custom bridge implementations
+    
+  # AI/ML marketplace tests
+  ai_ml:
+    workflow: "WF-DEV-CHANGE"
+    model: "complex_tests"
+    requires_deviation_notes: true  # Custom AI/ML integrations
+
+# Execution environment
+environment:
+  local_port: 8080  # Default IPPAN node port
+  test_scope: "codebase"  # or "diff" for staged changes only
+  
+# Integration with existing TestSprite MCP tools
+mcp_integration:
+  bootstrap_tests:
+    enabled: true
+    type: "backend"  # IPPAN is primarily a backend system
+    project_path: "."  # Current directory
+    
+  generate_test_plan:
+    enabled: true
+    need_login: false  # IPPAN doesn't require login for basic operations
+    
+  generate_code_and_execute:
+    enabled: true
+    project_name: "ippan"
+    additional_instruction: "Follow IPPAN architecture and use Rust best practices"

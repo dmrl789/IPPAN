@@ -1,7 +1,16 @@
 {
   "status": "commited",
-  "type": "backend",
+  "type": "frontend",
   "scope": "codebase",
-  "localEndpoint": "http://localhost:8080",
-  "backendAuthType": "public"
+  "localEndpoint": "http://localhost:3000",
+  "executionArgs": {
+    "projectName": "ippan",
+    "projectPath": "C:\\Users\\yuyby\\Desktop\\backUp CursorSoftware\\ippan",
+    "testIds": [],
+    "additionalInstruction": "Run the complete test suite to verify all critical fixes have been implemented successfully. Focus on validating that the previously failing tests now pass, including frontend loading, domain security, wallet connection, UI components, and backend services.",
+    "envs": {
+      "API_KEY": "sk-user-GXnh5TIvYQW17f0_coj8jWePDHa10g6wLO3SdVmW3r7LbpUeeDWyc1wOLlZZ3W5bLVUYLM8tz2DHvzDZU1CThp1_l067sRxfrDEOnt0eVNglUqyt0-mR-qUiRxaI4T1UET0"
+    }
+  },
+  "proxy": "http://d4a3e6f6-79f4-4a84-8054-2b5a0ba29942:4iAsbaoMbW4fSAHipmC7jqOlmLFOTsKH@tun.testsprite.com:8080"
 }

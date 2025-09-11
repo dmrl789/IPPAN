@@ -1,3 +1,8 @@
+use anyhow::{Context, Result};
+use std::{panic, time::Duration};
+use tracing::{debug, error, info};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+
 use ippan::{
     node::IppanNode,
     config::Config,
@@ -9,7 +14,22 @@ use ippan::{
 use clap::{Command, Arg};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
+    // Panic + logging setup
+    std::env::set_var("RUST_BACKTRACE", std::env::var("RUST_BACKTRACE").unwrap_or_else(|_| "full".into()));
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .init();
+
+    panic::set_hook(Box::new(|pi| {
+        eprintln!("[panic] {pi}");
+        if let Ok(bt) = std::env::var("RUST_BACKTRACE") {
+            eprintln!("[panic] RUST_BACKTRACE={bt}");
+        }
+    }));
+
+    info!("IPPAN node starting…");
     // Parse command line arguments
     let matches = Command::new("IPPAN")
         .version("1.0")
@@ -61,22 +81,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Initialize logging system
-    let logging_config = LoggerConfig::default();
-    let logger = StructuredLogger::new(logging_config);
-    logger.init()?;
+    // 1) Load config
+    let cfg = Config::load().context("Config::load failed")?;
+    info!("Configuration loaded successfully");
 
-    log::info!("Starting IPPAN node");
+    // 2) Build node
+    info!("creating IppanNode…");
+    let mut node = IppanNode::new(cfg.clone())
+        .await
+        .map_err(|e| anyhow::anyhow!("IppanNode::new failed: {}", e))?;
+    info!("IppanNode created.");
 
-    // Load configuration
-    let config = Config::load()?;
-    log::info!("Configuration loaded successfully");
-
-    // Create and start the node
-    let mut node = IppanNode::new(config).await?;
+    // 3) Start services
+    info!("starting node services…");
     
-    // Start the node
-    node.start().await?;
+    // Variant C: start() spawns tasks and returns immediately -> keep process alive
+    node.start().await.map_err(|e| anyhow::anyhow!("node.start failed: {}", e))?;
+    info!("node started; entering keep-alive loop");
+    tokio::signal::ctrl_c().await.expect("failed to wait for ctrl_c");
+    info!("ctrl_c received; shutting down");
 
+    info!("node exited normally.");
     Ok(())
 }

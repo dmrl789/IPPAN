@@ -169,6 +169,7 @@ pub struct EncryptedData {
 }
 
 /// Encryption manager with secure key management
+#[derive(Debug)]
 pub struct EncryptionManager {
     /// Encryption keys
     keys: Arc<RwLock<HashMap<String, EncryptionKey>>>,

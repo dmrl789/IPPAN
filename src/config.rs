@@ -403,6 +403,11 @@ impl Config {
     
     /// Get configuration file path
     fn get_config_path() -> Result<PathBuf> {
+        // Check if IPPAN_CONFIG_PATH environment variable is set
+        if let Ok(env_path) = std::env::var("IPPAN_CONFIG_PATH") {
+            return Ok(PathBuf::from(env_path));
+        }
+        
         let mut path = dirs::config_dir()
             .ok_or_else(|| IppanError::Config("Could not determine config directory".to_string()))?;
         path.push("ippan");

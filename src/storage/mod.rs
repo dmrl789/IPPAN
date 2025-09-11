@@ -13,6 +13,7 @@ pub mod encryption;
 pub mod shards;
 pub mod proofs;
 pub mod orchestrator;
+pub mod real_storage; // NEW - Real encrypted storage implementation
 
 use distributed::DistributedStorage;
 use encryption::EncryptionManager;
@@ -21,6 +22,7 @@ use proofs::ProofManager;
 use orchestrator::StorageOrchestrator;
 
 /// Storage manager
+#[derive(Debug)]
 pub struct StorageManager {
     pub config: StorageConfig,
     pub distributed_storage: Arc<RwLock<DistributedStorage>>,

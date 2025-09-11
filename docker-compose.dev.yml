@@ -17,7 +17,9 @@ services:
       - ippan_dev_logs:/logs
       - ./config:/config:ro
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=ippan=trace,ippan_node=trace,info
+      - RUST_BACKTRACE=full
+      - IPPAN_CONFIG_DIR=/app/data
       - IPPAN_NETWORK_PORT=8080
       - IPPAN_API_PORT=8080
       - IPPAN_STORAGE_DIR=/data

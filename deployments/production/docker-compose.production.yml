@@ -1,0 +1,184 @@
+version: '3.8'
+
+services:
+  ippan-node:
+    image: ippan/ippan:latest
+    container_name: ippan-node
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # P2P network port
+      - "3000:3000"  # API port
+    volumes:
+      - ippan_data:/data
+      - ippan_keys:/keys
+      - ippan_logs:/logs
+      - ./config/production.toml:/config/production.toml:ro
+      - ./ssl:/ssl:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_CONFIG_PATH=/config/production.toml
+      - IPPAN_NETWORK_PORT=8080
+      - IPPAN_API_PORT=3000
+      - IPPAN_STORAGE_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - NODE_ENV=production
+    networks:
+      - ippan_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+
+  ippan-monitor:
+    image: prom/prometheus:latest
+    container_name: ippan-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - monitor_data:/prometheus
+      - ./monitoring/prometheus-production.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+  ippan-grafana:
+    image: grafana/grafana:latest
+    container_name: ippan-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-production.yml:/etc/grafana/grafana.ini:ro
+      - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123}
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
+      - GF_DATABASE_TYPE=sqlite3
+      - GF_DATABASE_PATH=/var/lib/grafana/grafana.db
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-monitor
+
+  ippan-alertmanager:
+    image: prom/alertmanager:latest
+    container_name: ippan-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - alert_data:/alertmanager
+      - ./monitoring/alertmanager-production.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-monitor
+
+  ippan-backup:
+    image: alpine:latest
+    container_name: ippan-backup
+    restart: unless-stopped
+    volumes:
+      - ippan_data:/data:ro
+      - ippan_keys:/keys:ro
+      - backup_data:/backups
+    environment:
+      - BACKUP_SCHEDULE=0 2 * * *
+      - BACKUP_RETENTION_DAYS=30
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
+    command: |
+      sh -c '
+        apk add --no-cache tar gzip openssl &&
+        while true; do
+          sleep 3600
+          timestamp=$$(date +%Y%m%d_%H%M%S)
+          tar -czf /backups/ippan_backup_$$timestamp.tar.gz -C /data . -C /keys .
+          find /backups -name "ippan_backup_*.tar.gz" -mtime +$${BACKUP_RETENTION_DAYS} -delete
+        done
+      '
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+  ippan-lb:
+    image: nginx:alpine
+    container_name: ippan-lb
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-production.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - lb_logs:/var/log/nginx
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+    security_opt:
+      - no-new-privileges:true
+
+  ippan-fluentd:
+    image: fluent/fluentd:v1.16-debian-1
+    container_name: ippan-fluentd
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/fluentd.conf:/fluentd/etc/fluent.conf:ro
+      - ippan_logs:/var/log/ippan:ro
+      - fluentd_data:/var/log/fluentd
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+volumes:
+  ippan_data:
+    driver: local
+  ippan_keys:
+    driver: local
+  ippan_logs:
+    driver: local
+  monitor_data:
+    driver: local
+  grafana_data:
+    driver: local
+  backup_data:
+    driver: local
+  alert_data:
+    driver: local
+  lb_logs:
+    driver: local
+  fluentd_data:
+    driver: local
+
+networks:
+  ippan_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

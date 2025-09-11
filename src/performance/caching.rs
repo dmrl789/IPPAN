@@ -321,24 +321,28 @@ pub struct CacheManager {
 }
 
 #[derive(Clone)]
+#[derive(Debug, PartialEq)]
 struct BlockData {
     block: Vec<u8>,
     timestamp: u64,
 }
 
 #[derive(Clone)]
+#[derive(Debug, PartialEq)]
 struct TransactionData {
     transaction: Vec<u8>,
     timestamp: u64,
 }
 
 #[derive(Clone)]
+#[derive(Debug, PartialEq)]
 struct ValidatorData {
     validator: Vec<u8>,
     stake: u64,
 }
 
 #[derive(Clone)]
+#[derive(Debug, PartialEq)]
 struct ConfigData {
     config: Vec<u8>,
     version: u32,

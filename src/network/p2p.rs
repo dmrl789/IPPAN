@@ -882,6 +882,7 @@ mod danger {
 }
 
 // Legacy P2PNetwork for backward compatibility
+#[derive(Debug)]
 pub struct P2PNetwork {
     /// Node ID
     _node_id: [u8; 32],
@@ -903,6 +904,24 @@ pub struct P2PNetwork {
     _max_connections: usize,
     /// Connection timeout
     _connection_timeout: std::time::Duration,
+}
+
+impl Default for P2PNetwork {
+    fn default() -> Self {
+        let (message_sender, _message_receiver) = mpsc::channel(1000);
+        Self {
+            _node_id: [0u8; 32],
+            _node_address: "127.0.0.1:8080".to_string(),
+            listen_addr: "127.0.0.1:8080".parse().unwrap(),
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            known_peers: Arc::new(RwLock::new(HashMap::new())),
+            message_sender,
+            _message_receiver,
+            _protocol_version: 1,
+            _max_connections: 100,
+            _connection_timeout: std::time::Duration::from_secs(30),
+        }
+    }
 }
 
 /// Legacy P2P connection

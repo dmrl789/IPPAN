@@ -1,0 +1,104 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'ippan-production'
+    replica: 'prometheus-1'
+
+rule_files:
+  - "/etc/prometheus/ippan-production-rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - ippan-alertmanager:9093
+
+scrape_configs:
+  # IPPAN Node metrics
+  - job_name: 'ippan-node'
+    static_configs:
+      - targets: ['ippan-node:3000']
+    metrics_path: '/api/v1/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 10s
+    honor_labels: true
+    scheme: http
+
+  # IPPAN Network metrics
+  - job_name: 'ippan-network'
+    static_configs:
+      - targets: ['ippan-node:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 15s
+    honor_labels: true
+    scheme: http
+
+  # Nginx metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['ippan-lb:80']
+    metrics_path: '/nginx_status'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    honor_labels: true
+    scheme: http
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['ippan-node:9100']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Alertmanager monitoring
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['ippan-alertmanager:9093']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Grafana monitoring
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['ippan-grafana:3001']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Fluentd monitoring
+  - job_name: 'fluentd'
+    static_configs:
+      - targets: ['ippan-fluentd:24224']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+# Storage configuration
+storage:
+  tsdb:
+    retention.time: 30d
+    retention.size: 10GB
+    wal-compression: true
+
+# Remote write configuration (optional)
+# remote_write:
+#   - url: "https://prometheus-remote-write-endpoint/api/v1/write"
+#     basic_auth:
+#       username: "username"
+#       password: "password"
+
+# Remote read configuration (optional)
+# remote_read:
+#   - url: "https://prometheus-remote-read-endpoint/api/v1/read"
+#     basic_auth:
+#       username: "username"
+#       password: "password"

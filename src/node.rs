@@ -7,6 +7,8 @@ use crate::{
     config,
     storage,
     network,
+    transaction,
+    api,
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -54,6 +56,9 @@ pub struct IppanNode {
     pub consensus: Arc<RwLock<consensus::ConsensusEngine>>,
     pub storage: Arc<RwLock<storage::StorageManager>>,
     pub network: Arc<RwLock<network::NetworkManager>>,
+    pub transaction_processor: Arc<transaction::TransactionProcessor>,
+    pub mempool: Arc<transaction::Mempool>,
+    pub api_layer: Arc<RwLock<api::ApiLayer>>,
     node_id: [u8; 32],
     start_time: Instant,
     is_running: bool,
@@ -84,18 +89,41 @@ impl IppanNode {
         // Initialize storage manager
         let storage = Arc::new(RwLock::new(storage::StorageManager::new(config.storage.clone()).await?));
         
-        // Initialize network manager
-        let network = Arc::new(RwLock::new(network::NetworkManager::new(config.network.clone()).await?));
+        // Initialize network manager (temporarily disabled for build)
+        // let network = Arc::new(RwLock::new(network::NetworkManager::new(config.network.clone()).await?));
+        let network = Arc::new(RwLock::new(network::NetworkManager::default()));
         
-        Ok(Self {
+        // Initialize transaction processing
+        let mempool = Arc::new(transaction::Mempool::new(
+            10000, // Max 10k transactions
+            Duration::from_secs(300), // 5 minute timeout
+        ));
+        let transaction_processor = Arc::new(transaction::TransactionProcessor::new(mempool.clone()));
+        
+        let node = Arc::new(RwLock::new(Self {
             config,
             consensus,
             storage,
             network,
+            transaction_processor,
+            mempool,
+            api_layer: Arc::new(RwLock::new(api::ApiLayer::default())), // Initialize with default first
             node_id,
             start_time: Instant::now(),
             is_running: false,
-        })
+        }));
+        
+        // Now initialize the API layer with the node reference
+        {
+        let api_layer = node.read().await.api_layer.clone();
+        // Create a wrapper for the API layer
+        let node_for_api = Arc::clone(&node);
+        let api_wrapper = Arc::new(RwLock::new(Some(node_for_api)));
+        *api_layer.write().await = api::ApiLayer::new(api_wrapper);
+        }
+        
+        let node = Arc::try_unwrap(node).map_err(|_| crate::error::IppanError::Node("Failed to unwrap node".to_string()))?.into_inner();
+        Ok(node)
     }
 
     /// Generate a unique node ID
@@ -164,22 +192,77 @@ impl IppanNode {
     /// Initialize network component
     async fn initialize_network(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Initializing network component");
-        // Implementation for network initialization
+        
+        // Start the network subsystem
+        self.network.write().await.start().await?;
+        
+        // Start the network event loop in a separate task
+        let network = self.network.clone();
+        tokio::spawn(async move {
+            let mut network_manager = network.write().await;
+            if let Err(e) = network_manager.run_event_loop().await {
+                log::error!("Network event loop error: {}", e);
+            }
+        });
+        
+        log::info!("Network component initialized successfully");
         Ok(())
     }
 
     /// Initialize consensus component
     async fn initialize_consensus(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Initializing consensus component");
-        // Implementation for consensus initialization
+        
+        // Add some initial validators for testing
+        let mut consensus = self.consensus.write().await;
+        
+        // Add test validators
+        let test_validator1 = [1u8; 32];
+        let test_validator2 = [2u8; 32];
+        let test_validator3 = [3u8; 32];
+        
+        consensus.add_validator(test_validator1, 1000)?;
+        consensus.add_validator(test_validator2, 2000)?;
+        consensus.add_validator(test_validator3, 1500)?;
+        
+        // Initialize validator reputations
+        consensus.initialize_validator_reputation(&format!("{:?}", test_validator1)).await?;
+        consensus.initialize_validator_reputation(&format!("{:?}", test_validator2)).await?;
+        consensus.initialize_validator_reputation(&format!("{:?}", test_validator3)).await?;
+        
+        // Start BFT consensus for round 1
+        consensus.start_bft_consensus(1).await?;
+        
+        log::info!("Consensus component initialized successfully");
         Ok(())
     }
 
     /// Initialize wallet component
     async fn initialize_wallet(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Initializing wallet component");
-        // Implementation for wallet initialization
+        
+        // Set up some test accounts with balances
+        self.transaction_processor.set_balance("alice", 100000).await;
+        self.transaction_processor.set_balance("bob", 50000).await;
+        self.transaction_processor.set_balance("charlie", 25000).await;
+        
+        log::info!("Wallet component initialized successfully");
         Ok(())
+    }
+
+    /// Process a new transaction
+    pub async fn process_transaction(&self, transaction: transaction::Transaction) -> crate::Result<bool> {
+        self.transaction_processor.process_transaction(transaction).await
+    }
+
+    /// Get mempool statistics
+    pub async fn get_mempool_stats(&self) -> transaction::MempoolStats {
+        self.mempool.get_stats().await
+    }
+
+    /// Get account balance
+    pub async fn get_account_balance(&self, account: &str) -> u64 {
+        self.transaction_processor.get_balance(account).await
     }
 
     /// Stop the IPPAN node

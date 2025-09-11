@@ -60,6 +60,7 @@ pub enum PlacementStrategy {
 }
 
 /// Shard manager
+#[derive(Debug)]
 pub struct ShardManager {
     /// Shard information
     shards: Arc<RwLock<HashMap<String, ShardInfo>>>,

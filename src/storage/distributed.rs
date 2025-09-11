@@ -153,6 +153,7 @@ pub enum OperationResult {
 }
 
 /// Distributed storage manager
+#[derive(Debug)]
 pub struct DistributedStorage {
     /// Storage nodes
     nodes: Arc<RwLock<HashMap<String, StorageNode>>>,

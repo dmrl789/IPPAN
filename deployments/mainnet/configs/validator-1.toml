@@ -1,0 +1,131 @@
+# IPPAN Mainnet Validator Node 1 Configuration
+# Production validator node for mainnet deployment
+
+[network]
+network_id = "ippan-mainnet"
+chain_id = "ippan-1"
+node_id = "validator-node-1"
+is_bootstrap_node = false
+listen_address = "0.0.0.0:30333"
+api_address = "0.0.0.0:8080"
+p2p_address = "0.0.0.0:30333"
+external_address = "validator1.ippan.net:30333"
+
+[bootstrap_nodes]
+nodes = [
+    "bootstrap1.ippan.net:30333",
+    "bootstrap2.ippan.net:30333",
+    "bootstrap3.ippan.net:30333"
+]
+
+[consensus]
+consensus_type = "bft"
+block_time = 5
+max_block_size = 1048576
+max_transactions_per_block = 1000
+finality_threshold = 0.67
+validator_set_size = 25
+min_validator_stake = 1000000
+max_validator_stake = 10000000
+
+[staking]
+validator_address = "0x1234567890abcdef1234567890abcdef12345678"
+stake_amount = 5000000
+commission_rate = 0.05
+delegation_enabled = true
+min_delegation = 1000
+max_delegations = 1000
+
+[security]
+enable_tls = true
+cert_path = "/etc/ippan/certs/validator1.crt"
+key_path = "/etc/ippan/certs/validator1.key"
+ca_cert_path = "/etc/ippan/certs/ca.crt"
+enable_encryption = true
+encryption_key = "mainnet-encryption-key-validator1"
+rate_limit = 10000
+max_connections = 1000
+
+[storage]
+data_dir = "/var/lib/ippan"
+max_storage_size = "2TB"
+enable_compression = true
+enable_deduplication = true
+shard_count = 16
+replication_factor = 3
+backup_interval = 3600
+backup_retention = 7
+
+[database]
+database_url = "postgresql://ippan:secure-postgres-password@postgres:5432/ippan_mainnet"
+max_connections = 100
+connection_timeout = 30
+query_timeout = 60
+enable_wal = true
+enable_vacuum = true
+vacuum_interval = 86400
+
+[api]
+enable_api = true
+api_port = 8080
+api_host = "0.0.0.0"
+enable_cors = true
+cors_origins = ["https://ippan.net", "https://wallet.ippan.net", "https://explorer.ippan.net"]
+enable_auth = true
+auth_type = "jwt"
+jwt_secret = "mainnet-jwt-secret-validator1"
+rate_limit = 1000
+rate_limit_window = 3600
+
+[monitoring]
+enable_metrics = true
+metrics_port = 9090
+metrics_path = "/metrics"
+enable_health_checks = true
+health_check_interval = 30
+enable_tracing = true
+tracing_endpoint = "http://jaeger:14268/api/traces"
+
+[logging]
+log_level = "info"
+log_format = "json"
+log_file = "/var/log/ippan/ippan.log"
+max_log_size = "100MB"
+max_log_files = 10
+enable_console = true
+enable_file = true
+enable_json = true
+
+[performance]
+enable_optimization = true
+max_concurrent_requests = 1000
+request_timeout = 30
+enable_caching = true
+cache_size = "1GB"
+cache_ttl = 3600
+enable_compression = true
+compression_level = 6
+
+[backup]
+enable_backup = true
+backup_schedule = "0 2 * * *"
+backup_retention = 30
+backup_encryption = true
+backup_compression = true
+backup_destination = "s3://ippan-backups/mainnet/"
+
+[maintenance]
+enable_maintenance = true
+maintenance_window = "02:00-04:00"
+maintenance_timezone = "UTC"
+auto_update = false
+update_check_interval = 86400
+
+[mining]
+enable_mining = true
+mining_threads = 4
+mining_algorithm = "bft"
+mining_reward = 100
+mining_fee = 10
+mining_pool = false
+mining_solo = true

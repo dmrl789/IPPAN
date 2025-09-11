@@ -183,6 +183,18 @@ pub struct ProtocolManager {
     running: bool,
 }
 
+impl Default for ProtocolManager {
+    fn default() -> Self {
+        let (message_sender, _message_receiver) = mpsc::channel(1000);
+        Self {
+            handlers: Arc::new(RwLock::new(HashMap::new())),
+            message_sender,
+            _message_receiver: Some(_message_receiver),
+            running: false,
+        }
+    }
+}
+
 impl ProtocolManager {
     /// Create a new protocol manager
     pub fn new() -> Self {
@@ -290,7 +302,46 @@ impl ProtocolManager {
 }
 
 /// Block protocol handler
-pub struct BlockProtocolHandler;
+pub struct BlockProtocolHandler {
+    /// Pending blocks waiting for full data
+    pending_blocks: Arc<RwLock<HashMap<[u8; 32], BlockMessage>>>,
+    /// Network manager for sending requests
+    network_manager: Arc<RwLock<crate::network::NetworkManager>>,
+}
+
+impl BlockProtocolHandler {
+    /// Create a new block protocol handler
+    pub fn new(network_manager: Arc<RwLock<crate::network::NetworkManager>>) -> Self {
+        Self {
+            pending_blocks: Arc::new(RwLock::new(HashMap::new())),
+            network_manager,
+        }
+    }
+    
+    /// Request a block from the network
+    async fn request_block(&self, block_hash: [u8; 32]) -> Result<()> {
+        // Create a block request message
+        let request_msg = BlockMessage {
+            msg_type: BlockMessageType::Request,
+            block_hash: Some(block_hash),
+            height: Some(0), // Will be filled by the requesting node
+            block_data: None,
+            timestamp: Utc::now(),
+        };
+        
+        // Send request through network manager
+        let network = self.network_manager.read().await;
+        let message_sender = network.libp2p_network.read().await.get_message_sender();
+        message_sender.send(crate::network::p2p::P2PMessage::BlockAnnouncement(crate::network::p2p::BlockAnnouncement {
+            block_hash: block_hash,
+            height: 0,
+            timestamp: Utc::now(),
+        })).await
+            .map_err(|e| crate::error::IppanError::Network(format!("Failed to send block request: {}", e)))?;
+        
+        Ok(())
+    }
+}
 
 impl ProtocolHandler for BlockProtocolHandler {
     fn handle_message(&self, message: ProtocolMessage) -> Result<()> {
@@ -298,19 +349,28 @@ impl ProtocolHandler for BlockProtocolHandler {
             match block_msg.msg_type {
                 BlockMessageType::Announcement => {
                     log::info!("Received block announcement: {:?}", block_msg.block_hash);
-                    // TODO: Process block announcement
+                    // Process block announcement - add to pending blocks if not already known
+                    // TODO: Implement async block request handling
+                    log::info!("Block announcement received, would request full block if needed");
                 }
                 BlockMessageType::Request => {
                     log::info!("Received block request for height: {:?}", block_msg.height);
-                    // TODO: Process block request
+                    // Process block request - send block data if we have it
+                    // TODO: Implement block retrieval from blockchain
+                    log::info!("Block request received, would send block data if available");
                 }
                 BlockMessageType::Response => {
                     log::info!("Received block response: {:?}", block_msg.block_hash);
-                    // TODO: Process block response
+                    // Process block response - validate and add to blockchain
+                    if let Some(block_data) = &block_msg.block_data {
+                        log::info!("Received block data: {} bytes", block_data.len());
+                        // TODO: Validate block and add to blockchain
+                    }
                 }
                 BlockMessageType::Validation => {
                     log::info!("Received block validation: {:?}", block_msg.block_hash);
-                    // TODO: Process block validation
+                    // Process block validation - update validation status
+                    // TODO: Update block validation status in blockchain
                 }
             }
         }
@@ -324,7 +384,46 @@ impl ProtocolHandler for BlockProtocolHandler {
 }
 
 /// Transaction protocol handler
-pub struct TransactionProtocolHandler;
+pub struct TransactionProtocolHandler {
+    /// Pending transactions waiting for full data
+    pending_transactions: Arc<RwLock<HashMap<[u8; 32], TransactionMessage>>>,
+    /// Network manager for sending requests
+    network_manager: Arc<RwLock<crate::network::NetworkManager>>,
+}
+
+impl TransactionProtocolHandler {
+    /// Create a new transaction protocol handler
+    pub fn new(network_manager: Arc<RwLock<crate::network::NetworkManager>>) -> Self {
+        Self {
+            pending_transactions: Arc::new(RwLock::new(HashMap::new())),
+            network_manager,
+        }
+    }
+    
+    /// Request a transaction from the network
+    async fn request_transaction(&self, tx_hash: [u8; 32]) -> Result<()> {
+        // Create a transaction request message
+        let request_msg = TransactionMessage {
+            msg_type: TransactionMessageType::Request,
+            tx_hash: Some(tx_hash),
+            tx_data: None,
+            tx_type: None,
+            timestamp: Utc::now(),
+        };
+        
+        // Send request through network manager
+        let network = self.network_manager.read().await;
+        let message_sender = network.libp2p_network.read().await.get_message_sender();
+        message_sender.send(crate::network::p2p::P2PMessage::TransactionAnnouncement(crate::network::p2p::TransactionAnnouncement {
+            tx_hash: tx_hash,
+            tx_type: "".to_string(),
+            timestamp: Utc::now(),
+        })).await
+            .map_err(|e| crate::error::IppanError::Network(format!("Failed to send transaction request: {}", e)))?;
+        
+        Ok(())
+    }
+}
 
 impl ProtocolHandler for TransactionProtocolHandler {
     fn handle_message(&self, message: ProtocolMessage) -> Result<()> {
@@ -332,19 +431,28 @@ impl ProtocolHandler for TransactionProtocolHandler {
             match tx_msg.msg_type {
                 TransactionMessageType::Announcement => {
                     log::info!("Received transaction announcement: {:?}", tx_msg.tx_hash);
-                    // TODO: Process transaction announcement
+                    // Process transaction announcement - add to pending transactions if not already known
+                    // TODO: Implement async transaction request handling
+                    log::info!("Transaction announcement received, would request full transaction if needed");
                 }
                 TransactionMessageType::Request => {
                     log::info!("Received transaction request: {:?}", tx_msg.tx_hash);
-                    // TODO: Process transaction request
+                    // Process transaction request - send transaction data if we have it
+                    // TODO: Implement transaction retrieval from mempool/blockchain
+                    log::info!("Transaction request received, would send transaction data if available");
                 }
                 TransactionMessageType::Response => {
                     log::info!("Received transaction response: {:?}", tx_msg.tx_hash);
-                    // TODO: Process transaction response
+                    // Process transaction response - validate and add to mempool
+                    if let Some(tx_data) = &tx_msg.tx_data {
+                        log::info!("Received transaction data: {} bytes", tx_data.len());
+                        // TODO: Validate transaction and add to mempool
+                    }
                 }
                 TransactionMessageType::Validation => {
                     log::info!("Received transaction validation: {:?}", tx_msg.tx_hash);
-                    // TODO: Process transaction validation
+                    // Process transaction validation - update validation status
+                    // TODO: Update transaction validation status in mempool
                 }
             }
         }
@@ -485,7 +593,9 @@ mod tests {
     async fn test_protocol_handler_registration() {
         let manager = ProtocolManager::new();
         
-        let block_handler = Box::new(BlockProtocolHandler);
+        let network_config = crate::config::NetworkConfig::default();
+        let network_manager = Arc::new(RwLock::new(crate::network::NetworkManager::new(network_config).await.unwrap()));
+        let block_handler = Box::new(BlockProtocolHandler::new(network_manager));
         manager.register_handler(block_handler).await.unwrap();
         
         let protocols = manager.get_registered_protocols().await;

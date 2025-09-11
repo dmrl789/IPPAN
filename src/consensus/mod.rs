@@ -20,8 +20,11 @@ pub mod round;
 pub mod roundchain;
 pub mod telemetry;
 pub mod validators;
+pub mod bft_engine; // NEW - Real BFT consensus implementation
+pub mod consensus_manager; // NEW - Real consensus manager
 
 pub use blockdag::*;
+pub use bft_engine::{BFTBlock, BFTBlockHeader, BFTTransaction};
 
 use hashtimer::HashTimer;
 use hashtimer::IppanTimeManager;

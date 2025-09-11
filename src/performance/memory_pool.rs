@@ -32,7 +32,7 @@ impl<T> MemoryPool<T> {
         // Pre-allocate blocks
         for _ in 0..initial_capacity {
             let block = Box::into_raw(Box::new(PoolBlock {
-                data: unsafe { std::mem::zeroed() },
+                data: unsafe { std::mem::MaybeUninit::<T>::uninit().assume_init() },
                 next: AtomicPtr::new(ptr::null_mut()),
                 is_allocated: AtomicUsize::new(0),
             }));
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_memory_pool_batch() {
-        let pool = MemoryPool::new(5);
+        let pool: MemoryPool<u8> = MemoryPool::new(5);
         
         let items = pool.allocate_batch(3).unwrap();
         assert_eq!(items.len(), 3);
@@ -407,8 +407,8 @@ mod tests {
         
         // Reset and read
         buffer.reset();
-        let data1 = buffer.read(5).unwrap();
-        let data2 = buffer.read(5).unwrap();
+        let data1 = buffer.read(5).unwrap().to_vec();
+        let data2 = buffer.read(5).unwrap().to_vec();
         
         assert_eq!(data1, b"hello");
         assert_eq!(data2, b"world");

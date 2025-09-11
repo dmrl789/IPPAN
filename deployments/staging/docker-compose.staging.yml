@@ -1,0 +1,175 @@
+version: '3.8'
+
+services:
+  ippan-staging-node:
+    image: ippan/ippan:staging
+    container_name: ippan-staging-node
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # P2P network port
+      - "3000:3000"  # API port
+    volumes:
+      - staging_data:/data
+      - staging_keys:/keys
+      - staging_logs:/logs
+      - ./config/staging.toml:/config/staging.toml:ro
+      - ./ssl:/ssl:ro
+    environment:
+      - RUST_LOG=debug
+      - IPPAN_CONFIG_PATH=/config/staging.toml
+      - IPPAN_NETWORK_PORT=8080
+      - IPPAN_API_PORT=3000
+      - IPPAN_STORAGE_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - NODE_ENV=staging
+      - IPPAN_ENVIRONMENT=staging
+    networks:
+      - ippan_staging_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/status"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+
+  ippan-staging-monitor:
+    image: prom/prometheus:latest
+    container_name: ippan-staging-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - staging_monitor_data:/prometheus
+      - ./monitoring/prometheus-staging.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    networks:
+      - ippan_staging_network
+    depends_on:
+      - ippan-staging-node
+
+  ippan-staging-grafana:
+    image: grafana/grafana:latest
+    container_name: ippan-staging-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - staging_grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-staging.yml:/etc/grafana/grafana.ini:ro
+      - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-staging123}
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
+      - GF_DATABASE_TYPE=sqlite3
+      - GF_DATABASE_PATH=/var/lib/grafana/grafana.db
+    networks:
+      - ippan_staging_network
+    depends_on:
+      - ippan-staging-monitor
+
+  ippan-staging-alertmanager:
+    image: prom/alertmanager:latest
+    container_name: ippan-staging-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - staging_alert_data:/alertmanager
+      - ./monitoring/alertmanager-staging.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    networks:
+      - ippan_staging_network
+    depends_on:
+      - ippan-staging-monitor
+
+  ippan-staging-test-runner:
+    image: ippan/test-runner:latest
+    container_name: ippan-staging-test-runner
+    restart: "no"
+    volumes:
+      - ./tests:/tests:ro
+      - staging_test_results:/test-results
+    environment:
+      - TARGET_HOST=ippan-staging-node
+      - TARGET_PORT=3000
+      - TEST_ENVIRONMENT=staging
+    networks:
+      - ippan_staging_network
+    depends_on:
+      - ippan-staging-node
+    command: ["/tests/run-integration-tests.sh"]
+
+  ippan-staging-lb:
+    image: nginx:alpine
+    container_name: ippan-staging-lb
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-staging.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - staging_lb_logs:/var/log/nginx
+    networks:
+      - ippan_staging_network
+    depends_on:
+      - ippan-staging-node
+    security_opt:
+      - no-new-privileges:true
+
+  ippan-staging-fluentd:
+    image: fluent/fluentd:v1.16-debian-1
+    container_name: ippan-staging-fluentd
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/fluentd-staging.conf:/fluentd/etc/fluent.conf:ro
+      - staging_logs:/var/log/ippan:ro
+      - staging_fluentd_data:/var/log/fluentd
+    networks:
+      - ippan_staging_network
+    depends_on:
+      - ippan-staging-node
+
+volumes:
+  staging_data:
+    driver: local
+  staging_keys:
+    driver: local
+  staging_logs:
+    driver: local
+  staging_monitor_data:
+    driver: local
+  staging_grafana_data:
+    driver: local
+  staging_alert_data:
+    driver: local
+  staging_test_results:
+    driver: local
+  staging_lb_logs:
+    driver: local
+  staging_fluentd_data:
+    driver: local
+
+networks:
+  ippan_staging_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

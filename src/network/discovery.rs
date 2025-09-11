@@ -118,6 +118,7 @@ pub enum PeerStatus {
 }
 
 /// Peerstore for managing peer information
+#[derive(Debug)]
 pub struct Peerstore {
     /// Known peers
     peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
@@ -248,6 +249,7 @@ impl Peerstore {
 }
 
 /// Discovery service
+#[derive(Debug)]
 pub struct DiscoveryService {
     /// Node ID
     node_id: [u8; 32],
@@ -267,6 +269,23 @@ pub struct DiscoveryService {
     _message_receiver: broadcast::Receiver<DiscoveryMessage>,
     /// Running flag
     running: bool,
+}
+
+impl Default for DiscoveryService {
+    fn default() -> Self {
+        let (message_sender, _message_receiver) = broadcast::channel(1000);
+        Self {
+            node_id: [0u8; 32],
+            peerstore: Arc::new(Peerstore::new(100)),
+            bootstrap_peers: Vec::new(),
+            discovery_interval: Duration::from_secs(30),
+            _peer_timeout: Duration::from_secs(60),
+            max_peers: 100,
+            message_sender,
+            _message_receiver,
+            running: false,
+        }
+    }
 }
 
 impl DiscoveryService {

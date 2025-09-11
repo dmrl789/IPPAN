@@ -1,0 +1,331 @@
+version: '3.8'
+
+services:
+  # IPPAN Testnet Node 1 (Bootstrap Node)
+  ippan-node-1:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.production
+    container_name: ippan-testnet-node-1
+    hostname: ippan-node-1
+    ports:
+      - "8081:8080"  # API port
+      - "3001:3000"  # P2P port
+    environment:
+      - RUST_LOG=info
+      - IPPAN_CONFIG_PATH=/config/testnet-node-1.toml
+      - IPPAN_DATA_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - NODE_ENV=testnet
+      - NODE_ID=node-1
+      - NODE_ROLE=bootstrap
+      - P2P_PORT=3000
+      - API_PORT=8080
+    volumes:
+      - ippan-node-1-data:/data
+      - ippan-node-1-keys:/keys
+      - ippan-node-1-logs:/logs
+      - ./configs/testnet-node-1.toml:/config/testnet-node-1.toml:ro
+    networks:
+      - ippan-testnet
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "ippan.network=testnet"
+      - "ippan.node.id=node-1"
+      - "ippan.node.role=bootstrap"
+
+  # IPPAN Testnet Node 2
+  ippan-node-2:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.production
+    container_name: ippan-testnet-node-2
+    hostname: ippan-node-2
+    ports:
+      - "8082:8080"  # API port
+      - "3002:3000"  # P2P port
+    environment:
+      - RUST_LOG=info
+      - IPPAN_CONFIG_PATH=/config/testnet-node-2.toml
+      - IPPAN_DATA_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - NODE_ENV=testnet
+      - NODE_ID=node-2
+      - NODE_ROLE=validator
+      - P2P_PORT=3000
+      - API_PORT=8080
+      - BOOTSTRAP_NODES=ippan-node-1:3000
+    volumes:
+      - ippan-node-2-data:/data
+      - ippan-node-2-keys:/keys
+      - ippan-node-2-logs:/logs
+      - ./configs/testnet-node-2.toml:/config/testnet-node-2.toml:ro
+    networks:
+      - ippan-testnet
+    depends_on:
+      - ippan-node-1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "ippan.network=testnet"
+      - "ippan.node.id=node-2"
+      - "ippan.node.role=validator"
+
+  # IPPAN Testnet Node 3
+  ippan-node-3:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.production
+    container_name: ippan-testnet-node-3
+    hostname: ippan-node-3
+    ports:
+      - "8083:8080"  # API port
+      - "3003:3000"  # P2P port
+    environment:
+      - RUST_LOG=info
+      - IPPAN_CONFIG_PATH=/config/testnet-node-3.toml
+      - IPPAN_DATA_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - NODE_ENV=testnet
+      - NODE_ID=node-3
+      - NODE_ROLE=validator
+      - P2P_PORT=3000
+      - API_PORT=8080
+      - BOOTSTRAP_NODES=ippan-node-1:3000,ippan-node-2:3000
+    volumes:
+      - ippan-node-3-data:/data
+      - ippan-node-3-keys:/keys
+      - ippan-node-3-logs:/logs
+      - ./configs/testnet-node-3.toml:/config/testnet-node-3.toml:ro
+    networks:
+      - ippan-testnet
+    depends_on:
+      - ippan-node-1
+      - ippan-node-2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "ippan.network=testnet"
+      - "ippan.node.id=node-3"
+      - "ippan.node.role=validator"
+
+  # IPPAN Testnet Node 4
+  ippan-node-4:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.production
+    container_name: ippan-testnet-node-4
+    hostname: ippan-node-4
+    ports:
+      - "8084:8080"  # API port
+      - "3004:3000"  # P2P port
+    environment:
+      - RUST_LOG=info
+      - IPPAN_CONFIG_PATH=/config/testnet-node-4.toml
+      - IPPAN_DATA_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - NODE_ENV=testnet
+      - NODE_ID=node-4
+      - NODE_ROLE=validator
+      - P2P_PORT=3000
+      - API_PORT=8080
+      - BOOTSTRAP_NODES=ippan-node-1:3000,ippan-node-2:3000,ippan-node-3:3000
+    volumes:
+      - ippan-node-4-data:/data
+      - ippan-node-4-keys:/keys
+      - ippan-node-4-logs:/logs
+      - ./configs/testnet-node-4.toml:/config/testnet-node-4.toml:ro
+    networks:
+      - ippan-testnet
+    depends_on:
+      - ippan-node-1
+      - ippan-node-2
+      - ippan-node-3
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "ippan.network=testnet"
+      - "ippan.node.id=node-4"
+      - "ippan.node.role=validator"
+
+  # IPPAN Testnet Node 5
+  ippan-node-5:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.production
+    container_name: ippan-testnet-node-5
+    hostname: ippan-node-5
+    ports:
+      - "8085:8080"  # API port
+      - "3005:3000"  # P2P port
+    environment:
+      - RUST_LOG=info
+      - IPPAN_CONFIG_PATH=/config/testnet-node-5.toml
+      - IPPAN_DATA_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+      - NODE_ENV=testnet
+      - NODE_ID=node-5
+      - NODE_ROLE=validator
+      - P2P_PORT=3000
+      - API_PORT=8080
+      - BOOTSTRAP_NODES=ippan-node-1:3000,ippan-node-2:3000,ippan-node-3:3000,ippan-node-4:3000
+    volumes:
+      - ippan-node-5-data:/data
+      - ippan-node-5-keys:/keys
+      - ippan-node-5-logs:/logs
+      - ./configs/testnet-node-5.toml:/config/testnet-node-5.toml:ro
+    networks:
+      - ippan-testnet
+    depends_on:
+      - ippan-node-1
+      - ippan-node-2
+      - ippan-node-3
+      - ippan-node-4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "ippan.network=testnet"
+      - "ippan.node.id=node-5"
+      - "ippan.node.role=validator"
+
+  # Testnet Monitoring - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ippan-testnet-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    networks:
+      - ippan-testnet
+    restart: unless-stopped
+    labels:
+      - "ippan.network=testnet"
+      - "ippan.service=monitoring"
+
+  # Testnet Monitoring - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ippan-testnet-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - ippan-testnet
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    labels:
+      - "ippan.network=testnet"
+      - "ippan.service=monitoring"
+
+  # Testnet Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: ippan-testnet-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - ippan-testnet
+    depends_on:
+      - ippan-node-1
+      - ippan-node-2
+      - ippan-node-3
+      - ippan-node-4
+      - ippan-node-5
+    restart: unless-stopped
+    labels:
+      - "ippan.network=testnet"
+      - "ippan.service=loadbalancer"
+
+volumes:
+  ippan-node-1-data:
+    driver: local
+  ippan-node-1-keys:
+    driver: local
+  ippan-node-1-logs:
+    driver: local
+  ippan-node-2-data:
+    driver: local
+  ippan-node-2-keys:
+    driver: local
+  ippan-node-2-logs:
+    driver: local
+  ippan-node-3-data:
+    driver: local
+  ippan-node-3-keys:
+    driver: local
+  ippan-node-3-logs:
+    driver: local
+  ippan-node-4-data:
+    driver: local
+  ippan-node-4-keys:
+    driver: local
+  ippan-node-4-logs:
+    driver: local
+  ippan-node-5-data:
+    driver: local
+  ippan-node-5-keys:
+    driver: local
+  ippan-node-5-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  ippan-testnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -405,8 +405,9 @@ impl PaymentProcessor {
         
         for (tx_id, transaction) in &self.pending_transactions {
             let key = tx_id.as_bytes();
+            // Serialize the transaction properly
             let value = bincode::serialize(transaction)
-                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize pending transaction: {}", e)))?;
+                .map_err(|e| crate::error::IppanError::Serialization(format!("Failed to serialize transaction: {}", e)))?;
             pending_tree.insert(key, value)
                 .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save pending transaction: {}", e)))?;
         }
@@ -417,8 +418,9 @@ impl PaymentProcessor {
         
         for (tx_id, transaction) in &self.confirmed_transactions {
             let key = tx_id.as_bytes();
+            // Serialize the transaction properly
             let value = bincode::serialize(transaction)
-                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize confirmed transaction: {}", e)))?;
+                .map_err(|e| crate::error::IppanError::Serialization(format!("Failed to serialize transaction: {}", e)))?;
             confirmed_tree.insert(key, value)
                 .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save confirmed transaction: {}", e)))?;
         }
@@ -429,8 +431,9 @@ impl PaymentProcessor {
         
         for (tx_id, transaction) in &self.failed_transactions {
             let key = tx_id.as_bytes();
+            // Serialize the transaction properly
             let value = bincode::serialize(transaction)
-                .map_err(|e| crate::error::IppanError::Storage(format!("Failed to serialize failed transaction: {}", e)))?;
+                .map_err(|e| crate::error::IppanError::Serialization(format!("Failed to serialize transaction: {}", e)))?;
             failed_tree.insert(key, value)
                 .map_err(|e| crate::error::IppanError::Storage(format!("Failed to save failed transaction: {}", e)))?;
         }

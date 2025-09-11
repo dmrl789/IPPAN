@@ -1,0 +1,189 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts-staging@ippan.network'
+  smtp_auth_username: 'alerts-staging@ippan.network'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+
+# The directory from which notification templates are read.
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# The root route on which each condition enters the routing tree.
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 5s
+  group_interval: 5s
+  repeat_interval: 30m
+  receiver: 'staging-alerts'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-staging-alerts'
+      group_wait: 2s
+      repeat_interval: 5m
+    - match:
+        severity: warning
+      receiver: 'warning-staging-alerts'
+      group_wait: 10s
+      repeat_interval: 15m
+    - match:
+        service: 'ippan-staging-node'
+      receiver: 'ippan-staging-alerts'
+      group_wait: 5s
+      repeat_interval: 10m
+    - match:
+        service: 'database'
+      receiver: 'database-staging-alerts'
+      group_wait: 5s
+      repeat_interval: 10m
+    - match:
+        service: 'network'
+      receiver: 'network-staging-alerts'
+      group_wait: 5s
+      repeat_interval: 10m
+
+# Inhibition rules allow to mute a set of alerts given that another alert is
+# firing.
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'dev', 'instance']
+  - source_match:
+      alertname: 'NodeDown'
+    target_match:
+      alertname: 'ServiceDown'
+    equal: ['instance']
+
+receivers:
+  - name: 'staging-alerts'
+    webhook_configs:
+      - url: 'http://127.0.0.1:5001/'
+        send_resolved: true
+
+  - name: 'critical-staging-alerts'
+    email_configs:
+      - to: 'staging-admin@ippan.network'
+        subject: '[CRITICAL] IPPAN Staging Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Severity: {{ .Labels.severity }}
+          Instance: {{ .Labels.instance }}
+          Time: {{ .StartsAt }}
+          {{ end }}
+        headers:
+          X-Priority: '1'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#ippan-staging-critical'
+        title: 'CRITICAL IPPAN Staging Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Severity:* {{ .Labels.severity }}
+          *Instance:* {{ .Labels.instance }}
+          *Time:* {{ .StartsAt }}
+          {{ end }}
+        send_resolved: true
+
+  - name: 'warning-staging-alerts'
+    email_configs:
+      - to: 'staging-ops@ippan.network'
+        subject: '[WARNING] IPPAN Staging Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Severity: {{ .Labels.severity }}
+          Instance: {{ .Labels.instance }}
+          Time: {{ .StartsAt }}
+          {{ end }}
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#ippan-staging-warnings'
+        title: 'WARNING IPPAN Staging Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Severity:* {{ .Labels.severity }}
+          *Instance:* {{ .Labels.instance }}
+          *Time:* {{ .StartsAt }}
+          {{ end }}
+        send_resolved: true
+
+  - name: 'ippan-staging-alerts'
+    email_configs:
+      - to: 'ippan-staging-team@ippan.network'
+        subject: '[IPPAN STAGING] Node Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Node: {{ .Labels.instance }}
+          Time: {{ .StartsAt }}
+          {{ end }}
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#ippan-staging-nodes'
+        title: 'IPPAN Staging Node Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Node:* {{ .Labels.instance }}
+          *Time:* {{ .StartsAt }}
+          {{ end }}
+        send_resolved: true
+
+  - name: 'database-staging-alerts'
+    email_configs:
+      - to: 'dba-staging@ippan.network'
+        subject: '[DATABASE STAGING] IPPAN Database Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Database: {{ .Labels.instance }}
+          Time: {{ .StartsAt }}
+          {{ end }}
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#ippan-staging-database'
+        title: 'Database Staging Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Database:* {{ .Labels.instance }}
+          *Time:* {{ .StartsAt }}
+          {{ end }}
+        send_resolved: true
+
+  - name: 'network-staging-alerts'
+    email_configs:
+      - to: 'network-staging@ippan.network'
+        subject: '[NETWORK STAGING] IPPAN Network Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Network: {{ .Labels.instance }}
+          Time: {{ .StartsAt }}
+          {{ end }}
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#ippan-staging-network'
+        title: 'Network Staging Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Network:* {{ .Labels.instance }}
+          *Time:* {{ .StartsAt }}
+          {{ end }}
+        send_resolved: true

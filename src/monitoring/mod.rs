@@ -4,6 +4,7 @@
 
 pub mod metrics;
 pub mod dashboard;
+pub mod production_monitoring;
 
 use crate::Result;
 use axum::Router;

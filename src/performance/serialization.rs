@@ -168,7 +168,7 @@ impl StreamingSerializer {
 mod tests {
     use super::*;
 
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     struct TestData {
         id: u64,
         data: Vec<u8>,

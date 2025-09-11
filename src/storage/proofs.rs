@@ -77,6 +77,7 @@ pub enum ChallengeType {
 }
 
 /// Proof manager
+#[derive(Debug)]
 pub struct ProofManager {
     /// Storage proofs
     proofs: Arc<RwLock<HashMap<String, StorageProof>>>,

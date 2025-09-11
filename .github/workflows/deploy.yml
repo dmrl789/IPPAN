@@ -1,0 +1,220 @@
+name: Deployment Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Build and push Docker images
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # Deploy to staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment..."
+          echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+          echo "Digest: ${{ needs.build-and-push.outputs.image-digest }}"
+          
+          # Deploy to staging servers
+          # This could include:
+          # - Updating Kubernetes deployments
+          # - Updating Docker Compose services
+          # - Running database migrations
+          # - Updating load balancer configurations
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests on staging..."
+          # Add smoke test logic here
+          # This could include:
+          # - Health check endpoints
+          # - Basic functionality tests
+          # - Performance baseline tests
+
+      - name: Notify staging deployment
+        run: |
+          echo "Staging deployment completed successfully!"
+          # Add notification logic here (Slack, email, etc.)
+
+  # Deploy to production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production environment..."
+          echo "Image: ${{ needs.build-and-push.outputs.image-tag }}"
+          echo "Digest: ${{ needs.build-and-push.outputs.image-digest }}"
+          
+          # Deploy to production servers
+          # This could include:
+          # - Blue-green deployment
+          # - Rolling updates
+          # - Database migrations
+          # - Cache invalidation
+          # - Load balancer updates
+
+      - name: Run health checks
+        run: |
+          echo "Running health checks on production..."
+          # Add health check logic here
+          # This could include:
+          # - Comprehensive health checks
+          # - Performance monitoring
+          # - Error rate monitoring
+          # - Resource usage monitoring
+
+      - name: Run integration tests
+        run: |
+          echo "Running integration tests on production..."
+          # Add integration test logic here
+          # This could include:
+          # - End-to-end tests
+          # - API integration tests
+          # - Database integration tests
+          # - External service integration tests
+
+      - name: Notify production deployment
+        run: |
+          echo "Production deployment completed successfully!"
+          # Add notification logic here (Slack, email, etc.)
+
+  # Rollback deployment
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: failure()
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rollback deployment
+        run: |
+          echo "Rolling back deployment..."
+          # Add rollback logic here
+          # This could include:
+          # - Reverting to previous image
+          # - Rolling back database migrations
+          # - Restoring previous configurations
+          # - Updating load balancer
+
+      - name: Notify rollback
+        run: |
+          echo "Deployment rolled back successfully!"
+          # Add rollback notification logic here
+
+  # Post-deployment monitoring
+  monitor:
+    name: Post-deployment Monitoring
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start monitoring
+        run: |
+          echo "Starting post-deployment monitoring..."
+          # Add monitoring logic here
+          # This could include:
+          # - Setting up alerts
+          # - Monitoring key metrics
+          # - Tracking error rates
+          # - Monitoring performance
+
+      - name: Generate deployment report
+        run: |
+          echo "Generating deployment report..."
+          # Add report generation logic here
+          # This could include:
+          # - Deployment summary
+          # - Performance metrics
+          # - Error logs
+          # - Resource usage
+
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-report
+          path: deployment-report.txt

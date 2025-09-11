@@ -1,3 +1,8 @@
+// Minimal placeholder to satisfy bench target during Docker builds
+// Replace with real benchmarks as needed.
+
+fn main() {}
+
 #![feature(test)]
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};

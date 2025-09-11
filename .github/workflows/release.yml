@@ -1,0 +1,271 @@
+name: Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+        default: 'v1.0.0'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Create release
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        run: |
+          echo "## Changes in ${{ steps.version.outputs.version }}" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Features" >> CHANGELOG.md
+          echo "- Added new features" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Bug Fixes" >> CHANGELOG.md
+          echo "- Fixed various bugs" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Performance" >> CHANGELOG.md
+          echo "- Performance improvements" >> CHANGELOG.md
+
+      - name: Create release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          release_name: Release ${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+
+  # Build release artifacts
+  build-release:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: ippan-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: ippan-windows-x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: ippan-macos-x86_64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev protobuf-compiler
+
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install pkg-config openssl protobuf
+
+      - name: Build release
+        run: cargo build --release --target ${{ matrix.target }} --features all-features
+
+      - name: Create archive (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          tar -czf ${{ matrix.artifact_name }}.tar.gz -C target/${{ matrix.target }}/release ippan
+          echo "Archive created: ${{ matrix.artifact_name }}.tar.gz"
+
+      - name: Create archive (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          Compress-Archive -Path target/${{ matrix.target }}/release/ippan.exe -DestinationPath ${{ matrix.artifact_name }}.zip
+          echo "Archive created: ${{ matrix.artifact_name }}.zip"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.*
+
+  # Build and push Docker images
+  build-docker:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: create-release
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # Deploy to production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [create-release, build-release, build-docker]
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying version ${{ needs.create-release.outputs.version }} to production..."
+          # Add production deployment logic here
+          # This could include:
+          # - Updating Kubernetes deployments
+          # - Running database migrations
+          # - Updating load balancer configurations
+          # - Running health checks
+
+      - name: Run production tests
+        run: |
+          echo "Running production tests..."
+          # Add production test logic here
+          # This could include:
+          # - Smoke tests
+          # - Integration tests
+          # - Performance tests
+          # - Security tests
+
+      - name: Notify production deployment
+        run: |
+          echo "Production deployment completed successfully!"
+          # Add notification logic here (Slack, email, etc.)
+
+  # Update documentation
+  update-docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: create-release
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Update documentation
+        run: |
+          echo "Updating documentation for version ${{ needs.create-release.outputs.version }}..."
+          # Add documentation update logic here
+          # This could include:
+          # - Updating API documentation
+          # - Updating user guides
+          # - Updating deployment guides
+          # - Updating changelog
+
+      - name: Deploy documentation
+        run: |
+          echo "Deploying documentation..."
+          # Add documentation deployment logic here
+          # This could include:
+          # - Deploying to GitHub Pages
+          # - Deploying to documentation site
+          # - Updating API documentation
+
+  # Notify stakeholders
+  notify:
+    name: Notify Stakeholders
+    runs-on: ubuntu-latest
+    needs: [create-release, build-release, build-docker, deploy-production, update-docs]
+    if: always()
+    steps:
+      - name: Notify on success
+        if: needs.deploy-production.result == 'success'
+        run: |
+          echo "Release ${{ needs.create-release.outputs.version }} deployed successfully!"
+          # Add success notification logic here
+          # This could include:
+          # - Slack notifications
+          # - Email notifications
+          # - Discord notifications
+          # - Twitter announcements
+
+      - name: Notify on failure
+        if: needs.deploy-production.result == 'failure'
+        run: |
+          echo "Release ${{ needs.create-release.outputs.version }} deployment failed!"
+          # Add failure notification logic here
+          # This could include:
+          # - Alert notifications
+          # - Incident management
+          # - Rollback procedures

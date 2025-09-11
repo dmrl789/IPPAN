@@ -1,0 +1,100 @@
+meta:
+  name: "Cursor/TestSprite Guardrails"
+  version: "1.0.0"
+  owner: "IPPAN / FinDAG Engineering"
+  intent: >
+    Enforce sane scope, chunking, and model selection. Prevent runaway context,
+    oversized inputs, and accidental deviation from language/framework norms.
+
+policies:
+  chat_sessions:
+    - id: "CHAT-1"
+      rule: "If conversation exceeds 150 messages or a task changes scope, start a new session."
+      action: "HARD_STOP_AND_SPLIT"
+    - id: "CHAT-2"
+      rule: "Every task must begin with a 3-5 line summary of scope and success criteria."
+      action: "REQUIRE_SUMMARY"
+
+  file_processing:
+    - id: "FILE-1"
+      rule: "Do not process files > 500 KB as a single unit."
+      action: "SPLIT_BY_MODULE"
+      params:
+        split_max_lines: 400
+    - id: "FILE-2"
+      rule: "For refactors, operate per module/function; avoid full-repo edits."
+      action: "LIMIT_CHANGESET"
+      params:
+        max_changed_files: 10
+        max_hunk_size_lines: 120
+
+  design_principles:
+    - id: "ARCH-1"
+      rule: "Apply SOLID and DRY; extract helpers for repeated logic > 2 occurrences."
+      action: "SUGGEST_REFACTOR"
+    - id: "ARCH-2"
+      rule: "If custom requirements diverge from framework best practices, document rationale."
+      action: "REQUIRE_DEVIATION_NOTE"
+      params:
+        min_note_lines: 4
+
+  context_bounds:
+    - id: "CTX-1"
+      rule: "Avoid pasting very large rule sets or full MCPs; chunk into ≤ 200 lines each."
+      action: "ENFORCE_CHUNKING"
+    - id: "CTX-2"
+      rule: "Too many negatives in rules? Convert to positive, action-oriented guidelines."
+      action: "REWRITE_POSITIVE"
+
+  model_selection:
+    - id: "MODEL-1"
+      rule: "Fit model to task complexity."
+      action: "SELECT_MODEL"
+      params:
+        simple_models: ["gpt-4o-mini", "o4-mini"]
+        advanced_models: ["gpt-5", "gpt-5-thinking"]
+        selection_criteria:
+          - "Static content edits, formatting → simple_models"
+          - "Design/architecture/complex debugging → advanced_models"
+    - id: "MODEL-2"
+      rule: "If model mismatch detected (too basic/too advanced), switch and rerun."
+      action: "AUTO_SWITCH_MODEL"
+
+workflows:
+  - id: "WF-DEV-CHANGE"
+    name: "Safe Dev Change"
+    steps:
+      - "Create 3–5 line task brief (CHAT-2)."
+      - "Estimate blast radius; set max_changed_files (FILE-2)."
+      - "If input >500 KB, chunk (FILE-1, CTX-1)."
+      - "Check for custom deviations; add rationale (ARCH-2)."
+      - "Choose model (MODEL-1)."
+      - "Implement smallest vertical slice; run tests."
+      - "Generate patch summary & next steps."
+
+  - id: "WF-REFACTOR"
+    name: "SOLID/DRY Refactor"
+    steps:
+      - "Identify duplication & responsibilities (ARCH-1)."
+      - "Create helper/module; keep hunks ≤120 lines (FILE-2)."
+      - "Update imports & call sites incrementally."
+      - "Run unit tests; summarize changes."
+
+acceptance_criteria:
+  - "Changes compile (or build passes) with zero errors."
+  - "Unit tests added/updated for new or refactored logic."
+  - "Deviation notes present when diverging from norms."
+  - "Patch summary includes changed files, rationale, and follow-ups."
+
+fail_fast:
+  - "If a file or context exceeds limits after chunking → stop and request user confirmation."
+  - "If acceptance criteria cannot be met in one pass → produce partial patch and TODOs."
+
+outputs:
+  required:
+    - "task_brief.md"
+    - "patch_summary.md"
+    - "deviation_notes.md (conditional)"
+    - "next_steps.md"
+  optional:
+    - "refactor_plan.md"

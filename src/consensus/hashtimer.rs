@@ -22,6 +22,7 @@ pub struct HashTimer {
 }
 
 /// IPPAN Time Manager for global time synchronization
+#[derive(Debug)]
 pub struct IppanTimeManager {
     node_id: String,
     local_clock: Arc<RwLock<LocalClock>>,

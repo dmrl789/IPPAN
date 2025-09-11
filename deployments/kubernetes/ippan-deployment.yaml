@@ -2,8 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ippan-node
+  namespace: ippan
   labels:
     app: ippan-node
+    version: v1.0.0
 spec:
   replicas: 3
   selector:
@@ -13,17 +15,30 @@ spec:
     metadata:
       labels:
         app: ippan-node
+        version: v1.0.0
     spec:
+      serviceAccountName: ippan-node
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
-      - name: ippan
-        image: ippan:latest
+      - name: ippan-node
+        image: ghcr.io/ippan/ippan:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
           name: api
+          protocol: TCP
         - containerPort: 3000
-          name: frontend
+          name: p2p
+          protocol: TCP
         - containerPort: 80
           name: http
+          protocol: TCP
+        - containerPort: 443
+          name: https
+          protocol: TCP
         env:
         - name: RUST_LOG
           value: "info"
@@ -37,15 +52,18 @@ spec:
           value: "/logs"
         - name: NODE_ENV
           value: "production"
-        volumeMounts:
-        - name: config-volume
-          mountPath: /config
-        - name: data-volume
-          mountPath: /data
-        - name: keys-volume
-          mountPath: /keys
-        - name: logs-volume
-          mountPath: /logs
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         resources:
           requests:
             memory: "512Mi"
@@ -53,110 +71,254 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "1000m"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: data
+          mountPath: /data
+        - name: keys
+          mountPath: /keys
+        - name: logs
+          mountPath: /logs
         livenessProbe:
           httpGet:
-            path: /health
-            port: 80
+            path: /api/v1/status
+            port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /health
-            port: 80
+            path: /api/v1/status
+            port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
       volumes:
-      - name: config-volume
+      - name: config
         configMap:
           name: ippan-config
-      - name: data-volume
+      - name: data
         persistentVolumeClaim:
-          claimName: ippan-data-pvc
-      - name: keys-volume
+          claimName: ippan-data
+      - name: keys
         secret:
           secretName: ippan-keys
-      - name: logs-volume
+      - name: logs
         emptyDir: {}
-
+      imagePullSecrets:
+      - name: ghcr-secret
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: "ippan.io/node"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - ippan-node
+              topologyKey: kubernetes.io/hostname
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: ippan-service
+  name: ippan-node-service
+  namespace: ippan
+  labels:
+    app: ippan-node
 spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: api
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: p2p
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 443
+    protocol: TCP
+    name: https
   selector:
     app: ippan-node
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ippan-node-headless
+  namespace: ippan
+  labels:
+    app: ippan-node
+spec:
+  type: ClusterIP
+  clusterIP: None
   ports:
-  - name: api
-    port: 8080
-    targetPort: 8080
-  - name: frontend
-    port: 3000
+  - port: 3000
     targetPort: 3000
-  - name: http
-    port: 80
-    targetPort: 80
-  type: LoadBalancer
-
+    protocol: TCP
+    name: p2p
+  selector:
+    app: ippan-node
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: ippan-config
+  namespace: ippan
 data:
   default.toml: |
     [network]
-    listen_addr = "0.0.0.0:8080"
-    bootstrap_nodes = []
-    max_connections = 1000
-    connection_timeout = 30
-    enable_nat = true
-    enable_relay = true
-
-    [storage]
-    db_path = "/data/ippan.db"
-    max_storage_size = 107374182400  # 100GB
-    shard_size = 1048576  # 1MB
-    replication_factor = 3
-    enable_encryption = true
-    proof_interval = 3600
-
-    [consensus]
-    block_time = 1000
-    max_block_size = 1048576  # 1MB
-    validator_count = 21
-    stake_threshold = 1000000000  # 10 IPN
-
+    port = 3000
+    max_peers = 100
+    discovery_interval = 30
+    
     [api]
-    listen_addr = "0.0.0.0:8080"
+    port = 8080
     cors_origins = ["*"]
     rate_limit = 1000
-    timeout = 30
-
+    
+    [consensus]
+    max_validators = 100
+    block_time = 10
+    finality_threshold = 67
+    
+    [storage]
+    data_dir = "/data"
+    max_file_size = 104857600
+    compression = true
+    
     [logging]
     level = "info"
-    format = "json"
-    output = "stdout"
-
+    file = "/logs/ippan.log"
+    max_size = 104857600
+    max_files = 10
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: ippan-data-pvc
+  name: ippan-data
+  namespace: ippan
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
       storage: 100Gi
-
+  storageClassName: fast-ssd
 ---
 apiVersion: v1
 kind: Secret
 metadata:
   name: ippan-keys
+  namespace: ippan
 type: Opaque
 data:
-  # Base64 encoded keys will be added here
+  # Base64 encoded keys
   node.key: ""
   validator.key: ""
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ippan-node
+  namespace: ippan
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: ippan
+  name: ippan-node-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ippan-node-rolebinding
+  namespace: ippan
+subjects:
+- kind: ServiceAccount
+  name: ippan-node
+  namespace: ippan
+roleRef:
+  kind: Role
+  name: ippan-node-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ippan-network-policy
+  namespace: ippan
+spec:
+  podSelector:
+    matchLabels:
+      app: ippan-node
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ippan
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 3000
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: ippan
+    ports:
+    - protocol: TCP
+      port: 3000
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

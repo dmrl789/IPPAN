@@ -55,6 +55,17 @@ pub struct SecurityPolicies {
     pub require_audit_logging: bool,
 }
 
+/// Audit entry for key management
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEntry {
+    pub id: String,
+    pub timestamp: u64,
+    pub event_type: String,
+    pub description: String,
+    pub severity: String,
+    pub component: String,
+}
+
 /// Key audit event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyAuditEvent {

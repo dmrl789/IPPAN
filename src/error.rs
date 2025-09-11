@@ -19,6 +19,20 @@ pub enum IppanError {
     Staking(String),
     #[error("Domain error: {0}")]
     Domain(String),
+    #[error("CLI error: {0}")]
+    CLI(String),
+    #[error("Mining error: {0}")]
+    Mining(String),
+    #[error("Node error: {0}")]
+    Node(String),
+    #[error("Standard error: {0}")]
+    StandardError(String),
+    #[error("Genesis error: {0}")]
+    Genesis(String),
+    #[error("Token error: {0}")]
+    Token(String),
+    #[error("Validator error: {0}")]
+    Validator(String),
     #[error("API error: {0}")]
     Api(String),
     #[error("Cryptography error: {0}")]
@@ -113,6 +127,12 @@ impl From<hyper::Error> for IppanError {
 impl From<String> for IppanError {
     fn from(err: String) -> Self {
         IppanError::Config(err)
+    }
+}
+
+impl From<Box<dyn std::error::Error>> for IppanError {
+    fn from(err: Box<dyn std::error::Error>) -> Self {
+        IppanError::StandardError(err.to_string())
     }
 }
 

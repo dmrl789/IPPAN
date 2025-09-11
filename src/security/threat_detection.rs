@@ -127,7 +127,7 @@ pub struct DetectedThreat {
 }
 
 /// Threat status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ThreatStatus {
     Active,
     Investigating,
@@ -243,7 +243,7 @@ impl ThreatDetectionEngine {
                 
                 // Store detected threat
                 let mut threats = self.detected_threats.write().await;
-                threats.insert(threat.id.clone(), threat);
+                threats.insert(threat.id.clone(), threat.clone());
                 
                 // Update statistics
                 self.update_stats(&threat).await;

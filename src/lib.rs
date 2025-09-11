@@ -6,6 +6,13 @@ pub mod config;
 pub mod api;
 pub mod blockchain;
 pub mod consensus;
+pub mod crypto;
+pub mod database;
+pub mod mining;
+pub mod genesis;
+pub mod cli; // NEW - Real persistent database implementation // NEW - Real cryptographic implementations
+pub mod logging; // NEW - Comprehensive logging and monitoring system
+// pub mod security; // NEW - Comprehensive security audit and vulnerability assessment (moved to feature-gated)
 pub mod error;
 pub mod node;
 pub mod transaction_types; // NEW - User-facing transaction types
@@ -27,6 +34,9 @@ pub mod network;
 
 #[cfg(feature = "storage")]
 pub mod storage;
+
+#[cfg(feature = "network")]
+pub mod transaction;
 
 #[cfg(feature = "security")]
 pub mod security;

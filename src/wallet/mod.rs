@@ -11,6 +11,7 @@ pub mod ed25519;
 pub mod payments;
 pub mod stake;
 pub mod m2m_payments;
+pub mod real_wallet; // NEW - Real functional wallet implementation
 
 pub struct WalletManager {
     pub config: Config,

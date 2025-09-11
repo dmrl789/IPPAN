@@ -4,6 +4,7 @@ import DatasetsPage from "./pages/DatasetsPage";
 import InferencePage from "./pages/InferencePage";
 import BidsPage from "./pages/BidsPage";
 import ProofsPage from "./pages/ProofsPage";
+import InteroperabilityPage from "./pages/InteroperabilityPage";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
             ["Post Inference", "/inference"],
             ["Bids / Winner", "/bids"],
             ["Proofs", "/proofs"],
+            ["Interoperability", "/interoperability"],
           ].map(([label, to]) => (
             <NavLink key={to} to={to} className={({isActive}) =>
               `px-3 py-2 rounded ${isActive?"bg-black/10 dark:bg-white/10":"hover:bg-black/5 dark:hover:bg-white/5"}`
@@ -31,6 +33,7 @@ export default function App() {
           <Route path="/inference" element={<InferencePage />} />
           <Route path="/bids" element={<BidsPage />} />
           <Route path="/proofs" element={<ProofsPage />} />
+          <Route path="/interoperability" element={<InteroperabilityPage />} />
         </Routes>
       </main>
     </div>

@@ -1,0 +1,36 @@
+# IPPAN Web Server Container - Fixed Version
+FROM debian:bookworm-slim
+
+# Install runtime dependencies including Python
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    jq \
+    openssl \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create ippan user
+RUN groupadd -r ippan && useradd -r -g ippan ippan
+
+# Create required directories
+RUN mkdir -p /data /keys /logs /config /app && \
+    chown -R ippan:ippan /data /keys /logs /config /app
+
+# Copy the fixed Python web server script
+COPY ippan_server_fixed.py /app/ippan_server.py
+
+# Make the script executable
+RUN chmod +x /app/ippan_server.py
+
+# Switch to ippan user
+USER ippan
+
+# Set working directory
+WORKDIR /app
+
+# Expose ports
+EXPOSE 3000 8080
+
+# Run the web server
+CMD ["python3", "/app/ippan_server.py"]

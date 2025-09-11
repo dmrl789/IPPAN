@@ -9,6 +9,10 @@ pub mod performance_integration;
 pub mod security_integration;
 pub mod end_to_end_integration;
 pub mod unit;
+pub mod comprehensive_test_suite;
+pub mod component_tests;
+pub mod performance_tests;
+pub mod integration_tests;
 
 use crate::config::Config;
 use std::time::Instant;
@@ -27,71 +31,71 @@ impl TestRunner {
     /// Run all tests
     pub async fn run_all_tests(&self) -> Result<TestResults, Box<dyn std::error::Error>> {
         let start_time = Instant::now();
-        log::info!("🚀 Starting IPPAN test suite...");
+        log::info!("🚀 Starting IPPAN comprehensive test suite...");
 
         let mut results = TestResults::new();
 
-        // Run unit tests
-        log::info!("🧪 Running unit tests...");
-        let unit_start = Instant::now();
-        match unit::run_unit_tests().await {
+        // Run comprehensive test suite
+        log::info!("🧪 Running comprehensive test suite...");
+        let comprehensive_start = Instant::now();
+        match comprehensive_test_suite::run_comprehensive_test_suite().await {
             Ok(_) => {
                 results.unit_tests_passed = true;
-                results.unit_test_duration = unit_start.elapsed();
-                log::info!("✅ Unit tests passed in {:?}", results.unit_test_duration);
+                results.unit_test_duration = comprehensive_start.elapsed();
+                log::info!("✅ Comprehensive test suite passed in {:?}", results.unit_test_duration);
             }
             Err(e) => {
                 results.unit_tests_passed = false;
                 results.unit_test_error = Some(e.to_string());
-                log::error!("❌ Unit tests failed: {}", e);
+                log::error!("❌ Comprehensive test suite failed: {}", e);
+            }
+        }
+
+        // Run component tests
+        log::info!("🔧 Running component tests...");
+        let component_start = Instant::now();
+        match component_tests::run_all_component_tests().await {
+            Ok(_) => {
+                results.integration_tests_passed = true;
+                results.integration_test_duration = component_start.elapsed();
+                log::info!("✅ Component tests passed in {:?}", results.integration_test_duration);
+            }
+            Err(e) => {
+                results.integration_tests_passed = false;
+                results.integration_test_error = Some(e.to_string());
+                log::error!("❌ Component tests failed: {}", e);
+            }
+        }
+
+        // Run performance tests
+        log::info!("🚀 Running performance tests...");
+        let performance_start = Instant::now();
+        match performance_tests::run_all_performance_tests().await {
+            Ok(_) => {
+                results.performance_tests_passed = true;
+                results.performance_test_duration = performance_start.elapsed();
+                log::info!("✅ Performance tests passed in {:?}", results.performance_test_duration);
+            }
+            Err(e) => {
+                results.performance_tests_passed = false;
+                results.performance_test_error = Some(e.to_string());
+                log::error!("❌ Performance tests failed: {}", e);
             }
         }
 
         // Run integration tests
         log::info!("🔗 Running integration tests...");
         let integration_start = Instant::now();
-        match integration::run_integration_tests().await {
-            Ok(_) => {
-                results.integration_tests_passed = true;
-                results.integration_test_duration = integration_start.elapsed();
-                log::info!("✅ Integration tests passed in {:?}", results.integration_test_duration);
-            }
-            Err(e) => {
-                results.integration_tests_passed = false;
-                results.integration_test_error = Some(e.to_string());
-                log::error!("❌ Integration tests failed: {}", e);
-            }
-        }
-
-        // Run performance integration tests
-        log::info!("🚀 Running performance integration tests...");
-        let performance_start = Instant::now();
-        match performance_integration::run_performance_integration_tests().await {
-            Ok(_) => {
-                results.performance_tests_passed = true;
-                results.performance_test_duration = performance_start.elapsed();
-                log::info!("✅ Performance integration tests passed in {:?}", results.performance_test_duration);
-            }
-            Err(e) => {
-                results.performance_tests_passed = false;
-                results.performance_test_error = Some(e.to_string());
-                log::error!("❌ Performance integration tests failed: {}", e);
-            }
-        }
-
-        // Run security integration tests
-        log::info!("🔒 Running security integration tests...");
-        let security_start = Instant::now();
-        match security_integration::run_security_integration_tests().await {
+        match integration_tests::run_all_integration_tests().await {
             Ok(_) => {
                 results.security_tests_passed = true;
-                results.security_test_duration = security_start.elapsed();
-                log::info!("✅ Security integration tests passed in {:?}", results.security_test_duration);
+                results.security_test_duration = integration_start.elapsed();
+                log::info!("✅ Integration tests passed in {:?}", results.security_test_duration);
             }
             Err(e) => {
                 results.security_tests_passed = false;
                 results.security_test_error = Some(e.to_string());
-                log::error!("❌ Security integration tests failed: {}", e);
+                log::error!("❌ Integration tests failed: {}", e);
             }
         }
 

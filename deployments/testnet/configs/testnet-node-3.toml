@@ -1,0 +1,171 @@
+# IPPAN Testnet Node 3 Configuration (Validator Node)
+# This node connects to the bootstrap node and participates in consensus
+
+[network]
+# Network configuration
+port = 3000
+max_peers = 50
+discovery_interval = 30
+bootstrap_nodes = ["ippan-node-1:3000", "ippan-node-2:3000"]
+is_bootstrap = false
+external_ip = "ippan-node-3"
+external_port = 3000
+
+# P2P network settings
+connection_timeout = 30
+keep_alive_interval = 60
+max_connection_attempts = 5
+peer_discovery_enabled = true
+nat_traversal = false
+
+[api]
+# API server configuration
+port = 8080
+host = "0.0.0.0"
+cors_origins = ["*"]
+rate_limit = 1000
+max_request_size = 10485760  # 10MB
+timeout = 30
+
+# API endpoints
+enable_rest_api = true
+enable_graphql_api = false
+enable_websocket_api = true
+
+[consensus]
+# BFT consensus configuration
+max_validators = 5
+block_time = 10  # seconds
+finality_threshold = 67  # percentage
+view_change_timeout = 30
+proposal_timeout = 15
+commit_timeout = 10
+
+# Validator settings
+validator_id = "node-3"
+validator_role = "validator"
+stake_amount = 1000000
+commission_rate = 0.05
+
+[storage]
+# Storage configuration
+data_dir = "/data"
+max_file_size = 104857600  # 100MB
+compression = true
+encryption = true
+replication_factor = 3
+shard_size = 1000
+
+# Database settings
+database_type = "sqlite"
+database_path = "/data/ippan.db"
+max_connections = 100
+connection_timeout = 30
+query_timeout = 60
+
+[mining]
+# Mining configuration
+enabled = true
+miner_id = "node-3"
+mining_pool = "testnet-pool"
+block_reward = 100
+transaction_fee = 0.001
+gas_limit = 1000000
+gas_price = 0.000001
+
+# Block creation settings
+max_transactions_per_block = 1000
+block_size_limit = 1048576  # 1MB
+difficulty_adjustment_interval = 100
+
+[wallet]
+# Wallet configuration
+wallet_dir = "/keys"
+default_account = "node-3-account"
+account_type = "validator"
+transaction_fee = 0.001
+gas_limit = 100000
+gas_price = 0.000001
+
+# Key management
+key_derivation = "ed25519"
+key_encryption = true
+backup_enabled = true
+
+[logging]
+# Logging configuration
+level = "info"
+file = "/logs/ippan-node-3.log"
+max_size = 104857600  # 100MB
+max_files = 10
+rotation = "daily"
+format = "json"
+
+# Log categories
+enable_network_logs = true
+enable_consensus_logs = true
+enable_storage_logs = true
+enable_api_logs = true
+enable_mining_logs = true
+
+[monitoring]
+# Monitoring configuration
+enabled = true
+metrics_port = 9090
+health_check_interval = 30
+performance_monitoring = true
+resource_monitoring = true
+
+# Alerting
+alerts_enabled = true
+alert_webhook_url = ""
+alert_email = ""
+
+[security]
+# Security configuration
+enable_tls = false
+tls_cert_path = ""
+tls_key_path = ""
+enable_authentication = false
+api_key_required = false
+rate_limiting = true
+max_requests_per_minute = 1000
+
+# Network security
+firewall_enabled = false
+allowed_ips = []
+blocked_ips = []
+
+[genesis]
+# Genesis block configuration
+genesis_file = "/data/genesis.json"
+initial_validators = [
+    "node-1",
+    "node-2", 
+    "node-3",
+    "node-4",
+    "node-5"
+]
+initial_supply = 1000000000
+initial_distribution = {
+    "node-1" = 200000000,
+    "node-2" = 200000000,
+    "node-3" = 200000000,
+    "node-4" = 200000000,
+    "node-5" = 200000000
+}
+
+[testnet]
+# Testnet specific configuration
+network_id = "ippan-testnet"
+chain_id = 1001
+testnet_mode = true
+faucet_enabled = true
+faucet_amount = 1000
+faucet_interval = 3600  # 1 hour
+
+# Testnet features
+enable_debug_apis = true
+enable_test_transactions = true
+fast_block_time = true
+low_difficulty = true

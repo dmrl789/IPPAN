@@ -119,6 +119,7 @@ pub enum ConnectionState {
 }
 
 /// Relay service
+#[derive(Debug)]
 pub struct RelayService {
     /// Active relay connections
     connections: Arc<RwLock<HashMap<String, RelayConnection>>>,
@@ -130,6 +131,19 @@ pub struct RelayService {
     _message_receiver: broadcast::Receiver<RelayMessage>,
     /// Running flag
     running: bool,
+}
+
+impl Default for RelayService {
+    fn default() -> Self {
+        let (message_sender, _message_receiver) = broadcast::channel(1000);
+        Self {
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            config: RelayConfig::default(),
+            message_sender,
+            _message_receiver,
+            running: false,
+        }
+    }
 }
 
 /// Relay configuration

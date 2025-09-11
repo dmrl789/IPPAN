@@ -446,8 +446,8 @@ mod tests {
         assert_eq!(summary.error_count, 2);
     }
 
-    #[test]
-    fn test_performance_monitor() {
+    #[tokio::test]
+    async fn test_performance_monitor() {
         let metrics = Arc::new(PerformanceMetrics::new());
         let monitor = PerformanceMonitor::new(metrics.clone(), Duration::from_millis(100));
         

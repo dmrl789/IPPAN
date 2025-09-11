@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
 /// NAT traversal service
+#[derive(Debug)]
 pub struct NATService {
     /// External IP address
     external_ip: Option<IpAddr>,
@@ -18,6 +19,19 @@ pub struct NATService {
     stun_servers: Vec<String>,
     /// Running flag
     running: bool,
+}
+
+impl Default for NATService {
+    fn default() -> Self {
+        Self {
+            external_ip: None,
+            external_port: None,
+            nat_type: NATType::Unknown,
+            upnp_enabled: false,
+            stun_servers: Vec::new(),
+            running: false,
+        }
+    }
 }
 
 /// NAT type
