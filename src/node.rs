@@ -89,9 +89,8 @@ impl IppanNode {
         // Initialize storage manager
         let storage = Arc::new(RwLock::new(storage::StorageManager::new(config.storage.clone()).await?));
         
-        // Initialize network manager (temporarily disabled for build)
-        // let network = Arc::new(RwLock::new(network::NetworkManager::new(config.network.clone()).await?));
-        let network = Arc::new(RwLock::new(network::NetworkManager::default()));
+        // Initialize real network manager
+        let network = Arc::new(RwLock::new(network::NetworkManager::new(config.network.clone()).await?));
         
         // Initialize transaction processing
         let mempool = Arc::new(transaction::Mempool::new(
@@ -113,10 +112,9 @@ impl IppanNode {
             is_running: false,
         }));
         
-        // Now initialize the API layer with the node reference
+        // Initialize API layer with node reference and start HTTP server
         {
         let api_layer = node.read().await.api_layer.clone();
-        // Create a wrapper for the API layer
         let node_for_api = Arc::clone(&node);
         let api_wrapper = Arc::new(RwLock::new(Some(node_for_api)));
         *api_layer.write().await = api::ApiLayer::new(api_wrapper);
@@ -460,9 +458,7 @@ impl IppanNode {
 
     async fn run_main_loop_internal(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Starting IPPAN node main loop...");
-        
-        // Initialize components (without starting the main loop)
-        self.initialize_components().await?;
+        // Components already initialized in start(); avoid double-start here
         // TODO: Implement background tasks
         log::info!("Background tasks initialization skipped (placeholder)");
         

@@ -1,0 +1,40 @@
+﻿# Update system
+apt update && apt upgrade -y
+
+# Install essential packages
+apt install -y curl git wget unzip ufw fail2ban ca-certificates gnupg lsb-release
+
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh && rm get-docker.sh
+
+# Create ippan user
+useradd -m -s /bin/bash -G sudo,docker ippan
+
+# Create SSH directory for ippan user
+mkdir -p /home/ippan/.ssh
+
+# Add SSH public key
+echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDv7mfvbhDRfBUaCknJ2BP9JEUeU3RT5RKxTsMaAhtdJqvRyz6UchEgkvzMzXbt/w1kvfEcK4ev8ial+y5StTPME6SF95syjvtsNTDhr/cHSUZsV3Nbb6w7wTQGn42O1HV7o4L8Q2Fu+zbNLiHp3PXi8dONlOHptKQif/bNCxRf2uanNwPGVwGHslvEYVNaB++OcVCICmjev/rI8Bx5NZMAz4uUOP7gRwRbTK5YZE8z7X/JFNZleRhaFse8xq2WYTa9rzarkrMagH+b0l/6yLP2qbth71GBMcIY/Az3WJfumyhD5w/EkyzpqREs0kI3LbxxduuHUqDm7tK5FPIRZpSYwNJJ5adq3sx30XD7PbO3k+sh8/UtEtQwyodB9P2hhdpzszE1+TIVBauRohaQnQpwb0NBiE62qdVlN5RUXCV4j5LvFuJCeib/8m8d4H9HdHtA5H/2ZAya//1r5wwcNtgsRx/fagaLfsLMvyBhA/MKCCzrjsRl3HMj9UMOrJfKkZPIsb0W9CQkkpulsjsUlVe82ufh+sAT54niuC/HXZHeokGi51xIyq/ktfdzXoyfq+UBbSfbEIj3jOeyz75Avm7YucGoKuaI2CBghl9i4mXb+orNB1lxYzaBQc/ucilgWbMarP8bAZP9Qpy5TTyHeslodVCPEmyzCWUEts2iEkANGQ== yuyby@hugh' >> /home/ippan/.ssh/authorized_keys
+
+# Set proper permissions
+chown -R ippan:ippan /home/ippan/.ssh
+chmod 700 /home/ippan/.ssh
+chmod 600 /home/ippan/.ssh/authorized_keys
+
+# Create IPPAN directories
+mkdir -p /opt/ippan/mainnet
+mkdir -p /opt/ippan/data
+mkdir -p /opt/ippan/keys
+mkdir -p /opt/ippan/logs
+chown -R ippan:ippan /opt/ippan
+
+# Configure firewall
+ufw allow 22/tcp    # SSH
+ufw allow 3000/tcp  # API
+ufw allow 8080/tcp  # P2P
+ufw allow 9090/tcp  # Prometheus
+ufw allow 3001/tcp  # Grafana
+ufw --force enable
+
+# Exit rescue mode and boot normally
+exit

@@ -125,6 +125,36 @@ impl NetworkManager {
         libp2p_network.start().await?;
         drop(libp2p_network);
         
+        // Attempt to dial bootstrap peers
+        for addr in self.config.bootstrap_nodes.clone() {
+            // Support both multiaddr and host:port formats
+            if addr.starts_with("/ip4/") {
+                // Parse libp2p multiaddr: /ip4/<ip>/tcp/<port>
+                let parts: Vec<&str> = addr.split('/').collect();
+                if parts.len() >= 5 {
+                    let ip = parts[2].to_string();
+                    let port = parts[4].parse::<u16>().unwrap_or(8080);
+                    if let Err(e) = self.connect_to_peer(ip, port).await {
+                        log::warn!("Failed to dial bootstrap peer {}: {}", addr, e);
+                    } else {
+                        log::info!("Dialing bootstrap peer {}", addr);
+                    }
+                } else {
+                    log::warn!("Invalid bootstrap multiaddr format: {}", addr);
+                }
+            } else if let Ok(sock) = addr.parse::<std::net::SocketAddr>() {
+                let ip = sock.ip().to_string();
+                let port = sock.port();
+                if let Err(e) = self.connect_to_peer(ip, port).await {
+                    log::warn!("Failed to dial bootstrap peer {}: {}", addr, e);
+                } else {
+                    log::info!("Dialing bootstrap peer {}", addr);
+                }
+            } else {
+                log::warn!("Unrecognized bootstrap address format: {}", addr);
+            }
+        }
+        
         // Start discovery service
         let mut discovery = self.discovery.write().await;
         discovery.start().await?;

@@ -17,13 +17,13 @@ use std::collections::HashMap;
 
 /// Simple HTTP server for IPPAN API
 pub struct SimpleHttpServer {
-    pub node: Arc<RwLock<IppanNode>>,
+    pub node: Option<Arc<RwLock<IppanNode>>>,
     pub addr: SocketAddr,
 }
 
 impl SimpleHttpServer {
     /// Create a new simple HTTP server
-    pub fn new(node: Arc<RwLock<IppanNode>>, addr: SocketAddr) -> Self {
+    pub fn new(node: Option<Arc<RwLock<IppanNode>>>, addr: SocketAddr) -> Self {
         Self { node, addr }
     }
 
@@ -31,12 +31,12 @@ impl SimpleHttpServer {
     pub async fn start(&self) -> Result<()> {
         log::info!("Starting simple HTTP server on {}", self.addr);
         
-        let node = Arc::clone(&self.node);
+        let node = self.node.clone();
         let make_svc = make_service_fn(move |_conn| {
-            let node = Arc::clone(&node);
+            let node = node.clone();
             async move {
                 Ok::<_, Infallible>(service_fn(move |req| {
-                    let node = Arc::clone(&node);
+                    let node = node.clone();
                     handle_request(req, node)
                 }))
             }
@@ -58,7 +58,7 @@ impl SimpleHttpServer {
 /// Handle HTTP requests
 async fn handle_request(
     req: Request<Body>,
-    node: Arc<RwLock<IppanNode>>,
+    node: Option<Arc<RwLock<IppanNode>>>,
 ) -> std::result::Result<Response<Body>, Infallible> {
     let method = req.method();
     let path = req.uri().path();
@@ -73,52 +73,74 @@ async fn handle_request(
         
         // Node status
         (&Method::GET, "/status") => {
-            let node_guard = node.read().await;
-            let status = node_guard.get_status();
+            if let Some(node_arc) = &node {
+                let node_guard = node_arc.read().await;
+                let status = node_guard.get_status();
             
-            let status_response = StatusResponse {
-                is_running: status.is_running,
-                uptime_seconds: status.uptime.as_secs(),
-                version: status.version,
-                node_id: hex::encode(node_guard.node_id()),
-            };
-            
-            let json = serde_json::to_string(&status_response).unwrap_or_else(|_| "{}".to_string());
-            Ok(Response::new(Body::from(json)))
-        }
-        
-        // API status
-        (&Method::GET, "/api/v1/status") => {
-            let node_guard = node.read().await;
-            let status = node_guard.get_status();
-            let network_stats = node_guard.network.read().await.get_network_stats().await;
-            let mempool_stats = node_guard.get_mempool_stats().await;
-            
-            let api_status = ApiStatusResponse {
-                node: NodeInfo {
+                let status_response = StatusResponse {
                     is_running: status.is_running,
                     uptime_seconds: status.uptime.as_secs(),
                     version: status.version,
                     node_id: hex::encode(node_guard.node_id()),
-                },
-                network: NetworkInfo {
-                    connected_peers: network_stats.active_connections,
-                    known_peers: network_stats.known_peers,
-                    total_peers: network_stats.total_peers,
-                },
-                mempool: MempoolInfo {
-                    total_transactions: mempool_stats.total_transactions,
-                    total_senders: mempool_stats.total_senders,
-                    total_size: mempool_stats.total_size,
-                },
-                consensus: ConsensusInfo {
-                    current_round: node_guard.consensus.read().await.current_round(),
-                    validator_count: node_guard.consensus.read().await.get_validators().len(),
-                },
-            };
+                };
             
-            let json = serde_json::to_string(&api_status).unwrap_or_else(|_| "{}".to_string());
-            Ok(Response::new(Body::from(json)))
+                let json = serde_json::to_string(&status_response).unwrap_or_else(|_| "{}".to_string());
+                Ok(Response::new(Body::from(json)))
+            } else {
+                let status_response = StatusResponse {
+                    is_running: true,
+                    uptime_seconds: 0,
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    node_id: "unknown".to_string(),
+                };
+                let json = serde_json::to_string(&status_response).unwrap_or_else(|_| "{}".to_string());
+                Ok(Response::new(Body::from(json)))
+            }
+        }
+        
+        // API status
+        (&Method::GET, "/api/v1/status") => {
+            if let Some(node_arc) = &node {
+                let node_guard = node_arc.read().await;
+                let status = node_guard.get_status();
+                let network_stats = node_guard.network.read().await.get_network_stats().await;
+                let mempool_stats = node_guard.get_mempool_stats().await;
+            
+                let api_status = ApiStatusResponse {
+                    node: NodeInfo {
+                        is_running: status.is_running,
+                        uptime_seconds: status.uptime.as_secs(),
+                        version: status.version,
+                        node_id: hex::encode(node_guard.node_id()),
+                    },
+                    network: NetworkInfo {
+                        connected_peers: network_stats.active_connections,
+                        known_peers: network_stats.known_peers,
+                        total_peers: network_stats.total_peers,
+                    },
+                    mempool: MempoolInfo {
+                        total_transactions: mempool_stats.total_transactions,
+                        total_senders: mempool_stats.total_senders,
+                        total_size: mempool_stats.total_size,
+                    },
+                    consensus: ConsensusInfo {
+                        current_round: node_guard.consensus.read().await.current_round(),
+                        validator_count: node_guard.consensus.read().await.get_validators().len(),
+                    },
+                };
+            
+                let json = serde_json::to_string(&api_status).unwrap_or_else(|_| "{}".to_string());
+                Ok(Response::new(Body::from(json)))
+            } else {
+                let api_status = ApiStatusResponse {
+                    node: NodeInfo { is_running: true, uptime_seconds: 0, version: env!("CARGO_PKG_VERSION").to_string(), node_id: "unknown".to_string() },
+                    network: NetworkInfo { connected_peers: 0, known_peers: 0, total_peers: 0 },
+                    mempool: MempoolInfo { total_transactions: 0, total_senders: 0, total_size: 0 },
+                    consensus: ConsensusInfo { current_round: 0, validator_count: 0 },
+                };
+                let json = serde_json::to_string(&api_status).unwrap_or_else(|_| "{}".to_string());
+                Ok(Response::new(Body::from(json)))
+            }
         }
         
         // Get account balance

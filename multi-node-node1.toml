@@ -1,0 +1,28 @@
+# IPPAN Multi-Node Configuration - Node 1
+[network]
+bootstrap_nodes = [
+    "188.245.97.41:8080",  # Node 1 (Nuremberg)
+    "135.181.145.174:8080" # Node 2 (Helsinki)
+]
+listen_address = "0.0.0.0:8080"
+external_address = "188.245.97.41:8080"
+
+[api]
+listen_address = "0.0.0.0:3000"
+cors_origins = ["*"]
+
+[metrics]
+listen_address = "0.0.0.0:9090"
+
+[logging]
+level = "info"
+format = "json"
+
+[consensus]
+algorithm = "proof_of_stake"
+block_time = 10
+max_transactions_per_block = 1000
+
+[storage]
+data_dir = "/opt/ippan/data"
+wal_dir = "/opt/ippan/wal"

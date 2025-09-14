@@ -1,0 +1,57 @@
+﻿# IPPAN Deployment Instructions
+
+## Current Status:
+- Server 1 (188.245.97.41): Online - API: Not Running
+- Server 2 (135.181.145.174): Online - API: Not Running
+
+## Next Steps:
+
+### Option 1: Manual Deployment via Console
+1. Go to Hetzner Cloud Console: https://console.hetzner.cloud/
+2. Access each server's console
+3. Run the deployment commands
+
+### Option 2: SSH Deployment
+1. Connect to each server via SSH
+2. Run the IPPAN deployment script
+
+### Option 3: Recreate Servers
+1. Delete existing servers
+2. Create new servers with cloud-init files
+3. Deploy IPPAN services automatically
+
+## Deployment Commands (for manual deployment):
+
+# On each server, run:
+sudo apt update && sudo apt install -y curl git docker.io
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker 
+
+# Clone and deploy IPPAN
+cd /opt
+sudo git clone https://github.com/dmrl789/IPPAN.git ippan
+cd ippan
+sudo chown -R $USER:$USER .
+
+# Create configuration
+cat > config.toml << 'EOF'
+[network]
+bootstrap_nodes = [
+    "",
+    ""
+]
+listen_address = "0.0.0.0:8080"
+external_address = "SERVER_IP:8080"
+
+[api]
+listen_address = "0.0.0.0:3000"
+cors_origins = ["*"]
+
+[logging]
+level = "info"
+format = "json"
+EOF
+
+# Start services
+docker-compose up -d
