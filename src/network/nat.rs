@@ -69,8 +69,10 @@ impl NATService {
 
     /// Start the NAT service
     pub async fn start(&mut self) -> Result<()> {
-        log::info!("Starting NAT traversal service");
-        self.running = true;
+        log::info!("NAT service temporarily disabled");
+        return Ok(());
+        // log::info!("Starting NAT traversal service");
+        // self.running = true;
         
         // Discover external IP
         self.discover_external_ip().await?;

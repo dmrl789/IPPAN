@@ -186,8 +186,10 @@ impl RelayService {
 
     /// Start the relay service
     pub async fn start(&mut self) -> Result<()> {
-        log::info!("Starting relay service");
-        self.running = true;
+        log::info!("Relay service temporarily disabled");
+        return Ok(());
+        // log::info!("Starting relay service");
+        // self.running = true;
         
         // Start relay listener
         let config = self.config.clone();

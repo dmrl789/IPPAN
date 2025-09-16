@@ -311,8 +311,10 @@ impl DiscoveryService {
 
     /// Start the discovery service
     pub async fn start(&mut self) -> Result<()> {
-        log::info!("Starting peer discovery service");
-        self.running = true;
+        log::info!("Discovery service temporarily disabled");
+        return Ok(());
+        // log::info!("Starting peer discovery service");
+        // self.running = true;
         
         // Start discovery loop
         let discovery_interval = self.discovery_interval;

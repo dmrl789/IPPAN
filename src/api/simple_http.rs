@@ -5,6 +5,7 @@
 use crate::node::IppanNode;
 use crate::Result;
 use crate::transaction::{Transaction, TransactionType, create_transaction};
+use crate::network;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -146,8 +147,12 @@ async fn handle_request(
         // Get account balance
         (&Method::GET, path) if path.starts_with("/api/v1/balance/") => {
             let account = path.strip_prefix("/api/v1/balance/").unwrap_or("");
-            let node_guard = node.read().await;
-            let balance = node_guard.get_account_balance(account).await;
+            let balance = if let Some(node_ref) = node {
+                let node_guard = node_ref.read().await;
+                node_guard.get_account_balance(account).await
+            } else {
+                0 // Default balance when node is not available
+            };
             
             let balance_response = BalanceResponse {
                 account: account.to_string(),
@@ -192,8 +197,12 @@ async fn handle_request(
             };
             
             // Process transaction
-            let node_guard = node.read().await;
-            let processed = node_guard.process_transaction(transaction).await.unwrap_or(false);
+            let processed = if let Some(node_ref) = node {
+                let node_guard = node_ref.read().await;
+                node_guard.process_transaction(transaction).await.unwrap_or(false)
+            } else {
+                false // Transaction cannot be processed without node
+            };
             
             let response = if processed {
                 TransactionResponse {
@@ -218,8 +227,18 @@ async fn handle_request(
         
         // Get mempool stats
         (&Method::GET, "/api/v1/mempool") => {
-            let node_guard = node.read().await;
-            let mempool_stats = node_guard.get_mempool_stats().await;
+            let mempool_stats = if let Some(node_ref) = node {
+                let node_guard = node_ref.read().await;
+                node_guard.get_mempool_stats().await
+            } else {
+                // Default mempool stats when node is not available
+                crate::transaction::MempoolStats {
+                    total_transactions: 0,
+                    total_senders: 0,
+                    total_size: 0,
+                    fee_distribution: std::collections::HashMap::new(),
+                }
+            };
             
             let json = serde_json::to_string(&mempool_stats).unwrap_or_else(|_| "{}".to_string());
             Ok(Response::new(Body::from(json)))
@@ -227,8 +246,19 @@ async fn handle_request(
         
         // Get network stats
         (&Method::GET, "/api/v1/network") => {
-            let node_guard = node.read().await;
-            let network_stats = node_guard.network.read().await.get_network_stats().await;
+            let network_stats = if let Some(node_ref) = node {
+                let node_guard = node_ref.read().await;
+                let network_manager = node_guard.network.read().await;
+                network_manager.get_network_stats().await
+            } else {
+                // Default network stats when node is not available
+                network::NetworkStats {
+                    active_connections: 0,
+                    known_peers: 0,
+                    reachable_peers: 0,
+                    total_peers: 0,
+                }
+            };
             
             let json = serde_json::to_string(&network_stats).unwrap_or_else(|_| "{}".to_string());
             Ok(Response::new(Body::from(json)))
@@ -236,15 +266,24 @@ async fn handle_request(
         
         // Get consensus stats
         (&Method::GET, "/api/v1/consensus") => {
-            let node_guard = node.read().await;
-            let consensus_engine = node_guard.consensus.read().await;
-            let current_round = consensus_engine.current_round();
-            let validators = consensus_engine.get_validators();
-            
-            let consensus_stats = ConsensusStatsResponse {
-                current_round,
-                validator_count: validators.len(),
-                total_stake: validators.values().sum(),
+            let consensus_stats = if let Some(node_ref) = node {
+                let node_guard = node_ref.read().await;
+                let consensus_engine = node_guard.consensus.read().await;
+                let current_round = consensus_engine.current_round();
+                let validators = consensus_engine.get_validators();
+                
+                ConsensusStatsResponse {
+                    current_round,
+                    validator_count: validators.len(),
+                    total_stake: validators.values().sum(),
+                }
+            } else {
+                // Default consensus stats when node is not available
+                ConsensusStatsResponse {
+                    current_round: 0,
+                    validator_count: 0,
+                    total_stake: 0,
+                }
             };
             
             let json = serde_json::to_string(&consensus_stats).unwrap_or_else(|_| "{}".to_string());

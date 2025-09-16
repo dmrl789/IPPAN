@@ -1,0 +1,40 @@
+{
+  "blockchain_info": {
+    "network_name": "IPPAN Mainnet",
+    "version": "1.0.0",
+    "genesis_timestamp": 1757936828,
+    "current_block": 1,
+    "total_transactions": 0
+  },
+  "accounts": {
+    "iRbDqSo0H4NxPGC0q55ohG36JrvlcYGvM3DpS4Q": {
+      "balance": 5000000,
+      "staked": 2500000,
+      "nonce": 0,
+      "transactions": []
+    },
+    "i1Alice123456789012345678901234567890123456789012345678901234567890": {
+      "balance": 1000000,
+      "staked": 500000,
+      "nonce": 0,
+      "transactions": []
+    },
+    "i1Bob123456789012345678901234567890123456789012345678901234567890123": {
+      "balance": 1000000,
+      "staked": 500000,
+      "nonce": 0,
+      "transactions": []
+    }
+  },
+  "transactions": [],
+  "blocks": [
+    {
+      "height": 1,
+      "hash": "genesis_block_001",
+      "timestamp": 1757936828,
+      "transactions": [],
+      "validator": "alice",
+      "stake": 500000
+    }
+  ]
+}

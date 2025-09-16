@@ -1,4 +1,4 @@
-# IPPAN Server 1 Deployment Commands
+n# IPPAN Server 1 Deployment Commands
 # Run these on the server at 188.245.97.41
 
 # Update system

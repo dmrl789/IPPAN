@@ -2,7 +2,7 @@
 //! 
 //! Handles transaction validation, mempool management, and block assembly
 
-use crate::{Result, IppanError};
+use crate::{Result, IppanError, types::Address};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -361,6 +361,12 @@ impl TransactionProcessor {
 
     /// Validate a transaction
     async fn validate_transaction(&self, transaction: &Transaction) -> Result<bool> {
+        // Validate sender address format
+        if !Address::is_valid_format(&transaction.sender) {
+            log::warn!("Invalid sender address format: {}", transaction.sender);
+            return Ok(false);
+        }
+        
         // Check nonce
         {
             let nonces = self.nonces.read().await;
@@ -373,7 +379,17 @@ impl TransactionProcessor {
         }
 
         // Check balance for payment transactions
-        if let TransactionType::Payment { from, amount, fee, .. } = &transaction.tx_type {
+        if let TransactionType::Payment { from, to, amount, fee, .. } = &transaction.tx_type {
+            // Validate address formats
+            if !Address::is_valid_format(from) {
+                log::warn!("Invalid 'from' address format: {}", from);
+                return Ok(false);
+            }
+            if !Address::is_valid_format(to) {
+                log::warn!("Invalid 'to' address format: {}", to);
+                return Ok(false);
+            }
+            
             if from != &transaction.sender {
                 return Ok(false);
             }
@@ -460,6 +476,24 @@ impl TransactionProcessor {
     pub async fn set_balance(&self, account: &str, balance: u64) {
         let mut balances = self.balances.write().await;
         balances.insert(account.to_string(), balance);
+    }
+    
+    /// Fund an account with tokens (for genesis/funding)
+    pub async fn fund_account(&self, account: &str, amount: u64) -> Result<()> {
+        // Validate address format
+        if !Address::is_valid_format(account) {
+            return Err(IppanError::Validation(
+                format!("Invalid address format: {}", account)
+            ));
+        }
+        
+        let mut balances = self.balances.write().await;
+        let current_balance = balances.get(account).copied().unwrap_or(0);
+        let new_balance = current_balance + amount;
+        balances.insert(account.to_string(), new_balance);
+        
+        log::info!("Funded account {} with {} tokens (new balance: {})", account, amount, new_balance);
+        Ok(())
     }
 
     /// Get account nonce

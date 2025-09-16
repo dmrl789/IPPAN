@@ -22,6 +22,7 @@ import WalletPage from './pages/WalletPage'
 import InteroperabilityPage from './pages/InteroperabilityPage'
 import FileAvailabilityPage from './pages/FileAvailabilityPage'
 import DomainUpdatesPage from './pages/DomainUpdatesPage'
+import NodeSelector from './components/NodeSelector'
 
 // Local storage helpers (same as WalletOverview)
 const LS_ADDR = "ippan.wallet.address";
@@ -132,6 +133,12 @@ export default function App() {
         { name: "Bids & Winners", path: "/bids", icon: "🏆" },
         { name: "Proofs", path: "/proofs", icon: "🔍" },
       ]
+    },
+    {
+      title: "Node Management",
+      items: [
+        { name: "Node Selection", path: "/node-selector", icon: "🔧" },
+      ]
     }
   ]
 
@@ -209,6 +216,9 @@ export default function App() {
               <Route path="/inference" element={<InferencePage />} />
               <Route path="/bids" element={<BidsPage />} />
               <Route path="/proofs" element={<ProofsPage />} />
+              
+              {/* Node Management Routes */}
+              <Route path="/node-selector" element={<NodeSelector />} />
             </Routes>
           </div>
         </main>

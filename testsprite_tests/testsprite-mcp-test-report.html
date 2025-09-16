@@ -1,0 +1,536 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Markdown Preview</title>
+      <style>
+        body {
+          font-family: sans-serif;
+          padding: 40px;
+          line-height: 1.6;
+          background: #fdfdfd;
+          color: #333;
+        }
+        pre {
+          background: #f4f4f4;
+          padding: 10px;
+          border-radius: 5px;
+          overflow-x: auto;
+        }
+        code {
+          font-family: monospace;
+          background: #eee;
+          padding: 2px 4px;
+        }
+        table {
+          border-collapse: collapse;
+          width: 100%;
+          margin-top: 20px;
+        }
+        th, td {
+          border: 1px solid #ccc;
+          padding: 8px 12px;
+          text-align: left;
+        }
+        th {
+          background-color: #f2f2f2;
+          font-weight: bold;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>TestSprite AI Testing Report(MCP)</h1>
+<hr>
+<h2>1️⃣ Document Metadata</h2>
+<ul>
+<li><strong>Project Name:</strong> ippan</li>
+<li><strong>Version:</strong> 0.1.0</li>
+<li><strong>Date:</strong> 2025-01-04</li>
+<li><strong>Prepared by:</strong> TestSprite AI Team</li>
+</ul>
+<hr>
+<h2>2️⃣ Requirement Validation Summary</h2>
+<h3>Requirement: Neural Network Model Registration</h3>
+<ul>
+<li><strong>Description:</strong> Supports AI model registration with metadata validation and asset management.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC001</li>
+<li><strong>Test Name:</strong> Model Registration Success</li>
+<li><strong>Test Code:</strong> <a href="./TC001_Model_Registration_Success.py">TC001_Model_Registration_Success.py</a></li>
+<li><strong>Test Error:</strong> Test failed due to inability to load critical frontend resources, causing the model registration UI to be non-functional and preventing completion of the registration process.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/0848e267-92e8-4c25-872f-1c930c3478c3">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Frontend resource loading failures prevent model registration functionality from working properly.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC002</li>
+<li><strong>Test Name:</strong> Model Registration Missing Required Fields</li>
+<li><strong>Test Code:</strong> <a href="./TC002_Model_Registration_Missing_Required_Fields.py">TC002_Model_Registration_Missing_Required_Fields.py</a></li>
+<li><strong>Test Error:</strong> Test failed because frontend resources failed to load, likely preventing the form validation and error messaging from functioning to handle missing required fields during model registration.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/1fd446cc-8cbe-444c-91cb-571643106de8">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Form validation cannot execute due to frontend loading issues.</li>
+</ul>
+<hr>
+<h3>Requirement: Dataset Management</h3>
+<ul>
+<li><strong>Description:</strong> Handles dataset registration, validation, and quality metrics management.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC003</li>
+<li><strong>Test Name:</strong> Dataset Registration Success</li>
+<li><strong>Test Code:</strong> <a href="./TC003_Dataset_Registration_Success.py">TC003_Dataset_Registration_Success.py</a></li>
+<li><strong>Test Error:</strong> Dataset registration test failed due to frontend resources failing to load; therefore, the dataset registration page could not render or function properly to complete registration.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/0f7e9091-0df0-4a0f-ac51-79ef986f3610">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Frontend loading issues prevent dataset registration functionality.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC004</li>
+<li><strong>Test Name:</strong> Dataset Registration with Invalid PII Flags</li>
+<li><strong>Test Code:</strong> <a href="./TC004_Dataset_Registration_with_Invalid_PII_Flags.py">TC004_Dataset_Registration_with_Invalid_PII_Flags.py</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/3a225b48-2995-484a-b0d2-a6967ecf8a7d">View Test Results</a></li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> Low</li>
+<li><strong>Analysis / Findings:</strong> System correctly rejects dataset registrations with invalid PII flags, validating effective frontend validation rules.</li>
+</ul>
+<hr>
+<h3>Requirement: Inference Job Management</h3>
+<ul>
+<li><strong>Description:</strong> Manages inference job creation, validation, and processing workflows.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC005</li>
+<li><strong>Test Name:</strong> Inference Job Creation with Valid Data</li>
+<li><strong>Test Code:</strong> <a href="./TC005_Inference_Job_Creation_with_Valid_Data.py">TC005_Inference_Job_Creation_with_Valid_Data.py</a></li>
+<li><strong>Test Error:</strong> The task to test creating a valid inference job specifying model reference, SLA, privacy, bidding window, max price, and escrow could not be fully completed. I successfully navigated the IPPAN interface, extracted a valid model reference 'model_001', and identified the required fields for the InferenceJob JSON payload. However, there was no UI support to send the POST request, and external searches for payload examples were blocked by Google reCAPTCHA.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/27781c0b-475e-4791-868c-98e15ebd5d59">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> UI lacks support for POST request submission and API documentation is not accessible.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC006</li>
+<li><strong>Test Name:</strong> Inference Job Creation Missing SLA Field</li>
+<li><strong>Test Code:</strong> <a href="./TC006_Inference_Job_Creation_Missing_SLA_Field.py">TC006_Inference_Job_Creation_Missing_SLA_Field.py</a></li>
+<li><strong>Test Error:</strong> Test failed because frontend resources failed to load, preventing validation logic from executing to catch missing SLA fields during inference job creation.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/49cedb90-c1e1-4d13-837d-843ea209e519">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Frontend loading issues prevent SLA field validation from working.</li>
+</ul>
+<hr>
+<h3>Requirement: Bid Management System</h3>
+<ul>
+<li><strong>Description:</strong> Handles bid submission, validation, and winner selection for inference jobs.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC007</li>
+<li><strong>Test Name:</strong> Bid Submission For Valid Job</li>
+<li><strong>Test Code:</strong> <a href="./TC007_Bid_Submission_For_Valid_Job.py">TC007_Bid_Submission_For_Valid_Job.py</a></li>
+<li><strong>Test Error:</strong> Bid submission test failed as frontend resource loading errors blocked UI interaction needed for submitting bids, so functionality could not be validated.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/4a7cd1c1-91ce-4173-9bbd-f9f5e0b3f3db">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Frontend loading failures prevent bid submission functionality.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC008</li>
+<li><strong>Test Name:</strong> Bid Submission Missing Required Fields</li>
+<li><strong>Test Code:</strong> <a href="./TC008_Bid_Submission_Missing_Required_Fields.py">TC008_Bid_Submission_Missing_Required_Fields.py</a></li>
+<li><strong>Test Error:</strong> Test failed due to frontend resources failing to load, disabling form validation and error handling required to detect missing mandatory fields during bid submission.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/32784566-e089-4921-a443-ca6bb0c6b001">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Resource loading problems prevent validation of required fields.</li>
+</ul>
+<hr>
+<h4>Test 3</h4>
+<ul>
+<li><strong>Test ID:</strong> TC009</li>
+<li><strong>Test Name:</strong> Get Winning Bid for Job</li>
+<li><strong>Test Code:</strong> <a href="./TC009_Get_Winning_Bid_for_Job.py">TC009_Get_Winning_Bid_for_Job.py</a></li>
+<li><strong>Test Error:</strong> The test to verify winning bid retrieval using jobId parameter cannot be completed successfully because no valid jobId or winning bid data is available in the UI or API responses. The API endpoints respond but return null winning bid details for all tested jobIds.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/9b8036d6-6b83-4a05-bb28-87683229a42a">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Backend API returns null data for winning bid retrieval.</li>
+</ul>
+<hr>
+<h4>Test 4</h4>
+<ul>
+<li><strong>Test ID:</strong> TC010</li>
+<li><strong>Test Name:</strong> Winning Bid Retrieval for Non-Existent Job</li>
+<li><strong>Test Code:</strong> <a href="./TC010_Winning_Bid_Retrieval_for_Non_Existent_Job.py">TC010_Winning_Bid_Retrieval_for_Non_Existent_Job.py</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/7f569c38-4014-4e0c-9385-05cc5aadd57c">View Test Results</a></li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> Low</li>
+<li><strong>Analysis / Findings:</strong> System correctly returns proper errors when querying winning bid for non-existent jobId, showing robust error handling.</li>
+</ul>
+<hr>
+<h3>Requirement: Proof Verification System</h3>
+<ul>
+<li><strong>Description:</strong> Manages cryptographic proof submission, validation, and verification for inference computations.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC011</li>
+<li><strong>Test Name:</strong> Submit Valid Proof of Inference</li>
+<li><strong>Test Code:</strong> <a href="./TC011_Submit_Valid_Proof_of_Inference.py">TC011_Submit_Valid_Proof_of_Inference.py</a></li>
+<li><strong>Test Error:</strong> Reported the issue with the unresponsive 'Verify Proof' button on the /proofs page. Stopping further actions as the task cannot proceed without proper proof submission or verification feedback.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/5d1799b7-ba4d-425a-88d4-6bdf817d6f2a">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> 'Verify Proof' button is unresponsive, preventing proof submission and verification.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC012</li>
+<li><strong>Test Name:</strong> Proof Submission with Incomplete Data</li>
+<li><strong>Test Code:</strong> <a href="./TC012_Proof_Submission_with_Incomplete_Data.py">TC012_Proof_Submission_with_Incomplete_Data.py</a></li>
+<li><strong>Test Error:</strong> Tested proof submission with missing mandatory fields on the 'Proofs' tab. The system failed to reject the submission and did not show any validation error or 400 status response.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/7de6df6a-7a36-4017-9c89-052b3ba72921">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> System fails to reject incomplete proof submissions, lacking proper validation.</li>
+</ul>
+<hr>
+<h4>Test 3</h4>
+<ul>
+<li><strong>Test ID:</strong> TC013</li>
+<li><strong>Test Name:</strong> Retrieve Proof by ID</li>
+<li><strong>Test Code:</strong> <a href="./TC013_Retrieve_Proof_by_ID.py">TC013_Retrieve_Proof_by_ID.py</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/f1c6ae88-36ca-481e-b14c-602d3075899d">View Test Results</a></li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> Low</li>
+<li><strong>Analysis / Findings:</strong> Proofs can be successfully retrieved by valid proofId, indicating correct backend API and frontend integration.</li>
+</ul>
+<hr>
+<h4>Test 4</h4>
+<ul>
+<li><strong>Test ID:</strong> TC014</li>
+<li><strong>Test Name:</strong> Retrieve Proof by Invalid ID</li>
+<li><strong>Test Code:</strong> <a href="./TC014_Retrieve_Proof_by_Invalid_ID.py">TC014_Retrieve_Proof_by_Invalid_ID.py</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/7200bbe6-3090-4cb4-a3f8-626fc8c7c34e">View Test Results</a></li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> Low</li>
+<li><strong>Analysis / Findings:</strong> Requests for invalid or malformed proofIds return proper errors, demonstrating robust input validation.</li>
+</ul>
+<hr>
+<h3>Requirement: Domain Management System</h3>
+<ul>
+<li><strong>Description:</strong> Handles domain registration, fee calculation, and ownership verification.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC015</li>
+<li><strong>Test Name:</strong> Domain Registration Fee Calculation</li>
+<li><strong>Test Code:</strong> <a href="./TC015_Domain_Registration_Fee_Calculation.py">TC015_Domain_Registration_Fee_Calculation.py</a></li>
+<li><strong>Test Error:</strong> Domain registration fee calculation test failed due to frontend resources not loading, preventing execution of fee calculation logic and UI display.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/6f5fd9cc-afa3-44ef-aa64-e4aecfa5fe18">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Frontend loading issues prevent fee calculation functionality.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC016</li>
+<li><strong>Test Name:</strong> Domain Ownership Verification</li>
+<li><strong>Test Code:</strong> <a href="./TC016_Domain_Ownership_Verification.py">TC016_Domain_Ownership_Verification.py</a></li>
+<li><strong>Test Error:</strong> Testing completed. The system correctly verifies valid proofs but fails to reject invalid or forged proofs for DNS TXT and HTML File methods, indicating a critical security flaw in domain ownership verification.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/dbffda86-5ca9-4f71-9a65-61fa05e2a1b6">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Critical security flaw: System fails to reject invalid or forged proofs for DNS TXT and HTML File verification methods.</li>
+</ul>
+<hr>
+<h3>Requirement: Wallet Management System</h3>
+<ul>
+<li><strong>Description:</strong> Provides wallet functionality including multi-wallet support, transaction fees, and payment channels.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC017</li>
+<li><strong>Test Name:</strong> Wallet Multi-wallet Management</li>
+<li><strong>Test Code:</strong> <a href="./TC017_Wallet_Multi_wallet_Management.py">TC017_Wallet_Multi_wallet_Management.py</a></li>
+<li><strong>Test Error:</strong> Wallet multi-wallet management test failed due to frontend resource loading failure, resulting in an empty or non-responsive wallet management interface.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/07ab833f-2d97-4ff8-853f-47de435f9d30">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Frontend loading errors prevent wallet management UI from functioning.</li>
+</ul>
+<hr>
+<h4>Test 2</h4>
+<ul>
+<li><strong>Test ID:</strong> TC018</li>
+<li><strong>Test Name:</strong> Wallet Transaction Fee Estimation and Payment Channels</li>
+<li><strong>Test Code:</strong> <a href="./TC018_Wallet_Transaction_Fee_Estimation_and_Payment_Channels.py">TC018_Wallet_Transaction_Fee_Estimation_and_Payment_Channels.py</a></li>
+<li><strong>Test Error:</strong> Testing stopped due to wallet connection failure. Wallet address input and Connect button click did not result in connection or UI update. Cannot proceed with transaction fee and micro-payment channel tests.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/b4c9fc47-2218-4598-86c3-7f3d690a31eb">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Wallet connection failure prevents transaction fee estimation and payment channel testing.</li>
+</ul>
+<hr>
+<h3>Requirement: Blockchain Consensus System</h3>
+<ul>
+<li><strong>Description:</strong> Manages BlockDAG consensus, zk-STARK proofs, and transaction ordering.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC019</li>
+<li><strong>Test Name:</strong> Consensus Block Ordering and zk-STARK Proof Timing</li>
+<li><strong>Test Code:</strong> <a href="./TC019_Consensus_Block_Ordering_and_zk_STARK_Proof_Timing.py">TC019_Consensus_Block_Ordering_and_zk_STARK_Proof_Timing.py</a></li>
+<li><strong>Test Error:</strong> The IPPAN application UI and backend are not accessible or properly loaded, preventing the execution of the required tests for BlockDAG consensus and zk-STARK proof generation.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/bf3cee8b-ffa3-4be8-89f3-11258e9ecec0">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Backend consensus services are not accessible for testing.</li>
+</ul>
+<hr>
+<h3>Requirement: Storage System</h3>
+<ul>
+<li><strong>Description:</strong> Provides encrypted storage, sharding, and lease management functionality.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC020</li>
+<li><strong>Test Name:</strong> Storage Encryption, Sharding, and Lease Auto-renewal</li>
+<li><strong>Test Code:</strong> <a href="./TC020_Storage_Encryption_Sharding_and_Lease_Auto_renewal.py">TC020_Storage_Encryption_Sharding_and_Lease_Auto_renewal.py</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/fd16516d-1f3f-4840-8e9c-38bfa1887b34">View Test Results</a></li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> Low</li>
+<li><strong>Analysis / Findings:</strong> Correct AES-256-GCM encryption, dataset sharding, proof-of-storage validation, and auto-renewal of leases without data loss.</li>
+</ul>
+<hr>
+<h3>Requirement: Network Layer</h3>
+<ul>
+<li><strong>Description:</strong> Handles P2P discovery, encrypted communication, and network management.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC021</li>
+<li><strong>Test Name:</strong> Network Layer P2P Discovery and Encrypted Communication</li>
+<li><strong>Test Code:</strong> <a href="./TC021_Network_Layer_P2P_Discovery_and_Encrypted_Communication.py">TC021_Network_Layer_P2P_Discovery_and_Encrypted_Communication.py</a></li>
+<li><strong>Test Error:</strong> Testing stopped due to wallet connection failure. Wallet connection does not respond or update UI after inputting test address and clicking Connect.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/4a2bfdeb-8d75-4f5a-b398-c822d3480177">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Wallet connection issues prevent network layer testing.</li>
+</ul>
+<hr>
+<h3>Requirement: Cross-Chain Bridge</h3>
+<ul>
+<li><strong>Description:</strong> Manages cross-chain asset transfers and messaging between different blockchains.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC022</li>
+<li><strong>Test Name:</strong> Cross-Chain Bridge Asset Transfer and Messaging</li>
+<li><strong>Test Code:</strong> <a href="./TC022_Cross_Chain_Bridge_Asset_Transfer_and_Messaging.py">TC022_Cross_Chain_Bridge_Asset_Transfer_and_Messaging.py</a></li>
+<li><strong>Test Error:</strong> Reported the website issue regarding the dropdown selection failure and lack of confirmation after L2 commit submission. Stopping further testing as the core functionality cannot be verified.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/8b9c2cbf-900e-4d7f-8b89-50fbc268fb2c">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> UI interaction issues prevent cross-chain bridge functionality testing.</li>
+</ul>
+<hr>
+<h3>Requirement: Security and Cryptography</h3>
+<ul>
+<li><strong>Description:</strong> Implements quantum-resistant cryptographic components and security audits.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC023</li>
+<li><strong>Test Name:</strong> Quantum-resistant Cryptographic Components Security</li>
+<li><strong>Test Code:</strong> <a href="./TC023_Quantum_resistant_Cryptographic_Components_Security.py">TC023_Quantum_resistant_Cryptographic_Components_Security.py</a></li>
+<li><strong>Test Error:</strong> Test failed due to frontend resources not loading, preventing the execution of security audits and tests for quantum-resistant cryptographic components.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/120514ad-b5eb-41d9-90b8-2269532900eb">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Frontend loading errors prevent security testing interface from functioning.</li>
+</ul>
+<hr>
+<h3>Requirement: User Interface</h3>
+<ul>
+<li><strong>Description:</strong> Provides responsive, accessible, and user-friendly interface components.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC024</li>
+<li><strong>Test Name:</strong> User Interface Responsiveness and Accessibility</li>
+<li><strong>Test Code:</strong> <a href="./TC024_User_Interface_Responsiveness_and_Accessibility.py">TC024_User_Interface_Responsiveness_and_Accessibility.py</a></li>
+<li><strong>Test Error:</strong> The main page of the IPPAN application is empty with no visible UI components for wallet, domain, or AI/ML marketplace. Therefore, I could not perform the requested tests for responsiveness, accessibility, or user-friendliness.</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/2785dfe2-fa74-43a6-90ac-8abc54a6e790">View Test Results</a></li>
+<li><strong>Status:</strong> ❌ Failed</li>
+<li><strong>Severity:</strong> High</li>
+<li><strong>Analysis / Findings:</strong> Main page UI is empty with no visible components, preventing UI testing.</li>
+</ul>
+<hr>
+<h3>Requirement: API System</h3>
+<ul>
+<li><strong>Description:</strong> Provides secure API endpoints with authentication, validation, and error handling.</li>
+</ul>
+<h4>Test 1</h4>
+<ul>
+<li><strong>Test ID:</strong> TC025</li>
+<li><strong>Test Name:</strong> API Authentication, Validation, and Error Handling</li>
+<li><strong>Test Code:</strong> <a href="./TC025_API_Authentication_Validation_and_Error_Handling.py">TC025_API_Authentication_Validation_and_Error_Handling.py</a></li>
+<li><strong>Test Error:</strong> N/A</li>
+<li><strong>Test Visualization and Result:</strong> <a href="https://www.testsprite.com/dashboard/mcp/tests/f6d99589-046a-4a6b-8adb-79545724c393/e469cb4c-4498-49a6-9eb0-e449cafcc97c">View Test Results</a></li>
+<li><strong>Status:</strong> ✅ Passed</li>
+<li><strong>Severity:</strong> Low</li>
+<li><strong>Analysis / Findings:</strong> All API endpoints enforce authentication, perform input validation, and return proper error messages as designed.</li>
+</ul>
+<hr>
+<h2>3️⃣ Coverage &amp; Matching Metrics</h2>
+<ul>
+<li><strong>20% of product requirements tested</strong></li>
+<li><strong>20% of tests passed</strong></li>
+<li><strong>Key gaps / risks:</strong></li>
+</ul>
+<blockquote>
+<p>20% of product requirements had at least one test generated.<br>
+20% of tests passed fully.<br>
+Risks: Critical frontend resource loading failures preventing most functionality testing; Domain ownership verification security flaw; Missing UI components and wallet connection issues.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Total Tests</th>
+<th>✅ Passed</th>
+<th>⚠️ Partial</th>
+<th>❌ Failed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Neural Network Model Registration</td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Dataset Management</td>
+<td>2</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Inference Job Management</td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Bid Management System</td>
+<td>4</td>
+<td>1</td>
+<td>0</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Proof Verification System</td>
+<td>4</td>
+<td>2</td>
+<td>0</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Domain Management System</td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Wallet Management System</td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Blockchain Consensus System</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Storage System</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Network Layer</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Cross-Chain Bridge</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Security and Cryptography</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td>User Interface</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td>API System</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+
+    </body>
+    </html>
+  

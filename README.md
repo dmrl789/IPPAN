@@ -13,6 +13,7 @@ A high-performance, quantum-resistant blockchain with advanced features includin
 - **Comprehensive API**: REST API for all operations
 - **Advanced Monitoring**: Real-time monitoring and alerting
 - **Production Ready**: Docker, Kubernetes, and CI/CD support
+- **Unified UI**: Single, comprehensive web interface for all operations
 
 ## Quick Start
 
@@ -23,7 +24,7 @@ A high-performance, quantum-resistant blockchain with advanced features includin
 - Protocol Buffers 3.20+
 - Node.js 18+ (for frontend)
 
-### Installation
+### Backend Setup
 
 ```bash
 # Clone repository
@@ -37,15 +38,64 @@ cargo build --release
 ./target/release/ippan-node --config configs/testnet-node.toml
 ```
 
+### Frontend Setup
+
+```bash
+# Install dependencies
+cd apps/unified-ui
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+```
+
 ### Docker Deployment
 
 ```bash
-# Deploy testnet
-cd deployments/testnet
-docker-compose -f docker-compose.testnet.yml up -d
+# Deploy with Docker Compose
+docker-compose -f docker-compose.production.yml up -d
 
 # Check status
-docker-compose -f docker-compose.testnet.yml ps
+docker-compose -f docker-compose.production.yml ps
+```
+
+## Unified UI
+
+The repository includes a single, comprehensive web interface at `apps/unified-ui` that provides:
+
+- **Wallet Management**: View balances, send transactions, manage keys
+- **Block Explorer**: Browse blocks, transactions, and accounts
+- **Network Monitoring**: Real-time network statistics and node status
+- **Storage Management**: Upload, manage, and share files
+- **Domain Management**: Register and manage DNS domains
+- **Staking Interface**: Participate in network consensus
+- **AI/ML Marketplace**: Deploy and manage neural models
+
+### Environment Variables
+
+Create a `.env` file in `apps/unified-ui/`:
+
+```bash
+# API Configuration
+VITE_API_URL=http://localhost:3000
+
+# Optional: Custom API endpoints
+VITE_API_BASE_URL=http://your-node-ip:3000
+```
+
+### Running the UI
+
+```bash
+# Development mode
+cd apps/unified-ui
+npm run dev
+
+# Production build
+npm run build
+npm run preview
 ```
 
 ### Kubernetes Deployment

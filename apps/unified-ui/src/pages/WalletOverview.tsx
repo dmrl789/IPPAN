@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import QRCode from 'qrcode'
 import { Card, Button, Field, Input, Badge } from '../components/UI'
+import { getNodeStatus, getNetworkStats, getMempoolStats, getConsensusStats, getHealth } from '../lib/api'
 
 // ---------------------------------
 // Types
@@ -333,6 +334,54 @@ export default function WalletOverview() {
   const [addrBook, setAddrBook] = useState<AddressBookEntry[]>(loadBook());
   const [fx, setFx] = useState<Fx>({ USD: 0.85, EUR: 0.78 });
 
+  // Real-time node data
+  const [nodeData, setNodeData] = useState({
+    status: null,
+    network: null,
+    mempool: null,
+    consensus: null,
+    health: null,
+    loading: true,
+    error: null
+  });
+
+  // Fetch real-time node data
+  useEffect(() => {
+    const fetchNodeData = async () => {
+      try {
+        setNodeData(prev => ({ ...prev, loading: true, error: null }));
+        
+        const [health, status, network, mempool, consensus] = await Promise.allSettled([
+          getHealth(),
+          getNodeStatus(),
+          getNetworkStats(),
+          getMempoolStats(),
+          getConsensusStats()
+        ]);
+
+        setNodeData({
+          health: health.status === 'fulfilled' ? health.value : null,
+          status: status.status === 'fulfilled' ? status.value : null,
+          network: network.status === 'fulfilled' ? network.value : null,
+          mempool: mempool.status === 'fulfilled' ? mempool.value : null,
+          consensus: consensus.status === 'fulfilled' ? consensus.value : null,
+          loading: false,
+          error: null
+        });
+      } catch (error) {
+        setNodeData(prev => ({ 
+          ...prev, 
+          loading: false, 
+          error: error.message || 'Failed to fetch node data' 
+        }));
+      }
+    };
+
+    fetchNodeData();
+    const interval = setInterval(fetchNodeData, 5000); // Update every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   // Send drawer
   const [sendOpen, setSendOpen] = useState(false);
   const [sendTo, setSendTo] = useState("");
@@ -562,6 +611,74 @@ export default function WalletOverview() {
                   Disconnect
                 </Button>
               </div>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Real-time Node Status */}
+      <Card title="IPPAN Node Status">
+        <div className="space-y-4">
+          {nodeData.loading ? (
+            <p className="text-sm text-gray-600">Loading node data...</p>
+          ) : nodeData.error ? (
+            <div className="text-sm text-red-600">
+              <p>Error: {nodeData.error}</p>
+              <p className="text-xs mt-1">Make sure the IPPAN node is running on http://188.245.97.41:3000</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {nodeData.status && (
+                <div className="rounded-xl border p-3">
+                  <div className="text-sm text-gray-600 mb-2">Node Status</div>
+                  <div className="text-lg font-medium">{nodeData.status.status}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Block: {nodeData.status.current_block?.toLocaleString() || 'N/A'}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Uptime: {Math.floor((nodeData.status.uptime_seconds || 0) / 3600)}h
+                  </div>
+                </div>
+              )}
+              
+              {nodeData.network && (
+                <div className="rounded-xl border p-3">
+                  <div className="text-sm text-gray-600 mb-2">Network</div>
+                  <div className="text-lg font-medium">{nodeData.network.connected_peers || 0} peers</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Total: {nodeData.network.total_peers || 0} peers
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    ID: {nodeData.network.network_id?.substring(0, 8) || 'N/A'}...
+                  </div>
+                </div>
+              )}
+              
+              {nodeData.mempool && (
+                <div className="rounded-xl border p-3">
+                  <div className="text-sm text-gray-600 mb-2">Mempool</div>
+                  <div className="text-lg font-medium">{nodeData.mempool.total_transactions || 0} txs</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Senders: {nodeData.mempool.total_senders || 0}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Size: {nodeData.mempool.total_size || 0} bytes
+                  </div>
+                </div>
+              )}
+              
+              {nodeData.consensus && (
+                <div className="rounded-xl border p-3">
+                  <div className="text-sm text-gray-600 mb-2">Consensus</div>
+                  <div className="text-lg font-medium">Round {nodeData.consensus.current_round || 0}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Validators: {nodeData.consensus.validators_count || 0}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Status: {nodeData.consensus.consensus_status || 'N/A'}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

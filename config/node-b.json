@@ -1,0 +1,14 @@
+{
+  "node_id": "node-b",
+  "p2p": {
+    "listen": "0.0.0.0:8080",
+    "seeds": ["188.245.97.41:8080"]
+  },
+  "rpc": {
+    "http": "0.0.0.0:3000"
+  },
+  "db_path": "/var/lib/ippan/node-b",
+  "genesis": "/etc/ippan/genesis.json",
+  "real_mode": true
+}
+

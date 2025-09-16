@@ -1,0 +1,47 @@
+[
+  {
+    "id": "TC001",
+    "title": "get_node_status",
+    "description": "Verify the /api/v1/status GET endpoint returns the current node status including height, peers count, and latest block hash with correct data types and values."
+  },
+  {
+    "id": "TC002",
+    "title": "validate_address_format",
+    "description": "Test the /api/v1/address/validate GET endpoint with valid and invalid address inputs to ensure it correctly identifies valid and invalid blockchain addresses."
+  },
+  {
+    "id": "TC003",
+    "title": "submit_transaction_success",
+    "description": "Test the /api/v1/transaction/submit POST endpoint with a valid transaction payload to verify successful transaction submission and receipt of a transaction ID."
+  },
+  {
+    "id": "TC004",
+    "title": "submit_transaction_invalid_payload",
+    "description": "Test the /api/v1/transaction/submit POST endpoint with invalid or malformed transaction data to verify proper error handling and 400 Bad Request response."
+  },
+  {
+    "id": "TC005",
+    "title": "sign_transaction",
+    "description": "Verify the /sign POST endpoint correctly signs a given transaction using the provided private key and returns a valid signature and public key."
+  },
+  {
+    "id": "TC006",
+    "title": "verify_transaction_signature",
+    "description": "Test the /verify POST endpoint to confirm it accurately verifies the signature of a transaction against the provided public key and returns the correct validity status."
+  },
+  {
+    "id": "TC007",
+    "title": "get_genesis_configuration",
+    "description": "Verify the /genesis GET endpoint returns the blockchain genesis configuration including chain ID, timestamp, allocation of addresses with balances, and blockchain parameters."
+  },
+  {
+    "id": "TC008",
+    "title": "get_node_configuration",
+    "description": "Test the /config GET endpoint to ensure it returns the current node configuration including node ID, P2P settings, RPC HTTP endpoint, database path, genesis file path, and real mode status."
+  },
+  {
+    "id": "TC009",
+    "title": "validate_codebase_for_mocks",
+    "description": "Verify the /validate POST endpoint of the CI Guard system correctly scans the codebase for mock usage and returns a status indicating whether the validation passed or failed."
+  }
+]

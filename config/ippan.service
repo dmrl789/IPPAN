@@ -1,0 +1,17 @@
+[Unit]
+Description=IPPAN Node
+After=network.target
+
+[Service]
+User=ippan
+Group=ippan
+Environment=REAL_MODE_REQUIRED=true
+Environment=DEMO_MODE=false
+ExecStart=/usr/local/bin/ippan-node --config /etc/ippan/node.json
+Restart=always
+RestartSec=2
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+

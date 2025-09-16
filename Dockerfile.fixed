@@ -1,0 +1,10 @@
+# Use the existing working image as base
+FROM mainnet-ippan-node:latest
+
+# Copy the fixed binary
+COPY --from=builder /usr/local/bin/ippan /usr/local/bin/ippan
+
+# Make sure it's executable
+RUN chmod +x /usr/local/bin/ippan
+
+# Keep the same entrypoint and configuration

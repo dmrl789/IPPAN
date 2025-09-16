@@ -51,6 +51,7 @@ pub enum ConsensusSyncStatus {
     Stuck,
 }
 
+#[derive(Clone)]
 pub struct IppanNode {
     pub config: config::Config,
     pub consensus: Arc<RwLock<consensus::ConsensusEngine>>,
@@ -99,7 +100,8 @@ impl IppanNode {
         ));
         let transaction_processor = Arc::new(transaction::TransactionProcessor::new(mempool.clone()));
         
-        let node = Arc::new(RwLock::new(Self {
+        // Create node directly without Arc wrapping to avoid try_unwrap issues
+        let node = Self {
             config,
             consensus,
             storage,
@@ -110,17 +112,8 @@ impl IppanNode {
             node_id,
             start_time: Instant::now(),
             is_running: false,
-        }));
+        };
         
-        // Initialize API layer with node reference and start HTTP server
-        {
-        let api_layer = node.read().await.api_layer.clone();
-        let node_for_api = Arc::clone(&node);
-        let api_wrapper = Arc::new(RwLock::new(Some(node_for_api)));
-        *api_layer.write().await = api::ApiLayer::new(api_wrapper);
-        }
-        
-        let node = Arc::try_unwrap(node).map_err(|_| crate::error::IppanError::Node("Failed to unwrap node".to_string()))?.into_inner();
         Ok(node)
     }
 
@@ -146,6 +139,9 @@ impl IppanNode {
         // Initialize node components
         self.initialize_components().await?;
         
+        // API layer will be started in the main loop to avoid double initialization issues
+        log::info!("API layer will be started in main loop");
+        
         // Start health monitoring in background
         // Note: We can't clone self here, so we'll create a new node reference
         // This is a temporary workaround - in a real implementation, we'd need to restructure this
@@ -162,7 +158,15 @@ impl IppanNode {
 
     /// Initialize node components
     async fn initialize_components(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        log::info!("Initializing node components");
+        log::info!("Initializing node components (is_running: {})", self.is_running);
+        
+        // Check if already initialized
+        if self.is_running {
+            log::info!("Node components already initialized, skipping");
+            return Ok(());
+        }
+        
+        log::info!("Starting component initialization...");
         
         // Initialize storage
         self.initialize_storage().await?;
@@ -177,6 +181,10 @@ impl IppanNode {
         self.initialize_wallet().await?;
         
         log::info!("Node components initialized successfully");
+        
+        // Mark as initialized
+        self.is_running = true;
+        
         Ok(())
     }
 
@@ -194,14 +202,8 @@ impl IppanNode {
         // Start the network subsystem
         self.network.write().await.start().await?;
         
-        // Start the network event loop in a separate task
-        let network = self.network.clone();
-        tokio::spawn(async move {
-            let mut network_manager = network.write().await;
-            if let Err(e) = network_manager.run_event_loop().await {
-                log::error!("Network event loop error: {}", e);
-            }
-        });
+        // Network event loop temporarily disabled
+        log::info!("Network event loop temporarily disabled");
         
         log::info!("Network component initialized successfully");
         Ok(())
@@ -244,7 +246,42 @@ impl IppanNode {
         self.transaction_processor.set_balance("bob", 50000).await;
         self.transaction_processor.set_balance("charlie", 25000).await;
         
+        // Fund the user's address with 100,000 IPN tokens
+        let user_address = "iRbDqSo0H4NxPGC0q55ohG36JrvlcYGvM3DpS4Q";
+        if let Err(e) = self.fund_account(user_address, 100_000).await {
+            log::error!("Failed to fund user address {}: {}", user_address, e);
+        } else {
+            log::info!("Successfully funded user address {} with 100,000 IPN tokens", user_address);
+        }
+        
         log::info!("Wallet component initialized successfully");
+        Ok(())
+    }
+
+    /// Start API layer
+    async fn start_api_layer(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        log::info!("Starting API layer");
+        
+        // Create API layer with proper node reference
+        let node_arc = Arc::new(RwLock::new(self.clone()));
+        let api_wrapper = Arc::new(RwLock::new(Some(node_arc)));
+        let mut api_layer = api::ApiLayer::new(api_wrapper);
+        
+        log::info!("Created API layer with node reference, starting it now...");
+        match api_layer.start().await {
+            Ok(_) => {
+                log::info!("API layer started successfully");
+            }
+            Err(e) => {
+                log::error!("Failed to start API layer: {}", e);
+                return Err(e);
+            }
+        }
+        
+        // Store the API layer in the node
+        self.api_layer = Arc::new(RwLock::new(api_layer));
+        
+        log::info!("API layer stored in node successfully");
         Ok(())
     }
 
@@ -261,6 +298,19 @@ impl IppanNode {
     /// Get account balance
     pub async fn get_account_balance(&self, account: &str) -> u64 {
         self.transaction_processor.get_balance(account).await
+    }
+    
+    /// Fund an account with initial tokens (for genesis/funding)
+    pub async fn fund_account(&self, account: &str, amount: u64) -> crate::Result<()> {
+        // Validate address format
+        if !crate::types::Address::is_valid_format(account) {
+            return Err(crate::IppanError::Validation(
+                format!("Invalid address format: {}", account)
+            ));
+        }
+        
+        log::info!("Funding account {} with {} tokens", account, amount);
+        self.transaction_processor.fund_account(account, amount).await
     }
 
     /// Stop the IPPAN node
@@ -458,9 +508,21 @@ impl IppanNode {
 
     async fn run_main_loop_internal(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Starting IPPAN node main loop...");
+        log::info!("Node running status: {}", self.is_running);
+        
         // Components already initialized in start(); avoid double-start here
-        // TODO: Implement background tasks
-        log::info!("Background tasks initialization skipped (placeholder)");
+        log::info!("Skipping component initialization - already done in start()");
+        
+        // Start API layer here if not already started
+        // For now, just start it unconditionally since we need to ensure it starts
+        log::info!("Starting API layer from main loop...");
+        match self.start_api_layer().await {
+            Ok(_) => log::info!("API layer started successfully from main loop"),
+            Err(e) => {
+                log::error!("Failed to start API layer from main loop: {}", e);
+                return Err(e);
+            }
+        }
         
         let mut last_health_check = Instant::now();
         let mut last_stats_log = Instant::now();
@@ -968,6 +1030,7 @@ pub struct NodeStatusInfo {
 }
 
 /// Consensus statistics
+#[derive(Default)]
 pub struct ConsensusStats {
     pub current_round: u64,
     pub validator_count: usize,
@@ -982,6 +1045,7 @@ pub struct StorageStats {
 }
 
 /// Network statistics
+#[derive(Default)]
 pub struct NetworkStats {
     pub connected_peers: usize,
     pub total_peers: usize,

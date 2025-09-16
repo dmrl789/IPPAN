@@ -1,0 +1,41 @@
+﻿=== DEPLOYMENT INSTRUCTIONS FOR NODE B ===
+
+Server: 135.181.145.174
+Status: Currently offline, needs deployment
+
+MANUAL DEPLOYMENT STEPS:
+
+1. Access the server via console or SSH with password
+2. Upload ippan-real-mode-deployment.zip to /tmp/
+3. Extract: unzip ippan-real-mode-deployment.zip
+4. Run deployment commands:
+
+   # Create directories
+   sudo mkdir -p /etc/ippan /var/lib/ippan/node-b /usr/local/bin
+   
+   # Copy binary
+   sudo cp ippan-node.exe /usr/local/bin/ippan-node
+   sudo chmod +x /usr/local/bin/ippan-node
+   
+   # Copy configurations
+   sudo cp genesis.json /etc/ippan/
+   sudo cp node-b.json /etc/ippan/node.json
+   sudo cp ippan.service /etc/systemd/system/
+   
+   # Start service
+   sudo systemctl daemon-reload
+   sudo systemctl enable ippan
+   sudo systemctl start ippan
+   
+   # Verify deployment
+   sudo systemctl status ippan
+   curl http://localhost:3000/api/v1/status
+
+EXPECTED RESULT:
+- Node B should start and connect to Node A
+- Both nodes should show connected_peers > 0
+- API endpoints should be available on both nodes
+
+TEST COMMANDS:
+curl http://135.181.145.174:3000/api/v1/status
+curl http://188.245.97.41:3000/api/v1/status

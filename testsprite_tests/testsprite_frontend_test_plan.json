@@ -1,0 +1,546 @@
+[
+  {
+    "id": "TC001",
+    "title": "Domain Registration with Premium TLD Fee Calculation",
+    "description": "Verify that users can register a domain using the IPPAN naming convention with correct premium TLD fee calculation and payment completion.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to domain registration page in React UI"
+      },
+      {
+        "type": "action",
+        "description": "Input valid domain name using 'ipn.domain.tld' convention with a premium TLD"
+      },
+      {
+        "type": "action",
+        "description": "System displays 20-year sliding fee schedule with premium multipliers applied"
+      },
+      {
+        "type": "action",
+        "description": "Complete payment within the UI"
+      },
+      {
+        "type": "assertion",
+        "description": "Domain is successfully registered and ownership proof can be verified"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Domain Registration with Invalid TLD",
+    "description": "Verify that registration fails when a domain with an invalid or unsupported TLD is submitted.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to domain registration page"
+      },
+      {
+        "type": "action",
+        "description": "Enter domain name with unsupported TLD"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to submit registration"
+      },
+      {
+        "type": "assertion",
+        "description": "System rejects registration with an appropriate error message about unsupported TLD"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Wallet Creation and Management",
+    "description": "Ensure users can generate, import, and manage multiple cryptographic wallets including local, watch-only, and hardware wallets.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Open wallet management page in React UI"
+      },
+      {
+        "type": "action",
+        "description": "Create new local wallet and verify key pair generation"
+      },
+      {
+        "type": "action",
+        "description": "Add a watch-only wallet by importing public address"
+      },
+      {
+        "type": "action",
+        "description": "Connect a hardware wallet and verify connection"
+      },
+      {
+        "type": "assertion",
+        "description": "Wallet list correctly displays all wallet types with their statuses"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Staking Validators and Rewards Distribution",
+    "description": "Validate staking process including validator registration, delegation, slashing, and proper rewards calculation and distribution.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Register new validator by staking IPN tokens"
+      },
+      {
+        "type": "action",
+        "description": "Delegate stake from a non-validator wallet to validator"
+      },
+      {
+        "type": "action",
+        "description": "Simulate slashing event due to misbehavior"
+      },
+      {
+        "type": "action",
+        "description": "Compute and distribute staking rewards to validator and delegators"
+      },
+      {
+        "type": "assertion",
+        "description": "Validator registration and delegation succeed, slashing updates balances correctly, and rewards are properly distributed"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Block Size Enforcement and Block Error",
+    "description": "Verify that blocks larger than 32 KB are rejected with the BlockError::TooLarge error and proper logging.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Submit block with size exactly 32 KB"
+      },
+      {
+        "type": "assertion",
+        "description": "Block accepted and processed successfully"
+      },
+      {
+        "type": "action",
+        "description": "Submit block with size exceeding 32 KB"
+      },
+      {
+        "type": "assertion",
+        "description": "Block rejected with BlockError::TooLarge error and proper error propagation"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "ZK-STARK Per-Round Proof Generation",
+    "description": "Ensure ZK-STARK proofs are generated once per consensus round and correctly attached to round information, not per block.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger a full consensus round with multiple blocks"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify exactly one ZK-STARK proof generated per round"
+      },
+      {
+        "type": "assertion",
+        "description": "Each block in round references the single round proof"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "HashTimer Encoding and Digest Compliance",
+    "description": "Validate that HashTimer encoding and digest computation conform to v1 canonical specification with valid field values.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Create transactions with valid and invalid HashTimer fields"
+      },
+      {
+        "type": "assertion",
+        "description": "Valid transactions have correct encoded HashTimer and digest per spec"
+      },
+      {
+        "type": "assertion",
+        "description": "Invalid HashTimer fields cause transaction rejection with validation errors"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "IPPAN Time Synchronization Accuracy and Fault Tolerance",
+    "description": "Verify IPPAN Time system ensures latency compensation, monotonic timestamps, drift policy, and Byzantine fault tolerance with validator quorum.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate multiple validators sending timestamp samples with network latency"
+      },
+      {
+        "type": "assertion",
+        "description": "System computes consensus timestamp with latency compensation and monotonic increase"
+      },
+      {
+        "type": "action",
+        "description": "Inject outlier timestamps"
+      },
+      {
+        "type": "assertion",
+        "description": "MAD filtering correctly excludes outliers from consensus calculation"
+      },
+      {
+        "type": "action",
+        "description": "Simulate up to f Byzantine faulty validator timestamps"
+      },
+      {
+        "type": "assertion",
+        "description": "Consensus timestamp remains stable and consistent with 2f+1 quorum"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Storage System Sharding, Encryption and Proof-of-Storage",
+    "description": "Test encrypted storage with shard creation, distribution, auto-balancing, and proof-of-storage validation for data availability.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Upload encrypted file and initiate sharding"
+      },
+      {
+        "type": "assertion",
+        "description": "File shards are distributed across storage nodes with replication"
+      },
+      {
+        "type": "action",
+        "description": "Trigger proof-of-storage challenge for stored shards"
+      },
+      {
+        "type": "assertion",
+        "description": "Storage nodes respond with valid proofs confirming availability"
+      },
+      {
+        "type": "action",
+        "description": "Simulate node failure and verify auto rebalancing of shards"
+      },
+      {
+        "type": "assertion",
+        "description": "Shards successfully replicated to maintain availability"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "AI/ML Marketplace End-to-End Job Lifecycle",
+    "description": "Verify user can register models and datasets, submit inference jobs with bidding, receive proof-of-computation, and distribute royalties.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Register AI model and dataset in marketplace registries"
+      },
+      {
+        "type": "action",
+        "description": "Submit inference job requesting bids from compute providers"
+      },
+      {
+        "type": "assertion",
+        "description": "Bids are correctly collected and best bid selected"
+      },
+      {
+        "type": "action",
+        "description": "Provider processes job providing cryptographic proof-of-computation"
+      },
+      {
+        "type": "assertion",
+        "description": "Proof is validated and job marked complete"
+      },
+      {
+        "type": "assertion",
+        "description": "Automated royalty payments are triggered and transaction logged"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Cross-Chain Bridge Asset Transfer and State Synchronization",
+    "description": "Confirm cross-chain asset transfers correctly map assets, relay transactions, and synchronize state across blockchains.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Initiate asset transfer from IPPAN chain to external blockchain using bridge"
+      },
+      {
+        "type": "assertion",
+        "description": "Asset mapping translates IPN tokens correctly to target chain representation"
+      },
+      {
+        "type": "action",
+        "description": "Relay network sends transaction anchoring to L2 chain"
+      },
+      {
+        "type": "assertion",
+        "description": "State synchronization occurs successfully and transaction finalized on both chains"
+      },
+      {
+        "type": "action",
+        "description": "Simulate network failure or message loss"
+      },
+      {
+        "type": "assertion",
+        "description": "Bridge retries and reconciles state without asset loss or duplication"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Post-Quantum Cryptography Signature Validation",
+    "description": "Validate all post-quantum algorithms (CRYSTALS-Kyber, Dilithium, SPHINCS+) perform correctly for transaction signing and verification.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Generate keys and sign transactions using each post-quantum cryptographic algorithm"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that signatures are correctly validated by the network"
+      },
+      {
+        "type": "action",
+        "description": "Submit transaction with invalid post-quantum signature"
+      },
+      {
+        "type": "assertion",
+        "description": "System rejects transaction with signature validation failure"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Security Audit and Threat Detection Logging and Alerts",
+    "description": "Ensure all suspicious activities and access events generate audit logs and trigger configured threat detection alerts.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Simulate unauthorized access and anomaly events"
+      },
+      {
+        "type": "assertion",
+        "description": "Audit log contains detailed entries of security events"
+      },
+      {
+        "type": "assertion",
+        "description": "Threat detection system raises alerts and notifications in real-time"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "RESTful API Authentication, Rate Limiting and Validation",
+    "description": "Test REST API endpoints for correct authentication, enforce rate limiting, validate input parameters, and handle errors gracefully.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send authenticated request with valid parameters to API endpoint"
+      },
+      {
+        "type": "assertion",
+        "description": "Request processed successfully and valid response returned"
+      },
+      {
+        "type": "action",
+        "description": "Send unauthenticated request"
+      },
+      {
+        "type": "assertion",
+        "description": "Request rejected with authentication error"
+      },
+      {
+        "type": "action",
+        "description": "Send requests exceeding rate limit threshold"
+      },
+      {
+        "type": "assertion",
+        "description": "Excess requests rejected with rate limit error"
+      },
+      {
+        "type": "action",
+        "description": "Send request with invalid parameters"
+      },
+      {
+        "type": "assertion",
+        "description": "API responds with appropriate validation error messages"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "React UI Responsiveness and Performance",
+    "description": "Verify all user-facing React UI components are responsive, load efficiently, and maintain usability across device types.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Open various UI pages (wallet, staking, domains, AI/ML marketplace, explorer) on desktop and mobile browsers"
+      },
+      {
+        "type": "assertion",
+        "description": "Pages render correctly without layout breaks on different screen sizes"
+      },
+      {
+        "type": "assertion",
+        "description": "UI performance remains within acceptable load times and interactions are smooth"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Node Configuration Hot-Reload and Validation",
+    "description": "Test node configuration manager supports hot-reloading of valid config updates and rejects invalid configurations with errors.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Apply valid configuration updates while node is running"
+      },
+      {
+        "type": "assertion",
+        "description": "Node hot-reloads configuration without restarting"
+      },
+      {
+        "type": "action",
+        "description": "Apply invalid configuration with schema violations"
+      },
+      {
+        "type": "assertion",
+        "description": "Configuration manager rejects invalid config with detailed errors and does not apply changes"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Monitoring Dashboard Metrics and Alerts Validation",
+    "description": "Validate real-time metrics collection, dashboard visualization, and alert notifications for system health and performance.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Inject synthetic performance data and faults"
+      },
+      {
+        "type": "assertion",
+        "description": "Dashboard metrics update in real time reflecting injected data"
+      },
+      {
+        "type": "assertion",
+        "description": "Alerts and notifications are generated and presented per configured thresholds"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Transaction Types Submission and Deterministic Ordering",
+    "description": "Test submission of different transaction types (payments, storage ops, domain updates, AI jobs) are accepted and ordered deterministically via HashTimer.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Submit payment transaction"
+      },
+      {
+        "type": "action",
+        "description": "Submit storage operation transaction"
+      },
+      {
+        "type": "action",
+        "description": "Submit domain update transaction"
+      },
+      {
+        "type": "action",
+        "description": "Submit AI model registration and job submission transactions"
+      },
+      {
+        "type": "assertion",
+        "description": "All transactions accepted and ordered correctly according to HashTimer deterministic timestamps"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Validator Selection Using Verifiable Randomness",
+    "description": "Validate that validators are selected fairly for block proposal and voting using verifiable randomness mechanisms.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger multiple consensus epochs with validator participation"
+      },
+      {
+        "type": "assertion",
+        "description": "Validator selection matches expected randomness distribution"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to manipulate randomness input"
+      },
+      {
+        "type": "assertion",
+        "description": "Verification prevents manipulation and ensures fairness in validator selection"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Blockchain Explorer Data Integrity and UI Interaction",
+    "description": "Ensure blockchain explorer UI displays consistent and accurate data for blocks, transactions, accounts, validators, and contracts with interactive controls.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Access live blocks, transactions, accounts, and validators pages"
+      },
+      {
+        "type": "assertion",
+        "description": "Displayed data matches backend state and is updated in near real-time"
+      },
+      {
+        "type": "action",
+        "description": "Use filters and search functionalities on explorer pages"
+      },
+      {
+        "type": "assertion",
+        "description": "Filtering and search results are accurate and performant"
+      }
+    ]
+  }
+]

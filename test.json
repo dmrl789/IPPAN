@@ -1,0 +1,16 @@
+[
+  {
+    "id": "1",
+    "timestamp": "2025-09-09T07:51:03.719585900Z",
+    "level": "Info",
+    "target": "test",
+    "message": "Test message",
+    "fields": {},
+    "error_details": null,
+    "performance_metrics": null,
+    "correlation_id": null,
+    "session_id": null,
+    "user_id": null,
+    "request_id": null
+  }
+]

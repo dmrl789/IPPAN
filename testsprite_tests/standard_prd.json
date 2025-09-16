@@ -1,0 +1,521 @@
+{
+  "meta": {
+    "project": "IPPAN Global Layer-1 Blockchain",
+    "date": "2025-09-13",
+    "prepared_by": "Software Development Manager"
+  },
+  "product_overview": "IPPAN is a production-ready global Layer-1 blockchain platform designed to deliver unparalleled scalability of 1-10 million transactions per second, with integrated encrypted storage and a comprehensive AI/ML marketplace. The system features deterministic transaction ordering via a cryptographic HashTimer, quantum-resistant security, and an innovative \"ipn.domain.tld\" naming convention for decentralized identity and service discovery.",
+  "core_goals": [
+    "Deliver the world's fastest and most scalable Layer-1 blockchain supporting 1-10 million TPS.",
+    "Implement a fully production-ready protocol supporting trustless timestamping, immutable proof-of-existence, and decentralized encrypted storage.",
+    "Provide an autonomous economic and staking system with keyless global fund distribution and M2M micropayments.",
+    "Create a distinct, collision-free IPPAN naming system with comprehensive TLD registry and domain fee structure.",
+    "Integrate a full AI/ML marketplace for model and dataset management, inference job execution, and proof-of-computation.",
+    "Ensure robust security posture including quantum-resistant cryptography, Byzantine Fault Tolerance, and hardened time synchronization.",
+    "Implement a hardened IPPAN Time system for latency-aware, quorum-verified, and auditable time consensus among validators.",
+    "Enable seamless cross-chain bridging, L2 integration, and archive mode for scalability and interoperability."
+  ],
+  "key_features": [
+    "HashTimer v1 system to provide deterministic, auditable event timestamps with nanosecond precision and unique cryptographic digests.",
+    "Comprehensive IPPAN Round JSON Schema supporting BlockDAG structure with parent blocks for enhanced consensus and network resilience.",
+    "Enforced 32KB maximum block size with per-round ZK-STARK proofs for efficient finality and improved network throughput.",
+    "Hardened IPPAN Time system that uses NTP-style latency compensation, validator quorum consensus, MAD outlier filtering, and drift-based validator role gating.",
+    "Robust economic models including staking, reward distributions, and 1% fee collection on payments routed to a keyless global fund.",
+    "Distinct IPPAN naming convention with support for 100+ TLDs, sliding scale multi-year domain fees, and DNS integration for metadata and service records.",
+    "Quantum-resistant cryptography integration employing Ed25519 signatures and post-quantum algorithms (CRYSTALS-Kyber, Dilithium, SPHINCS+).",
+    "Full AI/ML marketplace supporting model registration, dataset curation, job bidding and execution, proof of computation transparency, and automated royalty distributions.",
+    "Production-grade P2P networking with NAT traversal, peer discovery, and secure TLS/DTLS communication.",
+    "Comprehensive UI/UX including React wallet with multi-wallet support, transaction composer, real-time fee estimation, domain management, and blockchain explorer."
+  ],
+  "user_flow_summary": [
+    "Users register and renew IPPAN domains using the ipn.domain.tld naming convention, with real-time fee calculation and ownership verification via multiple proof mechanisms.",
+    "Validators participate in hardened IPPAN Time synchronization by exchanging signed NTP-style timestamps and achieving consensus through quorum voting and outlier filtering to maintain network-wide monotonic time.",
+    "Transaction submission via APIs or wallet UI includes deterministic timestamping with HashTimer and cryptographic signature validation, followed by inclusion in blocks respecting the enforced block size and canonical ordering.",
+    "Validators produce blocks referencing parent blocks in the BlockDAG, constrained to 32KB size limits; rounds finalize blocks with zk-STARK proofs verifying entire round states efficiently.",
+    "AI/ML marketplace users browse models and datasets, submit inference jobs to the job market, receive computational proofs of execution, and handle payments and royalties through integrated payment channels.",
+    "Node operators deploy IPPANCore instances configured for multi-server deployments using supplied production node configurations, enabling global distributed consensus and storage services.",
+    "Developers and integrators access the RESTful API endpoints for node status, transaction submission, address validation, genesis and node configurations, and CI Guard validation for production-ready code.",
+    "End-users interact with the React-based wallet interface for secure key management, transaction history viewing, multi-asset management with fiat conversion, and hardware wallet integrations."
+  ],
+  "validation_criteria": [
+    "All blocks created must enforce the 32KB hard block size limit and reject oversized blocks with appropriate error handling.",
+    "ZK-STARK proofs of computation are generated per round and not per block, verified efficiently within expected performance bands.",
+    "The HashTimer v1 encoding and hashing produce stable 96-byte inputs and 32-byte digests that are cryptographically validated against payloads.",
+    "Time synchronization across validators meets quorum requirements (≥2f+1), rejecting malformed signatures, and filters outliers via MAD statistics to maintain monotonic IPPAN Time.",
+    "Ed25519 and post-quantum cryptographic primitives correctly sign, verify, and protect all transactions, timestamps, and consensus messages.",
+    "Domain registration and renewal processes respect the 20-year sliding scale fee schedule with multiplier application per TLD category, and DNS proof verification methods are functional.",
+    "AI/ML marketplace features including model/ dataset registration, job bidding, proof-of-computation, and royalty payments operate with full auditability and real-time metrics.",
+    "APIs respond with appropriate status codes and schema compliance for endpoints including status, transaction submission, node configuration, address validation, and CI Guard mock detection.",
+    "Comprehensive test coverage includes unit, integration, performance, and security tests, with continuous monitoring indicating no critical warnings or vulnerabilities.",
+    "User interface elements deliver intended user flows with full responsiveness, including wallet operations, domain management, transaction composition, and AI/ML marketplace interactions."
+  ],
+  "code_summary": {
+    "tech_stack": [
+      "Rust",
+      "Tokio (async runtime)",
+      "Hyper (HTTP server)",
+      "Serde (serialization)",
+      "Ed25519 (cryptography)",
+      "SQLite (database)",
+      "Systemd (service management)"
+    ],
+    "features": [
+      {
+        "name": "Real-Mode API",
+        "description": "Production-ready HTTP API for IPPAN blockchain with live node state integration",
+        "files": [
+          "src/api/real_mode.rs",
+          "src/api/mod.rs"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "info": {
+            "title": "IPPAN Real-Mode API",
+            "version": "1.0.0",
+            "description": "Production blockchain API with live node state"
+          },
+          "servers": [
+            {
+              "url": "http://188.245.97.41:3000",
+              "description": "Node A (Seed)"
+            },
+            {
+              "url": "http://135.181.145.174:3000",
+              "description": "Node B (Peered)"
+            }
+          ],
+          "paths": {
+            "/api/v1/status": {
+              "get": {
+                "summary": "Get node status",
+                "responses": {
+                  "200": {
+                    "description": "Node status",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "height": {
+                              "type": "integer"
+                            },
+                            "peers": {
+                              "type": "integer"
+                            },
+                            "latest_block_hash": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "/api/v1/address/validate": {
+              "get": {
+                "summary": "Validate address",
+                "parameters": [
+                  {
+                    "name": "address",
+                    "in": "query",
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                ],
+                "responses": {
+                  "200": {
+                    "description": "Address validation result",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "/api/v1/transaction/submit": {
+              "post": {
+                "summary": "Submit transaction",
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "chain_id": {
+                            "type": "string"
+                          },
+                          "from": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string"
+                          },
+                          "amount": {
+                            "type": "string"
+                          },
+                          "fee": {
+                            "type": "string"
+                          },
+                          "nonce": {
+                            "type": "integer"
+                          },
+                          "timestamp": {
+                            "type": "string"
+                          },
+                          "signature": {
+                            "type": "string"
+                          },
+                          "pubkey": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "200": {
+                    "description": "Transaction submitted",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "tx_id": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "400": {
+                    "description": "Bad request",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "error": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Ed25519 Transaction Signer",
+        "description": "Cryptographic transaction signing and verification using Ed25519",
+        "files": [
+          "src/crypto/ed25519_signer.rs",
+          "src/crypto/mod.rs"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "info": {
+            "title": "IPPAN Ed25519 Signer",
+            "version": "1.0.0",
+            "description": "Transaction signing and verification"
+          },
+          "paths": {
+            "/sign": {
+              "post": {
+                "summary": "Sign transaction",
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "transaction": {
+                            "type": "object"
+                          },
+                          "private_key": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "200": {
+                    "description": "Signed transaction",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "signature": {
+                              "type": "string"
+                            },
+                            "pubkey": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "/verify": {
+              "post": {
+                "summary": "Verify transaction signature",
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "transaction": {
+                            "type": "object"
+                          },
+                          "signature": {
+                            "type": "string"
+                          },
+                          "pubkey": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "200": {
+                    "description": "Verification result",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Genesis Configuration",
+        "description": "Deterministic blockchain initialization with funded addresses",
+        "files": [
+          "config/genesis.json"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "info": {
+            "title": "IPPAN Genesis Config",
+            "version": "1.0.0",
+            "description": "Blockchain initialization configuration"
+          },
+          "paths": {
+            "/genesis": {
+              "get": {
+                "summary": "Get genesis configuration",
+                "responses": {
+                  "200": {
+                    "description": "Genesis configuration",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "chain_id": {
+                              "type": "string"
+                            },
+                            "timestamp": {
+                              "type": "string"
+                            },
+                            "alloc": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "address": {
+                                    "type": "string"
+                                  },
+                                  "balance": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            },
+                            "params": {
+                              "type": "object",
+                              "properties": {
+                                "block_ms": {
+                                  "type": "integer"
+                                },
+                                "round_ms": {
+                                  "type": "integer"
+                                },
+                                "max_block_bytes": {
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Node Configuration",
+        "description": "Production node configurations for multi-server deployment",
+        "files": [
+          "config/node-a.json",
+          "config/node-b.json",
+          "config/ippan.service"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "info": {
+            "title": "IPPAN Node Config",
+            "version": "1.0.0",
+            "description": "Node configuration management"
+          },
+          "paths": {
+            "/config": {
+              "get": {
+                "summary": "Get node configuration",
+                "responses": {
+                  "200": {
+                    "description": "Node configuration",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "node_id": {
+                              "type": "string"
+                            },
+                            "p2p": {
+                              "type": "object",
+                              "properties": {
+                                "listen": {
+                                  "type": "string"
+                                },
+                                "seeds": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            },
+                            "rpc": {
+                              "type": "object",
+                              "properties": {
+                                "http": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "db_path": {
+                              "type": "string"
+                            },
+                            "genesis": {
+                              "type": "string"
+                            },
+                            "real_mode": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "CI Guard System",
+        "description": "Zero-mock policy enforcement with build-time validation",
+        "files": [
+          "ci/no_mocks.sh"
+        ],
+        "api_doc": {
+          "openapi": "3.0.0",
+          "info": {
+            "title": "IPPAN CI Guard",
+            "version": "1.0.0",
+            "description": "Mock detection and prevention"
+          },
+          "paths": {
+            "/validate": {
+              "post": {
+                "summary": "Validate codebase for mocks",
+                "responses": {
+                  "200": {
+                    "description": "Validation passed",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "passed",
+                                "failed"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,6 +1,17 @@
 import axios from 'axios';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000';
+// Dynamic API configuration - can be changed at runtime
+let API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://188.245.97.41:3000';
+
+// Function to update API base URL
+export function setApiBaseUrl(url: string) {
+  API_BASE_URL = url;
+}
+
+// Function to get current API base URL
+export function getApiBaseUrl() {
+  return API_BASE_URL;
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -55,21 +66,22 @@ export async function getDatasets(): Promise<Dataset[]> {
   return response.data;
 }
 
-// Wallet API
+// Wallet API - Updated for real IPPAN nodes
 export interface WalletBalance {
   address: string;
-  balance: number;
-  staked: number;
-  rewards: number;
+  balance: string;
+  staked_amount: string;
+  rewards: string;
+  pending_transactions: any[];
 }
 
 export async function getWalletBalance(address: string): Promise<WalletBalance> {
-  const response = await api.get(`/api/wallet/${address}/balance`);
+  const response = await api.get(`/api/v1/balance/${address}`);
   return response.data;
 }
 
 export async function sendTransaction(transaction: any): Promise<string> {
-  const response = await api.post('/api/transactions', transaction);
+  const response = await api.post('/api/v1/transaction', transaction);
   return response.data;
 }
 
@@ -101,6 +113,69 @@ export async function uploadFile(file: File): Promise<string> {
       'Content-Type': 'multipart/form-data',
     },
   });
+  return response.data;
+}
+
+// IPPAN Node API - Real backend endpoints
+export interface NodeStatus {
+  node_id: string;
+  status: string;
+  current_block: number;
+  total_transactions: number;
+  network_peers: number;
+  uptime_seconds: number;
+  version: string;
+}
+
+export interface NetworkStats {
+  total_peers: number;
+  connected_peers: number;
+  network_id: string;
+  protocol_version: string;
+  uptime_seconds: number;
+}
+
+export interface MempoolStats {
+  total_transactions: number;
+  total_senders: number;
+  total_size: number;
+  fee_distribution: Record<string, number>;
+}
+
+export interface ConsensusStats {
+  current_round: number;
+  validators_count: number;
+  block_height: number;
+  consensus_status: string;
+}
+
+// Node Status API
+export async function getNodeStatus(): Promise<NodeStatus> {
+  const response = await api.get('/api/v1/status');
+  return response.data;
+}
+
+// Network API
+export async function getNetworkStats(): Promise<NetworkStats> {
+  const response = await api.get('/api/v1/network');
+  return response.data;
+}
+
+// Mempool API
+export async function getMempoolStats(): Promise<MempoolStats> {
+  const response = await api.get('/api/v1/mempool');
+  return response.data;
+}
+
+// Consensus API
+export async function getConsensusStats(): Promise<ConsensusStats> {
+  const response = await api.get('/api/v1/consensus');
+  return response.data;
+}
+
+// Health Check
+export async function getHealth(): Promise<any> {
+  const response = await api.get('/health');
   return response.data;
 }
 

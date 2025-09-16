@@ -1,0 +1,16 @@
+{
+  "network": {
+    "listen_addr": "/ip4/0.0.0.0/tcp/8080",
+    "bootstrap_nodes": [],
+    "max_connections": 100,
+    "connection_timeout": 30,
+    "enable_nat": true,
+    "enable_relay": false
+  },
+  "storage": { "db_path": "/data", "max_storage_size": 107374182400, "shard_size": 1048576, "replication_factor": 3, "enable_encryption": true, "proof_interval": 3600 },
+  "consensus": { "block_time": 10, "max_block_size": 24576, "validators_per_round": 21, "hashtimer_precision": 100, "time_sync_interval": 60, "round_timeout": 30 },
+  "dht": { "bucket_size": 20, "replication_factor": 3, "lookup_timeout": 30, "enable_caching": true },
+  "api": { "listen_addr": "0.0.0.0:3000", "enable_cors": true, "rate_limit": 1000, "enable_auth": false },
+  "staking": { "min_stake_amount": 1000000000, "max_stake_amount": 1000000000000, "stake_lock_period": 1000, "slashing_conditions": { "downtime_threshold": 100, "downtime_slash_percent": 5, "malicious_slash_percent": 50, "fake_proof_slash_percent": 25 } },
+  "logging": { "level": "info", "file_path": "/logs/ippan.log", "enable_console": true }
+}

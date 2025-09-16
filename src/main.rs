@@ -10,6 +10,7 @@ use ippan::{
     performance_test::PerformanceTestSuite,
     testing_framework::TestingFramework,
     security_audit::SecurityAuditFramework,
+    tools::run_transaction_generator,
 };
 use clap::{Command, Arg};
 
@@ -55,6 +56,13 @@ async fn main() -> Result<()> {
                 .action(clap::ArgAction::SetTrue)
                 .help("Run security audit")
         )
+        .arg(
+            Arg::new("transaction-generator")
+                .long("transaction-generator")
+                .short('g')
+                .action(clap::ArgAction::SetTrue)
+                .help("Run transaction generator to send thousands of transactions")
+        )
         .get_matches();
 
     // Check if performance test is requested
@@ -78,6 +86,13 @@ async fn main() -> Result<()> {
         println!("Running IPPAN Security Audit...");
         let mut security_framework = SecurityAuditFramework::new();
         security_framework.run_security_audit().await?;
+        return Ok(());
+    }
+
+    // Check if transaction generator is requested
+    if matches.get_flag("transaction-generator") {
+        println!("Running IPPAN Transaction Generator...");
+        run_transaction_generator().await?;
         return Ok(());
     }
 

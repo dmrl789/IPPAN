@@ -1,100 +1,99 @@
-meta:
-  name: "Cursor/TestSprite Guardrails"
-  version: "1.0.0"
-  owner: "IPPAN / FinDAG Engineering"
-  intent: >
-    Enforce sane scope, chunking, and model selection. Prevent runaway context,
-    oversized inputs, and accidental deviation from language/framework norms.
+version: 1
+suite: "IPPAN Real-Mode Core"
+vars:
+  NODE_A: "http://188.245.97.41:3000"
+  NODE_B: "http://135.181.145.174:3000"
+  FROM: "iSender1111111111111111111111111111111111111"
+  TO: "iRbDqSo0H4NxPGC0q55ohG36JrvlcYGvM3DpS4Q"
+  AMOUNT: "25000"
+  FEE: "10"
 
-policies:
-  chat_sessions:
-    - id: "CHAT-1"
-      rule: "If conversation exceeds 150 messages or a task changes scope, start a new session."
-      action: "HARD_STOP_AND_SPLIT"
-    - id: "CHAT-2"
-      rule: "Every task must begin with a 3-5 line summary of scope and success criteria."
-      action: "REQUIRE_SUMMARY"
-
-  file_processing:
-    - id: "FILE-1"
-      rule: "Do not process files > 500 KB as a single unit."
-      action: "SPLIT_BY_MODULE"
-      params:
-        split_max_lines: 400
-    - id: "FILE-2"
-      rule: "For refactors, operate per module/function; avoid full-repo edits."
-      action: "LIMIT_CHANGESET"
-      params:
-        max_changed_files: 10
-        max_hunk_size_lines: 120
-
-  design_principles:
-    - id: "ARCH-1"
-      rule: "Apply SOLID and DRY; extract helpers for repeated logic > 2 occurrences."
-      action: "SUGGEST_REFACTOR"
-    - id: "ARCH-2"
-      rule: "If custom requirements diverge from framework best practices, document rationale."
-      action: "REQUIRE_DEVIATION_NOTE"
-      params:
-        min_note_lines: 4
-
-  context_bounds:
-    - id: "CTX-1"
-      rule: "Avoid pasting very large rule sets or full MCPs; chunk into ≤ 200 lines each."
-      action: "ENFORCE_CHUNKING"
-    - id: "CTX-2"
-      rule: "Too many negatives in rules? Convert to positive, action-oriented guidelines."
-      action: "REWRITE_POSITIVE"
-
-  model_selection:
-    - id: "MODEL-1"
-      rule: "Fit model to task complexity."
-      action: "SELECT_MODEL"
-      params:
-        simple_models: ["gpt-4o-mini", "o4-mini"]
-        advanced_models: ["gpt-5", "gpt-5-thinking"]
-        selection_criteria:
-          - "Static content edits, formatting → simple_models"
-          - "Design/architecture/complex debugging → advanced_models"
-    - id: "MODEL-2"
-      rule: "If model mismatch detected (too basic/too advanced), switch and rerun."
-      action: "AUTO_SWITCH_MODEL"
-
-workflows:
-  - id: "WF-DEV-CHANGE"
-    name: "Safe Dev Change"
+tests:
+  - id: health-a
+    name: "Node A status (real mode)"
     steps:
-      - "Create 3–5 line task brief (CHAT-2)."
-      - "Estimate blast radius; set max_changed_files (FILE-2)."
-      - "If input >500 KB, chunk (FILE-1, CTX-1)."
-      - "Check for custom deviations; add rationale (ARCH-2)."
-      - "Choose model (MODEL-1)."
-      - "Implement smallest vertical slice; run tests."
-      - "Generate patch summary & next steps."
+      - run: curl -sS ${NODE_A}/api/v1/status
+        expect_json:
+          has_keys: ["height","peers","latest_block_hash"]
+          gt:
+            height: 0
 
-  - id: "WF-REFACTOR"
-    name: "SOLID/DRY Refactor"
+  - id: health-b
+    name: "Node B status (peered)"
     steps:
-      - "Identify duplication & responsibilities (ARCH-1)."
-      - "Create helper/module; keep hunks ≤120 lines (FILE-2)."
-      - "Update imports & call sites incrementally."
-      - "Run unit tests; summarize changes."
+      - run: curl -sS ${NODE_B}/api/v1/status
+        expect_json:
+          has_keys: ["height","peers"]
+          gte:
+            peers: 1
 
-acceptance_criteria:
-  - "Changes compile (or build passes) with zero errors."
-  - "Unit tests added/updated for new or refactored logic."
-  - "Deviation notes present when diverging from norms."
-  - "Patch summary includes changed files, rationale, and follow-ups."
+  - id: validate-address
+    name: "Validate receiver address"
+    steps:
+      - run: curl -sS "${NODE_A}/api/v1/address/validate?address=${TO}"
+        expect_json:
+          eq:
+            valid: true
 
-fail_fast:
-  - "If a file or context exceeds limits after chunking → stop and request user confirmation."
-  - "If acceptance criteria cannot be met in one pass → produce partial patch and TODOs."
+  - id: submit-tx
+    name: "Submit signed tx (happy path)"
+    setup:
+      - gen_tx:
+          from: ${FROM}
+          to: ${TO}
+          amount: ${AMOUNT}
+          fee: ${FEE}
+          nonce: 1
+          sign: ed25519
+          out: /tmp/tx.json
+    steps:
+      - run: curl -sS -X POST ${NODE_A}/api/v1/tx/submit -H "Content-Type: application/json" --data @/tmp/tx.json
+        capture_json:
+          tx_id: "$.tx_id"
+      - wait_for:
+          timeout_ms: 8000
+          every_ms: 500
+          run: curl -sS ${NODE_A}/api/v1/tx/{{tx_id}}
+          expect_json:
+            eq:
+              status: "included"
 
-outputs:
-  required:
-    - "task_brief.md"
-    - "patch_summary.md"
-    - "deviation_notes.md (conditional)"
-    - "next_steps.md"
-  optional:
-    - "refactor_plan.md"
+  - id: cross-node-visibility
+    name: "Tx visible on Node B"
+    steps:
+      - run: curl -sS ${NODE_B}/api/v1/tx/{{submit-tx.tx_id}}
+        expect_json:
+          eq:
+            status: "included"
+
+  - id: persistence
+    name: "Persist across restart (Node A)"
+    steps:
+      - run: sudo systemctl restart ippan
+      - wait_for:
+          timeout_ms: 8000
+          every_ms: 500
+          run: curl -sS ${NODE_A}/api/v1/status
+          expect_json:
+            gt:
+              height: 0
+      - run: curl -sS ${NODE_A}/api/v1/tx/{{submit-tx.tx_id}}
+        expect_json:
+          eq:
+            status: "included"
+
+  - id: invalid-sig
+    name: "Reject invalid signature"
+    setup:
+      - corrupt_sig: /tmp/tx.json
+    steps:
+      - run: curl -sS -X POST ${NODE_A}/api/v1/tx/submit -H "Content-Type: application/json" --data @/tmp/tx.json
+        expect_http:
+          status: 400
+
+  - id: double-spend
+    name: "Reject double spend (same nonce)"
+    steps:
+      - run: curl -sS -X POST ${NODE_A}/api/v1/tx/submit -H "Content-Type: application/json" --data @/tmp/tx.json
+        expect_http:
+          status: 400

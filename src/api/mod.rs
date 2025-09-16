@@ -9,6 +9,7 @@ pub mod user_cli; // NEW - User-facing transaction CLI
 pub mod http;
 pub mod simple_http;
 pub mod real_rest_api; // NEW - Real REST API implementation
+pub mod real_mode; // NEW - Real-mode API implementation
 // pub mod v1; // NEW - REST API v1 endpoints (temporarily disabled due to Axum compatibility issues)
 // pub mod explorer;
 
@@ -22,6 +23,7 @@ pub struct ApiLayer {
     node: Arc<RwLock<Option<Arc<RwLock<IppanNode>>>>>,
     http_server: Option<http::HttpServer>,
     simple_http_server: Option<simple_http::SimpleHttpServer>,
+    real_mode_server: Option<real_mode::RealModeServer>,
     // TODO: Re-enable when modules are ready
     // explorer: Option<explorer::ExplorerApi>,
 }
@@ -32,6 +34,7 @@ impl Default for ApiLayer {
             node: Arc::new(RwLock::new(None)), // Will be properly initialized later
             http_server: None,
             simple_http_server: None,
+            real_mode_server: None,
         }
     }
 }
@@ -42,6 +45,7 @@ impl ApiLayer {
             node,
             http_server: None,
             simple_http_server: None,
+            real_mode_server: None,
             // TODO: Re-enable when modules are ready
             // explorer: None,
         }
@@ -51,26 +55,30 @@ impl ApiLayer {
     pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Starting API layer...");
         
-        // Start simple HTTP server (bind all interfaces for external access)
+        // REAL MODE: Panic if API starts without node reference
         let node_clone = Arc::clone(&self.node);
-        let addr = "0.0.0.0:3000".parse().unwrap();
-        
-        // Extract the node from the Option wrapper
         let node_guard = node_clone.read().await;
-        if let Some(node_arc) = node_guard.as_ref() {
-            let inner_node = Arc::clone(node_arc);
-            self.simple_http_server = Some(simple_http::SimpleHttpServer::new(Some(inner_node), addr));
-        } else {
-            return Err("Node not initialized".into());
+        if node_guard.is_none() {
+            panic!("API started without node reference - REAL_MODE_REQUIRED=true");
         }
         
+        // Start simple HTTP server (bind all interfaces for external access)
+        let addr = "0.0.0.0:3000".parse().unwrap();
+        
+        // Extract the node from the Option wrapper (now guaranteed to exist)
+        let node_for_server = {
+            let node_arc = node_guard.as_ref().unwrap();
+            Arc::clone(node_arc)
+        };
+        self.real_mode_server = Some(real_mode::RealModeServer::new(node_for_server, addr));
+        
         // Start the server in a separate task
-        let server = self.simple_http_server.as_ref().unwrap();
-        let server_clone = simple_http::SimpleHttpServer { node: server.node.clone(), addr: server.addr };
+        let server = self.real_mode_server.as_ref().unwrap();
+        let server_clone = real_mode::RealModeServer::new(Arc::clone(&server.node), server.addr);
         
         tokio::spawn(async move {
             if let Err(e) = server_clone.start().await {
-                log::error!("Simple HTTP server error: {}", e);
+                log::error!("Real-mode HTTP server error: {}", e);
             }
         });
         

@@ -16,6 +16,7 @@ pub mod logging; // NEW - Comprehensive logging and monitoring system
 pub mod error;
 pub mod node;
 pub mod transaction_types; // NEW - User-facing transaction types
+pub mod types; // NEW - Address validation and types
 pub mod utils;
 pub mod performance;
 pub mod performance_test;
@@ -45,6 +46,7 @@ pub mod security;
 pub mod crosschain;
 
 pub mod bridge;
+pub mod tools;
 
 #[cfg(feature = "dns")]
 pub mod dns;

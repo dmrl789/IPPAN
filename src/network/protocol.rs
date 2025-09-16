@@ -210,22 +210,33 @@ impl ProtocolManager {
 
     /// Start the protocol manager
     pub async fn start(&mut self) -> Result<()> {
-        log::info!("Starting protocol manager");
-        self.running = true;
+        log::info!("Protocol manager temporarily disabled");
+        return Ok(());
+        // log::info!("Starting protocol manager");
+        // 
+        // // Check if already running
+        // if self.running {
+        //     log::info!("Protocol manager already running, skipping start");
+        //     return Ok(());
+        // }
+        // 
+        // self.running = true;
         
-        // Start message processing loop
-        let message_receiver = self._message_receiver.take().ok_or_else(|| {
-            crate::error::IppanError::Network("Message receiver already taken".to_string())
-        })?;
-        let handlers = self.handlers.clone();
-        
-        tokio::spawn(async move {
-            let mut message_receiver = message_receiver;
+        // Start message processing loop only if receiver is available
+        if let Some(message_receiver) = self._message_receiver.take() {
+            let handlers = self.handlers.clone();
             
-            while let Some(message) = message_receiver.recv().await {
-                Self::process_message(message, &handlers).await;
-            }
-        });
+            tokio::spawn(async move {
+                let mut message_receiver = message_receiver;
+                
+                while let Some(message) = message_receiver.recv().await {
+                    Self::process_message(message, &handlers).await;
+                }
+            });
+            log::info!("Protocol manager message loop started");
+        } else {
+            log::warn!("Protocol manager message receiver already taken, but continuing without it");
+        }
         
         Ok(())
     }
