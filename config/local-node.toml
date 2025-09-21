@@ -1,0 +1,73 @@
+# IPPAN Local Development Configuration
+
+[network]
+listen_addr = "127.0.0.1:8080"
+bootstrap_nodes = []
+max_connections = 10
+connection_timeout = 30
+enable_nat = false
+enable_relay = false
+
+[storage]
+db_path = "./data/local-ippan.db"
+max_storage_size = 1073741824  # 1GB
+shard_size = 1048576  # 1MB
+replication_factor = 1
+enable_encryption = false
+proof_interval = 300
+
+[consensus]
+block_time = 1000  # 1 second
+max_block_size = 1048576  # 1MB
+consensus_type = "BFT"
+validator_count = 1
+validators_per_round = 1
+hashtimer_precision = 100
+time_sync_interval = 60
+round_timeout = 30
+finality_threshold = 1
+enable_zk_proofs = false
+
+[api]
+listen_addr = "127.0.0.1:3001"
+enable_cors = true
+rate_limit = 1000
+enable_auth = false
+
+[staking]
+min_stake_amount = 1000000000  # 1 IPN
+max_stake_amount = 100000000000  # 100 IPN
+stake_lock_period = 1000
+slashing_conditions = {
+  downtime_threshold = 100,
+  downtime_slash_percent = 5,
+  malicious_slash_percent = 50,
+  fake_proof_slash_percent = 25
+}
+
+[wallet]
+key_type = "ed25519"
+key_rotation_interval = 2592000
+enable_hardware_wallet = false
+backup_interval = 86400
+
+[performance]
+max_tps = 1000
+batch_size = 100
+cache_size = 134217728  # 128MB
+enable_parallel_processing = true
+worker_threads = 4
+
+[security]
+enable_quantum_resistance = false
+enable_network_encryption = false
+enable_audit_logging = true
+
+[logging]
+level = "info"
+format = "json"
+enable_console = true
+enable_file = true
+file_path = "./logs/ippan.log"
+max_file_size = 10485760  # 10MB
+max_files = 5

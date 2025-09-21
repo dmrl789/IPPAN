@@ -1,0 +1,17 @@
+[package]
+name = "ippan-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ippan-node"
+path = "src/main.rs"
+
+[dependencies]
+ippan-types = { path = "../crates/types" }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

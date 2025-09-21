@@ -1,0 +1,35 @@
+[workspace]
+members = [
+  "crates/types",
+  "crates/crypto",
+  "crates/storage",
+  "crates/p2p",
+  "crates/mempool",
+  "crates/consensus",
+  "crates/rpc",
+  "node",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["IPPAN Contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread","macros","time","sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+blake3 = "1"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+rand_core = "0.6"
+time = { version = "0.3", features = ["formatting","macros"] }
+once_cell = "1"
+parking_lot = "0.12"
+heapless = "0.8"

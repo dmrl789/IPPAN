@@ -1,0 +1,208 @@
+groups:
+  - name: ippan.rules
+    rules:
+      # Node Health Rules
+      - alert: IPPANNodeDown
+        expr: up{job="ippan-nodes"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN node is down"
+          description: "IPPAN node {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: IPPANNodeHighCPU
+        expr: rate(process_cpu_seconds_total{job="ippan-nodes"}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN node high CPU usage"
+          description: "IPPAN node {{ $labels.instance }} CPU usage is above 80% for more than 5 minutes."
+
+      - alert: IPPANNodeHighMemory
+        expr: (process_resident_memory_bytes{job="ippan-nodes"} / 1024 / 1024 / 1024) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN node high memory usage"
+          description: "IPPAN node {{ $labels.instance }} memory usage is above 2GB for more than 5 minutes."
+
+      # Network Rules
+      - alert: IPPANNetworkConnectionsHigh
+        expr: ippan_network_active_connections > 800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN network high connection count"
+          description: "IPPAN node {{ $labels.instance }} has {{ $value }} active connections."
+
+      - alert: IPPANNetworkLatencyHigh
+        expr: ippan_network_avg_latency_ms > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN network high latency"
+          description: "IPPAN node {{ $labels.instance }} average latency is {{ $value }}ms."
+
+      # Consensus Rules
+      - alert: IPPANConsensusStuck
+        expr: time() - ippan_consensus_last_block_timestamp > 30
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN consensus is stuck"
+          description: "IPPAN node {{ $labels.instance }} has not produced a block for more than 30 seconds."
+
+      - alert: IPPANConsensusLowThroughput
+        expr: rate(ippan_consensus_blocks_per_second[5m]) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN consensus low throughput"
+          description: "IPPAN node {{ $labels.instance }} block rate is {{ $value }} blocks/second."
+
+      - alert: IPPANConsensusHighForkRate
+        expr: rate(ippan_consensus_forks_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN consensus high fork rate"
+          description: "IPPAN node {{ $labels.instance }} fork rate is {{ $value }} forks/second."
+
+      # Storage Rules
+      - alert: IPPANStorageHighUsage
+        expr: (ippan_storage_used_bytes / ippan_storage_total_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN storage high usage"
+          description: "IPPAN node {{ $labels.instance }} storage usage is {{ $value }}%."
+
+      - alert: IPPANStorageLowSpace
+        expr: ippan_storage_free_bytes < 10737418240  # 10GB
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN storage low space"
+          description: "IPPAN node {{ $labels.instance }} has only {{ $value }} bytes free."
+
+      - alert: IPPANStorageReplicationLow
+        expr: ippan_storage_replication_factor < 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN storage low replication"
+          description: "IPPAN node {{ $labels.instance }} replication factor is {{ $value }}."
+
+      # Performance Rules
+      - alert: IPPANPerformanceHighLatency
+        expr: histogram_quantile(0.95, rate(ippan_performance_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN performance high latency"
+          description: "IPPAN node {{ $labels.instance }} 95th percentile latency is {{ $value }}s."
+
+      - alert: IPPANPerformanceLowThroughput
+        expr: rate(ippan_performance_requests_total[5m]) < 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN performance low throughput"
+          description: "IPPAN node {{ $labels.instance }} request rate is {{ $value }} requests/second."
+
+      - alert: IPPANPerformanceHighErrorRate
+        expr: rate(ippan_performance_errors_total[5m]) / rate(ippan_performance_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN performance high error rate"
+          description: "IPPAN node {{ $labels.instance }} error rate is {{ $value }}%."
+
+      # Security Rules
+      - alert: IPPANSecurityHighFailedLogins
+        expr: rate(ippan_security_failed_logins_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN security high failed logins"
+          description: "IPPAN node {{ $labels.instance }} has {{ $value }} failed logins per second."
+
+      - alert: IPPANSecuritySuspiciousActivity
+        expr: rate(ippan_security_suspicious_requests_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN security suspicious activity"
+          description: "IPPAN node {{ $labels.instance }} has {{ $value }} suspicious requests per second."
+
+      # Validator Rules
+      - alert: IPPANValidatorOffline
+        expr: ippan_validator_status == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN validator is offline"
+          description: "IPPAN validator {{ $labels.validator_id }} has been offline for more than 2 minutes."
+
+      - alert: IPPANValidatorLowStake
+        expr: ippan_validator_stake < 1000000000  # 10 IPN
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN validator low stake"
+          description: "IPPAN validator {{ $labels.validator_id }} stake is {{ $value }}."
+
+      - alert: IPPANValidatorHighSlashRate
+        expr: rate(ippan_validator_slashes_total[1h]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN validator high slash rate"
+          description: "IPPAN validator {{ $labels.validator_id }} slash rate is {{ $value }} per hour."
+
+      # System Rules
+      - alert: IPPANSystemDiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/data"} / node_filesystem_size_bytes{mountpoint="/data"}) * 100 < 10
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN system disk space low"
+          description: "IPPAN node {{ $labels.instance }} disk space is {{ $value }}% available."
+
+      - alert: IPPANSystemLoadHigh
+        expr: node_load1 > 4
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN system high load"
+          description: "IPPAN node {{ $labels.instance }} load average is {{ $value }}."
+
+      - alert: IPPANSystemNetworkErrors
+        expr: rate(node_network_receive_errs_total[5m]) + rate(node_network_transmit_errs_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN system network errors"
+          description: "IPPAN node {{ $labels.instance }} has {{ $value }} network errors per second."

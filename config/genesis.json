@@ -1,0 +1,20 @@
+{
+  "chain_id": "ippan-devnet-001",
+  "timestamp": "2025-01-15T12:00:00Z",
+  "alloc": [
+    {
+      "address": "iSender1111111111111111111111111111111111111",
+      "balance": "1000000000"
+    },
+    {
+      "address": "iRbDqSo0H4NxPGC0q55ohG36JrvlcYGvM3DpS4Q",
+      "balance": "0"
+    }
+  ],
+  "params": {
+    "block_ms": 50,
+    "round_ms": 200,
+    "max_block_bytes": 32768
+  }
+}
+

@@ -1,0 +1,11 @@
+[package]
+name = "ippan-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+ippan-types = { path = "../types" }
+anyhow = { workspace = true }
+hex = { workspace = true }

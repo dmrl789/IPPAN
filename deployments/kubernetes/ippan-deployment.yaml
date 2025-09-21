@@ -1,0 +1,324 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ippan-node
+  namespace: ippan
+  labels:
+    app: ippan-node
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ippan-node
+  template:
+    metadata:
+      labels:
+        app: ippan-node
+        version: v1.0.0
+    spec:
+      serviceAccountName: ippan-node
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: ippan-node
+        image: ghcr.io/ippan/ippan:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: api
+          protocol: TCP
+        - containerPort: 3000
+          name: p2p
+          protocol: TCP
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 443
+          name: https
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info"
+        - name: IPPAN_CONFIG_PATH
+          value: "/config/default.toml"
+        - name: IPPAN_DATA_DIR
+          value: "/data"
+        - name: IPPAN_KEYS_DIR
+          value: "/keys"
+        - name: IPPAN_LOG_DIR
+          value: "/logs"
+        - name: NODE_ENV
+          value: "production"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: data
+          mountPath: /data
+        - name: keys
+          mountPath: /keys
+        - name: logs
+          mountPath: /logs
+        livenessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /api/v1/status
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+      volumes:
+      - name: config
+        configMap:
+          name: ippan-config
+      - name: data
+        persistentVolumeClaim:
+          claimName: ippan-data
+      - name: keys
+        secret:
+          secretName: ippan-keys
+      - name: logs
+        emptyDir: {}
+      imagePullSecrets:
+      - name: ghcr-secret
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: "ippan.io/node"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - ippan-node
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ippan-node-service
+  namespace: ippan
+  labels:
+    app: ippan-node
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: api
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: p2p
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 443
+    protocol: TCP
+    name: https
+  selector:
+    app: ippan-node
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ippan-node-headless
+  namespace: ippan
+  labels:
+    app: ippan-node
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: p2p
+  selector:
+    app: ippan-node
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ippan-config
+  namespace: ippan
+data:
+  default.toml: |
+    [network]
+    port = 3000
+    max_peers = 100
+    discovery_interval = 30
+    
+    [api]
+    port = 8080
+    cors_origins = ["*"]
+    rate_limit = 1000
+    
+    [consensus]
+    max_validators = 100
+    block_time = 10
+    finality_threshold = 67
+    
+    [storage]
+    data_dir = "/data"
+    max_file_size = 104857600
+    compression = true
+    
+    [logging]
+    level = "info"
+    file = "/logs/ippan.log"
+    max_size = 104857600
+    max_files = 10
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ippan-data
+  namespace: ippan
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ippan-keys
+  namespace: ippan
+type: Opaque
+data:
+  # Base64 encoded keys
+  node.key: ""
+  validator.key: ""
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ippan-node
+  namespace: ippan
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: ippan
+  name: ippan-node-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ippan-node-rolebinding
+  namespace: ippan
+subjects:
+- kind: ServiceAccount
+  name: ippan-node
+  namespace: ippan
+roleRef:
+  kind: Role
+  name: ippan-node-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ippan-network-policy
+  namespace: ippan
+spec:
+  podSelector:
+    matchLabels:
+      app: ippan-node
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ippan
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 3000
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: ippan
+    ports:
+    - protocol: TCP
+      port: 3000
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

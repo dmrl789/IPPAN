@@ -1,0 +1,14 @@
+{
+  "node_id": "node-a",
+  "p2p": {
+    "listen": "0.0.0.0:8080",
+    "seeds": []
+  },
+  "rpc": {
+    "http": "0.0.0.0:3000"
+  },
+  "db_path": "/var/lib/ippan/node-a",
+  "genesis": "/etc/ippan/genesis.json",
+  "real_mode": true
+}
+

@@ -1,0 +1,16 @@
+# IPPAN Default Configuration
+
+[dht]
+bootstrap_nodes = []
+max_connections = 50
+
+[staking]
+min_stake_amount = 10_000_000_000  # 10 IPN in smallest units
+max_stake_amount = 100_000_000_000 # 100 IPN in smallest units
+
+[l2]
+max_commit_size = 16384             # 16 KB
+min_epoch_gap_ms = 250              # per l2_id
+challenge_window_ms = 60000         # optimistic default
+da_mode = "external"                # or "inline"
+max_l2_count = 100                  # maximum L2s that can be registered 

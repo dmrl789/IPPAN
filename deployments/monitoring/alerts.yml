@@ -1,0 +1,277 @@
+groups:
+  - name: ippan-node-alerts
+    rules:
+      # Node Health Alerts
+      - alert: IPPANNodeDown
+        expr: up{job="ippan-node"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN node is down"
+          description: "IPPAN node has been down for more than 1 minute"
+
+      - alert: IPPANNodeHighCPU
+        expr: rate(process_cpu_seconds_total{job="ippan-node"}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN node high CPU usage"
+          description: "IPPAN node CPU usage is above 80% for 5 minutes"
+
+      - alert: IPPANNodeHighMemory
+        expr: (process_resident_memory_bytes{job="ippan-node"} / container_memory_usage_bytes{job="ippan-node"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN node high memory usage"
+          description: "IPPAN node memory usage is above 85% for 5 minutes"
+
+      # Network Alerts
+      - alert: IPPANNetworkLowPeers
+        expr: ippan_network_connected_peers < 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN network low peer count"
+          description: "IPPAN node has fewer than 5 connected peers for 10 minutes"
+
+      - alert: IPPANNetworkNoPeers
+        expr: ippan_network_connected_peers == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN network no peers"
+          description: "IPPAN node has no connected peers for 5 minutes"
+
+      - alert: IPPANNetworkHighLatency
+        expr: ippan_network_peer_latency_seconds > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN network high latency"
+          description: "IPPAN network peer latency is above 1 second for 5 minutes"
+
+      # Storage Alerts
+      - alert: IPPANStorageHighUsage
+        expr: (ippan_storage_used_bytes / ippan_storage_total_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN storage high usage"
+          description: "IPPAN storage usage is above 90% for 5 minutes"
+
+      - alert: IPPANStorageFull
+        expr: (ippan_storage_used_bytes / ippan_storage_total_bytes) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN storage almost full"
+          description: "IPPAN storage usage is above 95% for 2 minutes"
+
+      - alert: IPPANStorageLowReplicas
+        expr: ippan_storage_file_replicas < 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN storage low replicas"
+          description: "IPPAN storage files have fewer than 2 replicas for 10 minutes"
+
+      # Consensus Alerts
+      - alert: IPPANConsensusBlockDelay
+        expr: time() - ippan_consensus_last_block_timestamp > 60
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN consensus block delay"
+          description: "IPPAN consensus has not produced a block for more than 60 seconds"
+
+      - alert: IPPANConsensusValidatorDown
+        expr: ippan_consensus_validator_status == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN consensus validator down"
+          description: "IPPAN consensus validator is down for 5 minutes"
+
+      - alert: IPPANConsensusLowStake
+        expr: ippan_staking_stake_amount < 10000000000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN consensus low stake"
+          description: "IPPAN node stake is below 10 IPN for 10 minutes"
+
+      # Wallet Alerts
+      - alert: IPPANWalletLowBalance
+        expr: ippan_wallet_balance < 1000000000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN wallet low balance"
+          description: "IPPAN wallet balance is below 1 IPN for 10 minutes"
+
+      - alert: IPPANWalletNoBalance
+        expr: ippan_wallet_balance == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN wallet empty"
+          description: "IPPAN wallet has no balance for 5 minutes"
+
+      # DHT Alerts
+      - alert: IPPANDHTLowRoutingTable
+        expr: ippan_dht_routing_table_size < 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN DHT low routing table"
+          description: "IPPAN DHT routing table has fewer than 100 entries for 10 minutes"
+
+      - alert: IPPANDHTLookupFailures
+        expr: rate(ippan_dht_lookup_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN DHT lookup failures"
+          description: "IPPAN DHT lookup failure rate is above 0.1 per second for 5 minutes"
+
+      # Domain Alerts
+      - alert: IPPANDomainRegistrationFailures
+        expr: rate(ippan_domain_registration_failures_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN domain registration failures"
+          description: "IPPAN domain registration failure rate is above 0.01 per second for 5 minutes"
+
+      # Staking Alerts
+      - alert: IPPANStakingRewardDelay
+        expr: time() - ippan_staking_last_reward_timestamp > 604800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN staking reward delay"
+          description: "IPPAN staking has not received rewards for more than 7 days"
+
+      # Global Fund Alerts
+      - alert: IPPANGlobalFundLowBalance
+        expr: ippan_global_fund_balance < 1000000000000
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN global fund low balance"
+          description: "IPPAN global fund balance is below 1000 IPN for 1 hour"
+
+      # M2M Payment Alerts
+      - alert: IPPANM2MPaymentChannelExpiring
+        expr: ippan_m2m_payment_channel_expires_in_seconds < 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN M2M payment channel expiring"
+          description: "IPPAN M2M payment channel expires in less than 1 hour"
+
+      # Security Alerts
+      - alert: IPPANSecurityVulnerabilityDetected
+        expr: ippan_security_vulnerabilities_total > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN security vulnerability detected"
+          description: "IPPAN security scanner detected vulnerabilities"
+
+      - alert: IPPANSecurityBruteForceAttempt
+        expr: rate(ippan_security_failed_attempts_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN security brute force attempt"
+          description: "IPPAN security detected potential brute force attack"
+
+      - alert: IPPANSecurityUnauthorizedAccess
+        expr: ippan_security_unauthorized_access_attempts_total > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "IPPAN security unauthorized access"
+          description: "IPPAN security detected unauthorized access attempts"
+
+      # API Alerts
+      - alert: IPPANAPIHighErrorRate
+        expr: rate(ippan_api_errors_total[5m]) / rate(ippan_api_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN API high error rate"
+          description: "IPPAN API error rate is above 5% for 5 minutes"
+
+      - alert: IPPANAPIHighLatency
+        expr: histogram_quantile(0.95, rate(ippan_api_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN API high latency"
+          description: "IPPAN API 95th percentile latency is above 1 second for 5 minutes"
+
+      # System Alerts
+      - alert: IPPANSystemDiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN system disk space low"
+          description: "IPPAN system disk space is below 10% for 5 minutes"
+
+      - alert: IPPANSystemHighLoad
+        expr: node_load1 > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN system high load"
+          description: "IPPAN system load is above 5 for 5 minutes"
+
+      # Performance Alerts
+      - alert: IPPANPerformanceSlowBlockCreation
+        expr: histogram_quantile(0.95, rate(ippan_consensus_block_creation_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN performance slow block creation"
+          description: "IPPAN consensus block creation is slow (95th percentile > 10s)"
+
+      - alert: IPPANPerformanceSlowFileUpload
+        expr: histogram_quantile(0.95, rate(ippan_storage_upload_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IPPAN performance slow file upload"
+          description: "IPPAN storage file upload is slow (95th percentile > 30s)" 

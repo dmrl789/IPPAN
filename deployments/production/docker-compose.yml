@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  ippan-node:
+    image: ippan/ippan:latest
+    container_name: ippan-node
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # P2P network port
+      - "3000:3000"  # API port
+    volumes:
+      - ippan_data:/data
+      - ippan_keys:/keys
+      - ippan_logs:/logs
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_PORT=8080
+      - IPPAN_API_PORT=3000
+      - IPPAN_STORAGE_DIR=/data
+      - IPPAN_KEYS_DIR=/keys
+      - IPPAN_LOG_DIR=/logs
+    networks:
+      - ippan_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  ippan-monitor:
+    image: ippan/monitor:latest
+    container_name: ippan-monitor
+    restart: unless-stopped
+    ports:
+      - "9090:9090"  # Prometheus metrics
+      - "3001:3001"  # Grafana dashboard
+    volumes:
+      - monitor_data:/var/lib/prometheus
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+  ippan-backup:
+    image: ippan/backup:latest
+    container_name: ippan-backup
+    restart: unless-stopped
+    volumes:
+      - ippan_data:/data:ro
+      - ippan_keys:/keys:ro
+      - backup_data:/backups
+    environment:
+      - BACKUP_SCHEDULE=0 2 * * *  # Daily at 2 AM
+      - BACKUP_RETENTION_DAYS=30
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+  ippan-alerts:
+    image: ippan/alerts:latest
+    container_name: ippan-alerts
+    restart: unless-stopped
+    ports:
+      - "9093:9093"  # Alertmanager
+    volumes:
+      - alert_data:/data
+      - ./monitoring/alerts.yml:/etc/alertmanager/alerts.yml
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST}
+      - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT}
+      - EMAIL_USERNAME=${EMAIL_USERNAME}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+    networks:
+      - ippan_network
+
+  ippan-lb:
+    image: nginx:alpine
+    container_name: ippan-lb
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - lb_logs:/var/log/nginx
+    networks:
+      - ippan_network
+    depends_on:
+      - ippan-node
+
+volumes:
+  ippan_data:
+    driver: local
+  ippan_keys:
+    driver: local
+  ippan_logs:
+    driver: local
+  monitor_data:
+    driver: local
+  grafana_data:
+    driver: local
+  backup_data:
+    driver: local
+  alert_data:
+    driver: local
+  lb_logs:
+    driver: local
+
+networks:
+  ippan_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 

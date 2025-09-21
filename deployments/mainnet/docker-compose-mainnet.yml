@@ -1,0 +1,437 @@
+# IPPAN Mainnet Production Deployment
+# Complete production-ready mainnet with external server support
+
+version: '3.8'
+
+services:
+  # Bootstrap Node 1 - Primary bootstrap node
+  ippan-bootstrap-1:
+    image: ippan:latest
+    container_name: ippan-bootstrap-1
+    restart: unless-stopped
+    ports:
+      - "30333:30333"
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - ./configs/bootstrap-1.toml:/etc/ippan/config.toml:ro
+      - ./data/bootstrap-1:/var/lib/ippan
+      - ./logs/bootstrap-1:/var/log/ippan
+      - ./certs:/etc/ippan/certs:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_ID=ippan-mainnet
+      - IPPAN_CHAIN_ID=ippan-1
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+
+  # Bootstrap Node 2 - Secondary bootstrap node
+  ippan-bootstrap-2:
+    image: ippan:latest
+    container_name: ippan-bootstrap-2
+    restart: unless-stopped
+    ports:
+      - "30334:30333"
+      - "8081:8080"
+      - "9091:9090"
+    volumes:
+      - ./configs/bootstrap-2.toml:/etc/ippan/config.toml:ro
+      - ./data/bootstrap-2:/var/lib/ippan
+      - ./logs/bootstrap-2:/var/log/ippan
+      - ./certs:/etc/ippan/certs:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_ID=ippan-mainnet
+      - IPPAN_CHAIN_ID=ippan-1
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+
+  # Bootstrap Node 3 - Tertiary bootstrap node
+  ippan-bootstrap-3:
+    image: ippan:latest
+    container_name: ippan-bootstrap-3
+    restart: unless-stopped
+    ports:
+      - "30335:30333"
+      - "8082:8080"
+      - "9092:9090"
+    volumes:
+      - ./configs/bootstrap-3.toml:/etc/ippan/config.toml:ro
+      - ./data/bootstrap-3:/var/lib/ippan
+      - ./logs/bootstrap-3:/var/log/ippan
+      - ./certs:/etc/ippan/certs:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_ID=ippan-mainnet
+      - IPPAN_CHAIN_ID=ippan-1
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+
+  # Validator Node 1
+  ippan-validator-1:
+    image: ippan:latest
+    container_name: ippan-validator-1
+    restart: unless-stopped
+    ports:
+      - "30336:30333"
+      - "8083:8080"
+      - "9093:9090"
+    volumes:
+      - ./configs/validator-1.toml:/etc/ippan/config.toml:ro
+      - ./data/validator-1:/var/lib/ippan
+      - ./logs/validator-1:/var/log/ippan
+      - ./certs:/etc/ippan/certs:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_ID=ippan-mainnet
+      - IPPAN_CHAIN_ID=ippan-1
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 16G
+        reservations:
+          cpus: '4.0'
+          memory: 8G
+
+  # Validator Node 2
+  ippan-validator-2:
+    image: ippan:latest
+    container_name: ippan-validator-2
+    restart: unless-stopped
+    ports:
+      - "30337:30333"
+      - "8084:8080"
+      - "9094:9090"
+    volumes:
+      - ./configs/validator-2.toml:/etc/ippan/config.toml:ro
+      - ./data/validator-2:/var/lib/ippan
+      - ./logs/validator-2:/var/log/ippan
+      - ./certs:/etc/ippan/certs:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_ID=ippan-mainnet
+      - IPPAN_CHAIN_ID=ippan-1
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 16G
+        reservations:
+          cpus: '4.0'
+          memory: 8G
+
+  # Validator Node 3
+  ippan-validator-3:
+    image: ippan:latest
+    container_name: ippan-validator-3
+    restart: unless-stopped
+    ports:
+      - "30338:30333"
+      - "8085:8080"
+      - "9095:9090"
+    volumes:
+      - ./configs/validator-3.toml:/etc/ippan/config.toml:ro
+      - ./data/validator-3:/var/lib/ippan
+      - ./logs/validator-3:/var/log/ippan
+      - ./certs:/etc/ippan/certs:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_ID=ippan-mainnet
+      - IPPAN_CHAIN_ID=ippan-1
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 16G
+        reservations:
+          cpus: '4.0'
+          memory: 8G
+
+  # Validator Node 4
+  ippan-validator-4:
+    image: ippan:latest
+    container_name: ippan-validator-4
+    restart: unless-stopped
+    ports:
+      - "30339:30333"
+      - "8086:8080"
+      - "9096:9090"
+    volumes:
+      - ./configs/validator-4.toml:/etc/ippan/config.toml:ro
+      - ./data/validator-4:/var/lib/ippan
+      - ./logs/validator-4:/var/log/ippan
+      - ./certs:/etc/ippan/certs:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_ID=ippan-mainnet
+      - IPPAN_CHAIN_ID=ippan-1
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 16G
+        reservations:
+          cpus: '4.0'
+          memory: 8G
+
+  # Validator Node 5
+  ippan-validator-5:
+    image: ippan:latest
+    container_name: ippan-validator-5
+    restart: unless-stopped
+    ports:
+      - "30340:30333"
+      - "8087:8080"
+      - "9097:9090"
+    volumes:
+      - ./configs/validator-5.toml:/etc/ippan/config.toml:ro
+      - ./data/validator-5:/var/lib/ippan
+      - ./logs/validator-5:/var/log/ippan
+      - ./certs:/etc/ippan/certs:ro
+    environment:
+      - RUST_LOG=info
+      - IPPAN_NETWORK_ID=ippan-mainnet
+      - IPPAN_CHAIN_ID=ippan-1
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 16G
+        reservations:
+          cpus: '4.0'
+          memory: 8G
+
+  # Load Balancer - Nginx
+  nginx-lb:
+    image: nginx:1.24-alpine
+    container_name: ippan-nginx-lb
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - ippan-mainnet
+    depends_on:
+      - ippan-bootstrap-1
+      - ippan-bootstrap-2
+      - ippan-bootstrap-3
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Database - PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: ippan-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      - POSTGRES_DB=ippan_mainnet
+      - POSTGRES_USER=ippan
+      - POSTGRES_PASSWORD=secure-postgres-password
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ippan -d ippan_mainnet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis - Caching
+  redis:
+    image: redis:7-alpine
+    container_name: ippan-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring - Prometheus
+  prometheus:
+    image: prom/prometheus:v2.40.0
+    container_name: ippan-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring - Grafana
+  grafana:
+    image: grafana/grafana:9.3.0
+    container_name: ippan-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=secure-grafana-password
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring - AlertManager
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    container_name: ippan-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - ippan-mainnet
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+
+networks:
+  ippan-mainnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

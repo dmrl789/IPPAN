@@ -1,0 +1,31 @@
+# IPPAN Logging Configuration
+
+[development]
+log_level = "debug"
+log_dir = "logs"
+log_format = "both"
+enable_console = true
+enable_file = true
+enable_json = true
+max_file_size = 104857600  # 100MB
+max_files = 10
+
+[production]
+log_level = "info"
+log_dir = "/var/log/ippan"
+log_format = "json"
+enable_console = false
+enable_file = true
+enable_json = true
+max_file_size = 104857600  # 100MB
+max_files = 30
+
+[testing]
+log_level = "trace"
+log_dir = "test_logs"
+log_format = "text"
+enable_console = true
+enable_file = false
+enable_json = false
+max_file_size = 10485760   # 10MB
+max_files = 5 

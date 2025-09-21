@@ -1,0 +1,36 @@
+[Unit]
+Description=IPPAN Blockchain Node
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ippan
+Group=ippan
+WorkingDirectory=/opt/ippan
+ExecStart=/opt/ippan/bin/ippan-node
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ippan-node
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ippan/data
+ReadWritePaths=/var/log/ippan
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=32768
+
+# Environment
+Environment=RUST_LOG=info
+Environment=IPPAN_NETWORK=mainnet
+Environment=IPPAN_DATA_DIR=/opt/ippan/data
+
+[Install]
+WantedBy=multi-user.target
