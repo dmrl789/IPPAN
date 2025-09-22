@@ -1,27 +1,225 @@
 use anyhow::Result;
-use tracing::info;
-use tracing_subscriber::EnvFilter;
-use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
+use clap::{Arg, Command};
+use config::Config;
+use ippan_consensus::{PoAConsensus, PoAConfig, Validator};
+use ippan_p2p::{HttpP2PNetwork, P2PConfig};
+use ippan_rpc::{AppState, start_server};
+use ippan_storage::{SledStorage, Storage};
+use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros, Transaction};
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
+use tokio::sync::mpsc;
+use tracing::{info, warn, error};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+/// Application configuration
+#[derive(Debug, Clone)]
+struct AppConfig {
+    // Node identity
+    node_id: String,
+    validator_id: [u8; 32],
+    
+    // Network
+    rpc_host: String,
+    rpc_port: u16,
+    p2p_host: String,
+    p2p_port: u16,
+    
+    // Storage
+    data_dir: String,
+    db_path: String,
+    
+    // Consensus
+    slot_duration_ms: u64,
+    max_transactions_per_block: usize,
+    block_reward: u64,
+    
+    // P2P
+    bootstrap_nodes: Vec<String>,
+    max_peers: usize,
+    
+    // Logging
+    log_level: String,
+    log_format: String,
+    
+    // Development
+    dev_mode: bool,
+}
+
+impl AppConfig {
+    fn load() -> Result<Self> {
+        // Load from environment variables with defaults
+        let config = Config::builder()
+            .add_source(config::Environment::with_prefix("IPPAN"))
+            .build()?;
+        
+        // Parse validator ID from hex string
+        let validator_id_str = config.get_string("VALIDATOR_ID")
+            .unwrap_or_else(|_| "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string());
+        
+        let validator_id = if validator_id_str.len() == 64 {
+            let mut id = [0u8; 32];
+            hex::decode_to_slice(&validator_id_str, &mut id)?;
+            id
+        } else {
+            // Generate a deterministic ID from the string
+            let mut id = [0u8; 32];
+            let hash_bytes = validator_id_str.as_bytes();
+            for (i, &byte) in hash_bytes.iter().enumerate() {
+                if i < 32 {
+                    id[i] = byte;
+                }
+            }
+            id
+        };
+        
+        Ok(Self {
+            node_id: config.get_string("NODE_ID").unwrap_or_else(|_| "ippan_node".to_string()),
+            validator_id,
+            rpc_host: config.get_string("RPC_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            rpc_port: config.get_string("RPC_PORT").unwrap_or_else(|_| "8080".to_string()).parse()?,
+            p2p_host: config.get_string("P2P_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            p2p_port: config.get_string("P2P_PORT").unwrap_or_else(|_| "9000".to_string()).parse()?,
+            data_dir: config.get_string("DATA_DIR").unwrap_or_else(|_| "./data".to_string()),
+            db_path: config.get_string("DB_PATH").unwrap_or_else(|_| "./data/db".to_string()),
+            slot_duration_ms: config.get_string("SLOT_DURATION_MS").unwrap_or_else(|_| "1000".to_string()).parse()?,
+            max_transactions_per_block: config.get_string("MAX_TRANSACTIONS_PER_BLOCK").unwrap_or_else(|_| "1000".to_string()).parse()?,
+            block_reward: config.get_string("BLOCK_REWARD").unwrap_or_else(|_| "10".to_string()).parse()?,
+            bootstrap_nodes: config.get_string("BOOTSTRAP_NODES").unwrap_or_default().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
+            max_peers: config.get_string("MAX_PEERS").unwrap_or_else(|_| "50".to_string()).parse()?,
+            log_level: config.get_string("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
+            log_format: config.get_string("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string()),
+            dev_mode: config.get_string("DEV_MODE").unwrap_or_else(|_| "false".to_string()).parse()?,
+        })
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Parse command line arguments
+    let matches = Command::new("ippan-node")
+        .version(env!("CARGO_PKG_VERSION"))
+        .about("IPPAN Blockchain Node")
+        .arg(Arg::new("config")
+            .short('c')
+            .long("config")
+            .value_name("FILE")
+            .help("Configuration file path"))
+        .arg(Arg::new("data-dir")
+            .short('d')
+            .long("data-dir")
+            .value_name("DIR")
+            .help("Data directory"))
+        .arg(Arg::new("dev")
+            .long("dev")
+            .help("Run in development mode"))
+        .get_matches();
+    
+    // Load configuration
+    let mut config = AppConfig::load()?;
+    
+    // Override with command line arguments
+    if let Some(data_dir) = matches.get_one::<String>("data-dir") {
+        config.data_dir = data_dir.clone();
+        config.db_path = format!("{}/db", data_dir);
+    }
+    
+    if matches.get_flag("dev") {
+        config.dev_mode = true;
+        config.log_level = "debug".to_string();
+        config.log_format = "pretty".to_string();
+    }
+    
     // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
-        .init();
-
+    init_logging(&config)?;
+    
     // Initialize IPPAN Time service
     ippan_time_init();
     info!("IPPAN Time service initialized");
-
-    info!("IPPAN node booting...");
-
+    
+    info!("Starting IPPAN node: {}", config.node_id);
+    info!("Validator ID: {}", hex::encode(config.validator_id));
+    info!("Data directory: {}", config.data_dir);
+    info!("Development mode: {}", config.dev_mode);
+    
+    // Create data directory
+    std::fs::create_dir_all(&config.data_dir)?;
+    
+    // Initialize storage
+    let storage = Arc::new(SledStorage::new(&config.db_path)?);
+    storage.initialize()?;
+    info!("Storage initialized at {}", config.db_path);
+    
+    // Initialize consensus
+    let consensus_config = PoAConfig {
+        slot_duration_ms: config.slot_duration_ms,
+        validators: vec![Validator {
+            id: config.validator_id,
+            address: config.validator_id,
+            stake: 1000000,
+            is_active: true,
+        }],
+        max_transactions_per_block: config.max_transactions_per_block,
+        block_reward: config.block_reward,
+    };
+    
+    let mut consensus = PoAConsensus::new(consensus_config, storage.clone(), config.validator_id);
+    consensus.start().await?;
+    info!("Consensus engine started");
+    
+    // Initialize P2P network
+    let p2p_config = P2PConfig {
+        listen_address: format!("http://{}:{}", config.p2p_host, config.p2p_port),
+        bootstrap_peers: config.bootstrap_nodes.clone(),
+        max_peers: config.max_peers,
+        peer_discovery_interval: std::time::Duration::from_secs(30),
+        message_timeout: std::time::Duration::from_secs(10),
+        retry_attempts: 3,
+    };
+    
+    let local_p2p_address = format!("http://{}:{}", config.p2p_host, config.p2p_port);
+    let mut p2p_network = HttpP2PNetwork::new(p2p_config, local_p2p_address)?;
+    p2p_network.start().await?;
+    info!("HTTP P2P network started on {}:{}", config.p2p_host, config.p2p_port);
+    
+    // Get peer ID before moving p2p_network
+    let peer_id = p2p_network.get_local_peer_id();
+    
+    // Create transaction channel for consensus
+    let tx_sender = consensus.get_tx_sender();
+    
+    // Initialize RPC server
+    let peer_count = Arc::new(AtomicUsize::new(0));
+    let start_time = Instant::now();
+    
+    let p2p_network_arc = Arc::new(p2p_network);
+    let p2p_network_for_shutdown = p2p_network_arc.clone();
+    let app_state = AppState {
+        storage: storage.clone(),
+        start_time,
+        peer_count: peer_count.clone(),
+        p2p_network: Some(p2p_network_arc.clone()),
+    };
+    
+    let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);
+    let rpc_addr_clone = rpc_addr.clone();
+    info!("Starting RPC server on {}", rpc_addr);
+    
+    // Start RPC server in background
+    let rpc_handle = tokio::spawn(async move {
+        if let Err(e) = start_server(app_state, &rpc_addr_clone).await {
+            error!("RPC server error: {}", e);
+        }
+    });
+    
     // Create a boot HashTimer to demonstrate the system
     let current_time = IppanTimeMicros(ippan_time_now());
     let domain = "boot";
     let payload = b"node_startup";
     let nonce = ippan_types::random_nonce();
-    let node_id = b"ippan_node_001";
+    let node_id = config.node_id.as_bytes();
     
     let boot_hashtimer = HashTimer::derive(
         domain,
@@ -53,18 +251,58 @@ async fn main() -> Result<()> {
         info!("Time check {}: {} -> {} (diff: {})", i, time1, time2, time2 - time1);
     }
     
-    // TODO: Initialize and start core components
-    // - Storage layer
-    // - P2P network
-    // - Mempool
-    // - Consensus engine
-    // - RPC API
+    // Update peer count periodically
+    let peer_count_updater = {
+        let peer_count = peer_count.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+            loop {
+                interval.tick().await;
+                // Simulate peer count for now
+                peer_count.store(0, Ordering::Relaxed);
+            }
+        })
+    };
     
     info!("IPPAN node is ready and running");
+    info!("RPC API available at: http://{}", rpc_addr);
+    info!("P2P network listening on: {}:{}", config.p2p_host, config.p2p_port);
+    info!("Node ID: {}", peer_id);
     
     // Keep the node running
     tokio::signal::ctrl_c().await?;
     info!("Shutting down IPPAN node");
+    
+    // Stop components gracefully
+    consensus.stop().await?;
+    // Note: We can't call stop() on the Arc-wrapped network
+    // In a real implementation, we'd need a different approach
+    info!("P2P network shutdown requested");
+    rpc_handle.abort();
+    peer_count_updater.abort();
+    
+    // Flush storage
+    storage.flush()?;
+    
+    info!("IPPAN node shutdown complete");
+    Ok(())
+}
+
+fn init_logging(config: &AppConfig) -> Result<()> {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(&config.log_level));
+    
+    if config.log_format == "json" {
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().pretty())
+            .init();
+    }
     
     Ok(())
 }

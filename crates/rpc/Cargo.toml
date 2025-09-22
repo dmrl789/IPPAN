@@ -7,9 +7,16 @@ authors.workspace = true
 
 [dependencies]
 ippan-types = { path = "../types" }
+ippan-storage = { path = "../storage" }
+ippan-p2p = { path = "../p2p" }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+futures = { workspace = true }

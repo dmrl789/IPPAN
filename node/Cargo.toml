@@ -11,7 +11,21 @@ path = "src/main.rs"
 
 [dependencies]
 ippan-types = { path = "../crates/types" }
+ippan-storage = { path = "../crates/storage" }
+ippan-rpc = { path = "../crates/rpc" }
+ippan-consensus = { path = "../crates/consensus" }
+ippan-p2p = { path = "../crates/p2p" }
+ippan-crypto = { path = "../crates/crypto" }
+ippan-mempool = { path = "../crates/mempool" }
+
 anyhow = { workspace = true }
-tokio = { workspace = true, features = ["signal"] }
+thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+clap = { workspace = true }
+config = { workspace = true }
+dirs = { workspace = true }

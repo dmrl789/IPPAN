@@ -1,5 +1,6 @@
 [Unit]
 Description=IPPAN Blockchain Node
+Documentation=https://github.com/ippan/ippan
 After=network.target
 Wants=network.target
 
@@ -9,8 +10,9 @@ User=ippan
 Group=ippan
 WorkingDirectory=/opt/ippan
 ExecStart=/opt/ippan/bin/ippan-node
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
-RestartSec=10
+RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ippan-node
@@ -20,17 +22,23 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/ippan/data
+ReadWritePaths=/var/lib/ippan
 ReadWritePaths=/var/log/ippan
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
 
 # Resource limits
 LimitNOFILE=65536
 LimitNPROC=32768
 
 # Environment
-Environment=RUST_LOG=info
-Environment=IPPAN_NETWORK=mainnet
-Environment=IPPAN_DATA_DIR=/opt/ippan/data
+EnvironmentFile=/etc/ippan/ippan.env
+
+# Kill settings
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

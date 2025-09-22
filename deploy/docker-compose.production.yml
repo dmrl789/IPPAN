@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  ippan-node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: ippan-node-1
+    environment:
+      - NODE_ID=ippan_production_node_001
+      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000001
+      - RPC_HOST=0.0.0.0
+      - RPC_PORT=8080
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9000
+      - P2P_BOOTNODES=http://135.181.145.174:9001
+      - STORAGE_PATH=/var/lib/ippan/db
+      - CONSENSUS_SLOT_DURATION_MS=1000
+      - CONSENSUS_MAX_TX_PER_BLOCK=100
+      - CONSENSUS_BLOCK_REWARD=1000
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    ports:
+      - "8080:8080"  # RPC API
+      - "9000:9000"  # P2P
+    volumes:
+      - node1_data:/var/lib/ippan/db
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  ippan-node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: ippan-node-2
+    environment:
+      - NODE_ID=ippan_production_node_002
+      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000002
+      - RPC_HOST=0.0.0.0
+      - RPC_PORT=8080
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9001
+      - P2P_BOOTNODES=http://188.245.97.41:9000
+      - STORAGE_PATH=/var/lib/ippan/db
+      - CONSENSUS_SLOT_DURATION_MS=1000
+      - CONSENSUS_MAX_TX_PER_BLOCK=100
+      - CONSENSUS_BLOCK_REWARD=1000
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    ports:
+      - "8080:8080"  # RPC API
+      - "9001:9001"  # P2P
+    volumes:
+      - node2_data:/var/lib/ippan/db
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  node1_data:
+  node2_data:

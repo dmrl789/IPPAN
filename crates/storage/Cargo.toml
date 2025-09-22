@@ -8,4 +8,10 @@ authors.workspace = true
 [dependencies]
 ippan-types = { path = "../types" }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 hex = { workspace = true }
+sled = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
