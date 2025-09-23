@@ -4,6 +4,10 @@ on:
   issues:
     types: [opened, edited, reopened, labeled]
 
+concurrency:
+  group: apply-patch-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
   apply:
     if: contains(github.event.issue.labels.*.name, 'auto-patch')
@@ -12,23 +16,30 @@ jobs:
       contents: write
       pull-requests: write
       issues: read
+
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.BOT_TOKEN }}
+          ref: ${{ github.event.repository.default_branch }}
 
-      - name: Extract patch from issue body
+      - name: Extract patch from issue body (or allow cleanup-only)
         id: extract
+        env:
+          HAS_CLEANUP: ${{ contains(github.event.issue.labels.*.name, 'cleanup-now') }}
         run: |
           python - << 'PY'
 import os, re, sys
 body = """${{ github.event.issue.body }}"""
-# Look for fenced code blocks first; otherwise use the whole body
 blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
 candidates = blocks + [body]
 patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ','From '))), None)
 if not patch:
+    # Permit empty body when label 'cleanup-now' is present
+    if os.environ.get("HAS_CLEANUP","false").lower() == "true":
+        open("change.patch","w", encoding="utf-8").close()
+        sys.exit(0)
     print("No unified diff found in issue body.")
     sys.exit(1)
 with open("change.patch", "w", encoding="utf-8") as f:
@@ -46,34 +57,71 @@ PY
           echo "BRANCH=$BR" >> $GITHUB_ENV
           git checkout -b "$BR"
 
-      - name: Try applying patch (3-way)
+      - name: Try applying patch (3-way) if present
         run: |
           set -e
-          git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
+          if [ -s change.patch ]; then
+            git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
+          else
+            echo "No patch provided; proceeding to optional cleanup."
+          fi
+
+      - name: Remove mock/demo code (label: cleanup-now)
+        if: contains(github.event.issue.labels.*.name, 'cleanup-now')
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Find tracked files/dirs commonly used for demos/mocks/etc.
+          mapfile -t TARGETS < <(git ls-files -z | tr '\0' '\n' | grep -Ei '(^|/)(demo|demos|example|examples|mock|mocks|fixture|fixtures|sample|samples|storybook|playground|seed|seeds)(/|$)' || true)
+          # Keep unified UI intact
+          KEEP_PREFIXES=("apps/unified-ui/")
+          DEL=()
+          for f in "${TARGETS[@]}"; do
+            skip=0
+            for kp in "${KEEP_PREFIXES[@]}"; do
+              [[ "$f" == "$kp"* ]] && { skip=1; break; }
+            done
+            [[ $skip -eq 0 ]] && DEL+=("$f")
+          done
+          if [ ${#DEL[@]} -gt 0 ]; then
+            printf 'Removing %d paths...\n' "${#DEL[@]}"
+            git rm -r -f -- "${DEL[@]}" || true
+          else
+            echo "No mock/demo paths found."
+          fi
+          git add -A
 
       - name: Commit changes (if any)
         run: |
           if git diff --cached --quiet; then
-            echo "No changes staged; patch might already be applied."
+            echo "No changes staged; patch may already be applied or nothing to cleanup."
             exit 0
           fi
-          git commit -m "Apply patch from #${{ github.event.issue.number }}"
+          git commit -m "Apply patch / cleanup from #${{ github.event.issue.number }}"
 
       - name: Push branch
         run: |
-          if git rev-parse --verify HEAD >/dev/null 2>&1; then
-            git push -u origin "$BRANCH"
-          fi
+          git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
+          git push -u origin "$BRANCH"
 
       - name: Open PR
+        id: cpr
         if: success()
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.BOT_TOKEN }}
           branch: ${{ env.BRANCH }}
-          title: "Apply patch from #${{ github.event.issue.number }}"
+          title: "Apply patch / cleanup from #${{ github.event.issue.number }}"
           body: |
             Automated PR created from Issue #${{ github.event.issue.number }}.
-            Patch was applied by GitHub Actions.
-          commit-message: "Apply patch from #${{ github.event.issue.number }}"
+            This PR was created by the Apply Patch From Issue workflow.
+          commit-message: "Apply patch / cleanup from #${{ github.event.issue.number }}"
           labels: auto-patch
+
+      - name: Enable auto-merge (label: automerge)
+        if: success() && contains(github.event.issue.labels.*.name, 'automerge')
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ secrets.BOT_TOKEN }}
+          pull-request-number: ${{ steps.cpr.outputs['pull-request-number'] }}
+          merge-method: squash
