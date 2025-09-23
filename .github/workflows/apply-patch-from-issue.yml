@@ -29,7 +29,7 @@ jobs:
         env:
           HAS_CLEANUP: ${{ contains(github.event.issue.labels.*.name, 'cleanup-now') }}
         run: |
-          python - << 'PY'
+          python3 - << 'PY'
 import os, re, sys
 body = """${{ github.event.issue.body }}"""
 blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
@@ -45,6 +45,12 @@ if not patch:
 with open("change.patch", "w", encoding="utf-8") as f:
     f.write(patch)
 PY
+
+      - name: Debug — show event & labels
+        run: |
+          echo "event: ${{ github.event_name }}"
+          echo "labels: ${{ toJson(github.event.issue.labels.*.name) }}"
+          echo "branch (will be set later): $BRANCH"
 
       - name: Configure Git
         run: |
@@ -119,7 +125,7 @@ PY
           labels: auto-patch
 
       - name: Enable auto-merge (label: automerge)
-        if: success() && contains(github.event.issue.labels.*.name, 'automerge')
+        if: success() && contains(github.event.issue.labels.*.name, 'automerge') && steps.cpr.outputs['pull-request-number'] != ''
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ github.token }}
