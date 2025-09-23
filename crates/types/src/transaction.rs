@@ -1,6 +1,7 @@
+use crate::hashtimer::{HashTimer, IppanTimeMicros};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_bytes;
-use crate::hashtimer::{HashTimer, IppanTimeMicros, random_nonce};
 
 /// A transaction in the IPPAN blockchain
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,13 +29,16 @@ impl Transaction {
     /// Create a new transaction
     pub fn new(from: [u8; 32], to: [u8; 32], amount: u64, nonce: u64) -> Self {
         let timestamp = IppanTimeMicros::now();
-        let nonce_bytes = random_nonce();
-        let node_id = b"local_node"; // In real implementation, this would be the actual node ID
-        
-        // Create HashTimer for this transaction
         let payload = Self::create_payload(&from, &to, amount, nonce);
-        let hashtimer = HashTimer::now_tx("transaction", &payload, &nonce_bytes, node_id);
-        
+        let hashtimer = HashTimer::derive(
+            "transaction",
+            timestamp,
+            b"transaction",
+            &payload,
+            &nonce.to_be_bytes(),
+            &from,
+        );
+
         Self {
             id: [0u8; 32], // Will be computed after signing
             from,
@@ -57,58 +61,64 @@ impl Transaction {
         payload
     }
 
-    /// Sign the transaction (placeholder implementation)
+    /// Bytes used for signature verification (excludes signature and id)
+    fn message_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(
+            self.from.len() + self.to.len() + 8 + 8 + self.signature.len() + 7 + 25 + 8,
+        );
+        bytes.extend_from_slice(&self.from);
+        bytes.extend_from_slice(&self.to);
+        bytes.extend_from_slice(&self.amount.to_be_bytes());
+        bytes.extend_from_slice(&self.nonce.to_be_bytes());
+        bytes.extend_from_slice(&self.hashtimer.time_prefix);
+        bytes.extend_from_slice(&self.hashtimer.hash_suffix);
+        bytes.extend_from_slice(&self.timestamp.0.to_be_bytes());
+        bytes
+    }
+
+    /// Bytes used for hashing (includes signature)
+    fn canonical_bytes(&self) -> Vec<u8> {
+        let mut bytes = self.message_bytes();
+        bytes.extend_from_slice(&self.signature);
+        bytes
+    }
+
+    /// Sign the transaction using an Ed25519 private key
     pub fn sign(&mut self, private_key: &[u8; 32]) -> Result<(), String> {
-        // In a real implementation, this would use proper cryptographic signing
-        // For now, we'll create a deterministic signature based on the transaction data
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(&self.from);
-        hasher.update(&self.to);
-        hasher.update(&self.amount.to_be_bytes());
-        hasher.update(&self.nonce.to_be_bytes());
-        hasher.update(&self.hashtimer.to_hex().as_bytes());
-        hasher.update(private_key);
-        
-        let hash = hasher.finalize();
-        self.signature.copy_from_slice(&hash.as_bytes()[0..64]);
-        
-        // Set the transaction ID
-        self.id.copy_from_slice(&hash.as_bytes()[0..32]);
-        
+        let signing_key = SigningKey::try_from(private_key.as_slice())
+            .map_err(|e| format!("invalid private key: {e}"))?;
+        let expected_public_key = signing_key.verifying_key().to_bytes();
+
+        if self.from != expected_public_key {
+            return Err("private key does not match transaction sender".into());
+        }
+
+        let message = self.message_bytes();
+        let signature = signing_key.sign(&message);
+        self.signature.copy_from_slice(&signature.to_bytes());
+        self.id = self.hash();
+
         Ok(())
     }
 
     /// Verify the transaction signature
     pub fn verify(&self) -> bool {
-        // In a real implementation, this would verify the cryptographic signature
-        // For now, we'll verify that the signature is consistent with the transaction data
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(&self.from);
-        hasher.update(&self.to);
-        hasher.update(&self.amount.to_be_bytes());
-        hasher.update(&self.nonce.to_be_bytes());
-        hasher.update(&self.hashtimer.to_hex().as_bytes());
-        
-        let hash = hasher.finalize();
-        let expected_signature = &hash.as_bytes()[0..64];
-        
-        self.signature == expected_signature
+        match VerifyingKey::from_bytes(&self.from) {
+            Ok(verifying_key) => {
+                let signature = Signature::from_bytes(&self.signature);
+                verifying_key
+                    .verify(&self.message_bytes(), &signature)
+                    .is_ok()
+            }
+            Err(_) => false,
+        }
     }
 
     /// Get transaction hash
     pub fn hash(&self) -> [u8; 32] {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(&self.id);
-        hasher.update(&self.from);
-        hasher.update(&self.to);
-        hasher.update(&self.amount.to_be_bytes());
-        hasher.update(&self.nonce.to_be_bytes());
-        hasher.update(&self.signature);
-        hasher.update(&self.hashtimer.to_hex().as_bytes());
-        
-        let hash = hasher.finalize();
+        let hash = blake3::hash(&self.canonical_bytes());
         let mut result = [0u8; 32];
-        result.copy_from_slice(&hash.as_bytes()[0..32]);
+        result.copy_from_slice(hash.as_bytes());
         result
     }
 
@@ -118,22 +128,35 @@ impl Transaction {
         if self.amount == 0 {
             return false;
         }
-        
+
         if self.from == self.to {
             return false;
         }
-        
+
         // Verify signature
         if !self.verify() {
             return false;
         }
-        
+
+        if self.id != self.hash() {
+            return false;
+        }
+
         // Verify HashTimer is valid
         let payload = Self::create_payload(&self.from, &self.to, self.amount, self.nonce);
-        let nonce_bytes = random_nonce(); // In real implementation, this would be stored
-        let node_id = b"local_node";
-        let _expected_hashtimer = HashTimer::derive("transaction", self.timestamp, "transaction".as_bytes(), &payload, &nonce_bytes, node_id);
-        
+        let expected_hashtimer = HashTimer::derive(
+            "transaction",
+            self.timestamp,
+            b"transaction",
+            &payload,
+            &self.nonce.to_be_bytes(),
+            &self.from,
+        );
+
+        if expected_hashtimer != self.hashtimer {
+            return false;
+        }
+
         // HashTimer should be consistent (allowing for time differences)
         self.hashtimer.time().0 <= IppanTimeMicros::now().0
     }
@@ -142,16 +165,27 @@ impl Transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::SigningKey;
+    use rand_core::{OsRng, RngCore};
+
+    fn generate_account() -> ([u8; 32], [u8; 32]) {
+        let mut rng = OsRng;
+        let mut secret = [0u8; 32];
+        rng.fill_bytes(&mut secret);
+        let signing_key = SigningKey::try_from(secret.as_slice()).unwrap();
+        let public_key = signing_key.verifying_key().to_bytes();
+        (secret, public_key)
+    }
 
     #[test]
     fn test_transaction_creation() {
-        let from = [1u8; 32];
-        let to = [2u8; 32];
+        let (_, from) = generate_account();
+        let (_, to) = generate_account();
         let amount = 1000;
         let nonce = 1;
-        
+
         let tx = Transaction::new(from, to, amount, nonce);
-        
+
         assert_eq!(tx.from, from);
         assert_eq!(tx.to, to);
         assert_eq!(tx.amount, amount);
@@ -161,9 +195,10 @@ mod tests {
 
     #[test]
     fn test_transaction_signing() {
-        let mut tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
-        let private_key = [3u8; 32];
-        
+        let (private_key, from) = generate_account();
+        let (_, to) = generate_account();
+        let mut tx = Transaction::new(from, to, 1000, 1);
+
         let result = tx.sign(&private_key);
         assert!(result.is_ok());
         assert_ne!(tx.signature, [0u8; 64]);
@@ -172,37 +207,39 @@ mod tests {
 
     #[test]
     fn test_transaction_verification() {
-        let mut tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
-        let private_key = [3u8; 32];
-        
+        let (private_key, from) = generate_account();
+        let (_, to) = generate_account();
+        let mut tx = Transaction::new(from, to, 1000, 1);
+
         tx.sign(&private_key).unwrap();
         assert!(tx.verify());
     }
 
     #[test]
     fn test_transaction_validation() {
-        let mut tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
-        let private_key = [3u8; 32];
-        
+        let (private_key, from) = generate_account();
+        let (_, to) = generate_account();
+        let mut tx = Transaction::new(from, to, 1000, 1);
+
         tx.sign(&private_key).unwrap();
         assert!(tx.is_valid());
     }
 
     #[test]
     fn test_invalid_transaction_zero_amount() {
-        let mut tx = Transaction::new([1u8; 32], [2u8; 32], 0, 1);
-        let private_key = [3u8; 32];
-        
+        let (private_key, from) = generate_account();
+        let (_, to) = generate_account();
+        let mut tx = Transaction::new(from, to, 0, 1);
+
         tx.sign(&private_key).unwrap();
         assert!(!tx.is_valid());
     }
 
     #[test]
     fn test_invalid_transaction_same_sender_recipient() {
-        let addr = [1u8; 32];
+        let (private_key, addr) = generate_account();
         let mut tx = Transaction::new(addr, addr, 1000, 1);
-        let private_key = [3u8; 32];
-        
+
         tx.sign(&private_key).unwrap();
         assert!(!tx.is_valid());
     }
