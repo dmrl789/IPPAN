@@ -214,6 +214,17 @@ sudo ufw allow 9000/tcp  # P2P (Node 1)
 sudo ufw allow 9001/tcp  # P2P (Node 2)
 ```
 
+### **NAT Traversal Configuration**
+
+When deploying behind consumer routers or cloud firewalls, enable the new P2P NAT helpers:
+
+- Set `P2P_ENABLE_UPNP=true` to request an automatic port mapping from the local router. The node falls back gracefully if UPnP is unavailable.
+- Override the advertised address with `P2P_PUBLIC_HOST` when running behind reverse proxies or static NAT rules.
+- Customise the public IP discovery endpoints with `P2P_EXTERNAL_IP_SERVICES` (comma separated URLs) if your environment restricts outbound traffic.
+- Tune `P2P_DISCOVERY_INTERVAL_SECS` and `P2P_ANNOUNCE_INTERVAL_SECS` to control how frequently the node refreshes peer connectivity.
+
+By default every node now ships with bootstrap peers `http://188.245.97.41:9000` and `http://135.181.145.174:9000`, ensuring fresh deployments automatically join the public network.
+
 ---
 
 ## 📊 **Monitoring**
