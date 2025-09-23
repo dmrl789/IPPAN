@@ -1,0 +1,12 @@
+name: "Apply patch"
+description: "Paste a unified diff to be applied and opened as a PR"
+labels: ["auto-patch"]
+body:
+  - type: textarea
+    id: patch
+    attributes:
+      label: Paste unified diff (git format-patch or git diff)
+      description: Must start with lines like 'diff --git a/... b/...'
+      render: shell
+    validations:
+      required: true
