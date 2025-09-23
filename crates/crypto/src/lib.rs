@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::{OsRng, RngCore};
 
 /// Cryptographic key pair for IPPAN
@@ -17,7 +17,7 @@ impl KeyPair {
         rng.fill_bytes(&mut secret_key);
         let signing_key = SigningKey::from_bytes(&secret_key.into());
         let verifying_key = signing_key.verifying_key();
-        
+
         Self {
             signing_key,
             verifying_key,
@@ -79,7 +79,7 @@ mod tests {
         let keypair = KeyPair::generate();
         let public_key = keypair.public_key();
         let private_key = keypair.private_key();
-        
+
         assert_ne!(public_key, [0u8; 32]);
         assert_ne!(private_key, [0u8; 32]);
     }
@@ -88,10 +88,10 @@ mod tests {
     fn test_signing_and_verification() {
         let keypair = KeyPair::generate();
         let message = b"Hello, IPPAN!";
-        
+
         let signature = keypair.sign(message);
         let result = keypair.verify(message, &signature);
-        
+
         assert!(result.is_ok());
     }
 
@@ -100,7 +100,7 @@ mod tests {
         let data = b"test data";
         let hash1 = CryptoUtils::hash(data);
         let hash2 = CryptoUtils::hash(data);
-        
+
         assert_eq!(hash1, hash2);
         assert_ne!(hash1, [0u8; 32]);
     }
