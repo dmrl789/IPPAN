@@ -62,8 +62,8 @@ async function apiSendPayment(_from: string, _to: string, _amount: number, _memo
 
 async function apiListChannels(): Promise<Channel[]> {
   return new Promise(r=>setTimeout(()=>r([
-    { id: "ch1", peer: "iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X", state:"Active", capacity: 300, localBalance:150, remoteBalance:150, openedAt: nowMinus(72) },
-          { id: "ch2", peer: "iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X", state:"Pending", capacity: 100, localBalance:75, remoteBalance:25, openedAt: nowMinus(24*10) },
+    { id: "ch1", peer: "i0000000000000000000000000000000000000000000000000000000000000000", state:"Active", capacity: 300, localBalance:150, remoteBalance:150, openedAt: nowMinus(72) },
+          { id: "ch2", peer: "i1111111111111111111111111111111111111111111111111111111111111111", state:"Pending", capacity: 100, localBalance:75, remoteBalance:25, openedAt: nowMinus(24*10) },
           { id: "ch3", peer: "iEBSQkH2jVt5B1jq2vMmO3b7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8X", state:"Active", capacity: 220, localBalance:90, remoteBalance:130, openedAt: nowMinus(24*2) }
   ]),160));
 }
@@ -80,7 +80,7 @@ async function apiSendMicro(id: string, amount: number): Promise<{ok:boolean}> {
 
 async function apiListStreams(): Promise<Stream[]> {
   return new Promise(r=>setTimeout(()=>r([
-    { id:"st1", channelId:"ch1", peer:"iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X", rate:0.02, startedAt: nowMinus(1), paused:false }
+    { id:"st1", channelId:"ch1", peer:"i0000000000000000000000000000000000000000000000000000000000000000", rate:0.02, startedAt: nowMinus(1), paused:false }
   ]),120));
 }
 async function apiStartStream(channelId: string, rate: number): Promise<{ok:boolean; stream:Stream}> {
@@ -122,8 +122,8 @@ async function apiToggleDevice(id: string, enabled: boolean): Promise<{ok:boolea
 
 async function apiListInvoices(): Promise<Invoice[]> {
   return new Promise(r=>setTimeout(()=>r([
-    { id:"inv1", to:"iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X", amount:25.5, memo:"Lunch payment", status:"Paid", link:"https://pay.ippan/inv1", createdAt: nowMinus(4), expiresAt: nowMinus(-24) },
-          { id:"inv2", to:"iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X", amount:500, memo:"Project payment", status:"Pending", link:"https://pay.ippan/inv2", createdAt: nowMinus(26), expiresAt: nowMinus(-1) },
+    { id:"inv1", to:"i0000000000000000000000000000000000000000000000000000000000000000", amount:25.5, memo:"Lunch payment", status:"Paid", link:"https://pay.ippan/inv1", createdAt: nowMinus(4), expiresAt: nowMinus(-24) },
+          { id:"inv2", to:"i1111111111111111111111111111111111111111111111111111111111111111", amount:500, memo:"Project payment", status:"Pending", link:"https://pay.ippan/inv2", createdAt: nowMinus(26), expiresAt: nowMinus(-1) },
   ]),160));
 }
 async function apiCreateInvoice(to: string, amount: number, memo?: string, ttlMins=60): Promise<{ok:boolean; invoice:Invoice}> {
@@ -181,8 +181,8 @@ export default function PaymentsM2M({ walletAddress, walletConnected }: Payments
 
   // Activity + KPIs
   const [activity, setActivity] = useState<Activity[]>([
-    { id: "a1", title:"Payment Sent", subtitle:"To: iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X • Lunch payment", delta:-25.50, when: nowMinus(2), status:"Confirmed" },
-          { id: "a2", title:"Payment Received", subtitle:"From: iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X • Project payment", delta:+500.00, when: nowMinus(24), status:"Confirmed" },
+    { id: "a1", title:"Payment Sent", subtitle:"To: i0000000000000000000000000000000000000000000000000000000000000000 • Lunch payment", delta:-25.50, when: nowMinus(2), status:"Confirmed" },
+          { id: "a2", title:"Payment Received", subtitle:"From: i1111111111111111111111111111111111111111111111111111111111111111 • Project payment", delta:+500.00, when: nowMinus(24), status:"Confirmed" },
       { id: "a3", title:"M2M Channel Opened", subtitle:"With: iEBSQkH2jVt5B1jq2vMmO3b7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8X • 100 IPN", delta:0, when: nowMinus(24*3), status:"Active" },
   ]);
 

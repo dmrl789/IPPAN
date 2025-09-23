@@ -42,7 +42,7 @@ async function apiNetworkStats(): Promise<NetworkStats> {
 async function apiListValidators(): Promise<Validator[]> {
   const rows: Validator[] = Array.from({ length: 50 }).map((_, i) => ({
     id: `val${i+1}`,
-    address: "i" + (1000+i).toString(16).padEnd(39,"a").slice(0,39),
+    address: "i" + (1000+i).toString(16).padEnd(64,"a").slice(0,64),
     moniker: `Validator ${i+1}`,
     commission: Math.round((Math.random()*10+2)*10)/10, // 2–12%
     uptimePct: Math.round((96 + Math.random()*4)*10)/10,

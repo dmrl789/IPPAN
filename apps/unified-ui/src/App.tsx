@@ -74,7 +74,7 @@ export default function App() {
         connect: async () => {
           // For now, return a default address - in a real app this would connect to a wallet
           return {
-            address: "iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X",
+            address: "i0000000000000000000000000000000000000000000000000000000000000000",
             balance: "0.0" // Will be fetched from blockchain
           };
         },
@@ -84,7 +84,7 @@ export default function App() {
           return 'real_signature_' + btoa(message).slice(0, 32);
         },
         getAddress: async () => {
-          return "iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X";
+          return "i0000000000000000000000000000000000000000000000000000000000000000";
         }
       };
     }
