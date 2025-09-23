@@ -122,6 +122,6 @@ PY
         if: success() && contains(github.event.issue.labels.*.name, 'automerge')
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
-          token: ${{ secrets.BOT_TOKEN }}
+          token: ${{ github.token }}
           pull-request-number: ${{ steps.cpr.outputs['pull-request-number'] }}
           merge-method: squash
