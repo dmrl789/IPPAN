@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Get the current API base URL
 function getApiBaseUrl(): string {
-  return (window as any).API_BASE_URL || 'http://localhost:3001';
+  return (window as any).API_BASE_URL || 'http://localhost:8080';
 }
 
 // Wallet API functions
@@ -50,7 +50,19 @@ export async function submitTransaction(transaction: {
 }): Promise<{ success: boolean; tx_id?: string; message?: string }> {
   try {
     const response = await axios.post(`${getApiBaseUrl()}/api/v1/transaction`, transaction);
-    return response.data;
+    const body = response.data;
+
+    if (body?.success) {
+      return {
+        success: true,
+        tx_id: body?.data?.tx_hash,
+      };
+    }
+
+    return {
+      success: false,
+      message: body?.error || 'Failed to submit transaction',
+    };
   } catch (error) {
     console.error('Error submitting transaction:', error);
     return {

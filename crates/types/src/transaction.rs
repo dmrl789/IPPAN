@@ -47,6 +47,11 @@ impl Transaction {
         }
     }
 
+    /// Recompute the transaction identifier from its contents.
+    pub fn refresh_id(&mut self) {
+        self.id = self.compute_hash();
+    }
+
     /// Create payload for HashTimer computation
     fn create_payload(from: &[u8; 32], to: &[u8; 32], amount: u64, nonce: u64) -> Vec<u8> {
         let mut payload = Vec::new();
@@ -76,9 +81,7 @@ impl Transaction {
         let mut output = [0u8; 64];
         hasher.finalize_xof().fill(&mut output);
         self.signature.copy_from_slice(&output);
-
-        // Set the transaction ID using the first 32 bytes of the extended output
-        self.id.copy_from_slice(&output[..32]);
+        self.refresh_id();
 
         Ok(())
     }
@@ -102,8 +105,11 @@ impl Transaction {
 
     /// Get transaction hash
     pub fn hash(&self) -> [u8; 32] {
+        self.compute_hash()
+    }
+
+    fn compute_hash(&self) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(&self.id);
         hasher.update(&self.from);
         hasher.update(&self.to);
         hasher.update(&self.amount.to_be_bytes());
@@ -133,20 +139,12 @@ impl Transaction {
             return false;
         }
 
-        // Verify HashTimer is valid
-        let payload = Self::create_payload(&self.from, &self.to, self.amount, self.nonce);
-        let nonce_bytes = random_nonce(); // In real implementation, this would be stored
-        let node_id = b"local_node";
-        let _expected_hashtimer = HashTimer::derive(
-            "transaction",
-            self.timestamp,
-            "transaction".as_bytes(),
-            &payload,
-            &nonce_bytes,
-            node_id,
-        );
+        // Ensure the ID matches the computed hash
+        if self.id != self.compute_hash() {
+            return false;
+        }
 
-        // HashTimer should be consistent (allowing for time differences)
+        // Verify HashTimer is valid
         self.hashtimer.time().0 <= IppanTimeMicros::now().0
     }
 }

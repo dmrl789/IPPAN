@@ -167,15 +167,15 @@ async function apiSendPayment(from: string, to: string, amount: number, fee: num
   return new Promise<{ ok: boolean }>((r) => setTimeout(() => r({ ok: true }), 450));
 }
 
+const ADDRESS_REGEX = /^i[0-9a-fA-F]{64}$/;
+
 // Check if address exists in explorer
 async function apiExplorerCheckAddressExists(addr: string): Promise<boolean> {
-  // Validate address format: i + 38 alphanumeric characters
-  const addressRegex = /^i[A-Za-z0-9]{38}$/;
-  if (!addressRegex.test(addr)) {
-    throw new Error('Invalid address format. Must be i followed by 38 alphanumeric characters.');
+  if (!ADDRESS_REGEX.test(addr)) {
+    throw new Error('Invalid address format. Must be i followed by 64 hexadecimal characters.');
   }
   // simulate explorer lookup (80% chance it exists)
-  return new Promise((r) => setTimeout(() => r(Math.random() > 0.2 && /^i[A-Za-z0-9]{38}$/.test(addr)), 180));
+  return new Promise((r) => setTimeout(() => r(Math.random() > 0.2 && ADDRESS_REGEX.test(addr)), 180));
 }
 
 async function apiRates(): Promise<Fx> {
@@ -201,43 +201,30 @@ const addressFromSeed = async (seed: string): Promise<string> => {
     // Convert hash to Uint8Array
     const hashArray = new Uint8Array(hashBuffer);
     
-    // Use the hash to generate a deterministic but varied address
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    
-    // Generate exactly 38 characters using the hash data
-    for (let i = 0; i < 38; i++) {
-      // Use different bytes from the hash for each position
-      const hashIndex = i % hashArray.length;
-      const hashByte = hashArray[hashIndex];
-      
-      // Mix with position to ensure variety
-      const mixedValue = (hashByte + i * 7) % chars.length;
-      result += chars.charAt(mixedValue);
-    }
-    
-    return "i" + result; // i + 38 alphanumeric = 39 total
+    const hashHex = Array.from(hashArray)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    return "i" + hashHex;
   } catch (error) {
     // Fallback to a simpler method if crypto.subtle is not available
     console.warn('Web Crypto API not available, using fallback method');
-    
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+    const chars = '0123456789abcdef';
     let result = '';
-    let hash = 0;
-    
-    // Simple hash function
+    let hash = 0x9e3779b9;
+
     for (let i = 0; i < seed.length; i++) {
-      hash = ((hash << 5) - hash + seed.charCodeAt(i)) & 0xFFFFFFFF;
+      hash ^= seed.charCodeAt(i);
+      hash = (hash * 2654435761) >>> 0;
     }
-    
-    // Generate exactly 38 characters
-    for (let i = 0; i < 38; i++) {
-      const mixedHash = (hash + i * 31) & 0xFFFFFFFF;
-      const charIndex = mixedHash % chars.length;
-      result += chars.charAt(charIndex);
-      hash = (hash * 33 + mixedHash) & 0xFFFFFFFF;
+
+    for (let i = 0; i < 64; i++) {
+      hash = (hash * 1664525 + 1013904223) >>> 0;
+      const index = (hash >>> 24) & 0x0f;
+      result += chars[index];
     }
-    
+
     return "i" + result;
   }
 };
@@ -252,43 +239,30 @@ const addressFromPrivKey = async (pk: string): Promise<string> => {
     // Convert hash to Uint8Array
     const hashArray = new Uint8Array(hashBuffer);
     
-    // Use the hash to generate a deterministic but varied address
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    
-    // Generate exactly 38 characters using the hash data
-    for (let i = 0; i < 38; i++) {
-      // Use different bytes from the hash for each position
-      const hashIndex = i % hashArray.length;
-      const hashByte = hashArray[hashIndex];
-      
-      // Mix with position to ensure variety
-      const mixedValue = (hashByte + i * 11) % chars.length;
-      result += chars.charAt(mixedValue);
-    }
-    
-    return "i" + result; // i + 38 alphanumeric = 39 total
+    const hashHex = Array.from(hashArray)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    return "i" + hashHex;
   } catch (error) {
     // Fallback to a simpler method if crypto.subtle is not available
     console.warn('Web Crypto API not available, using fallback method');
-    
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+    const chars = '0123456789abcdef';
     let result = '';
-    let hash = 0;
-    
-    // Simple hash function
+    let hash = 0x9e3779b9;
+
     for (let i = 0; i < pk.length; i++) {
-      hash = ((hash << 5) - hash + pk.charCodeAt(i)) & 0xFFFFFFFF;
+      hash ^= pk.charCodeAt(i);
+      hash = (hash * 2246822519) >>> 0;
     }
-    
-    // Generate exactly 38 characters
-    for (let i = 0; i < 38; i++) {
-      const mixedHash = (hash + i * 37) & 0xFFFFFFFF;
-      const charIndex = mixedHash % chars.length;
-      result += chars.charAt(charIndex);
-      hash = (hash * 37 + mixedHash) & 0xFFFFFFFF;
+
+    for (let i = 0; i < 64; i++) {
+      hash = (hash * 3266489917 + 374761393) >>> 0;
+      const index = (hash >>> 24) & 0x0f;
+      result += chars[index];
     }
-    
+
     return "i" + result;
   }
 };
@@ -476,7 +450,7 @@ export default function WalletOverview() {
   // Update fee preview when inputs change
   useEffect(() => {
     const amt = Number(sendAmount);
-    if (!address || !/^i[A-Za-z0-9]{38}$/.test(sendTo) || !amt || amt <= 0) { 
+    if (!address || !ADDRESS_REGEX.test(sendTo) || !amt || amt <= 0) {
       setFeePreview(null); 
       return; 
     }
@@ -521,15 +495,15 @@ export default function WalletOverview() {
   function onConnectByAddress() {
     const trimmedAddr = inputAddr.trim();
     
-    // SECURITY FIX: Proper IPPAN address validation (35 characters: i + 34 alphanumeric)
-    if (!/^i[A-Za-z0-9]{34}$/.test(trimmedAddr)) { 
-      alert("Enter a valid IPPAN address (i followed by 34 alphanumeric characters)"); 
-      return; 
+    // SECURITY FIX: Proper IPPAN address validation (65 characters: i + 64 hex digits)
+    if (!ADDRESS_REGEX.test(trimmedAddr)) {
+      alert("Enter a valid IPPAN address (i followed by 64 hexadecimal characters)");
+      return;
     }
-    
+
     // Additional validation: check for common invalid patterns
-    if (trimmedAddr.length !== 35) {
-      alert("IPPAN address must be exactly 35 characters long");
+    if (trimmedAddr.length !== 65) {
+      alert("IPPAN address must be exactly 65 characters long");
       return;
     }
     
@@ -560,7 +534,7 @@ export default function WalletOverview() {
       alert("Watch-only wallet cannot sign transactions. Connect a signer."); 
       return; 
     }
-          if (!/^i[A-Za-z0-9]{38}$/.test(sendTo.trim())) { 
+          if (!ADDRESS_REGEX.test(sendTo.trim())) {
       alert("Invalid recipient address"); 
       return; 
     }
@@ -820,10 +794,10 @@ export default function WalletOverview() {
                       const addr = newContactAddr.trim();
                       console.log('Add button clicked:', { name, addr, addrLength: addr.length });
                       
-                      if (!name || !/^i[A-Za-z0-9]{38}$/.test(addr)) { 
+                      if (!name || !ADDRESS_REGEX.test(addr)) {
                         console.log('Validation failed:', { 
                           hasName: !!name, 
-                          validAddress: /^i[A-Za-z0-9]{38}$/.test(addr),
+                        validAddress: ADDRESS_REGEX.test(addr),
                           addressLength: addr.length,
                           addressStart: addr.substring(0, 5)
                         });

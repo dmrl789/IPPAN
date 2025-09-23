@@ -26,7 +26,7 @@ export default function AccountsPage() {
   useEffect(() => {
     const mockAccounts: Account[] = [
       {
-        address: "iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X",
+        address: "i0000000000000000000000000000000000000000000000000000000000000000",
         balance: "1000.0",
         nonce: 42,
         transactionCount: 156,
@@ -35,7 +35,7 @@ export default function AccountsPage() {
         type: 'user'
       },
       {
-        address: "iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X",
+        address: "i1111111111111111111111111111111111111111111111111111111111111111",
         balance: "2500.0",
         nonce: 23,
         transactionCount: 89,
@@ -46,7 +46,7 @@ export default function AccountsPage() {
         validatorStatus: 'active'
       },
       {
-        address: "iABC123def456ghi789jkl012mno345pqr678stu901vwx234yz",
+        address: "i2222222222222222222222222222222222222222222222222222222222222222",
         balance: "5000.0",
         nonce: 67,
         transactionCount: 312,
@@ -57,7 +57,7 @@ export default function AccountsPage() {
         validatorStatus: 'active'
       },
       {
-        address: "iXYZ987wvu654tsr321qpo098nml765kji432hgf109edc876baz",
+        address: "i3333333333333333333333333333333333333333333333333333333333333333",
         balance: "750.5",
         nonce: 12,
         transactionCount: 45,
@@ -66,7 +66,7 @@ export default function AccountsPage() {
         type: 'user'
       },
       {
-        address: "iDEF456ghi789jkl012mno345pqr678stu901vwx234yz567abc",
+        address: "i4444444444444444444444444444444444444444444444444444444444444444",
         balance: "15000.0",
         nonce: 34,
         transactionCount: 189,
@@ -77,7 +77,7 @@ export default function AccountsPage() {
         validatorStatus: 'inactive'
       },
       {
-        address: "iGHI789jkl012mno345pqr678stu901vwx234yz567abc890def",
+        address: "i5555555555555555555555555555555555555555555555555555555555555555",
         balance: "250.0",
         nonce: 8,
         transactionCount: 23,
@@ -86,7 +86,7 @@ export default function AccountsPage() {
         type: 'user'
       },
       {
-        address: "iJKL012mno345pqr678stu901vwx234yz567abc890def123ghi",
+        address: "i6666666666666666666666666666666666666666666666666666666666666666",
         balance: "3200.0",
         nonce: 156,
         transactionCount: 445,
@@ -95,7 +95,7 @@ export default function AccountsPage() {
         type: 'user'
       },
       {
-        address: "iMNO345pqr678stu901vwx234yz567abc890def123ghi456jkl",
+        address: "i7777777777777777777777777777777777777777777777777777777777777777",
         balance: "850.0",
         nonce: 29,
         transactionCount: 78,

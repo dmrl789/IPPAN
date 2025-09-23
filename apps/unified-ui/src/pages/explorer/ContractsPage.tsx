@@ -22,32 +22,32 @@ export default function ContractsPage() {
   useEffect(() => {
     const mockContracts: Contract[] = [
       {
-        address: 'iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X',
+        address: 'i8888888888888888888888888888888888888888888888888888888888888888',
         name: 'AI Job Marketplace',
         type: 'ai_marketplace',
         verified: true,
-                 creator: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+        creator: 'i9999999999999999999999999999999999999999999999999999999999999999',
         deployedAt: '2024-01-15T10:30:00Z',
         transactions: 156,
         balance: '0.00 IPPAN',
         sourceCode: '// AI Job Marketplace Contract\ncontract AIJobMarketplace { ... }'
       },
       {
-        address: 'iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X',
+        address: 'iaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         name: 'Staking Pool',
         type: 'staking',
         verified: true,
-                 creator: 'iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X',
+        creator: 'iaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         deployedAt: '2024-02-20T14:15:00Z',
         transactions: 89,
         balance: '125,000.00 IPPAN'
       },
       {
-        address: 'iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X',
+        address: 'ibbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         name: 'Governance DAO',
         type: 'governance',
         verified: false,
-        creator: '0x9876543210fedcba9876543210fedcba9876543210',
+        creator: 'icccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
         deployedAt: '2024-03-10T09:45:00Z',
         transactions: 234,
         balance: '0.00 IPPAN'

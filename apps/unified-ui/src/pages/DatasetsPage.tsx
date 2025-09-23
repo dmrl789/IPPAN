@@ -64,7 +64,7 @@ const generateMockDatasets = (): Dataset[] => [
     visibility: 'public',
     size: 150 * 1024 * 1024 * 1024, // 150 GB
     records: 14000000,
-    owner: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+    owner: 'i0000000000000000000000000000000000000000000000000000000000000000',
     createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
     updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     version: 'v2.1',
@@ -148,7 +148,7 @@ const generateMockDatasets = (): Dataset[] => [
     visibility: 'restricted',
     size: 2.5 * 1024 * 1024 * 1024, // 2.5 GB
     records: 50000000,
-    owner: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+    owner: 'i0000000000000000000000000000000000000000000000000000000000000000',
     createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
     updatedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
     version: 'v0.9',
@@ -332,7 +332,7 @@ export default function DatasetsPage() {
       visibility: uploadForm.visibility,
       size: uploadForm.file?.size || 0,
       records: Math.floor(Math.random() * 1000000),
-      owner: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+      owner: 'i0000000000000000000000000000000000000000000000000000000000000000',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 'v1.0',

@@ -3,12 +3,13 @@ use clap::{Arg, Command};
 use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
-use ippan_rpc::{start_server, AppState};
+use ippan_rpc::{start_server, AppState, ConsensusHandle};
 use ippan_storage::SledStorage;
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -277,9 +278,26 @@ async fn main() -> Result<()> {
         block_reward: config.block_reward,
     };
 
-    let mut consensus = PoAConsensus::new(consensus_config, storage.clone(), config.validator_id);
-    consensus.start().await?;
+    let consensus = Arc::new(Mutex::new(PoAConsensus::new(
+        consensus_config,
+        storage.clone(),
+        config.validator_id,
+    )));
+
+    {
+        let mut guard = consensus.lock().await;
+        guard.start().await?;
+    }
     info!("Consensus engine started");
+
+    let consensus_handle = {
+        let guard = consensus.lock().await;
+        ConsensusHandle::new(
+            consensus.clone(),
+            guard.get_tx_sender(),
+            guard.get_mempool_handle(),
+        )
+    };
 
     // Initialize P2P network
     let p2p_config = P2PConfig {
@@ -319,6 +337,8 @@ async fn main() -> Result<()> {
         start_time,
         peer_count: peer_count.clone(),
         p2p_network: Some(p2p_network_arc.clone()),
+        node_id: config.node_id.clone(),
+        consensus: Some(consensus_handle.clone()),
     };
 
     let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);
@@ -403,7 +423,10 @@ async fn main() -> Result<()> {
     info!("Shutting down IPPAN node");
 
     // Stop components gracefully
-    consensus.stop().await?;
+    {
+        let mut guard = consensus.lock().await;
+        guard.stop().await?;
+    }
     // Note: We can't call stop() on the Arc-wrapped network
     // In a real implementation, we'd need a different approach
     info!("P2P network shutdown requested");

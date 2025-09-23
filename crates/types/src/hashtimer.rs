@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use blake3::Hasher as Blake3;
 use rand_core::{OsRng, RngCore};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// IPPAN Time: microsecond precision timestamp
@@ -93,7 +93,7 @@ impl HashTimer {
         hasher.update(payload);
         hasher.update(nonce);
         hasher.update(node_id);
-        
+
         let hash = hasher.finalize();
         let mut suffix = [0u8; 25];
         // Take first 25 bytes (200 bits) of the blake3 hash
@@ -111,7 +111,10 @@ impl HashTimer {
     /// Parse from hex string
     pub fn from_hex(hex_str: &str) -> Result<Self, String> {
         if hex_str.len() != 64 {
-            return Err(format!("HashTimer hex must be 64 characters, got {}", hex_str.len()));
+            return Err(format!(
+                "HashTimer hex must be 64 characters, got {}",
+                hex_str.len()
+            ));
         }
 
         let time_hex = &hex_str[0..14];
@@ -165,7 +168,14 @@ mod tests {
         let nonce = random_nonce();
         let node_id = b"test_node_id";
 
-        let ht1 = HashTimer::derive("test", IppanTimeMicros(1234567890123456), domain.as_bytes(), payload, &nonce, node_id);
+        let ht1 = HashTimer::derive(
+            "test",
+            IppanTimeMicros(1234567890123456),
+            domain.as_bytes(),
+            payload,
+            &nonce,
+            node_id,
+        );
         let hex_str = ht1.to_hex();
         let ht2 = HashTimer::from_hex(&hex_str).unwrap();
 
@@ -199,7 +209,8 @@ mod tests {
         let time = IppanTimeMicros(1234567890123456);
 
         let ht_tx = HashTimer::derive("tx", time, domain.as_bytes(), payload, &nonce, node_id);
-        let ht_block = HashTimer::derive("block", time, domain.as_bytes(), payload, &nonce, node_id);
+        let ht_block =
+            HashTimer::derive("block", time, domain.as_bytes(), payload, &nonce, node_id);
 
         assert_ne!(ht_tx, ht_block);
         assert_ne!(ht_tx.to_hex(), ht_block.to_hex());
@@ -213,10 +224,20 @@ mod tests {
         let nonce = random_nonce();
         let node_id = b"test";
 
-        let ht = HashTimer::derive("test", original_time, domain.as_bytes(), payload, &nonce, node_id);
+        let ht = HashTimer::derive(
+            "test",
+            original_time,
+            domain.as_bytes(),
+            payload,
+            &nonce,
+            node_id,
+        );
         let extracted_time = ht.time();
 
         // Should be close to original (within 56-bit precision)
-        assert_eq!(original_time.0 & 0x00FFFFFFFFFFFFFF, extracted_time.0 & 0x00FFFFFFFFFFFFFF);
+        assert_eq!(
+            original_time.0 & 0x00FFFFFFFFFFFFFF,
+            extracted_time.0 & 0x00FFFFFFFFFFFFFF
+        );
     }
 }

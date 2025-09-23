@@ -35,7 +35,7 @@ export default function WalletPage() {
             </Field>
             <Button 
               onClick={() => {
-                setAddress("iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X");
+                setAddress("i0000000000000000000000000000000000000000000000000000000000000000");
                 setShowConnect(true);
               }}
               className="bg-blue-600 hover:bg-blue-700"

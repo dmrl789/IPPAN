@@ -1,11 +1,12 @@
 import axios from 'axios';
 
 // Dynamic API configuration - can be changed at runtime
-let API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000';
+let API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
 
 // Function to update API base URL
 export function setApiBaseUrl(url: string) {
   API_BASE_URL = url;
+  api.defaults.baseURL = API_BASE_URL;
 }
 
 // Function to get current API base URL
@@ -69,10 +70,12 @@ export async function getDatasets(): Promise<Dataset[]> {
 // Wallet API - Updated for real IPPAN nodes
 export interface WalletBalance {
   address: string;
-  balance: string;
-  staked_amount: string;
-  rewards: string;
-  pending_transactions: any[];
+  balance: number;
+  staked_amount: number;
+  rewards: number;
+  nonce: number;
+  pending_transactions: string[];
+  staked?: number;
 }
 
 export async function getWalletBalance(address: string): Promise<WalletBalance> {
@@ -82,7 +85,14 @@ export async function getWalletBalance(address: string): Promise<WalletBalance> 
 
 export async function sendTransaction(transaction: any): Promise<string> {
   const response = await api.post('/api/v1/transaction', transaction);
-  return response.data;
+  const body = response.data;
+
+  if (body?.success && body?.data?.tx_hash) {
+    return body.data.tx_hash as string;
+  }
+
+  const error = body?.error || 'Failed to submit transaction';
+  throw new Error(error);
 }
 
 // Domain API
@@ -125,6 +135,26 @@ export interface NodeStatus {
   network_peers: number;
   uptime_seconds: number;
   version: string;
+  node: {
+    is_running: boolean;
+    uptime_seconds: number;
+    version: string;
+    node_id: string;
+  };
+  network: {
+    connected_peers: number;
+    known_peers: number;
+    total_peers: number;
+  };
+  mempool: {
+    total_transactions: number;
+    pending_transactions: number;
+  };
+  blockchain: {
+    current_height: number;
+    total_blocks: number;
+    total_transactions: number;
+  };
 }
 
 export interface NetworkStats {

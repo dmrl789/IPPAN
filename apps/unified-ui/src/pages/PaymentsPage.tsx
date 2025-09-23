@@ -68,7 +68,7 @@ export default function PaymentsPage() {
               <div className="flex justify-between items-center">
                 <div>
                   <div className="font-medium">Channel #1</div>
-                                     <div className="text-sm text-gray-600">With: iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X</div>
+                                     <div className="text-sm text-gray-600">With: i0000000000000000000000000000000000000000000000000000000000000000</div>
                 </div>
                 <Badge variant="success">Active</Badge>
               </div>
@@ -82,7 +82,7 @@ export default function PaymentsPage() {
               <div className="flex justify-between items-center">
                 <div>
                   <div className="font-medium">Channel #2</div>
-                                     <div className="text-sm text-gray-600">With: iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X</div>
+                                     <div className="text-sm text-gray-600">With: i1111111111111111111111111111111111111111111111111111111111111111</div>
                 </div>
                 <Badge variant="warning">Pending</Badge>
               </div>
@@ -105,7 +105,7 @@ export default function PaymentsPage() {
           <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
             <div>
               <div className="font-medium">Payment Sent</div>
-                             <div className="text-sm text-gray-600">To: iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X</div>
+                             <div className="text-sm text-gray-600">To: i0000000000000000000000000000000000000000000000000000000000000000</div>
               <div className="text-xs text-gray-500">Memo: Lunch payment</div>
             </div>
             <div className="text-right">
@@ -118,7 +118,7 @@ export default function PaymentsPage() {
           <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
             <div>
               <div className="font-medium">Payment Received</div>
-                             <div className="text-sm text-gray-600">From: iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X</div>
+                             <div className="text-sm text-gray-600">From: i1111111111111111111111111111111111111111111111111111111111111111</div>
               <div className="text-xs text-gray-500">Memo: Project payment</div>
             </div>
             <div className="text-right">

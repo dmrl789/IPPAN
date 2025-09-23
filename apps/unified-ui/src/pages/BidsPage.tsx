@@ -69,7 +69,7 @@ const generateMockAuctions = (): Auction[] => [
     description: 'Exclusive license for GPT-4o model deployment on IPPAN network',
     type: 'model',
     status: 'active',
-    seller: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+    seller: 'i0000000000000000000000000000000000000000000000000000000000000000',
     startingPrice: 1000,
     currentPrice: 2500,
     reservePrice: 2000,
@@ -143,7 +143,7 @@ const generateMockAuctions = (): Auction[] => [
     startTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
     bidCount: 31,
     bidderCount: 18,
-    winner: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+    winner: 'i0000000000000000000000000000000000000000000000000000000000000000',
     winningBid: 1800,
     tags: ['ai', 'generation', 'diffusion', 'image'],
     metadata: {
@@ -158,7 +158,7 @@ const generateMockBids = (): Bid[] => [
   {
     id: 'bid_001',
     auctionId: 'auction_001',
-    bidder: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+    bidder: 'i0000000000000000000000000000000000000000000000000000000000000000',
     amount: 2500,
     timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
     status: 'winning',
@@ -170,7 +170,7 @@ const generateMockBids = (): Bid[] => [
   {
     id: 'bid_002',
     auctionId: 'auction_001',
-    bidder: 'iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X',
+    bidder: 'i1111111111111111111111111111111111111111111111111111111111111111',
     amount: 2400,
     timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
     status: 'outbid',
@@ -180,7 +180,7 @@ const generateMockBids = (): Bid[] => [
   {
     id: 'bid_003',
     auctionId: 'auction_002',
-    bidder: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+    bidder: 'i0000000000000000000000000000000000000000000000000000000000000000',
     amount: 1200,
     timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
     status: 'winning',
@@ -194,7 +194,7 @@ const generateMockWinners = (): Winner[] => [
     id: 'winner_001',
     auctionId: 'auction_004',
     auctionTitle: 'Stable Diffusion XL Model',
-    winner: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+    winner: 'i0000000000000000000000000000000000000000000000000000000000000000',
     winningBid: 1800,
     endTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     claimed: true,
@@ -205,7 +205,7 @@ const generateMockWinners = (): Winner[] => [
     id: 'winner_002',
     auctionId: 'auction_005',
     auctionTitle: 'BERT-Base Model License',
-    winner: 'iDLZ4d490pJHpsL2PDoXTDA8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0X',
+    winner: 'i1111111111111111111111111111111111111111111111111111111111111111',
     winningBid: 950,
     endTime: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
     claimed: false,
@@ -341,7 +341,7 @@ export default function BidsPage() {
     const newBid: Bid = {
       id: `bid_${Date.now()}`,
       auctionId: selectedAuction.id,
-      bidder: 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X',
+      bidder: 'i0000000000000000000000000000000000000000000000000000000000000000',
       amount: parseFloat(bidAmount),
       timestamp: new Date().toISOString(),
       status: 'active',
@@ -423,7 +423,7 @@ export default function BidsPage() {
             <div>
               <p className="text-sm font-medium text-gray-600">Your Wins</p>
               <p className="text-2xl font-bold text-orange-600">
-                {winners.filter(w => w.winner === 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X').length}
+                {winners.filter(w => w.winner === 'i0000000000000000000000000000000000000000000000000000000000000000').length}
               </p>
             </div>
             <Trophy className="h-8 w-8 text-orange-600" />
@@ -720,7 +720,7 @@ export default function BidsPage() {
                           </Badge>
                         </div>
                         <p className="text-sm text-green-600">
-                          Winner: {winner.winner === 'iCzfRuaeBuDyHYkzP2PO6zC9d454cfc419a4bcdf4c3d686cc34a0b64b7ed4X' ? 'You' : 'Other'}
+                          Winner: {winner.winner === 'i0000000000000000000000000000000000000000000000000000000000000000' ? 'You' : 'Other'}
                         </p>
                         <p className="text-xs text-green-500">
                           Ended {formatTimeAgo(winner.endTime)} • 
