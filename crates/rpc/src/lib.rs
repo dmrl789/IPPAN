@@ -523,15 +523,19 @@ mod tests {
             p2p_network: None,
         };
 
-        let response = health_check(State(state)).await;
+        let Json(response) = health_check(State(state)).await;
         assert!(response.success);
-        assert_eq!(response.data.unwrap().status, "healthy");
+        let health = response.data.expect("health check should return a payload");
+        assert_eq!(health.status, "healthy");
     }
 
     #[tokio::test]
     async fn test_get_time() {
-        let response = get_time().await;
+        let Json(response) = get_time().await;
         assert!(response.success);
-        assert!(response.data.unwrap().time_us > 0);
+        let time = response
+            .data
+            .expect("time endpoint should return a payload");
+        assert!(time.time_us > 0);
     }
 }
