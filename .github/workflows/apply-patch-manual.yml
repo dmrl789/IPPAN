@@ -1,0 +1,120 @@
+name: Apply Patch (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      patch:
+        description: "Unified diff to apply (optional). Must start with 'diff --git a/... b/...'"
+        required: false
+        type: string
+      cleanup:
+        description: "Also delete demo/mock/example/fixture/sample/storybook/playground/seed paths"
+        required: false
+        default: false
+        type: boolean
+      automerge:
+        description: "Enable auto-merge on the created PR"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Write patch (if provided)
+        id: writepatch
+        run: |
+          if [ -n "${{ github.event.inputs.patch }}" ]; then
+            printf "%s" "${{ github.event.inputs.patch }}" > change.patch
+            echo "has_patch=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_patch=false" >> $GITHUB_OUTPUT
+            : > change.patch
+          fi
+
+      - name: Configure Git
+        run: |
+          git config user.name "ippan-auto-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Create branch
+        run: |
+          BR="auto/manual-$(date +%Y%m%d-%H%M%S)"
+          echo "BRANCH=$BR" >> $GITHUB_ENV
+          git checkout -b "$BR"
+
+      - name: Apply patch if present
+        if: steps.writepatch.outputs.has_patch == 'true'
+        run: |
+          set -e
+          git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
+
+      - name: Cleanup demo/mock/example paths (optional)
+        if: github.event.inputs.cleanup == 'true'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mapfile -t TARGETS < <(git ls-files -z | tr '\0' '\n' | grep -Ei '(^|/)(demo|demos|example|examples|mock|mocks|fixture|fixtures|sample|samples|storybook|playground|seed|seeds)(/|$)' || true)
+          KEEP_PREFIXES=("apps/unified-ui/")
+          DEL=()
+          for f in "${TARGETS[@]}"; do
+            skip=0
+            for kp in "${KEEP_PREFIXES[@]}"; do
+              [[ "$f" == "$kp"* ]] && { skip=1; break; }
+            done
+            [[ $skip -eq 0 ]] && DEL+=("$f")
+          done
+          if [ ${#DEL[@]} -gt 0 ]; then
+            printf 'Removing %d paths...\n' "${#DEL[@]}"
+            git rm -r -f -- "${DEL[@]}" || true
+          else
+            echo "No mock/demo paths found."
+          fi
+          git add -A
+
+      - name: Commit changes (if any)
+        run: |
+          if git diff --cached --quiet; then
+            echo "No changes staged; nothing to commit."
+            exit 0
+          fi
+          git commit -m "Apply manual patch / cleanup"
+
+      - name: Push branch (if any commit)
+        run: |
+          if git log -1 --pretty=%B | grep -q "Apply manual patch / cleanup"; then
+            git push -u origin "$BRANCH"
+          else
+            echo "No commit created; skipping push."
+          fi
+
+      - name: Open PR (if branch pushed)
+        id: cpr
+        if: success()
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ github.token }}
+          branch: ${{ env.BRANCH }}
+          title: "Apply manual patch / cleanup"
+          body: |
+            Automated PR created via workflow_dispatch.
+          commit-message: "Apply manual patch / cleanup"
+
+      - name: Enable auto-merge (optional)
+        if: success() && github.event.inputs.automerge == 'true' && steps.cpr.outputs['pull-request-number'] != ''
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ github.token }}
+          pull-request-number: ${{ steps.cpr.outputs['pull-request-number'] }}
+          merge-method: squash
