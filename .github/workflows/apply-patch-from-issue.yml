@@ -1,0 +1,79 @@
+name: Apply Patch From Issue
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+
+jobs:
+  apply:
+    if: contains(github.event.issue.labels.*.name, 'auto-patch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BOT_TOKEN }}
+
+      - name: Extract patch from issue body
+        id: extract
+        run: |
+          python - << 'PY'
+import os, re, sys
+body = """${{ github.event.issue.body }}"""
+# Look for fenced code blocks first; otherwise use the whole body
+blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
+candidates = blocks + [body]
+patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ','From '))), None)
+if not patch:
+    print("No unified diff found in issue body.")
+    sys.exit(1)
+with open("change.patch", "w", encoding="utf-8") as f:
+    f.write(patch)
+PY
+
+      - name: Configure Git
+        run: |
+          git config user.name "ippan-auto-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Create branch
+        run: |
+          BR="auto/patch-${{ github.event.issue.number }}"
+          echo "BRANCH=$BR" >> $GITHUB_ENV
+          git checkout -b "$BR"
+
+      - name: Try applying patch (3-way)
+        run: |
+          set -e
+          git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
+
+      - name: Commit changes (if any)
+        run: |
+          if git diff --cached --quiet; then
+            echo "No changes staged; patch might already be applied."
+            exit 0
+          fi
+          git commit -m "Apply patch from #${{ github.event.issue.number }}"
+
+      - name: Push branch
+        run: |
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git push -u origin "$BRANCH"
+          fi
+
+      - name: Open PR
+        if: success()
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.BOT_TOKEN }}
+          branch: ${{ env.BRANCH }}
+          title: "Apply patch from #${{ github.event.issue.number }}"
+          body: |
+            Automated PR created from Issue #${{ github.event.issue.number }}.
+            Patch was applied by GitHub Actions.
+          commit-message: "Apply patch from #${{ github.event.issue.number }}"
+          labels: auto-patch
