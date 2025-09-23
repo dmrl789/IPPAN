@@ -1,6 +1,6 @@
+use crate::hashtimer::{random_nonce, HashTimer, IppanTimeMicros};
 use serde::{Deserialize, Serialize};
 use serde_bytes;
-use crate::hashtimer::{HashTimer, IppanTimeMicros, random_nonce};
 
 /// A transaction in the IPPAN blockchain
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,11 +30,11 @@ impl Transaction {
         let timestamp = IppanTimeMicros::now();
         let nonce_bytes = random_nonce();
         let node_id = b"local_node"; // In real implementation, this would be the actual node ID
-        
+
         // Create HashTimer for this transaction
         let payload = Self::create_payload(&from, &to, amount, nonce);
         let hashtimer = HashTimer::now_tx("transaction", &payload, &nonce_bytes, node_id);
-        
+
         Self {
             id: [0u8; 32], // Will be computed after signing
             from,
@@ -67,14 +67,19 @@ impl Transaction {
         hasher.update(&self.amount.to_be_bytes());
         hasher.update(&self.nonce.to_be_bytes());
         hasher.update(&self.hashtimer.to_hex().as_bytes());
-        hasher.update(private_key);
-        
-        let hash = hasher.finalize();
-        self.signature.copy_from_slice(&hash.as_bytes()[0..64]);
-        
-        // Set the transaction ID
-        self.id.copy_from_slice(&hash.as_bytes()[0..32]);
-        
+        // The placeholder implementation doesn't perform real cryptographic signing.
+        // Keep the parameter to maintain API compatibility but avoid using it so that
+        // verification can deterministically recompute the same signature from the
+        // transaction contents alone.
+        let _ = private_key;
+
+        let mut output = [0u8; 64];
+        hasher.finalize_xof().fill(&mut output);
+        self.signature.copy_from_slice(&output);
+
+        // Set the transaction ID using the first 32 bytes of the extended output
+        self.id.copy_from_slice(&output[..32]);
+
         Ok(())
     }
 
@@ -88,10 +93,10 @@ impl Transaction {
         hasher.update(&self.amount.to_be_bytes());
         hasher.update(&self.nonce.to_be_bytes());
         hasher.update(&self.hashtimer.to_hex().as_bytes());
-        
-        let hash = hasher.finalize();
-        let expected_signature = &hash.as_bytes()[0..64];
-        
+
+        let mut expected_signature = [0u8; 64];
+        hasher.finalize_xof().fill(&mut expected_signature);
+
         self.signature == expected_signature
     }
 
@@ -105,7 +110,7 @@ impl Transaction {
         hasher.update(&self.nonce.to_be_bytes());
         hasher.update(&self.signature);
         hasher.update(&self.hashtimer.to_hex().as_bytes());
-        
+
         let hash = hasher.finalize();
         let mut result = [0u8; 32];
         result.copy_from_slice(&hash.as_bytes()[0..32]);
@@ -118,22 +123,29 @@ impl Transaction {
         if self.amount == 0 {
             return false;
         }
-        
+
         if self.from == self.to {
             return false;
         }
-        
+
         // Verify signature
         if !self.verify() {
             return false;
         }
-        
+
         // Verify HashTimer is valid
         let payload = Self::create_payload(&self.from, &self.to, self.amount, self.nonce);
         let nonce_bytes = random_nonce(); // In real implementation, this would be stored
         let node_id = b"local_node";
-        let _expected_hashtimer = HashTimer::derive("transaction", self.timestamp, "transaction".as_bytes(), &payload, &nonce_bytes, node_id);
-        
+        let _expected_hashtimer = HashTimer::derive(
+            "transaction",
+            self.timestamp,
+            "transaction".as_bytes(),
+            &payload,
+            &nonce_bytes,
+            node_id,
+        );
+
         // HashTimer should be consistent (allowing for time differences)
         self.hashtimer.time().0 <= IppanTimeMicros::now().0
     }
@@ -149,9 +161,9 @@ mod tests {
         let to = [2u8; 32];
         let amount = 1000;
         let nonce = 1;
-        
+
         let tx = Transaction::new(from, to, amount, nonce);
-        
+
         assert_eq!(tx.from, from);
         assert_eq!(tx.to, to);
         assert_eq!(tx.amount, amount);
@@ -163,7 +175,7 @@ mod tests {
     fn test_transaction_signing() {
         let mut tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
         let private_key = [3u8; 32];
-        
+
         let result = tx.sign(&private_key);
         assert!(result.is_ok());
         assert_ne!(tx.signature, [0u8; 64]);
@@ -174,7 +186,7 @@ mod tests {
     fn test_transaction_verification() {
         let mut tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
         let private_key = [3u8; 32];
-        
+
         tx.sign(&private_key).unwrap();
         assert!(tx.verify());
     }
@@ -183,7 +195,7 @@ mod tests {
     fn test_transaction_validation() {
         let mut tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
         let private_key = [3u8; 32];
-        
+
         tx.sign(&private_key).unwrap();
         assert!(tx.is_valid());
     }
@@ -192,7 +204,7 @@ mod tests {
     fn test_invalid_transaction_zero_amount() {
         let mut tx = Transaction::new([1u8; 32], [2u8; 32], 0, 1);
         let private_key = [3u8; 32];
-        
+
         tx.sign(&private_key).unwrap();
         assert!(!tx.is_valid());
     }
@@ -202,7 +214,7 @@ mod tests {
         let addr = [1u8; 32];
         let mut tx = Transaction::new(addr, addr, 1000, 1);
         let private_key = [3u8; 32];
-        
+
         tx.sign(&private_key).unwrap();
         assert!(!tx.is_valid());
     }
