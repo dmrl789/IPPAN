@@ -46,11 +46,10 @@ with open("change.patch", "w", encoding="utf-8") as f:
     f.write(patch)
 PY
 
-      - name: Debug — show event & labels
+      - name: Debug - show event and labels
         run: |
           echo "event: ${{ github.event_name }}"
           echo "labels: ${{ toJson(github.event.issue.labels.*.name) }}"
-          echo "branch (will be set later): $BRANCH"
 
       - name: Configure Git
         run: |
@@ -77,9 +76,7 @@ PY
         shell: bash
         run: |
           set -euxo pipefail
-          # Find tracked files/dirs commonly used for demos/mocks/etc.
           mapfile -t TARGETS < <(git ls-files -z | tr '\0' '\n' | grep -Ei '(^|/)(demo|demos|example|examples|mock|mocks|fixture|fixtures|sample|samples|storybook|playground|seed|seeds)(/|$)' || true)
-          # Keep unified UI intact
           KEEP_PREFIXES=("apps/unified-ui/")
           DEL=()
           for f in "${TARGETS[@]}"; do
