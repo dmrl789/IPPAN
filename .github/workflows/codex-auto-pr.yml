@@ -1,11 +1,14 @@
-﻿name: Codex Auto PR
+name: Codex Auto PR
 on:
   push:
-    branches: ["codex/**"]      # still works if workflow file is on that branch
-  create:                        # fires when new branch is created
+    branches:
+      - "codex/**"
+      - work
+      - "work/**"
+  create:
   schedule:
-    - cron: "*/10 * * * *"      # every 10 minutes
-  workflow_dispatch:             # manual run button
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
 
 jobs:
   open-prs:
@@ -16,33 +19,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Open PRs for codex/** without one
+      - name: Open PRs for codex/** and work (if missing)
         uses: actions/github-script@v7
         with:
           script: |
             const { owner, repo } = context.repo;
 
-            // List all remote branches under heads/codex/
-            const refs = await github.paginate(github.git.listMatchingRefs, {
-              owner, repo, ref: "heads/codex/"
-            });
-
-            for (const r of refs) {
-              const branch = r.ref.replace("refs/heads/", "");
-              // Skip if PR already exists
+            // helper to ensure a PR exists from head->main
+            async function ensurePR(head) {
               const prs = await github.paginate(github.pulls.list, {
-                owner, repo, state: "open", head: `${owner}:${branch}`, base: "main"
+                owner, repo, state: "open", head: `${owner}:${head}`, base: "main"
               });
-              if (prs.length > 0) continue;
+              if (prs.length > 0) return;
 
-              // Create PR
-              const pr = await github.pulls.create({
-                owner, repo, title: `Codex: ${branch}`, head: branch, base: "main",
-                body: "Auto PR created from Codex branch."
+              const { data: pr } = await github.pulls.create({
+                owner, repo, title: `Auto PR: ${head}`, head, base: "main",
+                body: "Auto PR created by workflow."
               });
-
-              // Label for auto-merge workflow / policy
               await github.issues.addLabels({
-                owner, repo, issue_number: pr.data.number, labels: ["automerge"]
+                owner, repo, issue_number: pr.number, labels: ["automerge"]
               });
+            }
+
+            // discover branches under codex/** and work/**
+            async function listHeads(prefix) {
+              const refs = await github.paginate(github.git.listMatchingRefs, {
+                owner, repo, ref: `heads/${prefix}`
+              });
+              return refs.map(r => r.ref.replace("refs/heads/", ""));
+            }
+
+            const codex = await listHeads("codex/");
+            const workLike = await listHeads("work/");
+
+            // also include plain 'work' if it exists
+            try {
+              await github.repos.getBranch({ owner, repo, branch: "work" });
+              workLike.push("work");
+            } catch (_) {}
+
+            for (const head of [...new Set([...codex, ...workLike])]) {
+              await ensurePR(head);
             }
