@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, Command};
 use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
@@ -8,7 +8,7 @@ use ippan_storage::SledStorage;
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -37,6 +37,11 @@ struct AppConfig {
     // P2P
     bootstrap_nodes: Vec<String>,
     max_peers: usize,
+    peer_discovery_interval_secs: u64,
+    peer_announce_interval_secs: u64,
+    p2p_public_host: Option<String>,
+    p2p_enable_upnp: bool,
+    p2p_external_ip_services: Vec<String>,
 
     // Logging
     log_level: String,
@@ -122,6 +127,41 @@ impl AppConfig {
                 .get_string("MAX_PEERS")
                 .unwrap_or_else(|_| "50".to_string())
                 .parse()?,
+            peer_discovery_interval_secs: config
+                .get_string("PEER_DISCOVERY_INTERVAL_SECS")
+                .unwrap_or_else(|_| "30".to_string())
+                .parse()?,
+            peer_announce_interval_secs: config
+                .get_string("PEER_ANNOUNCE_INTERVAL_SECS")
+                .unwrap_or_else(|_| "60".to_string())
+                .parse()?,
+            p2p_public_host: config.get_string("P2P_PUBLIC_HOST").ok().and_then(|value| {
+                let trimmed = value.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }),
+            p2p_enable_upnp: config
+                .get_string("P2P_ENABLE_UPNP")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse()?,
+            p2p_external_ip_services: {
+                let services = config
+                    .get_string("P2P_EXTERNAL_IP_SERVICES")
+                    .unwrap_or_default();
+                let mut parsed: Vec<String> = services
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if parsed.is_empty() {
+                    parsed.push("https://api.ipify.org".to_string());
+                    parsed.push("https://ifconfig.me/ip".to_string());
+                }
+                parsed
+            },
             log_level: config
                 .get_string("LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
@@ -244,9 +284,10 @@ async fn main() -> Result<()> {
     let start_time = Instant::now();
 
     let p2p_network_arc = Arc::new(p2p_network);
-    let _p2p_network_for_shutdown = p2p_network_arc.clone();
+    let p2p_network_for_shutdown = p2p_network_arc.clone();
     peer_count.store(p2p_network_arc.get_peer_count(), Ordering::Relaxed);
     let app_state = AppState {
+        node_id: config.node_id.clone(),
         storage: storage.clone(),
         start_time,
         peer_count: peer_count.clone(),

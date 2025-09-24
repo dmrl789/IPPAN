@@ -143,6 +143,9 @@ Environment variables:
 - `RUST_LOG`: Logging level (default: info)
 - `IPPAN_NETWORK`: Network type (mainnet/testnet)
 - `IPPAN_DATA_DIR`: Data directory path
+- `P2P_PUBLIC_HOST`: Optional public hostname or URL to advertise to peers when running behind proxies or load balancers.
+- `P2P_ENABLE_UPNP`: Set to `true` to attempt automatic UPnP/NAT-PMP port forwarding for home routers.
+- `P2P_EXTERNAL_IP_SERVICES`: Comma-separated list of services used to discover the external IP address when no static host is configured (defaults to `https://api.ipify.org,https://ifconfig.me/ip`).
 
 ## 📈 Performance
 

@@ -53,7 +53,7 @@ impl Transaction {
 
     /// Recompute the transaction identifier from its contents.
     pub fn refresh_id(&mut self) {
-        self.id = self.compute_hash();
+        self.id = self.hash();
     }
 
     /// Create payload for HashTimer computation
@@ -69,7 +69,13 @@ impl Transaction {
     /// Bytes used for signature verification (excludes signature and id)
     fn message_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(
-            self.from.len() + self.to.len() + 8 + 8 + self.signature.len() + 7 + 25 + 8,
+            self.from.len()
+                + self.to.len()
+                + 8
+                + 8
+                + self.hashtimer.time_prefix.len()
+                + self.hashtimer.hash_suffix.len()
+                + 8,
         );
         bytes.extend_from_slice(&self.from);
         bytes.extend_from_slice(&self.to);
@@ -101,7 +107,7 @@ impl Transaction {
         let message = self.message_bytes();
         let signature = signing_key.sign(&message);
         self.signature.copy_from_slice(&signature.to_bytes());
-        self.id = self.hash();
+        self.refresh_id();
 
         Ok(())
     }
@@ -195,6 +201,7 @@ mod tests {
         assert_eq!(tx.to, to);
         assert_eq!(tx.amount, amount);
         assert_eq!(tx.nonce, nonce);
+        assert_eq!(tx.signature, [0u8; 64]);
         assert!(tx.hashtimer.to_hex().len() == 64);
     }
 
