@@ -3,14 +3,15 @@ use clap::{Arg, ArgAction, Command};
 use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
-use ippan_rpc::{start_server, AppState, ConsensusHandle};
-use ippan_storage::SledStorage;
-use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
+use ippan_rpc::{start_server, AppState};
+use ippan_storage::{SledStorage, Storage};
+use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros, Transaction};
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
-use tracing::{error, info};
+use std::time::Instant;
+use tokio::sync::mpsc;
+use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Application configuration
@@ -38,11 +39,6 @@ struct AppConfig {
     // P2P
     bootstrap_nodes: Vec<String>,
     max_peers: usize,
-    p2p_public_host: Option<String>,
-    p2p_external_ip_services: Vec<String>,
-    p2p_enable_upnp: bool,
-    peer_discovery_interval_secs: u64,
-    peer_announce_interval_secs: u64,
 
     // Logging
     log_level: String,
@@ -79,70 +75,6 @@ impl AppConfig {
             }
             id
         };
-
-        let default_bootstrap = "http://188.245.97.41:9000,http://135.181.145.174:9000".to_string();
-
-        let bootstrap_raw = config
-            .get_string("P2P_BOOTNODES")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| {
-                config
-                    .get_string("BOOTSTRAP_NODES")
-                    .ok()
-                    .filter(|value| !value.trim().is_empty())
-            })
-            .unwrap_or_else(|| default_bootstrap.clone());
-
-        let mut bootstrap_nodes: Vec<String> = bootstrap_raw
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        if bootstrap_nodes.is_empty() {
-            bootstrap_nodes = default_bootstrap
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-        }
-
-        bootstrap_nodes.sort();
-        bootstrap_nodes.dedup();
-
-        let p2p_public_host = config
-            .get_string("P2P_PUBLIC_HOST")
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
-
-        let mut p2p_external_ip_services: Vec<String> = config
-            .get_string("P2P_EXTERNAL_IP_SERVICES")
-            .unwrap_or_else(|_| "https://api.ipify.org,https://ifconfig.me/ip".to_string())
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        if p2p_external_ip_services.is_empty() {
-            p2p_external_ip_services = vec![
-                "https://api.ipify.org".to_string(),
-                "https://ifconfig.me/ip".to_string(),
-            ];
-        }
-
-        let peer_discovery_interval_secs = config
-            .get_string("P2P_DISCOVERY_INTERVAL_SECS")
-            .unwrap_or_else(|_| "30".to_string())
-            .parse()?;
-
-        let peer_announce_interval_secs = config
-            .get_string("P2P_ANNOUNCE_INTERVAL_SECS")
-            .unwrap_or_else(|_| "60".to_string())
-            .parse()?;
-
-        let p2p_enable_upnp = config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false);
 
         Ok(Self {
             node_id: config
@@ -181,16 +113,17 @@ impl AppConfig {
                 .get_string("BLOCK_REWARD")
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()?,
-            bootstrap_nodes,
+            bootstrap_nodes: config
+                .get_string("BOOTSTRAP_NODES")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
             max_peers: config
                 .get_string("MAX_PEERS")
                 .unwrap_or_else(|_| "50".to_string())
                 .parse()?,
-            p2p_public_host,
-            p2p_external_ip_services,
-            p2p_enable_upnp,
-            peer_discovery_interval_secs,
-            peer_announce_interval_secs,
             log_level: config
                 .get_string("LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
@@ -225,12 +158,7 @@ async fn main() -> Result<()> {
                 .value_name("DIR")
                 .help("Data directory"),
         )
-        .arg(
-            Arg::new("dev")
-                .long("dev")
-                .help("Run in development mode")
-                .action(ArgAction::SetTrue),
-        )
+        .arg(Arg::new("dev").long("dev").help("Run in development mode"))
         .get_matches();
 
     // Load configuration
@@ -259,8 +187,6 @@ async fn main() -> Result<()> {
     info!("Validator ID: {}", hex::encode(config.validator_id));
     info!("Data directory: {}", config.data_dir);
     info!("Development mode: {}", config.dev_mode);
-    info!("Bootstrap peers: {:?}", config.bootstrap_nodes);
-    info!("UPnP enabled: {}", config.p2p_enable_upnp);
 
     // Create data directory
     std::fs::create_dir_all(&config.data_dir)?;
@@ -283,26 +209,9 @@ async fn main() -> Result<()> {
         block_reward: config.block_reward,
     };
 
-    let consensus = Arc::new(Mutex::new(PoAConsensus::new(
-        consensus_config,
-        storage.clone(),
-        config.validator_id,
-    )));
-
-    {
-        let mut guard = consensus.lock().await;
-        guard.start().await?;
-    }
+    let mut consensus = PoAConsensus::new(consensus_config, storage.clone(), config.validator_id);
+    consensus.start().await?;
     info!("Consensus engine started");
-
-    let consensus_handle = {
-        let guard = consensus.lock().await;
-        ConsensusHandle::new(
-            consensus.clone(),
-            guard.get_tx_sender(),
-            guard.get_mempool_handle(),
-        )
-    };
 
     // Initialize P2P network
     let p2p_config = P2PConfig {
@@ -322,13 +231,15 @@ async fn main() -> Result<()> {
     let mut p2p_network = HttpP2PNetwork::new(p2p_config, local_p2p_address)?;
     p2p_network.start().await?;
     info!(
-        "HTTP P2P network started (listening: {}, announcing: {})",
-        p2p_network.get_listening_address(),
-        p2p_network.get_announce_address()
+        "HTTP P2P network started on {}:{}",
+        config.p2p_host, config.p2p_port
     );
 
     // Get peer ID before moving p2p_network
     let peer_id = p2p_network.get_local_peer_id();
+
+    // Create transaction channel for consensus
+    let tx_sender = consensus.get_tx_sender();
 
     // Initialize RPC server
     let peer_count = Arc::new(AtomicUsize::new(0));
@@ -417,9 +328,8 @@ async fn main() -> Result<()> {
     info!("IPPAN node is ready and running");
     info!("RPC API available at: http://{}", rpc_addr);
     info!(
-        "P2P network listening on {} (announcing {})",
-        p2p_network_arc.get_listening_address(),
-        p2p_network_arc.get_announce_address()
+        "P2P network listening on: {}:{}",
+        config.p2p_host, config.p2p_port
     );
     info!("Node ID: {}", peer_id);
 

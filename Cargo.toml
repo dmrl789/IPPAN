@@ -44,3 +44,4 @@ futures = "0.3"
 clap = { version = "4", features = ["derive"] }
 config = "0.14"
 dirs = "5"
+tempfile = "3"

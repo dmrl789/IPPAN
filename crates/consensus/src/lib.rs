@@ -1,13 +1,13 @@
 use anyhow::Result;
 use ippan_storage::{Account, Storage};
-use ippan_types::{Block, Transaction};
+use ippan_types::{ippan_time_now, Block, HashTimer, IppanTimeMicros, Transaction};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Consensus errors
 #[derive(thiserror::Error, Debug)]
@@ -99,11 +99,6 @@ impl PoAConsensus {
         self.tx_sender.clone()
     }
 
-    /// Expose a handle to the internal mempool for external observers.
-    pub fn get_mempool_handle(&self) -> Arc<RwLock<Vec<Transaction>>> {
-        self.mempool.clone()
-    }
-
     /// Start the consensus engine
     pub async fn start(&mut self) -> Result<()> {
         *self.is_running.write() = true;
@@ -166,8 +161,8 @@ impl PoAConsensus {
 
                     slot_interval.tick().await;
                 }
-            });
-        }
+            })
+        };
 
         info!("PoA consensus engine started");
         Ok(())
@@ -189,7 +184,7 @@ impl PoAConsensus {
     pub fn get_state(&self) -> ConsensusState {
         let current_slot = *self.current_slot.read();
         let proposer = Self::get_proposer_for_slot(&self.config.validators, current_slot);
-        let is_proposing = proposer == Some(self.validator_id);
+        let is_proposing = proposer.map_or(false, |p| p == self.validator_id);
 
         ConsensusState {
             current_slot,

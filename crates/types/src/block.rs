@@ -167,6 +167,23 @@ impl Block {
         }
 
         // Verify HashTimer is valid
+        let payload = Self::create_payload(
+            &self.header.prev_hash,
+            &self.header.tx_merkle_root,
+            self.header.round_id,
+            &self.header.proposer_id,
+            self.header.nonce,
+        );
+        let _expected_hashtimer = HashTimer::derive(
+            "block",
+            self.header.timestamp,
+            "block".as_bytes(),
+            &payload,
+            &self.header.nonce.to_be_bytes(),
+            &self.header.proposer_id,
+        );
+
+        // HashTimer should be consistent (allowing for time differences)
         self.header.hashtimer.time().0 <= IppanTimeMicros::now().0
 
         // Note: In a real implementation, we might want to verify the exact HashTimer

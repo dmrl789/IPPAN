@@ -6,12 +6,8 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use ippan_consensus::{ConsensusState, PoAConsensus};
-use ippan_storage::Storage;
-use ippan_types::{
-    decode_address, encode_address, ippan_time_now, is_valid_address, Block, Transaction,
-};
-use parking_lot::RwLock;
+use ippan_storage::{Account, Storage};
+use ippan_types::{ippan_time_now, Block, Transaction};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -392,16 +388,6 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health_check))
         .route("/status", get(node_status))
         .route("/time", get(get_time))
-        // Unified UI API v1
-        .route("/api/v1/status", get(api_v1_status))
-        .route("/api/v1/network", get(api_v1_network))
-        .route("/api/v1/mempool", get(api_v1_mempool))
-        .route("/api/v1/consensus", get(api_v1_consensus))
-        .route("/api/v1/balance", get(get_balance_v1))
-        .route("/api/v1/balance/:address", get(get_balance_v1_path))
-        .route("/api/v1/transactions", get(get_transactions_v1))
-        .route("/api/v1/transaction", post(submit_transaction_v1))
-        .route("/api/v1/address/validate", get(validate_address_v1))
         // Blockchain endpoints
         .route("/block", get(get_block))
         .route("/block/:hash", get(get_block_by_hash))
@@ -786,7 +772,38 @@ async fn submit_transaction(
     State(state): State<AppState>,
     Json(request): Json<SubmitTransactionRequest>,
 ) -> Result<Json<RpcResponse<SubmitTransactionResponse>>, StatusCode> {
-    let tx = submit_transaction_common(&state, request).await?;
+    // Parse addresses
+    let from = hex::decode(&request.from).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let to = hex::decode(&request.to).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let signature = hex::decode(&request.signature).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    if from.len() != 32 || to.len() != 32 || signature.len() != 64 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut from_bytes = [0u8; 32];
+    let mut to_bytes = [0u8; 32];
+    let mut signature_bytes = [0u8; 64];
+
+    from_bytes.copy_from_slice(&from);
+    to_bytes.copy_from_slice(&to);
+    signature_bytes.copy_from_slice(&signature);
+
+    // Create transaction
+    let mut tx = Transaction::new(from_bytes, to_bytes, request.amount, request.nonce);
+    tx.signature = signature_bytes;
+
+    // Validate transaction
+    if !tx.is_valid() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Store transaction
+    state
+        .storage
+        .store_transaction(tx.clone())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     let response = SubmitTransactionResponse {
         tx_hash: hex::encode(tx.hash()),
     };
@@ -822,7 +839,14 @@ async fn get_account(
     State(state): State<AppState>,
     Path(address_str): Path<String>,
 ) -> Result<Json<RpcResponse<Option<GetAccountResponse>>>, StatusCode> {
-    let address_bytes = parse_address_string(&address_str)?;
+    let address = hex::decode(&address_str).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    if address.len() != 32 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut address_bytes = [0u8; 32];
+    address_bytes.copy_from_slice(&address);
 
     let account = state
         .storage
@@ -850,7 +874,7 @@ async fn get_all_accounts(
     let response: Vec<GetAccountResponse> = accounts
         .into_iter()
         .map(|acc| GetAccountResponse {
-            address: encode_address(&acc.address),
+            address: hex::encode(acc.address),
             balance: acc.balance,
             nonce: acc.nonce,
         })
@@ -885,12 +909,6 @@ async fn receive_transaction(
     if let Err(e) = state.storage.store_transaction(tx.clone()) {
         error!("Failed to store received transaction: {}", e);
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    if let Some(consensus) = &state.consensus {
-        if let Err(err) = consensus.sender().send(tx.clone()) {
-            warn!("Failed to enqueue received transaction: {}", err);
-        }
     }
 
     info!("Received transaction from peer: {}", hex::encode(tx.hash()));
@@ -952,15 +970,6 @@ async fn receive_peer_info(
             "Received peer info: {} with addresses: {:?}",
             peer_id, addresses
         );
-
-        if let Some(network) = state.p2p_network.as_ref() {
-            for address in &addresses {
-                if let Err(e) = network.add_peer(address.clone()).await {
-                    warn!("Failed to add announced peer {}: {}", address, e);
-                }
-            }
-        }
-
         Ok(Json(RpcResponse::success("Peer info received".to_string())))
     } else {
         Err(StatusCode::BAD_REQUEST)
@@ -974,15 +983,6 @@ async fn receive_peer_discovery(
 ) -> Result<Json<RpcResponse<String>>, StatusCode> {
     if let ippan_p2p::NetworkMessage::PeerDiscovery { peers } = discovery {
         info!("Received peer discovery with {} peers", peers.len());
-
-        if let Some(network) = state.p2p_network.as_ref() {
-            for peer in &peers {
-                if let Err(e) = network.add_peer(peer.clone()).await {
-                    warn!("Failed to add discovered peer {}: {}", peer, e);
-                }
-            }
-        }
-
         Ok(Json(RpcResponse::success(
             "Peer discovery received".to_string(),
         )))
@@ -1057,15 +1057,19 @@ mod tests {
             consensus: None,
         };
 
-        let Json(body) = health_check(State(state)).await;
-        assert!(body.success);
-        assert_eq!(body.data.unwrap().status, "healthy");
+        let Json(response) = health_check(State(state)).await;
+        assert!(response.success);
+        let health = response.data.expect("health check should return a payload");
+        assert_eq!(health.status, "healthy");
     }
 
     #[tokio::test]
     async fn test_get_time() {
-        let Json(body) = get_time().await;
-        assert!(body.success);
-        assert!(body.data.unwrap().time_us > 0);
+        let Json(response) = get_time().await;
+        assert!(response.success);
+        let time = response
+            .data
+            .expect("time endpoint should return a payload");
+        assert!(time.time_us > 0);
     }
 }

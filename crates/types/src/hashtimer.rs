@@ -3,6 +3,8 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::time_service::ippan_time_now;
+
 /// IPPAN Time: microsecond precision timestamp
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct IppanTimeMicros(pub u64);
@@ -10,11 +12,7 @@ pub struct IppanTimeMicros(pub u64);
 impl IppanTimeMicros {
     /// Get current IPPAN time in microseconds
     pub fn now() -> Self {
-        // This will be replaced by the proper IPPAN Time service
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        Self(now.as_micros() as u64)
+        Self(ippan_time_now())
     }
 }
 
