@@ -1,5 +1,6 @@
-use crate::hashtimer::{random_nonce, HashTimer, IppanTimeMicros};
+use crate::hashtimer::{HashTimer, IppanTimeMicros};
 use crate::transaction::Transaction;
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
 /// Block header containing metadata and HashTimer
@@ -39,17 +40,9 @@ impl Block {
         proposer_id: [u8; 32],
     ) -> Self {
         let timestamp = IppanTimeMicros::now();
-        let nonce_bytes = random_nonce();
-        let nonce = u64::from_be_bytes([
-            nonce_bytes[0],
-            nonce_bytes[1],
-            nonce_bytes[2],
-            nonce_bytes[3],
-            nonce_bytes[4],
-            nonce_bytes[5],
-            nonce_bytes[6],
-            nonce_bytes[7],
-        ]);
+        let mut nonce_bytes = [0u8; 8];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = u64::from_be_bytes(nonce_bytes);
 
         // Compute transaction merkle root
         let tx_merkle_root = Self::compute_merkle_root(&transactions);
@@ -57,7 +50,14 @@ impl Block {
         // Create HashTimer for this block
         let payload =
             Self::create_payload(&prev_hash, &tx_merkle_root, round_id, &proposer_id, nonce);
-        let hashtimer = HashTimer::now_block("block", &payload, &nonce_bytes, &proposer_id);
+        let hashtimer = HashTimer::derive(
+            "block",
+            timestamp,
+            b"block",
+            &payload,
+            &nonce_bytes,
+            &proposer_id,
+        );
 
         let header = BlockHeader {
             prev_hash,
@@ -174,7 +174,7 @@ impl Block {
             &self.header.proposer_id,
             self.header.nonce,
         );
-        let _expected_hashtimer = HashTimer::derive(
+        let expected_hashtimer = HashTimer::derive(
             "block",
             self.header.timestamp,
             "block".as_bytes(),
@@ -183,11 +183,12 @@ impl Block {
             &self.header.proposer_id,
         );
 
+        if expected_hashtimer != self.header.hashtimer {
+            return false;
+        }
+
         // HashTimer should be consistent (allowing for time differences)
         self.header.hashtimer.time().0 <= IppanTimeMicros::now().0
-
-        // Note: In a real implementation, we might want to verify the exact HashTimer
-        // but for now we just check that the time is reasonable
     }
 
     /// Get block size in bytes (approximate)

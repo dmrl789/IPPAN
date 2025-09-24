@@ -4,14 +4,12 @@ use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
 use ippan_rpc::{start_server, AppState};
-use ippan_storage::{SledStorage, Storage};
-use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros, Transaction};
-use std::path::Path;
+use ippan_storage::SledStorage;
+use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Application configuration
@@ -253,8 +251,7 @@ async fn main() -> Result<()> {
         start_time,
         peer_count: peer_count.clone(),
         p2p_network: Some(p2p_network_arc.clone()),
-        node_id: config.node_id.clone(),
-        consensus: Some(consensus_handle.clone()),
+        tx_sender: Some(tx_sender.clone()),
     };
 
     let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);
@@ -268,7 +265,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Create a boot HashTimer to demonstrate the system
+    // Create a boot HashTimer to uniquely identify this startup
     let current_time = IppanTimeMicros(ippan_time_now());
     let domain = "boot";
     let payload = b"node_startup";
@@ -287,29 +284,13 @@ async fn main() -> Result<()> {
     info!("Boot HashTimer: {}", boot_hashtimer.to_hex());
     info!("Current IPPAN Time: {} microseconds", current_time.0);
 
-    // Demonstrate HashTimer creation for different contexts
-    let tx_hashtimer = HashTimer::now_tx("demo_tx", b"transfer_100_tokens", &nonce, node_id);
-    let block_hashtimer = HashTimer::now_block("demo_block", b"block_creation", &nonce, node_id);
-    let round_hashtimer = HashTimer::now_round("demo_round", b"consensus_round", &nonce, node_id);
-
-    info!("Transaction HashTimer: {}", tx_hashtimer.to_hex());
-    info!("Block HashTimer: {}", block_hashtimer.to_hex());
-    info!("Round HashTimer: {}", round_hashtimer.to_hex());
-
-    // Demonstrate time monotonicity
-    info!("Testing time monotonicity...");
-    for i in 0..5 {
-        let time1 = ippan_time_now();
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-        let time2 = ippan_time_now();
-        info!(
-            "Time check {}: {} -> {} (diff: {})",
-            i,
-            time1,
-            time2,
-            time2 - time1
-        );
-    }
+    let consensus_state = consensus.get_state();
+    info!(
+        "Consensus state => slot: {}, latest height: {}, proposer: {:?}",
+        consensus_state.current_slot,
+        consensus_state.latest_block_height,
+        consensus_state.current_proposer.map(hex::encode)
+    );
 
     // Update peer count periodically
     let peer_count_updater = {
@@ -319,8 +300,8 @@ async fn main() -> Result<()> {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
             loop {
                 interval.tick().await;
-                let current = network.get_peer_count();
-                peer_count.store(current, Ordering::Relaxed);
+                let count = network.get_peer_count();
+                peer_count.store(count, Ordering::Relaxed);
             }
         })
     };
@@ -338,13 +319,8 @@ async fn main() -> Result<()> {
     info!("Shutting down IPPAN node");
 
     // Stop components gracefully
-    {
-        let mut guard = consensus.lock().await;
-        guard.stop().await?;
-    }
-    // Note: We can't call stop() on the Arc-wrapped network
-    // In a real implementation, we'd need a different approach
-    info!("P2P network shutdown requested");
+    consensus.stop().await?;
+    p2p_network_for_shutdown.stop().await?;
     rpc_handle.abort();
     peer_count_updater.abort();
 

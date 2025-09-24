@@ -209,7 +209,7 @@ impl HttpP2PNetwork {
     }
 
     /// Stop the P2P network
-    pub async fn stop(&mut self) -> Result<()> {
+    pub async fn stop(&self) -> Result<()> {
         *self.is_running.write() = false;
         info!("Stopping HTTP P2P network");
 

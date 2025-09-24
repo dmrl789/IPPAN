@@ -18,4 +18,4 @@ rand_core = { workspace = true, features = ["getrandom"] }
 time = { workspace = true }
 once_cell = { workspace = true }
 parking_lot = { workspace = true }
-thiserror = { workspace = true }
+ed25519-dalek = { workspace = true }

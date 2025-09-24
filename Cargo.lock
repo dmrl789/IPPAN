@@ -1283,6 +1283,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "ed25519-dalek",
  "futures",
  "hex",
  "ippan-consensus",
@@ -1320,6 +1321,7 @@ name = "ippan-types"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ed25519-dalek",
  "hex",
  "once_cell",
  "parking_lot 0.12.4",
