@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "IPPAN Unified Mobile",
+    "slug": "ippan-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "permissions": []
+    },
+    "extra": {
+      "defaultApiBaseUrl": "http://localhost:8080"
+    }
+  }
+}
