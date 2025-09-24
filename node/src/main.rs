@@ -1,14 +1,15 @@
 use anyhow::Result;
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, Command};
 use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
-use ippan_rpc::{start_server, AppState};
+use ippan_rpc::{start_server, AppState, ConsensusHandle};
 use ippan_storage::SledStorage;
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -37,6 +38,11 @@ struct AppConfig {
     // P2P
     bootstrap_nodes: Vec<String>,
     max_peers: usize,
+    peer_discovery_interval_secs: u64,
+    peer_announce_interval_secs: u64,
+    p2p_public_host: Option<String>,
+    p2p_enable_upnp: bool,
+    p2p_external_ip_services: Vec<String>,
 
     // Logging
     log_level: String,
@@ -122,6 +128,30 @@ impl AppConfig {
                 .get_string("MAX_PEERS")
                 .unwrap_or_else(|_| "50".to_string())
                 .parse()?,
+            peer_discovery_interval_secs: config
+                .get_string("PEER_DISCOVERY_INTERVAL_SECS")
+                .unwrap_or_else(|_| "30".to_string())
+                .parse()?,
+            peer_announce_interval_secs: config
+                .get_string("PEER_ANNOUNCE_INTERVAL_SECS")
+                .unwrap_or_else(|_| "60".to_string())
+                .parse()?,
+            p2p_public_host: config
+                .get_string("P2P_PUBLIC_HOST")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            p2p_enable_upnp: config
+                .get_string("P2P_ENABLE_UPNP")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse()?,
+            p2p_external_ip_services: config
+                .get_string("P2P_EXTERNAL_IP_SERVICES")
+                .unwrap_or_else(|_| "https://api.ipify.org,https://ifconfig.me/ip".to_string())
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
             log_level: config
                 .get_string("LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
@@ -207,9 +237,15 @@ async fn main() -> Result<()> {
         block_reward: config.block_reward,
     };
 
-    let mut consensus = PoAConsensus::new(consensus_config, storage.clone(), config.validator_id);
-    consensus.start().await?;
+    let mut consensus_engine =
+        PoAConsensus::new(consensus_config, storage.clone(), config.validator_id);
+    consensus_engine.start().await?;
     info!("Consensus engine started");
+
+    let tx_sender = consensus_engine.get_tx_sender();
+    let mempool = consensus_engine.mempool();
+    let consensus = Arc::new(Mutex::new(consensus_engine));
+    let consensus_handle = ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool);
 
     // Initialize P2P network
     let p2p_config = P2PConfig {
@@ -236,15 +272,12 @@ async fn main() -> Result<()> {
     // Get peer ID before moving p2p_network
     let peer_id = p2p_network.get_local_peer_id();
 
-    // Create transaction channel for consensus
-    let tx_sender = consensus.get_tx_sender();
-
     // Initialize RPC server
     let peer_count = Arc::new(AtomicUsize::new(0));
     let start_time = Instant::now();
 
     let p2p_network_arc = Arc::new(p2p_network);
-    let _p2p_network_for_shutdown = p2p_network_arc.clone();
+    let p2p_network_for_shutdown = p2p_network_arc.clone();
     peer_count.store(p2p_network_arc.get_peer_count(), Ordering::Relaxed);
     let app_state = AppState {
         storage: storage.clone(),
@@ -252,6 +285,8 @@ async fn main() -> Result<()> {
         peer_count: peer_count.clone(),
         p2p_network: Some(p2p_network_arc.clone()),
         tx_sender: Some(tx_sender.clone()),
+        node_id: config.node_id.clone(),
+        consensus: Some(consensus_handle.clone()),
     };
 
     let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);
@@ -284,7 +319,7 @@ async fn main() -> Result<()> {
     info!("Boot HashTimer: {}", boot_hashtimer.to_hex());
     info!("Current IPPAN Time: {} microseconds", current_time.0);
 
-    let consensus_state = consensus.get_state();
+    let consensus_state = consensus_handle.state().await;
     info!(
         "Consensus state => slot: {}, latest height: {}, proposer: {:?}",
         consensus_state.current_slot,
@@ -319,7 +354,7 @@ async fn main() -> Result<()> {
     info!("Shutting down IPPAN node");
 
     // Stop components gracefully
-    consensus.stop().await?;
+    consensus.lock().await.stop().await?;
     p2p_network_for_shutdown.stop().await?;
     rpc_handle.abort();
     peer_count_updater.abort();

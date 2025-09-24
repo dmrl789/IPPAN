@@ -1,19 +1,14 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use ippan_types::{Block, Transaction};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::net::{IpAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use url::Url;
-
-use igd::aio::search_gateway;
-use igd::PortMappingProtocol;
-use local_ip_address::local_ip;
 
 /// P2P network errors
 #[derive(thiserror::Error, Debug)]
@@ -133,8 +128,8 @@ impl HttpP2PNetwork {
             peer_count: Arc::new(parking_lot::RwLock::new(0)),
             is_running: Arc::new(parking_lot::RwLock::new(false)),
             local_peer_id,
-            listen_address: listen_address.clone(),
-            announce_address: Arc::new(parking_lot::RwLock::new(listen_address)),
+            listen_address: local_address.clone(),
+            announce_address: Arc::new(parking_lot::RwLock::new(local_address)),
             upnp_mapping_active: Arc::new(parking_lot::RwLock::new(false)),
         })
     }
@@ -142,7 +137,7 @@ impl HttpP2PNetwork {
     /// Start the P2P network
     pub async fn start(&mut self) -> Result<()> {
         *self.is_running.write() = true;
-        info!("Starting HTTP P2P network on {}", self.local_address);
+        info!("Starting HTTP P2P network on {}", self.listen_address);
 
         // Add bootstrap peers
         for peer in &self.config.bootstrap_peers {
@@ -188,7 +183,8 @@ impl HttpP2PNetwork {
             let peers = self.peers.clone();
             let client = self.client.clone();
             let config = self.config.clone();
-            let local_address = self.local_address.clone();
+            let announce_address = self.announce_address.clone();
+            let peer_count = self.peer_count.clone();
 
             tokio::spawn(async move {
                 let mut interval = interval(config.peer_discovery_interval);
@@ -199,7 +195,19 @@ impl HttpP2PNetwork {
                     }
 
                     interval.tick().await;
-                    Self::discover_peers(&client, &peers, &local_address).await;
+
+                    let local_address = {
+                        let raw = announce_address.read().clone();
+                        match Self::canonicalize_address(&raw) {
+                            Ok(address) => address,
+                            Err(err) => {
+                                debug!("Failed to canonicalize announce address {}: {}", raw, err);
+                                raw
+                            }
+                        }
+                    };
+
+                    Self::discover_peers(&client, &peers, &local_address, &peer_count).await;
                 }
             })
         };
@@ -222,16 +230,10 @@ impl HttpP2PNetwork {
 
     /// Add a peer to the network
     pub async fn add_peer(&self, peer_address: String) -> Result<()> {
-        // Validate URL
-        let _url: Url = peer_address.parse()?;
+        let canonical = Self::canonicalize_address(&peer_address)?;
 
-        // Add to peers set
-        {
+        let inserted = {
             let mut peers = self.peers.write();
-
-            if peers.contains(&canonical) {
-                return Ok(());
-            }
 
             if peers.len() >= self.config.max_peers {
                 warn!(
@@ -244,17 +246,11 @@ impl HttpP2PNetwork {
             peers.insert(canonical.clone())
         };
 
-        if !inserted {
-            return Ok(());
+        if inserted {
+            self.update_peer_count();
+            info!("Added peer: {}", canonical);
         }
 
-        // Update peer count
-        {
-            let mut count = self.peer_count.write();
-            *count = self.peers.read().len();
-        }
-
-        info!("Added peer: {}", peer_address);
         Ok(())
     }
 
@@ -279,13 +275,6 @@ impl HttpP2PNetwork {
                 );
             }
         }
-
-        {
-            let mut count = self.peer_count.write();
-            *count = self.peers.read().len();
-        }
-
-        info!("Removed peer: {}", peer_address);
     }
 
     /// Get message sender for sending messages
@@ -306,6 +295,12 @@ impl HttpP2PNetwork {
     /// Get listening address
     pub fn get_listening_address(&self) -> String {
         self.listen_address.clone()
+    }
+
+    /// Get the public announce address for this node
+    pub fn get_announce_address(&self) -> String {
+        let raw = self.announce_address.read().clone();
+        Self::canonicalize_address(&raw).unwrap_or(raw)
     }
 
     /// Get list of peers
@@ -334,6 +329,50 @@ impl HttpP2PNetwork {
         Ok(())
     }
 
+    fn update_peer_count(&self) {
+        let count = self.peers.read().len();
+        *self.peer_count.write() = count;
+    }
+
+    fn canonicalize_address(address: &str) -> Result<String> {
+        let trimmed = address.trim();
+
+        if trimmed.is_empty() {
+            return Err(anyhow!("Peer address cannot be empty"));
+        }
+
+        let normalized = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            trimmed.to_string()
+        } else {
+            format!("http://{}", trimmed)
+        };
+
+        let mut url = Url::parse(&normalized)
+            .map_err(|err| anyhow!("Invalid peer address {}: {}", trimmed, err))?;
+
+        if url.scheme() != "http" && url.scheme() != "https" {
+            return Err(anyhow!(
+                "Unsupported peer scheme '{}'. Use http or https.",
+                url.scheme()
+            ));
+        }
+
+        if url.host_str().is_none() {
+            return Err(anyhow!("Peer address {} is missing a host", trimmed));
+        }
+
+        url.set_path("");
+        url.set_query(None);
+        url.set_fragment(None);
+
+        let mut canonical = url.to_string();
+        if canonical.ends_with('/') {
+            canonical = canonical.trim_end_matches('/').to_string();
+        }
+
+        Ok(canonical)
+    }
+
     /// Handle outgoing messages by sending them to all peers
     async fn handle_outgoing_message(
         client: &Client,
@@ -343,6 +382,9 @@ impl HttpP2PNetwork {
         message: NetworkMessage,
     ) {
         let peer_list = peers.read().clone();
+        let local_address_raw = announce_address.read().clone();
+        let local_address =
+            Self::canonicalize_address(&local_address_raw).unwrap_or(local_address_raw);
 
         for peer_address in peer_list {
             if peer_address == local_address {
@@ -420,13 +462,19 @@ impl HttpP2PNetwork {
         client: &Client,
         peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
         local_address: &str,
+        peer_count: &Arc<parking_lot::RwLock<usize>>,
     ) {
         let peer_list = peers.read().clone();
 
         for peer_address in peer_list {
+            if peer_address == local_address {
+                continue;
+            }
+
             let client = client.clone();
             let peers = peers.clone();
             let local_address = local_address.to_string();
+            let peer_count = peer_count.clone();
 
             tokio::spawn(async move {
                 if let Err(e) = Self::request_peers_from_peer(
@@ -434,6 +482,7 @@ impl HttpP2PNetwork {
                     &peer_address,
                     &peers,
                     &local_address,
+                    &peer_count,
                 )
                 .await
                 {
@@ -451,7 +500,7 @@ impl HttpP2PNetwork {
         local_address: &str,
         peer_count: &Arc<parking_lot::RwLock<usize>>,
     ) -> Result<()> {
-        let url = format!("{}/p2p/peers", peer_address);
+        let url = format!("{}/p2p/peers", peer_address.trim_end_matches('/'));
 
         let response = client.get(&url).send().await?;
         if response.status().is_success() {
@@ -459,11 +508,27 @@ impl HttpP2PNetwork {
 
             // Add new peers (excluding ourselves)
             let mut current_peers = peers.write();
+            let mut updated = false;
             for peer in peer_list {
-                if peer != local_address && !current_peers.contains(&peer) {
-                    current_peers.insert(peer.clone());
-                    info!("Discovered new peer: {}", peer);
+                match Self::canonicalize_address(&peer) {
+                    Ok(canonical) => {
+                        if canonical != local_address && !current_peers.contains(&canonical) {
+                            current_peers.insert(canonical.clone());
+                            info!("Discovered new peer: {}", canonical);
+                            updated = true;
+                        }
+                    }
+                    Err(err) => {
+                        debug!("Discarding invalid peer address {}: {}", peer, err);
+                    }
                 }
+            }
+
+            let count = current_peers.len();
+            drop(current_peers);
+
+            if updated {
+                *peer_count.write() = count;
             }
         }
 

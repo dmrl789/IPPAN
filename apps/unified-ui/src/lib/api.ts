@@ -21,6 +21,196 @@ const api = axios.create({
   },
 });
 
+type RpcResponse<T> = {
+  success: boolean;
+  data?: T | null;
+  error?: string;
+};
+
+const bytesToHex = (bytes: number[]): string =>
+  bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+const decodeTimestamp = (value: unknown): number => {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'number') {
+    return value[0];
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (typeof record.us === 'number') {
+      return record.us;
+    }
+    if (typeof record['0'] === 'number') {
+      return record['0'] as number;
+    }
+  }
+
+  return 0;
+};
+
+const decodeAddressBytes = (bytes: number[]): string => `i${bytesToHex(bytes)}`;
+
+interface RawHashTimer {
+  time_prefix: number[];
+  hash_suffix: number[];
+}
+
+interface RawTransaction {
+  id: number[];
+  from: number[];
+  to: number[];
+  amount: number;
+  nonce: number;
+  signature: number[];
+  hashtimer: RawHashTimer;
+  timestamp: unknown;
+}
+
+interface RawBlockHeader {
+  prev_hash: number[];
+  tx_merkle_root: number[];
+  round_id: number;
+  proposer_id: number[];
+  nonce: number;
+  hashtimer: RawHashTimer;
+  timestamp: unknown;
+}
+
+interface RawBlock {
+  header: RawBlockHeader;
+  transactions: RawTransaction[];
+}
+
+const decodeHashTimer = (timer: RawHashTimer): string =>
+  `${bytesToHex(timer.time_prefix)}${bytesToHex(timer.hash_suffix)}`;
+
+const decodeTransaction = (tx: RawTransaction) => ({
+  hash: bytesToHex(tx.id),
+  from: decodeAddressBytes(tx.from),
+  to: decodeAddressBytes(tx.to),
+  amount: tx.amount,
+  nonce: tx.nonce,
+  timestamp: decodeTimestamp(tx.timestamp),
+  hashtimer: decodeHashTimer(tx.hashtimer),
+});
+
+const decodeBlock = (height: number, raw: RawBlock) => ({
+  height,
+  hashtimer: decodeHashTimer(raw.header.hashtimer),
+  timestamp: decodeTimestamp(raw.header.timestamp),
+  proposer: decodeAddressBytes(raw.header.proposer_id),
+  previousHash: bytesToHex(raw.header.prev_hash),
+  merkleRoot: bytesToHex(raw.header.tx_merkle_root),
+  transactions: raw.transactions.map(decodeTransaction),
+});
+
+export type ChainTransaction = ReturnType<typeof decodeTransaction>;
+export type ChainBlock = ReturnType<typeof decodeBlock>;
+
+export interface AccountRecord {
+  address: string;
+  balance: number;
+  nonce: number;
+}
+
+export interface LegacyNodeStatus {
+  node_id: string;
+  version: string;
+  latest_height: number;
+  uptime_seconds: number;
+  peer_count: number;
+}
+
+export async function getLegacyNodeStatus(): Promise<LegacyNodeStatus> {
+  const response = await api.get<RpcResponse<LegacyNodeStatus>>('/status');
+  const body = response.data;
+
+  if (!body.success || !body.data) {
+    throw new Error(body.error || 'Failed to fetch node status');
+  }
+
+  return body.data;
+}
+
+export async function fetchBlockByHeight(height: number): Promise<ChainBlock | null> {
+  const response = await api.get<RpcResponse<RawBlock | null>>(`/block/height/${height}`);
+  const body = response.data;
+
+  if (!body.success) {
+    throw new Error(body.error || `Failed to load block ${height}`);
+  }
+
+  if (!body.data) {
+    return null;
+  }
+
+  return decodeBlock(height, body.data);
+}
+
+export async function fetchRecentBlocks(limit: number): Promise<ChainBlock[]> {
+  const status = await getLegacyNodeStatus();
+  const blocks: ChainBlock[] = [];
+  const maxHeight = status.latest_height;
+
+  for (let i = 0; i < limit; i++) {
+    const height = maxHeight - i;
+    if (height < 0) {
+      break;
+    }
+
+    const block = await fetchBlockByHeight(height);
+    if (!block) {
+      break;
+    }
+    blocks.push(block);
+  }
+
+  return blocks;
+}
+
+export async function fetchAccounts(): Promise<AccountRecord[]> {
+  const response = await api.get<RpcResponse<AccountRecord[]>>('/accounts');
+  const body = response.data;
+
+  if (!body.success || !body.data) {
+    throw new Error(body.error || 'Failed to load accounts');
+  }
+
+  return body.data.map((account) => ({
+    address: account.address,
+    balance: Number(account.balance),
+    nonce: Number(account.nonce),
+  }));
+}
+
+export interface ValidatorInfo {
+  id: string;
+  address: string;
+  stake: number;
+  is_active: boolean;
+  is_proposer: boolean;
+}
+
+export async function fetchValidators(): Promise<ValidatorInfo[]> {
+  const response = await api.get<ValidatorInfo[]>('/api/v1/validators');
+  return response.data;
+}
+
+export async function fetchPeerList(): Promise<string[]> {
+  const response = await api.get<RpcResponse<string[]>>('/p2p/peers');
+  const body = response.data;
+
+  if (!body.success || !body.data) {
+    throw new Error(body.error || 'Failed to load peers');
+  }
+
+  return body.data;
+}
+
 // Neural Network API
 export interface ModelAsset {
   id: Uint8Array;

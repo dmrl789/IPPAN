@@ -1329,7 +1329,6 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
- "thiserror 1.0.69",
  "time",
 ]
 

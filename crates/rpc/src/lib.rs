@@ -6,11 +6,14 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use ippan_consensus::{ConsensusState, PoAConsensus, Validator};
 use ippan_storage::Storage;
 use ippan_types::{ippan_time_now, Block, Transaction};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc, Mutex};
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -136,6 +139,11 @@ impl ConsensusHandle {
             .cloned()
             .collect()
     }
+
+    pub async fn validators(&self) -> Vec<Validator> {
+        let consensus = self.inner.lock().await;
+        consensus.validators()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -207,6 +215,15 @@ pub struct ConsensusStatsV1 {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ValidatorInfoV1 {
+    pub id: String,
+    pub address: String,
+    pub stake: u64,
+    pub is_active: bool,
+    pub is_proposer: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct BalanceResponseV1 {
     pub account: String,
     pub address: String,
@@ -240,6 +257,16 @@ pub struct AddressValidationResponse {
     pub valid: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AddressQuery {
+    pub address: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SubmitTransactionRequest {
+    pub transaction: Transaction,
+}
+
 /// Application state
 #[derive(Clone)]
 pub struct AppState {
@@ -247,7 +274,9 @@ pub struct AppState {
     pub start_time: std::time::Instant,
     pub peer_count: Arc<std::sync::atomic::AtomicUsize>,
     pub p2p_network: Option<Arc<ippan_p2p::HttpP2PNetwork>>,
-    pub tx_sender: Option<UnboundedSender<Transaction>>,
+    pub tx_sender: Option<mpsc::UnboundedSender<Transaction>>,
+    pub node_id: String,
+    pub consensus: Option<ConsensusHandle>,
 }
 
 /// Create the Axum router with all RPC endpoints
@@ -257,6 +286,16 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health_check))
         .route("/status", get(node_status))
         .route("/time", get(get_time))
+        .route("/api/v1/status", get(api_v1_status))
+        .route("/api/v1/network", get(api_v1_network))
+        .route("/api/v1/mempool", get(api_v1_mempool))
+        .route("/api/v1/consensus", get(api_v1_consensus))
+        .route("/api/v1/validators", get(api_v1_validators))
+        .route("/api/v1/balance", get(get_balance_v1))
+        .route("/api/v1/balance/:address", get(get_balance_v1_path))
+        .route("/api/v1/transactions", get(get_transactions_v1))
+        .route("/api/v1/transaction", post(submit_transaction_v1))
+        .route("/api/v1/address/validate", get(validate_address_v1))
         // Blockchain endpoints
         .route("/block", get(get_block))
         .route("/block/:hash", get(get_block_by_hash))
@@ -491,6 +530,37 @@ async fn api_v1_consensus(
     Ok(Json(stats))
 }
 
+async fn api_v1_validators(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ValidatorInfoV1>>, StatusCode> {
+    let Some(handle) = state.consensus.clone() else {
+        return Ok(Json(Vec::new()));
+    };
+
+    let consensus_state = handle.state().await;
+    let current_proposer = consensus_state.current_proposer;
+    let validators = handle.validators().await;
+
+    let infos = validators
+        .into_iter()
+        .map(|validator| {
+            let is_proposer = current_proposer
+                .map(|id| id == validator.id)
+                .unwrap_or(false);
+
+            ValidatorInfoV1 {
+                id: hex::encode(validator.id),
+                address: encode_address(&validator.address),
+                stake: validator.stake,
+                is_active: validator.is_active,
+                is_proposer,
+            }
+        })
+        .collect();
+
+    Ok(Json(infos))
+}
+
 async fn get_balance_v1(
     State(state): State<AppState>,
     Query(params): Query<AddressQuery>,
@@ -568,6 +638,136 @@ async fn validate_address_v1(
 ) -> Json<AddressValidationResponse> {
     let valid = is_valid_address(&params.address) || parse_address_string(&params.address).is_ok();
     Json(AddressValidationResponse { valid })
+}
+
+fn encode_address(bytes: &[u8; 32]) -> String {
+    format!("i{}", hex::encode(bytes))
+}
+
+fn is_valid_address(address: &str) -> bool {
+    let trimmed = address.trim();
+    let normalized = if let Some(rest) = trimmed.strip_prefix('i') {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("0x") {
+        rest
+    } else {
+        trimmed
+    };
+
+    normalized.len() == 64 && normalized.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn parse_address_string(address: &str) -> Result<[u8; 32], StatusCode> {
+    let trimmed = address.trim();
+    let normalized = if let Some(rest) = trimmed.strip_prefix('i') {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("0x") {
+        rest
+    } else {
+        trimmed
+    };
+
+    if normalized.len() != 64 || !normalized.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut bytes = [0u8; 32];
+    if let Err(error) = hex::decode_to_slice(normalized, &mut bytes) {
+        warn!("Failed to decode address {}: {}", address, error);
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    Ok(bytes)
+}
+
+fn balance_response_for(
+    state: &AppState,
+    address_bytes: [u8; 32],
+) -> Result<BalanceResponseV1, StatusCode> {
+    let account = state.storage.get_account(&address_bytes).map_err(|error| {
+        error!(
+            "Failed to load account {}: {}",
+            encode_address(&address_bytes),
+            error
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let (balance, nonce) = account
+        .map(|acc| (acc.balance, acc.nonce))
+        .unwrap_or((0, 0));
+
+    let pending_transactions = if let Some(handle) = state.consensus.clone() {
+        handle
+            .pending_for_address(&address_bytes)
+            .into_iter()
+            .map(|tx| hex::encode(tx.hash()))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    Ok(BalanceResponseV1 {
+        account: encode_address(&address_bytes),
+        address: encode_address(&address_bytes),
+        balance,
+        staked: 0,
+        staked_amount: 0,
+        rewards: 0,
+        nonce,
+        pending_transactions,
+    })
+}
+
+async fn submit_transaction_common(
+    state: &AppState,
+    request: SubmitTransactionRequest,
+) -> Result<Transaction, StatusCode> {
+    let mut tx = request.transaction;
+
+    let computed_hash = tx.hash();
+    if tx.id != computed_hash {
+        tx.id = computed_hash;
+    }
+
+    if !tx.is_valid() {
+        warn!(
+            "Rejected invalid transaction submission from {}",
+            encode_address(&tx.from)
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    state
+        .storage
+        .store_transaction(tx.clone())
+        .map_err(|error| {
+            error!(
+                "Failed to store transaction {}: {}",
+                hex::encode(tx.id),
+                error
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    if let Some(sender) = &state.tx_sender {
+        sender.send(tx.clone()).map_err(|error| {
+            error!("Failed to forward transaction to consensus: {}", error);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    }
+
+    if let Some(network) = &state.p2p_network {
+        if let Err(error) = network.broadcast_transaction(tx.clone()).await {
+            warn!(
+                "Failed to broadcast transaction {}: {}",
+                hex::encode(tx.id),
+                error
+            );
+        }
+    }
+
+    Ok(tx)
 }
 
 /// Get block by hash or height
@@ -867,7 +1067,7 @@ async fn receive_block_response(
 
 /// P2P endpoint: Receive peer info from peer
 async fn receive_peer_info(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(info): Json<ippan_p2p::NetworkMessage>,
 ) -> Result<Json<RpcResponse<String>>, StatusCode> {
     if let ippan_p2p::NetworkMessage::PeerInfo { peer_id, addresses } = info {
@@ -883,7 +1083,7 @@ async fn receive_peer_info(
 
 /// P2P endpoint: Receive peer discovery from peer
 async fn receive_peer_discovery(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(discovery): Json<ippan_p2p::NetworkMessage>,
 ) -> Result<Json<RpcResponse<String>>, StatusCode> {
     if let ippan_p2p::NetworkMessage::PeerDiscovery { peers } = discovery {
@@ -966,6 +1166,8 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: None,
+            node_id: "test-node".into(),
+            consensus: None,
         };
 
         let mut app = create_router(state);
@@ -998,6 +1200,8 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: None,
+            node_id: "test-node".into(),
+            consensus: None,
         };
 
         let mut app = create_router(state);
@@ -1032,6 +1236,8 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: Some(tx_sender),
+            node_id: "test-node".into(),
+            consensus: None,
         };
 
         let mut app = create_router(state);
