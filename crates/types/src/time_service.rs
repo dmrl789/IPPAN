@@ -32,7 +32,7 @@ impl IppanTime {
 
     /// Get current IPPAN time in microseconds
     pub fn now_us() -> u64 {
-        let time_service = IPPAN_TIME.read();
+        let mut time_service = IPPAN_TIME.write();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
@@ -43,6 +43,8 @@ impl IppanTime {
         } else {
             time_service.last_time + Duration::from_micros(1)
         };
+
+        time_service.last_time = adjusted_time;
 
         adjusted_time.as_micros() as u64
     }
@@ -104,12 +106,6 @@ impl IppanTime {
         } else {
             current_time + slew_rate
         }
-    }
-
-    /// Force update the last time (used internally)
-    fn update_last_time(new_time: Duration) {
-        let mut time_service = IPPAN_TIME.write();
-        time_service.last_time = new_time;
     }
 }
 

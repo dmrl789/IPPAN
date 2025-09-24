@@ -71,7 +71,7 @@ impl Transaction {
         hasher.update(&self.to);
         hasher.update(&self.amount.to_be_bytes());
         hasher.update(&self.nonce.to_be_bytes());
-        hasher.update(&self.hashtimer.to_hex().as_bytes());
+        hasher.update(self.hashtimer.to_hex().as_bytes());
         // The placeholder implementation doesn't perform real cryptographic signing.
         // Keep the parameter to maintain API compatibility but avoid using it so that
         // verification can deterministically recompute the same signature from the
@@ -95,7 +95,7 @@ impl Transaction {
         hasher.update(&self.to);
         hasher.update(&self.amount.to_be_bytes());
         hasher.update(&self.nonce.to_be_bytes());
-        hasher.update(&self.hashtimer.to_hex().as_bytes());
+        hasher.update(self.hashtimer.to_hex().as_bytes());
 
         let mut expected_signature = [0u8; 64];
         hasher.finalize_xof().fill(&mut expected_signature);
@@ -115,7 +115,7 @@ impl Transaction {
         hasher.update(&self.amount.to_be_bytes());
         hasher.update(&self.nonce.to_be_bytes());
         hasher.update(&self.signature);
-        hasher.update(&self.hashtimer.to_hex().as_bytes());
+        hasher.update(self.hashtimer.to_hex().as_bytes());
 
         let hash = hasher.finalize();
         let mut result = [0u8; 32];

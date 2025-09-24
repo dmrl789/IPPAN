@@ -283,6 +283,12 @@ impl MemoryStorage {
     }
 }
 
+impl Default for MemoryStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Storage for MemoryStorage {
     fn store_block(&self, block: Block) -> Result<()> {
         let hash = block.hash();
@@ -358,7 +364,7 @@ impl Storage for MemoryStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{Block, Transaction};
+    use ippan_types::Block;
     use tempfile::tempdir;
 
     #[test]
