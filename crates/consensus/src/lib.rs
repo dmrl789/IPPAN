@@ -99,6 +99,11 @@ impl PoAConsensus {
         self.tx_sender.clone()
     }
 
+    /// Access the shared mempool for monitoring purposes
+    pub fn get_mempool(&self) -> Arc<RwLock<Vec<Transaction>>> {
+        self.mempool.clone()
+    }
+
     /// Start the consensus engine
     pub async fn start(&mut self) -> Result<()> {
         *self.is_running.write() = true;
