@@ -9,7 +9,8 @@ use axum::{
 use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_storage::Storage;
 use ippan_types::{
-    decode_address, encode_address, ippan_time_now, is_valid_address, Block, Transaction,
+    decode_address, encode_address, ippan_time_now, is_valid_address, Block, IppanTimeMicros,
+    L2Exit, L2ExitStatus, L2ProofType, L2StateCommit, Transaction,
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,33 @@ pub struct RpcResponse<T> {
     pub success: bool,
     pub data: Option<T>,
     pub error: Option<String>,
+}
+
+/// Static bridge policy used by RPC handlers.
+#[derive(Debug, Clone)]
+pub struct L2Config {
+    /// Maximum size allowed for commitment payloads (proof + inline data) in bytes.
+    pub max_commit_size: usize,
+    /// Minimum gap between commitments for the same rollup in milliseconds.
+    pub min_epoch_gap_ms: u64,
+    /// Challenge window applied to exits in milliseconds.
+    pub challenge_window_ms: u64,
+    /// Maximum number of simultaneously registered L2 networks.
+    pub max_l2_count: usize,
+    /// Default data availability mode for new commits.
+    pub da_mode: String,
+}
+
+impl Default for L2Config {
+    fn default() -> Self {
+        Self {
+            max_commit_size: 16 * 1024,
+            min_epoch_gap_ms: 250,
+            challenge_window_ms: 60_000,
+            max_l2_count: 100,
+            da_mode: "external".to_string(),
+        }
+    }
 }
 
 impl<T> RpcResponse<T> {
@@ -57,6 +85,54 @@ pub struct SubmitTransactionRequest {
     pub amount: u64,
     pub nonce: u64,
     pub signature: String,
+}
+
+/// Submit L2 commitment request
+#[derive(Debug, Deserialize)]
+pub struct L2CommitRequest {
+    pub l2_id: String,
+    pub epoch: u64,
+    pub state_root: String,
+    pub da_hash: Option<String>,
+    pub proof_type: Option<L2ProofType>,
+    pub proof: Option<String>,
+    pub inline_data: Option<String>,
+}
+
+/// Response returned after storing an L2 commitment
+#[derive(Debug, Serialize)]
+pub struct L2CommitResponse {
+    pub l2_id: String,
+    pub epoch: u64,
+    pub commit_id: String,
+    pub hashtimer: String,
+    pub timestamp: u64,
+}
+
+/// L2 exit verification request
+#[derive(Debug, Deserialize)]
+pub struct L2ExitVerificationRequest {
+    pub l2_id: String,
+    pub epoch: u64,
+    pub proof_of_inclusion: String,
+    pub account: String,
+    pub amount: f64,
+    pub nonce: u64,
+}
+
+/// Response returned after accepting an L2 exit
+#[derive(Debug, Serialize)]
+pub struct L2ExitVerificationResponse {
+    pub exit_id: String,
+    pub status: L2ExitStatus,
+    pub hashtimer: String,
+    pub submitted_at: u64,
+    pub challenge_window_ends_at: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct L2FilterQuery {
+    l2_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -269,6 +345,7 @@ pub struct AppState {
     pub p2p_network: Option<Arc<ippan_p2p::HttpP2PNetwork>>,
     pub node_id: String,
     pub consensus: Option<ConsensusHandle>,
+    pub l2_config: L2Config,
 }
 
 fn parse_address_string(address: &str) -> Result<[u8; 32], StatusCode> {
@@ -301,6 +378,21 @@ fn parse_signature(signature: &str) -> Result<Option<[u8; 64]>, StatusCode> {
     let mut sig = [0u8; 64];
     sig.copy_from_slice(&bytes);
     Ok(Some(sig))
+}
+
+const L2_AMOUNT_SCALE: u128 = 1_000_000;
+
+fn convert_exit_amount(amount: f64) -> Result<u128, StatusCode> {
+    if !amount.is_finite() || amount <= 0.0 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let scaled = (amount * L2_AMOUNT_SCALE as f64).round();
+    if scaled < 0.0 || scaled > u128::MAX as f64 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    Ok(scaled as u128)
 }
 
 async fn submit_transaction_common(
@@ -347,6 +439,175 @@ async fn submit_transaction_common(
     }
 
     Ok(tx)
+}
+
+async fn submit_l2_commit(
+    State(state): State<AppState>,
+    Json(request): Json<L2CommitRequest>,
+) -> Result<Json<RpcResponse<L2CommitResponse>>, StatusCode> {
+    if request.l2_id.trim().is_empty() || request.state_root.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let proof_type = request.proof_type.unwrap_or_default();
+    let payload_size = request
+        .proof
+        .as_ref()
+        .map(|s| s.as_bytes().len())
+        .unwrap_or(0)
+        + request
+            .inline_data
+            .as_ref()
+            .map(|s| s.as_bytes().len())
+            .unwrap_or(0);
+
+    if payload_size > state.l2_config.max_commit_size {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    let now = IppanTimeMicros::now();
+    let min_gap = state.l2_config.min_epoch_gap_ms.saturating_mul(1_000);
+
+    if let Ok(existing) = state.storage.get_l2_commits(Some(request.l2_id.as_str())) {
+        if let Some(latest) = existing.first() {
+            if request.epoch <= latest.epoch {
+                return Err(StatusCode::CONFLICT);
+            }
+
+            if min_gap > 0 && now.0 < latest.timestamp.0.saturating_add(min_gap) {
+                return Err(StatusCode::TOO_MANY_REQUESTS);
+            }
+        }
+    }
+
+    let commit = L2StateCommit::with_timestamp(
+        request.l2_id.clone(),
+        request.epoch,
+        request.state_root.clone(),
+        request.da_hash.clone(),
+        proof_type,
+        request.proof.clone(),
+        request.inline_data.clone(),
+        now,
+        state.node_id.as_bytes(),
+    );
+
+    state
+        .storage
+        .store_l2_commit(commit.clone())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    info!(
+        "Anchored L2 commitment {} epoch {}",
+        commit.l2_id, commit.epoch
+    );
+
+    let response = L2CommitResponse {
+        l2_id: commit.l2_id.clone(),
+        epoch: commit.epoch,
+        commit_id: hex::encode(commit.id),
+        hashtimer: commit.hashtimer.to_hex(),
+        timestamp: commit.timestamp.0,
+    };
+
+    Ok(Json(RpcResponse::success(response)))
+}
+
+async fn list_l2_commits(
+    State(state): State<AppState>,
+    Query(filter): Query<L2FilterQuery>,
+) -> Result<Json<RpcResponse<Vec<L2StateCommit>>>, StatusCode> {
+    let commits = state
+        .storage
+        .get_l2_commits(filter.l2_id.as_deref())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(RpcResponse::success(commits)))
+}
+
+async fn verify_l2_exit(
+    State(state): State<AppState>,
+    Json(request): Json<L2ExitVerificationRequest>,
+) -> Result<Json<RpcResponse<L2ExitVerificationResponse>>, StatusCode> {
+    if request.l2_id.trim().is_empty()
+        || request.account.trim().is_empty()
+        || request.proof_of_inclusion.trim().is_empty()
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let amount = convert_exit_amount(request.amount)?;
+    let now = IppanTimeMicros::now();
+    let mut exit = L2Exit::with_timestamp(
+        request.l2_id.clone(),
+        request.epoch,
+        request.account.clone(),
+        amount,
+        request.nonce,
+        request.proof_of_inclusion.clone(),
+        now,
+        state.node_id.as_bytes(),
+    );
+
+    if state.l2_config.challenge_window_ms > 0 {
+        exit.status = L2ExitStatus::ChallengeWindow;
+    } else {
+        exit.status = L2ExitStatus::Finalized;
+        exit.finalized_at = Some(now);
+    }
+
+    state
+        .storage
+        .store_l2_exit(exit.clone())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let response = L2ExitVerificationResponse {
+        exit_id: hex::encode(exit.id),
+        status: exit.status.clone(),
+        hashtimer: exit.hashtimer.to_hex(),
+        submitted_at: exit.submitted_at.0,
+        challenge_window_ends_at: exit
+            .challenge_window_deadline(state.l2_config.challenge_window_ms)
+            .0,
+    };
+
+    info!(
+        "Accepted L2 exit for {} epoch {} amount {}",
+        exit.l2_id, exit.epoch, request.amount
+    );
+
+    Ok(Json(RpcResponse::success(response)))
+}
+
+async fn list_l2_exits(
+    State(state): State<AppState>,
+    Query(filter): Query<L2FilterQuery>,
+) -> Result<Json<RpcResponse<Vec<L2Exit>>>, StatusCode> {
+    let exits = state
+        .storage
+        .get_l2_exits(filter.l2_id.as_deref())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(RpcResponse::success(exits)))
+}
+
+async fn get_l2_exit(
+    State(state): State<AppState>,
+    Path(exit_id): Path<String>,
+) -> Result<Json<RpcResponse<Option<L2Exit>>>, StatusCode> {
+    let bytes = hex::decode(exit_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if bytes.len() != 32 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let mut id = [0u8; 32];
+    id.copy_from_slice(&bytes);
+
+    let exit = state
+        .storage
+        .get_l2_exit(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(RpcResponse::success(exit)))
 }
 
 fn balance_response_for(
@@ -402,6 +663,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/transactions", get(get_transactions_v1))
         .route("/api/v1/transaction", post(submit_transaction_v1))
         .route("/api/v1/address/validate", get(validate_address_v1))
+        .route("/api/v1/l2/commit", post(submit_l2_commit))
+        .route("/api/v1/l2/commits", get(list_l2_commits))
+        .route("/api/v1/l2/verify_exit", post(verify_l2_exit))
+        .route("/api/v1/l2/exits", get(list_l2_exits))
+        .route("/api/v1/l2/exits/:exit_id", get(get_l2_exit))
         // Blockchain endpoints
         .route("/block", get(get_block))
         .route("/block/:hash", get(get_block_by_hash))
@@ -1025,6 +1291,11 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     info!("  GET  /api/v1/transactions?address=<address> - Account transactions");
     info!("  POST /api/v1/transaction - Submit transaction");
     info!("  GET  /api/v1/address/validate?address=<address> - Validate address");
+    info!("  POST /api/v1/l2/commit - Submit L2 state commitment");
+    info!("  GET  /api/v1/l2/commits - List L2 commitments");
+    info!("  POST /api/v1/l2/verify_exit - Submit L2 exit proof");
+    info!("  GET  /api/v1/l2/exits - List L2 exit requests");
+    info!("  GET  /api/v1/l2/exits/<id> - Get exit by identifier");
     info!("  GET  /block?hash=<hash> - Get block by hash");
     info!("  GET  /block?height=<height> - Get block by height");
     info!("  GET  /block/<hash> - Get block by hash");
@@ -1055,6 +1326,7 @@ mod tests {
             p2p_network: None,
             node_id: "test-node".to_string(),
             consensus: None,
+            l2_config: L2Config::default(),
         };
 
         let Json(body) = health_check(State(state)).await;
@@ -1067,5 +1339,75 @@ mod tests {
         let Json(body) = get_time().await;
         assert!(body.success);
         assert!(body.data.unwrap().time_us > 0);
+    }
+
+    #[tokio::test]
+    async fn test_submit_l2_commit() {
+        let storage = Arc::new(MemoryStorage::new());
+        let state = AppState {
+            storage: storage.clone(),
+            start_time: std::time::Instant::now(),
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            p2p_network: None,
+            node_id: "test-node".to_string(),
+            consensus: None,
+            l2_config: L2Config::default(),
+        };
+
+        let request = L2CommitRequest {
+            l2_id: "rollup-1".to_string(),
+            epoch: 1,
+            state_root: "0xabc".to_string(),
+            da_hash: None,
+            proof_type: Some(L2ProofType::Optimistic),
+            proof: Some("proof".to_string()),
+            inline_data: None,
+        };
+
+        let Json(response) = submit_l2_commit(State(state.clone()), Json(request))
+            .await
+            .expect("commit should succeed");
+
+        assert!(response.success);
+        let data = response.data.unwrap();
+        assert_eq!(data.l2_id, "rollup-1");
+        assert_eq!(data.epoch, 1);
+
+        let commits = storage.get_l2_commits(Some("rollup-1")).unwrap();
+        assert_eq!(commits.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_verify_l2_exit() {
+        let storage = Arc::new(MemoryStorage::new());
+        let state = AppState {
+            storage: storage.clone(),
+            start_time: std::time::Instant::now(),
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            p2p_network: None,
+            node_id: "test-node".to_string(),
+            consensus: None,
+            l2_config: L2Config::default(),
+        };
+
+        let request = L2ExitVerificationRequest {
+            l2_id: "rollup-1".to_string(),
+            epoch: 1,
+            proof_of_inclusion: "proof".to_string(),
+            account: "0xabc".to_string(),
+            amount: 10.5,
+            nonce: 0,
+        };
+
+        let Json(response) = verify_l2_exit(State(state.clone()), Json(request))
+            .await
+            .expect("exit should succeed");
+
+        assert!(response.success);
+        let data = response.data.unwrap();
+        assert_eq!(data.status, L2ExitStatus::ChallengeWindow);
+
+        let exits = storage.get_l2_exits(Some("rollup-1")).unwrap();
+        assert_eq!(exits.len(), 1);
     }
 }

@@ -8,6 +8,7 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - **HashTimer**: 256-bit temporal identifiers (14 hex prefix + 50 hex suffix) embedded in all blockchain operations
 - **Real Blockchain**: Complete implementation with transactions, blocks, consensus, and P2P networking
 - **Unified UI**: Modern React-based frontend for blockchain interaction
+- **L2 Bridge**: Anchor rollup commitments and manage exits through the RPC and UI
 - **Production Ready**: Docker, systemd, and CI/CD configurations
 
 ## 🏗️ Architecture
@@ -77,6 +78,62 @@ The node will:
 - `GET /block/{hash|height}` - Get block
 - `GET /account/{address}` - Get account info
 - `GET /time` - Get current IPPAN Time
+- `POST /api/v1/l2/commit` - Anchor an L2 state commitment
+- `GET /api/v1/l2/commits` - List anchored L2 state commitments
+- `POST /api/v1/l2/verify_exit` - Submit an exit proof for verification
+- `GET /api/v1/l2/exits` - List tracked L2 exit requests
+- `GET /api/v1/l2/exits/<id>` - Inspect a single exit by identifier
+
+## 🪐 L2 Anchoring & Exits
+
+IPPAN now exposes a full bridge surface for Layer-2 networks. The RPC keeps the bridge
+configuration in `node/src/main.rs` and persists rollup activity through the storage
+crate, so every node has access to the latest commitments and exit lifecycle states.
+
+### Anchoring a commitment
+
+```bash
+curl -X POST http://localhost:8080/api/v1/l2/commit \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "l2_id": "rollup-1",
+        "epoch": 42,
+        "state_root": "0xabc123",
+        "da_hash": null,
+        "proof_type": "zk-groth16",
+        "proof": "0xdeadbeef",
+        "inline_data": null
+      }'
+```
+
+The server returns a deterministic `commit_id` and HashTimer. Commitments are stored in
+sled and can be queried with `GET /api/v1/l2/commits?l2_id=rollup-1`.
+
+### Submitting an exit
+
+```bash
+curl -X POST http://localhost:8080/api/v1/l2/verify_exit \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "l2_id": "rollup-1",
+        "epoch": 42,
+        "proof_of_inclusion": "base64-proof",
+        "account": "0x1234...5678",
+        "amount": 12.5,
+        "nonce": 7
+      }'
+```
+
+Responses include the generated exit identifier, current status, and challenge window
+deadline. Exits can be listed with `GET /api/v1/l2/exits` or fetched individually via the
+`/api/v1/l2/exits/<id>` endpoint.
+
+### Operator UI
+
+The React interoperability dashboard under `/interoperability` lets bridge operators
+submit commits, stage exits, and monitor rollup metrics. Start the UI with `npm run dev`
+inside `apps/unified-ui` and navigate to the Interoperability page to access the L2
+controls.
 
 ## 🐳 Deployment
 

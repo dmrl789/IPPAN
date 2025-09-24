@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ippan_types::{Block, Transaction};
+use ippan_types::{Block, IppanTimeMicros, L2Exit, L2ExitStatus, L2StateCommit, Transaction};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
@@ -20,6 +20,10 @@ pub enum StorageError {
     TransactionNotFound,
     #[error("Account not found")]
     AccountNotFound,
+    #[error("L2 commitment not found")]
+    L2CommitNotFound,
+    #[error("L2 exit not found")]
+    L2ExitNotFound,
 }
 
 /// Account information
@@ -64,6 +68,33 @@ pub trait Storage {
 
     /// Total number of stored transactions
     fn get_transaction_count(&self) -> Result<u64>;
+
+    /// Persist an L2 state commitment anchor.
+    fn store_l2_commit(&self, commit: L2StateCommit) -> Result<()>;
+
+    /// Fetch a commitment by identifier.
+    fn get_l2_commit(&self, id: &[u8; 32]) -> Result<Option<L2StateCommit>>;
+
+    /// List commitments, optionally filtered by rollup identifier.
+    fn get_l2_commits(&self, l2_id: Option<&str>) -> Result<Vec<L2StateCommit>>;
+
+    /// Persist an L2 exit request.
+    fn store_l2_exit(&self, exit: L2Exit) -> Result<()>;
+
+    /// Fetch an exit request by identifier.
+    fn get_l2_exit(&self, id: &[u8; 32]) -> Result<Option<L2Exit>>;
+
+    /// List exit requests, optionally filtered by rollup identifier.
+    fn get_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2Exit>>;
+
+    /// Update the status of an exit request.
+    fn update_l2_exit_status(
+        &self,
+        id: &[u8; 32],
+        status: L2ExitStatus,
+        finalized_at: Option<IppanTimeMicros>,
+        rejection_reason: Option<String>,
+    ) -> Result<()>;
 }
 
 /// Sled-backed persistent storage implementation
@@ -73,6 +104,8 @@ pub struct SledStorage {
     transactions: Tree,
     accounts: Tree,
     metadata: Tree,
+    l2_commits: Tree,
+    l2_exits: Tree,
 }
 
 impl SledStorage {
@@ -84,6 +117,8 @@ impl SledStorage {
         let transactions = db.open_tree("transactions")?;
         let accounts = db.open_tree("accounts")?;
         let metadata = db.open_tree("metadata")?;
+        let l2_commits = db.open_tree("l2_commits")?;
+        let l2_exits = db.open_tree("l2_exits")?;
 
         Ok(Self {
             db,
@@ -91,6 +126,8 @@ impl SledStorage {
             transactions,
             accounts,
             metadata,
+            l2_commits,
+            l2_exits,
         })
     }
 
@@ -262,6 +299,100 @@ impl Storage for SledStorage {
     fn get_transaction_count(&self) -> Result<u64> {
         Ok(self.transactions.len() as u64)
     }
+
+    fn store_l2_commit(&self, commit: L2StateCommit) -> Result<()> {
+        let key = commit.id;
+        let data = serde_json::to_vec(&commit)?;
+        self.l2_commits.insert(&key[..], data)?;
+        Ok(())
+    }
+
+    fn get_l2_commit(&self, id: &[u8; 32]) -> Result<Option<L2StateCommit>> {
+        if let Some(data) = self.l2_commits.get(&id[..])? {
+            let commit: L2StateCommit = serde_json::from_slice(&data)?;
+            Ok(Some(commit))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn get_l2_commits(&self, l2_id: Option<&str>) -> Result<Vec<L2StateCommit>> {
+        let mut commits = Vec::new();
+
+        for item in self.l2_commits.iter() {
+            let (_, data) = item?;
+            let commit: L2StateCommit = serde_json::from_slice(&data)?;
+            if l2_id
+                .map(|expected| commit.l2_id == expected)
+                .unwrap_or(true)
+            {
+                commits.push(commit);
+            }
+        }
+
+        commits.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        Ok(commits)
+    }
+
+    fn store_l2_exit(&self, exit: L2Exit) -> Result<()> {
+        let key = exit.id;
+        let data = serde_json::to_vec(&exit)?;
+        self.l2_exits.insert(&key[..], data)?;
+        Ok(())
+    }
+
+    fn get_l2_exit(&self, id: &[u8; 32]) -> Result<Option<L2Exit>> {
+        if let Some(data) = self.l2_exits.get(&id[..])? {
+            let exit: L2Exit = serde_json::from_slice(&data)?;
+            Ok(Some(exit))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn get_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2Exit>> {
+        let mut exits = Vec::new();
+
+        for item in self.l2_exits.iter() {
+            let (_, data) = item?;
+            let exit: L2Exit = serde_json::from_slice(&data)?;
+            if l2_id.map(|expected| exit.l2_id == expected).unwrap_or(true) {
+                exits.push(exit);
+            }
+        }
+
+        exits.sort_by(|a, b| b.submitted_at.cmp(&a.submitted_at));
+        Ok(exits)
+    }
+
+    fn update_l2_exit_status(
+        &self,
+        id: &[u8; 32],
+        status: L2ExitStatus,
+        finalized_at: Option<IppanTimeMicros>,
+        rejection_reason: Option<String>,
+    ) -> Result<()> {
+        let mut exit = self.get_l2_exit(id)?.ok_or(StorageError::L2ExitNotFound)?;
+
+        exit.status = status;
+        exit.finalized_at = finalized_at.or_else(|| {
+            if matches!(
+                exit.status,
+                L2ExitStatus::Finalized | L2ExitStatus::Rejected
+            ) {
+                Some(IppanTimeMicros::now())
+            } else {
+                None
+            }
+        });
+        exit.rejection_reason = rejection_reason;
+        exit.refresh_id();
+
+        // Use original identifier as the key to preserve references.
+        let data = serde_json::to_vec(&exit)?;
+        self.l2_exits.insert(&id[..], data)?;
+        Ok(())
+    }
 }
 
 /// In-memory storage implementation (for testing/development)
@@ -270,6 +401,8 @@ pub struct MemoryStorage {
     transactions: Arc<RwLock<HashMap<String, Transaction>>>,
     accounts: Arc<RwLock<HashMap<String, Account>>>,
     latest_height: Arc<RwLock<u64>>,
+    l2_commits: Arc<RwLock<HashMap<String, L2StateCommit>>>,
+    l2_exits: Arc<RwLock<HashMap<String, L2Exit>>>,
 }
 
 impl MemoryStorage {
@@ -279,6 +412,8 @@ impl MemoryStorage {
             transactions: Arc::new(RwLock::new(HashMap::new())),
             accounts: Arc::new(RwLock::new(HashMap::new())),
             latest_height: Arc::new(RwLock::new(0)),
+            l2_commits: Arc::new(RwLock::new(HashMap::new())),
+            l2_exits: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -353,12 +488,88 @@ impl Storage for MemoryStorage {
     fn get_transaction_count(&self) -> Result<u64> {
         Ok(self.transactions.read().len() as u64)
     }
+
+    fn store_l2_commit(&self, commit: L2StateCommit) -> Result<()> {
+        let key = hex::encode(commit.id);
+        self.l2_commits.write().insert(key, commit);
+        Ok(())
+    }
+
+    fn get_l2_commit(&self, id: &[u8; 32]) -> Result<Option<L2StateCommit>> {
+        let key = hex::encode(id);
+        Ok(self.l2_commits.read().get(&key).cloned())
+    }
+
+    fn get_l2_commits(&self, l2_id: Option<&str>) -> Result<Vec<L2StateCommit>> {
+        let mut commits: Vec<_> = self
+            .l2_commits
+            .read()
+            .values()
+            .filter(|commit| {
+                l2_id
+                    .map(|expected| commit.l2_id == expected)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+        commits.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        Ok(commits)
+    }
+
+    fn store_l2_exit(&self, exit: L2Exit) -> Result<()> {
+        let key = hex::encode(exit.id);
+        self.l2_exits.write().insert(key, exit);
+        Ok(())
+    }
+
+    fn get_l2_exit(&self, id: &[u8; 32]) -> Result<Option<L2Exit>> {
+        let key = hex::encode(id);
+        Ok(self.l2_exits.read().get(&key).cloned())
+    }
+
+    fn get_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2Exit>> {
+        let mut exits: Vec<_> = self
+            .l2_exits
+            .read()
+            .values()
+            .filter(|exit| l2_id.map(|expected| exit.l2_id == expected).unwrap_or(true))
+            .cloned()
+            .collect();
+        exits.sort_by(|a, b| b.submitted_at.cmp(&a.submitted_at));
+        Ok(exits)
+    }
+
+    fn update_l2_exit_status(
+        &self,
+        id: &[u8; 32],
+        status: L2ExitStatus,
+        finalized_at: Option<IppanTimeMicros>,
+        rejection_reason: Option<String>,
+    ) -> Result<()> {
+        let key = hex::encode(id);
+        let mut exits = self.l2_exits.write();
+        let exit = exits.get_mut(&key).ok_or(StorageError::L2ExitNotFound)?;
+        exit.status = status;
+        exit.finalized_at = finalized_at.or_else(|| {
+            if matches!(
+                exit.status,
+                L2ExitStatus::Finalized | L2ExitStatus::Rejected
+            ) {
+                Some(IppanTimeMicros::now())
+            } else {
+                None
+            }
+        });
+        exit.rejection_reason = rejection_reason;
+        exit.refresh_id();
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{Block, Transaction};
+    use ippan_types::{Block, L2Exit, L2ExitStatus, L2ProofType, L2StateCommit};
     use tempfile::tempdir;
 
     #[test]
@@ -403,5 +614,50 @@ mod tests {
 
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().balance, 1000);
+    }
+
+    #[test]
+    fn test_l2_commit_storage_roundtrip() {
+        let temp_dir = tempdir().unwrap();
+        let storage = SledStorage::new(temp_dir.path()).unwrap();
+        storage.initialize().unwrap();
+
+        let commit = L2StateCommit::new(
+            "rollup-1",
+            42,
+            "0xabc",
+            None,
+            L2ProofType::Optimistic,
+            Some("proof".to_string()),
+            None,
+            b"node",
+        );
+
+        storage.store_l2_commit(commit.clone()).unwrap();
+        let stored = storage.get_l2_commit(&commit.id).unwrap();
+        assert!(stored.is_some());
+        assert_eq!(stored.unwrap().epoch, 42);
+
+        let filtered = storage.get_l2_commits(Some("rollup-1")).unwrap();
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_l2_exit_storage_and_update() {
+        let storage = MemoryStorage::new();
+
+        let exit = L2Exit::new("rollup-1", 7, "0xabc", 10_000, 1, "proof", b"node");
+        let exit_id = exit.id;
+        storage.store_l2_exit(exit).unwrap();
+
+        let fetched = storage.get_l2_exit(&exit_id).unwrap().unwrap();
+        assert_eq!(fetched.status, L2ExitStatus::Pending);
+
+        storage
+            .update_l2_exit_status(&exit_id, L2ExitStatus::ChallengeWindow, None, None)
+            .unwrap();
+
+        let updated = storage.get_l2_exit(&exit_id).unwrap().unwrap();
+        assert_eq!(updated.status, L2ExitStatus::ChallengeWindow);
     }
 }

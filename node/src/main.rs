@@ -3,7 +3,7 @@ use clap::{Arg, ArgAction, Command};
 use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
-use ippan_rpc::{start_server, AppState, ConsensusHandle};
+use ippan_rpc::{start_server, AppState, ConsensusHandle, L2Config};
 use ippan_storage::SledStorage;
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -50,6 +50,13 @@ struct AppConfig {
 
     // Development
     dev_mode: bool,
+
+    // L2 bridge configuration
+    l2_max_commit_size: usize,
+    l2_min_epoch_gap_ms: u64,
+    l2_challenge_window_ms: u64,
+    l2_max_l2_count: usize,
+    l2_da_mode: String,
 }
 
 impl AppConfig {
@@ -144,6 +151,26 @@ impl AppConfig {
 
         let p2p_enable_upnp = config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false);
 
+        let l2_max_commit_size = config
+            .get_string("L2_MAX_COMMIT_SIZE")
+            .unwrap_or_else(|_| "16384".to_string())
+            .parse()?;
+        let l2_min_epoch_gap_ms = config
+            .get_string("L2_MIN_EPOCH_GAP_MS")
+            .unwrap_or_else(|_| "250".to_string())
+            .parse()?;
+        let l2_challenge_window_ms = config
+            .get_string("L2_CHALLENGE_WINDOW_MS")
+            .unwrap_or_else(|_| "60000".to_string())
+            .parse()?;
+        let l2_max_l2_count = config
+            .get_string("L2_MAX_L2_COUNT")
+            .unwrap_or_else(|_| "100".to_string())
+            .parse()?;
+        let l2_da_mode = config
+            .get_string("L2_DA_MODE")
+            .unwrap_or_else(|_| "external".to_string());
+
         Ok(Self {
             node_id: config
                 .get_string("NODE_ID")
@@ -201,6 +228,11 @@ impl AppConfig {
                 .get_string("DEV_MODE")
                 .unwrap_or_else(|_| "false".to_string())
                 .parse()?,
+            l2_max_commit_size,
+            l2_min_epoch_gap_ms,
+            l2_challenge_window_ms,
+            l2_max_l2_count,
+            l2_da_mode,
         })
     }
 }
@@ -261,6 +293,12 @@ async fn main() -> Result<()> {
     info!("Development mode: {}", config.dev_mode);
     info!("Bootstrap peers: {:?}", config.bootstrap_nodes);
     info!("UPnP enabled: {}", config.p2p_enable_upnp);
+    info!(
+        "L2 bridge config => max_commit_size: {} bytes, min_epoch_gap_ms: {}, challenge_window_ms: {}",
+        config.l2_max_commit_size,
+        config.l2_min_epoch_gap_ms,
+        config.l2_challenge_window_ms
+    );
 
     // Create data directory
     std::fs::create_dir_all(&config.data_dir)?;
@@ -344,6 +382,13 @@ async fn main() -> Result<()> {
         p2p_network: Some(p2p_network_arc.clone()),
         node_id: config.node_id.clone(),
         consensus: Some(consensus_handle.clone()),
+        l2_config: L2Config {
+            max_commit_size: config.l2_max_commit_size,
+            min_epoch_gap_ms: config.l2_min_epoch_gap_ms,
+            challenge_window_ms: config.l2_challenge_window_ms,
+            max_l2_count: config.l2_max_l2_count,
+            da_mode: config.l2_da_mode.clone(),
+        },
     };
 
     let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);

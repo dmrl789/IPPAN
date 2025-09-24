@@ -133,11 +133,62 @@ export default function InteroperabilityPage() {
     setExitRecords(mockExits);
   }, []);
 
-  const handleCommitSubmit = (e: React.FormEvent) => {
+  const handleCommitSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Here you would integrate with the actual L2 commit API
-    console.log('Submitting L2 commit:', commitData);
-    success('L2 Commit Submitted', 'Your L2 commit has been submitted successfully!');
+    try {
+      if (!commitData.l2Id.trim() || !commitData.stateRoot.trim()) {
+        throw new Error('L2 network ID and state root are required');
+      }
+
+      const epoch = parseInt(commitData.epoch, 10);
+      if (isNaN(epoch) || epoch < 0) {
+        throw new Error('Please provide a valid epoch number');
+      }
+
+      const payload = {
+        l2_id: commitData.l2Id.trim(),
+        epoch,
+        state_root: commitData.stateRoot.trim(),
+        da_hash: commitData.daHash.trim() ? commitData.daHash.trim() : undefined,
+        proof_type: commitData.proofType,
+        proof: commitData.proof.trim() ? commitData.proof.trim() : undefined,
+        inline_data: commitData.inlineData.trim() ? commitData.inlineData.trim() : undefined,
+      };
+
+      const response = await fetch('/api/v1/l2/commit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to anchor L2 commitment');
+      }
+
+      const commitId: string | undefined = result.data?.commit_id;
+      success(
+        'L2 Commit Submitted',
+        `Anchored epoch ${payload.epoch} for ${payload.l2_id}${commitId ? ` (commit ${commitId.slice(0, 8)}…)` : ''}`
+      );
+
+      setCommitData({
+        l2Id: '',
+        epoch: '',
+        stateRoot: '',
+        daHash: '',
+        proofType: 'zk-groth16',
+        proof: '',
+        inlineData: ''
+      });
+    } catch (err) {
+      error(
+        'Commit Submission Failed',
+        err instanceof Error ? err.message : 'An unexpected error occurred'
+      );
+    }
   };
 
   const handleExitSubmit = async (e: React.FormEvent) => {
@@ -172,13 +223,10 @@ export default function InteroperabilityPage() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to submit L2 exit');
-      }
-
       const result = await response.json();
-      console.log('L2 exit submitted:', result);
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to submit L2 exit');
+      }
 
       // Add to local records
       const newExit: L2ExitRecord = {
@@ -186,7 +234,7 @@ export default function InteroperabilityPage() {
         l2Id: exitData.l2Id,
         account: exitData.account,
         amount: `${exitData.amount} IPPAN`,
-        status: 'pending',
+        status: (result.data?.status as L2ExitRecord['status']) || 'pending',
         submittedAt: new Date().toISOString(),
       };
 
