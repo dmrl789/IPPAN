@@ -199,7 +199,7 @@ impl HttpP2PNetwork {
                     }
 
                     interval.tick().await;
-                    Self::discover_peers(&client, &peers, &announce_address, &peer_count).await;
+                    Self::discover_peers(&client, &peers, &local_address).await;
                 }
             })
         };
@@ -419,15 +419,13 @@ impl HttpP2PNetwork {
     async fn discover_peers(
         client: &Client,
         peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
-        announce_address: &Arc<parking_lot::RwLock<String>>,
-        peer_count: &Arc<parking_lot::RwLock<usize>>,
+        local_address: &str,
     ) {
         let peer_list = peers.read().clone();
 
         for peer_address in peer_list {
             let client = client.clone();
             let peers = peers.clone();
-            let config = config.clone();
             let local_address = local_address.to_string();
 
             tokio::spawn(async move {
@@ -435,7 +433,6 @@ impl HttpP2PNetwork {
                     &client,
                     &peer_address,
                     &peers,
-                    &config,
                     &local_address,
                 )
                 .await

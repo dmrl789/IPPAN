@@ -1,13 +1,13 @@
 use anyhow::Result;
 use ippan_storage::{Account, Storage};
-use ippan_types::{ippan_time_now, Block, HashTimer, IppanTimeMicros, Transaction};
+use ippan_types::{Block, Transaction};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 /// Consensus errors
 #[derive(thiserror::Error, Debug)]
@@ -161,8 +161,8 @@ impl PoAConsensus {
 
                     slot_interval.tick().await;
                 }
-            })
-        };
+            });
+        }
 
         info!("PoA consensus engine started");
         Ok(())
