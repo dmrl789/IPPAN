@@ -64,7 +64,7 @@ impl Block {
             tx_merkle_root,
             round_id,
             proposer_id,
-            nonce: nonce,
+            nonce,
             hashtimer,
             timestamp,
         };
@@ -142,7 +142,7 @@ impl Block {
         hasher.update(&self.header.round_id.to_be_bytes());
         hasher.update(&self.header.proposer_id);
         hasher.update(&self.header.nonce.to_be_bytes());
-        hasher.update(&self.header.hashtimer.to_hex().as_bytes());
+        hasher.update(self.header.hashtimer.to_hex().as_bytes());
         hasher.update(&self.header.timestamp.0.to_be_bytes());
 
         let hash = hasher.finalize();

@@ -15,7 +15,7 @@ impl KeyPair {
         let mut rng = OsRng;
         let mut secret_key = [0u8; 32];
         rng.fill_bytes(&mut secret_key);
-        let signing_key = SigningKey::from_bytes(&secret_key.into());
+        let signing_key = SigningKey::from_bytes(&secret_key);
         let verifying_key = signing_key.verifying_key();
 
         Self {

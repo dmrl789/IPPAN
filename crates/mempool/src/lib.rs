@@ -46,7 +46,7 @@ impl Mempool {
         // Update sender nonce index
         sender_nonces
             .entry(sender)
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .insert(tx.nonce, tx_hash);
 
         Ok(true)

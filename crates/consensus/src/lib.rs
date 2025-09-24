@@ -189,7 +189,7 @@ impl PoAConsensus {
     pub fn get_state(&self) -> ConsensusState {
         let current_slot = *self.current_slot.read();
         let proposer = Self::get_proposer_for_slot(&self.config.validators, current_slot);
-        let is_proposing = proposer.map_or(false, |p| p == self.validator_id);
+        let is_proposing = proposer == Some(self.validator_id);
 
         ConsensusState {
             current_slot,
@@ -387,6 +387,7 @@ impl PoAConsensus {
 }
 
 /// Legacy consensus engine trait for compatibility
+#[allow(async_fn_in_trait)]
 pub trait ConsensusEngine {
     async fn start(&mut self) -> Result<()>;
     async fn stop(&mut self) -> Result<()>;
