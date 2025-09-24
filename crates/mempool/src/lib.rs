@@ -1,7 +1,7 @@
 use anyhow::Result;
 use ippan_types::Transaction;
 use parking_lot::RwLock;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 
 /// Mempool for managing pending transactions
 pub struct Mempool {
@@ -26,29 +26,29 @@ impl Mempool {
     pub fn add_transaction(&self, tx: Transaction) -> Result<bool> {
         let tx_hash = hex::encode(tx.hash());
         let sender = hex::encode(tx.from);
-        
+
         let mut transactions = self.transactions.write();
         let mut sender_nonces = self.sender_nonces.write();
-        
+
         // Check if transaction already exists
         if transactions.contains_key(&tx_hash) {
             return Ok(false);
         }
-        
+
         // Check mempool size limit
         if transactions.len() >= self.max_size {
             return Ok(false);
         }
-        
+
         // Add transaction
         transactions.insert(tx_hash.clone(), tx.clone());
-        
+
         // Update sender nonce index
         sender_nonces
             .entry(sender)
             .or_insert_with(BTreeMap::new)
             .insert(tx.nonce, tx_hash);
-        
+
         Ok(true)
     }
 
@@ -56,7 +56,7 @@ impl Mempool {
     pub fn remove_transaction(&self, tx_hash: &str) -> Result<Option<Transaction>> {
         let mut transactions = self.transactions.write();
         let mut sender_nonces = self.sender_nonces.write();
-        
+
         if let Some(tx) = transactions.remove(tx_hash) {
             let sender = hex::encode(tx.from);
             if let Some(nonces) = sender_nonces.get_mut(&sender) {
@@ -80,9 +80,10 @@ impl Mempool {
     pub fn get_sender_transactions(&self, sender: &str) -> Vec<Transaction> {
         let transactions = self.transactions.read();
         let sender_nonces = self.sender_nonces.read();
-        
+
         if let Some(nonces) = sender_nonces.get(sender) {
-            nonces.values()
+            nonces
+                .values()
                 .filter_map(|tx_hash| transactions.get(tx_hash))
                 .cloned()
                 .collect()
@@ -95,10 +96,10 @@ impl Mempool {
     pub fn get_transactions_for_block(&self, max_count: usize) -> Vec<Transaction> {
         let transactions = self.transactions.read();
         let sender_nonces = self.sender_nonces.read();
-        
+
         let mut selected = Vec::new();
         let mut used_senders = HashMap::new();
-        
+
         // Select transactions in nonce order for each sender
         for (sender, nonces) in sender_nonces.iter() {
             let mut sender_txs = Vec::new();
@@ -107,7 +108,7 @@ impl Mempool {
                     sender_txs.push((*nonce, tx.clone()));
                 }
             }
-            
+
             // Sort by nonce and take the first few
             sender_txs.sort_by_key(|(nonce, _)| *nonce);
             for (nonce, tx) in sender_txs {
@@ -125,7 +126,7 @@ impl Mempool {
                 }
             }
         }
-        
+
         selected
     }
 
@@ -149,17 +150,17 @@ mod tests {
     #[test]
     fn test_mempool_add_remove() {
         let mempool = Mempool::new(100);
-        
+
         let tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
         let tx_hash = hex::encode(tx.hash());
-        
+
         // Add transaction
         assert!(mempool.add_transaction(tx.clone()).unwrap());
         assert_eq!(mempool.size(), 1);
-        
+
         // Try to add same transaction again
         assert!(!mempool.add_transaction(tx.clone()).unwrap());
-        
+
         // Remove transaction
         let removed = mempool.remove_transaction(&tx_hash).unwrap();
         assert!(removed.is_some());
@@ -169,14 +170,14 @@ mod tests {
     #[test]
     fn test_mempool_sender_transactions() {
         let mempool = Mempool::new(100);
-        
+
         let sender = [1u8; 32];
         let tx1 = Transaction::new(sender, [2u8; 32], 1000, 1);
         let tx2 = Transaction::new(sender, [3u8; 32], 2000, 2);
-        
+
         mempool.add_transaction(tx1).unwrap();
         mempool.add_transaction(tx2).unwrap();
-        
+
         let sender_txs = mempool.get_sender_transactions(&hex::encode(sender));
         assert_eq!(sender_txs.len(), 2);
     }

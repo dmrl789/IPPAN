@@ -1,14 +1,13 @@
 use anyhow::Result;
-use ippan_storage::{Storage, Account};
-use ippan_types::{Block, Transaction, ippan_time_now, HashTimer, IppanTimeMicros};
+use ippan_storage::{Account, Storage};
+use ippan_types::{Block, Transaction};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
-use tracing::{info, warn, error, debug};
-use parking_lot::RwLock;
+use tracing::{error, info, warn};
 
 /// Consensus errors
 #[derive(thiserror::Error, Debug)]
@@ -82,7 +81,7 @@ impl PoAConsensus {
         validator_id: [u8; 32],
     ) -> Self {
         let (tx_sender, tx_receiver) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             storage,
@@ -94,17 +93,17 @@ impl PoAConsensus {
             mempool: Arc::new(RwLock::new(Vec::new())),
         }
     }
-    
+
     /// Get the transaction sender for submitting transactions
     pub fn get_tx_sender(&self) -> mpsc::UnboundedSender<Transaction> {
         self.tx_sender.clone()
     }
-    
+
     /// Start the consensus engine
     pub async fn start(&mut self) -> Result<()> {
         *self.is_running.write() = true;
         info!("Starting PoA consensus engine");
-        
+
         // Initialize current slot based on time
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -112,9 +111,9 @@ impl PoAConsensus {
             .as_millis() as u64;
         let initial_slot = current_time / self.config.slot_duration_ms;
         *self.current_slot.write() = initial_slot;
-        
+
         // Start the consensus loop
-        let consensus_handle = {
+        {
             let is_running = self.is_running.clone();
             let current_slot = self.current_slot.clone();
             let config = self.config.clone();
@@ -122,24 +121,24 @@ impl PoAConsensus {
             let validator_id = self.validator_id;
             let mempool = self.mempool.clone();
             let mut tx_receiver = self.tx_receiver.take().unwrap();
-            
+
             tokio::spawn(async move {
                 let mut slot_interval = interval(Duration::from_millis(config.slot_duration_ms));
-                
+
                 loop {
                     if !*is_running.read() {
                         break;
                     }
-                    
+
                     // Process incoming transactions
                     while let Ok(tx) = tx_receiver.try_recv() {
                         mempool.write().push(tx);
                     }
-                    
+
                     // Check if it's our turn to propose
                     let slot_number = *current_slot.read();
                     let proposer = Self::get_proposer_for_slot(&config.validators, slot_number);
-                    
+
                     if let Some(proposer_id) = proposer {
                         if proposer_id == validator_id {
                             // It's our turn to propose a block
@@ -149,42 +148,44 @@ impl PoAConsensus {
                                 &config,
                                 slot_number,
                                 validator_id,
-                            ).await {
+                            )
+                            .await
+                            {
                                 error!("Failed to propose block: {}", e);
                             }
                         }
                     }
-                    
+
                     // Update current slot
                     *current_slot.write() = slot_number + 1;
-                    
+
                     slot_interval.tick().await;
                 }
-            })
-        };
-        
+            });
+        }
+
         info!("PoA consensus engine started");
         Ok(())
     }
-    
+
     /// Stop the consensus engine
     pub async fn stop(&mut self) -> Result<()> {
         *self.is_running.write() = false;
         info!("Stopping PoA consensus engine");
-        
+
         // Wait a bit for the consensus loop to finish
         sleep(Duration::from_millis(100)).await;
-        
+
         info!("PoA consensus engine stopped");
         Ok(())
     }
-    
+
     /// Get current consensus state
     pub fn get_state(&self) -> ConsensusState {
         let current_slot = *self.current_slot.read();
         let proposer = Self::get_proposer_for_slot(&self.config.validators, current_slot);
         let is_proposing = proposer.map_or(false, |p| p == self.validator_id);
-        
+
         ConsensusState {
             current_slot,
             current_proposer: proposer,
@@ -193,26 +194,24 @@ impl PoAConsensus {
             latest_block_height: self.storage.get_latest_height().unwrap_or(0),
         }
     }
-    
+
     /// Get the proposer for a given slot
     fn get_proposer_for_slot(validators: &[Validator], slot: u64) -> Option<[u8; 32]> {
         if validators.is_empty() {
             return None;
         }
-        
-        let active_validators: Vec<&Validator> = validators
-            .iter()
-            .filter(|v| v.is_active)
-            .collect();
-        
+
+        let active_validators: Vec<&Validator> =
+            validators.iter().filter(|v| v.is_active).collect();
+
         if active_validators.is_empty() {
             return None;
         }
-        
+
         let proposer_index = (slot % active_validators.len() as u64) as usize;
         Some(active_validators[proposer_index].id)
     }
-    
+
     /// Propose a new block
     async fn propose_block(
         storage: &Arc<dyn Storage + Send + Sync>,
@@ -227,17 +226,18 @@ impl PoAConsensus {
             let tx_count = transactions.len().min(config.max_transactions_per_block);
             transactions.drain(..tx_count).collect::<Vec<_>>()
         };
-        
+
         // Get previous block hash
         let latest_height = storage.get_latest_height()?;
         let prev_hash = if latest_height == 0 {
             [0u8; 32] // Genesis block
         } else {
-            let prev_block = storage.get_block_by_height(latest_height)?
+            let prev_block = storage
+                .get_block_by_height(latest_height)?
                 .ok_or_else(|| anyhow::anyhow!("Previous block not found"))?;
             prev_block.hash()
         };
-        
+
         // Create new block
         let block = Block::new(
             prev_hash,
@@ -245,27 +245,34 @@ impl PoAConsensus {
             latest_height + 1,
             proposer_id,
         );
-        
+
         // Validate block
         if !block.is_valid() {
             return Err(anyhow::anyhow!("Invalid block"));
         }
-        
+
         // Store block
         storage.store_block(block.clone())?;
-        
+
         // Process transactions and update accounts
-        Self::process_transactions(storage, &block.transactions, config.block_reward, proposer_id).await?;
-        
-        info!("Proposed and stored block {} at height {} with {} transactions", 
-            hex::encode(block.hash()), 
+        Self::process_transactions(
+            storage,
+            &block.transactions,
+            config.block_reward,
+            proposer_id,
+        )
+        .await?;
+
+        info!(
+            "Proposed and stored block {} at height {} with {} transactions",
+            hex::encode(block.hash()),
             block.header.round_id,
             block.transactions.len()
         );
-        
+
         Ok(())
     }
-    
+
     /// Process transactions and update account balances
     async fn process_transactions(
         storage: &Arc<dyn Storage + Send + Sync>,
@@ -286,7 +293,7 @@ impl PoAConsensus {
             };
             storage.update_account(proposer_account)?;
         }
-        
+
         // Process each transaction
         for tx in transactions {
             // Get sender account
@@ -296,7 +303,7 @@ impl PoAConsensus {
                     sender_account.balance -= tx.amount;
                     sender_account.nonce += 1;
                     storage.update_account(sender_account)?;
-                    
+
                     // Update receiver account
                     if let Some(mut receiver_account) = storage.get_account(&tx.to)? {
                         receiver_account.balance += tx.amount;
@@ -317,56 +324,57 @@ impl PoAConsensus {
                 warn!("Transaction from unknown account");
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate a proposed block
     pub async fn validate_block(&self, block: &Block) -> Result<bool> {
         if !*self.is_running.read() {
             return Err(ConsensusError::NotRunning.into());
         }
-        
+
         // Basic block validation
         if !block.is_valid() {
             return Ok(false);
         }
-        
+
         // Check if the proposer is valid for this slot
-        let expected_proposer = Self::get_proposer_for_slot(&self.config.validators, block.header.round_id);
+        let expected_proposer =
+            Self::get_proposer_for_slot(&self.config.validators, block.header.round_id);
         if expected_proposer != Some(block.header.proposer_id) {
             return Ok(false);
         }
-        
+
         // Check if block height is correct
         let latest_height = self.storage.get_latest_height()?;
         if block.header.round_id != latest_height + 1 {
             return Ok(false);
         }
-        
+
         // Validate transactions
         for tx in &block.transactions {
             if !tx.is_valid() {
                 return Ok(false);
             }
         }
-        
+
         Ok(true)
     }
-    
+
     /// Add a validator
     pub fn add_validator(&mut self, validator: Validator) {
         let validator_id = validator.id;
         self.config.validators.push(validator);
         info!("Added validator: {}", hex::encode(validator_id));
     }
-    
+
     /// Remove a validator
     pub fn remove_validator(&mut self, validator_id: &[u8; 32]) {
         self.config.validators.retain(|v| v.id != *validator_id);
         info!("Removed validator: {}", hex::encode(validator_id));
     }
-    
+
     /// Get validator list
     pub fn get_validators(&self) -> &[Validator] {
         &self.config.validators
@@ -386,22 +394,24 @@ impl ConsensusEngine for PoAConsensus {
     async fn start(&mut self) -> Result<()> {
         PoAConsensus::start(self).await
     }
-    
+
     async fn stop(&mut self) -> Result<()> {
         PoAConsensus::stop(self).await
     }
-    
+
     async fn propose_block(&self, transactions: Vec<Transaction>) -> Result<Block> {
         // This is a simplified version for the trait
         let latest_height = self.storage.get_latest_height()?;
         let prev_hash = if latest_height == 0 {
             [0u8; 32]
         } else {
-            let prev_block = self.storage.get_block_by_height(latest_height)?
+            let prev_block = self
+                .storage
+                .get_block_by_height(latest_height)?
                 .ok_or_else(|| anyhow::anyhow!("Previous block not found"))?;
             prev_block.hash()
         };
-        
+
         Ok(Block::new(
             prev_hash,
             transactions,
@@ -409,11 +419,11 @@ impl ConsensusEngine for PoAConsensus {
             self.validator_id,
         ))
     }
-    
+
     async fn validate_block(&self, block: &Block) -> Result<bool> {
         PoAConsensus::validate_block(self, block).await
     }
-    
+
     fn get_state(&self) -> ConsensusState {
         PoAConsensus::get_state(self)
     }
@@ -430,17 +440,17 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let config = PoAConfig::default();
         let validator_id = [1u8; 32];
-        
+
         let mut consensus = PoAConsensus::new(config, storage, validator_id);
-        
+
         // Test starting and stopping
         consensus.start().await.unwrap();
         assert!(*consensus.is_running.read());
-        
+
         consensus.stop().await.unwrap();
         assert!(!*consensus.is_running.read());
     }
-    
+
     #[test]
     fn test_proposer_selection() {
         let validators = vec![
@@ -457,10 +467,19 @@ mod tests {
                 is_active: true,
             },
         ];
-        
+
         // Test proposer rotation
-        assert_eq!(PoAConsensus::get_proposer_for_slot(&validators, 0), Some([1u8; 32]));
-        assert_eq!(PoAConsensus::get_proposer_for_slot(&validators, 1), Some([2u8; 32]));
-        assert_eq!(PoAConsensus::get_proposer_for_slot(&validators, 2), Some([1u8; 32]));
+        assert_eq!(
+            PoAConsensus::get_proposer_for_slot(&validators, 0),
+            Some([1u8; 32])
+        );
+        assert_eq!(
+            PoAConsensus::get_proposer_for_slot(&validators, 1),
+            Some([2u8; 32])
+        );
+        assert_eq!(
+            PoAConsensus::get_proposer_for_slot(&validators, 2),
+            Some([1u8; 32])
+        );
     }
 }

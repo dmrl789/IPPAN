@@ -1,6 +1,7 @@
-use serde::{Deserialize, Serialize};
-use crate::hashtimer::{HashTimer, IppanTimeMicros, random_nonce};
+use crate::hashtimer::{HashTimer, IppanTimeMicros};
 use crate::transaction::Transaction;
+use rand_core::{OsRng, RngCore};
+use serde::{Deserialize, Serialize};
 
 /// Block header containing metadata and HashTimer
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,19 +40,25 @@ impl Block {
         proposer_id: [u8; 32],
     ) -> Self {
         let timestamp = IppanTimeMicros::now();
-        let nonce_bytes = random_nonce();
-        let nonce = u64::from_be_bytes([
-            nonce_bytes[0], nonce_bytes[1], nonce_bytes[2], nonce_bytes[3],
-            nonce_bytes[4], nonce_bytes[5], nonce_bytes[6], nonce_bytes[7],
-        ]);
-        
+        let mut nonce_bytes = [0u8; 8];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = u64::from_be_bytes(nonce_bytes);
+
         // Compute transaction merkle root
         let tx_merkle_root = Self::compute_merkle_root(&transactions);
-        
+
         // Create HashTimer for this block
-        let payload = Self::create_payload(&prev_hash, &tx_merkle_root, round_id, &proposer_id, nonce);
-        let hashtimer = HashTimer::now_block("block", &payload, &nonce_bytes, &proposer_id);
-        
+        let payload =
+            Self::create_payload(&prev_hash, &tx_merkle_root, round_id, &proposer_id, nonce);
+        let hashtimer = HashTimer::derive(
+            "block",
+            timestamp,
+            b"block",
+            &payload,
+            &nonce_bytes,
+            &proposer_id,
+        );
+
         let header = BlockHeader {
             prev_hash,
             tx_merkle_root,
@@ -61,7 +68,7 @@ impl Block {
             hashtimer,
             timestamp,
         };
-        
+
         Self {
             header,
             transactions,
@@ -91,18 +98,18 @@ impl Block {
             // Empty block has zero merkle root
             return [0u8; 32];
         }
-        
+
         if transactions.len() == 1 {
             // Single transaction, its hash is the merkle root
             return transactions[0].hash();
         }
-        
+
         // Compute merkle tree
         let mut hashes: Vec<[u8; 32]> = transactions.iter().map(|tx| tx.hash()).collect();
-        
+
         while hashes.len() > 1 {
             let mut next_level = Vec::new();
-            
+
             for i in (0..hashes.len()).step_by(2) {
                 let left = hashes[i];
                 let right = if i + 1 < hashes.len() {
@@ -110,20 +117,20 @@ impl Block {
                 } else {
                     left // Duplicate last element if odd number
                 };
-                
+
                 let mut hasher = blake3::Hasher::new();
                 hasher.update(&left);
                 hasher.update(&right);
                 let hash = hasher.finalize();
-                
+
                 let mut combined = [0u8; 32];
                 combined.copy_from_slice(&hash.as_bytes()[0..32]);
                 next_level.push(combined);
             }
-            
+
             hashes = next_level;
         }
-        
+
         hashes[0]
     }
 
@@ -137,7 +144,7 @@ impl Block {
         hasher.update(&self.header.nonce.to_be_bytes());
         hasher.update(&self.header.hashtimer.to_hex().as_bytes());
         hasher.update(&self.header.timestamp.0.to_be_bytes());
-        
+
         let hash = hasher.finalize();
         let mut result = [0u8; 32];
         result.copy_from_slice(&hash.as_bytes()[0..32]);
@@ -151,14 +158,14 @@ impl Block {
         if computed_merkle_root != self.header.tx_merkle_root {
             return false;
         }
-        
+
         // Verify all transactions are valid
         for tx in &self.transactions {
             if !tx.is_valid() {
                 return false;
             }
         }
-        
+
         // Verify HashTimer is valid
         let payload = Self::create_payload(
             &self.header.prev_hash,
@@ -167,7 +174,7 @@ impl Block {
             &self.header.proposer_id,
             self.header.nonce,
         );
-        let _expected_hashtimer = HashTimer::derive(
+        let expected_hashtimer = HashTimer::derive(
             "block",
             self.header.timestamp,
             "block".as_bytes(),
@@ -175,12 +182,13 @@ impl Block {
             &self.header.nonce.to_be_bytes(),
             &self.header.proposer_id,
         );
-        
+
+        if expected_hashtimer != self.header.hashtimer {
+            return false;
+        }
+
         // HashTimer should be consistent (allowing for time differences)
         self.header.hashtimer.time().0 <= IppanTimeMicros::now().0
-        
-        // Note: In a real implementation, we might want to verify the exact HashTimer
-        // but for now we just check that the time is reasonable
     }
 
     /// Get block size in bytes (approximate)
@@ -205,9 +213,9 @@ mod tests {
             Transaction::new([3u8; 32], [4u8; 32], 1000, 1),
             Transaction::new([5u8; 32], [6u8; 32], 2000, 2),
         ];
-        
+
         let block = Block::new(prev_hash, transactions, round_id, proposer_id);
-        
+
         assert_eq!(block.header.prev_hash, prev_hash);
         assert_eq!(block.header.proposer_id, proposer_id);
         assert_eq!(block.header.round_id, round_id);
@@ -221,9 +229,9 @@ mod tests {
         let proposer_id = [2u8; 32];
         let round_id = 1;
         let transactions = vec![];
-        
+
         let block = Block::new(prev_hash, transactions, round_id, proposer_id);
-        
+
         assert_eq!(block.transactions.len(), 0);
         assert_eq!(block.header.tx_merkle_root, [0u8; 32]);
     }
@@ -235,9 +243,9 @@ mod tests {
         let round_id = 1;
         let tx = Transaction::new([3u8; 32], [4u8; 32], 1000, 1);
         let transactions = vec![tx.clone()];
-        
+
         let block = Block::new(prev_hash, transactions, round_id, proposer_id);
-        
+
         assert_eq!(block.transactions.len(), 1);
         assert_eq!(block.header.tx_merkle_root, tx.hash());
     }
@@ -247,7 +255,7 @@ mod tests {
         let tx1 = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
         let tx2 = Transaction::new([3u8; 32], [4u8; 32], 2000, 2);
         let transactions = vec![tx1, tx2];
-        
+
         let merkle_root = Block::compute_merkle_root(&transactions);
         assert_ne!(merkle_root, [0u8; 32]);
     }
@@ -258,10 +266,10 @@ mod tests {
         let proposer_id = [2u8; 32];
         let round_id = 1;
         let transactions = vec![Transaction::new([3u8; 32], [4u8; 32], 1000, 1)];
-        
+
         let block = Block::new(prev_hash, transactions, round_id, proposer_id);
         let hash = block.hash();
-        
+
         assert_ne!(hash, [0u8; 32]);
     }
 }
