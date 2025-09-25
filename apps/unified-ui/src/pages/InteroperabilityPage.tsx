@@ -133,11 +133,62 @@ export default function InteroperabilityPage() {
     setExitRecords(mockExits);
   }, []);
 
-  const handleCommitSubmit = (e: React.FormEvent) => {
+  const handleCommitSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Here you would integrate with the actual L2 commit API
-    console.log('Submitting L2 commit:', commitData);
-    success('L2 Commit Submitted', 'Your L2 commit has been submitted successfully!');
+    try {
+      if (!commitData.l2Id || !commitData.epoch || !commitData.stateRoot || !commitData.daHash) {
+        throw new Error('Please complete all required commit fields');
+      }
+
+      const epoch = Number(commitData.epoch);
+      if (!Number.isFinite(epoch) || epoch <= 0) {
+        throw new Error('Epoch must be a positive number');
+      }
+
+      const response = await fetch('/api/v1/l2/commit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          l2_id: commitData.l2Id,
+          epoch,
+          state_root: commitData.stateRoot,
+          da_hash: commitData.daHash,
+          proof_type: commitData.proofType,
+          proof: commitData.proof || null,
+          inline_data: commitData.inlineData || null,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || 'Failed to submit L2 commit');
+      }
+
+      const data = payload.data;
+      success(
+        'L2 Commit Submitted',
+        data
+          ? `Commit ${data.commit_id} accepted for epoch ${data.epoch}.`
+          : 'Your L2 commit has been submitted successfully.'
+      );
+
+      setCommitData({
+        l2Id: '',
+        epoch: '',
+        stateRoot: '',
+        daHash: '',
+        proofType: 'zk-groth16',
+        proof: '',
+        inlineData: ''
+      });
+    } catch (err) {
+      error(
+        'Commit Submission Failed',
+        err instanceof Error ? err.message : 'An unexpected error occurred'
+      );
+    }
   };
 
   const handleExitSubmit = async (e: React.FormEvent) => {
