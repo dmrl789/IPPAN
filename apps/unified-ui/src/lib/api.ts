@@ -67,6 +67,24 @@ export async function getDatasets(): Promise<Dataset[]> {
   return response.data;
 }
 
+// Accounts API
+export interface AccountSummary {
+  address: string;
+  balance: number;
+  nonce: number;
+}
+
+export async function getAccounts(): Promise<AccountSummary[]> {
+  const response = await api.get('/accounts');
+  const body = response.data;
+
+  if (body?.success && Array.isArray(body.data)) {
+    return body.data as AccountSummary[];
+  }
+
+  return [];
+}
+
 // Wallet API - Updated for real IPPAN nodes
 export interface WalletBalance {
   address: string;
