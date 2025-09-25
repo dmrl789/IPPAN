@@ -53,7 +53,7 @@ impl Transaction {
 
     /// Recompute the transaction identifier from its contents.
     pub fn refresh_id(&mut self) {
-        self.id = self.compute_hash();
+        self.id = self.hash();
     }
 
     /// Create payload for HashTimer computation
