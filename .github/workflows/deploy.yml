@@ -1,4 +1,4 @@
-name: Build & Deploy IPPAN (Docker → Hetzner)
+﻿name: Build & Deploy IPPAN (Docker → Hetzner)
 
 on:
   push:
@@ -54,7 +54,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Install key & known_hosts without ssh-add (avoids libcrypto issues)
+      # Install key & known_hosts (avoids ssh-add/libcrypto)
       - name: Install SSH key
         uses: shimataro/ssh-key-action@v2
         with:
@@ -74,7 +74,6 @@ jobs:
               IdentitiesOnly yes
               StrictHostKeyChecking yes
 
-      # Strong debug to see *why* SSH fails if it does (shows no secrets)
       - name: Debug SSH environment
         run: |
           set -x
