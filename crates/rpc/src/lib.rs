@@ -6,11 +6,17 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_storage::Storage;
-use ippan_types::{ippan_time_now, Block, Transaction};
+use ippan_types::{
+    address::{decode_address, encode_address, is_valid_address, ADDRESS_BYTES},
+    ippan_time_now, Block, Transaction,
+};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc, Mutex};
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -55,6 +61,11 @@ pub struct SubmitTransactionResponse {
 pub struct GetBlockQuery {
     pub hash: Option<String>,
     pub height: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddressQuery {
+    pub address: String,
 }
 
 /// Get account response
@@ -247,7 +258,9 @@ pub struct AppState {
     pub start_time: std::time::Instant,
     pub peer_count: Arc<std::sync::atomic::AtomicUsize>,
     pub p2p_network: Option<Arc<ippan_p2p::HttpP2PNetwork>>,
-    pub tx_sender: Option<UnboundedSender<Transaction>>,
+    pub tx_sender: Option<mpsc::UnboundedSender<Transaction>>,
+    pub consensus: Option<ConsensusHandle>,
+    pub node_id: String,
 }
 
 /// Create the Axum router with all RPC endpoints
@@ -263,6 +276,16 @@ pub fn create_router(state: AppState) -> Router {
         .route("/block/height/:height", get(get_block_by_height))
         .route("/tx", post(submit_transaction))
         .route("/tx/:hash", get(get_transaction))
+        // Versioned API endpoints
+        .route("/api/v1/status", get(api_v1_status))
+        .route("/api/v1/network", get(api_v1_network))
+        .route("/api/v1/mempool", get(api_v1_mempool))
+        .route("/api/v1/consensus", get(api_v1_consensus))
+        .route("/api/v1/balance", get(get_balance_v1))
+        .route("/api/v1/balance/:address", get(get_balance_v1_path))
+        .route("/api/v1/transactions", get(get_transactions_v1))
+        .route("/api/v1/transaction", post(submit_transaction_v1))
+        .route("/api/v1/address/validate", get(validate_address_v1))
         // Account endpoints
         .route("/account/:address", get(get_account))
         .route("/accounts", get(get_all_accounts))
@@ -491,6 +514,62 @@ async fn api_v1_consensus(
     Ok(Json(stats))
 }
 
+fn parse_address_string(address: &str) -> Result<[u8; ADDRESS_BYTES], StatusCode> {
+    let trimmed = address.trim();
+    if trimmed.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if trimmed.starts_with('i') {
+        decode_address(trimmed).map_err(|_| StatusCode::BAD_REQUEST)
+    } else {
+        let cleaned = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+        let decoded = hex::decode(cleaned).map_err(|_| StatusCode::BAD_REQUEST)?;
+        if decoded.len() != ADDRESS_BYTES {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        let mut bytes = [0u8; ADDRESS_BYTES];
+        bytes.copy_from_slice(&decoded);
+        Ok(bytes)
+    }
+}
+
+fn balance_response_for(
+    state: &AppState,
+    address: [u8; ADDRESS_BYTES],
+) -> Result<BalanceResponseV1, StatusCode> {
+    let account = state
+        .storage
+        .get_account(&address)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let (balance, nonce) = account
+        .map(|acc| (acc.balance, acc.nonce))
+        .unwrap_or((0, 0));
+
+    let pending_transactions = state
+        .consensus
+        .as_ref()
+        .map(|handle| handle.pending_for_address(&address))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|tx| hex::encode(tx.hash()))
+        .collect();
+
+    let encoded = encode_address(&address);
+
+    Ok(BalanceResponseV1 {
+        account: encoded.clone(),
+        address: encoded,
+        balance,
+        staked: 0,
+        staked_amount: 0,
+        rewards: 0,
+        nonce,
+        pending_transactions,
+    })
+}
+
 async fn get_balance_v1(
     State(state): State<AppState>,
     Query(params): Query<AddressQuery>,
@@ -551,13 +630,52 @@ async fn get_transactions_v1(
     Ok(Json(response))
 }
 
+async fn process_transaction_submission(
+    state: &AppState,
+    mut tx: Transaction,
+) -> Result<Transaction, StatusCode> {
+    let computed_hash = tx.hash();
+    if tx.id != computed_hash {
+        tx.id = computed_hash;
+    }
+
+    if !tx.is_valid() {
+        warn!("Rejected invalid transaction from {}", hex::encode(tx.from));
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    state
+        .storage
+        .store_transaction(tx.clone())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if let Some(sender) = &state.tx_sender {
+        if let Err(error) = sender.send(tx.clone()) {
+            error!("Failed to forward transaction to consensus: {}", error);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    if let Some(network) = &state.p2p_network {
+        if let Err(error) = network.broadcast_transaction(tx.clone()).await {
+            warn!(
+                "Failed to broadcast transaction {}: {}",
+                hex::encode(tx.id),
+                error
+            );
+        }
+    }
+
+    Ok(tx)
+}
+
 async fn submit_transaction_v1(
     State(state): State<AppState>,
-    Json(request): Json<SubmitTransactionRequest>,
+    Json(tx): Json<Transaction>,
 ) -> Result<Json<RpcResponse<SubmitTransactionResponse>>, StatusCode> {
-    let tx = submit_transaction_common(&state, request).await?;
+    let tx = process_transaction_submission(&state, tx).await?;
     let response = SubmitTransactionResponse {
-        tx_hash: hex::encode(tx.hash()),
+        tx_hash: hex::encode(tx.id),
     };
 
     Ok(Json(RpcResponse::success(response)))
@@ -639,45 +757,9 @@ async fn get_block_by_height(
 /// Submit a transaction
 async fn submit_transaction(
     State(state): State<AppState>,
-    Json(mut tx): Json<Transaction>,
+    Json(tx): Json<Transaction>,
 ) -> Result<Json<RpcResponse<SubmitTransactionResponse>>, StatusCode> {
-    // Ensure transaction identifier reflects the provided contents
-    let computed_hash = tx.hash();
-    if tx.id != computed_hash {
-        tx.id = computed_hash;
-    }
-
-    // Validate transaction before accepting it
-    if !tx.is_valid() {
-        warn!("Rejected invalid transaction from {}", hex::encode(tx.from));
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    // Store transaction locally
-    state
-        .storage
-        .store_transaction(tx.clone())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Submit to the consensus mempool if available
-    if let Some(sender) = &state.tx_sender {
-        if let Err(error) = sender.send(tx.clone()) {
-            error!("Failed to forward transaction to consensus: {}", error);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    // Broadcast the transaction to peers if networking is available
-    if let Some(network) = &state.p2p_network {
-        if let Err(error) = network.broadcast_transaction(tx.clone()).await {
-            warn!(
-                "Failed to broadcast transaction {}: {}",
-                hex::encode(tx.id),
-                error
-            );
-        }
-    }
-
+    let tx = process_transaction_submission(&state, tx).await?;
     let response = SubmitTransactionResponse {
         tx_hash: hex::encode(tx.id),
     };
@@ -867,7 +949,7 @@ async fn receive_block_response(
 
 /// P2P endpoint: Receive peer info from peer
 async fn receive_peer_info(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(info): Json<ippan_p2p::NetworkMessage>,
 ) -> Result<Json<RpcResponse<String>>, StatusCode> {
     if let ippan_p2p::NetworkMessage::PeerInfo { peer_id, addresses } = info {
@@ -883,7 +965,7 @@ async fn receive_peer_info(
 
 /// P2P endpoint: Receive peer discovery from peer
 async fn receive_peer_discovery(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(discovery): Json<ippan_p2p::NetworkMessage>,
 ) -> Result<Json<RpcResponse<String>>, StatusCode> {
     if let ippan_p2p::NetworkMessage::PeerDiscovery { peers } = discovery {
@@ -966,6 +1048,8 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: None,
+            consensus: None,
+            node_id: "test-node".to_string(),
         };
 
         let mut app = create_router(state);
@@ -998,6 +1082,8 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: None,
+            consensus: None,
+            node_id: "test-node".to_string(),
         };
 
         let mut app = create_router(state);
@@ -1032,6 +1118,8 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: Some(tx_sender),
+            consensus: None,
+            node_id: "test-node".to_string(),
         };
 
         let mut app = create_router(state);

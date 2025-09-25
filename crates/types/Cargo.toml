@@ -19,3 +19,4 @@ time = { workspace = true }
 once_cell = { workspace = true }
 parking_lot = { workspace = true }
 ed25519-dalek = { workspace = true }
+thiserror = { workspace = true }
