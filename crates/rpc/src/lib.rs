@@ -6,11 +6,17 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_storage::Storage;
-use ippan_types::{ippan_time_now, Block, Transaction};
+use ippan_types::{
+    ippan_time_now, random_nonce, Block, HashTimer, IppanTimeMicros, L2Commit, L2ExitRecord,
+    L2ExitStatus, L2Network, L2NetworkStatus, Transaction,
+};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc, Mutex};
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -42,6 +48,23 @@ impl<T> RpcResponse<T> {
             error: Some(message),
         }
     }
+}
+
+fn is_hex_like(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let without_prefix = if let Some(rest) = trimmed.strip_prefix("0x") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("0X") {
+        rest
+    } else {
+        trimmed
+    };
+
+    !without_prefix.is_empty() && without_prefix.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 /// Submit transaction response
@@ -86,6 +109,28 @@ pub struct NodeStatusResponse {
 pub struct HealthResponse {
     pub status: String,
     pub timestamp: u64,
+}
+
+/// Runtime configuration for handling L2 interoperability flows.
+#[derive(Debug, Clone)]
+pub struct L2Config {
+    pub max_commit_size: usize,
+    pub min_epoch_gap_ms: u64,
+    pub challenge_window_ms: u64,
+    pub da_mode: String,
+    pub max_l2_count: usize,
+}
+
+impl Default for L2Config {
+    fn default() -> Self {
+        Self {
+            max_commit_size: 16 * 1024,
+            min_epoch_gap_ms: 250,
+            challenge_window_ms: 60_000,
+            da_mode: "external".to_string(),
+            max_l2_count: 100,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -240,6 +285,44 @@ pub struct AddressValidationResponse {
     pub valid: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct L2CommitRequest {
+    pub l2_id: String,
+    pub epoch: u64,
+    pub state_root: String,
+    pub da_hash: String,
+    pub proof_type: String,
+    pub proof: Option<String>,
+    pub inline_data: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct L2CommitResponse {
+    pub commit_id: String,
+    pub hashtimer: String,
+    pub submitted_at: u64,
+    pub l2_id: String,
+    pub epoch: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct L2ExitVerificationRequest {
+    pub l2_id: String,
+    pub epoch: u64,
+    pub proof_of_inclusion: String,
+    pub account: String,
+    pub amount: f64,
+    pub nonce: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct L2ExitVerificationResponse {
+    pub exit_id: String,
+    pub status: L2ExitStatus,
+    pub submitted_at: u64,
+    pub challenge_window_ends_at: Option<u64>,
+}
+
 /// Application state
 #[derive(Clone)]
 pub struct AppState {
@@ -247,7 +330,10 @@ pub struct AppState {
     pub start_time: std::time::Instant,
     pub peer_count: Arc<std::sync::atomic::AtomicUsize>,
     pub p2p_network: Option<Arc<ippan_p2p::HttpP2PNetwork>>,
-    pub tx_sender: Option<UnboundedSender<Transaction>>,
+    pub tx_sender: Option<mpsc::UnboundedSender<Transaction>>,
+    pub node_id: String,
+    pub consensus: Option<ConsensusHandle>,
+    pub l2_config: L2Config,
 }
 
 /// Create the Axum router with all RPC endpoints
@@ -274,6 +360,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/p2p/peer-info", post(receive_peer_info))
         .route("/p2p/peer-discovery", post(receive_peer_discovery))
         .route("/p2p/peers", get(get_peers))
+        // L2 interoperability endpoints
+        .route("/api/v1/l2/commit", post(submit_l2_commit))
+        .route("/api/v1/l2/verify_exit", post(verify_l2_exit))
         // Add middleware
         .layer(
             ServiceBuilder::new()
@@ -686,6 +775,284 @@ async fn submit_transaction(
     Ok(Json(RpcResponse::success(response)))
 }
 
+/// Submit an L2 commitment into the IPPAN L1 bridge contract.
+async fn submit_l2_commit(
+    State(state): State<AppState>,
+    Json(request): Json<L2CommitRequest>,
+) -> Result<Json<RpcResponse<L2CommitResponse>>, StatusCode> {
+    if request.l2_id.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let allowed_proofs = ["zk-groth16", "optimistic", "external"];
+    if !allowed_proofs
+        .iter()
+        .any(|proof| proof.eq_ignore_ascii_case(&request.proof_type))
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if !is_hex_like(&request.state_root) || !is_hex_like(&request.da_hash) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if let Some(inline) = &request.inline_data {
+        if inline.as_bytes().len() > state.l2_config.max_commit_size {
+            return Err(StatusCode::PAYLOAD_TOO_LARGE);
+        }
+    }
+
+    let mut network = match state
+        .storage
+        .get_l2_network(&request.l2_id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        Some(existing) => existing,
+        None => {
+            let networks = state
+                .storage
+                .list_l2_networks()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            if networks.len() >= state.l2_config.max_l2_count {
+                warn!(
+                    "Rejected L2 registration for {}: capacity reached",
+                    request.l2_id
+                );
+                return Err(StatusCode::FORBIDDEN);
+            }
+
+            L2Network {
+                id: request.l2_id.clone(),
+                proof_type: request.proof_type.clone(),
+                da_mode: if request.inline_data.is_some() {
+                    "inline".to_string()
+                } else {
+                    state.l2_config.da_mode.clone()
+                },
+                status: L2NetworkStatus::Active,
+                last_epoch: 0,
+                total_commits: 0,
+                total_exits: 0,
+                last_commit_time: None,
+                registered_at: ippan_time_now(),
+                challenge_window_ms: if request.proof_type.eq_ignore_ascii_case("optimistic") {
+                    Some(state.l2_config.challenge_window_ms)
+                } else {
+                    None
+                },
+            }
+        }
+    };
+
+    if request.epoch <= network.last_epoch {
+        warn!(
+            "Rejected non-monotonic epoch {} for L2 {} (last={})",
+            request.epoch, network.id, network.last_epoch
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let now = ippan_time_now();
+    if let Some(last_time) = network.last_commit_time {
+        let min_gap = state.l2_config.min_epoch_gap_ms.saturating_mul(1_000);
+        if now < last_time.saturating_add(min_gap) {
+            warn!(
+                "Rejected L2 commit for {} due to epoch gap enforcement",
+                network.id
+            );
+            return Err(StatusCode::TOO_MANY_REQUESTS);
+        }
+    }
+
+    let payload = format!(
+        "{}:{}:{}:{}",
+        request.l2_id, request.epoch, request.state_root, request.da_hash
+    );
+    let commit_nonce = random_nonce();
+    let hashtimer = HashTimer::derive(
+        "l2_commit",
+        IppanTimeMicros(now),
+        request.proof_type.as_bytes(),
+        payload.as_bytes(),
+        &commit_nonce,
+        state.node_id.as_bytes(),
+    );
+
+    let commit = L2Commit {
+        id: hashtimer.to_hex(),
+        l2_id: request.l2_id.clone(),
+        epoch: request.epoch,
+        state_root: request.state_root.clone(),
+        da_hash: request.da_hash.clone(),
+        proof_type: request.proof_type.clone(),
+        proof: request.proof.clone(),
+        inline_data: request.inline_data.clone(),
+        submitted_at: now,
+        hashtimer: hashtimer.to_hex(),
+    };
+
+    state
+        .storage
+        .store_l2_commit(commit.clone())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    network.last_epoch = request.epoch;
+    network.total_commits = network.total_commits.saturating_add(1);
+    network.last_commit_time = Some(now);
+    network.proof_type = request.proof_type.clone();
+    network.da_mode = if request.inline_data.is_some() {
+        "inline".to_string()
+    } else {
+        state.l2_config.da_mode.clone()
+    };
+    if network.challenge_window_ms.is_none()
+        && network.proof_type.eq_ignore_ascii_case("optimistic")
+    {
+        network.challenge_window_ms = Some(state.l2_config.challenge_window_ms);
+    }
+    network.status = L2NetworkStatus::Active;
+
+    state
+        .storage
+        .put_l2_network(network)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    info!(
+        "Accepted L2 commit {} for {} (epoch {})",
+        commit.id, commit.l2_id, commit.epoch
+    );
+
+    let response = L2CommitResponse {
+        commit_id: commit.id.clone(),
+        hashtimer: commit.hashtimer.clone(),
+        submitted_at: commit.submitted_at,
+        l2_id: commit.l2_id,
+        epoch: commit.epoch,
+    };
+
+    Ok(Json(RpcResponse::success(response)))
+}
+
+/// Verify an L2 exit proof and queue the withdrawal for settlement.
+async fn verify_l2_exit(
+    State(state): State<AppState>,
+    Json(request): Json<L2ExitVerificationRequest>,
+) -> Result<Json<RpcResponse<L2ExitVerificationResponse>>, StatusCode> {
+    if request.l2_id.trim().is_empty()
+        || request.account.trim().is_empty()
+        || request.proof_of_inclusion.trim().is_empty()
+        || request.amount <= 0.0
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if request.proof_of_inclusion.len() < 32 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut network = state
+        .storage
+        .get_l2_network(&request.l2_id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    if request.epoch > network.last_epoch {
+        warn!(
+            "Rejected exit for {} referencing future epoch {} (latest {})",
+            network.id, request.epoch, network.last_epoch
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let now = ippan_time_now();
+    let payload = format!(
+        "{}:{}:{}:{}",
+        request.l2_id, request.account, request.epoch, request.amount
+    );
+    let exit_nonce = random_nonce();
+    let hashtimer = HashTimer::derive(
+        "l2_exit",
+        IppanTimeMicros(now),
+        request.l2_id.as_bytes(),
+        payload.as_bytes(),
+        &exit_nonce,
+        state.node_id.as_bytes(),
+    );
+
+    let mut status = L2ExitStatus::Pending;
+    let mut challenge_end = None;
+    if network.proof_type.eq_ignore_ascii_case("optimistic") {
+        status = L2ExitStatus::ChallengeWindow;
+        let delta = state.l2_config.challenge_window_ms.saturating_mul(1_000);
+        challenge_end = Some(now.saturating_add(delta));
+    }
+
+    let exit = L2ExitRecord {
+        id: hashtimer.to_hex(),
+        l2_id: request.l2_id.clone(),
+        epoch: request.epoch,
+        account: request.account.clone(),
+        amount: request.amount,
+        nonce: request.nonce,
+        proof_of_inclusion: request.proof_of_inclusion.clone(),
+        status: status.clone(),
+        submitted_at: now,
+        finalized_at: None,
+        rejection_reason: None,
+        challenge_window_ends_at: challenge_end,
+    };
+
+    state
+        .storage
+        .store_l2_exit(exit)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    network.total_exits = network.total_exits.saturating_add(1);
+    if network.challenge_window_ms.is_none() && status == L2ExitStatus::ChallengeWindow {
+        network.challenge_window_ms = Some(state.l2_config.challenge_window_ms);
+    }
+    network.status = L2NetworkStatus::Active;
+
+    state
+        .storage
+        .put_l2_network(network)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let response = L2ExitVerificationResponse {
+        exit_id: hashtimer.to_hex(),
+        status,
+        submitted_at: now,
+        challenge_window_ends_at: challenge_end,
+    };
+
+    info!(
+        "Queued L2 exit {} for network {}",
+        response.exit_id, request.l2_id
+    );
+
+    Ok(Json(RpcResponse::success(response)))
+}
+
+fn encode_address(address: &[u8; 32]) -> String {
+    format!("0x{}", hex::encode(address))
+}
+
+fn parse_address_string(address: &str) -> Result<[u8; 32], StatusCode> {
+    let addr = address.strip_prefix("0x").unwrap_or(address);
+    let bytes = hex::decode(addr).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if bytes.len() != 32 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&bytes);
+    Ok(result)
+}
+
+fn is_valid_address(address: &str) -> bool {
+    let addr = address.strip_prefix("0x").unwrap_or(address);
+    addr.len() == 64 && addr.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 /// Get transaction by hash
 async fn get_transaction(
     State(state): State<AppState>,
@@ -929,6 +1296,8 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     info!("  GET  /api/v1/balance?address=<address> - Account balance");
     info!("  GET  /api/v1/transactions?address=<address> - Account transactions");
     info!("  POST /api/v1/transaction - Submit transaction");
+    info!("  POST /api/v1/l2/commit - Submit L2 state commitment");
+    info!("  POST /api/v1/l2/verify_exit - Submit L2 exit proof");
     info!("  GET  /api/v1/address/validate?address=<address> - Validate address");
     info!("  GET  /block?hash=<hash> - Get block by hash");
     info!("  GET  /block?height=<height> - Get block by height");
@@ -950,6 +1319,7 @@ mod tests {
     use axum::body::{self, Body};
     use axum::http::{Method, Request, StatusCode};
     use ippan_storage::MemoryStorage;
+    use serde_json::json;
     use std::convert::TryFrom;
     use std::sync::atomic::AtomicUsize;
     use tokio::sync::mpsc;
@@ -966,6 +1336,9 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: None,
+            node_id: "test-node".to_string(),
+            consensus: None,
+            l2_config: L2Config::default(),
         };
 
         let mut app = create_router(state);
@@ -998,6 +1371,9 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: None,
+            node_id: "test-node".to_string(),
+            consensus: None,
+            l2_config: L2Config::default(),
         };
 
         let mut app = create_router(state);
@@ -1032,6 +1408,9 @@ mod tests {
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
             tx_sender: Some(tx_sender),
+            node_id: "test-node".to_string(),
+            consensus: None,
+            l2_config: L2Config::default(),
         };
 
         let mut app = create_router(state);
@@ -1072,5 +1451,93 @@ mod tests {
 
         let forwarded = tx_receiver.try_recv().unwrap();
         assert_eq!(forwarded.id, tx.id);
+    }
+
+    #[tokio::test]
+    async fn test_l2_commit_and_exit_flow() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::new());
+        let state = AppState {
+            storage: storage.clone(),
+            start_time: std::time::Instant::now(),
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            p2p_network: None,
+            tx_sender: None,
+            node_id: "test-node".to_string(),
+            consensus: None,
+            l2_config: L2Config::default(),
+        };
+
+        let mut app = create_router(state);
+
+        let commit_request = json!({
+            "l2_id": "rollup-test",
+            "epoch": 1,
+            "state_root": "0xabcdef0123456789",
+            "da_hash": "0x1234567890abcdef",
+            "proof_type": "zk-groth16",
+            "proof": null,
+            "inline_data": null
+        });
+
+        let commit_response = Service::call(
+            &mut app,
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/l2/commit")
+                .header("content-type", "application/json")
+                .body(Body::from(commit_request.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(commit_response.status(), StatusCode::OK);
+        let commit_body = body::to_bytes(commit_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let commit_rpc: RpcResponse<L2CommitResponse> =
+            serde_json::from_slice(&commit_body).unwrap();
+        assert!(commit_rpc.success);
+        let commit_data = commit_rpc.data.unwrap();
+        assert_eq!(commit_data.l2_id, "rollup-test");
+        assert_eq!(commit_data.epoch, 1);
+
+        let networks = storage.list_l2_networks().unwrap();
+        assert_eq!(networks.len(), 1);
+        assert_eq!(networks[0].last_epoch, 1);
+
+        let exit_request = json!({
+            "l2_id": "rollup-test",
+            "epoch": 1,
+            "proof_of_inclusion": "deadbeefdeadbeefdeadbeefdeadbeef",
+            "account": "0x0011",
+            "amount": 5.5,
+            "nonce": 1
+        });
+
+        let exit_response = Service::call(
+            &mut app,
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/l2/verify_exit")
+                .header("content-type", "application/json")
+                .body(Body::from(exit_request.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(exit_response.status(), StatusCode::OK);
+        let exit_body = body::to_bytes(exit_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let exit_rpc: RpcResponse<L2ExitVerificationResponse> =
+            serde_json::from_slice(&exit_body).unwrap();
+        assert!(exit_rpc.success);
+
+        let exits = storage.list_l2_exits(Some("rollup-test")).unwrap();
+        assert_eq!(exits.len(), 1);
+        assert_eq!(exits[0].amount, 5.5);
+        assert_eq!(exits[0].status, L2ExitStatus::Pending);
     }
 }

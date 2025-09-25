@@ -3,12 +3,12 @@ use clap::{Arg, ArgAction, Command};
 use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
-use ippan_rpc::{start_server, AppState};
+use ippan_rpc::{start_server, AppState, L2Config};
 use ippan_storage::SledStorage;
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -34,9 +34,21 @@ struct AppConfig {
     max_transactions_per_block: usize,
     block_reward: u64,
 
+    // L2 interoperability
+    l2_max_commit_size: usize,
+    l2_min_epoch_gap_ms: u64,
+    l2_challenge_window_ms: u64,
+    l2_da_mode: String,
+    l2_max_l2_count: usize,
+
     // P2P
     bootstrap_nodes: Vec<String>,
     max_peers: usize,
+    peer_discovery_interval_secs: u64,
+    p2p_public_host: String,
+    p2p_enable_upnp: bool,
+    p2p_external_ip_services: Vec<String>,
+    peer_announce_interval_secs: u64,
 
     // Logging
     log_level: String,
@@ -111,6 +123,25 @@ impl AppConfig {
                 .get_string("BLOCK_REWARD")
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()?,
+            l2_max_commit_size: config
+                .get_string("L2_MAX_COMMIT_SIZE")
+                .unwrap_or_else(|_| "16384".to_string())
+                .parse()?,
+            l2_min_epoch_gap_ms: config
+                .get_string("L2_MIN_EPOCH_GAP_MS")
+                .unwrap_or_else(|_| "250".to_string())
+                .parse()?,
+            l2_challenge_window_ms: config
+                .get_string("L2_CHALLENGE_WINDOW_MS")
+                .unwrap_or_else(|_| "60000".to_string())
+                .parse()?,
+            l2_da_mode: config
+                .get_string("L2_DA_MODE")
+                .unwrap_or_else(|_| "external".to_string()),
+            l2_max_l2_count: config
+                .get_string("L2_MAX_L2_COUNT")
+                .unwrap_or_else(|_| "100".to_string())
+                .parse()?,
             bootstrap_nodes: config
                 .get_string("BOOTSTRAP_NODES")
                 .unwrap_or_default()
@@ -121,6 +152,30 @@ impl AppConfig {
             max_peers: config
                 .get_string("MAX_PEERS")
                 .unwrap_or_else(|_| "50".to_string())
+                .parse()?,
+            peer_discovery_interval_secs: config
+                .get_string("PEER_DISCOVERY_INTERVAL_SECS")
+                .unwrap_or_else(|_| "30".to_string())
+                .parse()?,
+            p2p_public_host: config.get_string("P2P_PUBLIC_HOST").unwrap_or_else(|_| {
+                config
+                    .get_string("P2P_HOST")
+                    .unwrap_or_else(|_| "0.0.0.0".to_string())
+            }),
+            p2p_enable_upnp: config
+                .get_string("P2P_ENABLE_UPNP")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse()?,
+            p2p_external_ip_services: config
+                .get_string("P2P_EXTERNAL_IP_SERVICES")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+            peer_announce_interval_secs: config
+                .get_string("PEER_ANNOUNCE_INTERVAL_SECS")
+                .unwrap_or_else(|_| "60".to_string())
                 .parse()?,
             log_level: config
                 .get_string("LOG_LEVEL")
@@ -246,12 +301,22 @@ async fn main() -> Result<()> {
     let p2p_network_arc = Arc::new(p2p_network);
     let _p2p_network_for_shutdown = p2p_network_arc.clone();
     peer_count.store(p2p_network_arc.get_peer_count(), Ordering::Relaxed);
+    let l2_config = L2Config {
+        max_commit_size: config.l2_max_commit_size,
+        min_epoch_gap_ms: config.l2_min_epoch_gap_ms,
+        challenge_window_ms: config.l2_challenge_window_ms,
+        da_mode: config.l2_da_mode.clone(),
+        max_l2_count: config.l2_max_l2_count,
+    };
     let app_state = AppState {
         storage: storage.clone(),
         start_time,
         peer_count: peer_count.clone(),
         p2p_network: Some(p2p_network_arc.clone()),
         tx_sender: Some(tx_sender.clone()),
+        node_id: config.node_id.clone(),
+        consensus: None,
+        l2_config,
     };
 
     let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);

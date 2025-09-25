@@ -429,13 +429,9 @@ impl HttpP2PNetwork {
             let local_address = local_address.to_string();
 
             tokio::spawn(async move {
-                if let Err(e) = Self::request_peers_from_peer(
-                    &client,
-                    &peer_address,
-                    &peers,
-                    &local_address,
-                )
-                .await
+                if let Err(e) =
+                    Self::request_peers_from_peer(&client, &peer_address, &peers, &local_address)
+                        .await
                 {
                     debug!("Failed to discover peers from {}: {}", peer_address, e);
                 }
