@@ -54,28 +54,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Write private key & known_hosts directly (avoids ssh-add/libcrypto issues)
+      # Install SSH key and known_hosts (no ssh-add, no libcrypto issue)
       - name: Install SSH key
         uses: shimataro/ssh-key-action@v2
         with:
-          key: ${{ secrets.HETZNER_SSH_KEY }}          # OpenSSH PRIVATE key (BEGIN/END lines)
-          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}  # the two ed25519 lines you captured
-          key_path: ~/.ssh/id_ed25519
+          key: ${{ secrets.HETZNER_SSH_KEY }}          # OpenSSH PRIVATE key (BEGIN/END…)
+          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}  # your two ed25519 lines
+          name: id_ed25519
+          if_key_exists: replace
+          config: |
+            Host 188.245.97.41 135.181.145.174
+              User root
+              IdentityFile ~/.ssh/id_ed25519
+              IdentitiesOnly yes
+              StrictHostKeyChecking yes
 
-      # (Optional) quick connectivity test
       - name: Test SSH to host
-        run: ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "echo ok"
+        run: ssh -o BatchMode=yes root@${{ matrix.host }} "echo ok"
+
+      - name: Ensure /opt/ippan exists
+        run: ssh root@${{ matrix.host }} "mkdir -p /opt/ippan"
 
       - name: Copy docker-compose.yml to server
-        run: |
-          scp -o StrictHostKeyChecking=yes deploy/docker-compose.yml root@${{ matrix.host }}:${{ env.COMPOSE_REMOTE_PATH }}
+        run: scp deploy/docker-compose.yml root@${{ matrix.host }}:${{ env.COMPOSE_REMOTE_PATH }}
 
       - name: Deploy remotely
         run: |
           if [ -n "${GHCR_PAT:-}" ]; then
-            ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "export GHCR_USER='${{ github.repository_owner }}'; export GHCR_TOKEN='${GHCR_PAT}'; /usr/local/bin/ippan-deploy"
+            ssh root@${{ matrix.host }} "export GHCR_USER='${{ github.repository_owner }}'; export GHCR_TOKEN='${GHCR_PAT}'; /usr/local/bin/ippan-deploy"
           else
-            ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "/usr/local/bin/ippan-deploy"
+            ssh root@${{ matrix.host }} "/usr/local/bin/ippan-deploy"
           fi
         env:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
