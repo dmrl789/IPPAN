@@ -14,6 +14,9 @@ use tokio::time::{interval, sleep};
 use tracing::{debug, info, warn};
 use url::Url;
 
+pub mod server;
+pub use server::{start_server, AppState, ConsensusHandle, L2Config};
+
 /// P2P network errors
 #[derive(thiserror::Error, Debug)]
 pub enum P2PError {
