@@ -1,1593 +1,906 @@
-use anyhow::Result;
-use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
-    response::Json,
-    routing::{get, post},
-    Router,
-};
-use ippan_consensus::{ConsensusState, PoAConsensus};
-use ippan_storage::Storage;
-use ippan_types::{
-    address::{decode_address, encode_address, is_valid_address, ADDRESS_BYTES},
-    ippan_time_now, random_nonce, Block, HashTimer, IppanTimeMicros, L2Commit, L2ExitRecord,
-    L2ExitStatus, L2Network, L2NetworkStatus, Transaction,
-};
-use parking_lot::RwLock;
+use anyhow::{anyhow, Result};
+use igd::aio::search_gateway;
+use igd::PortMappingProtocol;
+use ippan_types::{Block, Transaction};
+use local_ip_address::local_ip;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::net::{IpAddr, SocketAddrV4};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use tower::ServiceBuilder;
-use tower_http::{
-    cors::{Any, CorsLayer},
-    trace::TraceLayer,
-};
-use tracing::{error, info, warn};
+use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio::time::{interval, sleep};
+use tracing::{debug, info, warn};
+use url::Url;
 
-/// RPC response wrapper
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RpcResponse<T> {
-    pub success: bool,
-    pub data: Option<T>,
-    pub error: Option<String>,
+/// P2P network errors
+#[derive(thiserror::Error, Debug)]
+pub enum P2PError {
+    #[error("Channel error: {0}")]
+    Channel(#[from] mpsc::error::SendError<NetworkMessage>),
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("URL error: {0}")]
+    Url(#[from] url::ParseError),
+    #[error("Peer error: {0}")]
+    Peer(String),
 }
 
-impl<T> RpcResponse<T> {
-    pub fn success(data: T) -> Self {
-        Self {
-            success: true,
-            data: Some(data),
-            error: None,
-        }
-    }
-
-    pub fn error(message: String) -> Self {
-        Self {
-            success: false,
-            data: None,
-            error: Some(message),
-        }
-    }
+/// Network message types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum NetworkMessage {
+    Block(Block),
+    Transaction(Transaction),
+    BlockRequest { hash: [u8; 32] },
+    BlockResponse(Block),
+    PeerInfo { peer_id: String, addresses: Vec<String> },
+    PeerDiscovery { peers: Vec<String> },
 }
 
-fn is_hex_like(value: &str) -> bool {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-
-    let without_prefix = if let Some(rest) = trimmed.strip_prefix("0x") {
-        rest
-    } else if let Some(rest) = trimmed.strip_prefix("0X") {
-        rest
-    } else {
-        trimmed
-    };
-
-    !without_prefix.is_empty() && without_prefix.chars().all(|ch| ch.is_ascii_hexdigit())
-}
-
-/// Submit transaction response
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SubmitTransactionResponse {
-    pub tx_hash: String,
-}
-
-/// Get block query parameters
-#[derive(Debug, Deserialize)]
-pub struct GetBlockQuery {
-    pub hash: Option<String>,
-    pub height: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AddressQuery {
+/// Peer information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerInfo {
+    pub id: String,
     pub address: String,
+    pub last_seen: u64,
+    pub is_connected: bool,
 }
 
-/// Get account response
-#[derive(Debug, Serialize)]
-pub struct GetAccountResponse {
-    pub address: String,
-    pub balance: u64,
-    pub nonce: u64,
-}
-
-/// Get time response
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetTimeResponse {
-    pub time_us: u64,
-}
-
-/// Node status response
-#[derive(Debug, Serialize)]
-pub struct NodeStatusResponse {
-    pub node_id: String,
-    pub version: String,
-    pub latest_height: u64,
-    pub uptime_seconds: u64,
-    pub peer_count: usize,
-}
-
-/// Health check response
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HealthResponse {
-    pub status: String,
-    pub timestamp: u64,
-}
-
-/// Runtime configuration for handling L2 interoperability flows.
+/// P2P network configuration
 #[derive(Debug, Clone)]
-pub struct L2Config {
-    pub max_commit_size: usize,
-    pub min_epoch_gap_ms: u64,
-    pub challenge_window_ms: u64,
-    pub da_mode: String,
-    pub max_l2_count: usize,
+pub struct P2PConfig {
+    pub listen_address: String,
+    pub bootstrap_peers: Vec<String>,
+    pub max_peers: usize,
+    pub peer_discovery_interval: Duration,
+    pub message_timeout: Duration,
+    pub retry_attempts: usize,
+    pub public_host: Option<String>,
+    pub enable_upnp: bool,
+    pub external_ip_services: Vec<String>,
+    pub peer_announce_interval: Duration,
 }
 
-impl Default for L2Config {
+impl Default for P2PConfig {
     fn default() -> Self {
         Self {
-            max_commit_size: 16 * 1024,
-            min_epoch_gap_ms: 250,
-            challenge_window_ms: 60_000,
-            da_mode: "external".to_string(),
-            max_l2_count: 100,
+            listen_address: "http://0.0.0.0:9000".to_string(),
+            bootstrap_peers: vec![],
+            max_peers: 50,
+            peer_discovery_interval: Duration::from_secs(30),
+            message_timeout: Duration::from_secs(10),
+            retry_attempts: 3,
+            public_host: None,
+            enable_upnp: false,
+            external_ip_services: vec![
+                "https://api.ipify.org".to_string(),
+                "https://ifconfig.me/ip".to_string(),
+            ],
+            peer_announce_interval: Duration::from_secs(60),
         }
     }
 }
 
-#[derive(Clone)]
-pub struct ConsensusHandle {
-    inner: Arc<Mutex<PoAConsensus>>,
-    tx_sender: mpsc::UnboundedSender<Transaction>,
-    mempool: Arc<RwLock<Vec<Transaction>>>,
+/// HTTP-based P2P network manager
+pub struct HttpP2PNetwork {
+    config: P2PConfig,
+    client: Client,
+    peers: Arc<parking_lot::RwLock<HashSet<String>>>,
+    message_sender: mpsc::UnboundedSender<NetworkMessage>,
+    message_receiver: Option<mpsc::UnboundedReceiver<NetworkMessage>>,
+    peer_count: Arc<parking_lot::RwLock<usize>>,
+    is_running: Arc<parking_lot::RwLock<bool>>,
+    local_peer_id: String,
+    listen_address: String,
+    local_address: String,
+    announce_address: Arc<parking_lot::RwLock<String>>,
+    upnp_mapping_active: Arc<parking_lot::RwLock<bool>>,
 }
 
-impl ConsensusHandle {
-    pub fn new(
-        inner: Arc<Mutex<PoAConsensus>>,
-        tx_sender: mpsc::UnboundedSender<Transaction>,
-        mempool: Arc<RwLock<Vec<Transaction>>>,
-    ) -> Self {
-        Self {
-            inner,
-            tx_sender,
-            mempool,
-        }
-    }
+impl HttpP2PNetwork {
+    /// Create a new HTTP P2P network
+    pub fn new(config: P2PConfig, local_address: String) -> Result<Self> {
+        let client = Client::builder().timeout(config.message_timeout).build()?;
 
-    pub fn sender(&self) -> mpsc::UnboundedSender<Transaction> {
-        self.tx_sender.clone()
-    }
+        // Validate and normalize the listen address
+        let canonical_listen = Self::canonicalize_address(&local_address)?;
 
-    pub async fn state(&self) -> ConsensusState {
-        let consensus = self.inner.lock().await;
-        consensus.get_state()
-    }
+        // Generate a simple peer ID
+        let local_peer_id = format!(
+            "ippan-peer-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        );
 
-    pub fn mempool_snapshot(&self) -> Vec<Transaction> {
-        self.mempool.read().clone()
-    }
+        // Create message channels
+        let (message_sender, message_receiver) = mpsc::unbounded_channel();
 
-    pub fn mempool_metrics(&self) -> (usize, usize) {
-        let mempool = self.mempool.read();
-        let total = mempool.len();
-        let unique: HashSet<[u8; 32]> = mempool.iter().map(|tx| tx.from).collect();
-        (total, unique.len())
-    }
-
-    pub fn pending_for_address(&self, address: &[u8; 32]) -> Vec<Transaction> {
-        self.mempool
-            .read()
-            .iter()
-            .filter(|tx| &tx.from == address || &tx.to == address)
-            .cloned()
-            .collect()
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct NodeInfoV1 {
-    pub is_running: bool,
-    pub uptime_seconds: u64,
-    pub version: String,
-    pub node_id: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct NetworkInfoV1 {
-    pub connected_peers: usize,
-    pub known_peers: usize,
-    pub total_peers: usize,
-}
-
-#[derive(Debug, Serialize)]
-pub struct MempoolInfoV1 {
-    pub total_transactions: usize,
-    pub pending_transactions: usize,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BlockchainInfoV1 {
-    pub current_height: u64,
-    pub total_blocks: u64,
-    pub total_transactions: u64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct NodeStatusV1 {
-    pub node_id: String,
-    pub status: String,
-    pub current_block: u64,
-    pub total_transactions: u64,
-    pub network_peers: usize,
-    pub uptime_seconds: u64,
-    pub version: String,
-    pub node: NodeInfoV1,
-    pub network: NetworkInfoV1,
-    pub mempool: MempoolInfoV1,
-    pub blockchain: BlockchainInfoV1,
-}
-
-#[derive(Debug, Serialize)]
-pub struct NetworkStatsV1 {
-    pub total_peers: usize,
-    pub connected_peers: usize,
-    pub network_id: String,
-    pub protocol_version: String,
-    pub uptime_seconds: u64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct MempoolStatsV1 {
-    pub total_transactions: usize,
-    pub total_senders: usize,
-    pub total_size: usize,
-    pub fee_distribution: HashMap<String, u64>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ConsensusStatsV1 {
-    pub current_round: u64,
-    pub validators_count: usize,
-    pub block_height: u64,
-    pub consensus_status: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct BalanceResponseV1 {
-    pub account: String,
-    pub address: String,
-    pub balance: u64,
-    pub staked: u64,
-    pub staked_amount: u64,
-    pub rewards: u64,
-    pub nonce: u64,
-    pub pending_transactions: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AccountTransactionInfo {
-    pub id: String,
-    pub from: String,
-    pub to: String,
-    pub amount: u64,
-    pub nonce: u64,
-    pub timestamp: u64,
-    pub direction: String,
-    pub hashtimer: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct TransactionsResponse {
-    pub transactions: Vec<AccountTransactionInfo>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AddressValidationResponse {
-    pub valid: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct L2CommitRequest {
-    pub l2_id: String,
-    pub epoch: u64,
-    pub state_root: String,
-    pub da_hash: String,
-    pub proof_type: String,
-    pub proof: Option<String>,
-    pub inline_data: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct L2CommitResponse {
-    pub commit_id: String,
-    pub hashtimer: String,
-    pub submitted_at: u64,
-    pub l2_id: String,
-    pub epoch: u64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct L2ExitVerificationRequest {
-    pub l2_id: String,
-    pub epoch: u64,
-    pub proof_of_inclusion: String,
-    pub account: String,
-    pub amount: f64,
-    pub nonce: Option<u64>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct L2ExitVerificationResponse {
-    pub exit_id: String,
-    pub status: L2ExitStatus,
-    pub submitted_at: u64,
-    pub challenge_window_ends_at: Option<u64>,
-}
-
-/// Application state
-#[derive(Clone)]
-pub struct AppState {
-    pub storage: Arc<dyn Storage + Send + Sync>,
-    pub start_time: std::time::Instant,
-    pub peer_count: Arc<std::sync::atomic::AtomicUsize>,
-    pub p2p_network: Option<Arc<ippan_p2p::HttpP2PNetwork>>,
-    pub tx_sender: Option<mpsc::UnboundedSender<Transaction>>,
-    pub node_id: String,
-    pub consensus: Option<ConsensusHandle>,
-    pub l2_config: L2Config,
-}
-
-/// Create the Axum router with all RPC endpoints
-pub fn create_router(state: AppState) -> Router {
-    Router::new()
-        // Health and status endpoints
-        .route("/health", get(health_check))
-        .route("/status", get(node_status))
-        .route("/time", get(get_time))
-        // Blockchain endpoints
-        .route("/block", get(get_block))
-        .route("/block/:hash", get(get_block_by_hash))
-        .route("/block/height/:height", get(get_block_by_height))
-        .route("/tx", post(submit_transaction))
-        .route("/tx/:hash", get(get_transaction))
-        // Versioned API endpoints
-        .route("/api/v1/status", get(api_v1_status))
-        .route("/api/v1/network", get(api_v1_network))
-        .route("/api/v1/mempool", get(api_v1_mempool))
-        .route("/api/v1/consensus", get(api_v1_consensus))
-        .route("/api/v1/balance", get(get_balance_v1))
-        .route("/api/v1/balance/:address", get(get_balance_v1_path))
-        .route("/api/v1/transactions", get(get_transactions_v1))
-        .route("/api/v1/transaction", post(submit_transaction_v1))
-        .route("/api/v1/address/validate", get(validate_address_v1))
-        // Account endpoints
-        .route("/account/:address", get(get_account))
-        .route("/accounts", get(get_all_accounts))
-        // P2P endpoints
-        .route("/p2p/blocks", post(receive_block))
-        .route("/p2p/transactions", post(receive_transaction))
-        .route("/p2p/block-request", post(receive_block_request))
-        .route("/p2p/block-response", post(receive_block_response))
-        .route("/p2p/peer-info", post(receive_peer_info))
-        .route("/p2p/peer-discovery", post(receive_peer_discovery))
-        .route("/p2p/peers", get(get_peers))
-        // L2 interoperability endpoints
-        .route("/api/v1/l2/commit", post(submit_l2_commit))
-        .route("/api/v1/l2/verify_exit", post(verify_l2_exit))
-        // Add middleware
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(
-                    CorsLayer::new()
-                        .allow_origin(Any)
-                        .allow_methods(Any)
-                        .allow_headers(Any),
-                ),
-        )
-        .with_state(state)
-}
-
-/// Health check endpoint
-async fn health_check(State(_state): State<AppState>) -> Json<RpcResponse<HealthResponse>> {
-    let response = HealthResponse {
-        status: "healthy".to_string(),
-        timestamp: ippan_time_now(),
-    };
-    Json(RpcResponse::success(response))
-}
-
-/// Node status endpoint
-async fn node_status(
-    State(state): State<AppState>,
-) -> Result<Json<RpcResponse<NodeStatusResponse>>, StatusCode> {
-    let latest_height = state
-        .storage
-        .get_latest_height()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let uptime = state.start_time.elapsed().as_secs();
-    let peer_count = state.peer_count.load(std::sync::atomic::Ordering::Relaxed);
-
-    let response = NodeStatusResponse {
-        node_id: state.node_id.clone(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        latest_height,
-        uptime_seconds: uptime,
-        peer_count,
-    };
-
-    Ok(Json(RpcResponse::success(response)))
-}
-
-/// Get current IPPAN time
-async fn get_time() -> Json<RpcResponse<GetTimeResponse>> {
-    let response = GetTimeResponse {
-        time_us: ippan_time_now(),
-    };
-    Json(RpcResponse::success(response))
-}
-
-async fn api_v1_status(State(state): State<AppState>) -> Result<Json<NodeStatusV1>, StatusCode> {
-    let latest_height = state
-        .storage
-        .get_latest_height()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let total_transactions = state
-        .storage
-        .get_transaction_count()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let uptime_seconds = state.start_time.elapsed().as_secs();
-    let network_peers = state.peer_count.load(std::sync::atomic::Ordering::Relaxed);
-
-    let consensus_handle = state.consensus.clone();
-    let (mempool_total, _) = consensus_handle
-        .as_ref()
-        .map(|handle| handle.mempool_metrics())
-        .unwrap_or((0, 0));
-
-    let consensus_state = if let Some(handle) = consensus_handle.clone() {
-        Some(handle.state().await)
-    } else {
-        None
-    };
-
-    let current_block = consensus_state
-        .as_ref()
-        .map(|s| s.latest_block_height)
-        .unwrap_or(latest_height);
-
-    let node_info = NodeInfoV1 {
-        is_running: consensus_state.is_some(),
-        uptime_seconds,
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        node_id: state.node_id.clone(),
-    };
-
-    let network_info = NetworkInfoV1 {
-        connected_peers: network_peers,
-        known_peers: state
-            .p2p_network
-            .as_ref()
-            .map(|net| net.get_peers().len())
-            .unwrap_or(0),
-        total_peers: network_peers,
-    };
-
-    let mempool_info = MempoolInfoV1 {
-        total_transactions: mempool_total,
-        pending_transactions: mempool_total,
-    };
-
-    let blockchain_info = BlockchainInfoV1 {
-        current_height: current_block,
-        total_blocks: current_block.saturating_add(1),
-        total_transactions,
-    };
-
-    let status = NodeStatusV1 {
-        node_id: state.node_id.clone(),
-        status: if consensus_state.is_some() {
-            "running".to_string()
-        } else {
-            "starting".to_string()
-        },
-        current_block,
-        total_transactions,
-        network_peers,
-        uptime_seconds,
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        node: node_info,
-        network: network_info,
-        mempool: mempool_info,
-        blockchain: blockchain_info,
-    };
-
-    Ok(Json(status))
-}
-
-async fn api_v1_network(State(state): State<AppState>) -> Result<Json<NetworkStatsV1>, StatusCode> {
-    let peer_count = state.peer_count.load(std::sync::atomic::Ordering::Relaxed);
-    let total_peers = state
-        .p2p_network
-        .as_ref()
-        .map(|net| net.get_peers().len())
-        .unwrap_or(0);
-
-    let stats = NetworkStatsV1 {
-        total_peers,
-        connected_peers: peer_count,
-        network_id: "ippan-local".to_string(),
-        protocol_version: env!("CARGO_PKG_VERSION").to_string(),
-        uptime_seconds: state.start_time.elapsed().as_secs(),
-    };
-
-    Ok(Json(stats))
-}
-
-async fn api_v1_mempool(State(state): State<AppState>) -> Result<Json<MempoolStatsV1>, StatusCode> {
-    let consensus_handle = state.consensus.clone();
-    let snapshot = consensus_handle
-        .as_ref()
-        .map(|handle| handle.mempool_snapshot())
-        .unwrap_or_default();
-    let (total_transactions, total_senders) = consensus_handle
-        .as_ref()
-        .map(|handle| handle.mempool_metrics())
-        .unwrap_or((0, 0));
-
-    let total_size = snapshot
-        .iter()
-        .map(|tx| serde_json::to_vec(tx).map(|v| v.len()).unwrap_or(0))
-        .sum();
-
-    let mut fee_distribution = HashMap::new();
-    fee_distribution.insert("low".to_string(), 0);
-    fee_distribution.insert("medium".to_string(), 0);
-    fee_distribution.insert("high".to_string(), 0);
-
-    let stats = MempoolStatsV1 {
-        total_transactions,
-        total_senders,
-        total_size,
-        fee_distribution,
-    };
-
-    Ok(Json(stats))
-}
-
-async fn api_v1_consensus(
-    State(state): State<AppState>,
-) -> Result<Json<ConsensusStatsV1>, StatusCode> {
-    let consensus_handle = match state.consensus.clone() {
-        Some(handle) => handle,
-        None => {
-            let stats = ConsensusStatsV1 {
-                current_round: 0,
-                validators_count: 0,
-                block_height: state
-                    .storage
-                    .get_latest_height()
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-                consensus_status: "stopped".to_string(),
-            };
-            return Ok(Json(stats));
-        }
-    };
-
-    let consensus_state = consensus_handle.state().await;
-    let stats = ConsensusStatsV1 {
-        current_round: consensus_state.current_slot,
-        validators_count: consensus_state.validator_count,
-        block_height: consensus_state.latest_block_height,
-        consensus_status: if consensus_state.is_proposing {
-            "proposing".to_string()
-        } else {
-            "running".to_string()
-        },
-    };
-
-    Ok(Json(stats))
-}
-
-fn parse_address_string(address: &str) -> Result<[u8; ADDRESS_BYTES], StatusCode> {
-    let trimmed = address.trim();
-    if trimmed.is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    if trimmed.starts_with('i') {
-        decode_address(trimmed).map_err(|_| StatusCode::BAD_REQUEST)
-    } else {
-        let cleaned = trimmed.strip_prefix("0x").unwrap_or(trimmed);
-        let decoded = hex::decode(cleaned).map_err(|_| StatusCode::BAD_REQUEST)?;
-        if decoded.len() != ADDRESS_BYTES {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-        let mut bytes = [0u8; ADDRESS_BYTES];
-        bytes.copy_from_slice(&decoded);
-        Ok(bytes)
-    }
-}
-
-fn balance_response_for(
-    state: &AppState,
-    address: [u8; ADDRESS_BYTES],
-) -> Result<BalanceResponseV1, StatusCode> {
-    let account = state
-        .storage
-        .get_account(&address)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let (balance, nonce) = account
-        .map(|acc| (acc.balance, acc.nonce))
-        .unwrap_or((0, 0));
-
-    let pending_transactions = state
-        .consensus
-        .as_ref()
-        .map(|handle| handle.pending_for_address(&address))
-        .unwrap_or_default()
-        .into_iter()
-        .map(|tx| hex::encode(tx.hash()))
-        .collect();
-
-    let encoded = encode_address(&address);
-
-    Ok(BalanceResponseV1 {
-        account: encoded.clone(),
-        address: encoded,
-        balance,
-        staked: 0,
-        staked_amount: 0,
-        rewards: 0,
-        nonce,
-        pending_transactions,
-    })
-}
-
-async fn get_balance_v1(
-    State(state): State<AppState>,
-    Query(params): Query<AddressQuery>,
-) -> Result<Json<BalanceResponseV1>, StatusCode> {
-    let address_bytes = parse_address_string(&params.address)?;
-    let response = balance_response_for(&state, address_bytes)?;
-    Ok(Json(response))
-}
-
-async fn get_balance_v1_path(
-    State(state): State<AppState>,
-    Path(address): Path<String>,
-) -> Result<Json<BalanceResponseV1>, StatusCode> {
-    let address_bytes = parse_address_string(&address)?;
-    let response = balance_response_for(&state, address_bytes)?;
-    Ok(Json(response))
-}
-
-async fn get_transactions_v1(
-    State(state): State<AppState>,
-    Query(params): Query<AddressQuery>,
-) -> Result<Json<TransactionsResponse>, StatusCode> {
-    let address_bytes = parse_address_string(&params.address)?;
-    let transactions = state
-        .storage
-        .get_transactions_by_address(&address_bytes)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let items = transactions
-        .into_iter()
-        .map(|tx| {
-            let direction = if tx.from == address_bytes && tx.to == address_bytes {
-                "self".to_string()
-            } else if tx.from == address_bytes {
-                "send".to_string()
-            } else if tx.to == address_bytes {
-                "receive".to_string()
-            } else {
-                "other".to_string()
-            };
-
-            AccountTransactionInfo {
-                id: hex::encode(tx.hash()),
-                from: encode_address(&tx.from),
-                to: encode_address(&tx.to),
-                amount: tx.amount,
-                nonce: tx.nonce,
-                timestamp: tx.timestamp.0,
-                direction,
-                hashtimer: tx.hashtimer.to_hex(),
-            }
+        Ok(Self {
+            config,
+            client,
+            peers: Arc::new(parking_lot::RwLock::new(HashSet::new())),
+            message_sender,
+            message_receiver: Some(message_receiver),
+            peer_count: Arc::new(parking_lot::RwLock::new(0)),
+            is_running: Arc::new(parking_lot::RwLock::new(false)),
+            local_peer_id,
+            listen_address: canonical_listen.clone(),
+            local_address: canonical_listen.clone(),
+            announce_address: Arc::new(parking_lot::RwLock::new(canonical_listen)),
+            upnp_mapping_active: Arc::new(parking_lot::RwLock::new(false)),
         })
-        .collect();
-
-    let response = TransactionsResponse {
-        transactions: items,
-    };
-    Ok(Json(response))
-}
-
-async fn process_transaction_submission(
-    state: &AppState,
-    mut tx: Transaction,
-) -> Result<Transaction, StatusCode> {
-    let computed_hash = tx.hash();
-    if tx.id != computed_hash {
-        tx.id = computed_hash;
     }
 
-    if !tx.is_valid() {
-        warn!("Rejected invalid transaction from {}", hex::encode(tx.from));
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    state
-        .storage
-        .store_transaction(tx.clone())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    if let Some(sender) = &state.tx_sender {
-        if let Err(error) = sender.send(tx.clone()) {
-            error!("Failed to forward transaction to consensus: {}", error);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    if let Some(network) = &state.p2p_network {
-        if let Err(error) = network.broadcast_transaction(tx.clone()).await {
-            warn!(
-                "Failed to broadcast transaction {}: {}",
-                hex::encode(tx.id),
-                error
-            );
-        }
-    }
-
-    Ok(tx)
-}
-
-async fn submit_transaction_v1(
-    State(state): State<AppState>,
-    Json(tx): Json<Transaction>,
-) -> Result<Json<RpcResponse<SubmitTransactionResponse>>, StatusCode> {
-    let tx = process_transaction_submission(&state, tx).await?;
-    let response = SubmitTransactionResponse {
-        tx_hash: hex::encode(tx.id),
-    };
-
-    Ok(Json(RpcResponse::success(response)))
-}
-
-async fn validate_address_v1(
-    Query(params): Query<AddressQuery>,
-) -> Json<AddressValidationResponse> {
-    let valid = is_valid_address(&params.address) || parse_address_string(&params.address).is_ok();
-    Json(AddressValidationResponse { valid })
-}
-
-/// Get block by hash or height
-async fn get_block(
-    State(state): State<AppState>,
-    Query(params): Query<GetBlockQuery>,
-) -> Result<Json<RpcResponse<Option<Block>>>, StatusCode> {
-    let block = if let Some(hash_str) = params.hash {
-        let hash = hex::decode(&hash_str).map_err(|_| StatusCode::BAD_REQUEST)?;
-
-        if hash.len() != 32 {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-
-        let mut hash_bytes = [0u8; 32];
-        hash_bytes.copy_from_slice(&hash);
-
-        state
-            .storage
-            .get_block(&hash_bytes)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    } else if let Some(height) = params.height {
-        state
-            .storage
-            .get_block_by_height(height)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    } else {
-        return Err(StatusCode::BAD_REQUEST);
-    };
-
-    Ok(Json(RpcResponse::success(block)))
-}
-
-/// Get block by hash
-async fn get_block_by_hash(
-    State(state): State<AppState>,
-    Path(hash_str): Path<String>,
-) -> Result<Json<RpcResponse<Option<Block>>>, StatusCode> {
-    let hash = hex::decode(&hash_str).map_err(|_| StatusCode::BAD_REQUEST)?;
-
-    if hash.len() != 32 {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let mut hash_bytes = [0u8; 32];
-    hash_bytes.copy_from_slice(&hash);
-
-    let block = state
-        .storage
-        .get_block(&hash_bytes)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(RpcResponse::success(block)))
-}
-
-/// Get block by height
-async fn get_block_by_height(
-    State(state): State<AppState>,
-    Path(height): Path<u64>,
-) -> Result<Json<RpcResponse<Option<Block>>>, StatusCode> {
-    let block = state
-        .storage
-        .get_block_by_height(height)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(RpcResponse::success(block)))
-}
-
-/// Submit a transaction
-async fn submit_transaction(
-    State(state): State<AppState>,
-    Json(tx): Json<Transaction>,
-) -> Result<Json<RpcResponse<SubmitTransactionResponse>>, StatusCode> {
-    let tx = process_transaction_submission(&state, tx).await?;
-    let response = SubmitTransactionResponse {
-        tx_hash: hex::encode(tx.id),
-    };
-
-    info!("Submitted transaction: {}", response.tx_hash);
-    Ok(Json(RpcResponse::success(response)))
-}
-
-/// Submit an L2 commitment into the IPPAN L1 bridge contract.
-async fn submit_l2_commit(
-    State(state): State<AppState>,
-    Json(request): Json<L2CommitRequest>,
-) -> Result<Json<RpcResponse<L2CommitResponse>>, StatusCode> {
-    if request.l2_id.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let allowed_proofs = ["zk-groth16", "optimistic", "external"];
-    if !allowed_proofs
-        .iter()
-        .any(|proof| proof.eq_ignore_ascii_case(&request.proof_type))
-    {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    if !is_hex_like(&request.state_root) || !is_hex_like(&request.da_hash) {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    if let Some(inline) = &request.inline_data {
-        if inline.as_bytes().len() > state.l2_config.max_commit_size {
-            return Err(StatusCode::PAYLOAD_TOO_LARGE);
-        }
-    }
-
-    let mut network = match state
-        .storage
-        .get_l2_network(&request.l2_id)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    {
-        Some(existing) => existing,
-        None => {
-            let networks = state
-                .storage
-                .list_l2_networks()
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            if networks.len() >= state.l2_config.max_l2_count {
-                warn!(
-                    "Rejected L2 registration for {}: capacity reached",
-                    request.l2_id
-                );
-                return Err(StatusCode::FORBIDDEN);
-            }
-
-            L2Network {
-                id: request.l2_id.clone(),
-                proof_type: request.proof_type.clone(),
-                da_mode: if request.inline_data.is_some() {
-                    "inline".to_string()
-                } else {
-                    state.l2_config.da_mode.clone()
-                },
-                status: L2NetworkStatus::Active,
-                last_epoch: 0,
-                total_commits: 0,
-                total_exits: 0,
-                last_commit_time: None,
-                registered_at: ippan_time_now(),
-                challenge_window_ms: if request.proof_type.eq_ignore_ascii_case("optimistic") {
-                    Some(state.l2_config.challenge_window_ms)
-                } else {
-                    None
-                },
-            }
-        }
-    };
-
-    if request.epoch <= network.last_epoch {
-        warn!(
-            "Rejected non-monotonic epoch {} for L2 {} (last={})",
-            request.epoch, network.id, network.last_epoch
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let now = ippan_time_now();
-    if let Some(last_time) = network.last_commit_time {
-        let min_gap = state.l2_config.min_epoch_gap_ms.saturating_mul(1_000);
-        if now < last_time.saturating_add(min_gap) {
-            warn!(
-                "Rejected L2 commit for {} due to epoch gap enforcement",
-                network.id
-            );
-            return Err(StatusCode::TOO_MANY_REQUESTS);
-        }
-    }
-
-    let payload = format!(
-        "{}:{}:{}:{}",
-        request.l2_id, request.epoch, request.state_root, request.da_hash
-    );
-    let commit_nonce = random_nonce();
-    let hashtimer = HashTimer::derive(
-        "l2_commit",
-        IppanTimeMicros(now),
-        request.proof_type.as_bytes(),
-        payload.as_bytes(),
-        &commit_nonce,
-        state.node_id.as_bytes(),
-    );
-
-    let commit = L2Commit {
-        id: hashtimer.to_hex(),
-        l2_id: request.l2_id.clone(),
-        epoch: request.epoch,
-        state_root: request.state_root.clone(),
-        da_hash: request.da_hash.clone(),
-        proof_type: request.proof_type.clone(),
-        proof: request.proof.clone(),
-        inline_data: request.inline_data.clone(),
-        submitted_at: now,
-        hashtimer: hashtimer.to_hex(),
-    };
-
-    state
-        .storage
-        .store_l2_commit(commit.clone())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    network.last_epoch = request.epoch;
-    network.total_commits = network.total_commits.saturating_add(1);
-    network.last_commit_time = Some(now);
-    network.proof_type = request.proof_type.clone();
-    network.da_mode = if request.inline_data.is_some() {
-        "inline".to_string()
-    } else {
-        state.l2_config.da_mode.clone()
-    };
-    if network.challenge_window_ms.is_none()
-        && network.proof_type.eq_ignore_ascii_case("optimistic")
-    {
-        network.challenge_window_ms = Some(state.l2_config.challenge_window_ms);
-    }
-    network.status = L2NetworkStatus::Active;
-
-    state
-        .storage
-        .put_l2_network(network)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    info!(
-        "Accepted L2 commit {} for {} (epoch {})",
-        commit.id, commit.l2_id, commit.epoch
-    );
-
-    let response = L2CommitResponse {
-        commit_id: commit.id.clone(),
-        hashtimer: commit.hashtimer.clone(),
-        submitted_at: commit.submitted_at,
-        l2_id: commit.l2_id,
-        epoch: commit.epoch,
-    };
-
-    Ok(Json(RpcResponse::success(response)))
-}
-
-/// Verify an L2 exit proof and queue the withdrawal for settlement.
-async fn verify_l2_exit(
-    State(state): State<AppState>,
-    Json(request): Json<L2ExitVerificationRequest>,
-) -> Result<Json<RpcResponse<L2ExitVerificationResponse>>, StatusCode> {
-    if request.l2_id.trim().is_empty()
-        || request.account.trim().is_empty()
-        || request.proof_of_inclusion.trim().is_empty()
-        || request.amount <= 0.0
-    {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    if request.proof_of_inclusion.len() < 32 {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let mut network = state
-        .storage
-        .get_l2_network(&request.l2_id)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::BAD_REQUEST)?;
-
-    if request.epoch > network.last_epoch {
-        warn!(
-            "Rejected exit for {} referencing future epoch {} (latest {})",
-            network.id, request.epoch, network.last_epoch
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let now = ippan_time_now();
-    let payload = format!(
-        "{}:{}:{}:{}",
-        request.l2_id, request.account, request.epoch, request.amount
-    );
-    let exit_nonce = random_nonce();
-    let hashtimer = HashTimer::derive(
-        "l2_exit",
-        IppanTimeMicros(now),
-        request.l2_id.as_bytes(),
-        payload.as_bytes(),
-        &exit_nonce,
-        state.node_id.as_bytes(),
-    );
-
-    let mut status = L2ExitStatus::Pending;
-    let mut challenge_end = None;
-    if network.proof_type.eq_ignore_ascii_case("optimistic") {
-        status = L2ExitStatus::ChallengeWindow;
-        let delta = state.l2_config.challenge_window_ms.saturating_mul(1_000);
-        challenge_end = Some(now.saturating_add(delta));
-    }
-
-    let exit = L2ExitRecord {
-        id: hashtimer.to_hex(),
-        l2_id: request.l2_id.clone(),
-        epoch: request.epoch,
-        account: request.account.clone(),
-        amount: request.amount,
-        nonce: request.nonce,
-        proof_of_inclusion: request.proof_of_inclusion.clone(),
-        status: status.clone(),
-        submitted_at: now,
-        finalized_at: None,
-        rejection_reason: None,
-        challenge_window_ends_at: challenge_end,
-    };
-
-    state
-        .storage
-        .store_l2_exit(exit)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    network.total_exits = network.total_exits.saturating_add(1);
-    if network.challenge_window_ms.is_none() && status == L2ExitStatus::ChallengeWindow {
-        network.challenge_window_ms = Some(state.l2_config.challenge_window_ms);
-    }
-    network.status = L2NetworkStatus::Active;
-
-    state
-        .storage
-        .put_l2_network(network)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let response = L2ExitVerificationResponse {
-        exit_id: hashtimer.to_hex(),
-        status,
-        submitted_at: now,
-        challenge_window_ends_at: challenge_end,
-    };
-
-    info!(
-        "Queued L2 exit {} for network {}",
-        response.exit_id, request.l2_id
-    );
-
-    Ok(Json(RpcResponse::success(response)))
-}
-
-/// Get transaction by hash
-async fn get_transaction(
-    State(state): State<AppState>,
-    Path(hash_str): Path<String>,
-) -> Result<Json<RpcResponse<Option<Transaction>>>, StatusCode> {
-    let hash = hex::decode(&hash_str).map_err(|_| StatusCode::BAD_REQUEST)?;
-
-    if hash.len() != 32 {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let mut hash_bytes = [0u8; 32];
-    hash_bytes.copy_from_slice(&hash);
-
-    let tx = state
-        .storage
-        .get_transaction(&hash_bytes)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(RpcResponse::success(tx)))
-}
-
-/// Get account information
-async fn get_account(
-    State(state): State<AppState>,
-    Path(address_str): Path<String>,
-) -> Result<Json<RpcResponse<Option<GetAccountResponse>>>, StatusCode> {
-    let address = hex::decode(&address_str).map_err(|_| StatusCode::BAD_REQUEST)?;
-
-    if address.len() != ADDRESS_BYTES {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let mut address_bytes = [0u8; ADDRESS_BYTES];
-    address_bytes.copy_from_slice(&address);
-
-    let account = state
-        .storage
-        .get_account(&address_bytes)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let response = account.map(|acc| GetAccountResponse {
-        address: encode_address(&acc.address),
-        balance: acc.balance,
-        nonce: acc.nonce,
-    });
-
-    Ok(Json(RpcResponse::success(response)))
-}
-
-/// Get all accounts
-async fn get_all_accounts(
-    State(state): State<AppState>,
-) -> Result<Json<RpcResponse<Vec<GetAccountResponse>>>, StatusCode> {
-    let accounts = state
-        .storage
-        .get_all_accounts()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let response: Vec<GetAccountResponse> = accounts
-        .into_iter()
-        .map(|acc| GetAccountResponse {
-            address: encode_address(&acc.address),
-            balance: acc.balance,
-            nonce: acc.nonce,
-        })
-        .collect();
-
-    Ok(Json(RpcResponse::success(response)))
-}
-
-/// P2P endpoint: Receive block from peer
-async fn receive_block(
-    State(state): State<AppState>,
-    Json(block): Json<Block>,
-) -> Result<Json<RpcResponse<String>>, StatusCode> {
-    if !block.is_valid() {
-        warn!(
-            "Rejected invalid block from peer: {}",
-            hex::encode(block.hash())
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    if let Err(e) = state.storage.store_block(block.clone()) {
-        error!("Failed to store received block: {}", e);
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    info!("Received block from peer: {}", hex::encode(block.hash()));
-    Ok(Json(RpcResponse::success("Block received".to_string())))
-}
-
-/// P2P endpoint: Receive transaction from peer
-async fn receive_transaction(
-    State(state): State<AppState>,
-    Json(tx): Json<Transaction>,
-) -> Result<Json<RpcResponse<String>>, StatusCode> {
-    if !tx.is_valid() {
-        warn!(
-            "Rejected invalid transaction from peer: {}",
-            hex::encode(tx.hash())
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    if let Err(e) = state.storage.store_transaction(tx.clone()) {
-        error!("Failed to store received transaction: {}", e);
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    if let Some(sender) = &state.tx_sender {
-        if let Err(error) = sender.send(tx.clone()) {
-            error!(
-                "Failed to forward received transaction to consensus: {}",
-                error
-            );
-        }
-    }
-
-    info!("Received transaction from peer: {}", hex::encode(tx.hash()));
-    Ok(Json(RpcResponse::success(
-        "Transaction received".to_string(),
-    )))
-}
-
-/// P2P endpoint: Receive block request from peer
-async fn receive_block_request(
-    State(state): State<AppState>,
-    Json(request): Json<ippan_p2p::NetworkMessage>,
-) -> Result<Json<RpcResponse<String>>, StatusCode> {
-    if let ippan_p2p::NetworkMessage::BlockRequest { hash } = request {
-        if let Ok(Some(_block)) = state.storage.get_block(&hash) {
-            info!("Block request received for: {}", hex::encode(hash));
-            Ok(Json(RpcResponse::success(
-                "Block request processed".to_string(),
-            )))
-        } else {
-            warn!("Block not found for request: {}", hex::encode(hash));
-            Err(StatusCode::NOT_FOUND)
-        }
-    } else {
-        Err(StatusCode::BAD_REQUEST)
-    }
-}
-
-/// P2P endpoint: Receive block response from peer
-async fn receive_block_response(
-    State(state): State<AppState>,
-    Json(response): Json<ippan_p2p::NetworkMessage>,
-) -> Result<Json<RpcResponse<String>>, StatusCode> {
-    if let ippan_p2p::NetworkMessage::BlockResponse(block) = response {
-        if !block.is_valid() {
-            warn!(
-                "Rejected invalid block response from peer: {}",
-                hex::encode(block.hash())
-            );
-            return Err(StatusCode::BAD_REQUEST);
-        }
-
-        if let Err(e) = state.storage.store_block(block.clone()) {
-            error!("Failed to store received block response: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-
-        info!("Received block response: {}", hex::encode(block.hash()));
-        Ok(Json(RpcResponse::success(
-            "Block response received".to_string(),
-        )))
-    } else {
-        Err(StatusCode::BAD_REQUEST)
-    }
-}
-
-/// P2P endpoint: Receive peer info from peer
-async fn receive_peer_info(
-    State(_state): State<AppState>,
-    Json(info): Json<ippan_p2p::NetworkMessage>,
-) -> Result<Json<RpcResponse<String>>, StatusCode> {
-    if let ippan_p2p::NetworkMessage::PeerInfo { peer_id, addresses } = info {
+    /// Start the P2P network
+    pub async fn start(&mut self) -> Result<()> {
+        *self.is_running.write() = true;
+        self.setup_connectivity().await?;
+
+        let announce_address = self.announce_address.read().clone();
         info!(
-            "Received peer info: {} with addresses: {:?}",
-            peer_id, addresses
+            "Starting HTTP P2P network on {} (announcing {})",
+            self.listen_address, announce_address
         );
-        Ok(Json(RpcResponse::success("Peer info received".to_string())))
-    } else {
-        Err(StatusCode::BAD_REQUEST)
+
+        // Add bootstrap peers (add_peer skips self)
+        for peer in &self.config.bootstrap_peers {
+            if let Err(e) = self.add_peer(peer.clone()).await {
+                warn!("Failed to add bootstrap peer {}: {}", peer, e);
+            }
+        }
+
+        // Start the message processing loop
+        let _message_handle = {
+            let is_running = self.is_running.clone();
+            let peers = self.peers.clone();
+            let client = self.client.clone();
+            let config = self.config.clone();
+            let announce_address = self.announce_address.clone();
+            let local_address = self.local_address.clone();
+            let mut message_receiver = self.message_receiver.take().unwrap();
+
+            tokio::spawn(async move {
+                loop {
+                    if !*is_running.read() {
+                        break;
+                    }
+
+                    // Process outgoing messages
+                    if let Some(msg) = message_receiver.recv().await {
+                        Self::handle_outgoing_message(
+                            &client,
+                            &peers,
+                            &config,
+                            &announce_address,
+                            &local_address,
+                            msg,
+                        )
+                        .await;
+                    }
+
+                    // Small delay to prevent busy waiting
+                    sleep(Duration::from_millis(10)).await;
+                }
+            })
+        };
+
+        // Start peer discovery loop (sequential to avoid task storms)
+        let _discovery_handle = {
+            let is_running = self.is_running.clone();
+            let peers = self.peers.clone();
+            let client = self.client.clone();
+            let config = self.config.clone();
+            let local_address = self.local_address.clone();
+            let announce_address = self.announce_address.clone();
+            let peer_count = self.peer_count.clone();
+
+            tokio::spawn(async move {
+                let mut interval = interval(config.peer_discovery_interval);
+
+                loop {
+                    if !*is_running.read() {
+                        break;
+                    }
+
+                    interval.tick().await;
+                    Self::discover_peers(
+                        &client,
+                        &peers,
+                        &local_address,
+                        &announce_address,
+                        &peer_count,
+                    )
+                    .await;
+                }
+            })
+        };
+
+        // Periodically announce our public addresses to peers
+        let _announce_handle = {
+            let is_running = self.is_running.clone();
+            let sender = self.message_sender.clone();
+            let config = self.config.clone();
+            let local_peer_id = self.local_peer_id.clone();
+            let announce_address = self.announce_address.clone();
+            let local_address = self.local_address.clone();
+
+            tokio::spawn(async move {
+                let mut interval = interval(config.peer_announce_interval);
+                loop {
+                    if !*is_running.read() {
+                        break;
+                    }
+
+                    interval.tick().await;
+
+                    // Build de-duped address list
+                    let announced = announce_address.read().clone();
+                    let mut addresses = vec![announced.clone()];
+                    if announced != local_address {
+                        addresses.push(local_address.clone());
+                    }
+
+                    if let Err(e) = sender.send(NetworkMessage::PeerInfo {
+                        peer_id: local_peer_id.clone(),
+                        addresses,
+                    }) {
+                        warn!("Failed to enqueue peer announcement: {}", e);
+                        break;
+                    }
+                }
+            })
+        };
+
+        // Send an initial announcement so bootstrap peers learn our address quickly
+        let initial_addresses = self.local_advertised_addresses();
+        self.message_sender.send(NetworkMessage::PeerInfo {
+            peer_id: self.local_peer_id.clone(),
+            addresses: initial_addresses,
+        })?;
+
+        info!("HTTP P2P network started");
+        Ok(())
     }
-}
 
-/// P2P endpoint: Receive peer discovery from peer
-async fn receive_peer_discovery(
-    State(_state): State<AppState>,
-    Json(discovery): Json<ippan_p2p::NetworkMessage>,
-) -> Result<Json<RpcResponse<String>>, StatusCode> {
-    if let ippan_p2p::NetworkMessage::PeerDiscovery { peers } = discovery {
-        info!("Received peer discovery with {} peers", peers.len());
-        Ok(Json(RpcResponse::success(
-            "Peer discovery received".to_string(),
-        )))
-    } else {
-        Err(StatusCode::BAD_REQUEST)
+    /// Stop the P2P network
+    pub async fn stop(&self) -> Result<()> {
+        *self.is_running.write() = false;
+        info!("Stopping HTTP P2P network");
+
+        if self.config.enable_upnp {
+            self.teardown_upnp_mapping().await;
+        }
+
+        // Wait a bit for the network loops to finish
+        sleep(Duration::from_millis(100)).await;
+
+        info!("HTTP P2P network stopped");
+        Ok(())
     }
-}
 
-/// P2P endpoint: Get list of peers
-async fn get_peers(
-    State(state): State<AppState>,
-) -> Result<Json<RpcResponse<Vec<String>>>, StatusCode> {
-    if let Some(p2p_network) = &state.p2p_network {
-        let mut peers = p2p_network.get_peers();
-        peers.push(p2p_network.get_announce_address());
-        peers.sort();
-        peers.dedup();
+    /// Add a peer to the network
+    pub async fn add_peer(&self, peer_address: String) -> Result<()> {
+        let canonical = Self::canonicalize_address(&peer_address)?;
 
-        Ok(Json(RpcResponse::success(peers)))
-    } else {
-        Ok(Json(RpcResponse::success(vec![])))
+        // Avoid adding self (listen or announce)
+        if canonical == self.listen_address || canonical == self.get_announce_address() {
+            return Ok(());
+        }
+
+        let inserted = {
+            let mut peers = self.peers.write();
+            if peers.contains(&canonical) {
+                false
+            } else if peers.len() >= self.config.max_peers {
+                warn!(
+                    "Peer limit reached ({}). Skipping peer {}",
+                    self.config.max_peers, canonical
+                );
+                false
+            } else {
+                peers.insert(canonical.clone())
+            }
+        };
+
+        if !inserted {
+            return Ok(());
+        }
+
+        self.update_peer_count();
+        info!("Added peer: {}", canonical);
+
+        // Share our addresses with the newly added peer
+        let addresses = self.local_advertised_addresses();
+        let client = self.client.clone();
+        let config = self.config.clone();
+        if let Err(e) = Self::send_message_to_peer(
+            &client,
+            &canonical,
+            &NetworkMessage::PeerInfo {
+                peer_id: self.local_peer_id.clone(),
+                addresses,
+            },
+            &config,
+        )
+        .await
+        {
+            warn!("Failed to send peer info to {}: {}", canonical, e);
+        }
+
+        Ok(())
     }
-}
 
-/// Start the HTTP server
-pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
-    let app = create_router(state);
+    /// Remove a peer from the network
+    pub fn remove_peer(&self, peer_address: &str) {
+        match Self::canonicalize_address(peer_address) {
+            Ok(canonical) => {
+                let removed = {
+                    let mut peers = self.peers.write();
+                    peers.remove(&canonical)
+                };
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!("RPC server listening on {}", addr);
-    info!("Available endpoints:");
-    info!("  GET  /health - Health check");
-    info!("  GET  /status - Node status");
-    info!("  GET  /time - Current IPPAN time");
-    info!("  GET  /api/v1/status - Detailed node status");
-    info!("  GET  /api/v1/network - Network statistics");
-    info!("  GET  /api/v1/mempool - Mempool statistics");
-    info!("  GET  /api/v1/consensus - Consensus state");
-    info!("  GET  /api/v1/balance?address=<address> - Account balance");
-    info!("  GET  /api/v1/transactions?address=<address> - Account transactions");
-    info!("  POST /api/v1/transaction - Submit transaction");
-    info!("  POST /api/v1/l2/commit - Submit L2 state commitment");
-    info!("  POST /api/v1/l2/verify_exit - Submit L2 exit proof");
-    info!("  GET  /api/v1/address/validate?address=<address> - Validate address");
-    info!("  GET  /block?hash=<hash> - Get block by hash");
-    info!("  GET  /block?height=<height> - Get block by height");
-    info!("  GET  /block/<hash> - Get block by hash");
-    info!("  GET  /block/height/<height> - Get block by height");
-    info!("  POST /tx - Submit transaction");
-    info!("  GET  /tx/<hash> - Get transaction by hash");
-    info!("  GET  /account/<address> - Get account info");
-    info!("  GET  /accounts - Get all accounts");
+                if removed {
+                    self.update_peer_count();
+                    info!("Removed peer: {}", canonical);
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to canonicalize peer {} for removal: {}",
+                    peer_address, e
+                );
+            }
+        }
+    }
 
-    axum::serve(listener, app).await?;
+    /// Get message sender for sending messages
+    pub fn get_message_sender(&self) -> mpsc::UnboundedSender<NetworkMessage> {
+        self.message_sender.clone()
+    }
 
-    Ok(())
+    /// Get current peer count
+    pub fn get_peer_count(&self) -> usize {
+        *self.peer_count.read()
+    }
+
+    fn update_peer_count(&self) {
+        let count = self.peers.read().len();
+        *self.peer_count.write() = count;
+    }
+
+    /// Get local peer ID
+    pub fn get_local_peer_id(&self) -> String {
+        self.local_peer_id.clone()
+    }
+
+    /// Get listening address
+    pub fn get_listening_address(&self) -> String {
+        self.listen_address.clone()
+    }
+
+    /// Get list of peers
+    pub fn get_peers(&self) -> Vec<String> {
+        self.peers.read().iter().cloned().collect()
+    }
+
+    /// Get the address advertised to other peers
+    pub fn get_announce_address(&self) -> String {
+        self.announce_address.read().clone()
+    }
+
+    /// Queue a peer info announcement for the network
+    pub fn announce_self(&self) -> Result<()> {
+        let address = self.get_announce_address();
+        let message = NetworkMessage::PeerInfo {
+            peer_id: self.local_peer_id.clone(),
+            addresses: vec![address],
+        };
+        self.message_sender.send(message)?;
+        Ok(())
+    }
+
+    /// Broadcast a block to all peers
+    pub async fn broadcast_block(&self, block: Block) -> Result<()> {
+        let message = NetworkMessage::Block(block);
+        self.message_sender.send(message)?;
+        Ok(())
+    }
+
+    /// Broadcast a transaction to all peers
+    pub async fn broadcast_transaction(&self, tx: Transaction) -> Result<()> {
+        let message = NetworkMessage::Transaction(tx);
+        self.message_sender.send(message)?;
+        Ok(())
+    }
+
+    /// Request a block from peers
+    pub async fn request_block(&self, hash: [u8; 32]) -> Result<()> {
+        let message = NetworkMessage::BlockRequest { hash };
+        self.message_sender.send(message)?;
+        Ok(())
+    }
+
+    fn local_advertised_addresses(&self) -> Vec<String> {
+        let announced = self.announce_address.read().clone();
+        if announced == self.local_address {
+            vec![announced]
+        } else {
+            vec![announced, self.local_address.clone()]
+        }
+    }
+
+    async fn setup_connectivity(&mut self) -> Result<()> {
+        let listen_url = Url::parse(&self.listen_address)?;
+        let scheme = listen_url.scheme().to_string();
+        let port = listen_url
+            .port_or_known_default()
+            .ok_or_else(|| anyhow!("listen address is missing a port"))?;
+
+        if let Some(address) = self
+            .determine_public_address(&scheme, port)
+            .await?
+            .or_else(|| self.local_network_address(&scheme, port))
+        {
+            *self.announce_address.write() = address.clone();
+            info!("Announcing peer address: {}", address);
+        } else {
+            warn!(
+                "Falling back to listen address for announcements: {}",
+                self.listen_address
+            );
+            *self.announce_address.write() = self.listen_address.clone();
+        }
+
+        Ok(())
+    }
+
+    async fn determine_public_address(
+        &mut self,
+        scheme: &str,
+        port: u16,
+    ) -> Result<Option<String>> {
+        if let Some(public_host) = self.config.public_host.as_ref() {
+            let address = self.build_public_host_address(scheme, port, public_host)?;
+            return Ok(Some(address));
+        }
+
+        if self.config.enable_upnp {
+            match self.try_setup_upnp(port, scheme).await {
+                Ok(Some(address)) => return Ok(Some(address)),
+                Ok(None) => {}
+                Err(e) => warn!("UPnP setup failed: {}", e),
+            }
+        }
+
+        if let Some(address) = self.fetch_external_ip(scheme, port).await {
+            return Ok(Some(address));
+        }
+
+        Ok(None)
+    }
+
+    fn build_public_host_address(
+        &self,
+        scheme: &str,
+        port: u16,
+        public_host: &str,
+    ) -> Result<String> {
+        if let Ok(url) = Url::parse(public_host) {
+            let host = url
+                .host_str()
+                .ok_or_else(|| anyhow!("public host URL missing host"))?;
+            let port = url.port().unwrap_or(port);
+            let scheme = url.scheme().to_string();
+            return Self::build_address(&scheme, host, port);
+        }
+
+        Self::build_address(scheme, public_host, port)
+    }
+
+    async fn try_setup_upnp(&self, port: u16, scheme: &str) -> Result<Option<String>> {
+        let gateway = match search_gateway(igd::SearchOptions::default()).await {
+            Ok(gateway) => gateway,
+            Err(e) => {
+                debug!("No UPnP gateway detected: {}", e);
+                return Ok(None);
+            }
+        };
+
+        let local_ip = match local_ip() {
+            Ok(IpAddr::V4(ipv4)) => ipv4,
+            Ok(other) => {
+                debug!("UPnP requires IPv4 local address, found {}", other);
+                return Ok(None);
+            }
+            Err(e) => {
+                debug!("Failed to determine local IP for UPnP: {}", e);
+                return Ok(None);
+            }
+        };
+
+        let socket = SocketAddrV4::new(local_ip, port);
+        match gateway
+            .add_port(PortMappingProtocol::TCP, port, socket, 0, "ippan-node")
+            .await
+        {
+            Ok(()) => match gateway.get_external_ip().await {
+                Ok(public_ip) => {
+                    *self.upnp_mapping_active.write() = true;
+                    let address = Self::build_address(scheme, &public_ip.to_string(), port)?;
+                    info!("Established UPnP port mapping: {} -> {}", address, socket);
+                    Ok(Some(address))
+                }
+                Err(e) => {
+                    warn!("Failed to retrieve external IP via UPnP: {}", e);
+                    Ok(None)
+                }
+            },
+            Err(e) => {
+                debug!("Failed to create UPnP port mapping: {}", e);
+                Ok(None)
+            }
+        }
+    }
+
+    async fn teardown_upnp_mapping(&self) {
+        if !*self.upnp_mapping_active.read() {
+            return;
+        }
+
+        let listen_port = match Url::parse(&self.listen_address)
+            .ok()
+            .and_then(|url| url.port_or_known_default())
+        {
+            Some(port) => port,
+            None => return,
+        };
+
+        match search_gateway(igd::SearchOptions::default()).await {
+            Ok(gateway) => {
+                match gateway
+                    .remove_port(PortMappingProtocol::TCP, listen_port)
+                    .await
+                {
+                    Ok(()) => info!("Removed UPnP port mapping on {}", listen_port),
+                    Err(e) => warn!("Failed to remove UPnP port mapping: {}", e),
+                }
+            }
+            Err(e) => debug!("Failed to contact UPnP gateway for removal: {}", e),
+        }
+
+        *self.upnp_mapping_active.write() = false;
+    }
+
+    async fn fetch_external_ip(&self, scheme: &str, port: u16) -> Option<String> {
+        for service in &self.config.external_ip_services {
+            match self.client.get(service).send().await {
+                Ok(response) => {
+                    if !response.status().is_success() {
+                        debug!(
+                            "External IP service {} returned status {}",
+                            service,
+                            response.status()
+                        );
+                        continue;
+                    }
+
+                    match response.text().await {
+                        Ok(body) => {
+                            let ip_str = body.trim();
+                            if ip_str.is_empty() {
+                                debug!("External IP service {} returned empty body", service);
+                                continue;
+                            }
+
+                            if ip_str.parse::<IpAddr>().is_err() {
+                                debug!(
+                                    "External IP service {} returned invalid IP: {}",
+                                    service, ip_str
+                                );
+                                continue;
+                            }
+
+                            match Self::build_address(scheme, ip_str, port) {
+                                Ok(address) => return Some(address),
+                                Err(e) => {
+                                    debug!(
+                                        "Failed to build announce address from {}: {}",
+                                        ip_str, e
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => debug!(
+                            "Failed to read response from external IP service {}: {}",
+                            service, e
+                        ),
+                    }
+                }
+                Err(e) => debug!("External IP service {} request failed: {}", service, e),
+            }
+        }
+
+        None
+    }
+
+    fn local_network_address(&self, scheme: &str, port: u16) -> Option<String> {
+        match local_ip() {
+            Ok(ip) => Self::build_address(scheme, &ip.to_string(), port).ok(),
+            Err(e) => {
+                debug!("Failed to determine local network IP: {}", e);
+                None
+            }
+        }
+    }
+
+    async fn handle_outgoing_message(
+        client: &Client,
+        peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
+        config: &P2PConfig,
+        announce_address: &Arc<parking_lot::RwLock<String>>,
+        local_address: &str,
+        message: NetworkMessage,
+    ) {
+        let peer_list = peers.read().clone();
+        if peer_list.is_empty() {
+            return;
+        }
+
+        let announced = announce_address.read().clone();
+        let mut self_addresses = vec![local_address.to_string()];
+        if announced != local_address {
+            self_addresses.push(announced);
+        }
+
+        for peer_address in peer_list {
+            if self_addresses.contains(&peer_address) {
+                continue;
+            }
+
+            let client = client.clone();
+            let message = message.clone();
+            let config = config.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) =
+                    Self::send_message_to_peer(&client, &peer_address, &message, &config).await
+                {
+                    warn!("Failed to send message to peer {}: {}", peer_address, e);
+                }
+            });
+        }
+    }
+
+    async fn send_message_to_peer(
+        client: &Client,
+        peer_address: &str,
+        message: &NetworkMessage,
+        config: &P2PConfig,
+    ) -> Result<()> {
+        let endpoint = match message {
+            NetworkMessage::Block(_) => "/p2p/blocks",
+            NetworkMessage::Transaction(_) => "/p2p/transactions",
+            NetworkMessage::BlockRequest { .. } => "/p2p/block-request",
+            NetworkMessage::BlockResponse(_) => "/p2p/block-response",
+            NetworkMessage::PeerInfo { .. } => "/p2p/peer-info",
+            NetworkMessage::PeerDiscovery { .. } => "/p2p/peer-discovery",
+        };
+
+        let url = format!("{}{}", peer_address, endpoint);
+
+        for attempt in 1..=config.retry_attempts {
+            match client.post(&url).json(message).send().await {
+                Ok(response) if response.status().is_success() => {
+                    debug!("Successfully sent message to peer {}", peer_address);
+                    return Ok(());
+                }
+                Ok(response) => {
+                    if attempt == config.retry_attempts {
+                        return Err(P2PError::Peer(format!(
+                            "Peer {} returned status {}",
+                            peer_address,
+                            response.status()
+                        ))
+                        .into());
+                    }
+                    debug!(
+                        "Peer {} responded with status {} (attempt {}/{})",
+                        peer_address,
+                        response.status(),
+                        attempt,
+                        config.retry_attempts
+                    );
+                }
+                Err(e) => {
+                    if attempt == config.retry_attempts {
+                        return Err(P2PError::Peer(format!(
+                            "Failed to send to {} after {} attempts: {}",
+                            peer_address, config.retry_attempts, e
+                        ))
+                        .into());
+                    }
+                    debug!(
+                        "Attempt {} failed for peer {}: {}",
+                        attempt, peer_address, e
+                    );
+                }
+            }
+
+            // Exponential backoff with cap: 100, 200, 400, 800, then 1000ms
+            let delay_ms = (100u64 << (attempt.saturating_sub(1).min(3))).min(1000);
+            sleep(Duration::from_millis(delay_ms)).await;
+        }
+
+        Ok(())
+    }
+
+    async fn discover_peers(
+        client: &Client,
+        peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
+        local_address: &str,
+        announce_address: &Arc<parking_lot::RwLock<String>>,
+        peer_count: &Arc<parking_lot::RwLock<usize>>,
+    ) {
+        let peer_list = peers.read().clone();
+        if peer_list.is_empty() {
+            return;
+        }
+
+        let announced = announce_address.read().clone();
+
+        // Sequential to avoid spawning many tasks on large peer sets
+        for peer_address in peer_list {
+            if let Err(e) = Self::request_peers_from_peer(
+                client,
+                &peer_address,
+                peers,
+                local_address,
+                &announced,
+                peer_count,
+            )
+            .await
+            {
+                debug!("Failed to discover peers from {}: {}", peer_address, e);
+            }
+        }
+    }
+
+    async fn request_peers_from_peer(
+        client: &Client,
+        peer_address: &str,
+        peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
+        local_address: &str,
+        announce_address: &str,
+        peer_count: &Arc<parking_lot::RwLock<usize>>,
+    ) -> Result<()> {
+        let url = format!("{}/p2p/peers", peer_address);
+
+        let response = client.get(&url).send().await?;
+        if response.status().is_success() {
+            let peer_list: Vec<String> = response.json().await?;
+
+            let mut current_peers = peers.write();
+            for peer in peer_list {
+                match Self::canonicalize_address(&peer) {
+                    Ok(canonical) => {
+                        if canonical != local_address
+                            && canonical != announce_address
+                            && !current_peers.contains(&canonical)
+                        {
+                            current_peers.insert(canonical.clone());
+                            info!("Discovered new peer: {}", canonical);
+                        }
+                    }
+                    Err(e) => debug!("Invalid peer address {} from {}: {}", peer, peer_address, e),
+                }
+            }
+
+            *peer_count.write() = current_peers.len();
+        }
+
+        Ok(())
+    }
+
+    fn canonicalize_address(address: &str) -> Result<String> {
+        let candidate = if address.contains("://") {
+            address.to_string()
+        } else {
+            format!("http://{}", address)
+        };
+
+        let url = Url::parse(&candidate)?;
+        match url.scheme() {
+            "http" | "https" => {}
+            other => return Err(anyhow!("unsupported scheme for peer address: {}", other)),
+        }
+
+        let scheme = url.scheme().to_string();
+        let host = url
+            .host_str()
+            .ok_or_else(|| anyhow!("peer address missing host"))?
+            .to_string();
+        let port = url
+            .port_or_known_default()
+            .ok_or_else(|| anyhow!("peer address missing port"))?;
+
+        Self::build_address(&scheme, &host, port)
+    }
+
+    fn build_address(scheme: &str, host: &str, port: u16) -> Result<String> {
+        // Wrap IPv6 hosts with [] if missing
+        let formatted_host = if host.contains(':') && !host.starts_with('[') && !host.ends_with(']')
+        {
+            format!("[{}]", host)
+        } else {
+            host.to_string()
+        };
+
+        let mut url = Url::parse(&format!("{}://{}:{}/", scheme, formatted_host, port))?;
+        url.set_path("");
+        url.set_query(None);
+        url.set_fragment(None);
+        let formatted = url.to_string();
+        Ok(formatted.trim_end_matches('/').to_string())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::{self, Body};
-    use axum::http::{Method, Request, StatusCode};
-    use ippan_storage::MemoryStorage;
-    use serde_json::json;
-    use std::convert::TryFrom;
-    use std::sync::atomic::AtomicUsize;
-    use tokio::sync::mpsc;
-    use tower::Service;
-
-    use ed25519_dalek::SigningKey;
 
     #[tokio::test]
-    async fn test_health_check() {
-        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::new());
-        let state = AppState {
-            storage,
-            start_time: std::time::Instant::now(),
-            peer_count: Arc::new(AtomicUsize::new(0)),
-            p2p_network: None,
-            tx_sender: None,
-            node_id: "test-node".to_string(),
-            consensus: None,
-            l2_config: L2Config::default(),
-        };
+    async fn test_http_p2p_network_creation() {
+        let config = P2PConfig::default();
+        let network = HttpP2PNetwork::new(config, "http://localhost:9000".to_string());
+        assert!(network.is_ok());
+    }
 
-        let mut app = create_router(state);
-        let response = Service::call(
-            &mut app,
-            Request::builder()
-                .method(Method::GET)
-                .uri("/health")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    #[test]
+    fn test_network_message_serialization() {
+        let block = Block::new([0u8; 32], vec![], 1, [1u8; 32]);
+        let message = NetworkMessage::Block(block);
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let rpc_response: RpcResponse<HealthResponse> = serde_json::from_slice(&body).unwrap();
-        assert!(rpc_response.success);
-        assert_eq!(rpc_response.data.unwrap().status, "healthy");
+        let serialized = serde_json::to_vec(&message).unwrap();
+        let deserialized: NetworkMessage = serde_json::from_slice(&serialized).unwrap();
+
+        match deserialized {
+            NetworkMessage::Block(_) => {}
+            _ => panic!("Expected Block message"),
+        }
     }
 
     #[tokio::test]
-    async fn test_get_time() {
-        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::new());
-        let state = AppState {
-            storage,
-            start_time: std::time::Instant::now(),
-            peer_count: Arc::new(AtomicUsize::new(0)),
-            p2p_network: None,
-            tx_sender: None,
-            node_id: "test-node".to_string(),
-            consensus: None,
-            l2_config: L2Config::default(),
-        };
+    async fn test_peer_management() {
+        let config = P2PConfig::default();
+        let network = HttpP2PNetwork::new(config, "http://localhost:9000".to_string()).unwrap();
 
-        let mut app = create_router(state);
-        let response = Service::call(
-            &mut app,
-            Request::builder()
-                .method(Method::GET)
-                .uri("/time")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = body::to_bytes(response.into_body(), usize::MAX)
+        // Test adding peers
+        network
+            .add_peer("http://localhost:9001".to_string())
             .await
             .unwrap();
-        let rpc_response: RpcResponse<GetTimeResponse> = serde_json::from_slice(&body).unwrap();
-        assert!(rpc_response.success);
-        assert!(rpc_response.data.unwrap().time_us > 0);
-    }
-
-    #[tokio::test]
-    async fn test_submit_transaction_flow() {
-        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::new());
-        let (tx_sender, mut tx_receiver) = mpsc::unbounded_channel();
-
-        let state = AppState {
-            storage: storage.clone(),
-            start_time: std::time::Instant::now(),
-            peer_count: Arc::new(AtomicUsize::new(0)),
-            p2p_network: None,
-            tx_sender: Some(tx_sender),
-            node_id: "test-node".to_string(),
-            consensus: None,
-            l2_config: L2Config::default(),
-        };
-
-        let mut app = create_router(state);
-
-        let secret_bytes = [7u8; 32];
-        the ed25519_dalek::SigningKey is used here		let signing_key = SigningKey::try_from(&secret_bytes[..]).unwrap();
-        let public_key = signing_key.verifying_key().to_bytes();
-
-        let mut tx = Transaction::new(public_key, [9u8; 32], 500, 0);
-        tx.sign(&secret_bytes).unwrap();
-
-        let body_bytes = serde_json::to_vec(&tx).unwrap();
-
-        let response = Service::call(
-            &mut app,
-            Request::builder()
-                .method(Method::POST)
-                .uri("/tx")
-                .header("content-type", "application/json")
-                .body(Body::from(body_bytes))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let body = body::to_bytes(response.into_body(), usize::MAX)
+        network
+            .add_peer("http://localhost:9002".to_string())
             .await
             .unwrap();
-        let rpc_response: RpcResponse<SubmitTransactionResponse> =
-            serde_json::from_slice(&body).unwrap();
-        assert!(rpc_response.success);
-        assert_eq!(rpc_response.data.unwrap().tx_hash, hex::encode(tx.id));
 
-        let stored = storage.get_transaction(&tx.id).unwrap();
-        assert!(stored.is_some());
+        assert_eq!(network.get_peer_count(), 2);
+        assert_eq!(network.get_peers().len(), 2);
 
-        let forwarded = tx_receiver.try_recv().unwrap();
-        assert_eq!(forwarded.id, tx.id);
-    }
+        // Test removing peers
+        network.remove_peer("http://localhost:9001");
+        assert_eq!(network.get_peer_count(), 1);
 
-    #[tokio::test]
-    async fn test_l2_commit_and_exit_flow() {
-        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::new());
-        let state = AppState {
-            storage: storage.clone(),
-            start_time: std::time::Instant::now(),
-            peer_count: Arc::new(AtomicUsize::new(0)),
-            p2p_network: None,
-            tx_sender: None,
-            node_id: "test-node".to_string(),
-            consensus: None,
-            l2_config: L2Config::default(),
-        };
-
-        let mut app = create_router(state);
-
-        let commit_request = json!({
-            "l2_id": "rollup-test",
-            "epoch": 1,
-            "state_root": "0xabcdef0123456789",
-            "da_hash": "0x1234567890abcdef",
-            "proof_type": "zk-groth16",
-            "proof": null,
-            "inline_data": null
-        });
-
-        let commit_response = Service::call(
-            &mut app,
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/v1/l2/commit")
-                .header("content-type", "application/json")
-                .body(Body::from(commit_request.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(commit_response.status(), StatusCode::OK);
-        let commit_body = body::to_bytes(commit_response.into_body(), usize::MAX)
+        // Adding self should be a no-op
+        network
+            .add_peer("http://localhost:9000".to_string())
             .await
             .unwrap();
-        let commit_rpc: RpcResponse<L2CommitResponse> =
-            serde_json::from_slice(&commit_body).unwrap();
-        assert!(commit_rpc.success);
-        let commit_data = commit_rpc.data.unwrap();
-        assert_eq!(commit_data.l2_id, "rollup-test");
-        assert_eq!(commit_data.epoch, 1);
-
-        let networks = storage.list_l2_networks().unwrap();
-        assert_eq!(networks.len(), 1);
-        assert_eq!(networks[0].last_epoch, 1);
-
-        let exit_request = json!({
-            "l2_id": "rollup-test",
-            "epoch": 1,
-            "proof_of_inclusion": "deadbeefdeadbeefdeadbeefdeadbeef",
-            "account": "0x0011",
-            "amount": 5.5,
-            "nonce": 1
-        });
-
-        let exit_response = Service::call(
-            &mut app,
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/v1/l2/verify_exit")
-                .header("content-type", "application/json")
-                .body(Body::from(exit_request.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(exit_response.status(), StatusCode::OK);
-        let exit_body = body::to_bytes(exit_response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let exit_rpc: RpcResponse<L2ExitVerificationResponse> =
-            serde_json::from_slice(&exit_body).unwrap();
-        assert!(exit_rpc.success);
-
-        let exits = storage.list_l2_exits(Some("rollup-test")).unwrap();
-        assert_eq!(exits.len(), 1);
-        assert_eq!(exits[0].amount, 5.5);
-        assert_eq!(exits[0].status, L2ExitStatus::Pending);
+        assert_eq!(network.get_peer_count(), 1);
     }
 }

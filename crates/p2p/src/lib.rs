@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Result};
+use igd::aio::search_gateway;
+use igd::PortMappingProtocol;
 use ippan_types::{Block, Transaction};
 use local_ip_address::local_ip;
 use reqwest::Client;
@@ -11,9 +13,6 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
 use tracing::{debug, info, warn};
 use url::Url;
-
-use igd::aio::search_gateway;
-use igd::PortMappingProtocol;
 
 /// P2P network errors
 #[derive(thiserror::Error, Debug)]
@@ -96,9 +95,7 @@ pub struct HttpP2PNetwork {
     is_running: Arc<parking_lot::RwLock<bool>>,
     local_peer_id: String,
     listen_address: String,
-    listen_host: String,
-    listen_port: u16,
-    listen_scheme: String,
+    local_address: String,
     announce_address: Arc<parking_lot::RwLock<String>>,
     upnp_mapping_active: Arc<parking_lot::RwLock<bool>>,
 }
@@ -108,16 +105,8 @@ impl HttpP2PNetwork {
     pub fn new(config: P2PConfig, local_address: String) -> Result<Self> {
         let client = Client::builder().timeout(config.message_timeout).build()?;
 
+        // Validate and normalize the listen address
         let canonical_listen = Self::canonicalize_address(&local_address)?;
-        let listen_url: Url = canonical_listen.parse()?;
-        let listen_host = listen_url
-            .host_str()
-            .ok_or_else(|| anyhow!("listen address must include a host"))?
-            .to_string();
-        let listen_port = listen_url
-            .port_or_known_default()
-            .ok_or_else(|| anyhow!("listen address must include a port"))?;
-        let listen_scheme = listen_url.scheme().to_string();
 
         // Generate a simple peer ID
         let local_peer_id = format!(
@@ -141,9 +130,7 @@ impl HttpP2PNetwork {
             is_running: Arc::new(parking_lot::RwLock::new(false)),
             local_peer_id,
             listen_address: canonical_listen.clone(),
-            listen_host,
-            listen_port,
-            listen_scheme,
+            local_address: canonical_listen.clone(),
             announce_address: Arc::new(parking_lot::RwLock::new(canonical_listen)),
             upnp_mapping_active: Arc::new(parking_lot::RwLock::new(false)),
         })
@@ -152,7 +139,13 @@ impl HttpP2PNetwork {
     /// Start the P2P network
     pub async fn start(&mut self) -> Result<()> {
         *self.is_running.write() = true;
-        info!("Starting HTTP P2P network on {}", self.listen_address);
+        self.setup_connectivity().await?;
+
+        let announce_address = self.announce_address.read().clone();
+        info!(
+            "Starting HTTP P2P network on {} (announcing {})",
+            self.listen_address, announce_address
+        );
 
         // Add bootstrap peers
         for peer in &self.config.bootstrap_peers {
@@ -166,6 +159,7 @@ impl HttpP2PNetwork {
             let client = self.client.clone();
             let config = self.config.clone();
             let announce_address = self.announce_address.clone();
+            let local_address = self.local_address.clone();
             let mut message_receiver = self.message_receiver.take().unwrap();
 
             tokio::spawn(async move {
@@ -177,7 +171,12 @@ impl HttpP2PNetwork {
                     // Process outgoing messages
                     if let Some(msg) = message_receiver.recv().await {
                         Self::handle_outgoing_message(
-                            &client, &peers, &config, &announce_address, msg,
+                            &client,
+                            &peers,
+                            &config,
+                            &announce_address,
+                            &local_address,
+                            msg,
                         )
                         .await;
                     }
@@ -194,6 +193,7 @@ impl HttpP2PNetwork {
             let peers = self.peers.clone();
             let client = self.client.clone();
             let config = self.config.clone();
+            let local_address = self.local_address.clone();
             let announce_address = self.announce_address.clone();
             let peer_count = self.peer_count.clone();
 
@@ -206,82 +206,57 @@ impl HttpP2PNetwork {
                     }
 
                     interval.tick().await;
-                    let local_address = announce_address.read().clone();
-                    if let Err(e) =
-                        Self::discover_peers(&client, &peers, &local_address, &peer_count).await
-                    {
-                        debug!("Peer discovery attempt failed: {}", e);
-                    }
+                    Self::discover_peers(
+                        &client,
+                        &peers,
+                        &local_address,
+                        &announce_address,
+                        &peer_count,
+                    )
+                    .await;
                 }
             })
         };
 
-        if let Err(e) = Self::refresh_announce_address_inner(
-            &self.client,
-            &self.config,
-            &self.listen_host,
-            &self.listen_scheme,
-            self.listen_port,
-            &self.announce_address,
-            &self.upnp_mapping_active,
-        )
-        .await
-        {
-            warn!("Failed to determine announce address: {}", e);
-        }
-
-        if let Err(e) = self.announce_self() {
-            warn!("Failed to queue initial peer announcement: {}", e);
-        }
-
+        // Periodically announce our public addresses to peers
         let _announce_handle = {
             let is_running = self.is_running.clone();
-            let client = self.client.clone();
+            let sender = self.message_sender.clone();
             let config = self.config.clone();
-            let listen_host = self.listen_host.clone();
-            let listen_scheme = self.listen_scheme.clone();
-            let listen_port = self.listen_port;
-            let announce_address = self.announce_address.clone();
-            let upnp_mapping_active = self.upnp_mapping_active.clone();
-            let message_sender = self.message_sender.clone();
             let local_peer_id = self.local_peer_id.clone();
+            let announce_address = self.announce_address.clone();
+            let local_address = self.local_address.clone();
 
             tokio::spawn(async move {
                 let mut interval = interval(config.peer_announce_interval);
-
                 loop {
                     if !*is_running.read() {
                         break;
                     }
 
                     interval.tick().await;
-
-                    if let Err(e) = HttpP2PNetwork::refresh_announce_address_inner(
-                        &client,
-                        &config,
-                        &listen_host,
-                        &listen_scheme,
-                        listen_port,
-                        &announce_address,
-                        &upnp_mapping_active,
-                    )
-                    .await
-                    {
-                        warn!("Failed to refresh announce address: {}", e);
+                    let mut addresses = vec![announce_address.read().clone()];
+                    if !addresses.contains(&local_address) {
+                        addresses.push(local_address.clone());
                     }
 
-                    let address = announce_address.read().clone();
-                    let message = NetworkMessage::PeerInfo {
+                    if let Err(e) = sender.send(NetworkMessage::PeerInfo {
                         peer_id: local_peer_id.clone(),
-                        addresses: vec![address],
-                    };
-
-                    if let Err(e) = message_sender.send(message) {
-                        warn!("Failed to queue peer announcement: {}", e);
+                        addresses,
+                    }) {
+                        warn!("Failed to enqueue peer announcement: {}", e);
+                        break;
                     }
                 }
             })
         };
+
+        // Send an initial announcement so bootstrap peers learn our address quickly
+        let initial_addresses = self.local_advertised_addresses();
+        self.message_sender.send(NetworkMessage::PeerInfo {
+            peer_id: self.local_peer_id.clone(),
+            addresses: initial_addresses,
+        })?;
 
         info!("HTTP P2P network started");
         Ok(())
@@ -292,10 +267,8 @@ impl HttpP2PNetwork {
         *self.is_running.write() = false;
         info!("Stopping HTTP P2P network");
 
-        if let Err(e) =
-            Self::teardown_upnp_mapping(self.listen_port, &self.upnp_mapping_active).await
-        {
-            warn!("Failed to remove UPnP port mapping: {}", e);
+        if self.config.enable_upnp {
+            self.teardown_upnp_mapping().await;
         }
 
         // Wait a bit for the network loops to finish
@@ -307,29 +280,20 @@ impl HttpP2PNetwork {
 
     /// Add a peer to the network
     pub async fn add_peer(&self, peer_address: String) -> Result<()> {
-        // Validate URL
         let canonical = Self::canonicalize_address(&peer_address)?;
-
-        if canonical == self.listen_address || canonical == self.get_announce_address() {
-            return Ok(());
-        }
 
         let inserted = {
             let mut peers = self.peers.write();
-
             if peers.contains(&canonical) {
                 false
+            } else if peers.len() >= self.config.max_peers {
+                warn!(
+                    "Peer limit reached ({}). Skipping peer {}",
+                    self.config.max_peers, canonical
+                );
+                false
             } else {
-                if peers.len() >= self.config.max_peers {
-                    warn!(
-                        "Peer limit reached ({}). Skipping peer {}",
-                        self.config.max_peers, canonical
-                    );
-                    false
-                } else {
-                    peers.insert(canonical.clone());
-                    true
-                }
+                peers.insert(canonical.clone())
             }
         };
 
@@ -338,11 +302,24 @@ impl HttpP2PNetwork {
         }
 
         self.update_peer_count();
-
         info!("Added peer: {}", canonical);
 
-        if let Err(e) = self.announce_self() {
-            debug!("Failed to announce self after adding peer: {}", e);
+        // Share our addresses with the newly added peer
+        let addresses = self.local_advertised_addresses();
+        let client = self.client.clone();
+        let config = self.config.clone();
+        if let Err(e) = Self::send_message_to_peer(
+            &client,
+            &canonical,
+            &NetworkMessage::PeerInfo {
+                peer_id: self.local_peer_id.clone(),
+                addresses,
+            },
+            &config,
+        )
+        .await
+        {
+            warn!("Failed to send peer info to {}: {}", canonical, e);
         }
 
         Ok(())
@@ -438,19 +415,239 @@ impl HttpP2PNetwork {
         Ok(())
     }
 
-    /// Handle outgoing messages by sending them to all peers
+    fn local_advertised_addresses(&self) -> Vec<String> {
+        let mut addresses = vec![self.announce_address.read().clone()];
+        if !addresses.contains(&self.local_address) {
+            addresses.push(self.local_address.clone());
+        }
+        addresses
+    }
+
+    async fn setup_connectivity(&mut self) -> Result<()> {
+        let listen_url = Url::parse(&self.listen_address)?;
+        let scheme = listen_url.scheme().to_string();
+        let port = listen_url
+            .port_or_known_default()
+            .ok_or_else(|| anyhow!("listen address is missing a port"))?;
+
+        if let Some(address) = self
+            .determine_public_address(&scheme, port)
+            .await?
+            .or_else(|| self.local_network_address(&scheme, port))
+        {
+            *self.announce_address.write() = address.clone();
+            info!("Announcing peer address: {}", address);
+        } else {
+            warn!(
+                "Falling back to listen address for announcements: {}",
+                self.listen_address
+            );
+            *self.announce_address.write() = self.listen_address.clone();
+        }
+
+        Ok(())
+    }
+
+    async fn determine_public_address(
+        &mut self,
+        scheme: &str,
+        port: u16,
+    ) -> Result<Option<String>> {
+        if let Some(public_host) = self.config.public_host.as_ref() {
+            let address = self.build_public_host_address(scheme, port, public_host)?;
+            return Ok(Some(address));
+        }
+
+        if self.config.enable_upnp {
+            match self.try_setup_upnp(port, scheme).await {
+                Ok(Some(address)) => return Ok(Some(address)),
+                Ok(None) => {}
+                Err(e) => warn!("UPnP setup failed: {}", e),
+            }
+        }
+
+        if let Some(address) = self.fetch_external_ip(scheme, port).await {
+            return Ok(Some(address));
+        }
+
+        Ok(None)
+    }
+
+    fn build_public_host_address(
+        &self,
+        scheme: &str,
+        port: u16,
+        public_host: &str,
+    ) -> Result<String> {
+        if let Ok(url) = Url::parse(public_host) {
+            let host = url
+                .host_str()
+                .ok_or_else(|| anyhow!("public host URL missing host"))?;
+            let port = url.port().unwrap_or(port);
+            let scheme = url.scheme().to_string();
+            return Self::build_address(&scheme, host, port);
+        }
+
+        Self::build_address(scheme, public_host, port)
+    }
+
+    async fn try_setup_upnp(&self, port: u16, scheme: &str) -> Result<Option<String>> {
+        let gateway = match search_gateway(igd::SearchOptions::default()).await {
+            Ok(gateway) => gateway,
+            Err(e) => {
+                debug!("No UPnP gateway detected: {}", e);
+                return Ok(None);
+            }
+        };
+
+        let local_ip = match local_ip() {
+            Ok(IpAddr::V4(ipv4)) => ipv4,
+            Ok(other) => {
+                debug!("UPnP requires IPv4 local address, found {}", other);
+                return Ok(None);
+            }
+            Err(e) => {
+                debug!("Failed to determine local IP for UPnP: {}", e);
+                return Ok(None);
+            }
+        };
+
+        let socket = SocketAddrV4::new(local_ip, port);
+        match gateway
+            .add_port(PortMappingProtocol::TCP, port, socket, 0, "ippan-node")
+            .await
+        {
+            Ok(()) => match gateway.get_external_ip().await {
+                Ok(public_ip) => {
+                    *self.upnp_mapping_active.write() = true;
+                    let address = Self::build_address(scheme, &public_ip.to_string(), port)?;
+                    info!("Established UPnP port mapping: {} -> {}", address, socket);
+                    Ok(Some(address))
+                }
+                Err(e) => {
+                    warn!("Failed to retrieve external IP via UPnP: {}", e);
+                    Ok(None)
+                }
+            },
+            Err(e) => {
+                debug!("Failed to create UPnP port mapping: {}", e);
+                Ok(None)
+            }
+        }
+    }
+
+    async fn teardown_upnp_mapping(&self) {
+        if !*self.upnp_mapping_active.read() {
+            return;
+        }
+
+        let listen_port = match Url::parse(&self.listen_address)
+            .ok()
+            .and_then(|url| url.port_or_known_default())
+        {
+            Some(port) => port,
+            None => return,
+        };
+
+        match search_gateway(igd::SearchOptions::default()).await {
+            Ok(gateway) => {
+                match gateway
+                    .remove_port(PortMappingProtocol::TCP, listen_port)
+                    .await
+                {
+                    Ok(()) => info!("Removed UPnP port mapping on {}", listen_port),
+                    Err(e) => warn!("Failed to remove UPnP port mapping: {}", e),
+                }
+            }
+            Err(e) => debug!("Failed to contact UPnP gateway for removal: {}", e),
+        }
+
+        *self.upnp_mapping_active.write() = false;
+    }
+
+    async fn fetch_external_ip(&self, scheme: &str, port: u16) -> Option<String> {
+        for service in &self.config.external_ip_services {
+            match self.client.get(service).send().await {
+                Ok(response) => {
+                    if !response.status().is_success() {
+                        debug!(
+                            "External IP service {} returned status {}",
+                            service,
+                            response.status()
+                        );
+                        continue;
+                    }
+
+                    match response.text().await {
+                        Ok(body) => {
+                            let ip_str = body.trim();
+                            if ip_str.is_empty() {
+                                debug!("External IP service {} returned empty body", service);
+                                continue;
+                            }
+
+                            if ip_str.parse::<IpAddr>().is_err() {
+                                debug!(
+                                    "External IP service {} returned invalid IP: {}",
+                                    service, ip_str
+                                );
+                                continue;
+                            }
+
+                            match Self::build_address(scheme, ip_str, port) {
+                                Ok(address) => return Some(address),
+                                Err(e) => {
+                                    debug!(
+                                        "Failed to build announce address from {}: {}",
+                                        ip_str, e
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => debug!(
+                            "Failed to read response from external IP service {}: {}",
+                            service, e
+                        ),
+                    }
+                }
+                Err(e) => debug!("External IP service {} request failed: {}", service, e),
+            }
+        }
+
+        None
+    }
+
+    fn local_network_address(&self, scheme: &str, port: u16) -> Option<String> {
+        match local_ip() {
+            Ok(ip) => Self::build_address(scheme, &ip.to_string(), port).ok(),
+            Err(e) => {
+                debug!("Failed to determine local network IP: {}", e);
+                None
+            }
+        }
+    }
+
     async fn handle_outgoing_message(
         client: &Client,
         peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
         config: &P2PConfig,
         announce_address: &Arc<parking_lot::RwLock<String>>,
+        local_address: &str,
         message: NetworkMessage,
     ) {
         let peer_list = peers.read().clone();
-        let local_address = announce_address.read().clone();
+        if peer_list.is_empty() {
+            return;
+        }
+
+        let announce_address = announce_address.read().clone();
+        let mut self_addresses = vec![local_address.to_string()];
+        if !self_addresses.contains(&announce_address) {
+            self_addresses.push(announce_address);
+        }
 
         for peer_address in peer_list {
-            if peer_address == local_address {
+            if self_addresses.contains(&peer_address) {
                 continue;
             }
 
@@ -468,7 +665,6 @@ impl HttpP2PNetwork {
         }
     }
 
-    /// Send a message to a specific peer
     async fn send_message_to_peer(
         client: &Client,
         peer_address: &str,
@@ -488,19 +684,26 @@ impl HttpP2PNetwork {
 
         for attempt in 1..=config.retry_attempts {
             match client.post(&url).json(message).send().await {
+                Ok(response) if response.status().is_success() => {
+                    debug!("Successfully sent message to peer {}", peer_address);
+                    return Ok(());
+                }
                 Ok(response) => {
-                    if response.status().is_success() {
-                        debug!("Successfully sent message to peer {}", peer_address);
-                        return Ok(());
-                    } else {
-                        debug!(
-                            "Peer {} returned status {} (attempt {}/{})",
+                    if attempt == config.retry_attempts {
+                        return Err(P2PError::Peer(format!(
+                            "Peer {} returned status {}",
                             peer_address,
-                            response.status(),
-                            attempt,
-                            config.retry_attempts
-                        );
+                            response.status()
+                        ))
+                        .into());
                     }
+                    debug!(
+                        "Peer {} responded with status {} (attempt {}/{})",
+                        peer_address,
+                        response.status(),
+                        attempt,
+                        config.retry_attempts
+                    );
                 }
                 Err(e) => {
                     if attempt == config.retry_attempts {
@@ -523,38 +726,49 @@ impl HttpP2PNetwork {
         Ok(())
     }
 
-    /// Discover new peers by asking existing peers
     async fn discover_peers(
         client: &Client,
         peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
         local_address: &str,
+        announce_address: &Arc<parking_lot::RwLock<String>>,
         peer_count: &Arc<parking_lot::RwLock<usize>>,
-    ) -> Result<()> {
+    ) {
         let peer_list = peers.read().clone();
-
-        for peer_address in peer_list {
-            if let Err(e) = Self::request_peers_from_peer(
-                client,
-                &peer_address,
-                peers,
-                local_address,
-                peer_count,
-            )
-            .await
-            {
-                debug!("Failed to discover peers from {}: {}", peer_address, e);
-            }
+        if peer_list.is_empty() {
+            return;
         }
 
-        Ok(())
+        for peer_address in peer_list {
+            let client = client.clone();
+            let peers = peers.clone();
+            let local_address = local_address.to_string();
+            let announce_address = announce_address.clone();
+            let peer_count = peer_count.clone();
+
+            tokio::spawn(async move {
+                let announced = announce_address.read().clone();
+                if let Err(e) = Self::request_peers_from_peer(
+                    &client,
+                    &peer_address,
+                    &peers,
+                    &local_address,
+                    &announced,
+                    &peer_count,
+                )
+                .await
+                {
+                    debug!("Failed to discover peers from {}: {}", peer_address, e);
+                }
+            });
+        }
     }
 
-    /// Request peer list from a specific peer
     async fn request_peers_from_peer(
         client: &Client,
         peer_address: &str,
         peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
         local_address: &str,
+        announce_address: &str,
         peer_count: &Arc<parking_lot::RwLock<usize>>,
     ) -> Result<()> {
         let url = format!("{}/p2p/peers", peer_address);
@@ -563,255 +777,63 @@ impl HttpP2PNetwork {
         if response.status().is_success() {
             let peer_list: Vec<String> = response.json().await?;
 
-            let mut added = false;
-            {
-                let mut current_peers = peers.write();
-                for peer in peer_list {
-                    match Self::canonicalize_address(&peer) {
-                        Ok(canonical) => {
-                            if canonical != local_address && !current_peers.contains(&canonical) {
-                                current_peers.insert(canonical.clone());
-                                added = true;
-                                info!("Discovered new peer: {}", canonical);
-                            }
-                        }
-                        Err(e) => {
-                            debug!("Skipping invalid peer address {}: {}", peer, e);
+            let mut current_peers = peers.write();
+            for peer in peer_list {
+                match Self::canonicalize_address(&peer) {
+                    Ok(canonical) => {
+                        if canonical != local_address
+                            && canonical != announce_address
+                            && !current_peers.contains(&canonical)
+                        {
+                            current_peers.insert(canonical.clone());
+                            info!("Discovered new peer: {}", canonical);
                         }
                     }
+                    Err(e) => debug!("Invalid peer address {} from {}: {}", peer, peer_address, e),
                 }
             }
 
-            if added {
-                *peer_count.write() = peers.read().len();
-            }
+            *peer_count.write() = current_peers.len();
         }
 
         Ok(())
     }
 
     fn canonicalize_address(address: &str) -> Result<String> {
-        let trimmed = address.trim();
-        if trimmed.is_empty() {
-            return Err(anyhow!("address cannot be empty"));
-        }
-
-        let mut candidates = vec![trimmed.to_string()];
-        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
-            candidates.push(format!("http://{}", trimmed));
-        }
-
-        for candidate in candidates {
-            if let Ok(url) = Url::parse(&candidate) {
-                return Ok(Self::normalize_url(url));
-            }
-        }
-
-        Err(anyhow!("invalid peer address: {}", address))
-    }
-
-    fn normalize_url(mut url: Url) -> String {
-        // Ensure URLs always include a port component
-        if url.port_or_known_default().is_none() {
-            if let Err(e) = url.set_port(Some(80)) {
-                debug!("Failed to normalize URL without port: {}", e);
-            }
-        }
-
-        let mut normalized = url.to_string();
-        while normalized.ends_with('/') {
-            normalized.pop();
-        }
-        normalized
-    }
-
-    fn build_announce_address(scheme: &str, host: &str, port: u16) -> Result<String> {
-        let trimmed = host.trim();
-        if trimmed.is_empty() {
-            return Err(anyhow!("announce host cannot be empty"));
-        }
-
-        let mut url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-            Url::parse(trimmed)?
+        let candidate = if address.contains("://") {
+            address.to_string()
         } else {
-            Url::parse(&format!("{}://{}", scheme, trimmed))?
+            format!("http://{}", address)
         };
 
-        if url.port().is_none() {
-            url.set_port(Some(port))
-                .map_err(|_| anyhow!("invalid announce port: {}", port))?;
-        }
+        let url = Url::parse(&candidate)?;
+        let scheme = url.scheme().to_string();
+        let host = url
+            .host_str()
+            .ok_or_else(|| anyhow!("peer address missing host"))?
+            .to_string();
+        let port = url
+            .port_or_known_default()
+            .ok_or_else(|| anyhow!("peer address missing port"))?;
 
-        Ok(Self::normalize_url(url))
+        Self::build_address(&scheme, &host, port)
     }
 
-    fn store_announce_address(
-        announce_address: &Arc<parking_lot::RwLock<String>>,
-        new_address: String,
-    ) -> Result<()> {
-        let canonical = Self::canonicalize_address(&new_address)?;
-        let mut current = announce_address.write();
-        if *current != canonical {
-            info!("Updated announce address to {}", canonical);
-            *current = canonical;
-        }
-        Ok(())
-    }
+    fn build_address(scheme: &str, host: &str, port: u16) -> Result<String> {
+        // Wrap IPv6 hosts with [] if missing
+        let formatted_host = if host.contains(':') && !host.starts_with('[') && !host.ends_with(']')
+        {
+            format!("[{}]", host)
+        } else {
+            host.to_string()
+        };
 
-    async fn refresh_announce_address_inner(
-        client: &Client,
-        config: &P2PConfig,
-        listen_host: &str,
-        listen_scheme: &str,
-        listen_port: u16,
-        announce_address: &Arc<parking_lot::RwLock<String>>,
-        upnp_mapping_active: &Arc<parking_lot::RwLock<bool>>,
-    ) -> Result<()> {
-        if let Some(public_host) = &config.public_host {
-            let address = Self::build_announce_address(listen_scheme, public_host, listen_port)?;
-            return Self::store_announce_address(announce_address, address);
-        }
-
-        if config.enable_upnp {
-            if let Some(ip) =
-                Self::try_get_upnp_external_ip(listen_port, upnp_mapping_active).await?
-            {
-                let address =
-                    Self::build_announce_address(listen_scheme, &ip.to_string(), listen_port)?;
-                return Self::store_announce_address(announce_address, address);
-            }
-        }
-
-        if let Some(ip) = Self::fetch_external_ip(client, &config.external_ip_services).await? {
-            let address = Self::build_announce_address(listen_scheme, &ip, listen_port)?;
-            return Self::store_announce_address(announce_address, address);
-        }
-
-        let fallback = Self::build_announce_address(listen_scheme, listen_host, listen_port)?;
-        Self::store_announce_address(announce_address, fallback)?;
-        Ok(())
-    }
-
-    async fn fetch_external_ip(client: &Client, services: &[String]) -> Result<Option<String>> {
-        for service in services {
-            let endpoint = service.trim();
-            if endpoint.is_empty() {
-                continue;
-            }
-
-            match client.get(endpoint).send().await {
-                Ok(response) => {
-                    if !response.status().is_success() {
-                        debug!(
-                            "External IP service {} returned status {}",
-                            endpoint,
-                            response.status()
-                        );
-                        continue;
-                    }
-
-                    match response.text().await {
-                        Ok(body) => {
-                            let candidate = body.trim();
-                            if candidate.is_empty() {
-                                continue;
-                            }
-                            if candidate.parse::<IpAddr>().is_ok() {
-                                info!("Detected external IP {} via {}", candidate, endpoint);
-                                return Ok(Some(candidate.to_string()));
-                            } else {
-                                debug!(
-                                    "External IP service {} returned unexpected payload: {}",
-                                    endpoint, candidate
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            debug!(
-                                "Failed to read response from external IP service {}: {}",
-                                endpoint, e
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    debug!("Failed to contact external IP service {}: {}", endpoint, e);
-                }
-            }
-        }
-
-        Ok(None)
-    }
-
-    async fn try_get_upnp_external_ip(
-        listen_port: u16,
-        upnp_mapping_active: &Arc<parking_lot::RwLock<bool>>,
-    ) -> Result<Option<IpAddr>> {
-        match search_gateway(Default::default()).await {
-            Ok(gateway) => {
-                let external_ip = gateway.get_external_ip().await?;
-
-                if !*upnp_mapping_active.read() {
-                    match local_ip() {
-                        Ok(IpAddr::V4(local_ipv4)) => {
-                            let socket = SocketAddrV4::new(local_ipv4, listen_port);
-                            match gateway
-                                .add_port(
-                                    PortMappingProtocol::TCP,
-                                    listen_port,
-                                    socket,
-                                    0,
-                                    "ippan-node",
-                                )
-                                .await
-                            {
-                                Ok(_) => {
-                                    info!("Established UPnP port mapping on port {}", listen_port);
-                                    *upnp_mapping_active.write() = true;
-                                }
-                                Err(e) => {
-                                    warn!("Failed to configure UPnP port mapping: {}", e);
-                                }
-                            }
-                        }
-                        Ok(IpAddr::V6(_)) => {
-                            debug!("Local IPv6 address detected; skipping UPnP mapping");
-                        }
-                        Err(e) => {
-                            debug!("Failed to obtain local IP address for UPnP: {}", e);
-                        }
-                    }
-                }
-
-                Ok(Some(external_ip))
-            }
-            Err(e) => {
-                debug!("UPnP gateway discovery failed: {}", e);
-                Ok(None)
-            }
-        }
-    }
-
-    async fn teardown_upnp_mapping(
-        listen_port: u16,
-        upnp_mapping_active: &Arc<parking_lot::RwLock<bool>>,
-    ) -> Result<()> {
-        if !*upnp_mapping_active.read() {
-            return Ok(());
-        }
-
-        match search_gateway(Default::default()).await {
-            Ok(gateway) => {
-                gateway
-                    .remove_port(PortMappingProtocol::TCP, listen_port)
-                    .await
-                    .map_err(|e| anyhow!("{}", e))?;
-                info!("Removed UPnP port mapping on port {}", listen_port);
-                *upnp_mapping_active.write() = false;
-                Ok(())
-            }
-            Err(e) => Err(anyhow!("failed to contact UPnP gateway: {}", e)),
-        }
+        let mut url = Url::parse(&format!("{}://{}:{}/", scheme, formatted_host, port))?;
+        url.set_path("");
+        url.set_query(None);
+        url.set_fragment(None);
+        let formatted = url.to_string();
+        Ok(formatted.trim_end_matches('/').to_string())
     }
 }
 

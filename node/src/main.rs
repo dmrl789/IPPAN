@@ -85,6 +85,14 @@ impl AppConfig {
             id
         };
 
+        let external_ip_services: Vec<String> = config
+            .get_string("P2P_EXTERNAL_IP_SERVICES")
+            .unwrap_or_else(|_| "https://api.ipify.org,https://ifconfig.me/ip".to_string())
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
         Ok(Self {
             node_id: config
                 .get_string("NODE_ID")
