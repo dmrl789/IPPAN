@@ -93,8 +93,8 @@ jobs:
       - name: Ensure /opt/ippan exists
         run: ssh ${{ matrix.host }} "mkdir -p /opt/ippan"
 
-      - name: Copy docker-compose.yml to server
-        run: scp deploy/docker-compose.yml ${{ matrix.host }}:${{ env.COMPOSE_REMOTE_PATH }}
+      - name: Copy deploy dir to server
+        run: scp -r deploy/* ${{ matrix.host }}:/opt/ippan/
 
       - name: Deploy remotely
         run: |
