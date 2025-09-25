@@ -115,6 +115,6 @@ mod tests {
     fn invalid_hex_rejected() {
         let bad = format!("i{}", "gg".repeat(ADDRESS_BYTES));
         let err = decode_address(&bad).unwrap_err();
-        assert!(matches!(err, AddressError::InvalidHex(_)));
+        assert!(matches!(err, AddressError::InvalidHex(_))); 
     }
 }

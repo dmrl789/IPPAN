@@ -45,10 +45,10 @@ struct AppConfig {
     bootstrap_nodes: Vec<String>,
     max_peers: usize,
     peer_discovery_interval_secs: u64,
-    p2p_public_host: String,
+    peer_announce_interval_secs: u64,
+    p2p_public_host: Option<String>,
     p2p_enable_upnp: bool,
     p2p_external_ip_services: Vec<String>,
-    peer_announce_interval_secs: u64,
 
     // Logging
     log_level: String,
@@ -78,10 +78,8 @@ impl AppConfig {
             // Generate a deterministic ID from the string
             let mut id = [0u8; 32];
             let hash_bytes = validator_id_str.as_bytes();
-            for (i, &byte) in hash_bytes.iter().enumerate() {
-                if i < 32 {
-                    id[i] = byte;
-                }
+            for (i, &byte) in hash_bytes.iter().enumerate().take(32) {
+                id[i] = byte;
             }
             id
         };
@@ -157,26 +155,31 @@ impl AppConfig {
                 .get_string("PEER_DISCOVERY_INTERVAL_SECS")
                 .unwrap_or_else(|_| "30".to_string())
                 .parse()?,
-            p2p_public_host: config.get_string("P2P_PUBLIC_HOST").unwrap_or_else(|_| {
-                config
-                    .get_string("P2P_HOST")
-                    .unwrap_or_else(|_| "0.0.0.0".to_string())
-            }),
-            p2p_enable_upnp: config
-                .get_string("P2P_ENABLE_UPNP")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse()?,
-            p2p_external_ip_services: config
-                .get_string("P2P_EXTERNAL_IP_SERVICES")
-                .unwrap_or_default()
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect(),
             peer_announce_interval_secs: config
                 .get_string("PEER_ANNOUNCE_INTERVAL_SECS")
                 .unwrap_or_else(|_| "60".to_string())
                 .parse()?,
+            p2p_public_host: config
+                .get_string("P2P_PUBLIC_HOST")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            p2p_enable_upnp: config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false),
+            p2p_external_ip_services: {
+                let services = config
+                    .get_string("P2P_EXTERNAL_IP_SERVICES")
+                    .unwrap_or_else(|_| "https://api.ipify.org,https://ifconfig.me/ip".to_string());
+                let mut services: Vec<String> = services
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if services.is_empty() {
+                    services.push("https://api.ipify.org".to_string());
+                    services.push("https://ifconfig.me/ip".to_string());
+                }
+                services
+            },
             log_level: config
                 .get_string("LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
@@ -255,7 +258,7 @@ async fn main() -> Result<()> {
         validators: vec![Validator {
             id: config.validator_id,
             address: config.validator_id,
-            stake: 1000000,
+            stake: 1_000_000,
             is_active: true,
         }],
         max_transactions_per_block: config.max_transactions_per_block,
