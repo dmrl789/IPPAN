@@ -99,6 +99,11 @@ impl PoAConsensus {
         self.tx_sender.clone()
     }
 
+    /// Get a handle to the current mempool
+    pub fn mempool(&self) -> Arc<RwLock<Vec<Transaction>>> {
+        self.mempool.clone()
+    }
+
     /// Start the consensus engine
     pub async fn start(&mut self) -> Result<()> {
         *self.is_running.write() = true;
@@ -184,7 +189,7 @@ impl PoAConsensus {
     pub fn get_state(&self) -> ConsensusState {
         let current_slot = *self.current_slot.read();
         let proposer = Self::get_proposer_for_slot(&self.config.validators, current_slot);
-        let is_proposing = proposer.map_or(false, |p| p == self.validator_id);
+        let is_proposing = proposer == Some(self.validator_id);
 
         ConsensusState {
             current_slot,

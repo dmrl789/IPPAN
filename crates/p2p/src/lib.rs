@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use ippan_types::{Block, Transaction};
+use local_ip_address::local_ip;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -8,12 +9,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use url::Url;
 
 use igd::aio::search_gateway;
 use igd::PortMappingProtocol;
-use local_ip_address::local_ip;
 
 /// P2P network errors
 #[derive(thiserror::Error, Debug)]
@@ -35,17 +35,10 @@ pub enum P2PError {
 pub enum NetworkMessage {
     Block(Block),
     Transaction(Transaction),
-    BlockRequest {
-        hash: [u8; 32],
-    },
+    BlockRequest { hash: [u8; 32] },
     BlockResponse(Block),
-    PeerInfo {
-        peer_id: String,
-        addresses: Vec<String>,
-    },
-    PeerDiscovery {
-        peers: Vec<String>,
-    },
+    PeerInfo { peer_id: String, addresses: Vec<String> },
+    PeerDiscovery { peers: Vec<String> },
 }
 
 /// Peer information
@@ -184,11 +177,7 @@ impl HttpP2PNetwork {
                     // Process outgoing messages
                     if let Some(msg) = message_receiver.recv().await {
                         Self::handle_outgoing_message(
-                            &client,
-                            &peers,
-                            &config,
-                            &announce_address,
-                            msg,
+                            &client, &peers, &config, &announce_address, msg,
                         )
                         .await;
                     }
@@ -321,7 +310,7 @@ impl HttpP2PNetwork {
         // Validate URL
         let canonical = Self::canonicalize_address(&peer_address)?;
 
-               if canonical == self.listen_address || canonical == self.get_announce_address() {
+        if canonical == self.listen_address || canonical == self.get_announce_address() {
             return Ok(());
         }
 
@@ -504,10 +493,12 @@ impl HttpP2PNetwork {
                         debug!("Successfully sent message to peer {}", peer_address);
                         return Ok(());
                     } else {
-                        warn!(
-                            "Peer {} returned status: {}",
+                        debug!(
+                            "Peer {} returned status {} (attempt {}/{})",
                             peer_address,
-                            response.status()
+                            response.status(),
+                            attempt,
+                            config.retry_attempts
                         );
                     }
                 }
@@ -519,13 +510,14 @@ impl HttpP2PNetwork {
                         ))
                         .into());
                     }
-                    warn!(
+                    debug!(
                         "Attempt {} failed for peer {}: {}",
                         attempt, peer_address, e
                     );
-                    sleep(Duration::from_millis(100 * attempt as u64)).await;
                 }
             }
+
+            sleep(Duration::from_millis(100 * attempt as u64)).await;
         }
 
         Ok(())
