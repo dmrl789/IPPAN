@@ -8,7 +8,7 @@ use ippan_storage::SledStorage;
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -37,6 +37,11 @@ struct AppConfig {
     // P2P
     bootstrap_nodes: Vec<String>,
     max_peers: usize,
+    peer_discovery_interval_secs: u64,
+    peer_announce_interval_secs: u64,
+    p2p_public_host: Option<String>,
+    p2p_enable_upnp: bool,
+    p2p_external_ip_services: Vec<String>,
 
     // Logging
     log_level: String,
@@ -122,6 +127,35 @@ impl AppConfig {
                 .get_string("MAX_PEERS")
                 .unwrap_or_else(|_| "50".to_string())
                 .parse()?,
+            peer_discovery_interval_secs: config
+                .get_string("PEER_DISCOVERY_INTERVAL_SECS")
+                .unwrap_or_else(|_| "30".to_string())
+                .parse()?,
+            peer_announce_interval_secs: config
+                .get_string("PEER_ANNOUNCE_INTERVAL_SECS")
+                .unwrap_or_else(|_| "60".to_string())
+                .parse()?,
+            p2p_public_host: config
+                .get_string("P2P_PUBLIC_HOST")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            p2p_enable_upnp: config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false),
+            p2p_external_ip_services: {
+                let services = config
+                    .get_string("P2P_EXTERNAL_IP_SERVICES")
+                    .unwrap_or_else(|_| "https://api.ipify.org,https://ifconfig.me/ip".to_string());
+                let mut services: Vec<String> = services
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if services.is_empty() {
+                    services.push("https://api.ipify.org".to_string());
+                    services.push("https://ifconfig.me/ip".to_string());
+                }
+                services
+            },
             log_level: config
                 .get_string("LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
