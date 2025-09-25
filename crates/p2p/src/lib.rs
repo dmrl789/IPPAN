@@ -321,7 +321,7 @@ impl HttpP2PNetwork {
         // Validate URL
         let canonical = Self::canonicalize_address(&peer_address)?;
 
-        if canonical == self.listen_address || canonical == self.get_announce_address() {
+               if canonical == self.listen_address || canonical == self.get_announce_address() {
             return Ok(());
         }
 
