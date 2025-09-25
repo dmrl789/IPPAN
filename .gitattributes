@@ -1,16 +1,5 @@
-﻿# Images & icons
-*.png filter=lfs diff=lfs merge=lfs -text
-*.jpg filter=lfs diff=lfs merge=lfs -text
-*.jpeg filter=lfs diff=lfs merge=lfs -text
-*.ico filter=lfs diff=lfs merge=lfs -text
-*.svgz filter=lfs diff=lfs merge=lfs -text
-
-# Fonts
-*.ttf filter=lfs diff=lfs merge=lfs -text
-*.otf filter=lfs diff=lfs merge=lfs -text
-*.woff filter=lfs diff=lfs merge=lfs -text
-*.woff2 filter=lfs diff=lfs merge=lfs -text
-
-# Other binaries
-*.wasm filter=lfs diff=lfs merge=lfs -text
-*.zip  filter=lfs diff=lfs merge=lfs -text
+* text=auto
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+Dockerfile text eol=lf
