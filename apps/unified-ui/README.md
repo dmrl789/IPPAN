@@ -32,7 +32,6 @@ A comprehensive web interface that combines all IPPAN network functionality into
 - **Accounts**: View account balances, history, and activity
 - **Validators**: Monitor validator performance and network consensus
 - **Rounds & Finality**: Track consensus rounds and finality
-- **Smart Contracts**: Browse and interact with deployed contracts
 - **Network Map**: Visualize network topology and node distribution
 - **Analytics**: Network metrics, performance, and trends
 
