@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  packages: write   # needed to push to GHCR
+  packages: write
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ippan
@@ -34,6 +34,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_NAME }}:latest
@@ -53,33 +54,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Start ssh-agent and add private key
-        uses: webfactory/ssh-agent@v0.9.0
+      # Write private key & known_hosts directly (avoids ssh-add/libcrypto issues)
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
         with:
-          ssh-private-key: ${{ secrets.HETZNER_SSH_KEY }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}          # OpenSSH PRIVATE key (BEGIN/END lines)
+          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}  # the two ed25519 lines you captured
+          key_path: ~/.ssh/id_ed25519
 
-      - name: Write known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          echo "${SSH_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
-        env:
-          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+      # (Optional) quick connectivity test
+      - name: Test SSH to host
+        run: ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "echo ok"
 
       - name: Copy docker-compose.yml to server
         run: |
           scp -o StrictHostKeyChecking=yes deploy/docker-compose.yml root@${{ matrix.host }}:${{ env.COMPOSE_REMOTE_PATH }}
 
-      # If your GHCR package is PRIVATE, pass credentials to remote (else these env vars are empty)
       - name: Deploy remotely
         run: |
-          # Optional GHCR creds for private images:
           if [ -n "${GHCR_PAT:-}" ]; then
-            ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "export GHCR_USER='${GHCR_USER}'; export GHCR_TOKEN='${GHCR_PAT}'; /usr/local/bin/ippan-deploy"
+            ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "export GHCR_USER='${{ github.repository_owner }}'; export GHCR_TOKEN='${GHCR_PAT}'; /usr/local/bin/ippan-deploy"
           else
             ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "/usr/local/bin/ippan-deploy"
           fi
         env:
-          GHCR_USER: ${{ github.repository_owner }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
 
     concurrency:
