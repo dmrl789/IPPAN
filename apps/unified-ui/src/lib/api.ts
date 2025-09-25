@@ -1,12 +1,44 @@
 import axios from 'axios';
 
-// Dynamic API configuration - can be changed at runtime
-let API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+const STORAGE_KEY = 'ippan.api.baseUrl';
+const DEFAULT_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+
+let API_BASE_URL = DEFAULT_BASE_URL;
+
+function persistBaseUrl(url: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, url);
+  } catch (error) {
+    console.warn('Unable to persist API base URL:', error);
+  }
+}
+
+function readStoredBaseUrl(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn('Unable to read stored API base URL:', error);
+    return null;
+  }
+}
 
 // Function to update API base URL
 export function setApiBaseUrl(url: string) {
   API_BASE_URL = url;
   api.defaults.baseURL = API_BASE_URL;
+
+  if (typeof window !== 'undefined') {
+    (window as any).API_BASE_URL = API_BASE_URL;
+    persistBaseUrl(API_BASE_URL);
+  }
 }
 
 // Function to get current API base URL
@@ -14,8 +46,20 @@ export function getApiBaseUrl() {
   return API_BASE_URL;
 }
 
+export function initializeApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const stored = readStoredBaseUrl();
+    const baseUrl = stored || DEFAULT_BASE_URL;
+    setApiBaseUrl(baseUrl);
+    return baseUrl;
+  }
+
+  API_BASE_URL = DEFAULT_BASE_URL;
+  return API_BASE_URL;
+}
+
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: DEFAULT_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -65,6 +109,24 @@ export async function postDataset(dataset: Dataset): Promise<string> {
 export async function getDatasets(): Promise<Dataset[]> {
   const response = await api.get('/api/datasets');
   return response.data;
+}
+
+// Accounts API
+export interface AccountSummary {
+  address: string;
+  balance: number;
+  nonce: number;
+}
+
+export async function getAccounts(): Promise<AccountSummary[]> {
+  const response = await api.get('/accounts');
+  const body = response.data;
+
+  if (body?.success && Array.isArray(body.data)) {
+    return body.data as AccountSummary[];
+  }
+
+  return [];
 }
 
 // Wallet API - Updated for real IPPAN nodes

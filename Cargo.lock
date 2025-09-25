@@ -1290,7 +1290,6 @@ dependencies = [
  "ippan-p2p",
  "ippan-storage",
  "ippan-types",
- "parking_lot 0.12.4",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1329,7 +1328,6 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
- "thiserror 1.0.69",
  "time",
 ]
 

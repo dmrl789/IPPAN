@@ -34,17 +34,10 @@ pub enum P2PError {
 pub enum NetworkMessage {
     Block(Block),
     Transaction(Transaction),
-    BlockRequest {
-        hash: [u8; 32],
-    },
+    BlockRequest { hash: [u8; 32] },
     BlockResponse(Block),
-    PeerInfo {
-        peer_id: String,
-        addresses: Vec<String>,
-    },
-    PeerDiscovery {
-        peers: Vec<String>,
-    },
+    PeerInfo { peer_id: String, addresses: Vec<String> },
+    PeerDiscovery { peers: Vec<String> },
 }
 
 /// Peer information
@@ -112,6 +105,9 @@ impl HttpP2PNetwork {
     pub fn new(config: P2PConfig, local_address: String) -> Result<Self> {
         let client = Client::builder().timeout(config.message_timeout).build()?;
 
+        // Validate and normalize the listen address
+        let canonical_listen = Self::canonicalize_address(&local_address)?;
+
         // Generate a simple peer ID
         let local_peer_id = format!(
             "ippan-peer-{}",
@@ -124,8 +120,6 @@ impl HttpP2PNetwork {
         // Create message channels
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
 
-        let canonical_local = Self::canonicalize_address(&local_address)?;
-
         Ok(Self {
             config,
             client,
@@ -135,9 +129,9 @@ impl HttpP2PNetwork {
             peer_count: Arc::new(parking_lot::RwLock::new(0)),
             is_running: Arc::new(parking_lot::RwLock::new(false)),
             local_peer_id,
-            listen_address: canonical_local.clone(),
-            local_address: canonical_local.clone(),
-            announce_address: Arc::new(parking_lot::RwLock::new(canonical_local)),
+            listen_address: canonical_listen.clone(),
+            local_address: canonical_listen.clone(),
+            announce_address: Arc::new(parking_lot::RwLock::new(canonical_listen)),
             upnp_mapping_active: Arc::new(parking_lot::RwLock::new(false)),
         })
     }
@@ -290,7 +284,6 @@ impl HttpP2PNetwork {
 
         let inserted = {
             let mut peers = self.peers.write();
-
             if peers.contains(&canonical) {
                 false
             } else if peers.len() >= self.config.max_peers {
@@ -365,6 +358,11 @@ impl HttpP2PNetwork {
         *self.peer_count.read()
     }
 
+    fn update_peer_count(&self) {
+        let count = self.peers.read().len();
+        *self.peer_count.write() = count;
+    }
+
     /// Get local peer ID
     pub fn get_local_peer_id(&self) -> String {
         self.local_peer_id.clone()
@@ -375,14 +373,25 @@ impl HttpP2PNetwork {
         self.listen_address.clone()
     }
 
-    /// Get announce address
+    /// Get list of peers
+    pub fn get_peers(&self) -> Vec<String> {
+        self.peers.read().iter().cloned().collect()
+    }
+
+    /// Get the address advertised to other peers
     pub fn get_announce_address(&self) -> String {
         self.announce_address.read().clone()
     }
 
-    /// Get list of peers
-    pub fn get_peers(&self) -> Vec<String> {
-        self.peers.read().iter().cloned().collect()
+    /// Queue a peer info announcement for the network
+    pub fn announce_self(&self) -> Result<()> {
+        let address = self.get_announce_address();
+        let message = NetworkMessage::PeerInfo {
+            peer_id: self.local_peer_id.clone(),
+            addresses: vec![address],
+        };
+        self.message_sender.send(message)?;
+        Ok(())
     }
 
     /// Broadcast a block to all peers
@@ -412,11 +421,6 @@ impl HttpP2PNetwork {
             addresses.push(self.local_address.clone());
         }
         addresses
-    }
-
-    fn update_peer_count(&self) {
-        let count = self.peers.read().len();
-        *self.peer_count.write() = count;
     }
 
     async fn setup_connectivity(&mut self) -> Result<()> {
@@ -816,6 +820,7 @@ impl HttpP2PNetwork {
     }
 
     fn build_address(scheme: &str, host: &str, port: u16) -> Result<String> {
+        // Wrap IPv6 hosts with [] if missing
         let formatted_host = if host.contains(':') && !host.starts_with('[') && !host.ends_with(']')
         {
             format!("[{}]", host)

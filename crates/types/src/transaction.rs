@@ -56,6 +56,14 @@ impl Transaction {
         self.id = self.hash();
     }
 
+    /// Compute the canonical transaction hash using BLAKE3.
+    fn compute_hash(&self) -> [u8; 32] {
+        let hash = blake3::hash(&self.canonical_bytes());
+        let mut result = [0u8; 32];
+        result.copy_from_slice(hash.as_bytes());
+        result
+    }
+
     /// Create payload for HashTimer computation
     fn create_payload(from: &[u8; 32], to: &[u8; 32], amount: u64, nonce: u64) -> Vec<u8> {
         let mut payload = Vec::new();
@@ -68,8 +76,9 @@ impl Transaction {
 
     /// Bytes used for signature verification (excludes signature and id)
     fn message_bytes(&self) -> Vec<u8> {
+        // Capacity hint only; it may be slightly overestimated and that's fine.
         let mut bytes = Vec::with_capacity(
-            self.from.len() + self.to.len() + 8 + 8 + self.signature.len() + 7 + 25 + 8,
+            self.from.len() + self.to.len() + 8 + 8 + 7 + 25 + 8, // rough sizes
         );
         bytes.extend_from_slice(&self.from);
         bytes.extend_from_slice(&self.to);
@@ -111,9 +120,7 @@ impl Transaction {
         match VerifyingKey::from_bytes(&self.from) {
             Ok(verifying_key) => {
                 let signature = Signature::from_bytes(&self.signature);
-                verifying_key
-                    .verify(&self.message_bytes(), &signature)
-                    .is_ok()
+                verifying_key.verify(&self.message_bytes(), &signature).is_ok()
             }
             Err(_) => false,
         }
@@ -121,10 +128,7 @@ impl Transaction {
 
     /// Get transaction hash
     pub fn hash(&self) -> [u8; 32] {
-        let hash = blake3::hash(&self.canonical_bytes());
-        let mut result = [0u8; 32];
-        result.copy_from_slice(hash.as_bytes());
-        result
+        self.compute_hash()
     }
 
     /// Check if transaction is valid
@@ -143,11 +147,12 @@ impl Transaction {
             return false;
         }
 
+        // Ensure the id matches the canonical hash
         if self.id != self.hash() {
             return false;
         }
 
-        // Verify HashTimer is valid
+        // Verify HashTimer is valid and consistent with contents
         let payload = Self::create_payload(&self.from, &self.to, self.amount, self.nonce);
         let expected_hashtimer = HashTimer::derive(
             "transaction",
@@ -162,7 +167,7 @@ impl Transaction {
             return false;
         }
 
-        // HashTimer should be consistent (allowing for time differences)
+        // HashTimer should not be from the future
         self.hashtimer.time().0 <= IppanTimeMicros::now().0
     }
 }

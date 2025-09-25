@@ -3,7 +3,7 @@ use clap::{Arg, Command};
 use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
-use ippan_rpc::{start_server, AppState, ConsensusHandle};
+use ippan_rpc::{start_server, AppState, ConsensusHandle, L2Config};
 use ippan_storage::SledStorage;
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -34,6 +34,13 @@ struct AppConfig {
     slot_duration_ms: u64,
     max_transactions_per_block: usize,
     block_reward: u64,
+
+    // L2 interoperability
+    l2_max_commit_size: usize,
+    l2_min_epoch_gap_ms: u64,
+    l2_challenge_window_ms: u64,
+    l2_da_mode: String,
+    l2_max_l2_count: usize,
 
     // P2P
     bootstrap_nodes: Vec<String>,
@@ -72,10 +79,8 @@ impl AppConfig {
             // Generate a deterministic ID from the string
             let mut id = [0u8; 32];
             let hash_bytes = validator_id_str.as_bytes();
-            for (i, &byte) in hash_bytes.iter().enumerate() {
-                if i < 32 {
-                    id[i] = byte;
-                }
+            for (i, &byte) in hash_bytes.iter().enumerate().take(32) {
+                id[i] = byte;
             }
             id
         };
@@ -125,6 +130,25 @@ impl AppConfig {
                 .get_string("BLOCK_REWARD")
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()?,
+            l2_max_commit_size: config
+                .get_string("L2_MAX_COMMIT_SIZE")
+                .unwrap_or_else(|_| "16384".to_string())
+                .parse()?,
+            l2_min_epoch_gap_ms: config
+                .get_string("L2_MIN_EPOCH_GAP_MS")
+                .unwrap_or_else(|_| "250".to_string())
+                .parse()?,
+            l2_challenge_window_ms: config
+                .get_string("L2_CHALLENGE_WINDOW_MS")
+                .unwrap_or_else(|_| "60000".to_string())
+                .parse()?,
+            l2_da_mode: config
+                .get_string("L2_DA_MODE")
+                .unwrap_or_else(|_| "external".to_string()),
+            l2_max_l2_count: config
+                .get_string("L2_MAX_L2_COUNT")
+                .unwrap_or_else(|_| "100".to_string())
+                .parse()?,
             bootstrap_nodes: config
                 .get_string("BOOTSTRAP_NODES")
                 .unwrap_or_default()
@@ -147,19 +171,23 @@ impl AppConfig {
             p2p_public_host: config
                 .get_string("P2P_PUBLIC_HOST")
                 .ok()
-                .filter(|s| !s.trim().is_empty())
-                .map(|s| s.trim().to_string()),
-            p2p_enable_upnp: config
-                .get_string("P2P_ENABLE_UPNP")
-                .unwrap_or_else(|_| "true".to_string())
-                .parse()?,
-            p2p_external_ip_services: if external_ip_services.is_empty() {
-                vec![
-                    "https://api.ipify.org".to_string(),
-                    "https://ifconfig.me/ip".to_string(),
-                ]
-            } else {
-                external_ip_services
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            p2p_enable_upnp: config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false),
+            p2p_external_ip_services: {
+                let services = config
+                    .get_string("P2P_EXTERNAL_IP_SERVICES")
+                    .unwrap_or_else(|_| "https://api.ipify.org,https://ifconfig.me/ip".to_string());
+                let mut services: Vec<String> = services
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if services.is_empty() {
+                    services.push("https://api.ipify.org".to_string());
+                    services.push("https://ifconfig.me/ip".to_string());
+                }
+                services
             },
             log_level: config
                 .get_string("LOG_LEVEL")
@@ -239,7 +267,7 @@ async fn main() -> Result<()> {
         validators: vec![Validator {
             id: config.validator_id,
             address: config.validator_id,
-            stake: 1000000,
+            stake: 1_000_000,
             is_active: true,
         }],
         max_transactions_per_block: config.max_transactions_per_block,
@@ -282,7 +310,7 @@ async fn main() -> Result<()> {
     // Get peer ID before moving p2p_network
     let peer_id = p2p_network.get_local_peer_id();
 
-    // Create transaction channel for consensus
+    // Wire consensus handle for RPC
     let consensus_handle = ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool);
 
     // Initialize RPC server
@@ -293,14 +321,24 @@ async fn main() -> Result<()> {
     let p2p_network_for_shutdown = p2p_network_arc.clone();
     let consensus_for_shutdown = consensus.clone();
     peer_count.store(p2p_network_arc.get_peer_count(), Ordering::Relaxed);
+
+    let l2_config = L2Config {
+        max_commit_size: config.l2_max_commit_size,
+        min_epoch_gap_ms: config.l2_min_epoch_gap_ms,
+        challenge_window_ms: config.l2_challenge_window_ms,
+        da_mode: config.l2_da_mode.clone(),
+        max_l2_count: config.l2_max_l2_count,
+    };
+
     let app_state = AppState {
         storage: storage.clone(),
         start_time,
         peer_count: peer_count.clone(),
         p2p_network: Some(p2p_network_arc.clone()),
         tx_sender: Some(tx_sender.clone()),
-        consensus: Some(consensus_handle.clone()),
         node_id: config.node_id.clone(),
+        consensus: Some(consensus_handle.clone()),
+        l2_config,
     };
 
     let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);
