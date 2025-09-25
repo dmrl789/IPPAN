@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ippan_types::{Block, Transaction};
+use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
@@ -64,6 +64,27 @@ pub trait Storage {
 
     /// Total number of stored transactions
     fn get_transaction_count(&self) -> Result<u64>;
+
+    /// Store or update metadata for an L2 network
+    fn put_l2_network(&self, network: L2Network) -> Result<()>;
+
+    /// Fetch an L2 network by identifier
+    fn get_l2_network(&self, id: &str) -> Result<Option<L2Network>>;
+
+    /// List all registered L2 networks
+    fn list_l2_networks(&self) -> Result<Vec<L2Network>>;
+
+    /// Persist a new L2 state commitment
+    fn store_l2_commit(&self, commit: L2Commit) -> Result<()>;
+
+    /// List stored L2 commitments, optionally filtered by L2 identifier
+    fn list_l2_commits(&self, l2_id: Option<&str>) -> Result<Vec<L2Commit>>;
+
+    /// Persist or update an L2 exit record
+    fn store_l2_exit(&self, exit: L2ExitRecord) -> Result<()>;
+
+    /// List L2 exit records, optionally filtered by L2 identifier
+    fn list_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2ExitRecord>>;
 }
 
 /// Sled-backed persistent storage implementation
@@ -73,6 +94,9 @@ pub struct SledStorage {
     transactions: Tree,
     accounts: Tree,
     metadata: Tree,
+    l2_networks: Tree,
+    l2_commits: Tree,
+    l2_exits: Tree,
 }
 
 impl SledStorage {
@@ -84,6 +108,9 @@ impl SledStorage {
         let transactions = db.open_tree("transactions")?;
         let accounts = db.open_tree("accounts")?;
         let metadata = db.open_tree("metadata")?;
+        let l2_networks = db.open_tree("l2_networks")?;
+        let l2_commits = db.open_tree("l2_commits")?;
+        let l2_exits = db.open_tree("l2_exits")?;
 
         Ok(Self {
             db,
@@ -91,6 +118,9 @@ impl SledStorage {
             transactions,
             accounts,
             metadata,
+            l2_networks,
+            l2_commits,
+            l2_exits,
         })
     }
 
@@ -262,6 +292,72 @@ impl Storage for SledStorage {
     fn get_transaction_count(&self) -> Result<u64> {
         Ok(self.transactions.len() as u64)
     }
+
+    fn put_l2_network(&self, network: L2Network) -> Result<()> {
+        let data = serde_json::to_vec(&network)?;
+        self.l2_networks
+            .insert(network.id.as_bytes(), data.as_slice())?;
+        Ok(())
+    }
+
+    fn get_l2_network(&self, id: &str) -> Result<Option<L2Network>> {
+        if let Some(value) = self.l2_networks.get(id.as_bytes())? {
+            let network: L2Network = serde_json::from_slice(&value)?;
+            Ok(Some(network))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
+        let mut networks = Vec::new();
+        for entry in self.l2_networks.iter() {
+            let (_, value) = entry?;
+            let network: L2Network = serde_json::from_slice(&value)?;
+            networks.push(network);
+        }
+        networks.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(networks)
+    }
+
+    fn store_l2_commit(&self, commit: L2Commit) -> Result<()> {
+        let data = serde_json::to_vec(&commit)?;
+        self.l2_commits
+            .insert(commit.id.as_bytes(), data.as_slice())?;
+        Ok(())
+    }
+
+    fn list_l2_commits(&self, l2_id: Option<&str>) -> Result<Vec<L2Commit>> {
+        let mut commits = Vec::new();
+        for entry in self.l2_commits.iter() {
+            let (_, value) = entry?;
+            let commit: L2Commit = serde_json::from_slice(&value)?;
+            if l2_id.map(|id| id == commit.l2_id).unwrap_or(true) {
+                commits.push(commit);
+            }
+        }
+        commits.sort_by(|a, b| a.epoch.cmp(&b.epoch));
+        Ok(commits)
+    }
+
+    fn store_l2_exit(&self, exit: L2ExitRecord) -> Result<()> {
+        let data = serde_json::to_vec(&exit)?;
+        self.l2_exits.insert(exit.id.as_bytes(), data.as_slice())?;
+        Ok(())
+    }
+
+    fn list_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2ExitRecord>> {
+        let mut exits = Vec::new();
+        for entry in self.l2_exits.iter() {
+            let (_, value) = entry?;
+            let exit: L2ExitRecord = serde_json::from_slice(&value)?;
+            if l2_id.map(|id| id == exit.l2_id).unwrap_or(true) {
+                exits.push(exit);
+            }
+        }
+        exits.sort_by(|a, b| a.submitted_at.cmp(&b.submitted_at));
+        Ok(exits)
+    }
 }
 
 /// In-memory storage implementation (for testing/development)
@@ -270,6 +366,9 @@ pub struct MemoryStorage {
     transactions: Arc<RwLock<HashMap<String, Transaction>>>,
     accounts: Arc<RwLock<HashMap<String, Account>>>,
     latest_height: Arc<RwLock<u64>>,
+    l2_networks: Arc<RwLock<HashMap<String, L2Network>>>,
+    l2_commits: Arc<RwLock<HashMap<String, L2Commit>>>,
+    l2_exits: Arc<RwLock<HashMap<String, L2ExitRecord>>>,
 }
 
 impl MemoryStorage {
@@ -279,6 +378,9 @@ impl MemoryStorage {
             transactions: Arc::new(RwLock::new(HashMap::new())),
             accounts: Arc::new(RwLock::new(HashMap::new())),
             latest_height: Arc::new(RwLock::new(0)),
+            l2_networks: Arc::new(RwLock::new(HashMap::new())),
+            l2_commits: Arc::new(RwLock::new(HashMap::new())),
+            l2_exits: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -358,6 +460,55 @@ impl Storage for MemoryStorage {
 
     fn get_transaction_count(&self) -> Result<u64> {
         Ok(self.transactions.read().len() as u64)
+    }
+
+    fn put_l2_network(&self, network: L2Network) -> Result<()> {
+        self.l2_networks.write().insert(network.id.clone(), network);
+        Ok(())
+    }
+
+    fn get_l2_network(&self, id: &str) -> Result<Option<L2Network>> {
+        Ok(self.l2_networks.read().get(id).cloned())
+    }
+
+    fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
+        let mut networks: Vec<L2Network> = self.l2_networks.read().values().cloned().collect();
+        networks.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(networks)
+    }
+
+    fn store_l2_commit(&self, commit: L2Commit) -> Result<()> {
+        self.l2_commits.write().insert(commit.id.clone(), commit);
+        Ok(())
+    }
+
+    fn list_l2_commits(&self, l2_id: Option<&str>) -> Result<Vec<L2Commit>> {
+        let mut commits: Vec<L2Commit> = self
+            .l2_commits
+            .read()
+            .values()
+            .filter(|commit| l2_id.map(|id| id == commit.l2_id).unwrap_or(true))
+            .cloned()
+            .collect();
+        commits.sort_by(|a, b| a.epoch.cmp(&b.epoch));
+        Ok(commits)
+    }
+
+    fn store_l2_exit(&self, exit: L2ExitRecord) -> Result<()> {
+        self.l2_exits.write().insert(exit.id.clone(), exit);
+        Ok(())
+    }
+
+    fn list_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2ExitRecord>> {
+        let mut exits: Vec<L2ExitRecord> = self
+            .l2_exits
+            .read()
+            .values()
+            .filter(|exit| l2_id.map(|id| id == exit.l2_id).unwrap_or(true))
+            .cloned()
+            .collect();
+        exits.sort_by(|a, b| a.submitted_at.cmp(&b.submitted_at));
+        Ok(exits)
     }
 }
 
