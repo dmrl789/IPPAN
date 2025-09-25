@@ -1,0 +1,87 @@
+name: Build & Deploy IPPAN (Docker → Hetzner)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write   # needed to push to GHCR
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ippan
+  COMPOSE_REMOTE_PATH: /opt/ippan/docker-compose.yml
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push (latest + sha)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [ "188.245.97.41", "135.181.145.174" ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start ssh-agent and add private key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.HETZNER_SSH_KEY }}
+
+      - name: Write known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          echo "${SSH_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+
+      - name: Copy docker-compose.yml to server
+        run: |
+          scp -o StrictHostKeyChecking=yes deploy/docker-compose.yml root@${{ matrix.host }}:${{ env.COMPOSE_REMOTE_PATH }}
+
+      # If your GHCR package is PRIVATE, pass credentials to remote (else these env vars are empty)
+      - name: Deploy remotely
+        run: |
+          # Optional GHCR creds for private images:
+          if [ -n "${GHCR_PAT:-}" ]; then
+            ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "export GHCR_USER='${GHCR_USER}'; export GHCR_TOKEN='${GHCR_PAT}'; /usr/local/bin/ippan-deploy"
+          else
+            ssh -o StrictHostKeyChecking=yes root@${{ matrix.host }} "/usr/local/bin/ippan-deploy"
+          fi
+        env:
+          GHCR_USER: ${{ github.repository_owner }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: false
