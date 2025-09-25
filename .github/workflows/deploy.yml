@@ -1,4 +1,4 @@
-﻿name: Build & Deploy IPPAN (Docker → Hetzner)
+name: Build & Deploy IPPAN (Docker → Hetzner)
 
 on:
   push:
@@ -54,14 +54,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Install key & known_hosts (avoids ssh-add/libcrypto)
+      # Install key & known_hosts (no ssh-add / libcrypto issues)
       - name: Install SSH key
         uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.HETZNER_SSH_KEY }}          # OpenSSH PRIVATE key (BEGIN/END…)
-          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}  # your two ed25519 lines
           name: id_ed25519
           if_key_exists: replace
+          known_hosts: |
+            188.245.97.41 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICTcMn7PqFxX3w3K/9FMfdE27d2VHRFcQIrdw5WmOnZy
+            135.181.145.174 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEUjwwtbcnkKYJIj7ot43Fv3Seeoh+2gqUdqoluXu9tN
           config: |
             Host 188.245.97.41
               User root
