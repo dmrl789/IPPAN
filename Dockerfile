@@ -1,16 +1,21 @@
 ﻿# syntax=docker/dockerfile:1
 
-FROM rust:1.80 AS builder
-# If any crate needs native deps (safe to include; tiny impact)
+# Use latest stable Rust (supports Edition 2024)
+FROM rust:1 AS builder
+# (Optional) native deps commonly needed by crypto/net crates
 RUN apt-get update && apt-get install -y pkg-config libssl-dev protobuf-compiler && rm -rf /var/lib/apt/lists/*
+# Make sure rustup uses current stable inside the image
+RUN rustup update stable && rustup default stable
+
 WORKDIR /app
 
-# Cache dependencies
+# Cache deps
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY node ./node
 
-# IMPORTANT: build by *binary* name, not package
+# Build by binary name
+RUN cargo --version && rustc --version
 RUN cargo build --release --locked --bin ippan-node
 
 # ── Runtime ─────────────────────────────────────────────────────────────
