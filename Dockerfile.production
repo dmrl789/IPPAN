@@ -1,5 +1,5 @@
 # Multi-stage build for production
-FROM rust:1.75-slim as builder
+FROM rustlang/rust:nightly-slim AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
