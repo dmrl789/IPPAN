@@ -56,6 +56,14 @@ impl Transaction {
         self.id = self.compute_hash();
     }
 
+    /// Compute the canonical transaction hash using BLAKE3.
+    fn compute_hash(&self) -> [u8; 32] {
+        let hash = blake3::hash(&self.canonical_bytes());
+        let mut result = [0u8; 32];
+        result.copy_from_slice(hash.as_bytes());
+        result
+    }
+
     /// Create payload for HashTimer computation
     fn create_payload(from: &[u8; 32], to: &[u8; 32], amount: u64, nonce: u64) -> Vec<u8> {
         let mut payload = Vec::new();
@@ -121,10 +129,7 @@ impl Transaction {
 
     /// Get transaction hash
     pub fn hash(&self) -> [u8; 32] {
-        let hash = blake3::hash(&self.canonical_bytes());
-        let mut result = [0u8; 32];
-        result.copy_from_slice(hash.as_bytes());
-        result
+        self.compute_hash()
     }
 
     /// Check if transaction is valid
