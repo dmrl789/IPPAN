@@ -311,7 +311,8 @@ async fn main() -> Result<()> {
     let peer_id = p2p_network.get_local_peer_id();
 
     // Wire consensus handle for RPC
-    let consensus_handle = ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool);
+    let consensus_handle =
+        ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool.clone());
 
     // Initialize RPC server
     let peer_count = Arc::new(AtomicUsize::new(0));
@@ -339,6 +340,7 @@ async fn main() -> Result<()> {
         node_id: config.node_id.clone(),
         consensus: Some(consensus_handle.clone()),
         l2_config,
+        mempool: mempool.clone(),
     };
 
     let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);
