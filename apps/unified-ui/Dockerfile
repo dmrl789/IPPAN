@@ -1,40 +1,30 @@
-# IPPAN Unified UI - Multi-stage Docker build
-FROM node:20-alpine as builder
+# Unified UI production image
+FROM node:20-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml* package-lock.json* yarn.lock* ./
 
-# Install dependencies
-RUN npm ci --only=production
+RUN corepack enable || true
+RUN [ -f pnpm-lock.yaml ] && pnpm install --frozen-lockfile || \
+    ([ -f package-lock.json ] && npm ci || \
+     ([ -f yarn.lock ] && yarn install || npm install))
 
-# Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+ENV NODE_ENV=production
 
-# Production stage
-FROM nginx:alpine
+RUN npm run build || pnpm build || yarn build
 
-# Copy built application
-COPY --from=builder /app/dist /usr/share/nginx/html
+FROM node:20-alpine AS runner
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+WORKDIR /app
 
-# Create nginx user directories
-RUN mkdir -p /var/cache/nginx/client_temp && \
-    chown -R nginx:nginx /var/cache/nginx
+ENV NODE_ENV=production
+ENV PORT=4000
 
-# Expose port
-EXPOSE 80
+COPY --from=builder /app ./
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost/ || exit 1
+EXPOSE 4000
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["npm", "run", "start"]
