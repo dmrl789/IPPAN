@@ -4,6 +4,7 @@ import WalletOverview from './pages/WalletOverview'
 import DashboardPage from './pages/DashboardPage'
 import NodeSelector from './components/NodeSelector'
 import { getApiBaseUrl, getHealth } from './lib/api'
+import { UIConfig } from './lib/config'
 
 const navigation = [
   {
@@ -57,8 +58,15 @@ export default function App() {
     <div className="app bg-slate-50 text-slate-900">
       <header className="header">
         <div className="flex items-center space-x-4">
-          <h1 className="text-xl font-bold">IPPAN Operations Console</h1>
-          <span className="text-sm text-white/80">{apiBaseUrl}</span>
+          <div>
+            <h1 className="text-xl font-bold">IPPAN Operations Console</h1>
+            <div className="text-xs uppercase tracking-wide text-white/60">
+              {UIConfig.networkName}
+            </div>
+          </div>
+          <span className="text-sm text-white/80" title="Active RPC base URL">
+            {apiBaseUrl}
+          </span>
         </div>
         <div className="flex items-center space-x-2 text-sm">
           <span
