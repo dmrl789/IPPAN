@@ -34,10 +34,17 @@ pub enum P2PError {
 pub enum NetworkMessage {
     Block(Block),
     Transaction(Transaction),
-    BlockRequest { hash: [u8; 32] },
+    BlockRequest {
+        hash: [u8; 32],
+    },
     BlockResponse(Block),
-    PeerInfo { peer_id: String, addresses: Vec<String> },
-    PeerDiscovery { peers: Vec<String> },
+    PeerInfo {
+        peer_id: String,
+        addresses: Vec<String>,
+    },
+    PeerDiscovery {
+        peers: Vec<String>,
+    },
 }
 
 /// Peer information
