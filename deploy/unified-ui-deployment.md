@@ -64,6 +64,20 @@ server {
 ```
 
 For Envoy-based setups, ensure the virtual host configuration includes the incoming domain or use `"*"` to accept all hosts.
+The repository now ships with a ready-to-use configuration at
+`deployments/envoy/envoy.yaml` that binds Envoy to port `80`, proxies traffic to
+the UI container listening on `4000`, and permits any `Host` header. Deploy it
+alongside the UI container to avoid the `Domain forbidden` responses that occur
+when the requested host is missing from the Envoy allow list:
+
+```bash
+docker run --rm -v "$PWD/deployments/envoy/envoy.yaml:/etc/envoy/envoy.yaml" \
+  --network host envoyproxy/envoy:v1.31-latest
+```
+
+If you need to restrict accepted domains later, replace the wildcard entry in
+`domains:` with an explicit list of hostnames while keeping the UI upstream
+settings intact.
 
 ## 4. Verify deployments
 1. Push a change under `apps/unified-ui/**`. The workflow builds and pushes a new image to GHCR, then deploys it to the server.
