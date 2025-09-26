@@ -120,7 +120,9 @@ impl Transaction {
         match VerifyingKey::from_bytes(&self.from) {
             Ok(verifying_key) => {
                 let signature = Signature::from_bytes(&self.signature);
-                verifying_key.verify(&self.message_bytes(), &signature).is_ok()
+                verifying_key
+                    .verify(&self.message_bytes(), &signature)
+                    .is_ok()
             }
             Err(_) => false,
         }
