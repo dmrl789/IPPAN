@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card, Button, Field, Input, Badge } from './UI'
 import { getApiBaseUrl, setApiBaseUrl } from '../lib/api'
+import { UIConfig } from '../lib/config'
 
 type NodeStatus = 'connected' | 'disconnected' | 'checking'
 
@@ -14,11 +15,21 @@ type DisplayNode = SavedNode & {
   preset?: boolean
 }
 
-const PRESET_NODES: SavedNode[] = [
+const PRESET_NODE_CANDIDATES: Array<SavedNode | null> = [
+  UIConfig.apiBaseUrl
+    ? {
+        name: `${UIConfig.networkName} RPC`,
+        url: UIConfig.apiBaseUrl,
+      }
+    : null,
   { name: 'Local node', url: 'http://localhost:8080' },
   { name: 'Primary server', url: 'http://188.245.97.41:8080' },
   { name: 'Secondary server', url: 'http://135.181.145.174:8080' },
 ]
+
+const PRESET_NODES: SavedNode[] = PRESET_NODE_CANDIDATES
+  .filter((node): node is SavedNode => Boolean(node))
+  .filter((node, index, array) => array.findIndex((item) => item.url === node.url) === index)
 
 const STORAGE_KEY = 'ippan.ui.customNodes'
 
@@ -73,20 +84,27 @@ function normalizeUrl(url: string): string | null {
 
 async function probeNode(url: string): Promise<NodeStatus> {
   const normalized = url.replace(/\/$/, '')
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 4000)
+  const healthPaths = ['/api/health', '/health']
 
-  try {
-    const response = await fetch(`${normalized}/health`, {
-      method: 'GET',
-      signal: controller.signal,
-    })
-    return response.ok ? 'connected' : 'disconnected'
-  } catch {
-    return 'disconnected'
-  } finally {
-    window.clearTimeout(timeout)
+  for (const path of healthPaths) {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 4000)
+    try {
+      const response = await fetch(`${normalized}${path}`, {
+        method: 'GET',
+        signal: controller.signal,
+      })
+      if (response.ok) {
+        return 'connected'
+      }
+    } catch (error) {
+      // Try the next path
+      continue
+    } finally {
+      window.clearTimeout(timeout)
+    }
   }
+  return 'disconnected'
 }
 
 export default function NodeSelector() {

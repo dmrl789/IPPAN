@@ -91,13 +91,13 @@ The built files will be in the `dist` directory.
 ### Server Deployment Checklist
 
 1. **Configure Environment Variables**
-   - Copy `.env.production.example` to `.env` and update the values for your deployment:
+   - Copy `.env.production.example` to `.env.production` (or `.env.local` for local overrides) and adjust the URLs for your infrastructure:
 
      ```bash
-     cp .env.production.example .env
+     cp .env.production.example .env.production
      ```
 
-   - Set `VITE_API_URL` (and optional websocket variables) to the fully qualified URL that browsers should use to reach your node or API gateway.
+   - Update `NEXT_PUBLIC_API_BASE_URL`/`NEXT_PUBLIC_WS_URL` to point at the RPC endpoint and websocket gateway that browsers should use. These variables are also exposed as `VITE_*` for backwards compatibility.
 
 2. **Build & Serve the UI**
    - Install dependencies and produce a production build:
@@ -107,13 +107,13 @@ The built files will be in the `dist` directory.
      npm run build
      ```
 
-   - To serve the build directly from Node.js, run:
+   - Start the lightweight static server (listens on port `4000` by default and exposes `/api/health`):
 
      ```bash
      npm run start
      ```
 
-     The included `server.js` serves the `dist/` directory via Express on port `4173` by default. You can also containerize or integrate the static assets into your existing web server.
+     The server located at `server/serve.js` provides security headers, caches static assets, and returns a 200/`ok` response for health checks.
 
 3. **Expose the UI Through Your Reverse Proxy**
    - Ensure the domain you will use for the UI is allowed by your reverse proxy. Your previous Envoy configuration returned `Domain forbidden`, which indicates the host header needs to be listed under the allowed domains. The snippets below illustrate the minimal configuration needed for Nginx and Envoy (replace hostnames/IPs with your values):
@@ -126,11 +126,16 @@ The built files will be in the `dist` directory.
        server_name ui.example.com;
 
        location / {
-         proxy_pass http://127.0.0.1:4173;
+         proxy_pass http://127.0.0.1:4000;
          proxy_set_header Host $host;
          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
          proxy_set_header X-Forwarded-Proto $scheme;
          add_header Access-Control-Allow-Origin "https://ui.example.com";
+       }
+
+       location /api/health {
+         proxy_pass http://127.0.0.1:4000/api/health;
+         access_log off;
        }
      }
      ```
@@ -153,8 +158,10 @@ The built files will be in the `dist` directory.
                        name: local_route
                        virtual_hosts:
                          - name: unified_ui
-                           domains: ["ui.example.com"]
+                           domains: ["ui.example.com", "*"]
                            routes:
+                             - match: { prefix: "/api/health" }
+                               route: { cluster: unified_ui }
                              - match: { prefix: "/" }
                                route: { cluster: unified_ui }
                      http_filters:
@@ -167,11 +174,11 @@ The built files will be in the `dist` directory.
              cluster_name: unified_ui
              endpoints:
                - lb_endpoints:
-                   - endpoint:
+                  - endpoint:
                        address:
-                         socket_address:
-                           address: 127.0.0.1
-                           port_value: 4173
+                       socket_address:
+                         address: 127.0.0.1
+                         port_value: 4000
      ```
 
 4. **Enable TLS**

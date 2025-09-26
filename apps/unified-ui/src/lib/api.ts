@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { UIConfig } from './config';
 
 const STORAGE_KEY = 'ippan.api.baseUrl';
-const DEFAULT_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+const DEFAULT_BASE_URL = UIConfig.apiBaseUrl;
 
 let API_BASE_URL = DEFAULT_BASE_URL;
 

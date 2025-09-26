@@ -50,6 +50,10 @@ let validators = [
 ];
 
 // Health and Status Endpoints
+app.get("/api/health", (_req, res) => {
+  res.status(200).send("ok");
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: "healthy",
