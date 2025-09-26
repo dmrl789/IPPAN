@@ -242,6 +242,13 @@ export interface ConsensusStats {
   consensus_status: string;
 }
 
+export interface ValidatorInfo {
+  node_id: string;
+  address: string;
+  stake_amount: number;
+  is_active: boolean;
+}
+
 // Node Status API
 export async function getNodeStatus(): Promise<NodeStatus> {
   const response = await api.get('/api/v1/status');
@@ -263,6 +270,11 @@ export async function getMempoolStats(): Promise<MempoolStats> {
 // Consensus API
 export async function getConsensusStats(): Promise<ConsensusStats> {
   const response = await api.get('/api/v1/consensus');
+  return response.data;
+}
+
+export async function getValidators(): Promise<ValidatorInfo[]> {
+  const response = await api.get('/api/v1/validators');
   return response.data;
 }
 
