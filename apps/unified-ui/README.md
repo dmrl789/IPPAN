@@ -88,6 +88,104 @@ npm run build
 
 The built files will be in the `dist` directory.
 
+### Server Deployment Checklist
+
+1. **Configure Environment Variables**
+   - Copy `.env.production.example` to `.env` and update the values for your deployment:
+
+     ```bash
+     cp .env.production.example .env
+     ```
+
+   - Set `VITE_API_URL` (and optional websocket variables) to the fully qualified URL that browsers should use to reach your node or API gateway.
+
+2. **Build & Serve the UI**
+   - Install dependencies and produce a production build:
+
+     ```bash
+     npm install
+     npm run build
+     ```
+
+   - To serve the build directly from Node.js, run:
+
+     ```bash
+     npm run start
+     ```
+
+     The included `server.js` serves the `dist/` directory via Express on port `4173` by default. You can also containerize or integrate the static assets into your existing web server.
+
+3. **Expose the UI Through Your Reverse Proxy**
+   - Ensure the domain you will use for the UI is allowed by your reverse proxy. Your previous Envoy configuration returned `Domain forbidden`, which indicates the host header needs to be listed under the allowed domains. The snippets below illustrate the minimal configuration needed for Nginx and Envoy (replace hostnames/IPs with your values):
+
+     **Nginx**
+
+     ```nginx
+     server {
+       listen 80;
+       server_name ui.example.com;
+
+       location / {
+         proxy_pass http://127.0.0.1:4173;
+         proxy_set_header Host $host;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         proxy_set_header X-Forwarded-Proto $scheme;
+         add_header Access-Control-Allow-Origin "https://ui.example.com";
+       }
+     }
+     ```
+
+     **Envoy**
+
+     ```yaml
+     static_resources:
+       listeners:
+         - name: web_listener
+           address:
+             socket_address: { address: 0.0.0.0, port_value: 80 }
+           filter_chains:
+             - filters:
+                 - name: envoy.filters.network.http_connection_manager
+                   typed_config:
+                     "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                     stat_prefix: ingress_http
+                     route_config:
+                       name: local_route
+                       virtual_hosts:
+                         - name: unified_ui
+                           domains: ["ui.example.com"]
+                           routes:
+                             - match: { prefix: "/" }
+                               route: { cluster: unified_ui }
+                     http_filters:
+                       - name: envoy.filters.http.router
+       clusters:
+         - name: unified_ui
+           connect_timeout: 1s
+           type: logical_dns
+           load_assignment:
+             cluster_name: unified_ui
+             endpoints:
+               - lb_endpoints:
+                   - endpoint:
+                       address:
+                         socket_address:
+                           address: 127.0.0.1
+                           port_value: 4173
+     ```
+
+4. **Enable TLS**
+   - Terminate HTTPS at your reverse proxy using a trusted certificate (e.g., from Let’s Encrypt). Browsers will block RPC calls to insecure origins when the UI is served over HTTPS but calls an HTTP backend.
+
+5. **Health Checks**
+   - Verify that the RPC/API endpoint referenced in your `.env` file is reachable from the UI host:
+
+     ```bash
+     curl -f https://rpc.example.com/time
+     ```
+
+   - Confirm that the browser’s network tab shows successful responses for the API endpoints listed below.
+
 ## Project Structure
 
 ```
