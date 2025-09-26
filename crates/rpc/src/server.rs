@@ -94,6 +94,7 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
         .route("/api/v1/network", get(network_handler))
         .route("/api/v1/mempool", get(mempool_handler))
         .route("/api/v1/consensus", get(consensus_handler))
+        .route("/api/v1/validators", get(validators_handler))
         .route("/api/v1/balance", get(balance_handler))
         .route("/api/v1/balance/:address", get(balance_by_path_handler))
         .route("/api/v1/transactions", get(transactions_handler))
@@ -329,6 +330,34 @@ async fn consensus_handler(State(state): State<Arc<AppState>>) -> ApiResult<Cons
         block_height: consensus_state.latest_block_height,
         consensus_status: status.to_string(),
     }))
+}
+
+#[derive(Debug, Serialize)]
+struct ValidatorInfo {
+    node_id: String,
+    address: String,
+    stake_amount: u64,
+    is_active: bool,
+}
+
+async fn validators_handler(State(state): State<Arc<AppState>>) -> ApiResult<Vec<ValidatorInfo>> {
+    let Some(consensus) = state.consensus.as_ref() else {
+        return Ok(Json(Vec::new()));
+    };
+
+    let validators = consensus.get_validators().await;
+
+    let response = validators
+        .into_iter()
+        .map(|validator| ValidatorInfo {
+            node_id: hex::encode(validator.id),
+            address: encode_address(&validator.address),
+            stake_amount: validator.stake,
+            is_active: validator.is_active,
+        })
+        .collect();
+
+    Ok(Json(response))
 }
 
 #[derive(Debug, Deserialize)]
