@@ -1,17 +1,20 @@
 use anyhow::Result;
 use axum::extract::{Path, Query, State};
 use axum::http::{Method, StatusCode};
-use axum::routing::{get, post};
+use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
+use tracing::info;
 
 use ippan_consensus::{ConsensusState, PoAConsensus, Validator};
 use ippan_p2p::HttpP2PNetwork;
@@ -73,6 +76,7 @@ pub struct AppState {
     pub consensus: Option<ConsensusHandle>,
     pub l2_config: L2Config,
     pub mempool: Arc<parking_lot::RwLock<Vec<Transaction>>>,
+    pub unified_ui_dist: Option<PathBuf>,
 }
 
 pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
@@ -84,7 +88,7 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
         .allow_headers(Any)
         .allow_credentials(false);
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/health", get(health_handler))
         .route("/api/v1/status", get(node_status_handler))
         .route("/api/v1/network", get(network_handler))
@@ -95,9 +99,18 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
         .route("/api/v1/transactions", get(transactions_handler))
         .route("/api/v1/transaction", post(submit_transaction_handler))
         .route("/api/v1/address/validate", get(validate_address_handler))
-        .route("/accounts", get(accounts_handler))
-        .with_state(shared_state)
-        .layer(cors);
+        .route("/accounts", get(accounts_handler));
+
+    if let Some(dist_dir) = &shared_state.unified_ui_dist {
+        let index_html = dist_dir.join("index.html");
+        let spa_service =
+            ServeDir::new(dist_dir.clone()).not_found_service(ServeFile::new(index_html));
+
+        info!(path = %dist_dir.display(), "Unified UI enabled");
+        app = app.fallback_service(get_service(spa_service));
+    }
+
+    let app = app.with_state(shared_state).layer(cors);
 
     let addr: SocketAddr = addr.parse()?;
     let listener = TcpListener::bind(addr).await?;

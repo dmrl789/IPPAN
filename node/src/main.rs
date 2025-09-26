@@ -6,6 +6,7 @@ use ippan_p2p::{HttpP2PNetwork, P2PConfig};
 use ippan_rpc::{start_server, AppState, ConsensusHandle, L2Config};
 use ippan_storage::SledStorage;
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -51,6 +52,9 @@ struct AppConfig {
     p2p_enable_upnp: bool,
     p2p_external_ip_services: Vec<String>,
 
+    // Unified UI
+    unified_ui_dist_dir: Option<PathBuf>,
+
     // Logging
     log_level: String,
     log_format: String,
@@ -92,6 +96,21 @@ impl AppConfig {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
+
+        let unified_ui_dist_dir = config
+            .get_string("UNIFIED_UI_DIST_DIR")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                let default_path = PathBuf::from("./apps/unified-ui/dist");
+                if default_path.exists() {
+                    Some(default_path)
+                } else {
+                    None
+                }
+            });
 
         Ok(Self {
             node_id: config
@@ -189,6 +208,7 @@ impl AppConfig {
                 }
                 services
             },
+            unified_ui_dist_dir,
             log_level: config
                 .get_string("LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
@@ -341,6 +361,7 @@ async fn main() -> Result<()> {
         consensus: Some(consensus_handle.clone()),
         l2_config,
         mempool: mempool.clone(),
+        unified_ui_dist: config.unified_ui_dist_dir.clone(),
     };
 
     let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);
