@@ -64,7 +64,12 @@ impl IppanTime {
     /// Ingest a peer time sample for median calculation
     pub fn ingest_sample(peer_time_us: u64) {
         let mut time_service = IPPAN_TIME.write();
-        let local_time_us = system_time_us();
+        // Compare peer time against the last monotonic timestamp we emitted. Using the
+        // raw system clock introduced negative drift whenever there was a small delay
+        // between generating a peer sample and ingesting it locally. Anchoring the
+        // comparison to `last_time_us` keeps the drift calculation aligned with the
+        // service's monotonic timeline and prevents spurious negative offsets.
+        let local_time_us = time_service.last_time_us;
         let drift = peer_time_us as i128 - local_time_us as i128;
         let drift = clamp_drift(drift, time_service.max_peer_drift_us);
 
