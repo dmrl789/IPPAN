@@ -1220,6 +1220,7 @@ name = "ippan-consensus"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ed25519-dalek",
  "futures",
  "hex",
  "ippan-storage",
@@ -1227,6 +1228,7 @@ dependencies = [
  "parking_lot 0.12.4",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

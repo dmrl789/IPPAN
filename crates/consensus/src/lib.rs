@@ -438,8 +438,11 @@ impl ConsensusEngine for PoAConsensus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_storage::MemoryStorage;
+    use ed25519_dalek::SigningKey;
+    use ippan_storage::{Account, MemoryStorage, SledStorage, Storage};
+    use ippan_types::ippan_time_init;
     use std::sync::Arc;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_poa_consensus() {
@@ -486,6 +489,169 @@ mod tests {
         assert_eq!(
             PoAConsensus::get_proposer_for_slot(&validators, 2),
             Some([1u8; 32])
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_multi_node_block_production_with_transactions() {
+        ippan_time_init();
+
+        let temp_dir = tempdir().unwrap();
+        let sled_storage = Arc::new(SledStorage::new(temp_dir.path()).unwrap());
+        sled_storage.initialize().unwrap();
+        let storage: Arc<dyn Storage + Send + Sync> = sled_storage.clone();
+
+        let secret_one = [1u8; 32];
+        let secret_two = [2u8; 32];
+        let validator_one = SigningKey::from_bytes(&secret_one)
+            .verifying_key()
+            .to_bytes();
+        let validator_two = SigningKey::from_bytes(&secret_two)
+            .verifying_key()
+            .to_bytes();
+
+        storage
+            .update_account(Account {
+                address: validator_one,
+                balance: 1_000_000,
+                nonce: 0,
+            })
+            .unwrap();
+        storage
+            .update_account(Account {
+                address: validator_two,
+                balance: 1_000_000,
+                nonce: 0,
+            })
+            .unwrap();
+
+        let validators = vec![
+            Validator {
+                id: validator_one,
+                address: validator_one,
+                stake: 1_000,
+                is_active: true,
+            },
+            Validator {
+                id: validator_two,
+                address: validator_two,
+                stake: 1_000,
+                is_active: true,
+            },
+        ];
+
+        let config = PoAConfig {
+            slot_duration_ms: 50,
+            validators: validators.clone(),
+            max_transactions_per_block: 10,
+            block_reward: 5,
+        };
+
+        let node_one = PoAConsensus::new(config.clone(), storage.clone(), validator_one);
+        let node_two = PoAConsensus::new(config, storage.clone(), validator_two);
+
+        let mempool_one = node_one.mempool();
+        let mempool_two = node_two.mempool();
+
+        let transfers_per_side = 20u64;
+        for nonce in 0..transfers_per_side {
+            let mut tx = Transaction::new(validator_one, validator_two, 10, nonce);
+            tx.sign(&secret_one).unwrap();
+            mempool_one.write().push(tx);
+        }
+        for nonce in 0..transfers_per_side {
+            let mut tx = Transaction::new(validator_two, validator_one, 10, nonce);
+            tx.sign(&secret_two).unwrap();
+            mempool_two.write().push(tx);
+        }
+
+        let mut slot = 0u64;
+        let mut produced_blocks = 0u64;
+        while mempool_one.read().len() > 0 || mempool_two.read().len() > 0 {
+            let proposer = PoAConsensus::get_proposer_for_slot(&validators, slot).unwrap();
+            if proposer == validator_one {
+                PoAConsensus::propose_block(
+                    &storage,
+                    &mempool_one,
+                    &node_one.config,
+                    slot,
+                    validator_one,
+                )
+                .await
+                .unwrap();
+            } else {
+                PoAConsensus::propose_block(
+                    &storage,
+                    &mempool_two,
+                    &node_two.config,
+                    slot,
+                    validator_two,
+                )
+                .await
+                .unwrap();
+            }
+
+            slot += 1;
+            produced_blocks += 1;
+
+            if produced_blocks > 64 {
+                panic!("Exceeded expected block production while draining mempools");
+            }
+        }
+
+        let expected_nonce = transfers_per_side;
+        assert_eq!(mempool_one.read().len(), 0);
+        assert_eq!(mempool_two.read().len(), 0);
+
+        let latest_height = storage.get_latest_height().unwrap();
+        assert!(latest_height >= 4);
+
+        let mut total_transactions = 0usize;
+        let mut proposer_one_blocks = 0usize;
+        let mut proposer_two_blocks = 0usize;
+        let mut block_summary = Vec::new();
+
+        for height in 1..=latest_height {
+            if let Some(block) = storage.get_block_by_height(height).unwrap() {
+                total_transactions += block.transactions.len();
+                if !block.transactions.is_empty() {
+                    block_summary.push((
+                        height,
+                        block.transactions.len(),
+                        hex::encode(block.header.proposer_id),
+                    ));
+                }
+                if block.header.proposer_id == validator_one {
+                    proposer_one_blocks += 1;
+                } else if block.header.proposer_id == validator_two {
+                    proposer_two_blocks += 1;
+                }
+            }
+        }
+
+        let total_expected = (transfers_per_side * 2) as usize;
+        assert_eq!(
+            total_transactions, total_expected,
+            "non_empty_blocks: {:?}",
+            block_summary
+        );
+        assert!(proposer_one_blocks >= 2);
+        assert!(proposer_two_blocks >= 2);
+
+        let account_one = storage.get_account(&validator_one).unwrap().unwrap();
+        let account_two = storage.get_account(&validator_two).unwrap().unwrap();
+
+        assert_eq!(account_one.nonce, expected_nonce);
+        assert_eq!(account_two.nonce, expected_nonce);
+
+        let reward = 5u64;
+        assert_eq!(
+            account_one.balance,
+            1_000_000 + reward * proposer_one_blocks as u64
+        );
+        assert_eq!(
+            account_two.balance,
+            1_000_000 + reward * proposer_two_blocks as u64
         );
     }
 }
