@@ -115,6 +115,11 @@ The built files will be in the `dist` directory.
 
      The server located at `server/serve.js` provides security headers, caches static assets, and returns a 200/`ok` response for health checks.
 
+   - **Serve the build directly from the IPPAN node (optional):**
+     - Place the compiled assets where the Rust node can find them (default: `apps/unified-ui/dist`).
+     - Or point the node at a custom directory via `IPPAN_UNIFIED_UI_DIST_DIR=/path/to/dist`.
+     - When configured, the RPC server will expose the Unified UI at `/` while keeping the `/api` routes available.
+
 3. **Expose the UI Through Your Reverse Proxy**
    - Ensure the domain you will use for the UI is allowed by your reverse proxy. Your previous Envoy configuration returned `Domain forbidden`, which indicates the host header needs to be listed under the allowed domains. The snippets below illustrate the minimal configuration needed for Nginx and Envoy (replace hostnames/IPs with your values):
 

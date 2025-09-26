@@ -117,6 +117,8 @@ Features:
 - Network monitoring
 - Validator registration
 
+The Rust RPC server can serve the compiled Unified UI directly. Build the frontend (`npm run build`) so the assets are available in `apps/unified-ui/dist`, or point the node to another build directory using the `IPPAN_UNIFIED_UI_DIST_DIR` environment variable before starting the node.
+
 ## 📊 HashTimer Examples
 
 ### Transaction HashTimer

@@ -37,7 +37,7 @@ heapless = "0.8"
 # Production dependencies
 axum = { version = "0.7", features = ["macros", "tracing"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 sled = "0.34"
 libp2p = { version = "0.53", features = ["tcp", "yamux", "noise", "gossipsub", "identify", "ping", "kad"] }
 futures = "0.3"
