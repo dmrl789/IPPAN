@@ -89,13 +89,18 @@ impl AppConfig {
             id
         };
 
-        let external_ip_services: Vec<String> = config
+        let mut external_ip_services: Vec<String> = config
             .get_string("P2P_EXTERNAL_IP_SERVICES")
             .unwrap_or_else(|_| "https://api.ipify.org,https://ifconfig.me/ip".to_string())
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
+
+        if external_ip_services.is_empty() {
+            external_ip_services.push("https://api.ipify.org".to_string());
+            external_ip_services.push("https://ifconfig.me/ip".to_string());
+        }
 
         let unified_ui_dist_dir = config
             .get_string("UNIFIED_UI_DIST_DIR")
@@ -193,21 +198,7 @@ impl AppConfig {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             p2p_enable_upnp: config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false),
-            p2p_external_ip_services: {
-                let services = config
-                    .get_string("P2P_EXTERNAL_IP_SERVICES")
-                    .unwrap_or_else(|_| "https://api.ipify.org,https://ifconfig.me/ip".to_string());
-                let mut services: Vec<String> = services
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                if services.is_empty() {
-                    services.push("https://api.ipify.org".to_string());
-                    services.push("https://ifconfig.me/ip".to_string());
-                }
-                services
-            },
+            p2p_external_ip_services: external_ip_services,
             unified_ui_dist_dir,
             log_level: config
                 .get_string("LOG_LEVEL")
