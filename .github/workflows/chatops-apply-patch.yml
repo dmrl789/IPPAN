@@ -1,8 +1,8 @@
-name: ChatOps: Apply Patch / Cleanup
+name: ChatOps - Apply Patch
 
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited]
 
 permissions:
   contents: write
@@ -10,49 +10,23 @@ permissions:
   issues: read
 
 jobs:
-  run:
-    # Only run on Issues (not PR threads) and only for trusted commenters
-    if: >
-      github.event.issue.pull_request == null &&
-      (startsWith(github.event.comment.body, '/apply-patch') ||
-       startsWith(github.event.comment.body, '/cleanup') ) &&
-      (github.event.comment.author_association == 'OWNER' ||
-       github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'COLLABORATOR')
+  apply:
+    # Only run when someone writes "/apply-patch" (anywhere in the comment)
+    if: contains(github.event.comment.body, '/apply-patch')
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repo
+      - name: Check out default branch
         uses: actions/checkout@v4
         with:
           token: ${{ github.token }}
           ref: ${{ github.event.repository.default_branch }}
 
-      - name: Parse comment for patch/flags
-        id: parse
+      - name: Debug event
         run: |
-          python3 - <<'PY'
-import os, re, json, sys
-event = json.load(open(os.environ['GITHUB_EVENT_PATH']))
-body  = event['comment']['body']
-# detect modes
-apply = body.strip().startswith('/apply-patch')
-cleanup = '/cleanup' in body
-automerge = '/automerge' in body
-# extract first unified diff block
-blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
-patch = ''
-for b in blocks:
-    if 'diff --git ' in b or b.lstrip().startswith(('--- ','From ')):
-        patch = b
-        break
-open('change.patch','w', encoding='utf-8').write(patch)
-with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-    out.write(f"has_patch={'true' if patch else 'false'}\n")
-    out.write(f"do_cleanup={'true' if cleanup else 'false'}\n")
-    out.write(f"enable_automerge={'true' if automerge else 'false'}\n")
-    out.write(f"apply_mode={'true' if apply else 'false'}\n")
-PY
+          echo "default_branch=${{ github.event.repository.default_branch }}"
+          echo "issue_number=${{ github.event.issue.number }}"
+          echo "comment_id=${{ github.event.comment.id }}"
 
       - name: Configure Git
         run: |
@@ -61,76 +35,75 @@ PY
 
       - name: Create working branch
         run: |
-          BR="auto/chatops-${{ github.event.issue.number }}-$(date +%Y%m%d-%H%M%S)"
-          echo "BRANCH=$BR" >> $GITHUB_ENV
-          git checkout -b "$BR"
+          BRANCH="auto/chatops-${{ github.event.issue.number }}-${{ github.event.comment.id }}"
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          git checkout -b "$BRANCH"
 
-      - name: Apply patch (if provided)
-        if: steps.parse.outputs.has_patch == 'true'
+      - name: Extract patch from comment or issue body
+        id: extract
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          python3 - << 'PY'
+          import os, re, sys
+          comment = os.environ.get("COMMENT_BODY","")
+          issue   = os.environ.get("ISSUE_BODY","")
+          def find_patch(text):
+              # grab first fenced block that looks like a diff/patch OR a raw unified diff
+              blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", text, flags=re.S)
+              candidates = blocks + [text]
+              for c in candidates:
+                  c_stripped = c.lstrip()
+                  if ('diff --git ' in c) or c_stripped.startswith(('--- ', 'From ')):
+                      return c
+              return None
+          patch = find_patch(comment) or find_patch(issue)
+          if patch:
+              with open("change.patch","w",encoding="utf-8") as f:
+                  f.write(patch)
+              print("::notice::Found unified diff content.")
+          else:
+              print("::warning::No unified diff found in comment or issue body.")
+              # empty file; workflow may still perform cleanup in other workflows
+              open("change.patch","w",encoding="utf-8").close()
+          PY
+
+      - name: Try applying patch (3-way) if present
         run: |
           set -e
-          git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
-
-      - name: Cleanup demo/mock/example paths (if requested)
-        if: steps.parse.outputs.do_cleanup == 'true'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          mapfile -t TARGETS < <(git ls-files -z | tr '\0' '\n' | grep -Ei '(^|/)(demo|demos|example|examples|mock|mocks|fixture|fixtures|sample|samples|storybook|playground|seed|seeds)(/|$)' || true)
-          KEEP_PREFIXES=("apps/unified-ui/")
-          DEL=()
-          for f in "${TARGETS[@]}"; do
-            skip=0
-            for kp in "${KEEP_PREFIXES[@]}"; do
-              [[ "$f" == "$kp"* ]] && { skip=1; break; }
-            done
-            [[ $skip -eq 0 ]] && DEL+=("$f")
-          done
-          if [ ${#DEL[@]} -gt 0 ]; then
-            printf 'Removing %d paths...\n' "${#DEL[@]}"
-            git rm -r -f -- "${DEL[@]}" || true
+          if [ -s change.patch ]; then
+            git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
           else
-            echo "No mock/demo paths found."
+            echo "No patch content detected; nothing to apply."
           fi
-          git add -A
 
       - name: Commit changes (if any)
+        id: commit
         run: |
           if git diff --cached --quiet; then
-            echo "No changes staged; nothing to commit."
+            echo "made_commit=false" >> $GITHUB_OUTPUT
+            echo "No changes staged; skipping push/PR."
             exit 0
           fi
-          MSG="ChatOps: "
-          if [ "${{ steps.parse.outputs.has_patch }}" = "true" ]; then MSG="$MSG apply patch"; fi
-          if [ "${{ steps.parse.outputs.do_cleanup }}" = "true" ]; then MSG="$MSG + cleanup"; fi
-          MSG="$MSG (Issue #${{ github.event.issue.number }})"
-          git commit -m "$MSG"
+          git commit -m "ChatOps: apply patch from comment #${{ github.event.comment.id }} (issue #${{ github.event.issue.number }})"
+          echo "made_commit=true" >> $GITHUB_OUTPUT
 
-      - name: Push branch (if commit created)
-        run: |
-          if git log -1 --pretty=%B | grep -q "ChatOps:"; then
-            git push -u origin "$BRANCH"
-          else
-            echo "No commit created; skipping push & PR."
-            exit 0
-          fi
+      - name: Push branch
+        if: steps.commit.outputs.made_commit == 'true'
+        run: git push -u origin "$BRANCH"
 
       - name: Open PR
+        if: steps.commit.outputs.made_commit == 'true'
         id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ github.token }}
           branch: ${{ env.BRANCH }}
-          title: "ChatOps: changes from Issue #${{ github.event.issue.number }}"
+          base: ${{ github.event.repository.default_branch }}
+          title: "ChatOps: apply patch from comment (issue #${{ github.event.issue.number }})"
           body: |
-            Triggered by comment: `${{ github.event.comment.body }}`  
-            Actor: @${{ github.event.comment.user.login }}
-          commit-message: "ChatOps: changes from Issue #${{ github.event.issue.number }}"
-
-      - name: Enable auto-merge (if /automerge)
-        if: steps.parse.outputs.enable_automerge == 'true' && steps.cpr.outputs['pull-request-number'] != ''
-        uses: peter-evans/enable-pull-request-automerge@v3
-        with:
-          token: ${{ github.token }}
-          pull-request-number: ${{ steps.cpr.outputs['pull-request-number'] }}
-          merge-method: squash
+            Created by the ChatOps workflow on comment ${{ github.event.comment.id }}.
+            If no patch was detected, this PR will not be created.
+          commit-message: "ChatOps apply-patch"
+          labels: auto-patch
