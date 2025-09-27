@@ -1,5 +1,4 @@
-* text=auto
-*.sh    text eol=lf
-*.yml   text eol=lf
-*.yaml  text eol=lf
-Dockerfile text eol=lf
+# normalize text + enforce LF
+* text=auto eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
