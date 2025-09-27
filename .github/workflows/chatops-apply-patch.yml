@@ -6,7 +6,7 @@ name: ChatOps - Apply Patch
     types: [created, edited]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.event.issue.number }}
+  group: ${{ github.workflow }}-${{ github.ref || github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -50,35 +50,39 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          python3 - << 'PY'
-          import os, re, sys
-          comment = os.environ.get("COMMENT_BODY","")
-          issue   = os.environ.get("ISSUE_BODY","")
-          def find_patch(text):
-              # grab first fenced block that looks like a diff/patch OR a raw unified diff
+          python3 - <<'PY'
+          import os, re
+
+          comment = os.environ.get("COMMENT_BODY", "")
+          issue = os.environ.get("ISSUE_BODY", "")
+
+          def find_patch(text: str):
               blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", text, flags=re.S)
               candidates = blocks + [text]
-              for c in candidates:
-                  c_stripped = c.lstrip()
-                  if ('diff --git ' in c) or c_stripped.startswith(('--- ', 'From ')):
-                      return c
+              for candidate in candidates:
+                  stripped = candidate.lstrip()
+                  if "diff --git " in candidate or stripped.startswith(("--- ", "From ")):
+                      return candidate
               return None
+
           patch = find_patch(comment) or find_patch(issue)
           if patch:
-              with open("change.patch","w",encoding="utf-8") as f:
-                  f.write(patch)
+              with open("change.patch", "w", encoding="utf-8") as handle:
+                  handle.write(patch)
               print("::notice::Found unified diff content.")
           else:
               print("::warning::No unified diff found in comment or issue body.")
-              # empty file; workflow may still perform cleanup in other workflows
-              open("change.patch","w",encoding="utf-8").close()
+              open("change.patch", "w", encoding="utf-8").close()
           PY
 
       - name: Try applying patch (3-way) if present
         run: |
           set -e
           if [ -s change.patch ]; then
-            git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
+            if ! git apply --index --3way change.patch; then
+              echo "::warning::3-way failed; trying without 3-way"
+              git apply --index change.patch
+            fi
           else
             echo "No patch content detected; nothing to apply."
           fi
@@ -87,16 +91,17 @@ jobs:
         id: commit
         run: |
           if git diff --cached --quiet; then
-            echo "made_commit=false" >> $GITHUB_OUTPUT
+            echo "made_commit=false" >> "$GITHUB_OUTPUT"
             echo "No changes staged; skipping push/PR."
             exit 0
           fi
           git commit -m "ChatOps: apply patch from comment #${{ github.event.comment.id }} (issue #${{ github.event.issue.number }})"
-          echo "made_commit=true" >> $GITHUB_OUTPUT
+          echo "made_commit=true" >> "$GITHUB_OUTPUT"
 
       - name: Push branch
         if: steps.commit.outputs.made_commit == 'true'
-        run: git push -u origin "$BRANCH"
+        run: |
+          git push -u origin "$BRANCH"
 
       - name: Open PR
         if: steps.commit.outputs.made_commit == 'true'
