@@ -1,0 +1,40 @@
+name: Task
+description: Track a specific task or enhancement request.
+labels: [task, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please outline the task with enough detail so it can be picked up quickly.
+  - type: input
+    id: objective
+    attributes:
+      label: Objective
+      description: What needs to be accomplished?
+      placeholder: Implement ...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this task needed? Link to any relevant discussions or issues.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Define when this task is considered done.
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: true
+  - type: textarea
+    id: resources
+    attributes:
+      label: Additional resources
+      description: Add links to docs, designs, or related tickets.
+    validations:
+      required: false

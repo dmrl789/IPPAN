@@ -5,7 +5,7 @@ on:
     types: [opened, edited, reopened, labeled]
 
 concurrency:
-  group: apply-patch-${{ github.event.issue.number }}
+  group: ${{ github.workflow }}-${{ github.ref || github.event.issue.number }}
   cancel-in-progress: true
 
 permissions:
@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   apply:
-    if: contains(github.event.issue.labels.*.name, 'codex')
+    if: contains(github.event.issue.labels.*.name, 'auto-patch')
     runs-on: ubuntu-latest
 
     steps:

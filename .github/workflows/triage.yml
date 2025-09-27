@@ -1,0 +1,11 @@
+name: Auto-label & triage
+on:
+  issues:
+    types: [opened, edited, reopened]
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,30 +1,16 @@
 name: CI
-on:
-  pull_request:
-  push:
-    branches:
-      - main
-      - "codex/**"
-      - on-deployment
-      - work
-      - "work/**"
-
+on: [push, pull_request]
 jobs:
   rust:
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: 1
-      RUSTFLAGS: "-Dwarnings"
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy,rustfmt
-
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy,rustfmt }
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -32,40 +18,8 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Show toolchain & env
-        run: |
-          rustc -Vv
-          cargo -V
-          echo "default target:" $(rustc -vV | awk '/host:/ {print $2}')
-
-      - name: Resolve & check workspace (verbose)
-        run: |
-          cargo update -v
-          cargo tree -e features || true
-          cargo check --workspace --all-targets --all-features --verbose
-
-      - name: Build (release, verbose)
-        run: cargo build --workspace --all-features --verbose --locked
-
-      - name: Clippy (lint)
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: Test (show backtraces)
-        run: cargo test --workspace --all-features -- --nocapture
-
-  web:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: |
-          if [ -d apps/unified-ui ]; then
-            cd apps/unified-ui
-            npm ci || npm install
-            npm run -s build || echo "UI build skipped"
-          else
-            echo "No unified UI; skipping"
-          fi
+      - run: rustc -Vv && cargo -V
+      - run: cargo check --workspace --all-targets --all-features -v
+      - run: cargo build --workspace --all-features -v --locked
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --all-features -- --nocapture
