@@ -1,6 +1,7 @@
-name: Lint YAML
+name: Lint YAML (workflows)
 on:
   pull_request:
+    paths: [".github/workflows/*.y*ml"]
   push:
     paths: [".github/workflows/*.y*ml"]
 jobs:

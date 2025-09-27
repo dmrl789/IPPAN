@@ -1,0 +1,6 @@
+area/ci:
+  - .github/workflows/**
+
+area/rust:
+  - "**/*.rs"
+  - "Cargo.*"
