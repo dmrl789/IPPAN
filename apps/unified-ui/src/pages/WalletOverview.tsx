@@ -8,9 +8,7 @@ import {
   type WalletBalanceResponse,
   type WalletTransaction,
 } from '../lib/walletApi'
-
-const STORAGE_KEY = 'ippan.wallet.address'
-const ADDRESS_REGEX = /^i[0-9a-fA-F]{64}$/
+import { isValidWalletAddress, useWalletStore } from '../lib/walletStore'
 const ATOMIC_MULTIPLIER = 1_000_000_000
 
 type ConnectionState = 'idle' | 'connecting' | 'error'
@@ -62,10 +60,9 @@ function truncateAddress(address: string, chars = 10) {
 
 export default function WalletOverview() {
   const queryClient = useQueryClient()
-  const [address, setAddress] = useState<string>(() => {
-    if (typeof window === 'undefined') return ''
-    return window.localStorage.getItem(STORAGE_KEY) || ''
-  })
+  const address = useWalletStore((state) => state.address)
+  const setWalletAddress = useWalletStore((state) => state.setAddress)
+  const clearWalletAddress = useWalletStore((state) => state.clearAddress)
   const [formValue, setFormValue] = useState(address)
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle')
   const [connectionMessage, setConnectionMessage] = useState<string>('')
@@ -85,7 +82,7 @@ export default function WalletOverview() {
   const { data: balance, isLoading: balanceLoading, isError: balanceError, refetch: refetchBalance } = useQuery({
     queryKey: ['wallet', 'balance', address],
     queryFn: () => getWalletBalance(address),
-    enabled: ADDRESS_REGEX.test(address),
+    enabled: isValidWalletAddress(address),
     refetchInterval: 20000,
   })
 
@@ -97,7 +94,7 @@ export default function WalletOverview() {
   } = useQuery({
     queryKey: ['wallet', 'transactions', address],
     queryFn: () => getWalletTransactions(address),
-    enabled: ADDRESS_REGEX.test(address),
+    enabled: isValidWalletAddress(address),
     refetchInterval: 25000,
   })
 
@@ -116,20 +113,14 @@ export default function WalletOverview() {
   }, [address, queryClient])
 
   const handleDisconnect = () => {
-    setAddress('')
+    clearWalletAddress()
     setFormValue('')
     setConnectionMessage('')
     setWarning('')
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(STORAGE_KEY)
-    }
   }
 
   const saveAddress = (value: string) => {
-    setAddress(value)
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, value)
-    }
+    setWalletAddress(value)
   }
 
   const handleConnect = async () => {
@@ -141,7 +132,7 @@ export default function WalletOverview() {
       return
     }
 
-    if (!ADDRESS_REGEX.test(candidate)) {
+    if (!isValidWalletAddress(candidate)) {
       setConnectionState('error')
       setConnectionMessage('Addresses must start with "i" followed by 64 hexadecimal characters.')
       return
@@ -189,7 +180,7 @@ export default function WalletOverview() {
         throw new Error('Wallet did not return an address.')
       }
 
-      if (!ADDRESS_REGEX.test(walletAddress)) {
+      if (!isValidWalletAddress(walletAddress)) {
         throw new Error('The connected wallet returned an unexpected address format.')
       }
 
@@ -216,7 +207,7 @@ export default function WalletOverview() {
     }
   }
 
-  const walletConnected = ADDRESS_REGEX.test(address)
+  const walletConnected = isValidWalletAddress(address)
   const pending = (balance as WalletBalanceResponse | undefined)?.pending_transactions ?? []
 
   return (
