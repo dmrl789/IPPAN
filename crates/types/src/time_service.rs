@@ -153,9 +153,20 @@ pub fn ippan_time_ingest_sample(peer_time_us: u64) {
 mod tests {
     use super::*;
     use std::thread;
+    use std::sync::{Mutex, MutexGuard};
+    use once_cell::sync::Lazy;
+
+    static TEST_TIME_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    fn lock_time_service() -> MutexGuard<'static, ()> {
+        TEST_TIME_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[test]
     fn test_monotonic_time() {
+        let _guard = lock_time_service();
         ippan_time_init();
 
         let time1 = ippan_time_now();
@@ -168,6 +179,7 @@ mod tests {
 
     #[test]
     fn test_peer_sample_ingestion() {
+        let _guard = lock_time_service();
         ippan_time_init();
 
         // Use samples close to local time to simulate honest peers
@@ -189,6 +201,7 @@ mod tests {
 
     #[test]
     fn test_time_precision() {
+        let _guard = lock_time_service();
         ippan_time_init();
 
         let time1 = ippan_time_now();
@@ -201,6 +214,7 @@ mod tests {
 
     #[test]
     fn test_negative_peer_drift() {
+        let _guard = lock_time_service();
         ippan_time_init();
 
         let base_time = ippan_time_now();
