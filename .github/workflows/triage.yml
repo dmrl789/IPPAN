@@ -1,5 +1,6 @@
+---
 name: Auto-label & triage
-on:
+"on":
   issues:
     types: [opened, edited, reopened]
 jobs:

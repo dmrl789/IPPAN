@@ -1,6 +1,7 @@
+---
 name: ChatOps - Apply Patch
 
-on:
+"on":
   issue_comment:
     types: [created, edited]
 
