@@ -52,11 +52,6 @@ jobs:
               f.write(patch)
           PY
 
-      - name: Debug - show event and labels
-        run: |
-          echo "event: ${{ github.event_name }}"
-          echo "labels: ${{ toJson(github.event.issue.labels.*.name) }}"
-
       - name: Configure Git
         run: |
           git config user.name "ippan-auto-bot"
@@ -130,12 +125,6 @@ jobs:
             This PR was created by the Apply Patch From Issue workflow.
           commit-message: "Apply patch / cleanup from #${{ github.event.issue.number }}"
           labels: auto-patch
-
-      - name: Safety: cancel if base==head (should never happen)
-        if: steps.cpr.outputs.pull-request-number == '' || env.BRANCH == github.event.repository.default_branch
-        run: |
-          echo "::warning::PR not opened or base=head detected. BRANCH=$BRANCH base=${{ github.event.repository.default_branch }}"
-          exit 0
 
       - name: Enable auto-merge (label: automerge)
         if: contains(github.event.issue.labels.*.name, 'automerge') && steps.cpr.outputs['pull-request-number'] != ''
