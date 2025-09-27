@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   apply:
-    if: contains(github.event.issue.labels.*.name, 'auto-patch')
+    if: contains(github.event.issue.labels.*.name, 'codex')
     runs-on: ubuntu-latest
 
     steps:
@@ -66,12 +66,15 @@ jobs:
         run: |
           set -e
           if [ -s change.patch ]; then
-            git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
+            if ! git apply --index --3way change.patch; then
+              echo "::warning::3-way failed; trying without 3-way"
+              git apply --index change.patch
+            fi
           else
             echo "No patch provided; proceeding to optional cleanup."
           fi
 
-      - name: Remove mock/demo code (label: cleanup-now)
+      - name: "Remove mock/demo code (label: cleanup-now)"
         if: contains(github.event.issue.labels.*.name, 'cleanup-now')
         shell: bash
         run: |
@@ -125,7 +128,7 @@ jobs:
           commit-message: "Apply patch / cleanup from #${{ github.event.issue.number }}"
           labels: auto-patch
 
-      - name: Enable auto-merge (label: automerge)
+      - name: "Enable auto-merge (label: automerge)"
         if: contains(github.event.issue.labels.*.name, 'automerge') && steps.cpr.outputs['pull-request-number'] != ''
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
