@@ -12,11 +12,47 @@ on:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: 1
+      RUSTFLAGS: "-Dwarnings"
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --workspace --locked
-      - run: cargo test --workspace --locked
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Show toolchain & env
+        run: |
+          rustc -Vv
+          cargo -V
+          echo "default target:" $(rustc -vV | awk '/host:/ {print $2}')
+
+      - name: Resolve & check workspace (verbose)
+        run: |
+          cargo update -v
+          cargo tree -e features || true
+          cargo check --workspace --all-targets --all-features --verbose
+
+      - name: Build (release, verbose)
+        run: cargo build --workspace --all-features --verbose --locked
+
+      - name: Clippy (lint)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test (show backtraces)
+        run: cargo test --workspace --all-features -- --nocapture
 
   web:
     runs-on: ubuntu-latest
