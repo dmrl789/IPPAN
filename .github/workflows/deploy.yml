@@ -96,15 +96,19 @@ jobs:
       - name: Copy deploy dir to server
         run: scp -r deploy/* ${{ matrix.host }}:/opt/ippan/
 
+      - name: Ensure deploy script is executable
+        run: ssh ${{ matrix.host }} "chmod +x /opt/ippan/ippan-deploy.sh"
+
       - name: Deploy remotely
-        run: |
-          if [ -n "${GHCR_PAT:-}" ]; then
-            ssh ${{ matrix.host }} "export GHCR_USER='${{ github.repository_owner }}'; export GHCR_TOKEN='${GHCR_PAT}'; /usr/local/bin/ippan-deploy"
-          else
-            ssh ${{ matrix.host }} "/usr/local/bin/ippan-deploy"
-          fi
         env:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -eo pipefail
+          escaped_compose=$(printf %q "${COMPOSE_REMOTE_PATH}")
+          escaped_owner=$(printf %q "${REPO_OWNER}")
+          escaped_token=$(printf %q "${GHCR_PAT:-}")
+          ssh ${{ matrix.host }} "COMPOSE_REMOTE_PATH=$escaped_compose GHCR_USER=$escaped_owner GHCR_TOKEN=$escaped_token bash /opt/ippan/ippan-deploy.sh"
 
     concurrency:
       group: deploy-main
