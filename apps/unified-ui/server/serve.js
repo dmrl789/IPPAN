@@ -9,7 +9,7 @@ const rootDir = path.resolve(__dirname, '..')
 const distDir = path.join(rootDir, 'dist')
 
 const app = express()
-const port = Number.parseInt(process.env.PORT || '4000', 10)
+const port = Number.parseInt(process.env.PORT || '3000', 10)
 
 app.disable('x-powered-by')
 

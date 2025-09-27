@@ -107,7 +107,7 @@ The built files will be in the `dist` directory.
      npm run build
      ```
 
-   - Start the lightweight static server (listens on port `4000` by default and exposes `/api/health`):
+   - Start the lightweight static server (listens on port `3000` by default and exposes `/api/health`):
 
      ```bash
      npm run start
@@ -131,7 +131,7 @@ The built files will be in the `dist` directory.
        server_name ui.example.com;
 
        location / {
-         proxy_pass http://127.0.0.1:4000;
+         proxy_pass http://127.0.0.1:3000;
          proxy_set_header Host $host;
          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
          proxy_set_header X-Forwarded-Proto $scheme;
@@ -139,7 +139,7 @@ The built files will be in the `dist` directory.
        }
 
        location /api/health {
-         proxy_pass http://127.0.0.1:4000/api/health;
+         proxy_pass http://127.0.0.1:3000/api/health;
          access_log off;
        }
      }
@@ -183,7 +183,7 @@ The built files will be in the `dist` directory.
                        address:
                        socket_address:
                          address: 127.0.0.1
-                         port_value: 4000
+                         port_value: 3000
      ```
 
 4. **Enable TLS**

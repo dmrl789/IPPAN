@@ -27,13 +27,13 @@ services:
     image: ghcr.io/dmrl789/ippan-unified-ui:latest
     env_file: /srv/ippan/ui.env
     ports:
-      - "4000:4000"
+      - "3000:3000"
     restart: unless-stopped
 YAML
 
 sudo tee /srv/ippan/ui.env >/dev/null <<'ENV'
 NODE_ENV=production
-PORT=4000
+PORT=3000
 NEXT_PUBLIC_API_BASE_URL=http://135.181.145.174:8080
 NEXT_PUBLIC_WS_URL=ws://135.181.145.174:8080/ws
 NEXT_PUBLIC_NETWORK_NAME=IPPAN-Devnet
@@ -51,7 +51,7 @@ server {
   server_name ui.ippan.org 135.181.145.174 188.245.97.41;
 
   location / {
-    proxy_pass http://127.0.0.1:4000;
+    proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -66,7 +66,7 @@ server {
 For Envoy-based setups, ensure the virtual host configuration includes the incoming domain or use `"*"` to accept all hosts.
 The repository now ships with a ready-to-use configuration at
 `deployments/envoy/envoy.yaml` that binds Envoy to port `80`, proxies traffic to
-the UI container listening on `4000`, and permits any `Host` header. Deploy it
+the UI container listening on `3000`, and permits any `Host` header. Deploy it
 alongside the UI container to avoid the `Domain forbidden` responses that occur
 when the requested host is missing from the Envoy allow list:
 
@@ -84,7 +84,7 @@ settings intact.
 2. On the server, verify the container is healthy:
    ```bash
    docker ps
-   curl -I http://127.0.0.1:4000/api/health
+   curl -I http://127.0.0.1:3000/api/health
    ```
 3. If proxied, check the public endpoint:
    ```bash
