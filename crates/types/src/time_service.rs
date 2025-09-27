@@ -1,6 +1,5 @@
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
-use std::cmp;
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -118,7 +117,7 @@ fn apply_offset(now_us: u64, offset_us: i64) -> u64 {
 
 fn clamp_drift(drift: i128, limit: i64) -> i64 {
     let limit = limit as i128;
-    cmp::min(cmp::max(drift, -limit), limit) as i64
+    drift.clamp(-limit, limit) as i64
 }
 
 /// Global IPPAN Time instance
