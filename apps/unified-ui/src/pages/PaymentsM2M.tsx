@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Card, Button, Input, Badge, Switch, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter, Label, Textarea } from '../components/UI'
+import { isValidWalletAddress, useWalletStore } from '../lib/walletStore'
 
 // =============== Types ===============
 type FeePreview = { fee: number; nonce: number; etaSeconds: number };
@@ -143,15 +144,9 @@ async function apiSaveWebhook(url: string, events: string[]): Promise<{ok:boolea
 }
 
 // =============== Component ===============
-interface PaymentsM2MProps {
-  walletAddress: string | null;
-  walletConnected: boolean;
-}
-
-export default function PaymentsM2M({ walletAddress, walletConnected }: PaymentsM2MProps) {
-  // Use wallet state from props instead of local state
-  const address = walletAddress;
-  const connected = walletConnected;
+export default function PaymentsM2M() {
+  const address = useWalletStore((state) => state.address);
+  const connected = isValidWalletAddress(address);
 
   // Pay form
   const [to, setTo] = useState("");
