@@ -8,14 +8,15 @@ concurrency:
   group: apply-patch-${{ github.event.issue.number }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
 jobs:
   apply:
     if: contains(github.event.issue.labels.*.name, 'auto-patch')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: read
 
     steps:
       - name: Check out repo
@@ -30,21 +31,21 @@ jobs:
           HAS_CLEANUP: ${{ contains(github.event.issue.labels.*.name, 'cleanup-now') }}
         run: |
           python3 - << 'PY'
-import os, re, sys
-body = """${{ github.event.issue.body }}"""
-blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
-candidates = blocks + [body]
-patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ','From '))), None)
-if not patch:
-    # Permit empty body when label 'cleanup-now' is present
-    if os.environ.get("HAS_CLEANUP","false").lower() == "true":
-        open("change.patch","w", encoding="utf-8").close()
-        sys.exit(0)
-    print("No unified diff found in issue body.")
-    sys.exit(1)
-with open("change.patch", "w", encoding="utf-8") as f:
-    f.write(patch)
-PY
+          import os, re, sys
+          body = """${{ github.event.issue.body }}"""
+          blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
+          candidates = blocks + [body]
+          patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ','From '))), None)
+          if not patch:
+              # Permit empty body when label 'cleanup-now' is present
+              if os.environ.get("HAS_CLEANUP","false").lower() == "true":
+                  open("change.patch","w", encoding="utf-8").close()
+                  sys.exit(0)
+              print("No unified diff found in issue body.")
+              sys.exit(1)
+          with open("change.patch", "w", encoding="utf-8") as f:
+              f.write(patch)
+          PY
 
       - name: Debug - show event and labels
         run: |
@@ -58,9 +59,9 @@ PY
 
       - name: Create branch
         run: |
-          BR="auto/patch-${{ github.event.issue.number }}"
-          echo "BRANCH=$BR" >> $GITHUB_ENV
-          git checkout -b "$BR"
+          BRANCH="auto/patch-${{ github.event.issue.number }}"
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          git checkout -b "$BRANCH"
 
       - name: Try applying patch (3-way) if present
         run: |
@@ -95,25 +96,29 @@ PY
           git add -A
 
       - name: Commit changes (if any)
+        id: commit
         run: |
           if git diff --cached --quiet; then
+            echo "made_commit=false" >> $GITHUB_OUTPUT
             echo "No changes staged; patch may already be applied or nothing to cleanup."
             exit 0
           fi
           git commit -m "Apply patch / cleanup from #${{ github.event.issue.number }}"
+          echo "made_commit=true" >> $GITHUB_OUTPUT
 
       - name: Push branch
+        if: steps.commit.outputs.made_commit == 'true'
         run: |
-          git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
           git push -u origin "$BRANCH"
 
       - name: Open PR
+        if: steps.commit.outputs.made_commit == 'true'
         id: cpr
-        if: success()
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ github.token }}
           branch: ${{ env.BRANCH }}
+          base: ${{ github.event.repository.default_branch }}
           title: "Apply patch / cleanup from #${{ github.event.issue.number }}"
           body: |
             Automated PR created from Issue #${{ github.event.issue.number }}.
@@ -122,7 +127,7 @@ PY
           labels: auto-patch
 
       - name: Enable auto-merge (label: automerge)
-        if: success() && contains(github.event.issue.labels.*.name, 'automerge') && steps.cpr.outputs['pull-request-number'] != ''
+        if: contains(github.event.issue.labels.*.name, 'automerge') && steps.cpr.outputs['pull-request-number'] != ''
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ github.token }}
