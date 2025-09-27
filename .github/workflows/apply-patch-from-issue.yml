@@ -42,7 +42,6 @@ jobs:
           candidates = blocks + [body]
           patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ','From '))), None)
           if not patch:
-              # Permit empty body when label 'cleanup-now' is present
               if os.environ.get("HAS_CLEANUP","false").lower() == "true":
                   open("change.patch","w", encoding="utf-8").close()
                   sys.exit(0)
