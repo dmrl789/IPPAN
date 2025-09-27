@@ -1,0 +1,139 @@
+name: Auto Patch on CI Failure
+
+on:
+  workflow_run:
+    workflows: ["CI"]            # <-- exact name of your main CI workflow
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-patch-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  make-patch:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git author
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # ---------- OPTIONAL: try quick JS/TS autofixes if a package.json exists ----------
+      - name: Detect JS workspace
+        id: js
+        run: |
+          if [ -f "package.json" ] || [ -f "frontend/package.json" ] || [ -f "unified-ui/package.json" ]; then
+            echo "has_js=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_js=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node (only if JS present)
+        if: steps.js.outputs.has_js == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Autofix JS/TS (root)
+        if: steps.js.outputs.has_js == 'true' && hashFiles('package.json') != ''
+        run: |
+          npm ci || true
+          npm run lint --if-present || true
+          npm run lint:fix --if-present || true
+          npx prettier -w . || true
+
+      - name: Autofix JS/TS (frontend/)
+        if: steps.js.outputs.has_js == 'true' && hashFiles('frontend/package.json') != ''
+        working-directory: frontend
+        run: |
+          npm ci || true
+          npm run lint --if-present || true
+          npm run lint:fix --if-present || true
+          npx prettier -w . || true
+
+      - name: Autofix JS/TS (unified-ui/)
+        if: steps.js.outputs.has_js == 'true' && hashFiles('unified-ui/package.json') != ''
+        working-directory: unified-ui
+        run: |
+          npm ci || true
+          npm run lint --if-present || true
+          npm run lint:fix --if-present || true
+          npx prettier -w . || true
+
+      # ---------- Rust autofix ----------
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Prime deps (best-effort)
+        run: |
+          cargo update || true
+
+      - name: Try compiler suggestions
+        run: |
+          # Apply compiler-driven suggestions where possible
+          cargo fix --allow-dirty --allow-staged || true
+
+      - name: Clippy (best-effort fix)
+        run: |
+          # clippy --fix needs some nightly features in some cases; run best-effort
+          cargo clippy || true
+
+      - name: Format Rust
+        run: cargo fmt || true
+
+      - name: Quick build check (don’t fail the job)
+        run: cargo build || true
+
+      # ---------- Prepare PR ----------
+      - name: Create branch if changes exist
+        id: diff
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            BRANCH="auto/patch/${{ github.event.workflow_run.id }}"
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            git checkout -b "$BRANCH"
+            git add -A
+            git commit -m "Auto patch: try to fix CI failure from run ${{ github.event.workflow_run.id }}"
+          fi
+
+      - name: Create PR
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: ${{ steps.diff.outputs.branch }}
+          title: "Auto patch: fix CI failure (run ${{ github.event.workflow_run.id }})"
+          commit-message: "Auto patch: attempt fixes for failing CI run ${{ github.event.workflow_run.id }}"
+          body: |
+            This automated patch was created because the **CI** workflow failed on run **${{ github.event.workflow_run.id }}**.
+
+            **What this does**
+            - Rust: `cargo fix`, `cargo fmt`, best-effort `cargo clippy` pass
+            - JS/TS (if present): `npm run lint:fix` and Prettier formatting
+
+            **Links**
+            - Failing run: ${{ github.event.workflow_run.html_url }}
+
+            If this builds green, feel free to merge. Otherwise, leave comments and we can iterate.
+          labels: |
+            auto-patch
+            codex
+          draft: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No changes → log and exit
+        if: steps.diff.outputs.changed != 'true'
+        run: echo "No automatic changes detected; skipping patch PR."
