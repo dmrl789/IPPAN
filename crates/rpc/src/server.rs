@@ -413,7 +413,7 @@ fn balance_for_address(state: Arc<AppState>, address: &str) -> ApiResult<Balance
         .storage
         .get_account(&parsed)
         .map_err(internal_error)?
-        .unwrap_or_else(|| ippan_storage::Account {
+        .unwrap_or(ippan_storage::Account {
             address: parsed,
             balance: 0,
             nonce: 0,
@@ -617,8 +617,8 @@ fn decode_address(input: &str) -> Option<[u8; 32]> {
         return None;
     }
 
-    let candidate = if trimmed.starts_with('i') {
-        &trimmed[1..]
+    let candidate = if let Some(stripped) = trimmed.strip_prefix('i') {
+        stripped
     } else {
         trimmed
     };
