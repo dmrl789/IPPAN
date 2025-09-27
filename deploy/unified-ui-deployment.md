@@ -48,7 +48,7 @@ Below is an example Nginx server block that proxies incoming traffic to the UI c
 ```nginx
 server {
   listen 80;
-  server_name ui.ippan.org 135.181.145.174 188.245.97.41;
+  server_name 188.245.97.41;
 
   location / {
     proxy_pass http://127.0.0.1:3000;
@@ -62,6 +62,10 @@ server {
   location /health { return 200 "ok"; }
 }
 ```
+
+With this configuration the unified UI is served directly from
+`http://188.245.97.41`, replacing the former
+`https://ui.ippan.org/dashboard` address.
 
 For Envoy-based setups, ensure the virtual host configuration includes the incoming domain or use `"*"` to accept all hosts.
 The repository now ships with a ready-to-use configuration at
