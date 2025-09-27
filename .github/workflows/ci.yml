@@ -1,5 +1,6 @@
+---
 name: CI
-on: [push, pull_request]
+"on": [push, pull_request]
 jobs:
   rust:
     runs-on: ubuntu-latest
@@ -9,7 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with: { components: clippy,rustfmt }
+        with:
+          components: clippy,rustfmt
       - uses: actions/cache@v4
         with:
           path: |
