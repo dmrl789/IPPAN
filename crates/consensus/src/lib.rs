@@ -278,8 +278,32 @@ impl PoAConsensus {
         Ok(())
     }
 
+    /// Apply transactions and block rewards using the consensus configuration
+    pub async fn apply_block_state(
+        &self,
+        transactions: &[Transaction],
+        proposer_id: [u8; 32],
+    ) -> Result<()> {
+        Self::apply_transactions_to_storage(
+            &self.storage,
+            transactions,
+            self.config.block_reward,
+            proposer_id,
+        )
+        .await
+    }
+
     /// Process transactions and update account balances
     async fn process_transactions(
+        storage: &Arc<dyn Storage + Send + Sync>,
+        transactions: &[Transaction],
+        block_reward: u64,
+        proposer_id: [u8; 32],
+    ) -> Result<()> {
+        Self::apply_transactions_to_storage(storage, transactions, block_reward, proposer_id).await
+    }
+
+    async fn apply_transactions_to_storage(
         storage: &Arc<dyn Storage + Send + Sync>,
         transactions: &[Transaction],
         block_reward: u64,

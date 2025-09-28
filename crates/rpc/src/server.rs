@@ -63,6 +63,13 @@ impl ConsensusHandle {
     pub fn mempool(&self) -> Arc<parking_lot::RwLock<Vec<Transaction>>> {
         self.mempool.clone()
     }
+
+    pub async fn apply_block_state(&self, block: &Block) -> Result<()> {
+        let consensus = self.consensus.lock().await;
+        consensus
+            .apply_block_state(&block.transactions, block.header.proposer_id)
+            .await
+    }
 }
 
 #[derive(Clone)]
@@ -632,6 +639,12 @@ async fn p2p_blocks_handler(
     }
 
     persist_block(&state, &block)?;
+    if let Some(consensus) = &state.consensus {
+        consensus
+            .apply_block_state(&block)
+            .await
+            .map_err(internal_error)?;
+    }
     remove_transactions_from_mempool(&state, &block.transactions);
 
     Ok(StatusCode::OK)
@@ -710,6 +723,12 @@ async fn p2p_block_response_handler(
     }
 
     persist_block(&state, &block)?;
+    if let Some(consensus) = &state.consensus {
+        consensus
+            .apply_block_state(&block)
+            .await
+            .map_err(internal_error)?;
+    }
     remove_transactions_from_mempool(&state, &block.transactions);
 
     Ok(StatusCode::OK)
@@ -787,8 +806,9 @@ mod tests {
     use axum::extract::State;
     use axum::Json;
     use ed25519_dalek::SigningKey;
+    use ippan_consensus::PoAConfig;
     use ippan_p2p::P2PConfig;
-    use ippan_storage::SledStorage;
+    use ippan_storage::{Account, SledStorage};
     use ippan_types::Block;
     use rand::rngs::StdRng;
     use rand::{RngCore, SeedableRng};
@@ -829,6 +849,82 @@ mod tests {
         let mut tx = Transaction::new(public, [9u8; 32], 10, 1);
         tx.sign(&secret).expect("sign transaction");
         tx
+    }
+
+    #[tokio::test]
+    async fn incoming_block_updates_accounts() {
+        let temp_dir = tempdir().expect("tempdir");
+        let db_path = temp_dir.path().join("db");
+        let storage = Arc::new(SledStorage::new(&db_path).expect("storage"));
+
+        let proposer_id = [2u8; 32];
+        let mut config = PoAConfig::default();
+        config.validators = vec![Validator {
+            id: proposer_id,
+            address: proposer_id,
+            stake: 1,
+            is_active: true,
+        }];
+
+        let consensus = PoAConsensus::new(config, storage.clone(), proposer_id);
+        let tx_sender = consensus.get_tx_sender();
+        let mempool = consensus.mempool();
+        let consensus = Arc::new(tokio::sync::Mutex::new(consensus));
+        let handle = ConsensusHandle::new(consensus, tx_sender.clone(), mempool.clone());
+
+        let state = Arc::new(AppState {
+            storage: storage.clone(),
+            start_time: Instant::now(),
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            p2p_network: None,
+            tx_sender: Some(tx_sender),
+            node_id: "test-node".to_string(),
+            consensus: Some(handle.clone()),
+            l2_config: L2Config::default(),
+            mempool,
+            unified_ui_dist: None,
+        });
+
+        let mut rng = StdRng::seed_from_u64(7);
+        let mut sender_secret = [0u8; 32];
+        rng.fill_bytes(&mut sender_secret);
+        let sender_key = SigningKey::from_bytes(&sender_secret);
+        let sender = sender_key.verifying_key().to_bytes();
+        let receiver = [9u8; 32];
+
+        let mut tx = Transaction::new(sender, receiver, 10, 0);
+        tx.sign(&sender_secret).expect("sign transaction");
+
+        storage
+            .update_account(Account {
+                address: sender,
+                balance: 100,
+                nonce: 0,
+            })
+            .expect("seed sender");
+
+        let block = Block::new([1u8; 32], vec![tx], 1, proposer_id);
+
+        let status = p2p_blocks_handler(State(state.clone()), Json(NetworkMessage::Block(block)))
+            .await
+            .expect("ok status");
+
+        assert_eq!(status, StatusCode::OK);
+
+        let sender_account = state
+            .storage
+            .get_account(&sender)
+            .expect("fetch sender")
+            .expect("sender exists");
+        assert_eq!(sender_account.balance, 90);
+        assert_eq!(sender_account.nonce, 1);
+
+        let receiver_account = state
+            .storage
+            .get_account(&receiver)
+            .expect("fetch receiver")
+            .expect("receiver exists");
+        assert_eq!(receiver_account.balance, 10);
     }
 
     #[tokio::test]
