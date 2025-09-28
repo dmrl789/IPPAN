@@ -21,7 +21,7 @@ pub use server::{start_server, AppState, ConsensusHandle, L2Config};
 #[derive(thiserror::Error, Debug)]
 pub enum P2PError {
     #[error("Channel error: {0}")]
-    Channel(#[from] mpsc::error::SendError<NetworkMessage>),
+    Channel(#[from] Box<mpsc::error::SendError<NetworkMessage>>),
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
     #[error("HTTP error: {0}")]
@@ -30,6 +30,12 @@ pub enum P2PError {
     Url(#[from] url::ParseError),
     #[error("Peer error: {0}")]
     Peer(String),
+}
+
+impl From<mpsc::error::SendError<NetworkMessage>> for P2PError {
+    fn from(err: mpsc::error::SendError<NetworkMessage>) -> Self {
+        Self::Channel(Box::new(err))
+    }
 }
 
 /// Network message types
@@ -701,7 +707,7 @@ impl HttpP2PNetwork {
             NetworkMessage::PeerDiscovery { .. } => "/p2p/peer-discovery",
         };
 
-        let url = format!("{}{}", peer_address, endpoint);
+        let url = format!("{peer_address}{endpoint}");
 
         for attempt in 1..=config.retry_attempts {
             match client.post(&url).json(message).send().await {
@@ -788,7 +794,7 @@ impl HttpP2PNetwork {
         announce_address: &str,
         peer_count: &Arc<parking_lot::RwLock<usize>>,
     ) -> Result<()> {
-        let url = format!("{}/p2p/peers", peer_address);
+        let url = format!("{peer_address}/p2p/peers");
 
         let response = client.get(&url).send().await?;
         if response.status().is_success() {
@@ -820,7 +826,7 @@ impl HttpP2PNetwork {
         let candidate = if address.contains("://") {
             address.to_string()
         } else {
-            format!("http://{}", address)
+            format!("http://{address}")
         };
 
         let url = Url::parse(&candidate)?;
@@ -845,12 +851,12 @@ impl HttpP2PNetwork {
         // Wrap IPv6 hosts with [] if missing
         let formatted_host = if host.contains(':') && !host.starts_with('[') && !host.ends_with(']')
         {
-            format!("[{}]", host)
+            format!("[{host}]")
         } else {
             host.to_string()
         };
 
-        let mut url = Url::parse(&format!("{}://{}:{}/", scheme, formatted_host, port))?;
+        let mut url = Url::parse(&format!("{scheme}://{formatted_host}:{port}/"))?;
         url.set_path("");
         url.set_query(None);
         url.set_fragment(None);

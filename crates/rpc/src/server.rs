@@ -800,6 +800,41 @@ fn remove_transactions_from_mempool(state: &AppState, transactions: &[Transactio
     mempool.retain(|tx| !hashes.contains(&tx.hash()));
 }
 
+fn current_peer_count(state: &AppState) -> usize {
+    if let Some(network) = state.p2p_network.as_ref() {
+        let count = network.get_peer_count();
+        state.peer_count.store(count, Ordering::Relaxed);
+        count
+    } else {
+        state.peer_count.load(Ordering::Relaxed)
+    }
+}
+
+fn decode_address(input: &str) -> Option<[u8; 32]> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let candidate = if let Some(stripped) = trimmed.strip_prefix('i') {
+        stripped
+    } else {
+        trimmed
+    };
+
+    if candidate.len() != 64 {
+        return None;
+    }
+
+    let mut bytes = [0u8; 32];
+    hex::decode_to_slice(candidate, &mut bytes).ok()?;
+    Some(bytes)
+}
+
+fn encode_address(address: &[u8; 32]) -> String {
+    format!("i{}", hex::encode(address))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -858,13 +893,15 @@ mod tests {
         let storage = Arc::new(SledStorage::new(&db_path).expect("storage"));
 
         let proposer_id = [2u8; 32];
-        let mut config = PoAConfig::default();
-        config.validators = vec![Validator {
-            id: proposer_id,
-            address: proposer_id,
-            stake: 1,
-            is_active: true,
-        }];
+        let config = PoAConfig {
+            validators: vec![Validator {
+                id: proposer_id,
+                address: proposer_id,
+                stake: 1,
+                is_active: true,
+            }],
+            ..Default::default()
+        };
 
         let consensus = PoAConsensus::new(config, storage.clone(), proposer_id);
         let tx_sender = consensus.get_tx_sender();
@@ -1009,9 +1046,11 @@ mod tests {
 
     #[tokio::test]
     async fn updates_peers_from_peer_info() {
-        let mut config = P2PConfig::default();
-        config.retry_attempts = 1;
-        config.message_timeout = std::time::Duration::from_millis(10);
+        let config = P2PConfig {
+            retry_attempts: 1,
+            message_timeout: std::time::Duration::from_millis(10),
+            ..Default::default()
+        };
         let network = Arc::new(
             HttpP2PNetwork::new(config, "http://127.0.0.1:9000".to_string()).expect("network"),
         );
@@ -1035,9 +1074,11 @@ mod tests {
 
     #[tokio::test]
     async fn updates_peers_from_discovery() {
-        let mut config = P2PConfig::default();
-        config.retry_attempts = 1;
-        config.message_timeout = std::time::Duration::from_millis(10);
+        let config = P2PConfig {
+            retry_attempts: 1,
+            message_timeout: std::time::Duration::from_millis(10),
+            ..Default::default()
+        };
         let network = Arc::new(
             HttpP2PNetwork::new(config, "http://127.0.0.1:9000".to_string()).expect("network"),
         );
@@ -1057,39 +1098,4 @@ mod tests {
         assert!(peers.iter().any(|p| p.contains("9020")));
         assert_eq!(state.peer_count.load(Ordering::Relaxed), peers.len());
     }
-}
-
-fn current_peer_count(state: &AppState) -> usize {
-    if let Some(network) = state.p2p_network.as_ref() {
-        let count = network.get_peer_count();
-        state.peer_count.store(count, Ordering::Relaxed);
-        count
-    } else {
-        state.peer_count.load(Ordering::Relaxed)
-    }
-}
-
-fn decode_address(input: &str) -> Option<[u8; 32]> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let candidate = if let Some(stripped) = trimmed.strip_prefix('i') {
-        stripped
-    } else {
-        trimmed
-    };
-
-    if candidate.len() != 64 {
-        return None;
-    }
-
-    let mut bytes = [0u8; 32];
-    hex::decode_to_slice(candidate, &mut bytes).ok()?;
-    Some(bytes)
-}
-
-fn encode_address(address: &[u8; 32]) -> String {
-    format!("i{}", hex::encode(address))
 }
