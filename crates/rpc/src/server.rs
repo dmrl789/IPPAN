@@ -907,7 +907,7 @@ mod tests {
         let tx_sender = consensus.get_tx_sender();
         let mempool = consensus.mempool();
         let consensus = Arc::new(tokio::sync::Mutex::new(consensus));
-        let handle = ConsensusHandle::new(consensus, tx_sender.clone(), mempool.clone());
+        let handle = ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool.clone());
 
         let state = Arc::new(AppState {
             storage: storage.clone(),
@@ -940,7 +940,14 @@ mod tests {
             })
             .expect("seed sender");
 
-        let block = make_block(vec![tx.clone()]);
+        use ippan_consensus::ConsensusEngine;
+
+        let block = consensus
+            .lock()
+            .await
+            .propose_block(vec![tx.clone()])
+            .await
+            .expect("create block");
 
         let status = p2p_blocks_handler(State(state.clone()), Json(NetworkMessage::Block(block)))
             .await
