@@ -940,7 +940,7 @@ mod tests {
             })
             .expect("seed sender");
 
-        let block = Block::new(vec![[1u8; 32]], vec![tx], 1, proposer_id);
+
 
         let status = p2p_blocks_handler(State(state.clone()), Json(NetworkMessage::Block(block)))
             .await

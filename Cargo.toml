@@ -33,6 +33,7 @@ time = { version = "0.3", features = ["formatting","macros"] }
 once_cell = "1"
 parking_lot = "0.12"
 heapless = "0.8"
+winterfell = "0.13.1"
 
 # Production dependencies
 axum = { version = "0.7", features = ["macros", "tracing"] }

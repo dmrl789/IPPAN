@@ -150,6 +150,16 @@ impl Block {
         }
     }
 
+    /// Convenience constructor for creating a block with a single parent.
+    pub fn with_parent(
+        parent_id: BlockId,
+        transactions: Vec<Transaction>,
+        round: RoundId,
+        creator: ValidatorId,
+    ) -> Self {
+        Self::new(vec![parent_id], transactions, round, creator)
+    }
+
     /// Compute the merkle root for an arbitrary slice of 32-byte hashes.
     pub fn compute_merkle_root_from_hashes(items: &[BlockId]) -> [u8; 32] {
         if items.is_empty() {
