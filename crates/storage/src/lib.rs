@@ -130,10 +130,10 @@ impl SledStorage {
         if self.get_latest_height()? == 0 {
             // Create genesis block
             let genesis_block = Block::new(
-                [0u8; 32], // No previous block
-                vec![],    // No transactions
-                0,         // Genesis round
-                [0u8; 32], // Genesis proposer
+                Vec::new(), // No parents in genesis
+                vec![],     // No transactions
+                0,          // Genesis round
+                [0u8; 32],  // Genesis proposer
             );
 
             self.store_block(genesis_block)?;
@@ -162,7 +162,7 @@ impl SledStorage {
 impl Storage for SledStorage {
     fn store_block(&self, block: Block) -> Result<()> {
         let hash = block.hash();
-        let height = block.header.round_id;
+        let height = block.header.round;
 
         // Serialize block
         let block_data = serde_json::to_vec(&block)?;
@@ -412,7 +412,7 @@ impl Storage for MemoryStorage {
             .blocks
             .read()
             .values()
-            .find(|b| b.header.round_id == height)
+            .find(|b| b.header.round == height)
             .cloned())
     }
 
@@ -525,14 +525,14 @@ mod tests {
         storage.initialize().unwrap();
 
         // Test storing and retrieving a block
-        let block = Block::new([1u8; 32], vec![], 1, [2u8; 32]);
+        let block = Block::new(vec![[1u8; 32]], vec![], 1, [2u8; 32]);
         let block_hash = block.hash();
 
         storage.store_block(block.clone()).unwrap();
         let retrieved_block = storage.get_block(&block_hash).unwrap();
 
         assert!(retrieved_block.is_some());
-        assert_eq!(retrieved_block.unwrap().header.round_id, 1);
+        assert_eq!(retrieved_block.unwrap().header.round, 1);
 
         // Test height lookup
         let block_by_height = storage.get_block_by_height(1).unwrap();
