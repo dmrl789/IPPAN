@@ -1,18 +1,29 @@
 ---
 name: CI
-"on": [push, pull_request]
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
   rust:
+    name: Rust checks
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: 1
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt
-      - uses: actions/cache@v4
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -20,8 +31,47 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
-      - run: rustc -Vv && cargo -V
-      - run: cargo check --workspace --all-targets --all-features -v
-      - run: cargo build --workspace --all-features -v --locked
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - run: cargo test --workspace --all-features -- --nocapture
+
+      - name: Show tool versions
+        run: rustc -Vv && cargo -V
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Cargo check
+        run: cargo check --workspace --all-targets --all-features -v
+
+      - name: Cargo build
+        run: cargo build --workspace --all-features -v --locked
+
+      - name: Cargo clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Cargo test
+        run: cargo test --workspace --all-features -- --nocapture
+
+  frontend:
+    name: Unified UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/unified-ui
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/unified-ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

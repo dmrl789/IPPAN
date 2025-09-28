@@ -41,6 +41,7 @@ coverage/
 
 # Package manager
 package-lock.json
+!apps/unified-ui/package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
