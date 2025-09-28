@@ -1,5 +1,5 @@
 # ---- Build stage ------------------------------------------------------------
-FROM rust:1.80-bullseye AS builder
+FROM rust:1.88-slim AS builder
 
 # Native deps commonly needed by Rust crates (openssl, protobuf, etc.)
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
