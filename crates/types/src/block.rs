@@ -1,275 +1,383 @@
 use crate::hashtimer::{HashTimer, IppanTimeMicros};
 use crate::transaction::Transaction;
-use rand_core::{OsRng, RngCore};
+use blake3::Hasher as Blake3;
 use serde::{Deserialize, Serialize};
+use serde_bytes;
 
-/// Block header containing metadata and HashTimer
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Unique identifier for a consensus round.
+pub type RoundId = u64;
+/// Unique identifier for a validator (32-byte public key hash).
+pub type ValidatorId = [u8; 32];
+/// Canonical identifier for a block header (32-byte digest).
+pub type BlockId = [u8; 32];
+
+const HASH_CONTEXT: &str = "block";
+const HASH_DOMAIN: &[u8] = b"block";
+
+/// Block header capturing the round-scoped DAG metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BlockHeader {
-    /// Previous block hash (32 bytes)
-    pub prev_hash: [u8; 32],
-    /// Merkle root of transactions (32 bytes)
-    pub tx_merkle_root: [u8; 32],
-    /// Block height/round number
-    pub round_id: u64,
-    /// Proposer node ID (32 bytes)
-    pub proposer_id: [u8; 32],
-    /// Nonce for proof-of-work or other consensus mechanism
-    pub nonce: u64,
-    /// HashTimer for temporal ordering and validation
+    /// Canonical identifier for this block (hash of the header fields).
+    pub id: BlockId,
+    /// Validator that created the block.
+    pub creator: ValidatorId,
+    /// Round identifier.
+    pub round: RoundId,
+    /// HashTimer anchoring the block in IPPAN time.
     pub hashtimer: HashTimer,
-    /// Timestamp when block was created
-    pub timestamp: IppanTimeMicros,
+    /// Parent block identifiers drawn from round-1.
+    pub parent_ids: Vec<BlockId>,
+    /// Ordered payload identifiers (e.g., transaction batch digests).
+    pub payload_ids: Vec<[u8; 32]>,
+    /// Merkle root over payload identifiers.
+    pub merkle_payload: [u8; 32],
+    /// Merkle root over parent identifiers.
+    pub merkle_parents: [u8; 32],
+    /// Optional VRF proof used for committee sampling or priority.
+    #[serde(default, with = "serde_bytes")]
+    pub vrf_proof: Vec<u8>,
 }
 
-/// A block in the IPPAN blockchain
+/// A round-scoped DAG vertex along with its detached payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
-    /// Block header
+    /// Metadata header.
     pub header: BlockHeader,
-    /// List of transactions in this block
+    /// Signature issued by the creator (Ed25519 today, aggregated later).
+    #[serde(default, with = "serde_bytes")]
+    pub signature: Vec<u8>,
+    /// Optional inlined transactions; maintained for compatibility with the
+    /// current execution pipeline until the availability layer is wired in.
+    #[serde(default)]
     pub transactions: Vec<Transaction>,
 }
 
+impl BlockHeader {
+    /// Compute the canonical identifier for the supplied header components.
+    fn compute_id(
+        creator: &ValidatorId,
+        round: RoundId,
+        hashtimer: &HashTimer,
+        parent_ids: &[BlockId],
+        payload_ids: &[[u8; 32]],
+        merkle_payload: &[u8; 32],
+        merkle_parents: &[u8; 32],
+        vrf_proof: &[u8],
+    ) -> BlockId {
+        let mut hasher = Blake3::new();
+        hasher.update(creator);
+        hasher.update(&round.to_be_bytes());
+        hasher.update(&hashtimer.time_prefix);
+        hasher.update(&hashtimer.hash_suffix);
+        hasher.update(merkle_payload);
+        hasher.update(merkle_parents);
+        for parent in parent_ids {
+            hasher.update(parent);
+        }
+        for payload in payload_ids {
+            hasher.update(payload);
+        }
+        hasher.update(vrf_proof);
+
+        let hash = hasher.finalize();
+        let mut id = [0u8; 32];
+        id.copy_from_slice(&hash.as_bytes()[0..32]);
+        id
+    }
+}
+
 impl Block {
-    /// Create a new block
+    /// Create a new round-scoped block with the provided parents and
+    /// transactions. The transactions are flattened into payload identifiers
+    /// while remaining available on the struct for the current execution path.
     pub fn new(
-        prev_hash: [u8; 32],
+        parent_ids: Vec<BlockId>,
         transactions: Vec<Transaction>,
-        round_id: u64,
-        proposer_id: [u8; 32],
+        round: RoundId,
+        creator: ValidatorId,
     ) -> Self {
-        let timestamp = IppanTimeMicros::now();
-        let mut nonce_bytes = [0u8; 8];
-        OsRng.fill_bytes(&mut nonce_bytes);
-        let nonce = u64::from_be_bytes(nonce_bytes);
-
-        // Compute transaction merkle root
-        let tx_merkle_root = Self::compute_merkle_root(&transactions);
-
-        // Create HashTimer for this block
-        let payload =
-            Self::create_payload(&prev_hash, &tx_merkle_root, round_id, &proposer_id, nonce);
+        let payload_ids: Vec<[u8; 32]> = transactions.iter().map(|tx| tx.hash()).collect();
+        let merkle_payload = Self::compute_merkle_root_from_hashes(&payload_ids);
+        let merkle_parents = Self::compute_merkle_root_from_hashes(&parent_ids);
+        let hashtimer_nonce =
+            Self::derive_hashtimer_nonce(round, &creator, &parent_ids, &payload_ids);
+        let hashtimer_payload = Self::build_hashtimer_payload(
+            round,
+            &creator,
+            &parent_ids,
+            &payload_ids,
+            &merkle_payload,
+            &merkle_parents,
+        );
+        let time = IppanTimeMicros::now();
         let hashtimer = HashTimer::derive(
-            "block",
-            timestamp,
-            b"block",
-            &payload,
-            &nonce_bytes,
-            &proposer_id,
+            HASH_CONTEXT,
+            time,
+            HASH_DOMAIN,
+            &hashtimer_payload,
+            &hashtimer_nonce,
+            &creator,
+        );
+
+        let id = BlockHeader::compute_id(
+            &creator,
+            round,
+            &hashtimer,
+            &parent_ids,
+            &payload_ids,
+            &merkle_payload,
+            &merkle_parents,
+            &[],
         );
 
         let header = BlockHeader {
-            prev_hash,
-            tx_merkle_root,
-            round_id,
-            proposer_id,
-            nonce,
+            id,
+            creator,
+            round,
             hashtimer,
-            timestamp,
+            parent_ids,
+            payload_ids,
+            merkle_payload,
+            merkle_parents,
+            vrf_proof: Vec::new(),
         };
 
         Self {
             header,
+            signature: Vec::new(),
             transactions,
         }
     }
 
-    /// Create payload for HashTimer computation
-    fn create_payload(
-        prev_hash: &[u8; 32],
-        tx_merkle_root: &[u8; 32],
-        round_id: u64,
-        proposer_id: &[u8; 32],
-        nonce: u64,
-    ) -> Vec<u8> {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(prev_hash);
-        payload.extend_from_slice(tx_merkle_root);
-        payload.extend_from_slice(&round_id.to_be_bytes());
-        payload.extend_from_slice(proposer_id);
-        payload.extend_from_slice(&nonce.to_be_bytes());
-        payload
-    }
-
-    /// Compute merkle root of transactions
-    fn compute_merkle_root(transactions: &[Transaction]) -> [u8; 32] {
-        if transactions.is_empty() {
-            // Empty block has zero merkle root
+    /// Compute the merkle root for an arbitrary slice of 32-byte hashes.
+    pub fn compute_merkle_root_from_hashes(items: &[BlockId]) -> [u8; 32] {
+        if items.is_empty() {
             return [0u8; 32];
         }
 
-        if transactions.len() == 1 {
-            // Single transaction, its hash is the merkle root
-            return transactions[0].hash();
+        if items.len() == 1 {
+            return items[0];
         }
 
-        // Compute merkle tree
-        let mut hashes: Vec<[u8; 32]> = transactions.iter().map(|tx| tx.hash()).collect();
-
-        while hashes.len() > 1 {
-            let mut next_level = Vec::new();
-
-            for i in (0..hashes.len()).step_by(2) {
-                let left = hashes[i];
-                let right = if i + 1 < hashes.len() {
-                    hashes[i + 1]
-                } else {
-                    left // Duplicate last element if odd number
-                };
-
-                let mut hasher = blake3::Hasher::new();
+        let mut current_level: Vec<[u8; 32]> = items.to_vec();
+        while current_level.len() > 1 {
+            let mut next_level = Vec::with_capacity((current_level.len() + 1) / 2);
+            for chunk in current_level.chunks(2) {
+                let left = chunk[0];
+                let right = if chunk.len() == 2 { chunk[1] } else { chunk[0] };
+                let mut hasher = Blake3::new();
                 hasher.update(&left);
                 hasher.update(&right);
                 let hash = hasher.finalize();
-
                 let mut combined = [0u8; 32];
                 combined.copy_from_slice(&hash.as_bytes()[0..32]);
                 next_level.push(combined);
             }
-
-            hashes = next_level;
+            current_level = next_level;
         }
 
-        hashes[0]
+        current_level[0]
     }
 
-    /// Get block hash
-    pub fn hash(&self) -> [u8; 32] {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(&self.header.prev_hash);
-        hasher.update(&self.header.tx_merkle_root);
-        hasher.update(&self.header.round_id.to_be_bytes());
-        hasher.update(&self.header.proposer_id);
-        hasher.update(&self.header.nonce.to_be_bytes());
-        hasher.update(self.header.hashtimer.to_hex().as_bytes());
-        hasher.update(&self.header.timestamp.0.to_be_bytes());
-
+    /// Deterministically derive the nonce used in the HashTimer payload.
+    fn derive_hashtimer_nonce(
+        round: RoundId,
+        creator: &ValidatorId,
+        parent_ids: &[BlockId],
+        payload_ids: &[[u8; 32]],
+    ) -> [u8; 32] {
+        let mut hasher = Blake3::new();
+        hasher.update(&round.to_be_bytes());
+        hasher.update(creator);
+        for parent in parent_ids {
+            hasher.update(parent);
+        }
+        for payload in payload_ids {
+            hasher.update(payload);
+        }
         let hash = hasher.finalize();
-        let mut result = [0u8; 32];
-        result.copy_from_slice(&hash.as_bytes()[0..32]);
-        result
+        let mut nonce = [0u8; 32];
+        nonce.copy_from_slice(&hash.as_bytes()[0..32]);
+        nonce
     }
 
-    /// Verify block validity
+    /// Build the payload that is hashed into the HashTimer.
+    fn build_hashtimer_payload(
+        round: RoundId,
+        creator: &ValidatorId,
+        parent_ids: &[BlockId],
+        payload_ids: &[[u8; 32]],
+        merkle_payload: &[u8; 32],
+        merkle_parents: &[u8; 32],
+    ) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(
+            8 + creator.len() + (parent_ids.len() + payload_ids.len()) * 32 + 64,
+        );
+        payload.extend_from_slice(&round.to_be_bytes());
+        payload.extend_from_slice(creator);
+        payload.extend_from_slice(merkle_payload);
+        payload.extend_from_slice(merkle_parents);
+        for parent in parent_ids {
+            payload.extend_from_slice(parent);
+        }
+        for item in payload_ids {
+            payload.extend_from_slice(item);
+        }
+        payload
+    }
+
+    /// Return the canonical identifier for this block.
+    pub fn hash(&self) -> BlockId {
+        self.header.id
+    }
+
+    /// Approximate block size (header plus inlined transactions).
+    pub fn size(&self) -> usize {
+        let header_size = 32 // id
+            + 32 // creator
+            + 8  // round
+            + 7  // time prefix
+            + 25 // hash suffix
+            + self.header.parent_ids.len() * 32
+            + self.header.payload_ids.len() * 32
+            + 32 // merkle_payload
+            + 32 // merkle_parents
+            + self.header.vrf_proof.len()
+            + self.signature.len();
+        let tx_size = self.transactions.len() * 200; // heuristic for now
+        header_size + tx_size
+    }
+
+    /// Verify block integrity against the deterministic header rules.
     pub fn is_valid(&self) -> bool {
-        // Verify merkle root matches transactions
-        let computed_merkle_root = Self::compute_merkle_root(&self.transactions);
-        if computed_merkle_root != self.header.tx_merkle_root {
+        if self.header.merkle_payload
+            != Self::compute_merkle_root_from_hashes(&self.header.payload_ids)
+        {
             return false;
         }
 
-        // Verify all transactions are valid
-        for tx in &self.transactions {
-            if !tx.is_valid() {
+        if self.header.merkle_parents
+            != Self::compute_merkle_root_from_hashes(&self.header.parent_ids)
+        {
+            return false;
+        }
+
+        if !self.transactions.is_empty() {
+            let computed_payload_ids: Vec<[u8; 32]> =
+                self.transactions.iter().map(|tx| tx.hash()).collect();
+            if computed_payload_ids != self.header.payload_ids {
+                return false;
+            }
+
+            if self.transactions.iter().any(|tx| !tx.is_valid()) {
                 return false;
             }
         }
 
-        // Verify HashTimer is valid
-        let payload = Self::create_payload(
-            &self.header.prev_hash,
-            &self.header.tx_merkle_root,
-            self.header.round_id,
-            &self.header.proposer_id,
-            self.header.nonce,
+        let hashtimer_payload = Self::build_hashtimer_payload(
+            self.header.round,
+            &self.header.creator,
+            &self.header.parent_ids,
+            &self.header.payload_ids,
+            &self.header.merkle_payload,
+            &self.header.merkle_parents,
+        );
+        let expected_nonce = Self::derive_hashtimer_nonce(
+            self.header.round,
+            &self.header.creator,
+            &self.header.parent_ids,
+            &self.header.payload_ids,
         );
         let expected_hashtimer = HashTimer::derive(
-            "block",
-            self.header.timestamp,
-            "block".as_bytes(),
-            &payload,
-            &self.header.nonce.to_be_bytes(),
-            &self.header.proposer_id,
+            HASH_CONTEXT,
+            self.header.hashtimer.time(),
+            HASH_DOMAIN,
+            &hashtimer_payload,
+            &expected_nonce,
+            &self.header.creator,
         );
 
         if expected_hashtimer != self.header.hashtimer {
             return false;
         }
 
-        // HashTimer should be consistent (allowing for time differences)
-        self.header.hashtimer.time().0 <= IppanTimeMicros::now().0
-    }
+        let expected_id = BlockHeader::compute_id(
+            &self.header.creator,
+            self.header.round,
+            &self.header.hashtimer,
+            &self.header.parent_ids,
+            &self.header.payload_ids,
+            &self.header.merkle_payload,
+            &self.header.merkle_parents,
+            &self.header.vrf_proof,
+        );
 
-    /// Get block size in bytes (approximate)
-    pub fn size(&self) -> usize {
-        // Rough estimate of block size
-        let header_size = 32 + 32 + 8 + 32 + 8 + 64 + 8; // All header fields
-        let tx_size = self.transactions.len() * 200; // Rough estimate per transaction
-        header_size + tx_size
+        if expected_id != self.header.id {
+            return false;
+        }
+
+        // Ensure the declared time is not from the future.
+        self.header.hashtimer.time().0 <= IppanTimeMicros::now().0
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::SigningKey;
+
+    fn sample_transactions() -> Vec<Transaction> {
+        let secret1 = SigningKey::from_bytes(&[7u8; 32]);
+        let secret2 = SigningKey::from_bytes(&[8u8; 32]);
+        let mut tx1 = Transaction::new(secret1.verifying_key().to_bytes(), [4u8; 32], 1000, 1);
+        tx1.sign(&secret1.to_bytes()).expect("sign tx1");
+        let mut tx2 = Transaction::new(secret2.verifying_key().to_bytes(), [6u8; 32], 2000, 2);
+        tx2.sign(&secret2.to_bytes()).expect("sign tx2");
+        vec![tx1, tx2]
+    }
 
     #[test]
     fn test_block_creation() {
-        let prev_hash = [1u8; 32];
-        let proposer_id = [2u8; 32];
-        let round_id = 1;
-        let transactions = vec![
-            Transaction::new([3u8; 32], [4u8; 32], 1000, 1),
-            Transaction::new([5u8; 32], [6u8; 32], 2000, 2),
-        ];
+        let parent = [1u8; 32];
+        let creator = [2u8; 32];
+        let round = 1;
+        let block = Block::new(vec![parent], sample_transactions(), round, creator);
 
-        let block = Block::new(prev_hash, transactions, round_id, proposer_id);
-
-        assert_eq!(block.header.prev_hash, prev_hash);
-        assert_eq!(block.header.proposer_id, proposer_id);
-        assert_eq!(block.header.round_id, round_id);
+        assert_eq!(block.header.creator, creator);
+        assert_eq!(block.header.round, round);
+        assert_eq!(block.header.parent_ids, vec![parent]);
         assert_eq!(block.transactions.len(), 2);
-        assert!(block.header.hashtimer.to_hex().len() == 64);
+        assert_eq!(block.header.payload_ids.len(), 2);
+        assert_eq!(block.hash(), block.header.id);
+        assert_eq!(block.header.merkle_payload.len(), 32);
+        assert_eq!(block.header.merkle_parents.len(), 32);
+        assert_eq!(block.header.hashtimer.to_hex().len(), 64);
     }
 
     #[test]
     fn test_empty_block() {
-        let prev_hash = [1u8; 32];
-        let proposer_id = [2u8; 32];
-        let round_id = 1;
-        let transactions = vec![];
+        let creator = [2u8; 32];
+        let round = 1;
+        let block = Block::new(vec![], vec![], round, creator);
 
-        let block = Block::new(prev_hash, transactions, round_id, proposer_id);
-
-        assert_eq!(block.transactions.len(), 0);
-        assert_eq!(block.header.tx_merkle_root, [0u8; 32]);
-    }
-
-    #[test]
-    fn test_single_transaction_block() {
-        let prev_hash = [1u8; 32];
-        let proposer_id = [2u8; 32];
-        let round_id = 1;
-        let tx = Transaction::new([3u8; 32], [4u8; 32], 1000, 1);
-        let transactions = vec![tx.clone()];
-
-        let block = Block::new(prev_hash, transactions, round_id, proposer_id);
-
-        assert_eq!(block.transactions.len(), 1);
-        assert_eq!(block.header.tx_merkle_root, tx.hash());
+        assert!(block.transactions.is_empty());
+        assert!(block.header.payload_ids.is_empty());
+        assert_eq!(block.header.merkle_payload, [0u8; 32]);
+        assert_eq!(block.header.merkle_parents, [0u8; 32]);
     }
 
     #[test]
     fn test_merkle_root_computation() {
-        let tx1 = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
-        let tx2 = Transaction::new([3u8; 32], [4u8; 32], 2000, 2);
-        let transactions = vec![tx1, tx2];
-
-        let merkle_root = Block::compute_merkle_root(&transactions);
-        assert_ne!(merkle_root, [0u8; 32]);
+        let hashes = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
+        let root = Block::compute_merkle_root_from_hashes(&hashes);
+        assert_ne!(root, [0u8; 32]);
     }
 
     #[test]
-    fn test_block_hash() {
-        let prev_hash = [1u8; 32];
-        let proposer_id = [2u8; 32];
-        let round_id = 1;
-        let transactions = vec![Transaction::new([3u8; 32], [4u8; 32], 1000, 1)];
-
-        let block = Block::new(prev_hash, transactions, round_id, proposer_id);
-        let hash = block.hash();
-
-        assert_ne!(hash, [0u8; 32]);
+    fn test_block_validation() {
+        let parent = [7u8; 32];
+        let creator = [8u8; 32];
+        let block = Block::new(vec![parent], sample_transactions(), 5, creator);
+        assert!(block.is_valid());
     }
 }

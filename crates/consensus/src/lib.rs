@@ -9,6 +9,9 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
 use tracing::{error, info, warn};
 
+pub mod ordering;
+pub use ordering::order_round;
+
 /// Consensus errors
 #[derive(thiserror::Error, Debug)]
 pub enum ConsensusError {
@@ -245,7 +248,11 @@ impl PoAConsensus {
 
         // Create new block
         let block = Block::new(
-            prev_hash,
+            if latest_height == 0 {
+                Vec::new()
+            } else {
+                vec![prev_hash]
+            },
             block_transactions,
             latest_height + 1,
             proposer_id,
@@ -271,7 +278,7 @@ impl PoAConsensus {
         info!(
             "Proposed and stored block {} at height {} with {} transactions",
             hex::encode(block.hash()),
-            block.header.round_id,
+            block.header.round,
             block.transactions.len()
         );
 
@@ -346,14 +353,14 @@ impl PoAConsensus {
 
         // Check if the proposer is valid for this slot
         let expected_proposer =
-            Self::get_proposer_for_slot(&self.config.validators, block.header.round_id);
-        if expected_proposer != Some(block.header.proposer_id) {
+            Self::get_proposer_for_slot(&self.config.validators, block.header.round);
+        if expected_proposer != Some(block.header.creator) {
             return Ok(false);
         }
 
         // Check if block height is correct
         let latest_height = self.storage.get_latest_height()?;
-        if block.header.round_id != latest_height + 1 {
+        if block.header.round != latest_height + 1 {
             return Ok(false);
         }
 
@@ -419,7 +426,11 @@ impl ConsensusEngine for PoAConsensus {
         };
 
         Ok(Block::new(
-            prev_hash,
+            if latest_height == 0 {
+                Vec::new()
+            } else {
+                vec![prev_hash]
+            },
             transactions,
             latest_height + 1,
             self.validator_id,
@@ -618,12 +629,12 @@ mod tests {
                     block_summary.push((
                         height,
                         block.transactions.len(),
-                        hex::encode(block.header.proposer_id),
+                        hex::encode(block.header.creator),
                     ));
                 }
-                if block.header.proposer_id == validator_one {
+                if block.header.creator == validator_one {
                     proposer_one_blocks += 1;
-                } else if block.header.proposer_id == validator_two {
+                } else if block.header.creator == validator_two {
                     proposer_two_blocks += 1;
                 }
             }

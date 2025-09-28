@@ -872,7 +872,7 @@ mod tests {
 
     #[test]
     fn test_network_message_serialization() {
-        let block = Block::new([0u8; 32], vec![], 1, [1u8; 32]);
+        let block = Block::new(vec![[0u8; 32]], vec![], 1, [1u8; 32]);
         let message = NetworkMessage::Block(block);
 
         let serialized = serde_json::to_vec(&message).unwrap();

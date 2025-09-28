@@ -817,7 +817,7 @@ mod tests {
     }
 
     fn make_block(transactions: Vec<Transaction>) -> Block {
-        Block::new([1u8; 32], transactions, 1, [2u8; 32])
+        Block::new(vec![[1u8; 32]], transactions, 1, [2u8; 32])
     }
 
     fn make_signed_transaction() -> Transaction {
