@@ -34,3 +34,5 @@ local-ip-address = "0.6"
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
+rand = { version = "0.8" }
+tempfile = { workspace = true }
