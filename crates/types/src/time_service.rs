@@ -151,9 +151,9 @@ pub fn ippan_time_ingest_sample(peer_time_us: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
-    use std::sync::{Mutex, MutexGuard};
     use once_cell::sync::Lazy;
+    use std::sync::{Mutex, MutexGuard};
+    use std::thread;
 
     static TEST_TIME_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 

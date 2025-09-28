@@ -14,12 +14,12 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
-use tracing::info;
+use tracing::{info, warn};
 
 use ippan_consensus::{ConsensusState, PoAConsensus, Validator};
-use ippan_p2p::HttpP2PNetwork;
+use ippan_p2p::{HttpP2PNetwork, NetworkMessage};
 use ippan_storage::Storage;
-use ippan_types::Transaction;
+use ippan_types::{Block, Transaction};
 
 #[derive(Debug, Clone, Default)]
 pub struct L2Config {
@@ -100,7 +100,13 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
         .route("/api/v1/transactions", get(transactions_handler))
         .route("/api/v1/transaction", post(submit_transaction_handler))
         .route("/api/v1/address/validate", get(validate_address_handler))
-        .route("/accounts", get(accounts_handler));
+        .route("/accounts", get(accounts_handler))
+        .route("/p2p/blocks", post(p2p_blocks_handler))
+        .route("/p2p/transactions", post(p2p_transactions_handler))
+        .route("/p2p/block-request", post(p2p_block_request_handler))
+        .route("/p2p/block-response", post(p2p_block_response_handler))
+        .route("/p2p/peer-info", post(p2p_peer_info_handler))
+        .route("/p2p/peer-discovery", post(p2p_peer_discovery_handler));
 
     if let Some(dist_dir) = &shared_state.unified_ui_dist {
         let index_html = dist_dir.join("index.html");
@@ -126,11 +132,22 @@ struct ErrorResponse {
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorResponse>)>;
 
+type P2PResult = Result<StatusCode, (StatusCode, Json<ErrorResponse>)>;
+
 fn internal_error<E: std::fmt::Display>(err: E) -> (StatusCode, Json<ErrorResponse>) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse {
             error: err.to_string(),
+        }),
+    )
+}
+
+fn bad_request(message: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: message.into(),
         }),
     )
 }
@@ -599,6 +616,351 @@ async fn accounts_handler(State(state): State<Arc<AppState>>) -> ApiResult<Accou
         success: true,
         data: accounts,
     }))
+}
+
+async fn p2p_blocks_handler(
+    State(state): State<Arc<AppState>>,
+    Json(message): Json<NetworkMessage>,
+) -> P2PResult {
+    let block = match message {
+        NetworkMessage::Block(block) => block,
+        _ => return Err(bad_request("expected block message")),
+    };
+
+    if !block.is_valid() {
+        return Err(bad_request("invalid block"));
+    }
+
+    persist_block(&state, &block)?;
+    remove_transactions_from_mempool(&state, &block.transactions);
+
+    Ok(StatusCode::OK)
+}
+
+async fn p2p_transactions_handler(
+    State(state): State<Arc<AppState>>,
+    Json(message): Json<NetworkMessage>,
+) -> P2PResult {
+    let tx = match message {
+        NetworkMessage::Transaction(tx) => tx,
+        _ => return Err(bad_request("expected transaction message")),
+    };
+
+    if !tx.is_valid() {
+        return Err(bad_request("invalid transaction"));
+    }
+
+    {
+        let mut mempool = state.mempool.write();
+        let tx_hash = tx.hash();
+        if mempool.iter().any(|existing| existing.hash() == tx_hash) {
+            return Ok(StatusCode::OK);
+        }
+        mempool.push(tx.clone());
+    }
+
+    if let Some(sender) = &state.tx_sender {
+        if let Err(error) = sender.send(tx.clone()) {
+            warn!("failed to forward transaction to consensus: {}", error);
+        }
+    }
+
+    Ok(StatusCode::OK)
+}
+
+async fn p2p_block_request_handler(
+    State(state): State<Arc<AppState>>,
+    Json(message): Json<NetworkMessage>,
+) -> P2PResult {
+    let hash = match message {
+        NetworkMessage::BlockRequest { hash } => hash,
+        _ => return Err(bad_request("expected block request message")),
+    };
+
+    let Some(block) = state.storage.get_block(&hash).map_err(internal_error)? else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "requested block not found".into(),
+            }),
+        ));
+    };
+
+    if let Some(network) = &state.p2p_network {
+        let sender = network.get_message_sender();
+        if let Err(error) = sender.send(NetworkMessage::BlockResponse(block.clone())) {
+            warn!("failed to enqueue block response: {}", error);
+        }
+    }
+
+    Ok(StatusCode::OK)
+}
+
+async fn p2p_block_response_handler(
+    State(state): State<Arc<AppState>>,
+    Json(message): Json<NetworkMessage>,
+) -> P2PResult {
+    let block = match message {
+        NetworkMessage::BlockResponse(block) => block,
+        _ => return Err(bad_request("expected block response message")),
+    };
+
+    if !block.is_valid() {
+        return Err(bad_request("invalid block response"));
+    }
+
+    persist_block(&state, &block)?;
+    remove_transactions_from_mempool(&state, &block.transactions);
+
+    Ok(StatusCode::OK)
+}
+
+async fn p2p_peer_info_handler(
+    State(state): State<Arc<AppState>>,
+    Json(message): Json<NetworkMessage>,
+) -> P2PResult {
+    let (peer_id, addresses) = match message {
+        NetworkMessage::PeerInfo { peer_id, addresses } => (peer_id, addresses),
+        _ => return Err(bad_request("expected peer info message")),
+    };
+
+    if let Some(network) = &state.p2p_network {
+        for address in addresses {
+            if let Err(error) = network.add_peer(address.clone()).await {
+                warn!(
+                    "failed to add peer {} from announcement {}: {}",
+                    peer_id, address, error
+                );
+            }
+        }
+        state
+            .peer_count
+            .store(network.get_peer_count(), Ordering::Relaxed);
+    }
+
+    Ok(StatusCode::OK)
+}
+
+async fn p2p_peer_discovery_handler(
+    State(state): State<Arc<AppState>>,
+    Json(message): Json<NetworkMessage>,
+) -> P2PResult {
+    let peers = match message {
+        NetworkMessage::PeerDiscovery { peers } => peers,
+        _ => return Err(bad_request("expected peer discovery message")),
+    };
+
+    if let Some(network) = &state.p2p_network {
+        for address in peers {
+            if let Err(error) = network.add_peer(address.clone()).await {
+                warn!("failed to add discovered peer {}: {}", address, error);
+            }
+        }
+        state
+            .peer_count
+            .store(network.get_peer_count(), Ordering::Relaxed);
+    }
+
+    Ok(StatusCode::OK)
+}
+
+fn persist_block(state: &AppState, block: &Block) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    state
+        .storage
+        .store_block(block.clone())
+        .map_err(internal_error)
+}
+
+fn remove_transactions_from_mempool(state: &AppState, transactions: &[Transaction]) {
+    if transactions.is_empty() {
+        return;
+    }
+
+    let hashes: HashSet<[u8; 32]> = transactions.iter().map(Transaction::hash).collect();
+    let mut mempool = state.mempool.write();
+    mempool.retain(|tx| !hashes.contains(&tx.hash()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::State;
+    use axum::Json;
+    use ed25519_dalek::SigningKey;
+    use ippan_p2p::P2PConfig;
+    use ippan_storage::SledStorage;
+    use ippan_types::Block;
+    use rand::rngs::StdRng;
+    use rand::{RngCore, SeedableRng};
+    use tempfile::tempdir;
+
+    fn build_test_state(
+        p2p_network: Option<Arc<HttpP2PNetwork>>,
+    ) -> (Arc<AppState>, tempfile::TempDir) {
+        let temp_dir = tempdir().expect("tempdir");
+        let db_path = temp_dir.path().join("db");
+        let storage = Arc::new(SledStorage::new(&db_path).expect("storage"));
+        let state = AppState {
+            storage,
+            start_time: Instant::now(),
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            p2p_network,
+            tx_sender: None,
+            node_id: "test-node".to_string(),
+            consensus: None,
+            l2_config: L2Config::default(),
+            mempool: Arc::new(parking_lot::RwLock::new(Vec::new())),
+            unified_ui_dist: None,
+        };
+
+        (Arc::new(state), temp_dir)
+    }
+
+    fn make_block(transactions: Vec<Transaction>) -> Block {
+        Block::new([1u8; 32], transactions, 1, [2u8; 32])
+    }
+
+    fn make_signed_transaction() -> Transaction {
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut secret = [0u8; 32];
+        rng.fill_bytes(&mut secret);
+        let signing_key = SigningKey::from_bytes(&secret);
+        let public = signing_key.verifying_key().to_bytes();
+        let mut tx = Transaction::new(public, [9u8; 32], 10, 1);
+        tx.sign(&secret).expect("sign transaction");
+        tx
+    }
+
+    #[tokio::test]
+    async fn handles_incoming_block() {
+        let (state, _temp) = build_test_state(None);
+        let tx = make_signed_transaction();
+        state.mempool.write().push(tx.clone());
+        let block = make_block(vec![tx]);
+
+        let status = p2p_blocks_handler(
+            State(state.clone()),
+            Json(NetworkMessage::Block(block.clone())),
+        )
+        .await
+        .expect("ok status");
+
+        assert_eq!(status, StatusCode::OK);
+        let stored = state
+            .storage
+            .get_block(&block.hash())
+            .expect("storage lookup");
+        assert!(stored.is_some());
+        assert!(state.mempool.read().is_empty());
+    }
+
+    #[tokio::test]
+    async fn handles_incoming_transaction() {
+        let (state, _temp) = build_test_state(None);
+        let tx = make_signed_transaction();
+
+        let status = p2p_transactions_handler(
+            State(state.clone()),
+            Json(NetworkMessage::Transaction(tx.clone())),
+        )
+        .await
+        .expect("ok status");
+
+        assert_eq!(status, StatusCode::OK);
+        let mempool = state.mempool.read();
+        assert_eq!(mempool.len(), 1);
+        assert_eq!(mempool[0].hash(), tx.hash());
+    }
+
+    #[tokio::test]
+    async fn handles_block_request() {
+        let (state, _temp) = build_test_state(None);
+        let block = make_block(vec![make_signed_transaction()]);
+        state
+            .storage
+            .store_block(block.clone())
+            .expect("store block");
+
+        let status = p2p_block_request_handler(
+            State(state),
+            Json(NetworkMessage::BlockRequest { hash: block.hash() }),
+        )
+        .await
+        .expect("ok status");
+
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn handles_block_response() {
+        let (state, _temp) = build_test_state(None);
+        let block = make_block(vec![make_signed_transaction()]);
+
+        let status = p2p_block_response_handler(
+            State(state.clone()),
+            Json(NetworkMessage::BlockResponse(block.clone())),
+        )
+        .await
+        .expect("ok status");
+
+        assert_eq!(status, StatusCode::OK);
+        let stored = state
+            .storage
+            .get_block(&block.hash())
+            .expect("storage lookup");
+        assert!(stored.is_some());
+    }
+
+    #[tokio::test]
+    async fn updates_peers_from_peer_info() {
+        let mut config = P2PConfig::default();
+        config.retry_attempts = 1;
+        config.message_timeout = std::time::Duration::from_millis(10);
+        let network = Arc::new(
+            HttpP2PNetwork::new(config, "http://127.0.0.1:9000".to_string()).expect("network"),
+        );
+        let (state, _temp) = build_test_state(Some(network.clone()));
+
+        let status = p2p_peer_info_handler(
+            State(state.clone()),
+            Json(NetworkMessage::PeerInfo {
+                peer_id: "peer-a".into(),
+                addresses: vec!["http://127.0.0.1:9010".into()],
+            }),
+        )
+        .await
+        .expect("ok status");
+
+        assert_eq!(status, StatusCode::OK);
+        let peers = network.get_peers();
+        assert!(peers.iter().any(|p| p.contains("9010")));
+        assert_eq!(state.peer_count.load(Ordering::Relaxed), peers.len());
+    }
+
+    #[tokio::test]
+    async fn updates_peers_from_discovery() {
+        let mut config = P2PConfig::default();
+        config.retry_attempts = 1;
+        config.message_timeout = std::time::Duration::from_millis(10);
+        let network = Arc::new(
+            HttpP2PNetwork::new(config, "http://127.0.0.1:9000".to_string()).expect("network"),
+        );
+        let (state, _temp) = build_test_state(Some(network.clone()));
+
+        let status = p2p_peer_discovery_handler(
+            State(state.clone()),
+            Json(NetworkMessage::PeerDiscovery {
+                peers: vec!["http://127.0.0.1:9020".into()],
+            }),
+        )
+        .await
+        .expect("ok status");
+
+        assert_eq!(status, StatusCode::OK);
+        let peers = network.get_peers();
+        assert!(peers.iter().any(|p| p.contains("9020")));
+        assert_eq!(state.peer_count.load(Ordering::Relaxed), peers.len());
+    }
 }
 
 fn current_peer_count(state: &AppState) -> usize {
