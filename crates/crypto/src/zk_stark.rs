@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn detecting_tampering() {
         let mut proof = generate_fibonacci_proof(32).expect("proof generation should succeed");
-        proof.result = proof.result + BaseElement::ONE;
+        proof.result += BaseElement::ONE;
         assert!(verify_fibonacci_proof(&proof).is_err());
     }
 }
