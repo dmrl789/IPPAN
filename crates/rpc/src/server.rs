@@ -67,7 +67,7 @@ impl ConsensusHandle {
     pub async fn apply_block_state(&self, block: &Block) -> Result<()> {
         let consensus = self.consensus.lock().await;
         consensus
-            .apply_block_state(&block.transactions, block.header.proposer_id)
+            .apply_block_state(&block.transactions, block.header.creator)
             .await
     }
 }
@@ -903,7 +903,7 @@ mod tests {
             })
             .expect("seed sender");
 
-        let block = Block::new([1u8; 32], vec![tx], 1, proposer_id);
+        let block = Block::with_parent([1u8; 32], vec![tx], 1, proposer_id);
 
         let status = p2p_blocks_handler(State(state.clone()), Json(NetworkMessage::Block(block)))
             .await
