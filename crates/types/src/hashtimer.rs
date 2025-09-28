@@ -103,7 +103,7 @@ impl HashTimer {
     pub fn to_hex(&self) -> String {
         let time_hex = hex::encode(self.time_prefix);
         let hash_hex = hex::encode(self.hash_suffix);
-        format!("{}{}", time_hex, hash_hex)
+        format!("{time_hex}{hash_hex}")
     }
 
     /// Parse from hex string
@@ -119,12 +119,12 @@ impl HashTimer {
         let hash_hex = &hex_str[14..64];
 
         let time_prefix = hex::decode(time_hex)
-            .map_err(|e| format!("Invalid time prefix hex: {}", e))?
+            .map_err(|e| format!("Invalid time prefix hex: {e}"))?
             .try_into()
             .map_err(|_| "Time prefix must be 7 bytes")?;
 
         let hash_suffix = hex::decode(hash_hex)
-            .map_err(|e| format!("Invalid hash suffix hex: {}", e))?
+            .map_err(|e| format!("Invalid hash suffix hex: {e}"))?
             .try_into()
             .map_err(|_| "Hash suffix must be 25 bytes")?;
 

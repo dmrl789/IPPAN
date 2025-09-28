@@ -667,8 +667,7 @@ mod tests {
         let total_expected = (transfers_per_side * 2) as usize;
         assert_eq!(
             total_transactions, total_expected,
-            "non_empty_blocks: {:?}",
-            block_summary
+            "non_empty_blocks: {block_summary:?}"
         );
         assert!(proposer_one_blocks >= 2);
         assert!(proposer_two_blocks >= 2);

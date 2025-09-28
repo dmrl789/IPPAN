@@ -243,7 +243,7 @@ async fn main() -> Result<()> {
     // Override with command line arguments
     if let Some(data_dir) = matches.get_one::<String>("data-dir") {
         config.data_dir = data_dir.clone();
-        config.db_path = format!("{}/db", data_dir);
+        config.db_path = format!("{data_dir}/db");
     }
 
     if matches.get_flag("dev") {
@@ -297,8 +297,11 @@ async fn main() -> Result<()> {
     info!("Consensus engine started");
 
     // Initialize P2P network
+    let p2p_host = &config.p2p_host;
+    let p2p_port = config.p2p_port;
+    let listen_address = format!("http://{p2p_host}:{p2p_port}");
     let p2p_config = P2PConfig {
-        listen_address: format!("http://{}:{}", config.p2p_host, config.p2p_port),
+        listen_address: listen_address.clone(),
         bootstrap_peers: config.bootstrap_nodes.clone(),
         max_peers: config.max_peers,
         peer_discovery_interval: Duration::from_secs(config.peer_discovery_interval_secs),
@@ -310,8 +313,7 @@ async fn main() -> Result<()> {
         peer_announce_interval: Duration::from_secs(config.peer_announce_interval_secs),
     };
 
-    let local_p2p_address = format!("http://{}:{}", config.p2p_host, config.p2p_port);
-    let mut p2p_network = HttpP2PNetwork::new(p2p_config, local_p2p_address)?;
+    let mut p2p_network = HttpP2PNetwork::new(p2p_config, listen_address.clone())?;
     p2p_network.start().await?;
     info!(
         "HTTP P2P network started on {}:{}",
@@ -355,7 +357,9 @@ async fn main() -> Result<()> {
         unified_ui_dist: config.unified_ui_dist_dir.clone(),
     };
 
-    let rpc_addr = format!("{}:{}", config.rpc_host, config.rpc_port);
+    let rpc_host = &config.rpc_host;
+    let rpc_port = config.rpc_port;
+    let rpc_addr = format!("{rpc_host}:{rpc_port}");
     let rpc_addr_clone = rpc_addr.clone();
     info!("Starting RPC server on {}", rpc_addr);
 
