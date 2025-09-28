@@ -90,7 +90,7 @@ mod tests {
         // Overwrite the HashTimer for deterministic ordering in the test.
         block.header.hashtimer = HashTimer::derive(
             "block",
-            IppanTimeMicros(round as u64),
+            IppanTimeMicros(round),
             b"test",
             &[id_seed],
             &[0u8; 32],

@@ -54,6 +54,7 @@ pub struct Block {
 
 impl BlockHeader {
     /// Compute the canonical identifier for the supplied header components.
+    #[allow(clippy::too_many_arguments)]
     fn compute_id(
         creator: &ValidatorId,
         round: RoundId,
@@ -161,7 +162,7 @@ impl Block {
 
         let mut current_level: Vec<[u8; 32]> = items.to_vec();
         while current_level.len() > 1 {
-            let mut next_level = Vec::with_capacity((current_level.len() + 1) / 2);
+            let mut next_level = Vec::with_capacity(current_level.len().div_ceil(2));
             for chunk in current_level.chunks(2) {
                 let left = chunk[0];
                 let right = if chunk.len() == 2 { chunk[1] } else { chunk[0] };
