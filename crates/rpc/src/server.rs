@@ -349,7 +349,7 @@ async fn consensus_handler(State(state): State<Arc<AppState>>) -> ApiResult<Cons
     };
 
     Ok(Json(ConsensusStats {
-        current_round: consensus_state.current_slot,
+        current_round: consensus_state.current_round,
         validators_count: validators.len(),
         block_height: consensus_state.latest_block_height,
         consensus_status: status.to_string(),
