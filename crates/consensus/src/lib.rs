@@ -602,7 +602,13 @@ mod tests {
 
         let mut slot = 0u64;
         let mut produced_blocks = 0u64;
-        while !mempool_one.read().is_empty() || !mempool_two.read().is_empty() {
+        loop {
+            let empty1 = { mempool_one.read().is_empty() };
+            let empty2 = { mempool_two.read().is_empty() };
+            if empty1 && empty2 {
+                break;
+            }
+
             let proposer = PoAConsensus::get_proposer_for_slot(&validators, slot).unwrap();
             if proposer == validator_one {
                 PoAConsensus::propose_block(
