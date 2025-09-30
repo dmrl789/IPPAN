@@ -12,7 +12,6 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ippan
-  COMPOSE_REMOTE_PATH: /opt/ippan/docker-compose.yml
 
 jobs:
   build-and-push:
@@ -73,11 +72,11 @@ jobs:
               IdentitiesOnly yes
               StrictHostKeyChecking yes
 
-      - name: Ensure remote directory exists
-        run: ssh ${{ matrix.host }} "mkdir -p /opt/ippan"
+      - name: Prepare remote directory
+        run: ssh ${{ matrix.host }} "set -euo pipefail; mkdir -p \$HOME/apps/ippan; chmod 755 \$HOME/apps \$HOME/apps/ippan"
 
       - name: Copy deployment scripts
-        run: scp -r deploy/* ${{ matrix.host }}:/opt/ippan/
+        run: scp -r deploy/* ${{ matrix.host }}:~/apps/ippan/
 
       - name: Deploy container stack
         env:
@@ -85,10 +84,11 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
         run: |
           set -eo pipefail
-          escaped_compose=$(printf %q "${COMPOSE_REMOTE_PATH}")
-          escaped_owner=$(printf %q "${REPO_OWNER}")
-          escaped_token=$(printf %q "${GHCR_PAT:-}")
-          ssh ${{ matrix.host }} "COMPOSE_REMOTE_PATH=$escaped_compose GHCR_USER=$escaped_owner GHCR_TOKEN=$escaped_token bash /opt/ippan/ippan-deploy.sh"
+          remote_env="COMPOSE_REMOTE_PATH=\$HOME/apps/ippan/docker-compose.yml GHCR_USER=$(printf %q "${REPO_OWNER}")"
+          if [ -n "${GHCR_PAT:-}" ]; then
+            remote_env="$remote_env GHCR_TOKEN=$(printf %q "${GHCR_PAT}")"
+          fi
+          ssh ${{ matrix.host }} "$remote_env bash ~/apps/ippan/ippan-deploy.sh"
 
     concurrency:
       group: deploy-main
