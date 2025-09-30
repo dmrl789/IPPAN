@@ -19,7 +19,7 @@ use tracing::{info, warn};
 use ippan_consensus::{ConsensusState, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, NetworkMessage};
 use ippan_storage::Storage;
-use ippan_types::{Block, Transaction};
+use ippan_types::{ippan_time_ingest_sample, Block, Transaction};
 
 #[derive(Debug, Clone, Default)]
 pub struct L2Config {
@@ -738,10 +738,18 @@ async fn p2p_peer_info_handler(
     State(state): State<Arc<AppState>>,
     Json(message): Json<NetworkMessage>,
 ) -> P2PResult {
-    let (peer_id, addresses) = match message {
-        NetworkMessage::PeerInfo { peer_id, addresses } => (peer_id, addresses),
+    let (peer_id, addresses, time_us) = match message {
+        NetworkMessage::PeerInfo {
+            peer_id,
+            addresses,
+            time_us,
+        } => (peer_id, addresses, time_us),
         _ => return Err(bad_request("expected peer info message")),
     };
+
+    if let Some(peer_time) = time_us {
+        ippan_time_ingest_sample(peer_time);
+    }
 
     if let Some(network) = &state.p2p_network {
         for address in addresses {
@@ -1068,6 +1076,7 @@ mod tests {
             Json(NetworkMessage::PeerInfo {
                 peer_id: "peer-a".into(),
                 addresses: vec!["http://127.0.0.1:9010".into()],
+                time_us: Some(ippan_types::ippan_time_now()),
             }),
         )
         .await
