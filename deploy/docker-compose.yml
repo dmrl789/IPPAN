@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   ippan:
     image: ghcr.io/dmrl789/ippan:latest
@@ -8,7 +6,6 @@ services:
     env_file: /opt/ippan/.env
     ports:
       - "7070:7070"
-      - "3000:3000"
     volumes:
       - /opt/ippan/data:/var/lib/ippan
     command: []
