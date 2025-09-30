@@ -63,8 +63,45 @@ jobs:
           docker push "$IMAGE_PREFIX/gateway:latest"
           docker push "$IMAGE_PREFIX/node:latest"
 
+      - name: Sanity-check deploy secrets
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_FINGERPRINT: ${{ secrets.DEPLOY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          for v in DEPLOY_HOST DEPLOY_USER DEPLOY_PORT DEPLOY_SSH_KEY DEPLOY_FINGERPRINT; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::$v is empty. Add it in Settings → Secrets and variables → Actions."
+              exit 1
+            fi
+          done
+          # basic shape checks without leaking secrets
+          if [ "${#DEPLOY_SSH_KEY}" -lt 100 ]; then
+            echo "::error::DEPLOY_SSH_KEY looks too short. Paste the FULL private key (starts with '-----BEGIN OPENSSH PRIVATE KEY-----')."
+            exit 1
+          fi
+
+      - name: SSH dry-run (whoami@host)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.DEPLOY_FINGERPRINT }}
+          script: |
+            set -e
+            whoami
+            hostname
+            command -v docker >/dev/null || { echo "Docker missing"; exit 1; }
+            docker compose version || { echo "Docker compose plugin missing"; exit 1; }
+
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         env:
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
           NEXT_PUBLIC_GATEWAY_URL: ${{ secrets.NEXT_PUBLIC_GATEWAY_URL }}
@@ -79,9 +116,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
         with:
-          host: 188.245.97.41
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.DEPLOY_FINGERPRINT }}
           envs: IMAGE_PREFIX,NEXT_PUBLIC_GATEWAY_URL,NEXT_PUBLIC_API_BASE_URL,NEXT_PUBLIC_WS_URL,NEXT_PUBLIC_ENABLE_FULL_UI,TARGET_RPC_URL,TARGET_WS_URL,TARGET_HEALTH_PATH,HEALTH_TIMEOUT_MS,GATEWAY_ALLOWED_ORIGINS,GITHUB_TOKEN,GITHUB_ACTOR
           script: |
             set -euo pipefail
