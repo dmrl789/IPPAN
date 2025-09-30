@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use igd::aio::search_gateway;
 use igd::PortMappingProtocol;
-use ippan_types::{Block, Transaction};
+use ippan_types::{ippan_time_now, Block, Transaction};
 use local_ip_address::local_ip;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -50,6 +50,8 @@ pub enum NetworkMessage {
     PeerInfo {
         peer_id: String,
         addresses: Vec<String>,
+        #[serde(default)]
+        time_us: Option<u64>,
     },
     PeerDiscovery {
         peers: Vec<String>,
@@ -264,6 +266,7 @@ impl HttpP2PNetwork {
                     if let Err(e) = sender.send(NetworkMessage::PeerInfo {
                         peer_id: local_peer_id.clone(),
                         addresses,
+                        time_us: Some(ippan_time_now()),
                     }) {
                         warn!("Failed to enqueue peer announcement: {}", e);
                         break;
@@ -277,6 +280,7 @@ impl HttpP2PNetwork {
         self.message_sender.send(NetworkMessage::PeerInfo {
             peer_id: self.local_peer_id.clone(),
             addresses: initial_addresses,
+            time_us: Some(ippan_time_now()),
         })?;
 
         info!("HTTP P2P network started");
@@ -340,6 +344,7 @@ impl HttpP2PNetwork {
             &NetworkMessage::PeerInfo {
                 peer_id: self.local_peer_id.clone(),
                 addresses,
+                time_us: Some(ippan_time_now()),
             },
             &config,
         )
@@ -415,6 +420,7 @@ impl HttpP2PNetwork {
         let message = NetworkMessage::PeerInfo {
             peer_id: self.local_peer_id.clone(),
             addresses: vec![address],
+            time_us: Some(ippan_time_now()),
         };
         self.message_sender.send(message)?;
         Ok(())
