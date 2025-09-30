@@ -35,6 +35,7 @@ struct AppConfig {
     slot_duration_ms: u64,
     max_transactions_per_block: usize,
     block_reward: u64,
+    finalization_interval_ms: u64,
 
     // L2 interoperability
     l2_max_commit_size: usize,
@@ -144,7 +145,7 @@ impl AppConfig {
                 .unwrap_or_else(|_| "./data/db".to_string()),
             slot_duration_ms: config
                 .get_string("SLOT_DURATION_MS")
-                .unwrap_or_else(|_| "1000".to_string())
+                .unwrap_or_else(|_| "100".to_string())
                 .parse()?,
             max_transactions_per_block: config
                 .get_string("MAX_TRANSACTIONS_PER_BLOCK")
@@ -153,6 +154,10 @@ impl AppConfig {
             block_reward: config
                 .get_string("BLOCK_REWARD")
                 .unwrap_or_else(|_| "10".to_string())
+                .parse()?,
+            finalization_interval_ms: config
+                .get_string("FINALIZATION_INTERVAL_MS")
+                .unwrap_or_else(|_| "200".to_string())
                 .parse()?,
             l2_max_commit_size: config
                 .get_string("L2_MAX_COMMIT_SIZE")
@@ -283,6 +288,7 @@ async fn main() -> Result<()> {
         }],
         max_transactions_per_block: config.max_transactions_per_block,
         block_reward: config.block_reward,
+        finalization_interval_ms: config.finalization_interval_ms,
     };
 
     let consensus_instance =
