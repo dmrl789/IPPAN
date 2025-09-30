@@ -15,6 +15,7 @@ function sanitizeUrl(value: string | undefined): string | undefined {
 }
 
 const apiBaseUrl =
+  sanitizeUrl(env.NEXT_PUBLIC_GATEWAY_URL) ??
   sanitizeUrl(env.NEXT_PUBLIC_API_BASE_URL) ??
   sanitizeUrl(env.VITE_API_URL) ??
   'http://localhost:8080'
@@ -27,11 +28,17 @@ const wsUrl =
 const networkName = env.NEXT_PUBLIC_NETWORK_NAME || 'IPPAN Devnet'
 const explorerBase = sanitizeUrl(env.NEXT_PUBLIC_EXPLORER_BASE) ?? undefined
 
+const enableFullUi = (() => {
+  const value = env.NEXT_PUBLIC_ENABLE_FULL_UI ?? env.ENABLE_FULL_UI ?? '1'
+  return value !== '0' && value.toLowerCase() !== 'false'
+})()
+
 export const UIConfig = {
   apiBaseUrl,
   wsUrl,
   networkName,
   explorerBase,
+  enableFullUi,
 }
 
 export type UIConfigType = typeof UIConfig

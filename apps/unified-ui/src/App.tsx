@@ -29,7 +29,12 @@ import NodeSelector from './components/NodeSelector'
 import { getApiBaseUrl, getHealth } from './lib/api'
 import { UIConfig } from './lib/config'
 
-const navigation = [
+type NavigationGroup = {
+  title: string
+  items: ReadonlyArray<{ name: string; path: string; icon: string }>
+}
+
+const FULL_NAVIGATION: ReadonlyArray<NavigationGroup> = [
   {
     title: 'Overview',
     items: [{ name: 'Node Dashboard', path: '/dashboard', icon: '📊' }],
@@ -92,13 +97,24 @@ const navigation = [
     title: 'Operations',
     items: [{ name: 'Node Selector', path: '/operations/node-selector', icon: '🛰️' }],
   },
-] as const
+]
+
+const MINIMAL_NAVIGATION: ReadonlyArray<NavigationGroup> = [
+  {
+    title: 'Overview',
+    items: [
+      { name: 'Node Dashboard', path: '/dashboard', icon: '📊' },
+      { name: 'Node Selector', path: '/operations/node-selector', icon: '🛰️' },
+    ],
+  },
+]
 
 type HealthStatus = 'checking' | 'online' | 'offline'
 
 export default function App() {
   const [health, setHealth] = useState<HealthStatus>('checking')
   const apiBaseUrl = useMemo(() => getApiBaseUrl(), [])
+  const navigation = UIConfig.enableFullUi ? FULL_NAVIGATION : MINIMAL_NAVIGATION
 
   useEffect(() => {
     let cancelled = false

@@ -20,7 +20,7 @@ app.use((_, res, next) => {
   next()
 })
 
-app.get(['/api/health', '/healthz', '/_health'], (_req, res) => {
+app.get(['/health', '/api/health', '/healthz', '/_health'], (_req, res) => {
   res.status(200).type('text/plain').send('ok')
 })
 

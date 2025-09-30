@@ -1,0 +1,17 @@
+{
+  "name": "ippan-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "IPPAN API gateway and proxy service",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "http-proxy-middleware": "^2.0.6",
+    "morgan": "^1.10.0"
+  }
+}
