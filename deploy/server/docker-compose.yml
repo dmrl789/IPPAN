@@ -1,0 +1,27 @@
+services:
+  ui:
+    image: ghcr.io/OWNER/REPO/ui:latest
+    env_file: .env
+    restart: unless-stopped
+    networks: [web]
+    ports:
+      - "127.0.0.1:3000:3000"
+  gateway:
+    image: ghcr.io/OWNER/REPO/gateway:latest
+    env_file: .env
+    restart: unless-stopped
+    networks: [web]
+    depends_on:
+      - node
+    ports:
+      - "127.0.0.1:8080:8080"
+  node:
+    image: ghcr.io/OWNER/REPO/node:latest
+    env_file: .env
+    restart: unless-stopped
+    networks: [web]
+    ports:
+      - "127.0.0.1:9090:9090"
+networks:
+  web:
+    driver: bridge

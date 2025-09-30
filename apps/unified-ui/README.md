@@ -97,7 +97,8 @@ The built files will be in the `dist` directory.
      cp .env.production.example .env.production
      ```
 
-   - Update `NEXT_PUBLIC_API_BASE_URL`/`NEXT_PUBLIC_WS_URL` to point at the RPC endpoint and websocket gateway that browsers should use. These variables are also exposed as `VITE_*` for backwards compatibility.
+   - Update `NEXT_PUBLIC_GATEWAY_URL` (alias: `NEXT_PUBLIC_API_BASE_URL`) and `NEXT_PUBLIC_WS_URL` to point at the HTTP and WebSocket entrypoints browsers should use. These variables are also exposed as `VITE_*` for backwards compatibility.
+   - Set `NEXT_PUBLIC_ENABLE_FULL_UI=1` during the build to ensure the full navigation experience is rendered (this flag defaults to enabled).
 
 2. **Build & Serve the UI**
    - Install dependencies and produce a production build:
