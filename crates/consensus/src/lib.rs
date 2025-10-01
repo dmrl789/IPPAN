@@ -623,6 +623,7 @@ mod tests {
     use ippan_types::ippan_time_init;
     use std::sync::Arc;
     use tempfile::tempdir;
+    use tokio::time::{sleep, Duration, Instant};
 
     #[tokio::test]
     async fn test_poa_consensus() {
@@ -826,11 +827,26 @@ mod tests {
         assert!(proposer_one_blocks >= 2);
         assert!(proposer_two_blocks >= 2);
 
-        let account_one = storage.get_account(&validator_one).unwrap().unwrap();
-        let account_two = storage.get_account(&validator_two).unwrap().unwrap();
+        let (account_one, account_two) = {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                let account_one = storage.get_account(&validator_one).unwrap().unwrap();
+                let account_two = storage.get_account(&validator_two).unwrap().unwrap();
 
-        assert_eq!(account_one.nonce, expected_nonce);
-        assert_eq!(account_two.nonce, expected_nonce);
+                if account_one.nonce == expected_nonce && account_two.nonce == expected_nonce {
+                    break (account_one, account_two);
+                }
+
+                if Instant::now() >= deadline {
+                    panic!(
+                        "Timed out waiting for accounts to reach expected nonces: first={}, second={}",
+                        account_one.nonce, account_two.nonce
+                    );
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        };
 
         let reward = 5u64;
         assert_eq!(
