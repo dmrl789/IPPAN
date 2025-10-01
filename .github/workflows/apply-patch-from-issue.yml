@@ -1,7 +1,11 @@
 name: Apply Patch From Issue
 on:
   issues:
-    types: [opened, edited, reopened, labeled]
+    types:
+      - opened
+      - edited
+      - reopened
+      - labeled
 
 # Avoid overlapping runs on the same issue
 concurrency:
