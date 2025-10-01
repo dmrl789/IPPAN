@@ -140,35 +140,42 @@ jobs:
             sudo chown -R "$USER":"$USER" "$APP_DIR" || true
             cd "$APP_DIR"
 
-            sudo tee docker-compose.yml >/dev/null <<EOF
+            sudo tee docker-compose.yml >/dev/null <<'YML'
+            version: "3.8"
             services:
               ui:
                 image: ${IMAGE_PREFIX}/ui:latest
-                env_file: .env
+                env_file:
+                  - .env
                 restart: unless-stopped
-                networks: [web]
+                networks:
+                  - web
                 ports:
                   - "127.0.0.1:3000:3000"
               gateway:
                 image: ${IMAGE_PREFIX}/gateway:latest
-                env_file: .env
+                env_file:
+                  - .env
                 restart: unless-stopped
-                networks: [web]
+                networks:
+                  - web
                 depends_on:
                   - node
                 ports:
                   - "127.0.0.1:8080:8080"
               node:
                 image: ${IMAGE_PREFIX}/node:latest
-                env_file: .env
+                env_file:
+                  - .env
                 restart: unless-stopped
-                networks: [web]
+                networks:
+                  - web
                 ports:
                   - "127.0.0.1:9090:9090"
             networks:
               web:
                 driver: bridge
-            EOF
+            YML
 
             sudo tee .env >/dev/null <<EOF
             NODE_ENV=production
@@ -184,7 +191,7 @@ jobs:
             ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
             EOF
 
-            sudo tee /etc/nginx/sites-available/ui.ippan.org >/dev/null <<'EOF'
+            sudo tee /etc/nginx/sites-available/ui.ippan.org >/dev/null <<'NGINX'
             server {
               listen 80;
               server_name ui.ippan.org;
@@ -222,7 +229,7 @@ jobs:
                 proxy_set_header Host $host;
               }
             }
-            EOF
+            NGINX
 
             sudo ln -sf /etc/nginx/sites-available/ui.ippan.org /etc/nginx/sites-enabled/ui.ippan.org
 
@@ -237,7 +244,9 @@ jobs:
               DC="docker-compose"
             fi
 
-            docker login ghcr.io -u $GITHUB_ACTOR -p $GITHUB_TOKEN
+            if [ -n "${GITHUB_TOKEN:-}" ]; then
+              printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            fi
             $DC pull
             $DC up -d
             docker system prune -f

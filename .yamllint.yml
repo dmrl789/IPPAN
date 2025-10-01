@@ -1,26 +1,12 @@
-# Yamllint config tuned for GitHub Actions workflows
-# Ref: https://github.com/adrienverge/yamllint
 extends: default
-
 rules:
-  document-start:
-    present: false   # GH Actions doesn't require '---' everywhere
-  line-length:
-    max: 200
-    allow-non-breakable-words: true
-    allow-non-breakable-inline-mappings: true
-  truthy:
-    check-keys: false  # allow keys named 'on', etc.
-  indentation:
-    indent-sequences: consistent
-  comments:
-    min-spaces-from-content: 1
-  empty-lines:
-    max: 2
-  hyphens:
-    max-spaces-after: 1
-
+  document-start: {present: false}
+  line-length: {max: 200, allow-non-breakable-words: true, allow-non-breakable-inline-mappings: true}
+  truthy: {check-keys: false}
+  indentation: {indent-sequences: consistent}
+  comments: {min-spaces-from-content: 1}
+  empty-lines: {max: 2}
+  hyphens: {max-spaces-after: 1}
 ignore: |
-  # Ignore vendor/cache dirs if any
   **/node_modules/**
   **/.git/**
