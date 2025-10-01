@@ -1,5 +1,4 @@
 name: Apply Patch From Issue
-
 on:
   issues:
     types: [opened, edited, reopened, labeled]
