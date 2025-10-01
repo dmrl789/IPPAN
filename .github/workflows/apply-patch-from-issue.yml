@@ -1,23 +1,21 @@
----
 name: Apply Patch From Issue
 
-"on":
+on:
   issues:
     types: [opened, edited, reopened, labeled]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.event.issue.number || github.run_id }}
+  group: apply-patch-${{ github.event.issue.number }}
   cancel-in-progress: true
-
-permissions:
-  contents: write
-  pull-requests: write
-  issues: read
 
 jobs:
   apply:
     if: contains(github.event.issue.labels.*.name, 'auto-patch')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
 
     steps:
       - name: Check out repo
@@ -26,32 +24,32 @@ jobs:
           token: ${{ github.token }}
           ref: ${{ github.event.repository.default_branch }}
 
-      - name: Debug default/base/head
-        run: |
-          echo "default_branch=${{ github.event.repository.default_branch }}"
-          echo "labels=${{ toJson(github.event.issue.labels.*.name) }}"
-
       - name: Extract patch from issue body (or allow cleanup-only)
         id: extract
         env:
           HAS_CLEANUP: ${{ contains(github.event.issue.labels.*.name, 'cleanup-now') }}
         run: |
-          python3 - <<'PY'
+          python3 - << 'PY'
           import os, re, sys
-
           body = """${{ github.event.issue.body }}"""
           blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
           candidates = blocks + [body]
-          patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ', 'From '))), None)
+          patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ','From '))), None)
           if not patch:
-              if os.environ.get("HAS_CLEANUP", "false").lower() == "true":
-                  open("change.patch", "w", encoding="utf-8").close()
+              # Permit empty body when label 'cleanup-now' is present
+              if os.environ.get("HAS_CLEANUP","false").lower() == "true":
+                  open("change.patch","w", encoding="utf-8").close()
                   sys.exit(0)
               print("No unified diff found in issue body.")
               sys.exit(1)
           with open("change.patch", "w", encoding="utf-8") as f:
               f.write(patch)
           PY
+
+      - name: Debug - show event and labels
+        run: |
+          echo "event: ${{ github.event_name }}"
+          echo "labels: ${{ toJson(github.event.issue.labels.*.name) }}"
 
       - name: Configure Git
         run: |
@@ -60,33 +58,25 @@ jobs:
 
       - name: Create branch
         run: |
-          BRANCH="auto/patch-${{ github.event.issue.number }}"
-          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
-          git checkout -b "$BRANCH"
+          BR="auto/patch-${{ github.event.issue.number }}"
+          echo "BRANCH=$BR" >> $GITHUB_ENV
+          git checkout -b "$BR"
 
       - name: Try applying patch (3-way) if present
         run: |
           set -e
           if [ -s change.patch ]; then
-            if ! git apply --index --3way change.patch; then
-              echo "::warning::3-way failed; trying without 3-way"
-              git apply --index change.patch
-            fi
+            git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
           else
             echo "No patch provided; proceeding to optional cleanup."
           fi
 
-      - name: "Remove mock/demo code (label: cleanup-now)"
+      - name: Remove mock/demo code (label: cleanup-now)
         if: contains(github.event.issue.labels.*.name, 'cleanup-now')
         shell: bash
         run: |
           set -euxo pipefail
-          mapfile -t TARGETS < <(
-            git ls-files -z \
-              | tr '\0' '\n' \
-              | grep -Ei '(^|/)(demo|demos|example|examples|mock|mocks|fixture|fixtures|sample|samples|storybook|playground|seed|seeds)(/|$)' \
-              || true
-          )
+          mapfile -t TARGETS < <(git ls-files -z | tr '\0' '\n' | grep -Ei '(^|/)(demo|demos|example|examples|mock|mocks|fixture|fixtures|sample|samples|storybook|playground|seed|seeds)(/|$)' || true)
           KEEP_PREFIXES=("apps/unified-ui/")
           DEL=()
           for f in "${TARGETS[@]}"; do
@@ -105,29 +95,25 @@ jobs:
           git add -A
 
       - name: Commit changes (if any)
-        id: commit
         run: |
           if git diff --cached --quiet; then
-            echo "made_commit=false" >> "$GITHUB_OUTPUT"
             echo "No changes staged; patch may already be applied or nothing to cleanup."
             exit 0
           fi
           git commit -m "Apply patch / cleanup from #${{ github.event.issue.number }}"
-          echo "made_commit=true" >> "$GITHUB_OUTPUT"
 
       - name: Push branch
-        if: steps.commit.outputs.made_commit == 'true'
         run: |
+          git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
           git push -u origin "$BRANCH"
 
       - name: Open PR
-        if: steps.commit.outputs.made_commit == 'true'
         id: cpr
+        if: success()
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ github.token }}
           branch: ${{ env.BRANCH }}
-          base: ${{ github.event.repository.default_branch }}
           title: "Apply patch / cleanup from #${{ github.event.issue.number }}"
           body: |
             Automated PR created from Issue #${{ github.event.issue.number }}.
@@ -135,8 +121,8 @@ jobs:
           commit-message: "Apply patch / cleanup from #${{ github.event.issue.number }}"
           labels: auto-patch
 
-      - name: "Enable auto-merge (label: automerge)"
-        if: contains(github.event.issue.labels.*.name, 'automerge') && steps.cpr.outputs['pull-request-number'] != ''
+      - name: Enable auto-merge (label: automerge)
+        if: success() && contains(github.event.issue.labels.*.name, 'automerge') && steps.cpr.outputs['pull-request-number'] != ''
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ github.token }}
