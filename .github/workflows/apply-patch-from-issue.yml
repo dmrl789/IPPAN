@@ -1,18 +1,21 @@
----
 name: Apply Patch From Issue
 
-"on":
+on:
   issues:
     types: [opened, edited, reopened, labeled]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.event.issue.number || github.run_id }}
+  group: apply-patch-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 permissions:
   contents: write
   pull-requests: write
   issues: read
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   apply:
@@ -36,16 +39,15 @@ jobs:
         env:
           HAS_CLEANUP: ${{ contains(github.event.issue.labels.*.name, 'cleanup-now') }}
         run: |
-          python3 - <<'PY'
+          python3 - << 'PY'
           import os, re, sys
-
           body = """${{ github.event.issue.body }}"""
           blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
           candidates = blocks + [body]
-          patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ', 'From '))), None)
+          patch = next((c for c in candidates if 'diff --git ' in c or c.lstrip().startswith(('--- ','From '))), None)
           if not patch:
-              if os.environ.get("HAS_CLEANUP", "false").lower() == "true":
-                  open("change.patch", "w", encoding="utf-8").close()
+              if os.environ.get("HAS_CLEANUP","false").lower() == "true":
+                  open("change.patch","w", encoding="utf-8").close()
                   sys.exit(0)
               print("No unified diff found in issue body.")
               sys.exit(1)
@@ -61,32 +63,23 @@ jobs:
       - name: Create branch
         run: |
           BRANCH="auto/patch-${{ github.event.issue.number }}"
-          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
           git checkout -b "$BRANCH"
 
       - name: Try applying patch (3-way) if present
         run: |
           set -e
           if [ -s change.patch ]; then
-            if ! git apply --index --3way change.patch; then
-              echo "::warning::3-way failed; trying without 3-way"
-              git apply --index change.patch
-            fi
+            git apply --index --3way change.patch || (echo "::warning::3-way failed; trying without 3-way" && git apply --index change.patch)
           else
             echo "No patch provided; proceeding to optional cleanup."
           fi
 
-      - name: "Remove mock/demo code (label: cleanup-now)"
+      - name: Remove mock/demo code (label: cleanup-now)
         if: contains(github.event.issue.labels.*.name, 'cleanup-now')
-        shell: bash
         run: |
           set -euxo pipefail
-          mapfile -t TARGETS < <(
-            git ls-files -z \
-              | tr '\0' '\n' \
-              | grep -Ei '(^|/)(demo|demos|example|examples|mock|mocks|fixture|fixtures|sample|samples|storybook|playground|seed|seeds)(/|$)' \
-              || true
-          )
+          mapfile -t TARGETS < <(git ls-files -z | tr '\0' '\n' | grep -Ei '(^|/)(demo|demos|example|examples|mock|mocks|fixture|fixtures|sample|samples|storybook|playground|seed|seeds)(/|$)' || true)
           KEEP_PREFIXES=("apps/unified-ui/")
           DEL=()
           for f in "${TARGETS[@]}"; do
@@ -108,12 +101,12 @@ jobs:
         id: commit
         run: |
           if git diff --cached --quiet; then
-            echo "made_commit=false" >> "$GITHUB_OUTPUT"
+            echo "made_commit=false" >> $GITHUB_OUTPUT
             echo "No changes staged; patch may already be applied or nothing to cleanup."
             exit 0
           fi
           git commit -m "Apply patch / cleanup from #${{ github.event.issue.number }}"
-          echo "made_commit=true" >> "$GITHUB_OUTPUT"
+          echo "made_commit=true" >> $GITHUB_OUTPUT
 
       - name: Push branch
         if: steps.commit.outputs.made_commit == 'true'
@@ -135,7 +128,7 @@ jobs:
           commit-message: "Apply patch / cleanup from #${{ github.event.issue.number }}"
           labels: auto-patch
 
-      - name: "Enable auto-merge (label: automerge)"
+      - name: Enable auto-merge (label: automerge)
         if: contains(github.event.issue.labels.*.name, 'automerge') && steps.cpr.outputs['pull-request-number'] != ''
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
