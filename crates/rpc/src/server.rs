@@ -112,6 +112,7 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
         .route("/p2p/transactions", post(p2p_transactions_handler))
         .route("/p2p/block-request", post(p2p_block_request_handler))
         .route("/p2p/block-response", post(p2p_block_response_handler))
+        .route("/p2p/peers", get(p2p_peers_handler))
         .route("/p2p/peer-info", post(p2p_peer_info_handler))
         .route("/p2p/peer-discovery", post(p2p_peer_discovery_handler));
 
@@ -625,6 +626,22 @@ async fn accounts_handler(State(state): State<Arc<AppState>>) -> ApiResult<Accou
     }))
 }
 
+#[derive(Debug, Serialize)]
+struct P2PPeersResponse {
+    peers: Vec<String>,
+}
+
+async fn p2p_peers_handler(State(state): State<Arc<AppState>>) -> ApiResult<P2PPeersResponse> {
+    let peers = state
+        .p2p_network
+        .as_ref()
+        .map_or_else(Vec::new, |network| HttpP2PNetwork::get_peers(&**network));
+
+    state.peer_count.store(peers.len(), Ordering::Relaxed);
+
+    Ok(Json(P2PPeersResponse { peers }))
+}
+
 async fn p2p_blocks_handler(
     State(state): State<Arc<AppState>>,
     Json(message): Json<NetworkMessage>,
@@ -1057,6 +1074,45 @@ mod tests {
             .get_block(&block.hash())
             .expect("storage lookup");
         assert!(stored.is_some());
+    }
+
+    #[tokio::test]
+    async fn p2p_peers_handler_returns_peer_list_and_updates_count() {
+        let config = P2PConfig {
+            retry_attempts: 1,
+            message_timeout: std::time::Duration::from_millis(10),
+            ..Default::default()
+        };
+        let network = Arc::new(
+            HttpP2PNetwork::new(config, "http://127.0.0.1:9000".to_string()).expect("network"),
+        );
+        network
+            .add_peer("http://127.0.0.1:9030".to_string())
+            .await
+            .expect("add peer 1");
+        network
+            .add_peer("http://127.0.0.1:9040".to_string())
+            .await
+            .expect("add peer 2");
+        let (state, _temp) = build_test_state(Some(network));
+
+        let Json(response) =
+            p2p_peers_handler(State(state.clone())).await.expect("ok response");
+
+        assert!(response.peers.iter().any(|p| p.contains("9030")));
+        assert!(response.peers.iter().any(|p| p.contains("9040")));
+        assert_eq!(state.peer_count.load(Ordering::Relaxed), response.peers.len());
+    }
+
+    #[tokio::test]
+    async fn p2p_peers_handler_returns_empty_when_no_network() {
+        let (state, _temp) = build_test_state(None);
+
+        let Json(response) =
+            p2p_peers_handler(State(state.clone())).await.expect("ok response");
+
+        assert!(response.peers.is_empty());
+        assert_eq!(state.peer_count.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
