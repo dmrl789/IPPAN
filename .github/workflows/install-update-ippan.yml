@@ -1,0 +1,165 @@
+name: Install / Update IPPAN Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag"
+        default: "latest"
+        required: true
+      ui_domain:
+        description: "UI domain"
+        default: "ui.ippan.org"
+        required: true
+      next_public_api_url:
+        description: "Unified UI -> API base URL"
+        default: "http://127.0.0.1:8080"
+        required: true
+
+jobs:
+  deploy:
+    if: github.repository == 'dmrl789/IPPAN'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Deploy to server (node + UI on same host)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 40m
+          envs: ROLE,TAG,OWNER,DOMAIN_UI,NEXT_PUBLIC_API_URL,GHCR_PAT
+          script: |
+            set -Eeuo pipefail
+            ROLE="${ROLE:-all}"  # node + edge + ui + caddy
+            TAG="${TAG:-${{ github.event.inputs.tag }}}"
+            OWNER="${OWNER:-dmrl789}"
+            DOMAIN_UI="${DOMAIN_UI:-${{ github.event.inputs.ui_domain }}}"
+            NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-${{ github.event.inputs.next_public_api_url }}}"
+            GHCR_PAT="${GHCR_PAT:-${{ secrets.GHCR_PAT }}}"
+
+            # --- drop installer (same as before) ---
+            cat > ippan-install.sh <<'BASH'
+            #!/usr/bin/env bash
+            set -Eeuo pipefail
+            trap 'echo "[ERROR] line $LINENO: command exited with $?" >&2' ERR
+
+            ROLE="${ROLE:-all}"
+            OWNER="${OWNER:-dmrl789}"
+            TAG="${TAG:-latest}"
+            DOMAIN_UI="${DOMAIN_UI:-ui.ippan.org}"
+            APP_ROOT="${APP_ROOT:-/opt/ippan}"
+            API_LOOPBACK_PORT="${API_LOOPBACK_PORT:-8080}"
+            UI_LOOPBACK_PORT="${UI_LOOPBACK_PORT:-3000}"
+            NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-http://127.0.0.1:${API_LOOPBACK_PORT}}"
+
+            IMG_NODE="ghcr.io/${OWNER}/ippan:${TAG}"
+            IMG_EDGE="ghcr.io/${OWNER}/ippan-edge:${TAG}"
+            IMG_UI="ghcr.io/${OWNER}/unified-ui:${TAG}"
+
+            install_docker() {
+              if ! command -v docker >/dev/null 2>&1; then curl -fsSL https://get.docker.com | sh; fi
+              if ! docker compose version >/dev/null 2>&1; then
+                mkdir -p /usr/local/lib/docker/cli-plugins || true
+                curl -fsSL "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-$(uname -s)-$(uname -m)" \
+                  -o /usr/local/bin/docker-compose && chmod +x /usr/local/bin/docker-compose || true
+              fi
+              usermod -aG docker "${SUDO_USER:-$USER}" || true
+            }
+            ghcr_login() { if [[ -n "${GHCR_PAT:-}" ]]; then echo "${GHCR_PAT}" | docker login ghcr.io -u "${OWNER}" --password-stdin; fi; }
+            ensure_dirs() { mkdir -p "${APP_ROOT}"/{node,edge,ui}; chown -R "${SUDO_USER:-$USER}":"${SUDO_USER:-$USER}" "${APP_ROOT}" || true; }
+
+            compose_node() {
+              local dir="${APP_ROOT}/node"
+              cat > "${dir}/docker-compose.yml" <<YML
+            version: "3.8"
+            services:
+              ippan:
+                image: ${IMG_NODE}
+                restart: unless-stopped
+                ports:
+                  - "0.0.0.0:4001:4001/tcp"
+                  - "0.0.0.0:4001:4001/udp"
+                environment: [ "RUST_LOG=info" ]
+                volumes: [ "ippan-data:/var/lib/ippan" ]
+            volumes: { ippan-data: {} }
+            YML
+              (cd "${dir}" && docker compose pull && docker compose up -d)
+            }
+
+            compose_edge() {
+              local dir="${APP_ROOT}/edge"
+              cat > "${dir}/docker-compose.yml" <<YML
+            version: "3.8"
+            services:
+              ippan-edge:
+                image: ${IMG_EDGE}
+                restart: unless-stopped
+                ports: [ "127.0.0.1:${API_LOOPBACK_PORT}:80" ]
+                environment: [ "RUST_LOG=info" ]
+            YML
+              (cd "${dir}" && docker compose pull && docker compose up -d)
+            }
+
+            compose_ui() {
+              local dir="${APP_ROOT}/ui"
+              cat > "${dir}/docker-compose.yml" <<YML
+            version: "3.8"
+            services:
+              unified-ui:
+                image: ${IMG_UI}
+                restart: unless-stopped
+                ports: [ "127.0.0.1:${UI_LOOPBACK_PORT}:3000" ]
+                env_file: [ ".env" ]
+            YML
+              cat > "${dir}/.env" <<ENV
+            NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+            ENV
+              (cd "${dir}" && docker compose pull && docker compose up -d)
+            }
+
+            install_caddy() {
+              if ! command -v caddy >/dev/null 2>&1; then
+                apt-get update -y
+                apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+                curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | tee /etc/apt/trusted.gpg.d/caddy-stable.asc >/dev/null
+                curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+                apt-get update -y && apt-get install -y caddy
+                systemctl enable --now caddy
+              fi
+            }
+            configure_caddy_ui() {
+              cat > /etc/caddy/Caddyfile <<CADDY
+            ${DOMAIN_UI} {
+              reverse_proxy 127.0.0.1:${UI_LOOPBACK_PORT}
+              encode gzip
+            }
+            CADDY
+              ufw allow 80,443/tcp || true
+              systemctl reload caddy || systemctl restart caddy
+            }
+            diagnostics() {
+              docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' || true
+              ss -ltnup | egrep ':4001|:8080|:3000' || true
+              systemctl status caddy --no-pager -l | sed -n '1,40p' || true
+            }
+
+            install_docker
+            ghcr_login
+            ensure_dirs
+            case "${ROLE}" in
+              node) compose_node; compose_edge || true ;;
+              ui)   compose_node || true; compose_edge; compose_ui; install_caddy; configure_caddy_ui ;;
+              all)  compose_node; compose_edge; compose_ui; install_caddy; configure_caddy_ui ;;
+              *) echo "Unknown ROLE=${ROLE}" >&2; exit 2 ;;
+            esac
+            echo "[done] role=${ROLE}"
+            diagnostics
+            BASH
+
+            chmod +x ippan-install.sh
+            sudo -E env ROLE="$ROLE" TAG="$TAG" OWNER="$OWNER" DOMAIN_UI="$DOMAIN_UI" \
+              NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" GHCR_PAT="$GHCR_PAT" ./ippan-install.sh
