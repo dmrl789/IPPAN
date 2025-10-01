@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
@@ -239,7 +239,12 @@ async fn main() -> Result<()> {
                 .value_name("DIR")
                 .help("Data directory"),
         )
-        .arg(Arg::new("dev").long("dev").help("Run in development mode"))
+        .arg(
+            Arg::new("dev")
+                .long("dev")
+                .action(ArgAction::SetTrue)
+                .help("Run in development mode"),
+        )
         .get_matches();
 
     // Load configuration
