@@ -135,10 +135,12 @@ jobs:
             : "${HEALTH_TIMEOUT_MS:=5000}"
             : "${GATEWAY_ALLOWED_ORIGINS:=https://ui.ippan.org}"
 
-            mkdir -p /opt/ippan
-            cd /opt/ippan
+            APP_DIR=/opt/ippan/ui
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R "$USER":"$USER" "$APP_DIR" || true
+            cd "$APP_DIR"
 
-            cat <<EOF > docker-compose.yml
+            sudo tee docker-compose.yml >/dev/null <<EOF
             services:
               ui:
                 image: ${IMAGE_PREFIX}/ui:latest
@@ -168,7 +170,7 @@ jobs:
                 driver: bridge
             EOF
 
-            cat <<EOF > .env
+            sudo tee .env >/dev/null <<EOF
             NODE_ENV=production
             NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL}
             NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
@@ -182,7 +184,7 @@ jobs:
             ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
             EOF
 
-            cat <<'EOF' > /etc/nginx/sites-available/ui.ippan.org
+            sudo tee /etc/nginx/sites-available/ui.ippan.org >/dev/null <<'EOF'
             server {
               listen 80;
               server_name ui.ippan.org;
@@ -222,12 +224,23 @@ jobs:
             }
             EOF
 
-            ln -sf /etc/nginx/sites-available/ui.ippan.org /etc/nginx/sites-enabled/ui.ippan.org
+            sudo ln -sf /etc/nginx/sites-available/ui.ippan.org /etc/nginx/sites-enabled/ui.ippan.org
+
+            if docker compose version >/dev/null 2>&1; then
+              DC="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              DC="docker-compose"
+            else
+              echo "Installing docker-compose v2..."
+              sudo curl -L "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              DC="docker-compose"
+            fi
 
             docker login ghcr.io -u $GITHUB_ACTOR -p $GITHUB_TOKEN
-            docker compose pull
-            docker compose up -d
+            $DC pull
+            $DC up -d
             docker system prune -f
 
-            nginx -t
-            systemctl reload nginx
+            sudo nginx -t
+            sudo systemctl reload nginx
