@@ -13,6 +13,11 @@ export default function WalletPage() {
     enabled: !!address,
   })
 
+  const staked = balance?.staked ?? balance?.staked_amount ?? 0
+  const rewards = balance?.rewards ?? 0
+  const available = balance?.balance ?? 0
+  const total = available + staked + rewards
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -56,22 +61,20 @@ export default function WalletPage() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Available:</span>
-                  <span className="font-semibold">{balance.balance} IPPAN</span>
+                  <span className="font-semibold">{available} IPPAN</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Staked:</span>
-                  <span className="font-semibold">{balance.staked} IPPAN</span>
+                  <span className="font-semibold">{staked} IPPAN</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Rewards:</span>
-                  <span className="font-semibold text-green-600">{balance.rewards} IPPAN</span>
+                  <span className="font-semibold text-green-600">{rewards} IPPAN</span>
                 </div>
                 <div className="pt-2 border-t">
                   <div className="flex justify-between">
                     <span className="font-semibold">Total:</span>
-                    <span className="font-bold text-lg">
-                      {balance.balance + balance.staked + balance.rewards} IPPAN
-                    </span>
+                    <span className="font-bold text-lg">{total} IPPAN</span>
                   </div>
                 </div>
               </div>

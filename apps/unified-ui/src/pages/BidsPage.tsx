@@ -12,6 +12,7 @@ import {
 // =================== Types ===================
 type AuctionStatus = 'active' | 'ended' | 'upcoming' | 'cancelled';
 type BidStatus = 'active' | 'winning' | 'outbid' | 'cancelled' | 'won' | 'lost';
+type DeliveryStatus = 'pending' | 'delivered' | 'disputed';
 type AuctionType = 'model' | 'dataset' | 'compute' | 'storage' | 'service';
 
 type Auction = {
@@ -58,7 +59,7 @@ type Winner = {
   endTime: string;
   claimed: boolean;
   transactionHash?: string;
-  deliveryStatus: 'pending' | 'delivered' | 'disputed';
+  deliveryStatus: DeliveryStatus;
 };
 
 // =================== Mock Data ===================
@@ -246,7 +247,7 @@ function formatTimeRemaining(timestamp: string): string {
   return `${remainingMinutes}m`;
 }
 
-function getStatusColor(status: AuctionStatus | BidStatus): string {
+function getStatusColor(status: AuctionStatus | BidStatus | DeliveryStatus): string {
   switch (status) {
     case 'active':
     case 'winning':

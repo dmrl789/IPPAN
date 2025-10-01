@@ -1,27 +1,69 @@
-export function Card(props:{title:string; children:React.ReactNode; footer?:React.ReactNode}) {
+type CardProps = React.HTMLAttributes<HTMLDivElement> & {
+  title?: React.ReactNode;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+};
+
+export function Card({ title, children, footer, className, ...rest }: CardProps) {
   return (
-    <div className="border rounded-lg p-4 space-y-3 bg-white shadow-sm">
-      <h2 className="text-lg font-semibold text-gray-900">{props.title}</h2>
-      <div>{props.children}</div>
-      {props.footer && <div className="pt-2 border-t">{props.footer}</div>}
+    <div
+      {...rest}
+      className={`border rounded-lg p-4 space-y-3 bg-white shadow-sm ${className || ''}`.trim()}
+    >
+      {title ? <h2 className="text-lg font-semibold text-gray-900">{title}</h2> : null}
+      <div>{children}</div>
+      {footer ? <div className="pt-2 border-t">{footer}</div> : null}
     </div>
   );
 }
 
-export function Button({ variant = 'primary', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' }) {
-  const variants = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700',
-    secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'default';
+type ButtonSize = 'sm' | 'md' | 'lg';
+
+export function Button({
+  variant = 'primary',
+  size = 'md',
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
+  const variants: Record<ButtonVariant, string> = {
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500',
+    secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 focus-visible:ring-gray-400',
+    outline: 'border border-gray-300 text-gray-900 hover:bg-gray-100 focus-visible:ring-gray-400 bg-transparent',
+    ghost: 'text-gray-700 hover:bg-gray-100 focus-visible:ring-gray-400 bg-transparent',
+    default: 'bg-gray-100 text-gray-900 hover:bg-gray-200 focus-visible:ring-gray-400'
   };
-  
-  return <button {...props} className={`px-4 py-2 rounded disabled:opacity-50 transition-colors ${variants[variant]} ${props.className||""}`} />;
+
+  const sizes: Record<ButtonSize, string> = {
+    sm: 'px-3 py-1.5 text-sm',
+    md: 'px-4 py-2 text-sm',
+    lg: 'px-5 py-3 text-base'
+  };
+
+  return (
+    <button
+      {...props}
+      className={`inline-flex items-center justify-center rounded font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${variants[variant]} ${sizes[size]} ${className || ''}`.trim()}
+    />
+  );
 }
 
-export function Field({label, children}:{label:string; children:React.ReactNode}) {
+type FieldProps = React.LabelHTMLAttributes<HTMLLabelElement> & {
+  label: React.ReactNode;
+  children: React.ReactNode;
+  required?: boolean;
+  helperText?: React.ReactNode;
+};
+
+export function Field({ label, children, required, helperText, className, ...props }: FieldProps) {
   return (
-    <label className="grid gap-1">
-      <span className="text-sm text-gray-600 dark:text-gray-300 font-medium">{label}</span>
+    <label className={`grid gap-1 ${className || ''}`.trim()} {...props}>
+      <span className="text-sm text-gray-600 dark:text-gray-300 font-medium">
+        {label}
+        {required ? <span className="text-red-500 ml-1" aria-hidden="true">*</span> : null}
+      </span>
       {children}
+      {helperText ? <span className="text-xs text-gray-500">{helperText}</span> : null}
     </label>
   );
 }
@@ -34,18 +76,22 @@ export function Textarea(props:React.TextareaHTMLAttributes<HTMLTextAreaElement>
   return <textarea {...props} className={`border rounded px-3 py-2 bg-transparent focus:ring-2 focus:ring-blue-500 focus:border-transparent ${props.className||""}`} />
 }
 
-export function Badge({children, variant = 'default', className}: {children: React.ReactNode; variant?: 'default' | 'success' | 'warning' | 'error' | 'blue' | 'purple'; className?: string}) {
-  const variants = {
+type BadgeVariant = 'default' | 'success' | 'warning' | 'error' | 'blue' | 'purple' | 'secondary' | 'outline';
+
+export function Badge({children, variant = 'default', className}: {children: React.ReactNode; variant?: BadgeVariant; className?: string}) {
+  const variants: Record<BadgeVariant, string> = {
     default: 'bg-gray-100 text-gray-800',
     success: 'bg-green-100 text-green-800',
     warning: 'bg-yellow-100 text-yellow-800',
     error: 'bg-red-100 text-red-800',
     blue: 'bg-blue-100 text-blue-800',
-    purple: 'bg-purple-100 text-purple-800'
+    purple: 'bg-purple-100 text-purple-800',
+    secondary: 'bg-gray-200 text-gray-900',
+    outline: 'border border-gray-300 text-gray-900 bg-transparent'
   };
-  
+
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variants[variant]} ${className || ""}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variants[variant]} ${className || ''}`.trim()}>
       {children}
     </span>
   );
@@ -90,12 +136,23 @@ export function Switch({ checked, onCheckedChange, ...props }: { checked: boolea
   )
 }
 
-export function Select({ value, onValueChange, children, ...props }: { value: string; onValueChange: (value: string) => void; children: React.ReactNode; [key: string]: any }) {
+type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
+  value: string;
+  onValueChange?: (value: string) => void;
+  children: React.ReactNode;
+};
+
+export function Select({ value, onValueChange, children, onChange, className, ...props }: SelectProps) {
+  const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    onValueChange?.(event.target.value);
+    onChange?.(event);
+  };
+
   return (
     <select
       value={value}
-      onChange={(e) => onValueChange(e.target.value)}
-      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+      onChange={handleChange}
+      className={`block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm ${className || ''}`.trim()}
       {...props}
     >
       {children}
@@ -153,8 +210,12 @@ export function SheetFooter({ children, className }: { children: React.ReactNode
   return <div className={`flex items-center justify-between gap-2 pt-4 border-t ${className || ""}`}>{children}</div>;
 }
 
-export function Label({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <label className={`text-sm font-medium ${className || ""}`}>{children}</label>;
+export function Label({ children, className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
+  return (
+    <label className={`text-sm font-medium ${className || ''}`.trim()} {...props}>
+      {children}
+    </label>
+  );
 }
 
 export function Modal({ isOpen, onClose, title, children }: { 
