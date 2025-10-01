@@ -4,6 +4,16 @@ on:
   issues:
     types: [opened, edited, reopened, labeled]
 
+# Keep these from the codex branch: avoid overlapping runs on the same issue
+concurrency:
+  group: apply-patch-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+# Default shell for all run steps
+defaults:
+  run:
+    shell: bash
+
 jobs:
   apply:
     if: contains(github.event.issue.labels.*.name, 'auto-patch')
@@ -17,20 +27,18 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
-          # Use a PAT with repo permissions stored as a secret named BOT_TOKEN
-          token: ${{ secrets.BOT_TOKEN }}
-          fetch-depth: 0
+          token: ${{ secrets.BOT_TOKEN }}  # PAT with repo access
+          fetch-depth: 0                  # needed for 3-way apply
 
       - name: Extract patch from issue body
         id: extract
-        shell: bash
         env:
           BODY: ${{ github.event.issue.body }}
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import os, re, sys
           body = os.environ.get('BODY', '')
-          # Look for fenced code blocks tagged as diff/patch first; otherwise use full body
+          # Prefer fenced code blocks tagged diff/patch; otherwise consider whole body
           blocks = re.findall(r"```(?:diff|patch)?\n(.*?)```", body, flags=re.S)
           candidates = blocks + [body]
           patch = next((c for c in candidates
