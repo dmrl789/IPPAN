@@ -39,6 +39,22 @@ fi
 
 cd "$COMPOSE_DIR"
 
+log "checking port 80 usage"
+if command -v ss >/dev/null 2>&1; then
+  if command -v sudo >/dev/null 2>&1; then
+    SS_CMD=(sudo ss -ltnp)
+  else
+    SS_CMD=(ss -ltnp)
+  fi
+
+  if "${SS_CMD[@]}" | grep -q ':80'; then
+    printf '::warning::Port 80 is in use on host; bind containers to 127.0.0.1:<port> and proxy via nginx/caddy.\n'
+    "${SS_CMD[@]}" | grep ':80' || true
+  fi
+else
+  log "'ss' command not available; skipping port check"
+fi
+
 log "pulling images defined in $(basename "$COMPOSE_PATH")"
 "${COMPOSE_CMD[@]}" -f "$COMPOSE_PATH" pull
 
