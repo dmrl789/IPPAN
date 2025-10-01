@@ -191,6 +191,8 @@ jobs:
             ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
             EOF
 
+            sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+
             sudo tee /etc/nginx/sites-available/ui.ippan.org >/dev/null <<'NGINX'
             server {
               listen 80;
