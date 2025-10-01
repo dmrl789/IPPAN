@@ -13,6 +13,9 @@ def fix_inline_brackets(txt: str) -> str:
     # Convert inline lists with inner spaces --> no inner spaces (least invasive)
     def repl(m):
         inner = m.group(1)
+        if ',' not in inner:
+            # Likely a shell test (e.g. `[ -f file ]`) or similar construct – do not touch it.
+            return m.group(0)
         compact = re.sub(r'\s*,\s*', ', ', re.sub(r'^\s+|\s+$', '', inner))
         return f'[{compact}]'
     return re.sub(r'\[(.*?)\]', repl, txt)
