@@ -1,4 +1,3 @@
----
 name: Lint YAML (workflows)
 "on":
   pull_request:
