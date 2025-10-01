@@ -1,0 +1,41 @@
+name: "ChatOps: Self-heal workflows"
+on:
+  workflow_run:
+    workflows:
+      - "Lint YAML (workflows)"
+      - "Docker Build"
+      - "Build & Deploy IPPAN"
+      - "Deploy Unified UI"
+    types:
+      - completed
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  propose-fix:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BOT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Run fixer
+        run: |
+          python3 .github/scripts/fix_workflows.py || true
+
+      - name: Create auto-patch issue (if patch exists)
+        env:
+          GH_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: |
+          if [ -f fix-workflows.patch ]; then
+            TITLE="Auto-fix workflows after failed run #${{ github.event.workflow_run.id }}"
+            PATCH_CONTENT=$(sed 's/```/` ` `/g' fix-workflows.patch)
+            printf -v BODY 'Automated workflow fixes after a failing run.\n\n```diff\n%s\n```' "$PATCH_CONTENT"
+            gh issue create --title "$TITLE" --label auto-patch --body "$BODY"
+          else
+            echo "No changes to propose."
+          fi

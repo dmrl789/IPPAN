@@ -177,7 +177,7 @@ jobs:
                 driver: bridge
             YML
 
-            sudo tee .env >/dev/null <<EOF
+            sudo tee .env >/dev/null <<'ENV'
             NODE_ENV=production
             NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL}
             NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
@@ -189,7 +189,7 @@ jobs:
             TARGET_HEALTH_PATH=${TARGET_HEALTH_PATH}
             HEALTH_TIMEOUT_MS=${HEALTH_TIMEOUT_MS}
             ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
-            EOF
+            ENV
 
             sudo tee /etc/nginx/sites-available/ui.ippan.org >/dev/null <<'NGINX'
             server {
@@ -239,7 +239,8 @@ jobs:
               DC="docker-compose"
             else
               echo "Installing docker-compose v2..."
-              sudo curl -L "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo curl -fsSL "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-$(uname -s)-$(uname -m)" \
+                -o /usr/local/bin/docker-compose
               sudo chmod +x /usr/local/bin/docker-compose
               DC="docker-compose"
             fi

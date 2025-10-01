@@ -2,7 +2,9 @@ name: ChatOps - Apply Patch
 
 "on":
   issue_comment:
-    types: [created, edited]
+    types:
+      - created
+      - edited
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.event.issue.number || github.run_id }}

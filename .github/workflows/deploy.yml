@@ -50,7 +50,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: ["188.245.97.41", "135.181.145.174"]
+        host:
+          - "188.245.97.41"
+          - "135.181.145.174"
     environment: production
     steps:
       - name: Checkout
