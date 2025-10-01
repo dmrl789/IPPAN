@@ -1096,20 +1096,25 @@ mod tests {
             .expect("add peer 2");
         let (state, _temp) = build_test_state(Some(network));
 
-        let Json(response) =
-            p2p_peers_handler(State(state.clone())).await.expect("ok response");
+        let Json(response) = p2p_peers_handler(State(state.clone()))
+            .await
+            .expect("ok response");
 
         assert!(response.peers.iter().any(|p| p.contains("9030")));
         assert!(response.peers.iter().any(|p| p.contains("9040")));
-        assert_eq!(state.peer_count.load(Ordering::Relaxed), response.peers.len());
+        assert_eq!(
+            state.peer_count.load(Ordering::Relaxed),
+            response.peers.len()
+        );
     }
 
     #[tokio::test]
     async fn p2p_peers_handler_returns_empty_when_no_network() {
         let (state, _temp) = build_test_state(None);
 
-        let Json(response) =
-            p2p_peers_handler(State(state.clone())).await.expect("ok response");
+        let Json(response) = p2p_peers_handler(State(state.clone()))
+            .await
+            .expect("ok response");
 
         assert!(response.peers.is_empty());
         assert_eq!(state.peer_count.load(Ordering::Relaxed), 0);
