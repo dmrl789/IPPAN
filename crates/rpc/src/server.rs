@@ -5,6 +5,7 @@ use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -353,7 +354,10 @@ async fn mempool_handler(State(state): State<Arc<AppState>>) -> ApiResult<Mempoo
 
     for tx in mempool.iter() {
         if let Ok(bytes) = serde_json::to_vec(tx) {
-            total_size += bytes.len() as u64;
+            total_size = match u64::try_from(bytes.len()) {
+                Ok(len) => total_size.saturating_add(len),
+                Err(_) => u64::MAX,
+            };
         }
     }
 
