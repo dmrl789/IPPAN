@@ -440,7 +440,7 @@ async fn recent_blocks_handler(
         }));
     }
 
-    let limit = query.limit.unwrap_or(20).clamp(1, 100) as u64;
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
     let start_height = latest_height.saturating_sub(limit.saturating_sub(1));
 
     let mut blocks = Vec::new();
