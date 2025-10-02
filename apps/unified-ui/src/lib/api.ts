@@ -249,6 +249,45 @@ export interface ValidatorInfo {
   is_active: boolean;
 }
 
+export interface TransactionView {
+  id: string;
+  from: string;
+  to: string;
+  amount: number;
+  nonce: number;
+  timestamp: number;
+  direction?: string;
+  hashtimer: string;
+}
+
+export interface BlockSummary {
+  height: number;
+  hash: string;
+  parent_hashes: string[];
+  proposer: string;
+  transaction_count: number;
+  timestamp_micros: number;
+}
+
+export interface RecentBlocksResponse {
+  latest_height: number;
+  blocks: BlockSummary[];
+}
+
+export interface BlockDetail {
+  height: number;
+  hash: string;
+  parent_hashes: string[];
+  proposer: string;
+  transaction_count: number;
+  timestamp_micros: number;
+  transactions: TransactionView[];
+}
+
+export interface BlockDetailResponse {
+  block: BlockDetail;
+}
+
 // Node Status API
 export async function getNodeStatus(): Promise<NodeStatus> {
   const response = await api.get('/api/v1/status');
@@ -259,6 +298,12 @@ export async function getNodeStatus(): Promise<NodeStatus> {
 export async function getNetworkStats(): Promise<NetworkStats> {
   const response = await api.get('/api/v1/network');
   return response.data;
+}
+
+export async function getP2PPeers(): Promise<string[]> {
+  const response = await api.get('/p2p/peers');
+  const peers = response.data?.peers;
+  return Array.isArray(peers) ? peers : [];
 }
 
 // Mempool API
@@ -275,6 +320,18 @@ export async function getConsensusStats(): Promise<ConsensusStats> {
 
 export async function getValidators(): Promise<ValidatorInfo[]> {
   const response = await api.get('/api/v1/validators');
+  return response.data;
+}
+
+export async function getRecentBlocks(limit = 20): Promise<RecentBlocksResponse> {
+  const response = await api.get('/api/v1/blocks/recent', {
+    params: { limit },
+  });
+  return response.data;
+}
+
+export async function getBlockByHeight(height: number): Promise<BlockDetailResponse> {
+  const response = await api.get(`/api/v1/blocks/${height}`);
   return response.data;
 }
 
