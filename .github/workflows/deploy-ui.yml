@@ -50,6 +50,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Ensure port 3000 is free
+        run: |
+          if lsof -i:3000; then
+            kill -9 $(lsof -ti:3000)
+          fi
+
       - name: Build and push container images
         env:
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
