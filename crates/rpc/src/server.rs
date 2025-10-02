@@ -108,6 +108,7 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
         .route("/api/v1/transaction", post(submit_transaction_handler))
         .route("/api/v1/address/validate", get(validate_address_handler))
         .route("/accounts", get(accounts_handler))
+        .route("/block", get(block_handler))
         .route("/p2p/blocks", post(p2p_blocks_handler))
         .route("/p2p/transactions", post(p2p_transactions_handler))
         .route("/p2p/block-request", post(p2p_block_request_handler))
@@ -216,6 +217,22 @@ struct BlockchainInfo {
     current_height: u64,
     total_blocks: u64,
     total_transactions: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockSummary {
+    height: u64,
+    hash: String,
+    parent_hashes: Vec<String>,
+    proposer: String,
+    transaction_count: usize,
+    timestamp_micros: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct LatestBlockResponse {
+    height: u64,
+    block: BlockSummary,
 }
 
 async fn node_status_handler(State(state): State<Arc<AppState>>) -> ApiResult<NodeStatusResponse> {
@@ -354,6 +371,37 @@ async fn consensus_handler(State(state): State<Arc<AppState>>) -> ApiResult<Cons
         validators_count: validators.len(),
         block_height: consensus_state.latest_block_height,
         consensus_status: status.to_string(),
+    }))
+}
+
+async fn block_handler(State(state): State<Arc<AppState>>) -> ApiResult<LatestBlockResponse> {
+    let latest_height = state.storage.get_latest_height().map_err(internal_error)?;
+
+    let Some(block) = state
+        .storage
+        .get_block_by_height(latest_height)
+        .map_err(internal_error)?
+    else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("no block found at height {latest_height}"),
+            }),
+        ));
+    };
+
+    let summary = BlockSummary {
+        height: block.header.round,
+        hash: hex::encode(block.header.id),
+        parent_hashes: block.header.parent_ids.iter().map(hex::encode).collect(),
+        proposer: encode_address(&block.header.creator),
+        transaction_count: block.transactions.len(),
+        timestamp_micros: block.header.hashtimer.time().0,
+    };
+
+    Ok(Json(LatestBlockResponse {
+        height: summary.height,
+        block: summary,
     }))
 }
 
@@ -864,6 +912,7 @@ fn encode_address(address: &[u8; 32]) -> String {
 mod tests {
     use super::*;
     use axum::extract::State;
+    use axum::http::StatusCode;
     use axum::Json;
     use ed25519_dalek::SigningKey;
     use ippan_consensus::PoAConfig;
@@ -1174,5 +1223,48 @@ mod tests {
         let peers = network.get_peers();
         assert!(peers.iter().any(|p| p.contains("9020")));
         assert_eq!(state.peer_count.load(Ordering::Relaxed), peers.len());
+    }
+
+    #[tokio::test]
+    async fn block_handler_returns_latest_block_summary() {
+        let (state, _temp_dir) = build_test_state(None);
+        let block = make_block(vec![make_signed_transaction()]);
+
+        state
+            .storage
+            .store_block(block.clone())
+            .expect("store block");
+
+        let Json(response) = block_handler(State(state.clone()))
+            .await
+            .expect("block handler");
+
+        assert_eq!(response.height, block.header.round);
+        assert_eq!(response.block.height, block.header.round);
+        assert_eq!(response.block.hash, hex::encode(block.header.id));
+        assert_eq!(
+            response.block.proposer,
+            encode_address(&block.header.creator)
+        );
+        assert_eq!(response.block.transaction_count, block.transactions.len());
+        assert_eq!(
+            response.block.parent_hashes,
+            block
+                .header
+                .parent_ids
+                .iter()
+                .map(hex::encode)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn block_handler_returns_not_found_without_blocks() {
+        let (state, _temp_dir) = build_test_state(None);
+
+        let result = block_handler(State(state.clone())).await;
+
+        let (status, _) = result.expect_err("expected error");
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 }
