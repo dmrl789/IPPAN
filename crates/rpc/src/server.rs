@@ -102,6 +102,8 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
         .route("/api/v1/mempool", get(mempool_handler))
         .route("/api/v1/consensus", get(consensus_handler))
         .route("/api/v1/validators", get(validators_handler))
+        .route("/api/v1/blocks/recent", get(recent_blocks_handler))
+        .route("/api/v1/blocks/:height", get(block_by_height_handler))
         .route("/api/v1/balance", get(balance_handler))
         .route("/api/v1/balance/:address", get(balance_by_path_handler))
         .route("/api/v1/transactions", get(transactions_handler))
@@ -233,6 +235,33 @@ struct BlockSummary {
 struct LatestBlockResponse {
     height: u64,
     block: BlockSummary,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecentBlocksQuery {
+    limit: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+struct RecentBlocksResponse {
+    latest_height: u64,
+    blocks: Vec<BlockSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockDetail {
+    height: u64,
+    hash: String,
+    parent_hashes: Vec<String>,
+    proposer: String,
+    transaction_count: usize,
+    timestamp_micros: u64,
+    transactions: Vec<TransactionView>,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockDetailResponse {
+    block: BlockDetail,
 }
 
 async fn node_status_handler(State(state): State<Arc<AppState>>) -> ApiResult<NodeStatusResponse> {
@@ -390,19 +419,91 @@ async fn block_handler(State(state): State<Arc<AppState>>) -> ApiResult<LatestBl
         ));
     };
 
-    let summary = BlockSummary {
-        height: block.header.round,
-        hash: hex::encode(block.header.id),
-        parent_hashes: block.header.parent_ids.iter().map(hex::encode).collect(),
-        proposer: encode_address(&block.header.creator),
-        transaction_count: block.transactions.len(),
-        timestamp_micros: block.header.hashtimer.time().0,
-    };
+    let summary = block_to_summary(&block);
 
     Ok(Json(LatestBlockResponse {
         height: summary.height,
         block: summary,
     }))
+}
+
+async fn recent_blocks_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<RecentBlocksQuery>,
+) -> ApiResult<RecentBlocksResponse> {
+    let latest_height = state.storage.get_latest_height().map_err(internal_error)?;
+
+    if latest_height == 0 {
+        return Ok(Json(RecentBlocksResponse {
+            latest_height,
+            blocks: Vec::new(),
+        }));
+    }
+
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let start_height = latest_height.saturating_sub(limit.saturating_sub(1));
+
+    let mut blocks = Vec::new();
+
+    for height in (start_height..=latest_height).rev() {
+        if let Some(block) = state
+            .storage
+            .get_block_by_height(height)
+            .map_err(internal_error)?
+        {
+            blocks.push(block_to_summary(&block));
+        }
+    }
+
+    Ok(Json(RecentBlocksResponse {
+        latest_height,
+        blocks,
+    }))
+}
+
+async fn block_by_height_handler(
+    State(state): State<Arc<AppState>>,
+    Path(height): Path<u64>,
+) -> ApiResult<BlockDetailResponse> {
+    let Some(block) = state
+        .storage
+        .get_block_by_height(height)
+        .map_err(internal_error)?
+    else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("no block found at height {height}"),
+            }),
+        ));
+    };
+
+    let BlockSummary {
+        height,
+        hash,
+        parent_hashes,
+        proposer,
+        transaction_count,
+        timestamp_micros,
+    } = block_to_summary(&block);
+
+    let transactions = block
+        .transactions
+        .into_iter()
+        .map(|tx| transaction_to_view(tx, None))
+        .collect();
+
+    let detail = BlockDetail {
+        height,
+        hash,
+        parent_hashes,
+        proposer,
+        transaction_count,
+        timestamp_micros,
+        transactions,
+    };
+
+    Ok(Json(BlockDetailResponse { block: detail }))
 }
 
 #[derive(Debug, Serialize)]
@@ -546,36 +647,12 @@ async fn transactions_handler(
             .storage
             .get_transactions_by_address(&addr)
             .map_err(internal_error)?
+            .into_iter()
+            .map(|tx| transaction_to_view(tx, parsed_address))
+            .collect()
     } else {
         Vec::new()
     };
-
-    let transactions = transactions
-        .into_iter()
-        .map(|mut tx| {
-            if tx.id == [0u8; 32] {
-                tx.refresh_id();
-            }
-            let direction = parsed_address.map(|addr| {
-                if tx.from == addr {
-                    "outgoing"
-                } else {
-                    "incoming"
-                }
-                .to_string()
-            });
-            TransactionView {
-                id: hex::encode(tx.id),
-                from: encode_address(&tx.from),
-                to: encode_address(&tx.to),
-                amount: tx.amount,
-                nonce: tx.nonce,
-                timestamp: tx.timestamp.0,
-                direction,
-                hashtimer: tx.hashtimer.to_hex(),
-            }
-        })
-        .collect();
 
     Ok(Json(TransactionsResponse { transactions }))
 }
@@ -906,6 +983,43 @@ fn decode_address(input: &str) -> Option<[u8; 32]> {
 
 fn encode_address(address: &[u8; 32]) -> String {
     format!("i{}", hex::encode(address))
+}
+
+fn block_to_summary(block: &Block) -> BlockSummary {
+    BlockSummary {
+        height: block.header.round,
+        hash: hex::encode(block.hash()),
+        parent_hashes: block.header.parent_ids.iter().map(hex::encode).collect(),
+        proposer: encode_address(&block.header.creator),
+        transaction_count: block.transactions.len(),
+        timestamp_micros: block.header.hashtimer.time().0,
+    }
+}
+
+fn transaction_to_view(mut tx: Transaction, perspective: Option<[u8; 32]>) -> TransactionView {
+    if tx.id == [0u8; 32] {
+        tx.refresh_id();
+    }
+
+    let direction = perspective.map(|addr| {
+        if tx.from == addr {
+            "outgoing"
+        } else {
+            "incoming"
+        }
+        .to_string()
+    });
+
+    TransactionView {
+        id: hex::encode(tx.id),
+        from: encode_address(&tx.from),
+        to: encode_address(&tx.to),
+        amount: tx.amount,
+        nonce: tx.nonce,
+        timestamp: tx.timestamp.0,
+        direction,
+        hashtimer: tx.hashtimer.to_hex(),
+    }
 }
 
 #[cfg(test)]
