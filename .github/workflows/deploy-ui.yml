@@ -303,6 +303,16 @@ jobs:
             if [ -n "${GITHUB_TOKEN:-}" ]; then
               printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
             fi
+            if command -v fuser >/dev/null 2>&1; then
+              if [ -n "$SUDO" ]; then
+                run_root fuser -k 3000/tcp || true
+              else
+                fuser -k 3000/tcp || true
+              fi
+            else
+              echo "fuser not available; skipping port 3000 cleanup"
+            fi
+            docker rm -f ippan-ui-ui-1 2>/dev/null || true
             $DC pull
             $DC up -d
             docker system prune -f
