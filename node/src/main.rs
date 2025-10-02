@@ -4,14 +4,14 @@ use config::Config;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_p2p::{HttpP2PNetwork, P2PConfig};
 use ippan_rpc::{start_server, AppState, ConsensusHandle, L2Config};
-use ippan_storage::SledStorage;
+use ippan_storage::{RetentionPolicies, RetentionPolicy, SledStorage, Storage};
 use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Application configuration
@@ -30,6 +30,11 @@ struct AppConfig {
     // Storage
     data_dir: String,
     db_path: String,
+    retention_hot_block_heights: u64,
+    retention_hot_hours: u64,
+    retention_receipt_days: u64,
+    retention_snapshot_days: u64,
+    retention_prune_interval_secs: u64,
 
     // Consensus
     slot_duration_ms: u64,
@@ -143,6 +148,26 @@ impl AppConfig {
             db_path: config
                 .get_string("DB_PATH")
                 .unwrap_or_else(|_| "./data/db".to_string()),
+            retention_hot_block_heights: config
+                .get_string("RETENTION_HOT_BLOCK_HEIGHTS")
+                .unwrap_or_else(|_| "7200".to_string())
+                .parse()?,
+            retention_hot_hours: config
+                .get_string("RETENTION_HOT_HOURS")
+                .unwrap_or_else(|_| "72".to_string())
+                .parse()?,
+            retention_receipt_days: config
+                .get_string("RETENTION_RECEIPT_DAYS")
+                .unwrap_or_else(|_| "90".to_string())
+                .parse()?,
+            retention_snapshot_days: config
+                .get_string("RETENTION_SNAPSHOT_DAYS")
+                .unwrap_or_else(|_| "90".to_string())
+                .parse()?,
+            retention_prune_interval_secs: config
+                .get_string("RETENTION_PRUNE_INTERVAL_SECS")
+                .unwrap_or_else(|_| "300".to_string())
+                .parse()?,
             slot_duration_ms: config
                 .get_string("SLOT_DURATION_MS")
                 .unwrap_or_else(|_| "100".to_string())
@@ -217,6 +242,63 @@ impl AppConfig {
                 .parse()?,
         })
     }
+
+    fn build_retention_policies(&self) -> RetentionPolicies {
+        let block_policy = if self.retention_hot_block_heights == 0 && self.retention_hot_hours == 0
+        {
+            None
+        } else {
+            Some(RetentionPolicy {
+                retain_latest_heights: (self.retention_hot_block_heights > 0)
+                    .then_some(self.retention_hot_block_heights),
+                retain_duration: AppConfig::hours_to_duration(self.retention_hot_hours),
+            })
+        };
+
+        let receipt_policy = if self.retention_receipt_days == 0 {
+            None
+        } else {
+            Some(RetentionPolicy {
+                retain_latest_heights: None,
+                retain_duration: AppConfig::days_to_duration(self.retention_receipt_days),
+            })
+        };
+
+        let snapshot_policy = if self.retention_snapshot_days == 0 {
+            None
+        } else {
+            Some(RetentionPolicy {
+                retain_latest_heights: None,
+                retain_duration: AppConfig::days_to_duration(self.retention_snapshot_days),
+            })
+        };
+
+        RetentionPolicies {
+            block_bodies: block_policy,
+            receipts: receipt_policy,
+            snapshots: snapshot_policy,
+        }
+    }
+
+    fn retention_prune_interval(&self) -> Duration {
+        Duration::from_secs(self.retention_prune_interval_secs.max(10))
+    }
+
+    fn hours_to_duration(hours: u64) -> Option<Duration> {
+        if hours == 0 {
+            None
+        } else {
+            Some(Duration::from_secs(hours.saturating_mul(3600)))
+        }
+    }
+
+    fn days_to_duration(days: u64) -> Option<Duration> {
+        if days == 0 {
+            None
+        } else {
+            Some(Duration::from_secs(days.saturating_mul(86_400)))
+        }
+    }
 }
 
 #[tokio::main]
@@ -281,6 +363,51 @@ async fn main() -> Result<()> {
     let storage = Arc::new(SledStorage::new(&config.db_path)?);
     storage.initialize()?;
     info!("Storage initialized at {}", config.db_path);
+    info!(
+        "Retention hot window: {} heights / {} hours, receipts: {} days, snapshots: {} days",
+        config.retention_hot_block_heights,
+        config.retention_hot_hours,
+        config.retention_receipt_days,
+        config.retention_snapshot_days
+    );
+
+    let retention_handle = {
+        let policies = config.build_retention_policies();
+        let retention_enabled = policies.block_bodies.is_some()
+            || policies.receipts.is_some()
+            || policies.snapshots.is_some();
+
+        if retention_enabled {
+            let storage_clone: Arc<dyn Storage + Send + Sync> = storage.clone();
+            let prune_interval = config.retention_prune_interval();
+            Some(tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(prune_interval);
+                loop {
+                    ticker.tick().await;
+                    match storage_clone.apply_retention(&policies) {
+                        Ok(reports) => {
+                            for report in reports {
+                                if report.pruned_entries > 0 {
+                                    debug!(
+                                        target: "storage::retention",
+                                        "retention {:?}: pruned {} entries, retained {} entries",
+                                        report.target,
+                                        report.pruned_entries,
+                                        report.retained_entries
+                                    );
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            error!("Failed to apply retention policies: {}", err);
+                        }
+                    }
+                }
+            }))
+        } else {
+            None
+        }
+    };
 
     // Initialize consensus
     let consensus_config = PoAConfig {
@@ -446,6 +573,9 @@ async fn main() -> Result<()> {
     p2p_network_for_shutdown.stop().await?;
     rpc_handle.abort();
     peer_count_updater.abort();
+    if let Some(handle) = retention_handle {
+        handle.abort();
+    }
 
     // Flush storage
     storage.flush()?;
