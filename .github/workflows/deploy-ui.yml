@@ -318,7 +318,16 @@ jobs:
             else
               echo "fuser not available; skipping port 3000 cleanup"
             fi
-            docker rm -f ippan-ui-ui-1 2>/dev/null || true
+            remove_container() {
+              local name="$1"
+              if [ -n "$SUDO" ]; then
+                run_root docker rm -f "$name" 2>/dev/null || true
+              else
+                docker rm -f "$name" 2>/dev/null || true
+              fi
+            }
+
+            remove_container "ippan-ui-ui-1"
             $DC pull
             $DC up -d
             docker system prune -f
