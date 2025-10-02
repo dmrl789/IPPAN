@@ -9,6 +9,61 @@
 
 ## 📋 **Deployment Options**
 
+> **Heads-up:** The GitHub Actions deployment pipeline expects a `deploy` user on the target
+> servers with passwordless sudo for a limited set of commands. If the workflow fails at the
+> "SSH capability check (enforce Option B)" step, finish the prerequisites below before retrying.
+
+### ✅ **CI Deployment Prerequisites (Run Once Per Server)**
+
+You can automate the setup with the provided bootstrap script:
+
+```bash
+# 1) SSH to the server as root (or any sudo-capable user)
+ssh root@<SERVER_IP>
+
+# 2) Paste the *public* key that matches your GitHub Actions `DEPLOY_SSH_KEY` secret
+PUBKEY="ssh-ed25519 AAAA... ippan-ui-ci"
+
+# 3) Fetch and run the bootstrap script
+bash -lc 'cd /root && curl -fsSLO https://raw.githubusercontent.com/dmrl789/IPPAN/main/deploy/server/bootstrap_deploy_user.sh &&   bash bootstrap_deploy_user.sh '"$PUBKEY"''
+```
+
+Prefer to do it manually? These are the minimum steps:
+
+```bash
+# create deploy user (if missing)
+id -u deploy >/dev/null 2>&1 || adduser --disabled-password --gecos "" deploy
+
+# authorize the GitHub Actions public key
+install -d -m 700 /home/deploy/.ssh
+echo "ssh-ed25519 AAAA... ippan-ui-ci" >> /home/deploy/.ssh/authorized_keys
+chown -R deploy:deploy /home/deploy/.ssh
+chmod 600 /home/deploy/.ssh/authorized_keys
+
+# create target dir and hand ownership to deploy
+install -d -o deploy -g deploy -m 755 /opt/ippan/ui
+
+# allow passwordless sudo for limited commands
+cat >/etc/sudoers.d/deploy-ippan <<'EOF'
+deploy ALL=(root) NOPASSWD: /usr/bin/install, /usr/bin/chown, /usr/bin/systemctl, /usr/bin/docker, /usr/bin/docker-compose, /usr/bin/docker*, /bin/mkdir, /bin/rm, /usr/bin/rsync, /bin/ln, /usr/sbin/nginx, /usr/bin/curl
+EOF
+visudo -cf /etc/sudoers.d/deploy-ippan && chmod 440 /etc/sudoers.d/deploy-ippan
+
+# quick verification
+sudo -n true && echo "passwordless sudo OK"
+sudo -n install -d -m 755 -o deploy -g deploy /opt/ippan/ui && echo "dir ready"
+```
+
+Finally, confirm that your GitHub repository secrets point to the same host and key pair:
+
+- `DEPLOY_USER` should be `deploy`.
+- `DEPLOY_SSH_KEY` must be the private key that matches the public key installed above.
+- `DEPLOY_HOST` and `DEPLOY_PORT` must match the target server.
+- (Optional) `DEPLOY_FINGERPRINT` should equal the server's SSH host key fingerprint.
+
+Once these prerequisites are satisfied, re-run the workflow and it will clear the SSH capability check before continuing the deployment.
+
+
 ### **Option 1: Docker Deployment (Recommended)**
 
 #### **On Server 1 (188.245.97.41):**
