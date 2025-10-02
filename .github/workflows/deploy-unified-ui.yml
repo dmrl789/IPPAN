@@ -115,13 +115,14 @@ jobs:
           GATEWAY_ALLOWED_ORIGINS: ${{ secrets.GATEWAY_ALLOWED_ORIGINS }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
+          DEPLOY_APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           port: ${{ secrets.DEPLOY_PORT }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_FINGERPRINT }}
-          envs: IMAGE_PREFIX,NEXT_PUBLIC_GATEWAY_URL,NEXT_PUBLIC_API_BASE_URL,NEXT_PUBLIC_WS_URL,NEXT_PUBLIC_ENABLE_FULL_UI,TARGET_RPC_URL,TARGET_WS_URL,TARGET_HEALTH_PATH,HEALTH_TIMEOUT_MS,GATEWAY_ALLOWED_ORIGINS,GITHUB_TOKEN,GITHUB_ACTOR
+          envs: IMAGE_PREFIX,NEXT_PUBLIC_GATEWAY_URL,NEXT_PUBLIC_API_BASE_URL,NEXT_PUBLIC_WS_URL,NEXT_PUBLIC_ENABLE_FULL_UI,TARGET_RPC_URL,TARGET_WS_URL,TARGET_HEALTH_PATH,HEALTH_TIMEOUT_MS,GATEWAY_ALLOWED_ORIGINS,GITHUB_TOKEN,GITHUB_ACTOR,DEPLOY_APP_DIR
           script: |
             set -euo pipefail
             if command -v sudo >/dev/null 2>&1; then
@@ -154,11 +155,32 @@ jobs:
             : "${HEALTH_TIMEOUT_MS:=5000}"
             : "${GATEWAY_ALLOWED_ORIGINS:=https://ui.ippan.org}"
 
-            APP_DIR="$HOME/apps/ippan-ui"
-            mkdir -p "$APP_DIR"
-            mkdir -p "$APP_DIR/releases"
-            mkdir -p "$APP_DIR/shared"
-            run_root chown -R "$USER":"$USER" "$APP_DIR" || true
+            DEFAULT_APP_DIR="$HOME/apps/ippan-ui"
+            REQUESTED_APP_DIR="${DEPLOY_APP_DIR:-$DEFAULT_APP_DIR}"
+
+            ensure_dir() {
+              local dir="$1"
+              if mkdir -p "$dir" 2>/dev/null; then
+                return 0
+              fi
+              if [ -n "$SUDO" ]; then
+                run_root mkdir -p "$dir"
+                run_root chown -R "$USER":"$USER" "$dir" || true
+                return 0
+              fi
+              return 1
+            }
+
+            if ensure_dir "$REQUESTED_APP_DIR"; then
+              APP_DIR="$REQUESTED_APP_DIR"
+            else
+              echo "::warning::Cannot create '$REQUESTED_APP_DIR' without sudo; falling back to '$DEFAULT_APP_DIR'"
+              APP_DIR="$DEFAULT_APP_DIR"
+              ensure_dir "$APP_DIR"
+            fi
+
+            ensure_dir "$APP_DIR/releases"
+            ensure_dir "$APP_DIR/shared"
             cd "$APP_DIR"
 
             cat > docker-compose.yml <<'COMPOSE'
