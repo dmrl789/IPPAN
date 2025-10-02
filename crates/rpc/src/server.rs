@@ -5,6 +5,7 @@ use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -349,13 +350,15 @@ async fn mempool_handler(State(state): State<Arc<AppState>>) -> ApiResult<Mempoo
     let mempool = state.mempool.read();
     let total_transactions = mempool.len();
     let total_senders: HashSet<[u8; 32]> = mempool.iter().map(|tx| tx.from).collect();
-    let mut total_size = 0u64;
+    let mut total_size = 0usize;
 
     for tx in mempool.iter() {
         if let Ok(bytes) = serde_json::to_vec(tx) {
-            total_size += bytes.len() as u64;
+            total_size += bytes.len();
         }
     }
+
+    let total_size = u64::try_from(total_size).unwrap_or(u64::MAX);
 
     let mut fee_distribution = HashMap::new();
     fee_distribution.insert("low".to_string(), 0);
