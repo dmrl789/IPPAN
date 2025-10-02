@@ -309,14 +309,29 @@ jobs:
             if [ -n "${GITHUB_TOKEN:-}" ]; then
               printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
             fi
-            if command -v fuser >/dev/null 2>&1; then
+            $DC down --remove-orphans || true
+            if command -v lsof >/dev/null 2>&1; then
+              if [ -n "$SUDO" ]; then
+                PIDS="$(run_root sh -c 'lsof -ti tcp:3000 -s tcp:LISTEN 2>/dev/null' || true)"
+              else
+                PIDS="$(lsof -ti tcp:3000 -s tcp:LISTEN 2>/dev/null || true)"
+              fi
+              if [ -n "$PIDS" ]; then
+                echo "Killing processes using port 3000: $PIDS"
+                if [ -n "$SUDO" ]; then
+                  run_root kill -9 $PIDS || true
+                else
+                  kill -9 $PIDS || true
+                fi
+              fi
+            elif command -v fuser >/dev/null 2>&1; then
               if [ -n "$SUDO" ]; then
                 run_root fuser -k 3000/tcp || true
               else
                 fuser -k 3000/tcp || true
               fi
             else
-              echo "fuser not available; skipping port 3000 cleanup"
+              echo "Neither lsof nor fuser available; skipping port 3000 cleanup"
             fi
             docker rm -f ippan-ui-ui-1 2>/dev/null || true
             $DC pull
