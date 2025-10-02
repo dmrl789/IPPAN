@@ -483,7 +483,7 @@ impl Storage for SledStorage {
     }
 
     fn get_latest_snapshot(&self) -> Result<Option<StateSnapshot>> {
-        if let Some(Ok((_, value))) = self.snapshots.iter().rev().next() {
+        if let Some(Ok((_, value))) = self.snapshots.iter().next_back() {
             let snapshot: StateSnapshot = serde_json::from_slice(&value)?;
             Ok(Some(snapshot))
         } else {
@@ -855,8 +855,7 @@ impl Storage for MemoryStorage {
             .snapshots
             .read()
             .iter()
-            .rev()
-            .next()
+            .next_back()
             .map(|(_, v)| v.clone()))
     }
 
