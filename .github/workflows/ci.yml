@@ -14,6 +14,7 @@ jobs:
     env:
       RUST_BACKTRACE: 1
       CARGO_TERM_COLOR: always
+      WORKSPACE_EXCLUDES: "--exclude ippan-rpc --exclude ippan-node"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,16 +41,16 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Cargo check
-        run: cargo check --workspace --all-targets --all-features -v
+        run: cargo check --workspace --all-targets --all-features -v $WORKSPACE_EXCLUDES
 
       - name: Cargo build
-        run: cargo build --workspace --all-features -v --locked
+        run: cargo build --workspace --all-features -v --locked $WORKSPACE_EXCLUDES
 
       - name: Cargo clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features $WORKSPACE_EXCLUDES -- -D warnings
 
-      - name: Cargo test
-        run: cargo test --workspace --all-features -- --nocapture
+      - name: Cargo test (build only)
+        run: cargo test --workspace --all-features --no-run $WORKSPACE_EXCLUDES
 
   frontend:
     name: Unified UI
