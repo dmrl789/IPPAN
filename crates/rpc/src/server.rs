@@ -134,7 +134,6 @@ pub async fn run_rpc_server(
     l2_config: L2Config,
 ) -> Result<()> {
     // Touch symbol to avoid unused import warnings when feature-gated elsewhere.
-    // This is safe and has zero runtime cost.
     let _ = &ippan_time_ingest_sample;
 
     let consensus = ConsensusHandle::new(consensus, tx_sender, mempool);
@@ -163,7 +162,10 @@ pub async fn run_rpc_server(
 
     // Serve static (UI) if provided; index.html at root.
     if let Some(dir) = &static_dir {
-        router = router.nest_service("/", get_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html")))));
+        router = router.nest_service(
+            "/",
+            get_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html")))),
+        );
     }
 
     // Add permissive CORS for tooling; tighten in production as needed.
@@ -193,7 +195,6 @@ async fn health(State(app): State<AppState>) -> (StatusCode, Json<Health>) {
 async fn get_state(State(app): State<AppState>) -> Result<Json<StateEnvelope>, (StatusCode, String)> {
     let state = app.consensus.get_state().await;
     let mempool_len = app.consensus.mempool().read().len(); // no unnecessary cast
-
     Ok(Json(StateEnvelope { state, mempool_len }))
 }
 
@@ -232,7 +233,10 @@ async fn get_l2_config(State(app): State<AppState>) -> Result<Json<L2Config>, (S
     Ok(Json(app.l2_config.clone()))
 }
 
-async fn submit_tx(State(app): State<AppState>, Json(body): Json<SubmitTx>) -> Result<Json<OkResponse>, (StatusCode, String)> {
+async fn submit_tx(
+    State(app): State<AppState>,
+    Json(body): Json<SubmitTx>,
+) -> Result<Json<OkResponse>, (StatusCode, String)> {
     app.consensus
         .submit_tx(body.tx)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("submit failed: {e}")))?;
@@ -251,7 +255,6 @@ async fn broadcast(
         .broadcast(msg)
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("broadcast failed: {e}")))?;
-
     Ok(Json(OkResponse { ok: true }))
 }
 
@@ -259,7 +262,10 @@ async fn broadcast(
 
 #[allow(dead_code)]
 fn _headers_map<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> HashMap<String, String> {
-    pairs.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    pairs
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 #[allow(dead_code)]
