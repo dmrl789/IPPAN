@@ -173,4 +173,5 @@ jobs:
           echo "3. Monitored block height for \`${{ github.event.inputs.duration_sec }}s\` to detect stalls." >> $GITHUB_STEP_SUMMARY
           echo "4. Checked public \`https://${{ github.event.inputs.ui_domain }}\` from the runner." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> Tip: if you also want to fetch the raw server-side reports (\`system.txt\`, \`docker.txt\`, \`curls_local.txt\`, \`monitor.txt\`), we can add an scp step to upload them as artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "> Tip: to fetch raw server-side reports (\`system.txt\`, \`docker.txt\`, \`curls_local.txt\`, \`monitor.txt\`)," >> $GITHUB_STEP_SUMMARY
+          echo "add an scp step to upload them as artifacts." >> $GITHUB_STEP_SUMMARY
