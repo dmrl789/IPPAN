@@ -318,9 +318,9 @@ jobs:
             else
               echo "fuser not available; skipping port 3000 cleanup"
             fi
-            docker rm -f ippan-ui-ui-1 2>/dev/null || true
+            docker rm -f ippan-ui-ui-1 || true
             $DC pull
-            $DC up -d
+            $DC up -d --force-recreate
             docker system prune -f
 
             if [ -n "$SUDO" ]; then
