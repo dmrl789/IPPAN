@@ -683,7 +683,7 @@ async fn p2p_peers_handler(State(state): State<Arc<AppState>>) -> ApiResult<P2PP
     let peers = state
         .p2p_network
         .as_ref()
-        .map_or_else(Vec::new, |network| HttpP2PNetwork::get_peers(&**network));
+        .map_or_else(Vec::new, |network| network.get_peers());
 
     state.peer_count.store(peers.len(), Ordering::Relaxed);
 
