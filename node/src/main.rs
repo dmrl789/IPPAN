@@ -366,6 +366,7 @@ async fn main() -> Result<()> {
         l2_config,
         mempool: mempool.clone(),
         unified_ui_dist: config.unified_ui_dist_dir.clone(),
+        req_count: Arc::new(AtomicUsize::new(0)),
     };
 
     let rpc_host = &config.rpc_host;
