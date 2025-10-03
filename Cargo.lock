@@ -1220,6 +1220,7 @@ name = "ippan-consensus"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "ed25519-dalek",
  "futures",
  "hex",
