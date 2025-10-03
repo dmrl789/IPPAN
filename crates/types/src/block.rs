@@ -50,6 +50,9 @@ pub struct Block {
     /// current execution pipeline until the availability layer is wired in.
     #[serde(default)]
     pub transactions: Vec<Transaction>,
+    /// Optional metadata with the parent hash strings for UI consumption.
+    #[serde(default)]
+    pub prev_hashes: Vec<String>,
 }
 
 impl BlockHeader {
@@ -102,6 +105,7 @@ impl Block {
         let merkle_parents = Self::compute_merkle_root_from_hashes(&parent_ids);
         let hashtimer_nonce =
             Self::derive_hashtimer_nonce(round, &creator, &parent_ids, &payload_ids);
+        let prev_hashes: Vec<String> = parent_ids.iter().map(hex::encode).collect();
         let hashtimer_payload = Self::build_hashtimer_payload(
             round,
             &creator,
@@ -147,6 +151,7 @@ impl Block {
             header,
             signature: Vec::new(),
             transactions,
+            prev_hashes,
         }
     }
 
@@ -256,7 +261,8 @@ impl Block {
             + self.header.vrf_proof.len()
             + self.signature.len();
         let tx_size = self.transactions.len() * 200; // heuristic for now
-        header_size + tx_size
+        let metadata_size: usize = self.prev_hashes.iter().map(|hash| hash.len()).sum();
+        header_size + tx_size + metadata_size
     }
 
     /// Verify block integrity against the deterministic header rules.
@@ -271,6 +277,32 @@ impl Block {
             != Self::compute_merkle_root_from_hashes(&self.header.parent_ids)
         {
             return false;
+        }
+
+        if !self.prev_hashes.is_empty() {
+            if self.prev_hashes.len() != self.header.parent_ids.len() {
+                return false;
+            }
+
+            let expected_prev: Vec<String> =
+                self.header.parent_ids.iter().map(hex::encode).collect();
+
+            let actual_prev = self
+                .prev_hashes
+                .iter()
+                .map(|provided_hash| {
+                    let trimmed = provided_hash.strip_prefix("0x").unwrap_or(provided_hash);
+                    hex::decode(trimmed).map(hex::encode)
+                })
+                .collect::<Result<Vec<_>, _>>();
+
+            let Ok(actual_prev) = actual_prev else {
+                return false;
+            };
+
+            if actual_prev != expected_prev {
+                return false;
+            }
         }
 
         if !self.transactions.is_empty() {
@@ -389,6 +421,38 @@ mod tests {
         let parent = [7u8; 32];
         let creator = [8u8; 32];
         let block = Block::new(vec![parent], sample_transactions(), 5, creator);
+        assert!(block.is_valid());
+    }
+
+    #[test]
+    fn block_validation_allows_empty_prev_hashes() {
+        let parent = [9u8; 32];
+        let creator = [10u8; 32];
+        let mut block = Block::new(vec![parent], sample_transactions(), 6, creator);
+        block.prev_hashes.clear();
+
+        assert!(block.is_valid());
+    }
+
+    #[test]
+    fn block_validation_rejects_mismatched_prev_hashes() {
+        let parent = [11u8; 32];
+        let creator = [12u8; 32];
+        let mut block = Block::new(vec![parent], sample_transactions(), 7, creator);
+        let mut wrong_hash = hex::encode(parent);
+        wrong_hash.replace_range(0..2, "ff");
+        block.prev_hashes = vec![wrong_hash];
+
+        assert!(!block.is_valid());
+    }
+
+    #[test]
+    fn block_validation_accepts_prefixed_prev_hashes() {
+        let parent = [13u8; 32];
+        let creator = [14u8; 32];
+        let mut block = Block::new(vec![parent], sample_transactions(), 8, creator);
+        block.prev_hashes = vec![format!("0x{}", hex::encode_upper(parent))];
+
         assert!(block.is_valid());
     }
 }

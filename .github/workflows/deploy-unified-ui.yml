@@ -2,13 +2,12 @@ name: Deploy Unified UI
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
+    paths:
+      - "apps/unified-ui/**"
+      - "apps/gateway/**"
+      - ".github/workflows/deploy-unified-ui.yml"
   workflow_dispatch:
-
-concurrency:
-  group: deploy-unified-ui-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -20,6 +19,7 @@ jobs:
     env:
       REGISTRY: ghcr.io
       IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,15 +37,12 @@ jobs:
           NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
           NEXT_PUBLIC_ENABLE_FULL_UI: ${{ secrets.NEXT_PUBLIC_ENABLE_FULL_UI }}
         run: |
-          set -euo pipefail
           npm ci
           npm run build
 
       - name: Install gateway dependencies
         working-directory: apps/gateway
-        run: |
-          set -euo pipefail
-          npm ci
+        run: npm ci
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -87,11 +84,11 @@ jobs:
             fi
           done
           if [ "${#DEPLOY_SSH_KEY}" -lt 100 ]; then
-            echo "::error::DEPLOY_SSH_KEY looks too short. Paste the FULL private key (starts with '-----BEGIN OPENSSH PRIVATE KEY-----')."
+            echo "::error::DEPLOY_SSH_KEY looks too short. Paste the FULL private key (-----BEGIN OPENSSH PRIVATE KEY----- ...)."
             exit 1
           fi
 
-      - name: SSH dry-run (whoami@host)
+      - name: SSH capability check (enforce Option B)
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -99,14 +96,22 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_FINGERPRINT }}
+          script_stop: true
           script: |
-            set -e
-            whoami
-            hostname
-            command -v docker >/dev/null || { echo "Docker missing"; exit 1; }
-            docker compose version || { echo "Docker compose plugin missing"; exit 1; }
+            set -euo pipefail
+            whoami && hostname
+            command -v docker >/dev/null
+            (docker compose version || docker-compose version) >/dev/null 2>&1 || true
+            if ! command -v sudo >/dev/null 2>&1; then
+              echo "::error::sudo is not installed."
+              exit 1
+            fi
+            if ! sudo -n true 2>/dev/null; then
+              echo "::error::Passwordless sudo not configured for this user. Run deploy/server/bootstrap_deploy_user.sh on the server."
+              exit 1
+            fi
 
-      - name: Deploy via SSH
+      - name: Deploy via SSH to /opt/ippan/ui
         uses: appleboy/ssh-action@v1.2.0
         env:
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
@@ -121,34 +126,19 @@ jobs:
           GATEWAY_ALLOWED_ORIGINS: ${{ secrets.GATEWAY_ALLOWED_ORIGINS }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
-          DEPLOY_APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           port: ${{ secrets.DEPLOY_PORT }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           fingerprint: ${{ secrets.DEPLOY_FINGERPRINT }}
-          envs: IMAGE_PREFIX,NEXT_PUBLIC_GATEWAY_URL,NEXT_PUBLIC_API_BASE_URL,NEXT_PUBLIC_WS_URL,NEXT_PUBLIC_ENABLE_FULL_UI,TARGET_RPC_URL,TARGET_WS_URL,TARGET_HEALTH_PATH,HEALTH_TIMEOUT_MS,GATEWAY_ALLOWED_ORIGINS,GITHUB_TOKEN,GITHUB_ACTOR,DEPLOY_APP_DIR
+          envs: IMAGE_PREFIX,NEXT_PUBLIC_GATEWAY_URL,NEXT_PUBLIC_API_BASE_URL,NEXT_PUBLIC_WS_URL,NEXT_PUBLIC_ENABLE_FULL_UI,TARGET_RPC_URL,TARGET_WS_URL,TARGET_HEALTH_PATH,HEALTH_TIMEOUT_MS,GATEWAY_ALLOWED_ORIGINS,GITHUB_TOKEN,GITHUB_ACTOR
+          script_stop: true
           script: |
             set -euo pipefail
-            if command -v sudo >/dev/null 2>&1; then
-              if sudo -n true 2>/dev/null; then
-                SUDO="sudo"
-              else
-                echo "sudo requires a password; continuing without sudo"
-                SUDO=""
-              fi
-            else
-              SUDO=""
-            fi
 
-            run_root() {
-              if [ -n "$SUDO" ]; then
-                sudo "$@"
-              else
-                "$@"
-              fi
-            }
+            # Enforce Option B
+            sudo -n true >/dev/null 2>&1 || { echo "::error::Passwordless sudo missing. Run bootstrap_deploy_user.sh"; exit 1; }
 
             IMAGE_PREFIX="${IMAGE_PREFIX,,}"
             : "${NEXT_PUBLIC_GATEWAY_URL:=https://ui.ippan.org/api}"
@@ -158,97 +148,62 @@ jobs:
             : "${TARGET_RPC_URL:=http://node:8080}"
             : "${TARGET_WS_URL:=ws://node:8080/ws}"
             : "${TARGET_HEALTH_PATH:=/health}"
-            : "${HEALTH_TIMEOUT_MS:=5000}"
+            : "${HEALTH_TIMEOUT_MS:=8000}"
             : "${GATEWAY_ALLOWED_ORIGINS:=https://ui.ippan.org}"
 
-            DEFAULT_APP_DIR="$HOME/apps/ippan-ui"
-            REQUESTED_APP_DIR="${DEPLOY_APP_DIR:-$DEFAULT_APP_DIR}"
-
-            ensure_dir() {
-              local dir="$1"
-              if mkdir -p "$dir" 2>/dev/null; then
-                return 0
-              fi
-              if [ -n "$SUDO" ]; then
-                run_root mkdir -p "$dir"
-                run_root chown -R "$USER":"$USER" "$dir" || true
-                return 0
-              fi
-              return 1
-            }
-
-            if ensure_dir "$REQUESTED_APP_DIR"; then
-              APP_DIR="$REQUESTED_APP_DIR"
-            else
-              echo "::warning::Cannot create '$REQUESTED_APP_DIR' without sudo; falling back to '$DEFAULT_APP_DIR'"
-              APP_DIR="$DEFAULT_APP_DIR"
-              ensure_dir "$APP_DIR"
-            fi
-
-            ensure_dir "$APP_DIR/releases"
-            ensure_dir "$APP_DIR/shared"
+            APP_DIR=/opt/ippan/ui
+            sudo install -d -m 755 -o "$USER" -g "$USER" "$APP_DIR"
             cd "$APP_DIR"
 
-            cat <<'YML' > docker-compose.yml
+            # Compose file
+            cat <<'YML' | sudo tee docker-compose.yml >/dev/null
             version: "3.8"
             services:
               ui:
                 image: ${IMAGE_PREFIX}/ui:latest
-                env_file:
-                  - .env
+                env_file: [.env]
                 restart: unless-stopped
-                networks:
-                  - web
-                ports:
-                  - "127.0.0.1:3000:3000"
+                networks: [web]
+                ports: ["127.0.0.1:3000:3000"]
               gateway:
                 image: ${IMAGE_PREFIX}/gateway:latest
-                env_file:
-                  - .env
+                env_file: [.env]
                 restart: unless-stopped
-                networks:
-                  - web
-                depends_on:
-                  - node
-                ports:
-                  - "127.0.0.1:8080:8080"
+                networks: [web]
+                depends_on: [node]
+                ports: ["127.0.0.1:8080:8080"]
               node:
                 image: ${IMAGE_PREFIX}/node:latest
-                env_file:
-                  - .env
+                env_file: [.env]
                 restart: unless-stopped
-                networks:
-                  - web
-                ports:
-                  - "127.0.0.1:9090:9090"
-            networks:
-              web:
-                driver: bridge
+                networks: [web]
+                ports: ["127.0.0.1:9090:9090"]
+            networks: { web: { driver: bridge } }
             YML
 
-            cat <<ENV > .env
+            # Env file
+            cat <<ENV | sudo tee .env >/dev/null
             NODE_ENV=production
             NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL}
             NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
             NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
             NEXT_PUBLIC_ENABLE_FULL_UI=${NEXT_PUBLIC_ENABLE_FULL_UI}
             ENABLE_FULL_UI=${NEXT_PUBLIC_ENABLE_FULL_UI}
-            TARGET_RPC_URL=${TARGET_RPC_URL}
-            TARGET_WS_URL=${TARGET_WS_URL}
-            TARGET_HEALTH_PATH=${TARGET_HEALTH_PATH}
-            HEALTH_TIMEOUT_MS=${HEALTH_TIMEOUT_MS}
-            ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
+            TARGET_RPC_URL=${TARGET_RPC_URL:-}
+            TARGET_WS_URL=${TARGET_WS_URL:-}
+            TARGET_HEALTH_PATH=${TARGET_HEALTH_PATH:-}
+            HEALTH_TIMEOUT_MS=${HEALTH_TIMEOUT_MS:-}
+            ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS:-}
             ENV
 
-            if [ -n "$SUDO" ]; then
-              run_root mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
-              cat <<'NGINX' | sudo tee /etc/nginx/sites-available/ui.ippan.org >/dev/null
+            # Nginx reverse proxy
+            sudo install -d -m 755 /etc/nginx/sites-available /etc/nginx/sites-enabled
+            cat <<'NGINX' | sudo tee /etc/nginx/sites-available/ui.ippan.org >/dev/null
             server {
               listen 80;
               server_name ui.ippan.org;
               return 301 https://$host$request_uri;
             }
-
             server {
               listen 443 ssl http2;
               server_name ui.ippan.org;
@@ -261,17 +216,13 @@ jobs:
                 proxy_set_header Host $host;
                 proxy_set_header X-Forwarded-For $remote_addr;
                 proxy_set_header X-Forwarded-Proto https;
-                proxy_read_timeout 300;
               }
-
               location /api/ {
                 proxy_pass http://127.0.0.1:8080/;
                 proxy_set_header Host $host;
                 proxy_set_header X-Forwarded-For $remote_addr;
                 proxy_set_header X-Forwarded-Proto https;
-                proxy_read_timeout 300;
               }
-
               location /ws/ {
                 proxy_pass http://127.0.0.1:8080/ws/;
                 proxy_http_version 1.1;
@@ -281,57 +232,49 @@ jobs:
               }
             }
             NGINX
-              run_root ln -sf /etc/nginx/sites-available/ui.ippan.org /etc/nginx/sites-enabled/ui.ippan.org
-            else
-              echo "sudo unavailable; skipping nginx configuration"
-            fi
+            sudo ln -sf /etc/nginx/sites-available/ui.ippan.org /etc/nginx/sites-enabled/ui.ippan.org
+            sudo nginx -t
+            sudo systemctl reload nginx || sudo nginx -s reload
 
+            # Ensure docker compose available
             if docker compose version >/dev/null 2>&1; then
               DC="docker compose"
             elif command -v docker-compose >/dev/null 2>&1; then
               DC="docker-compose"
             else
-              if [ -n "$SUDO" ]; then
-                echo "Installing docker-compose v2 with sudo..."
-                run_root curl -fsSL "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-$(uname -s)-$(uname -m)" \
-                  -o /usr/local/bin/docker-compose
-                run_root chmod +x /usr/local/bin/docker-compose
-                DC="docker-compose"
-              else
-                echo "Installing docker compose plugin in user directory..."
-                mkdir -p "$HOME/.docker/cli-plugins"
-                curl -fsSL "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-$(uname -s)-$(uname -m)" \
-                  -o "$HOME/.docker/cli-plugins/docker-compose"
-                chmod +x "$HOME/.docker/cli-plugins/docker-compose"
-                DC="docker compose"
-              fi
+              echo "::group::Installing docker compose plugin"
+              sudo curl -fsSL "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              DC="docker-compose"
+              echo "::endgroup::"
             fi
 
+            # GHCR login for pulls
             if [ -n "${GITHUB_TOKEN:-}" ]; then
-              printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+              printf '%s\n' "$GITHUB_TOKEN" | sudo docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
             fi
 
+            # Pull and update stack
+            $DC pull
             $DC down --remove-orphans || true
 
-            # Best-effort cleanup of any stray UI container names from previous runs
-            remove_container() {
-              local name="$1"
-              if [ -n "$SUDO" ]; then
-                run_root docker rm -f "$name" 2>/dev/null || true
-              else
-                docker rm -f "$name" 2>/dev/null || true
-              fi
-            }
-            remove_container "ippan-ui-ui-1"
+            # Remove legacy containers (stale names)
+            sudo docker ps -aq --filter "name=ui"      | xargs -r sudo docker rm -f
+            sudo docker ps -aq --filter "name=gateway" | xargs -r sudo docker rm -f
+            sudo docker ps -aq --filter "name=node"    | xargs -r sudo docker rm -f
 
-            $DC pull
-            $DC up -d --force-recreate
-            docker system prune -f
+            $DC up -d
+            sudo docker system prune -f
 
-            if [ -n "$SUDO" ]; then
-              run_root nginx -t
-              if ! run_root systemctl reload nginx; then
-                echo "systemctl reload failed; attempting nginx -s reload"
-                run_root nginx -s reload
-              fi
-            fi
+            # Health checks
+            deadline=$(( $(date +%s) + ( ${HEALTH_TIMEOUT_MS:-8000} / 1000 ) + 20 ))
+            until curl -fsS http://127.0.0.1:3000${TARGET_HEALTH_PATH:-/health} >/dev/null 2>&1; do
+              [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::UI health check failed"; exit 1; }
+              sleep 1
+            done
+            until curl -fsS http://127.0.0.1:8080${TARGET_HEALTH_PATH:-/health} >/dev/null 2>&1; do
+              [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::Gateway health check failed"; exit 1; }
+              sleep 1
+            done
+
+            echo "✅ Deploy finished and health checks passed."
