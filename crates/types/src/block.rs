@@ -284,17 +284,24 @@ impl Block {
                 return false;
             }
 
-            for (expected_parent, provided_hash) in
-                self.header.parent_ids.iter().zip(&self.prev_hashes)
-            {
-                let trimmed = provided_hash.strip_prefix("0x").unwrap_or(provided_hash);
-                let Ok(decoded) = hex::decode(trimmed) else {
-                    return false;
-                };
+            let expected_prev: Vec<String> =
+                self.header.parent_ids.iter().map(hex::encode).collect();
 
-                if decoded.as_slice() != expected_parent {
-                    return false;
-                }
+            let actual_prev = self
+                .prev_hashes
+                .iter()
+                .map(|provided_hash| {
+                    let trimmed = provided_hash.strip_prefix("0x").unwrap_or(provided_hash);
+                    hex::decode(trimmed).map(hex::encode)
+                })
+                .collect::<Result<Vec<_>, _>>();
+
+            let Ok(actual_prev) = actual_prev else {
+                return false;
+            };
+
+            if actual_prev != expected_prev {
+                return false;
             }
         }
 
@@ -437,5 +444,15 @@ mod tests {
         block.prev_hashes = vec![wrong_hash];
 
         assert!(!block.is_valid());
+    }
+
+    #[test]
+    fn block_validation_accepts_prefixed_prev_hashes() {
+        let parent = [13u8; 32];
+        let creator = [14u8; 32];
+        let mut block = Block::new(vec![parent], sample_transactions(), 8, creator);
+        block.prev_hashes = vec![format!("0x{}", hex::encode_upper(parent))];
+
+        assert!(block.is_valid());
     }
 }
