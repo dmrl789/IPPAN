@@ -14,7 +14,7 @@ services:
     depends_on:
       - node
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${GATEWAY_HOST_IP:-127.0.0.1}:${GATEWAY_HOST_PORT:-8081}:8080"
   node:
     image: ghcr.io/OWNER/REPO/node:latest
     env_file: .env
