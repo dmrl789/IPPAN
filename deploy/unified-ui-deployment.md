@@ -27,7 +27,7 @@ services:
     image: ghcr.io/dmrl789/ippan-unified-ui:latest
     env_file: /srv/ippan/ui.env
     ports:
-      - "3000:3000"
+      - "${UI_HOST_PORT:-3001}:3000"
     restart: unless-stopped
 YAML
 
@@ -38,9 +38,16 @@ NEXT_PUBLIC_API_BASE_URL=http://135.181.145.174:8080
 NEXT_PUBLIC_WS_URL=ws://135.181.145.174:8080/ws
 NEXT_PUBLIC_NETWORK_NAME=IPPAN-Devnet
 ENV
+
+sudo tee /srv/ippan/.env >/dev/null <<'ENV'
+UI_HOST_PORT=3001
+ENV
 ```
 
-If you plan to proxy the UI behind Envoy or Nginx, adjust the exposed port mapping accordingly.
+If you plan to proxy the UI behind Envoy or Nginx, adjust the exposed port mapping accordingly. The example above binds the
+container's port `3000` to host port `3001` so GitHub-hosted runners avoid conflicts with existing services on `3000`.
+Docker Compose automatically reads the `.env` file in `/srv/ippan`, so the `UI_HOST_PORT` value applies whenever you run
+`docker compose` in that directory.
 
 ## 3. Optional: Reverse proxy configuration
 Below is an example Nginx server block that proxies incoming traffic to the UI container. Update `server_name` and any TLS settings to match your environment.
@@ -51,7 +58,7 @@ server {
   server_name 188.245.97.41;
 
   location / {
-    proxy_pass http://127.0.0.1:3000;
+    proxy_pass http://127.0.0.1:3001;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -88,7 +95,7 @@ settings intact.
 2. On the server, verify the container is healthy:
    ```bash
    docker ps
-   curl -I http://127.0.0.1:3000/api/health
+   curl -I http://127.0.0.1:3001/api/health
    ```
 3. If proxied, check the public endpoint:
    ```bash
