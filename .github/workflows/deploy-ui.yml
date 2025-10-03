@@ -324,6 +324,34 @@ jobs:
             }
             remove_container "ippan-ui-ui-1"
 
+            free_port() {
+              local port="$1"
+              local pids=""
+              if command -v fuser >/dev/null 2>&1; then
+                if [ -n "$SUDO" ]; then
+                  run_root fuser -k "${port}/tcp" 2>/dev/null || true
+                else
+                  fuser -k "${port}/tcp" 2>/dev/null || true
+                fi
+              elif command -v lsof >/dev/null 2>&1; then
+                if [ -n "$SUDO" ]; then
+                  pids="$(run_root lsof -ti:"$port" 2>/dev/null || true)"
+                  if [ -n "$pids" ]; then
+                    run_root kill -9 $pids 2>/dev/null || true
+                  fi
+                else
+                  pids="$(lsof -ti:"$port" 2>/dev/null || true)"
+                  if [ -n "$pids" ]; then
+                    kill -9 $pids 2>/dev/null || true
+                  fi
+                fi
+              else
+                echo "::warning::Neither fuser nor lsof found; skipping port $port cleanup"
+              fi
+            }
+
+            free_port 3000
+
             $DC pull
             $DC up -d --force-recreate
             docker system prune -f
