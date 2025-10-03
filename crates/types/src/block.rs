@@ -333,7 +333,10 @@ impl Block {
                 .prev_hashes
                 .iter()
                 .map(|s| {
-                    let trimmed = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+                    let trimmed = s
+                        .strip_prefix("0x")
+                        .or_else(|| s.strip_prefix("0X"))
+                        .unwrap_or_else(|| s.as_str());
                     hex::decode(trimmed).map(hex::encode)
                 })
                 .collect();
