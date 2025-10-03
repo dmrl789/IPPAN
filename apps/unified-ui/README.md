@@ -132,17 +132,17 @@ The built files will be in the `dist` directory.
        server_name ui.example.com;
 
        location / {
-         proxy_pass http://127.0.0.1:3000;
-         proxy_set_header Host $host;
-         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-         proxy_set_header X-Forwarded-Proto $scheme;
-         add_header Access-Control-Allow-Origin "https://ui.example.com";
-       }
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Access-Control-Allow-Origin "https://ui.example.com";
+      }
 
-       location /api/health {
-         proxy_pass http://127.0.0.1:3000/api/health;
-         access_log off;
-       }
+      location /api/health {
+        proxy_pass http://127.0.0.1:3001/api/health;
+        access_log off;
+      }
      }
      ```
 

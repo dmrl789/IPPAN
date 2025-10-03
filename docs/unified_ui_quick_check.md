@@ -8,12 +8,12 @@ docker compose -f /srv/ippan/docker-compose.yml ps
 ```
 Expected output includes a line similar to:
 ```
-ippan-ui   Up      0.0.0.0:3000->3000/tcp
+ippan-ui   Up      0.0.0.0:3001->3000/tcp
 ```
 
 ## 2. Confirm the UI health endpoint locally
 ```bash
-curl -fsS http://127.0.0.1:3000/api/health && echo "UI OK (local)"
+curl -fsS http://127.0.0.1:3001/api/health && echo "UI OK (local)"
 ```
 Expected output:
 ```
@@ -50,7 +50,7 @@ echo "== Docker Compose ps =="
 docker compose -f /srv/ippan/docker-compose.yml ps || true
 
 echo "== Local UI health =="
-if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then
+if curl -fsS http://127.0.0.1:3001/api/health >/dev/null; then
   echo "UI OK (local)"
 else
   echo "UI NOT responding locally"; exit 1
