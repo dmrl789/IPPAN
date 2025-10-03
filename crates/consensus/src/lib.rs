@@ -1,7 +1,11 @@
 use anyhow::Result;
+use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
 use ippan_storage::{Account, Storage};
-use ippan_types::{Block, BlockId, RoundId, Transaction};
+use ippan_types::IppanTimeMicros;
+use ippan_types::{
+    Block, BlockId, RoundCertificate, RoundFinalizationRecord, RoundId, RoundWindow, Transaction,
+};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -73,6 +77,7 @@ pub struct ConsensusState {
 struct RoundTracker {
     current_round: RoundId,
     round_start: Instant,
+    round_start_time: IppanTimeMicros,
     previous_round_blocks: Vec<BlockId>,
     current_round_blocks: Vec<BlockId>,
 }
@@ -112,6 +117,7 @@ impl PoAConsensus {
         let round_tracker = RoundTracker {
             current_round: latest_height.saturating_add(1),
             round_start: Instant::now(),
+            round_start_time: IppanTimeMicros::now(),
             previous_round_blocks,
             current_round_blocks: Vec::new(),
         };
@@ -359,7 +365,7 @@ impl PoAConsensus {
         round_tracker: &Arc<RwLock<RoundTracker>>,
         finalization_interval: Duration,
     ) -> Result<()> {
-        let (round_id, block_ids) = {
+        let (round_id, block_ids, window_start, window_end) = {
             let mut tracker = round_tracker.write();
             if tracker.round_start.elapsed() < finalization_interval {
                 return Ok(());
@@ -367,16 +373,20 @@ impl PoAConsensus {
 
             if tracker.current_round_blocks.is_empty() {
                 tracker.round_start = Instant::now();
+                tracker.round_start_time = IppanTimeMicros::now();
                 return Ok(());
             }
 
             let round_id = tracker.current_round;
             let block_ids = tracker.current_round_blocks.clone();
+            let window_start = tracker.round_start_time;
             tracker.previous_round_blocks = block_ids.clone();
             tracker.current_round += 1;
             tracker.current_round_blocks.clear();
             tracker.round_start = Instant::now();
-            (round_id, block_ids)
+            let window_end = IppanTimeMicros::now();
+            tracker.round_start_time = window_end;
+            (round_id, block_ids, window_start, window_end)
         };
 
         let mut blocks = Vec::new();
@@ -423,7 +433,7 @@ impl PoAConsensus {
             conflicts.len()
         );
 
-        for conflict in conflicts {
+        for conflict in &conflicts {
             warn!(
                 "Conflict detected in round {} for transaction {}",
                 round_id,
@@ -431,7 +441,67 @@ impl PoAConsensus {
             );
         }
 
+        let certificate = RoundCertificate {
+            round: round_id,
+            block_ids: block_ids.clone(),
+            agg_sig: Self::aggregate_round_signature(round_id, &block_ids),
+        };
+
+        let previous_state_root = storage
+            .get_latest_round_finalization()?
+            .map(|record| record.state_root)
+            .unwrap_or([0u8; 32]);
+
+        let mut state_hasher = Blake3::new();
+        state_hasher.update(&round_id.to_be_bytes());
+        state_hasher.update(&previous_state_root);
+        for block_id in &block_ids {
+            state_hasher.update(block_id);
+        }
+        for tx_id in &ordered {
+            state_hasher.update(tx_id);
+        }
+        for conflict in &conflicts {
+            state_hasher.update(conflict);
+        }
+        let state_digest = state_hasher.finalize();
+        let mut state_root = [0u8; 32];
+        state_root.copy_from_slice(state_digest.as_bytes());
+
+        let window = RoundWindow {
+            id: round_id,
+            start_us: window_start,
+            end_us: window_end,
+        };
+
+        let finalization = RoundFinalizationRecord {
+            round: round_id,
+            window,
+            ordered_tx_ids: ordered.clone(),
+            fork_drops: conflicts.clone(),
+            state_root,
+            proof: certificate.clone(),
+        };
+
+        storage.store_round_finalization(finalization.clone())?;
+
+        info!(
+            "Round {} certificate aggregated {} blocks; state root {}",
+            round_id,
+            certificate.block_ids.len(),
+            hex::encode(state_root)
+        );
+
         Ok(())
+    }
+
+    fn aggregate_round_signature(round_id: RoundId, block_ids: &[BlockId]) -> Vec<u8> {
+        let mut hasher = Blake3::new();
+        hasher.update(&round_id.to_be_bytes());
+        for block_id in block_ids {
+            hasher.update(block_id);
+        }
+        hasher.finalize().as_bytes()[..32].to_vec()
     }
 
     /// Apply transactions and block rewards using the consensus configuration
@@ -631,10 +701,11 @@ mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;
     use ippan_storage::{Account, MemoryStorage, SledStorage, Storage};
-    use ippan_types::ippan_time_init;
+    use ippan_types::{ippan_time_init, ippan_time_now};
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
     use tempfile::tempdir;
-    use tokio::time::{sleep, Duration, Instant};
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn test_poa_consensus() {
@@ -868,5 +939,31 @@ mod tests {
             account_two.balance,
             1_000_000 + reward * proposer_two_blocks as u64
         );
+
+        {
+            let mut tracker = node_one.round_tracker.write();
+            tracker.current_round_blocks = (1..=latest_height)
+                .filter_map(|height| storage.get_block_by_height(height).unwrap())
+                .map(|block| block.header.id)
+                .collect();
+            tracker.current_round = latest_height.saturating_add(1);
+            tracker.round_start = Instant::now() - node_one.finalization_interval;
+            let interval_us = node_one.finalization_interval.as_micros() as u64;
+            let now_us = ippan_time_now();
+            tracker.round_start_time = IppanTimeMicros(now_us.saturating_sub(interval_us));
+        }
+
+        PoAConsensus::finalize_round_if_ready(
+            &storage,
+            &node_one.round_tracker,
+            node_one.finalization_interval,
+        )
+        .unwrap();
+
+        let round_record = storage
+            .get_latest_round_finalization()
+            .unwrap()
+            .expect("finalization record stored");
+        assert_eq!(round_record.proof.block_ids.len(), latest_height as usize);
     }
 }

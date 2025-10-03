@@ -24,6 +24,7 @@ pub struct RoundCertificate {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoundFinalizationRecord {
     pub round: RoundId,
+    pub window: RoundWindow,
     pub ordered_tx_ids: Vec<[u8; 32]>,
     pub fork_drops: Vec<[u8; 32]>,
     pub state_root: [u8; 32],

@@ -1,5 +1,8 @@
 use anyhow::Result;
-use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
+use ippan_types::{
+    Block, L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord, RoundId,
+    Transaction,
+};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
@@ -85,6 +88,21 @@ pub trait Storage {
 
     /// List L2 exit records, optionally filtered by L2 identifier
     fn list_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2ExitRecord>>;
+
+    /// Store an aggregated round certificate
+    fn store_round_certificate(&self, certificate: RoundCertificate) -> Result<()>;
+
+    /// Fetch a stored round certificate
+    fn get_round_certificate(&self, round: RoundId) -> Result<Option<RoundCertificate>>;
+
+    /// Store a round finalization record
+    fn store_round_finalization(&self, record: RoundFinalizationRecord) -> Result<()>;
+
+    /// Fetch a round finalization record
+    fn get_round_finalization(&self, round: RoundId) -> Result<Option<RoundFinalizationRecord>>;
+
+    /// Fetch the most recent round finalization record
+    fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>>;
 }
 
 /// Sled-backed persistent storage implementation
@@ -97,6 +115,8 @@ pub struct SledStorage {
     l2_networks: Tree,
     l2_commits: Tree,
     l2_exits: Tree,
+    round_certificates: Tree,
+    round_finalizations: Tree,
 }
 
 impl SledStorage {
@@ -111,6 +131,8 @@ impl SledStorage {
         let l2_networks = db.open_tree("l2_networks")?;
         let l2_commits = db.open_tree("l2_commits")?;
         let l2_exits = db.open_tree("l2_exits")?;
+        let round_certificates = db.open_tree("round_certificates")?;
+        let round_finalizations = db.open_tree("round_finalizations")?;
 
         Ok(Self {
             db,
@@ -121,6 +143,8 @@ impl SledStorage {
             l2_networks,
             l2_commits,
             l2_exits,
+            round_certificates,
+            round_finalizations,
         })
     }
 
@@ -358,6 +382,53 @@ impl Storage for SledStorage {
         exits.sort_by(|a, b| a.submitted_at.cmp(&b.submitted_at));
         Ok(exits)
     }
+
+    fn store_round_certificate(&self, certificate: RoundCertificate) -> Result<()> {
+        let round_key = certificate.round.to_be_bytes();
+        let value = serde_json::to_vec(&certificate)?;
+        self.round_certificates.insert(round_key, value)?;
+        Ok(())
+    }
+
+    fn get_round_certificate(&self, round: RoundId) -> Result<Option<RoundCertificate>> {
+        if let Some(bytes) = self.round_certificates.get(round.to_be_bytes())? {
+            let cert = serde_json::from_slice::<RoundCertificate>(&bytes)?;
+            Ok(Some(cert))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn store_round_finalization(&self, record: RoundFinalizationRecord) -> Result<()> {
+        let round_key = record.round.to_be_bytes();
+        let value = serde_json::to_vec(&record)?;
+        self.round_finalizations.insert(round_key, value)?;
+        let cert_value = serde_json::to_vec(&record.proof)?;
+        self.round_certificates.insert(round_key, cert_value)?;
+        self.metadata
+            .insert(b"latest_finalized_round", &round_key)?;
+        Ok(())
+    }
+
+    fn get_round_finalization(&self, round: RoundId) -> Result<Option<RoundFinalizationRecord>> {
+        if let Some(bytes) = self.round_finalizations.get(round.to_be_bytes())? {
+            let record = serde_json::from_slice::<RoundFinalizationRecord>(&bytes)?;
+            Ok(Some(record))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>> {
+        if let Some(value) = self.metadata.get(b"latest_finalized_round")? {
+            let mut key = [0u8; 8];
+            key.copy_from_slice(&value);
+            let round = u64::from_be_bytes(key);
+            self.get_round_finalization(round)
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 /// In-memory storage implementation (for testing/development)
@@ -369,6 +440,9 @@ pub struct MemoryStorage {
     l2_networks: Arc<RwLock<HashMap<String, L2Network>>>,
     l2_commits: Arc<RwLock<HashMap<String, L2Commit>>>,
     l2_exits: Arc<RwLock<HashMap<String, L2ExitRecord>>>,
+    round_certificates: Arc<RwLock<HashMap<RoundId, RoundCertificate>>>,
+    round_finalizations: Arc<RwLock<HashMap<RoundId, RoundFinalizationRecord>>>,
+    latest_finalized_round: Arc<RwLock<Option<RoundId>>>,
 }
 
 impl MemoryStorage {
@@ -381,6 +455,9 @@ impl MemoryStorage {
             l2_networks: Arc::new(RwLock::new(HashMap::new())),
             l2_commits: Arc::new(RwLock::new(HashMap::new())),
             l2_exits: Arc::new(RwLock::new(HashMap::new())),
+            round_certificates: Arc::new(RwLock::new(HashMap::new())),
+            round_finalizations: Arc::new(RwLock::new(HashMap::new())),
+            latest_finalized_round: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -510,12 +587,49 @@ impl Storage for MemoryStorage {
         exits.sort_by(|a, b| a.submitted_at.cmp(&b.submitted_at));
         Ok(exits)
     }
+
+    fn store_round_certificate(&self, certificate: RoundCertificate) -> Result<()> {
+        self.round_certificates
+            .write()
+            .insert(certificate.round, certificate);
+        Ok(())
+    }
+
+    fn get_round_certificate(&self, round: RoundId) -> Result<Option<RoundCertificate>> {
+        Ok(self.round_certificates.read().get(&round).cloned())
+    }
+
+    fn store_round_finalization(&self, record: RoundFinalizationRecord) -> Result<()> {
+        let round = record.round;
+        self.round_finalizations
+            .write()
+            .insert(round, record.clone());
+        self.round_certificates
+            .write()
+            .insert(round, record.proof.clone());
+        *self.latest_finalized_round.write() = Some(round);
+        Ok(())
+    }
+
+    fn get_round_finalization(&self, round: RoundId) -> Result<Option<RoundFinalizationRecord>> {
+        Ok(self.round_finalizations.read().get(&round).cloned())
+    }
+
+    fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>> {
+        if let Some(round) = *self.latest_finalized_round.read() {
+            Ok(self.round_finalizations.read().get(&round).cloned())
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::Block;
+    use ippan_types::{
+        Block, IppanTimeMicros, RoundCertificate, RoundFinalizationRecord, RoundWindow,
+    };
     use tempfile::tempdir;
 
     #[test]
@@ -560,5 +674,42 @@ mod tests {
 
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().balance, 1000);
+    }
+
+    #[test]
+    fn test_round_persistence() {
+        let temp_dir = tempdir().unwrap();
+        let storage = SledStorage::new(temp_dir.path()).unwrap();
+
+        let certificate = RoundCertificate {
+            round: 42,
+            block_ids: vec![[0xAA; 32], [0xBB; 32]],
+            agg_sig: vec![0x01, 0x02, 0x03],
+        };
+
+        let record = RoundFinalizationRecord {
+            round: 42,
+            window: RoundWindow {
+                id: 42,
+                start_us: IppanTimeMicros(10),
+                end_us: IppanTimeMicros(20),
+            },
+            ordered_tx_ids: vec![[0x11; 32]],
+            fork_drops: vec![[0x22; 32]],
+            state_root: [0x33; 32],
+            proof: certificate.clone(),
+        };
+
+        storage.store_round_finalization(record.clone()).unwrap();
+
+        let fetched_cert = storage.get_round_certificate(42).unwrap().unwrap();
+        assert_eq!(fetched_cert.block_ids.len(), 2);
+
+        let fetched_record = storage.get_round_finalization(42).unwrap().unwrap();
+        assert_eq!(fetched_record.state_root, [0x33; 32]);
+        assert_eq!(fetched_record.window.end_us, IppanTimeMicros(20));
+
+        let latest = storage.get_latest_round_finalization().unwrap().unwrap();
+        assert_eq!(latest.round, 42);
     }
 }
