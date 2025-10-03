@@ -1,9 +1,12 @@
 use anyhow::Result;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{Method, StatusCode};
 use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::HashSet;
+use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -15,7 +18,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
 
-use hex::encode;
+use hex::{decode, encode};
 use ippan_consensus::{ConsensusState, PoAConsensus, Validator};
 use ippan_p2p::HttpP2PNetwork;
 use ippan_storage::Storage;
@@ -126,6 +129,289 @@ impl StateEnvelope {
     }
 }
 
+#[derive(Debug, Serialize)]
+struct NodeInfo {
+    is_running: bool,
+    uptime_seconds: u64,
+    version: String,
+    node_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct NetworkInfo {
+    connected_peers: usize,
+    known_peers: usize,
+    total_peers: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct MempoolInfo {
+    total_transactions: usize,
+    pending_transactions: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockchainInfo {
+    current_height: u64,
+    total_blocks: u64,
+    total_transactions: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct ApiNodeStatus {
+    node_id: String,
+    status: String,
+    current_block: u64,
+    total_transactions: u64,
+    network_peers: usize,
+    uptime_seconds: u64,
+    version: String,
+    node: NodeInfo,
+    network: NetworkInfo,
+    mempool: MempoolInfo,
+    blockchain: BlockchainInfo,
+}
+
+#[derive(Debug, Serialize)]
+struct NetworkStatsResponse {
+    total_peers: usize,
+    connected_peers: usize,
+    network_id: String,
+    protocol_version: String,
+    uptime_seconds: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct MempoolStatsResponse {
+    total_transactions: usize,
+    total_senders: usize,
+    total_size: u64,
+    fee_distribution: Value,
+}
+
+#[derive(Debug, Serialize)]
+struct ConsensusStatsResponse {
+    current_round: u64,
+    validators_count: usize,
+    block_height: u64,
+    consensus_status: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ValidatorInfoResponse {
+    node_id: String,
+    address: String,
+    stake_amount: u64,
+    is_active: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RecentBlocksResponsePayload {
+    latest_height: u64,
+    blocks: Vec<BlockSummaryResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockSummaryResponse {
+    height: u64,
+    hash: String,
+    parent_hashes: Vec<String>,
+    proposer: String,
+    transaction_count: usize,
+    timestamp_micros: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockDetailResponsePayload {
+    block: BlockDetailResponse,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockDetailResponse {
+    height: u64,
+    hash: String,
+    parent_hashes: Vec<String>,
+    proposer: String,
+    transaction_count: usize,
+    timestamp_micros: u64,
+    transactions: Vec<TransactionViewResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct TransactionViewResponse {
+    id: String,
+    from: String,
+    to: String,
+    amount: u64,
+    nonce: u64,
+    timestamp: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    direction: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hashtimer: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct WalletBalanceResponse {
+    account: String,
+    address: String,
+    balance: u64,
+    staked: u64,
+    rewards: u64,
+    nonce: u64,
+    pending_transactions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct WalletTransactionsResponse {
+    transactions: Vec<TransactionViewResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct AddressValidationResponse {
+    valid: bool,
+}
+
+fn format_address(bytes: &[u8; 32]) -> String {
+    format!("i{}", encode(bytes))
+}
+
+fn parse_wallet_address(value: &str) -> Result<[u8; 32], String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("address is required".to_string());
+    }
+
+    let normalized = trimmed
+        .strip_prefix('i')
+        .or_else(|| trimmed.strip_prefix('I'))
+        .unwrap_or(trimmed);
+
+    if normalized.len() != 64 {
+        return Err("addresses must contain 64 hexadecimal characters".to_string());
+    }
+
+    let raw = decode(normalized).map_err(|err| format!("invalid hexadecimal address: {err}"))?;
+
+    if raw.len() != 32 {
+        return Err("address must decode to 32 bytes".to_string());
+    }
+
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&raw);
+    Ok(bytes)
+}
+
+fn transaction_to_view(
+    tx: &Transaction,
+    perspective: Option<&[u8; 32]>,
+) -> TransactionViewResponse {
+    let direction = perspective.and_then(|address| {
+        if &tx.from == address {
+            Some("outgoing".to_string())
+        } else if &tx.to == address {
+            Some("incoming".to_string())
+        } else {
+            None
+        }
+    });
+
+    TransactionViewResponse {
+        id: encode(tx.hash()),
+        from: format_address(&tx.from),
+        to: format_address(&tx.to),
+        amount: tx.amount,
+        nonce: tx.nonce,
+        timestamp: tx.timestamp.0,
+        direction,
+        hashtimer: Some(tx.hashtimer.to_string()),
+    }
+}
+
+fn pending_hashes_for_address(mempool: &[Transaction], address: &[u8; 32]) -> Vec<String> {
+    mempool
+        .iter()
+        .filter(|tx| &tx.from == address)
+        .map(|tx| encode(tx.hash()))
+        .collect()
+}
+
+fn mempool_total_size(mempool: &[Transaction]) -> u64 {
+    mempool
+        .iter()
+        .map(|tx| {
+            serde_json::to_vec(tx)
+                .map(|bytes| bytes.len() as u64)
+                .unwrap_or(0)
+        })
+        .sum()
+}
+
+fn internal_error<E: std::fmt::Display>(error: E) -> (StatusCode, String) {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("internal error: {error}"),
+    )
+}
+
+fn forward_transaction(app: &AppState, tx: Transaction) -> Result<(), (StatusCode, String)> {
+    if let Some(consensus) = app.consensus.clone() {
+        consensus.submit_tx(tx).map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("submit failed: {err}"),
+            )
+        })?
+    } else if let Some(sender) = app.tx_sender.clone() {
+        sender.send(tx).map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("submit failed: {err}"),
+            )
+        })?
+    } else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "transaction submission unavailable".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn wallet_balance_for(
+    app: &AppState,
+    address: &str,
+) -> Result<WalletBalanceResponse, (StatusCode, String)> {
+    let address_bytes =
+        parse_wallet_address(address).map_err(|err| (StatusCode::BAD_REQUEST, err))?;
+
+    let account = app
+        .storage
+        .get_account(&address_bytes)
+        .map_err(internal_error)?;
+
+    let (balance, nonce) = account
+        .map(|acct| (acct.balance, acct.nonce))
+        .unwrap_or((0, 0));
+
+    let mempool = app.mempool.read();
+    let pending = pending_hashes_for_address(&mempool, &address_bytes);
+    drop(mempool);
+
+    let formatted = format_address(&address_bytes);
+
+    Ok(WalletBalanceResponse {
+        account: formatted.clone(),
+        address: formatted,
+        balance,
+        staked: 0,
+        rewards: 0,
+        nonce,
+        pending_transactions: pending,
+    })
+}
+
 /// Generic OK response.
 #[derive(Debug, Serialize)]
 struct OkResponse {
@@ -166,6 +452,17 @@ struct PageQuery {
     limit: usize,
 }
 
+#[derive(Debug, Deserialize)]
+struct BlocksQuery {
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WalletAddressQuery {
+    address: Option<String>,
+}
+
 /// Simple network broadcast body.
 #[derive(Debug, Deserialize)]
 struct BroadcastBody {
@@ -193,6 +490,19 @@ async fn run_rpc_server(app_state: AppState, bind_addr: SocketAddr) -> Result<()
         .route("/config/l2", get(get_l2_config))
         // txs
         .route("/tx", post(submit_tx))
+        // unified REST API used by the frontend
+        .route("/api/v1/status", get(api_status))
+        .route("/api/v1/network", get(api_network))
+        .route("/api/v1/mempool", get(api_mempool))
+        .route("/api/v1/consensus", get(api_consensus))
+        .route("/api/v1/validators", get(api_validators_list))
+        .route("/api/v1/blocks/recent", get(api_recent_blocks))
+        .route("/api/v1/blocks/:height", get(api_block_by_height))
+        .route("/api/v1/balance", get(api_balance_query))
+        .route("/api/v1/balance/:address", get(api_balance_path))
+        .route("/api/v1/transactions", get(api_transactions))
+        .route("/api/v1/address/validate", get(api_validate_address))
+        .route("/api/v1/transaction", post(api_submit_transaction))
         // network broadcast (basic diagnostic)
         .route("/network/broadcast", post(broadcast));
 
@@ -335,30 +645,100 @@ async fn submit_tx(
     State(app): State<AppState>,
     Json(body): Json<SubmitTx>,
 ) -> Result<Json<OkResponse>, (StatusCode, String)> {
-    let tx = body.tx;
+    forward_transaction(&app, body.tx)?;
+    Ok(Json(OkResponse { ok: true }))
+}
 
-    if let Some(consensus) = app.consensus.clone() {
-        consensus.submit_tx(tx).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("submit failed: {e}"),
-            )
-        })?;
-    } else if let Some(sender) = app.tx_sender.clone() {
-        sender.send(tx).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("submit failed: {e}"),
-            )
-        })?;
+async fn api_status(
+    State(app): State<AppState>,
+) -> Result<Json<ApiNodeStatus>, (StatusCode, String)> {
+    let uptime_seconds = app.start_time.elapsed().as_secs();
+    let peer_count = app.peer_count.load(Ordering::Relaxed);
+    let latest_height = app.storage.get_latest_height().map_err(internal_error)?;
+    let total_transactions = app
+        .storage
+        .get_transaction_count()
+        .map_err(internal_error)?;
+
+    let mempool = app.mempool.read();
+    let mempool_len = mempool.len();
+    drop(mempool);
+
+    let version =
+        env::var("IPPAN_NODE_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string());
+    let status = if peer_count == 0 {
+        "degraded"
     } else {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "transaction submission unavailable".to_string(),
-        ));
+        "healthy"
+    };
+    let total_blocks = latest_height.saturating_add(1);
+
+    Ok(Json(ApiNodeStatus {
+        node_id: app.node_id.clone(),
+        status: status.to_string(),
+        current_block: latest_height,
+        total_transactions,
+        network_peers: peer_count,
+        uptime_seconds,
+        version: version.clone(),
+        node: NodeInfo {
+            is_running: true,
+            uptime_seconds,
+            version: version.clone(),
+            node_id: app.node_id.clone(),
+        },
+        network: NetworkInfo {
+            connected_peers: peer_count,
+            known_peers: peer_count,
+            total_peers: peer_count,
+        },
+        mempool: MempoolInfo {
+            total_transactions: mempool_len,
+            pending_transactions: mempool_len,
+        },
+        blockchain: BlockchainInfo {
+            current_height: latest_height,
+            total_blocks,
+            total_transactions,
+        },
+    }))
+}
+
+async fn api_network(
+    State(app): State<AppState>,
+) -> Result<Json<NetworkStatsResponse>, (StatusCode, String)> {
+    let peer_count = app.peer_count.load(Ordering::Relaxed);
+    let uptime_seconds = app.start_time.elapsed().as_secs();
+    let network_id = env::var("IPPAN_NETWORK_ID").unwrap_or_else(|_| "ippan-devnet".to_string());
+    let protocol_version = env::var("IPPAN_PROTOCOL_VERSION")
+        .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string());
+
+    Ok(Json(NetworkStatsResponse {
+        total_peers: peer_count,
+        connected_peers: peer_count,
+        network_id,
+        protocol_version,
+        uptime_seconds,
+    }))
+}
+
+async fn api_mempool(
+    State(app): State<AppState>,
+) -> Result<Json<MempoolStatsResponse>, (StatusCode, String)> {
+    let mempool = app.mempool.read();
+    let mut senders = HashSet::new();
+    for tx in mempool.iter() {
+        senders.insert(tx.from);
     }
 
-    Ok(Json(OkResponse { ok: true }))
+    let total_size = mempool_total_size(&mempool);
+
+    Ok(Json(MempoolStatsResponse {
+        total_transactions: mempool.len(),
+        total_senders: senders.len(),
+        total_size,
+        fee_distribution: json!({}),
+    }))
 }
 
 async fn broadcast(
@@ -409,6 +789,202 @@ async fn broadcast(
     }
 
     Ok(Json(OkResponse { ok: true }))
+}
+
+async fn api_consensus(
+    State(app): State<AppState>,
+) -> Result<Json<ConsensusStatsResponse>, (StatusCode, String)> {
+    let consensus = app.consensus.clone().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "consensus unavailable".to_string(),
+    ))?;
+
+    let state = consensus.get_state().await;
+    let status = if state.validator_count == 0 {
+        "initializing"
+    } else if state.is_proposing {
+        "healthy"
+    } else {
+        "idle"
+    };
+
+    Ok(Json(ConsensusStatsResponse {
+        current_round: state.current_round,
+        validators_count: state.validator_count,
+        block_height: state.latest_block_height,
+        consensus_status: status.to_string(),
+    }))
+}
+
+async fn api_validators_list(
+    State(app): State<AppState>,
+) -> Result<Json<Vec<ValidatorInfoResponse>>, (StatusCode, String)> {
+    let consensus = app.consensus.clone().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "consensus unavailable".to_string(),
+    ))?;
+
+    let validators = consensus.get_validators().await;
+    let payload = validators
+        .into_iter()
+        .map(|validator| ValidatorInfoResponse {
+            node_id: format_address(&validator.id),
+            address: format_address(&validator.address),
+            stake_amount: validator.stake,
+            is_active: validator.is_active,
+        })
+        .collect();
+
+    Ok(Json(payload))
+}
+
+async fn api_recent_blocks(
+    State(app): State<AppState>,
+    Query(params): Query<BlocksQuery>,
+) -> Result<Json<RecentBlocksResponsePayload>, (StatusCode, String)> {
+    let limit = params.limit.unwrap_or(20).clamp(1, 100) as u64;
+    let latest_height = app.storage.get_latest_height().map_err(internal_error)?;
+
+    let start_height = latest_height.saturating_sub(limit.saturating_sub(1));
+    let mut blocks = Vec::new();
+
+    for height in (start_height..=latest_height).rev() {
+        if let Some(block) = app
+            .storage
+            .get_block_by_height(height)
+            .map_err(internal_error)?
+        {
+            let parent_hashes = block
+                .header
+                .parent_ids
+                .iter()
+                .map(|id| encode(id))
+                .collect();
+            blocks.push(BlockSummaryResponse {
+                height,
+                hash: encode(block.header.id),
+                parent_hashes,
+                proposer: format_address(&block.header.creator),
+                transaction_count: block.transactions.len(),
+                timestamp_micros: block.header.hashtimer.time().0,
+            });
+        }
+    }
+
+    Ok(Json(RecentBlocksResponsePayload {
+        latest_height,
+        blocks,
+    }))
+}
+
+async fn api_block_by_height(
+    State(app): State<AppState>,
+    Path(height): Path<u64>,
+) -> Result<Json<BlockDetailResponsePayload>, (StatusCode, String)> {
+    let block = app
+        .storage
+        .get_block_by_height(height)
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, format!("block {height} not found")))?;
+
+    let parent_hashes = block
+        .header
+        .parent_ids
+        .iter()
+        .map(|id| encode(id))
+        .collect();
+
+    let transactions = block
+        .transactions
+        .iter()
+        .map(|tx| transaction_to_view(tx, None))
+        .collect();
+
+    Ok(Json(BlockDetailResponsePayload {
+        block: BlockDetailResponse {
+            height,
+            hash: encode(block.header.id),
+            parent_hashes,
+            proposer: format_address(&block.header.creator),
+            transaction_count: block.transactions.len(),
+            timestamp_micros: block.header.hashtimer.time().0,
+            transactions,
+        },
+    }))
+}
+
+async fn api_balance_query(
+    State(app): State<AppState>,
+    Query(params): Query<WalletAddressQuery>,
+) -> Result<Json<WalletBalanceResponse>, (StatusCode, String)> {
+    let address = params.address.ok_or((
+        StatusCode::BAD_REQUEST,
+        "address query parameter is required".to_string(),
+    ))?;
+    let response = wallet_balance_for(&app, &address)?;
+    Ok(Json(response))
+}
+
+async fn api_balance_path(
+    State(app): State<AppState>,
+    Path(address): Path<String>,
+) -> Result<Json<WalletBalanceResponse>, (StatusCode, String)> {
+    let response = wallet_balance_for(&app, &address)?;
+    Ok(Json(response))
+}
+
+async fn api_transactions(
+    State(app): State<AppState>,
+    Query(params): Query<WalletAddressQuery>,
+) -> Result<Json<WalletTransactionsResponse>, (StatusCode, String)> {
+    let address = params.address.ok_or((
+        StatusCode::BAD_REQUEST,
+        "address query parameter is required".to_string(),
+    ))?;
+    let address_bytes =
+        parse_wallet_address(&address).map_err(|err| (StatusCode::BAD_REQUEST, err))?;
+
+    let mut transactions = app
+        .storage
+        .get_transactions_by_address(&address_bytes)
+        .map_err(internal_error)?;
+
+    transactions.sort_by_key(|tx| tx.timestamp.0);
+    transactions.reverse();
+
+    let views = transactions
+        .iter()
+        .map(|tx| transaction_to_view(tx, Some(&address_bytes)))
+        .collect();
+
+    Ok(Json(WalletTransactionsResponse {
+        transactions: views,
+    }))
+}
+
+async fn api_validate_address(
+    Query(params): Query<WalletAddressQuery>,
+) -> Json<AddressValidationResponse> {
+    let valid = params
+        .address
+        .as_deref()
+        .map(|candidate| parse_wallet_address(candidate).is_ok())
+        .unwrap_or(false);
+
+    Json(AddressValidationResponse { valid })
+}
+
+async fn api_submit_transaction(
+    State(app): State<AppState>,
+    Json(body): Json<SubmitTx>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let tx_hash = encode(body.tx.hash());
+    forward_transaction(&app, body.tx)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "tx_hash": tx_hash },
+    })))
 }
 
 #[cfg(test)]
