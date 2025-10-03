@@ -74,6 +74,20 @@ pub struct Block {
     pub prev_hashes: Vec<String>,
 }
 
+fn decode_block_id(hash: &str) -> Option<BlockId> {
+    let trimmed = hash
+        .strip_prefix("0x")
+        .or_else(|| hash.strip_prefix("0X"))
+        .unwrap_or(hash);
+    let bytes = hex::decode(trimmed).ok()?;
+    if bytes.len() != 32 {
+        return None;
+    }
+    let mut id = [0u8; 32];
+    id.copy_from_slice(&bytes);
+    Some(id)
+}
+
 impl BlockHeader {
     /// Compute the canonical identifier for the supplied header components.
     #[allow(clippy::too_many_arguments)]
@@ -307,10 +321,19 @@ impl Block {
             return false;
         }
 
-        // Header.prev_hashes must exactly reflect parent_ids (lower-hex, no 0x).
-        let expected_prev: Vec<String> =
-            self.header.parent_ids.iter().map(hex::encode).collect();
-        if self.header.prev_hashes != expected_prev {
+        // Header.prev_hashes must correspond to parent_ids (allowing optional 0x and casing).
+        let decoded_prev: Option<Vec<BlockId>> = self
+            .header
+            .prev_hashes
+            .iter()
+            .map(|hash| decode_block_id(hash))
+            .collect();
+
+        let Some(decoded_prev) = decoded_prev else {
+            return false;
+        };
+
+        if decoded_prev != self.header.parent_ids {
             return false;
         }
 
@@ -325,20 +348,19 @@ impl Block {
         // - allow empty (legacy)
         // - if present, allow 0x prefix and uppercase, but must match expected_prev.
         if !self.prev_hashes.is_empty() {
+            let expected_prev: Vec<String> =
+                self.header.parent_ids.iter().map(hex::encode).collect();
             if self.prev_hashes.len() != self.header.parent_ids.len() {
                 return false;
             }
 
-            let normalized: Result<Vec<String>, _> = self
+            let normalized: Option<Vec<String>> = self
                 .prev_hashes
                 .iter()
-                .map(|s| {
-                    let trimmed = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
-                    hex::decode(trimmed).map(hex::encode)
-                })
+                .map(|s| decode_block_id(s).map(hex::encode))
                 .collect();
 
-            let Ok(normalized) = normalized else {
+            let Some(normalized) = normalized else {
                 return false;
             };
 
@@ -525,6 +547,21 @@ mod tests {
         let creator = [14u8; 32];
         let mut block = Block::new(vec![parent], sample_transactions(), 8, creator);
         block.prev_hashes = vec![format!("0x{}", hex::encode_upper(parent))];
+
+        assert!(block.is_valid());
+    }
+
+    #[test]
+    fn block_validation_accepts_header_prev_hash_variants() {
+        let parent = [15u8; 32];
+        let creator = [16u8; 32];
+        let mut block = Block::new(vec![parent], sample_transactions(), 9, creator);
+        block.header.prev_hashes = block
+            .header
+            .prev_hashes
+            .iter()
+            .map(|hash| format!("0X{}", hash.to_uppercase()))
+            .collect();
 
         assert!(block.is_valid());
     }
