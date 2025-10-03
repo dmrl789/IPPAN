@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-unified-ui-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -33,12 +37,15 @@ jobs:
           NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
           NEXT_PUBLIC_ENABLE_FULL_UI: ${{ secrets.NEXT_PUBLIC_ENABLE_FULL_UI }}
         run: |
+          set -euo pipefail
           npm ci
           npm run build
 
       - name: Install gateway dependencies
         working-directory: apps/gateway
-        run: npm ci
+        run: |
+          set -euo pipefail
+          npm ci
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -49,12 +56,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Ensure port 3000 is free
-        run: |
-          if lsof -i:3000; then
-            kill -9 $(lsof -ti:3000)
-          fi
 
       - name: Build and push container images
         env:
@@ -85,7 +86,6 @@ jobs:
               exit 1
             fi
           done
-          # basic shape checks without leaking secrets
           if [ "${#DEPLOY_SSH_KEY}" -lt 100 ]; then
             echo "::error::DEPLOY_SSH_KEY looks too short. Paste the FULL private key (starts with '-----BEGIN OPENSSH PRIVATE KEY-----')."
             exit 1
@@ -149,6 +149,7 @@ jobs:
                 "$@"
               fi
             }
+
             IMAGE_PREFIX="${IMAGE_PREFIX,,}"
             : "${NEXT_PUBLIC_GATEWAY_URL:=https://ui.ippan.org/api}"
             : "${NEXT_PUBLIC_API_BASE_URL:=${NEXT_PUBLIC_GATEWAY_URL}}"
@@ -309,30 +310,10 @@ jobs:
             if [ -n "${GITHUB_TOKEN:-}" ]; then
               printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
             fi
+
             $DC down --remove-orphans || true
-            if command -v lsof >/dev/null 2>&1; then
-              if [ -n "$SUDO" ]; then
-                PIDS="$(run_root sh -c 'lsof -ti tcp:3000 -s tcp:LISTEN 2>/dev/null' || true)"
-              else
-                PIDS="$(lsof -ti tcp:3000 -s tcp:LISTEN 2>/dev/null || true)"
-              fi
-              if [ -n "$PIDS" ]; then
-                echo "Killing processes using port 3000: $PIDS"
-                if [ -n "$SUDO" ]; then
-                  run_root kill -9 $PIDS || true
-                else
-                  kill -9 $PIDS || true
-                fi
-              fi
-            elif command -v fuser >/dev/null 2>&1; then
-              if [ -n "$SUDO" ]; then
-                run_root fuser -k 3000/tcp || true
-              else
-                fuser -k 3000/tcp || true
-              fi
-            else
-              echo "Neither lsof nor fuser available; skipping port 3000 cleanup"
-            fi
+
+            # Best-effort cleanup of any stray UI container names from previous runs
             remove_container() {
               local name="$1"
               if [ -n "$SUDO" ]; then
@@ -341,10 +322,10 @@ jobs:
                 docker rm -f "$name" 2>/dev/null || true
               fi
             }
-
             remove_container "ippan-ui-ui-1"
+
             $DC pull
-            $DC up -d
+            $DC up -d --force-recreate
             docker system prune -f
 
             if [ -n "$SUDO" ]; then
