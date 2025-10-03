@@ -150,7 +150,7 @@ impl Block {
             &[],
         );
 
-        let prev_hashes: Vec<String> = parent_ids.iter().map(|hash| hex::encode(hash)).collect();
+        let prev_hashes: Vec<String> = parent_ids.iter().map(hex::encode).collect();
         let tx_root_hex = hex::encode(merkle_payload);
 
         let header = BlockHeader {
@@ -305,7 +305,7 @@ impl Block {
             .header
             .parent_ids
             .iter()
-            .map(|hash| hex::encode(hash))
+            .map(hex::encode)
             .collect();
         if self.header.prev_hashes != expected_prev {
             return false;
