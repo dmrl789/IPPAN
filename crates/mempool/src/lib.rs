@@ -1,4 +1,5 @@
 use anyhow::Result;
+use ippan_crypto::validate_confidential_transaction;
 use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap};
@@ -39,6 +40,9 @@ impl Mempool {
         if transactions.len() >= self.max_size {
             return Ok(false);
         }
+
+        // Validate confidential payloads before admission
+        validate_confidential_transaction(&tx)?;
 
         // Add transaction
         transactions.insert(tx_hash.clone(), tx.clone());

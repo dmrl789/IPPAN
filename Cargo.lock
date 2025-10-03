@@ -1223,6 +1223,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "ippan-crypto",
  "ippan-storage",
  "ippan-types",
  "parking_lot 0.12.4",
@@ -1239,8 +1240,10 @@ name = "ippan-crypto"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "blake3",
  "ed25519-dalek",
+ "hex",
  "ippan-types",
  "rand_core",
  "thiserror 1.0.69",
@@ -1253,6 +1256,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
+ "ippan-crypto",
  "ippan-types",
  "parking_lot 0.12.4",
 ]

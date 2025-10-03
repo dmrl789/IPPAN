@@ -1,4 +1,5 @@
 use anyhow::Result;
+use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
 use ippan_storage::{Account, Storage};
 use ippan_types::{Block, BlockId, RoundId, Transaction};
 use parking_lot::RwLock;
@@ -317,6 +318,9 @@ impl PoAConsensus {
             return Err(anyhow::anyhow!("Invalid block"));
         }
 
+        validate_confidential_block(&block)
+            .map_err(|err| anyhow::anyhow!("invalid confidential transaction: {err}"))?;
+
         // Store block
         storage.store_block(block.clone())?;
 
@@ -520,6 +524,10 @@ impl PoAConsensus {
             return Ok(false);
         }
 
+        if validate_confidential_block(block).is_err() {
+            return Ok(false);
+        }
+
         // Check if the proposer is valid for this slot
         let expected_proposer =
             Self::get_proposer_for_slot(&self.config.validators, block.header.round);
@@ -536,6 +544,9 @@ impl PoAConsensus {
         // Validate transactions
         for tx in &block.transactions {
             if !tx.is_valid() {
+                return Ok(false);
+            }
+            if validate_confidential_transaction(tx).is_err() {
                 return Ok(false);
             }
         }

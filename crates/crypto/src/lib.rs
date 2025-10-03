@@ -2,8 +2,13 @@ use anyhow::Result;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::{OsRng, RngCore};
 
+pub mod confidential;
 pub mod zk_stark;
 
+pub use confidential::{
+    validate_block as validate_confidential_block,
+    validate_transaction as validate_confidential_transaction, ConfidentialTransactionError,
+};
 pub use zk_stark::{generate_fibonacci_proof, verify_fibonacci_proof, StarkProof, StarkProofError};
 
 /// Cryptographic key pair for IPPAN

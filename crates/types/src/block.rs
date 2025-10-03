@@ -1,6 +1,7 @@
 use crate::hashtimer::{HashTimer, IppanTimeMicros};
 use crate::transaction::Transaction;
 use blake3::Hasher as Blake3;
+use hex;
 use serde::{Deserialize, Serialize};
 use serde_bytes;
 
@@ -27,12 +28,30 @@ pub struct BlockHeader {
     pub hashtimer: HashTimer,
     /// Parent block identifiers drawn from round-1.
     pub parent_ids: Vec<BlockId>,
+    /// Hex-encoded parent hashes for DA summaries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prev_hashes: Vec<String>,
     /// Ordered payload identifiers (e.g., transaction batch digests).
     pub payload_ids: Vec<[u8; 32]>,
     /// Merkle root over payload identifiers.
     pub merkle_payload: [u8; 32],
     /// Merkle root over parent identifiers.
     pub merkle_parents: [u8; 32],
+    /// Merkle/Verkle root of transactions committed in the block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx_root: Option<String>,
+    /// Merkle root of erasure-coded body shards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub erasure_root: Option<String>,
+    /// Root of receipts proving execution/state transitions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt_root: Option<String>,
+    /// Global state root after executing the block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_root: Option<String>,
+    /// Aggregate signatures (proposer + round validators).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub validator_sigs: Vec<String>,
     /// Optional VRF proof used for committee sampling or priority.
     #[serde(default, with = "serde_bytes")]
     pub vrf_proof: Vec<u8>,
@@ -131,15 +150,24 @@ impl Block {
             &[],
         );
 
+        let prev_hashes: Vec<String> = parent_ids.iter().map(|hash| hex::encode(hash)).collect();
+        let tx_root_hex = hex::encode(merkle_payload);
+
         let header = BlockHeader {
             id,
             creator,
             round,
             hashtimer,
             parent_ids,
+            prev_hashes,
             payload_ids,
             merkle_payload,
             merkle_parents,
+            tx_root: Some(tx_root_hex),
+            erasure_root: None,
+            receipt_root: None,
+            state_root: None,
+            validator_sigs: Vec::new(),
             vrf_proof: Vec::new(),
         };
 
@@ -273,6 +301,22 @@ impl Block {
             return false;
         }
 
+        let expected_prev: Vec<String> = self
+            .header
+            .parent_ids
+            .iter()
+            .map(|hash| hex::encode(hash))
+            .collect();
+        if self.header.prev_hashes != expected_prev {
+            return false;
+        }
+
+        if let Some(expected_tx_root) = &self.header.tx_root {
+            if *expected_tx_root != hex::encode(self.header.merkle_payload) {
+                return false;
+            }
+        }
+
         if !self.transactions.is_empty() {
             let computed_payload_ids: Vec<[u8; 32]> =
                 self.transactions.iter().map(|tx| tx.hash()).collect();
@@ -330,6 +374,23 @@ impl Block {
         // Ensure the declared time is not from the future.
         self.header.hashtimer.time().0 <= IppanTimeMicros::now().0
     }
+
+    /// Update erasure/receipt/state roots after executing the block.
+    pub fn set_data_availability_roots(
+        &mut self,
+        erasure_root: Option<String>,
+        receipt_root: Option<String>,
+        state_root: Option<String>,
+    ) {
+        self.header.erasure_root = erasure_root;
+        self.header.receipt_root = receipt_root;
+        self.header.state_root = state_root;
+    }
+
+    /// Append an aggregated validator signature entry.
+    pub fn push_validator_signature(&mut self, signature: String) {
+        self.header.validator_sigs.push(signature);
+    }
 }
 
 #[cfg(test)]
@@ -357,12 +418,18 @@ mod tests {
         assert_eq!(block.header.creator, creator);
         assert_eq!(block.header.round, round);
         assert_eq!(block.header.parent_ids, vec![parent]);
+        assert_eq!(block.header.prev_hashes, vec![hex::encode(parent)]);
         assert_eq!(block.transactions.len(), 2);
         assert_eq!(block.header.payload_ids.len(), 2);
         assert_eq!(block.hash(), block.header.id);
         assert_eq!(block.header.merkle_payload.len(), 32);
         assert_eq!(block.header.merkle_parents.len(), 32);
         assert_eq!(block.header.hashtimer.to_hex().len(), 64);
+        assert_eq!(
+            block.header.tx_root.as_ref().map(|root| root.len()),
+            Some(64)
+        );
+        assert!(block.header.validator_sigs.is_empty());
     }
 
     #[test]
@@ -375,6 +442,11 @@ mod tests {
         assert!(block.header.payload_ids.is_empty());
         assert_eq!(block.header.merkle_payload, [0u8; 32]);
         assert_eq!(block.header.merkle_parents, [0u8; 32]);
+        assert!(block.header.prev_hashes.is_empty());
+        assert_eq!(
+            block.header.tx_root.as_ref().map(|root| root.len()),
+            Some(64)
+        );
     }
 
     #[test]
