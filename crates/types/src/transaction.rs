@@ -2,6 +2,83 @@ use crate::hashtimer::{HashTimer, IppanTimeMicros};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_bytes;
+use std::collections::BTreeMap;
+
+/// Visibility options for transaction payloads.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TransactionVisibility {
+    /// Transaction payload is plaintext and globally readable.
+    Public,
+    /// Transaction payload is encrypted and only accessible to entitled parties.
+    Confidential,
+}
+
+impl Default for TransactionVisibility {
+    fn default() -> Self {
+        Self::Public
+    }
+}
+
+impl TransactionVisibility {
+    fn as_byte(self) -> u8 {
+        match self {
+            Self::Public => 0,
+            Self::Confidential => 1,
+        }
+    }
+}
+
+/// Envelope entry mapping an entitled recipient to an encrypted symmetric key.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AccessKey {
+    /// Recipient public key (e.g., encoded Ed25519 key).
+    pub recipient_pub: String,
+    /// Symmetric key encrypted to the recipient (base64 or hex).
+    pub enc_key: String,
+}
+
+/// Confidential transaction payload metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConfidentialEnvelope {
+    /// Encryption algorithm identifier (e.g., "AES-256-GCM").
+    pub enc_algo: String,
+    /// Initialization vector / nonce (base64 or hex string).
+    pub iv: String,
+    /// Ciphertext of the original payload (base64 or hex string).
+    pub ciphertext: String,
+    /// One entry per entitled reader.
+    pub access_keys: Vec<AccessKey>,
+}
+
+/// Supported zero-knowledge proof systems for confidential payload validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfidentialProofType {
+    /// Zero-knowledge STARK proof.
+    Stark,
+}
+
+impl ConfidentialProofType {
+    fn as_byte(self) -> u8 {
+        match self {
+            ConfidentialProofType::Stark => 0,
+        }
+    }
+}
+
+/// Metadata describing a confidential proof attached to a transaction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConfidentialProof {
+    /// Type of proof supplied by the transaction author.
+    #[serde(rename = "proof_type")]
+    pub proof_type: ConfidentialProofType,
+    /// Base64- or hex-encoded serialized proof bytes.
+    pub proof: String,
+    /// Public inputs bound to the proof (sorted for deterministic hashing).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub public_inputs: BTreeMap<String, String>,
+}
 
 /// A transaction in the IPPAN blockchain
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +93,18 @@ pub struct Transaction {
     pub amount: u64,
     /// Nonce for replay protection
     pub nonce: u64,
+    /// Visibility flag describing how the payload should be handled.
+    #[serde(default)]
+    pub visibility: TransactionVisibility,
+    /// Optional cleartext topics/tags for routing or indexing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub topics: Vec<String>,
+    /// Optional confidential payload envelope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidential: Option<ConfidentialEnvelope>,
+    /// Optional zero-knowledge proof metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zk_proof: Option<ConfidentialProof>,
     /// Transaction signature (64 bytes)
     #[serde(with = "serde_bytes")]
     pub signature: [u8; 64],
@@ -45,10 +134,42 @@ impl Transaction {
             to,
             amount,
             nonce,
+            visibility: TransactionVisibility::Public,
+            topics: Vec::new(),
+            confidential: None,
+            zk_proof: None,
             signature: [0u8; 64], // Will be set after signing
             hashtimer,
             timestamp,
         }
+    }
+
+    /// Attach cleartext topics/tags to the transaction body.
+    pub fn set_topics(&mut self, topics: Vec<String>) {
+        self.topics = topics;
+    }
+
+    /// Attach a confidential envelope and mark the transaction as confidential.
+    pub fn set_confidential_envelope(&mut self, envelope: ConfidentialEnvelope) {
+        self.visibility = TransactionVisibility::Confidential;
+        self.confidential = Some(envelope);
+    }
+
+    /// Remove any confidential envelope and revert to public visibility.
+    pub fn clear_confidential_envelope(&mut self) {
+        self.visibility = TransactionVisibility::Public;
+        self.confidential = None;
+        self.zk_proof = None;
+    }
+
+    /// Attach a zero-knowledge proof to the transaction.
+    pub fn set_confidential_proof(&mut self, proof: ConfidentialProof) {
+        self.zk_proof = Some(proof);
+    }
+
+    /// Remove any zero-knowledge proof metadata from the transaction.
+    pub fn clear_confidential_proof(&mut self) {
+        self.zk_proof = None;
     }
 
     /// Recompute the transaction identifier from its contents.
@@ -87,6 +208,22 @@ impl Transaction {
         bytes.extend_from_slice(&self.hashtimer.time_prefix);
         bytes.extend_from_slice(&self.hashtimer.hash_suffix);
         bytes.extend_from_slice(&self.timestamp.0.to_be_bytes());
+        bytes.push(self.visibility.as_byte());
+        Self::append_topics(&mut bytes, &self.topics);
+        match &self.confidential {
+            Some(envelope) => {
+                bytes.push(1);
+                Self::append_confidential(&mut bytes, envelope);
+            }
+            None => bytes.push(0),
+        }
+        match &self.zk_proof {
+            Some(proof) => {
+                bytes.push(1);
+                Self::append_confidential_proof(&mut bytes, proof);
+            }
+            None => bytes.push(0),
+        }
         bytes
     }
 
@@ -95,6 +232,47 @@ impl Transaction {
         let mut bytes = self.message_bytes();
         bytes.extend_from_slice(&self.signature);
         bytes
+    }
+
+    /// Digest of the canonical transaction message without the signature bytes.
+    pub fn message_digest(&self) -> [u8; 32] {
+        let hash = blake3::hash(&self.message_bytes());
+        let mut digest = [0u8; 32];
+        digest.copy_from_slice(hash.as_bytes());
+        digest
+    }
+
+    fn append_topics(bytes: &mut Vec<u8>, topics: &[String]) {
+        bytes.extend_from_slice(&(topics.len() as u32).to_be_bytes());
+        for topic in topics {
+            Self::append_length_prefixed(bytes, topic.as_bytes());
+        }
+    }
+
+    fn append_confidential(bytes: &mut Vec<u8>, envelope: &ConfidentialEnvelope) {
+        Self::append_length_prefixed(bytes, envelope.enc_algo.as_bytes());
+        Self::append_length_prefixed(bytes, envelope.iv.as_bytes());
+        Self::append_length_prefixed(bytes, envelope.ciphertext.as_bytes());
+        bytes.extend_from_slice(&(envelope.access_keys.len() as u32).to_be_bytes());
+        for access_key in &envelope.access_keys {
+            Self::append_length_prefixed(bytes, access_key.recipient_pub.as_bytes());
+            Self::append_length_prefixed(bytes, access_key.enc_key.as_bytes());
+        }
+    }
+
+    fn append_confidential_proof(bytes: &mut Vec<u8>, proof: &ConfidentialProof) {
+        bytes.push(proof.proof_type.as_byte());
+        Self::append_length_prefixed(bytes, proof.proof.as_bytes());
+        bytes.extend_from_slice(&(proof.public_inputs.len() as u32).to_be_bytes());
+        for (key, value) in &proof.public_inputs {
+            Self::append_length_prefixed(bytes, key.as_bytes());
+            Self::append_length_prefixed(bytes, value.as_bytes());
+        }
+    }
+
+    fn append_length_prefixed(bytes: &mut Vec<u8>, data: &[u8]) {
+        bytes.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(data);
     }
 
     /// Sign the transaction using an Ed25519 private key
@@ -136,12 +314,18 @@ impl Transaction {
     /// Check if transaction is valid
     pub fn is_valid(&self) -> bool {
         // Basic validation checks
-        if self.amount == 0 {
-            return false;
-        }
+        if self.visibility == TransactionVisibility::Confidential {
+            if self.confidential.is_none() || self.zk_proof.is_none() {
+                return false;
+            }
+        } else {
+            if self.amount == 0 {
+                return false;
+            }
 
-        if self.from == self.to {
-            return false;
+            if self.from == self.to {
+                return false;
+            }
         }
 
         // Verify signature

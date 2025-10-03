@@ -47,6 +47,25 @@ impl StarkProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         self.proof.to_bytes()
     }
+
+    /// Reconstruct a `StarkProof` instance from serialized bytes and public inputs.
+    pub fn from_bytes(
+        sequence_length: usize,
+        result: u64,
+        bytes: &[u8],
+    ) -> Result<Self, StarkProofError> {
+        if sequence_length < 4 || !sequence_length.is_power_of_two() {
+            return Err(StarkProofError::InvalidSequenceLength);
+        }
+
+        let proof = Proof::from_bytes(bytes)
+            .map_err(|err| StarkProofError::Deserialization(err.to_string()))?;
+        Ok(Self {
+            sequence_length,
+            result: BaseElement::new(result),
+            proof,
+        })
+    }
 }
 
 impl fmt::Debug for StarkProof {
@@ -70,6 +89,9 @@ pub enum StarkProofError {
     /// Verification failed for the supplied proof.
     #[error("failed to verify STARK proof: {0}")]
     Verification(#[from] VerifierError),
+    /// Deserialization of proof bytes failed.
+    #[error("failed to decode STARK proof: {0}")]
+    Deserialization(String),
 }
 
 /// Generate a STARK proof attesting that the Fibonacci sequence was computed correctly up to the

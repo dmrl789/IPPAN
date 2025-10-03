@@ -10,6 +10,7 @@ integration-tests = []
 
 [dependencies]
 ippan-types = { path = "../types" }
+ippan-crypto = { path = "../crypto" }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }
 hex = { workspace = true }
