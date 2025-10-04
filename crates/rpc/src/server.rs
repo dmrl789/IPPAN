@@ -854,11 +854,12 @@ async fn api_recent_blocks(
             .get_block_by_height(height)
             .map_err(internal_error)?
         {
+            #[allow(clippy::redundant_closure)]
             let parent_hashes: Vec<String> = block
                 .header
                 .parent_ids
                 .iter()
-                .map(encode)
+                .map(|id| encode(id))
                 .collect();
             blocks.push(BlockSummaryResponse {
                 height,
@@ -887,11 +888,12 @@ async fn api_block_by_height(
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, format!("block {height} not found")))?;
 
+    #[allow(clippy::redundant_closure)]
     let parent_hashes: Vec<String> = block
         .header
         .parent_ids
         .iter()
-        .map(encode)
+        .map(|id| encode(id))
         .collect();
 
     let transactions = block
