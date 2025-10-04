@@ -47,6 +47,17 @@ export function getApiBaseUrl() {
   return API_BASE_URL;
 }
 
+export function buildApiUrl(path: string): string {
+  if (!path) {
+    return getApiBaseUrl();
+  }
+
+  const normalizedBase = getApiBaseUrl().replace(/\/$/, '');
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  return `${normalizedBase}${normalizedPath}`;
+}
+
 export function initializeApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
     const stored = readStoredBaseUrl();

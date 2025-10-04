@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Card, Button, Input, Badge, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/UI'
+import { buildApiUrl } from '../lib/api'
 
 // Types for network file availability
 type FileStatus = 
@@ -267,12 +268,15 @@ export default function FileAvailabilityPage() {
       }
       
       // Call API to initiate download
-      const response = await fetch(`/api/v1/availability/files/${file.id}/download?requester=current_user`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
+      const response = await fetch(
+        buildApiUrl(`/api/v1/availability/files/${file.id}/download?requester=current_user`),
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
       
       if (response.ok) {
         const data = await response.json()
