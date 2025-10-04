@@ -858,7 +858,7 @@ async fn api_recent_blocks(
                 .header
                 .parent_ids
                 .iter()
-                .map(|id| encode(id))
+                .map(encode)
                 .collect();
             blocks.push(BlockSummaryResponse {
                 height,
@@ -891,7 +891,7 @@ async fn api_block_by_height(
         .header
         .parent_ids
         .iter()
-        .map(|id| encode(id))
+        .map(encode)
         .collect();
 
     let transactions = block
