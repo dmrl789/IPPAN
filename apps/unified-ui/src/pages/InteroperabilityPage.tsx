@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Badge, LoadingSpinner, Modal, Field, Input } from '../components/UI';
 import { useToast } from '../components/Toast';
+import { buildApiUrl } from '../lib/api';
 
 interface L2Network {
   id: string;
@@ -145,7 +146,7 @@ export default function InteroperabilityPage() {
         throw new Error('Epoch must be a positive number');
       }
 
-      const response = await fetch('/api/v1/l2/commit', {
+      const response = await fetch(buildApiUrl('/api/v1/l2/commit'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -208,7 +209,7 @@ export default function InteroperabilityPage() {
       }
 
       // Submit to API
-      const response = await fetch('/api/v1/l2/verify_exit', {
+      const response = await fetch(buildApiUrl('/api/v1/l2/verify_exit'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
