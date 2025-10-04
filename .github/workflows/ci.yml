@@ -23,6 +23,7 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: stable
           components: clippy,rustfmt
 
       - name: Cache cargo dependencies
@@ -52,6 +53,15 @@ jobs:
 
       - name: Cargo test (build only)
         run: cargo test --workspace --all-features --no-run $WORKSPACE_EXCLUDES
+
+      # If you have any shell scripts that check $toolchain, update them as below:
+      # Example:
+      - name: Parse toolchain version (example)
+        run: |
+          if [[ -z "${toolchain:-}" ]]; then
+            echo "'toolchain' is a required input" >&2
+            exit 1
+          fi
 
   frontend:
     name: Unified UI
