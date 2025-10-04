@@ -15,6 +15,7 @@ jobs:
       RUST_BACKTRACE: 1
       CARGO_TERM_COLOR: always
       WORKSPACE_EXCLUDES: "--exclude ippan-rpc --exclude ippan-node"
+      toolchain: stable
     steps:
       - name: Checkout
         uses: actions/checkout@v4

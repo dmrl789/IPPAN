@@ -854,11 +854,11 @@ async fn api_recent_blocks(
             .get_block_by_height(height)
             .map_err(internal_error)?
         {
-            let parent_hashes = block
+            let parent_hashes: Vec<String> = block
                 .header
                 .parent_ids
                 .iter()
-                .map(|id| encode(id))
+                .map(encode)
                 .collect();
             blocks.push(BlockSummaryResponse {
                 height,
@@ -887,11 +887,11 @@ async fn api_block_by_height(
         .map_err(internal_error)?
         .ok_or((StatusCode::NOT_FOUND, format!("block {height} not found")))?;
 
-    let parent_hashes = block
+    let parent_hashes: Vec<String> = block
         .header
         .parent_ids
         .iter()
-        .map(|id| encode(id))
+        .map(encode)
         .collect();
 
     let transactions = block
