@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Modal, Button, Field, Input, LoadingSpinner } from './UI'
 import { useToast } from './Toast'
+import { buildApiUrl } from '../lib/api'
 
 interface ValidatorRegistrationModalProps {
   isOpen: boolean
@@ -90,7 +91,7 @@ export default function ValidatorRegistrationModal({
     setError(null)
 
     try {
-      const response = await fetch('/api/v1/validators/register', {
+      const response = await fetch(buildApiUrl('/api/v1/validators/register'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
