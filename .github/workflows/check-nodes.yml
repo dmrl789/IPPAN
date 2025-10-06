@@ -1,0 +1,85 @@
+name: Check IPPAN Nodes
+
+on:
+  workflow_dispatch:
+    inputs:
+      hosts:
+        description: "Comma-separated IPv4/hostnames"
+        required: true
+        default: "188.245.97.41,188.245.97.42"
+      ui_url:
+        description: "Public UI URL (optional)"
+        required: false
+        default: "https://ui.ippan.org"
+      api_base:
+        description: "Node API base (as seen on target)"
+        required: false
+        default: "http://127.0.0.1:8080"
+      lb_health:
+        description: "Load balancer health URL on target"
+        required: false
+        default: "http://127.0.0.1:3000/lb-health"
+  schedule:
+    # Optional nightly check at 02:30 Europe/Rome
+    - cron: "30 0 * * *"
+
+env:
+  DEFAULT_HOSTS: "188.245.97.41,188.245.97.42"
+  DEFAULT_UI_URL: "https://ui.ippan.org"
+  DEFAULT_API_BASE: "http://127.0.0.1:8080"
+  DEFAULT_LB_HEALTH: "http://127.0.0.1:3000/lb-health"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      SSH_USER: ${{ secrets.PROD_SSH_USER }}
+      SSH_KEY: ${{ secrets.PROD_SSH_KEY }}          # OpenSSH private key
+      SSH_PORT: ${{ secrets.PROD_SSH_PORT || 22 }}
+      SYSTEMD_SVC: ippan-node
+      DOCKER_COMPOSE_DIR: /opt/ippan
+      P2P_PORTS: 4001,7000,8080,3000
+      DEFAULT_HOSTS: ${{ env.DEFAULT_HOSTS }}
+      DEFAULT_UI_URL: ${{ env.DEFAULT_UI_URL }}
+      DEFAULT_API_BASE: ${{ env.DEFAULT_API_BASE }}
+      DEFAULT_LB_HEALTH: ${{ env.DEFAULT_LB_HEALTH }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJson(format('["{0}"]', join('\",\"', split(replace(inputs.hosts || env.DEFAULT_HOSTS, ' ', ''), ',')))) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${SSH_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
+
+      - name: Copy checker script
+        run: |
+          rsync -e "ssh -i ~/.ssh/id_ed25519 -p ${SSH_PORT}" -avz deploy/check-nodes.sh "${SSH_USER}@${{ matrix.host }}:/tmp/check-nodes.sh"
+          ssh -i ~/.ssh/id_ed25519 -p ${SSH_PORT} "${SSH_USER}@${{ matrix.host }}" "chmod +x /tmp/check-nodes.sh"
+
+      - name: Run checks on ${{ matrix.host }}
+        id: run_checks
+        env:
+          HOST: ${{ matrix.host }}
+          UI_URL: ${{ inputs.ui_url || env.DEFAULT_UI_URL }}
+          API_BASE: ${{ inputs.api_base || env.DEFAULT_API_BASE }}
+          LB_HEALTH: ${{ inputs.lb_health || env.DEFAULT_LB_HEALTH }}
+        run: |
+          set -euo pipefail
+          api_base="${API_BASE%/}"
+          ssh -i ~/.ssh/id_ed25519 -p ${SSH_PORT} "${SSH_USER}@${{ matrix.host }}" \
+            "HOST='$HOST' UI_URL='$UI_URL' API_BASE='$api_base' LB_HEALTH='${LB_HEALTH}' HTTP_HEALTH='${api_base}/health' HTTP_STATUS='${api_base}/status' HTTP_PEERS='${api_base}/peers' SYSTEMD_SVC='${SYSTEMD_SVC}' DOCKER_COMPOSE_DIR='${DOCKER_COMPOSE_DIR}' P2P_PORTS='${P2P_PORTS}' /tmp/check-nodes.sh" \
+            | tee "summary-${{ matrix.host }}.json"
+
+      - name: Upload summaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-summaries
+          path: summary-*.json
