@@ -6,7 +6,7 @@ on:
       hosts:
         description: "Comma-separated IPv4/hostnames"
         required: true
-        default: "188.245.97.41,188.245.97.42"
+        default: "188.245.97.41,135.181.145.174"
       ui_url:
         description: "Public UI URL (optional)"
         required: false
@@ -24,7 +24,7 @@ on:
     - cron: "30 0 * * *"
 
 env:
-  DEFAULT_HOSTS: "188.245.97.41,188.245.97.42"
+  DEFAULT_HOSTS: "188.245.97.41,135.181.145.174"
   DEFAULT_UI_URL: "https://ui.ippan.org"
   DEFAULT_API_BASE: "http://127.0.0.1:8080"
   DEFAULT_LB_HEALTH: "http://127.0.0.1:3000/lb-health"
