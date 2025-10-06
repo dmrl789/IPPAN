@@ -57,9 +57,11 @@ docker run -d \
   --name ippan-ui \
   --restart unless-stopped \
   -p 80:80 \
-  -e REACT_APP_API_URL=http://188.245.97.41:8080 \
-  -e REACT_APP_NODE_1_URL=http://188.245.97.41:8080 \
-  -e REACT_APP_NODE_2_URL=http://135.181.145.174:8080 \
+  -e REACT_APP_API_URL=https://ui.ippan.org/api \
+  -e REACT_APP_NODE_1_URL=https://ui.ippan.org/api \
+  -e REACT_APP_NODE_2_URL=https://ui.ippan.org/api \
+  -e REACT_APP_WS_URL=wss://ui.ippan.org/ws \
+  -e REACT_APP_ENABLE_FULL_UI=1 \
   ippan-ui:latest
 ```
 
@@ -81,20 +83,22 @@ docker-compose -f deploy/docker-compose.production.yml up -d
 
 | Service | Server 1 (188.245.97.41) | Server 2 (135.181.145.174) |
 |---------|---------------------------|----------------------------|
-| **UI** | 80 (HTTP) | - |
+| **UI** | 443 (HTTPS) | - |
 | **Node 1 RPC** | 8080 | - |
 | **Node 2 RPC** | - | 8080 |
-| **Node 1 P2P** | 9000 | - |
-| **Node 2 P2P** | - | 9001 |
-| **Load Balancer** | 3000 | - |
+| **Node 1 P2P** | 4001/tcp | - |
+| **Node 2 P2P** | - | 4001/tcp |
+| **Gateway / API** | 8080 (internal), 443 (public) | - |
 
 ### **Environment Variables**
 
 **UI Configuration:**
 ```bash
-REACT_APP_API_URL=http://188.245.97.41:8080
-REACT_APP_NODE_1_URL=http://188.245.97.41:8080
-REACT_APP_NODE_2_URL=http://135.181.145.174:8080
+REACT_APP_API_URL=https://ui.ippan.org/api
+REACT_APP_NODE_1_URL=https://ui.ippan.org/api
+REACT_APP_NODE_2_URL=https://ui.ippan.org/api
+REACT_APP_WS_URL=wss://ui.ippan.org/ws
+REACT_APP_ENABLE_FULL_UI=1
 ```
 
 ---
@@ -102,19 +106,19 @@ REACT_APP_NODE_2_URL=http://135.181.145.174:8080
 ## 🌐 **Access Points**
 
 ### **Web Interface**
-- **Primary UI**: http://188.245.97.41
-- **Load Balancer**: http://188.245.97.41:3000
+- **Primary UI**: https://ui.ippan.org
+- **Load Balancer**: https://ui.ippan.org/api
 
 ### **API Endpoints**
-- **Node 1 API**: http://188.245.97.41:8080
-- **Node 2 API**: http://135.181.145.174:8080
-- **Load Balanced API**: http://188.245.97.41:3000/api
+- **Node 1 API**: https://ui.ippan.org/api
+- **Node 2 API**: https://ui.ippan.org/api
+- **Load Balanced API**: https://ui.ippan.org/api
 
 ### **Health Checks**
-- **UI Health**: http://188.245.97.41/health
-- **Node 1 Health**: http://188.245.97.41:8080/health
-- **Node 2 Health**: http://135.181.145.174:8080/health
-- **Load Balancer Health**: http://188.245.97.41:3000/lb-health
+- **UI Health**: https://ui.ippan.org/health
+- **Node 1 Health**: https://ui.ippan.org/api/health
+- **Node 2 Health**: https://ui.ippan.org/api/health
+- **Load Balancer Health**: https://ui.ippan.org/api/health
 
 ---
 
@@ -153,46 +157,53 @@ docker-compose -f deploy/docker-compose.production.yml ps
 
 ```bash
 # Check UI
-curl http://188.245.97.41/health
+curl https://ui.ippan.org/health
 
 # Check Node 1
-curl http://188.245.97.41:8080/health
+curl https://ui.ippan.org/api/health
 
 # Check Node 2
-curl http://135.181.145.174:8080/health
+curl https://ui.ippan.org/api/health
 
-# Check Load Balancer
-curl http://188.245.97.41:3000/lb-health
+# Check WebSocket upgrade
+curl -I -H 'Connection: Upgrade' -H 'Upgrade: websocket' https://ui.ippan.org/ws
 ```
 
 ### **2. Test UI Functionality**
 
 ```bash
 # Open web browser and navigate to:
-# http://188.245.97.41
+# https://ui.ippan.org
 
 # Test API through UI
-curl http://188.245.97.41:3000/api/health
+curl https://ui.ippan.org/api/health
 ```
 
 ### **3. Verify Network Connectivity**
 
 ```bash
-# Check peer connections
-curl http://188.245.97.41:8080/p2p/peers
-curl http://135.181.145.174:8080/p2p/peers
+# Confirm each node listens publicly for libp2p traffic
+ss -ltnp | grep :4001 || sudo lsof -iTCP:4001 -sTCP:LISTEN
 
-# Test transaction propagation
-curl -X POST http://188.245.97.41:8080/tx \
+# Open the firewall if required
+sudo ufw allow 4001/tcp
+sudo ufw reload
+
+# Check peer connections from the HTTPS gateway
+curl https://ui.ippan.org/api/peers
+
+# Test transaction propagation through the HTTPS gateway
+curl -X POST https://ui.ippan.org/api/tx \
   -H "Content-Type: application/json" \
   -d '{
     "from": "0000000000000000000000000000000000000000000000000000000000000001",
     "to": "0000000000000000000000000000000000000000000000000000000000000002",
     "amount": 1000,
     "nonce": 1,
-    "signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    "signature": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
   }'
 ```
+
 
 ---
 
@@ -240,9 +251,11 @@ The UI can be configured via environment variables:
 ```bash
 # In docker-compose.full-stack.yml
 environment:
-  - REACT_APP_API_URL=http://188.245.97.41:8080
-  - REACT_APP_NODE_1_URL=http://188.245.97.41:8080
-  - REACT_APP_NODE_2_URL=http://135.181.145.174:8080
+  - REACT_APP_API_URL=https://ui.ippan.org/api
+  - REACT_APP_NODE_1_URL=https://ui.ippan.org/api
+  - REACT_APP_NODE_2_URL=https://ui.ippan.org/api
+  - REACT_APP_WS_URL=wss://ui.ippan.org/ws
+  - REACT_APP_ENABLE_FULL_UI=1
   - REACT_APP_NETWORK_NAME=IPPAN Production
   - REACT_APP_CHAIN_ID=ippan-mainnet
 ```
@@ -275,8 +288,8 @@ docker exec ippan-ui nginx -t
 # Check load balancer
 docker logs ippan-nginx-lb
 
-# Test direct node access
-curl http://188.245.97.41:8080/health
+# Test direct node access through the gateway
+curl https://ui.ippan.org/api/health
 ```
 
 **3. Nodes not connecting:**
@@ -286,8 +299,8 @@ docker logs ippan-node-1
 docker logs ippan-node-2
 
 # Test network connectivity
-telnet 188.245.97.41 9000
-telnet 135.181.145.174 9001
+ss -ltnp | grep :4001 || sudo lsof -iTCP:4001 -sTCP:LISTEN
+sudo ufw status | grep 4001 || sudo ufw allow 4001/tcp
 ```
 
 ### **Debug Commands**
@@ -311,12 +324,10 @@ docker-compose -f deploy/docker-compose.full-stack.yml up -d --build
 
 ```bash
 # On both servers
-sudo ufw allow 80/tcp    # HTTP
-sudo ufw allow 443/tcp   # HTTPS
-sudo ufw allow 8080/tcp  # RPC API
-sudo ufw allow 9000/tcp  # P2P Node 1
-sudo ufw allow 9001/tcp  # P2P Node 2
-sudo ufw allow 3000/tcp  # Load Balancer
+sudo ufw allow 80/tcp    # HTTP (redirect to HTTPS)
+sudo ufw allow 443/tcp   # Public HTTPS entrypoint
+sudo ufw allow 8080/tcp  # RPC API (internal)
+sudo ufw allow 4001/tcp  # P2P libp2p port
 ```
 
 ### **SSL/TLS Setup (Optional)**
@@ -352,7 +363,7 @@ sudo certbot --nginx -d your-domain.com
 ## 🎯 **Next Steps**
 
 1. **Deploy the full stack** using Docker Compose
-2. **Access the web UI** at http://188.245.97.41
+2. **Access the web UI** at https://ui.ippan.org
 3. **Test blockchain functionality** through the UI
 4. **Monitor system performance** and logs
 5. **Set up automated backups** for blockchain data
@@ -371,7 +382,7 @@ sudo certbot --nginx -d your-domain.com
 **Your IPPAN blockchain network with unified UI is ready for production!** 🚀
 
 ### **Access Your System:**
-- **Web UI**: http://188.245.97.41
-- **API**: http://188.245.97.41:3000/api
-- **Node 1**: http://188.245.97.41:8080
-- **Node 2**: http://135.181.145.174:8080
+- **Web UI**: https://ui.ippan.org
+- **API**: https://ui.ippan.org/api
+- **Node 1**: https://ui.ippan.org/api
+- **Node 2**: https://ui.ippan.org/api
