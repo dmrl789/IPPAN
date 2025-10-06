@@ -34,8 +34,10 @@ YAML
 sudo tee /srv/ippan/ui.env >/dev/null <<'ENV'
 NODE_ENV=production
 PORT=3000
-NEXT_PUBLIC_API_BASE_URL=http://135.181.145.174:8080
-NEXT_PUBLIC_WS_URL=ws://135.181.145.174:8080/ws
+NEXT_PUBLIC_GATEWAY_URL=https://ui.ippan.org/api
+NEXT_PUBLIC_API_BASE_URL=https://ui.ippan.org/api
+NEXT_PUBLIC_WS_URL=wss://ui.ippan.org/ws
+NEXT_PUBLIC_ENABLE_FULL_UI=1
 NEXT_PUBLIC_NETWORK_NAME=IPPAN-Devnet
 ENV
 
@@ -53,10 +55,21 @@ Docker Compose automatically reads the `.env` file in `/srv/ippan`, so the `UI_H
 Below is an example Nginx server block that proxies incoming traffic to the UI container. Update `server_name` and any TLS settings to match your environment.
 
 ```nginx
+# Redirect HTTP to HTTPS (optional but recommended)
 server {
   listen 80;
-  server_name 188.245.97.41;
+  server_name ui.ippan.org;
+  return 301 https://$host$request_uri;
+}
 
+server {
+  listen 443 ssl http2;
+  server_name ui.ippan.org;
+
+  ssl_certificate     /etc/letsencrypt/live/ui.ippan.org/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/ui.ippan.org/privkey.pem;
+
+  # Serve the compiled UI
   location / {
     proxy_pass http://127.0.0.1:3001;
     proxy_http_version 1.1;
@@ -64,14 +77,46 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_buffering off;
   }
 
-  location /health { return 200 "ok"; }
+  # Forward all REST requests to the gateway
+  location ^~ /api/ {
+    proxy_pass http://127.0.0.1:8080/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+  }
+
+  # Enable WebSocket upgrades for subscription traffic
+  location /ws {
+    proxy_pass http://127.0.0.1:8080/ws;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+  }
+
+  location = /health {
+    access_log off;
+    return 200 "ok\n";
+    add_header Content-Type text/plain;
+  }
 }
 ```
 
 With this configuration the unified UI is served directly from
-`http://188.245.97.41`, replacing the former
+`https://ui.ippan.org`, replacing the former
 `https://ui.ippan.org/dashboard` address.
 
 For Envoy-based setups, ensure the virtual host configuration includes the incoming domain or use `"*"` to accept all hosts.
@@ -96,10 +141,12 @@ settings intact.
    ```bash
    docker ps
    curl -I http://127.0.0.1:3001/api/health
+   curl -I http://127.0.0.1:3001/ws --http1.1 -H 'Upgrade: websocket' -H 'Connection: Upgrade'
    ```
 3. If proxied, check the public endpoint:
    ```bash
-   curl -I http://<server-host>/api/health
+   curl -I https://<server-host>/api/health
+   curl -I -H 'Upgrade: websocket' -H 'Connection: Upgrade' https://<server-host>/ws
    ```
 
 Common issues are usually related to SSH authentication, missing Docker/Compose packages, or GHCR authentication. Address those first if the deploy job fails.
