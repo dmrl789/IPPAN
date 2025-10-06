@@ -1,0 +1,112 @@
+name: Codex: Fix Unified UI (env + restart + health)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_defaults:
+        description: "Force sane defaults if secrets are missing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    env:
+      # Defaults used if apply_defaults == true and a secret is empty
+      DEF_NEXT_PUBLIC_GATEWAY_URL: https://ui.ippan.org/api
+      DEF_NEXT_PUBLIC_API_BASE_URL: https://ui.ippan.org/api
+      DEF_NEXT_PUBLIC_WS_URL: wss://ui.ippan.org/ws
+      DEF_NEXT_PUBLIC_ENABLE_FULL_UI: "1"
+      DEF_GATEWAY_ALLOWED_ORIGINS: https://ui.ippan.org
+    steps:
+      - name: Resolve build-time env (use secrets or defaults)
+        id: envs
+        shell: bash
+        env:
+          APPLY_DEFAULTS: ${{ inputs.apply_defaults }}
+          S_NEXT_PUBLIC_GATEWAY_URL: ${{ secrets.NEXT_PUBLIC_GATEWAY_URL }}
+          S_NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
+          S_NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
+          S_NEXT_PUBLIC_ENABLE_FULL_UI: ${{ secrets.NEXT_PUBLIC_ENABLE_FULL_UI }}
+          S_GATEWAY_ALLOWED_ORIGINS: ${{ secrets.GATEWAY_ALLOWED_ORIGINS }}
+        run: |
+          set -euo pipefail
+          pick() { local v="$1" def="$2"; if [ -n "${v}" ]; then echo "$v"; elif [ "${APPLY_DEFAULTS}" = "true" ]; then echo "$def"; else echo ""; fi; }
+          NP_GATEWAY_URL="$(pick "${S_NEXT_PUBLIC_GATEWAY_URL:-}" "${DEF_NEXT_PUBLIC_GATEWAY_URL}")"
+          NP_API_BASE_URL="$(pick "${S_NEXT_PUBLIC_API_BASE_URL:-}" "${DEF_NEXT_PUBLIC_API_BASE_URL}")"
+          NP_WS_URL="$(pick "${S_NEXT_PUBLIC_WS_URL:-}" "${DEF_NEXT_PUBLIC_WS_URL}")"
+          NP_FULL_UI="$(pick "${S_NEXT_PUBLIC_ENABLE_FULL_UI:-}" "${DEF_NEXT_PUBLIC_ENABLE_FULL_UI}")"
+          ALLOWED_ORIGINS="$(pick "${S_GATEWAY_ALLOWED_ORIGINS:-}" "${DEF_GATEWAY_ALLOWED_ORIGINS}")"
+
+          for k in NP_GATEWAY_URL NP_API_BASE_URL NP_WS_URL NP_FULL_UI ALLOWED_ORIGINS; do
+            if [ -z "${!k}" ]; then
+              echo "::error::$k is empty and apply_defaults=false; set repo secrets or re-run with defaults."
+              exit 1
+            fi
+          done
+
+          echo "NP_GATEWAY_URL=$NP_GATEWAY_URL"       >> "$GITHUB_OUTPUT"
+          echo "NP_API_BASE_URL=$NP_API_BASE_URL"     >> "$GITHUB_OUTPUT"
+          echo "NP_WS_URL=$NP_WS_URL"                 >> "$GITHUB_OUTPUT"
+          echo "NP_FULL_UI=$NP_FULL_UI"               >> "$GITHUB_OUTPUT"
+          echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"     >> "$GITHUB_OUTPUT"
+
+      - name: SSH: enforce .env, restart, health-check
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          NEXT_PUBLIC_GATEWAY_URL: ${{ steps.envs.outputs.NP_GATEWAY_URL }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ steps.envs.outputs.NP_API_BASE_URL }}
+          NEXT_PUBLIC_WS_URL: ${{ steps.envs.outputs.NP_WS_URL }}
+          NEXT_PUBLIC_ENABLE_FULL_UI: ${{ steps.envs.outputs.NP_FULL_UI }}
+          GATEWAY_ALLOWED_ORIGINS: ${{ steps.envs.outputs.ALLOWED_ORIGINS }}
+          UI_HOST_PORT: "3001"
+          GATEWAY_HOST_PORT: "8081"
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.DEPLOY_FINGERPRINT }}
+          envs: NEXT_PUBLIC_GATEWAY_URL,NEXT_PUBLIC_API_BASE_URL,NEXT_PUBLIC_WS_URL,NEXT_PUBLIC_ENABLE_FULL_UI,GATEWAY_ALLOWED_ORIGINS,UI_HOST_PORT,GATEWAY_HOST_PORT
+          script: |
+            set -euo pipefail
+            APP_DIR="${DEPLOY_APP_DIR:-$HOME/apps/ippan-ui}"
+            mkdir -p "$APP_DIR" && cd "$APP_DIR"
+
+            # Ensure .env has the right values (create or update in place)
+            touch .env
+            upsert() {
+              key="$1"; val="$2"
+              if grep -q "^${key}=" .env; then
+                sed -i "s|^${key}=.*|${key}=${val//|/\\|}|" .env
+              else
+                echo "${key}=${val}" >> .env
+              fi
+            }
+            upsert NEXT_PUBLIC_GATEWAY_URL "${NEXT_PUBLIC_GATEWAY_URL}"
+            upsert NEXT_PUBLIC_API_BASE_URL "${NEXT_PUBLIC_API_BASE_URL}"
+            upsert NEXT_PUBLIC_WS_URL "${NEXT_PUBLIC_WS_URL}"
+            upsert NEXT_PUBLIC_ENABLE_FULL_UI "${NEXT_PUBLIC_ENABLE_FULL_UI}"
+            upsert ENABLE_FULL_UI "${NEXT_PUBLIC_ENABLE_FULL_UI}"
+            upsert ALLOWED_ORIGINS "${GATEWAY_ALLOWED_ORIGINS}"
+
+            # Restart stack
+            if docker compose version >/dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
+            $DC up -d --force-recreate
+
+            # Local health checks (gateway, then UI via Nginx)
+            echo "Gateway health:"
+            curl -sS -m 5 -i "http://127.0.0.1:${GATEWAY_HOST_PORT}/" || true
+            curl -sS -m 5 "http://127.0.0.1:${GATEWAY_HOST_PORT}/health" || true
+
+            echo "Public checks (UI + API)"
+            curl -sS -m 5 -I "https://ui.ippan.org/" || exit 1
+            curl -sS -m 5 -I "https://ui.ippan.org/api/" || exit 1
+
+      - name: Sanity: fail if short-menu likely
+        run: |
+          echo "If the UI still renders the short menu, check browser console/network for /api and /ws errors."

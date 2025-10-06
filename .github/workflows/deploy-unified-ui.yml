@@ -1,8 +1,6 @@
 name: (DEPRECATED) Deploy Unified UI
-
 on:
-  workflow_dispatch:
-
+  workflow_dispatch:   # manual only
 concurrency:
   group: deprecated-deploy-unified-ui
   cancel-in-progress: true
