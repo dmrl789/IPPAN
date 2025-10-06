@@ -8,7 +8,7 @@ on:
         required: true
         default: "188.245.97.41,135.181.145.174"
       ui_url:
-        description: "Public UI URL (optional)"
+        description: "Public UI URL"
         required: false
         default: "https://ui.ippan.org"
       api_base:
@@ -20,33 +20,29 @@ on:
         required: false
         default: "http://127.0.0.1:3000/lb-health"
   schedule:
-    # Optional nightly check at 02:30 Europe/Rome
+    # Nightly run (00:30 UTC). If no inputs (schedule), we fall back to repo vars or literals below.
     - cron: "30 0 * * *"
-
-env:
-  DEFAULT_HOSTS: "188.245.97.41,135.181.145.174"
-  DEFAULT_UI_URL: "https://ui.ippan.org"
-  DEFAULT_API_BASE: "http://127.0.0.1:8080"
-  DEFAULT_LB_HEALTH: "http://127.0.0.1:3000/lb-health"
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    env:
-      SSH_USER: ${{ secrets.PROD_SSH_USER }}
-      SSH_KEY: ${{ secrets.PROD_SSH_KEY }}          # OpenSSH private key
-      SSH_PORT: ${{ secrets.PROD_SSH_PORT || 22 }}
-      SYSTEMD_SVC: ippan-node
-      DOCKER_COMPOSE_DIR: /opt/ippan
-      P2P_PORTS: 4001,7000,8080,3000
-      DEFAULT_HOSTS: ${{ env.DEFAULT_HOSTS }}
-      DEFAULT_UI_URL: ${{ env.DEFAULT_UI_URL }}
-      DEFAULT_API_BASE: ${{ env.DEFAULT_API_BASE }}
-      DEFAULT_LB_HEALTH: ${{ env.DEFAULT_LB_HEALTH }}
+    # Build the matrix from inputs when present, else from repo vars, else hardcoded.
     strategy:
       fail-fast: false
       matrix:
-        host: ${{ fromJson(format('["{0}"]', join('\",\"', split(replace(inputs.hosts || env.DEFAULT_HOSTS, ' ', ''), ',')))) }}
+        host: ${{ fromJson(format('["{0}"]', join('\",\"', split((github.event.inputs.hosts || vars.DEFAULT_HOSTS || '188.245.97.41,135.181.145.174'), ',')))) }}
+
+    env:
+      # SSH
+      SSH_USER: ${{ secrets.PROD_SSH_USER }}
+      SSH_KEY:  ${{ secrets.PROD_SSH_KEY }}         # OpenSSH private key
+      SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+
+      # Services/paths
+      SYSTEMD_SVC: ippan-node
+      DOCKER_SVC: ippan-node
+      DOCKER_COMPOSE_DIR: /opt/ippan
+      P2P_PORTS: 4001,7000,8080,3000
 
     steps:
       - name: Checkout
@@ -67,15 +63,15 @@ jobs:
       - name: Run checks on ${{ matrix.host }}
         id: run_checks
         env:
-          HOST: ${{ matrix.host }}
-          UI_URL: ${{ inputs.ui_url || env.DEFAULT_UI_URL }}
-          API_BASE: ${{ inputs.api_base || env.DEFAULT_API_BASE }}
-          LB_HEALTH: ${{ inputs.lb_health || env.DEFAULT_LB_HEALTH }}
+          HOST:      ${{ matrix.host }}
+          # Use inputs if present; otherwise repo vars; otherwise literals.
+          UI_URL:    ${{ github.event.inputs.ui_url  || vars.DEFAULT_UI_URL  || 'https://ui.ippan.org' }}
+          API_BASE:  ${{ github.event.inputs.api_base || vars.DEFAULT_API_BASE || 'http://127.0.0.1:8080' }}
+          LB_HEALTH: ${{ github.event.inputs.lb_health || vars.DEFAULT_LB_HEALTH || 'http://127.0.0.1:3000/lb-health' }}
         run: |
           set -euo pipefail
-          api_base="${API_BASE%/}"
           ssh -i ~/.ssh/id_ed25519 -p ${SSH_PORT} "${SSH_USER}@${{ matrix.host }}" \
-            "HOST='$HOST' UI_URL='$UI_URL' API_BASE='$api_base' LB_HEALTH='${LB_HEALTH}' HTTP_HEALTH='${api_base}/health' HTTP_STATUS='${api_base}/status' HTTP_PEERS='${api_base}/peers' SYSTEMD_SVC='${SYSTEMD_SVC}' DOCKER_COMPOSE_DIR='${DOCKER_COMPOSE_DIR}' P2P_PORTS='${P2P_PORTS}' /tmp/check-nodes.sh" \
+            "HOST='$HOST' UI_URL='$UI_URL' API_BASE='$API_BASE' LB_HEALTH='$LB_HEALTH' SYSTEMD_SVC='${SYSTEMD_SVC}' DOCKER_SVC='${DOCKER_SVC}' DOCKER_COMPOSE_DIR='${DOCKER_COMPOSE_DIR}' P2P_PORTS='${P2P_PORTS}' /tmp/check-nodes.sh" \
             | tee "summary-${{ matrix.host }}.json"
 
       - name: Upload summaries
