@@ -71,6 +71,18 @@ The node will:
 3. Demonstrate time monotonicity
 4. Start blockchain services
 
+### 🔍 Checking peer connectivity
+
+- The node only connects to peers that you supply through the `BOOTSTRAP_NODES` environment variable. If it is left empty (default), the node happily runs in isolation and the `/health` endpoint reports `peer_count: 0`.
+- Provide a comma-separated list of peer base URLs before starting the node, for example:
+
+  ```bash
+  BOOTSTRAP_NODES="http://10.0.0.5:9000,http://10.0.0.6:9000" \
+    cargo run --bin ippan-node
+  ```
+
+- Query `http://<rpc-host>:<rpc-port>/health` once the node is up. When at least one peer is reachable, the response shows a `peer_count` greater than zero and keeps updating every 10 seconds via the background poller.
+
 ## 🌐 API Endpoints
 
 - `POST /tx` - Submit transaction
@@ -117,7 +129,13 @@ Features:
 - Network monitoring
 - Validator registration
 
-The Rust RPC server can serve the compiled Unified UI directly. Build the frontend (`npm run build`) so the assets are available in `apps/unified-ui/dist`, or point the node to another build directory using the `IPPAN_UNIFIED_UI_DIST_DIR` environment variable before starting the node.
+The Rust RPC server can serve the compiled Unified UI directly. Build the frontend (`npm run build`) so the assets are available in `apps/unified-ui/dist`, or point the node to another build directory using the `UNIFIED_UI_DIST_DIR` environment variable before starting the node.
+
+### 🧭 If the Unified UI does not appear
+
+- The RPC layer only mounts the UI when a build output directory exists. By default it looks for `./apps/unified-ui/dist`; if that folder is missing, only the JSON API routes are exposed.
+- Run `npm run build` inside `apps/unified-ui/` (or set `UNIFIED_UI_DIST_DIR` to a folder containing `index.html` and assets) before launching the node.
+- After rebuilding the UI, restart the node so the static assets are picked up. The home page should then load alongside the API routes.
 
 ## 📊 HashTimer Examples
 
