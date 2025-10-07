@@ -1,81 +1,68 @@
-name: Check IPPAN Nodes
+name: Check production nodes
 
 on:
   workflow_dispatch:
     inputs:
       hosts:
-        description: "Comma-separated IPv4/hostnames"
-        required: true
+        description: "Comma-separated host list"
+        required: false
         default: "188.245.97.41,135.181.145.174"
       ui_url:
         description: "Public UI URL"
         required: false
         default: "https://ui.ippan.org"
       api_base:
-        description: "Node API base (as seen on target)"
+        description: "API base under the UI (no trailing slash)"
         required: false
-        default: "http://127.0.0.1:8080"
-      lb_health:
-        description: "Load balancer health URL on target"
+        default: "https://ui.ippan.org/api"
+      p2p_port:
+        description: "P2P TCP port"
         required: false
-        default: "http://127.0.0.1:3000/lb-health"
-  schedule:
-    # Nightly run (00:30 UTC). If no inputs (schedule), we fall back to repo vars or literals below.
-    - cron: "30 0 * * *"
+        default: "4001"
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    # Build the matrix from inputs when present, else from repo vars, else hardcoded.
-    strategy:
-      fail-fast: false
-      matrix:
-        host: ${{ fromJson(format('["{0}"]', join('\",\"', split((github.event.inputs.hosts || vars.DEFAULT_HOSTS || '188.245.97.41,135.181.145.174'), ',')))) }}
-
     env:
-      # SSH
-      SSH_USER: ${{ secrets.PROD_SSH_USER }}
-      SSH_KEY:  ${{ secrets.PROD_SSH_KEY }}         # OpenSSH private key
-      SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
-
-      # Services/paths
-      SYSTEMD_SVC: ippan-node
-      DOCKER_SVC: ippan-node
-      DOCKER_COMPOSE_DIR: /opt/ippan
-      P2P_PORTS: 4001,7000,8080,3000
-
+      HOSTS: ${{ inputs.hosts }}
+      UI_URL: ${{ inputs.ui_url }}
+      API_BASE: ${{ inputs.api_base }}
+      P2P_PORT: ${{ inputs.p2p_port }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare SSH key
+      - name: Parse hosts
+        id: parse
         run: |
-          install -m 700 -d ~/.ssh
-          echo "${SSH_KEY}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          printf "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
+          H="${HOSTS// /}"
+          echo "hosts_json=$(printf '[\"%s\"]' \"$(printf '%s' \"$H\" | sed 's/,/","/g')\")" >> $GITHUB_OUTPUT
 
-      - name: Copy checker script
+      - name: DNS/HTTPS sanity
         run: |
-          rsync -e "ssh -i ~/.ssh/id_ed25519 -p ${SSH_PORT}" -avz deploy/check-nodes.sh "${SSH_USER}@${{ matrix.host }}:/tmp/check-nodes.sh"
-          ssh -i ~/.ssh/id_ed25519 -p ${SSH_PORT} "${SSH_USER}@${{ matrix.host }}" "chmod +x /tmp/check-nodes.sh"
+          set -e
+          echo "UI: $UI_URL"
+          curl -fsSLI "$UI_URL" >/dev/null
+          curl -fsSL "$API_BASE/health" | tee health.json
+          jq -e '.status=="healthy"' health.json >/dev/null
 
-      - name: Run checks on ${{ matrix.host }}
-        id: run_checks
-        env:
-          HOST:      ${{ matrix.host }}
-          # Use inputs if present; otherwise repo vars; otherwise literals.
-          UI_URL:    ${{ github.event.inputs.ui_url  || vars.DEFAULT_UI_URL  || 'https://ui.ippan.org' }}
-          API_BASE:  ${{ github.event.inputs.api_base || vars.DEFAULT_API_BASE || 'http://127.0.0.1:8080' }}
-          LB_HEALTH: ${{ github.event.inputs.lb_health || vars.DEFAULT_LB_HEALTH || 'http://127.0.0.1:3000/lb-health' }}
+      - name: Check P2P reachability per host
         run: |
-          set -euo pipefail
-          ssh -i ~/.ssh/id_ed25519 -p ${SSH_PORT} "${SSH_USER}@${{ matrix.host }}" \
-            "HOST='$HOST' UI_URL='$UI_URL' API_BASE='$API_BASE' LB_HEALTH='$LB_HEALTH' SYSTEMD_SVC='${SYSTEMD_SVC}' DOCKER_SVC='${DOCKER_SVC}' DOCKER_COMPOSE_DIR='${DOCKER_COMPOSE_DIR}' P2P_PORTS='${P2P_PORTS}' /tmp/check-nodes.sh" \
-            | tee "summary-${{ matrix.host }}.json"
+          set -e
+          for h in $(echo '${{ steps.parse.outputs.hosts_json }}' | jq -r '.[]'); do
+            echo "Testing TCP ${P2P_PORT} on $h"
+            (echo >/dev/tcp/$h/$P2P_PORT) >/dev/null 2>&1 || {
+              echo "::error::P2P port $P2P_PORT closed on $h"
+              exit 1
+            }
+          done
 
-      - name: Upload summaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: node-summaries
-          path: summary-*.json
+      - name: Check peer_count > 0 after both up
+        run: |
+          set -e
+          curl -fsSL "$API_BASE/health" | jq .
+          peers=$(curl -fsSL "$API_BASE/health" | jq -r '.peer_count // 0')
+          if [ "$peers" -lt 1 ]; then
+            echo "::error::peer_count=$peers (expected > 0 once both nodes are up)"
+            exit 1
+          fi
