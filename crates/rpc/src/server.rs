@@ -3,6 +3,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::{Method, StatusCode};
 use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
+use futures::future::join_all;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -11,7 +13,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
@@ -101,6 +103,44 @@ struct Health {
     req_count: usize,
     peer_count: usize,
     node_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteHealth {
+    status: Option<String>,
+    uptime_ms: Option<u128>,
+    req_count: Option<usize>,
+    peer_count: Option<usize>,
+    node_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PeerStatus {
+    address: String,
+    node_id: Option<String>,
+    connected: bool,
+    latency_ms: Option<u128>,
+    last_seen: Option<String>,
+    peer_count: Option<usize>,
+    status: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct LocalPeerSummary {
+    node_id: String,
+    listen_address: String,
+    announce_address: String,
+    peer_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct PeerListResponse {
+    peers: Vec<String>,
+    total: usize,
+    connected: usize,
+    local_peer: LocalPeerSummary,
+    details: Vec<PeerStatus>,
 }
 
 /// Consensus state envelope serialized for RPC consumers.
@@ -503,6 +543,9 @@ async fn run_rpc_server(app_state: AppState, bind_addr: SocketAddr) -> Result<()
         .route("/api/v1/transactions", get(api_transactions))
         .route("/api/v1/address/validate", get(api_validate_address))
         .route("/api/v1/transaction", post(api_submit_transaction))
+        .route("/p2p/peers", get(get_p2p_peer_list))
+        .route("/peers", get(get_p2p_peers))
+        .route("/p2p/peers/details", get(get_p2p_peers))
         // network broadcast (basic diagnostic)
         .route("/network/broadcast", post(broadcast));
 
@@ -720,6 +763,119 @@ async fn api_network(
         protocol_version,
         uptime_seconds,
     }))
+}
+
+async fn get_p2p_peer_list(
+    State(app): State<AppState>,
+) -> Result<Json<Vec<String>>, (StatusCode, String)> {
+    let network = app.p2p_network.clone().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "network unavailable".to_string(),
+    ))?;
+
+    Ok(Json(network.get_peers()))
+}
+
+async fn get_p2p_peers(
+    State(app): State<AppState>,
+) -> Result<Json<PeerListResponse>, (StatusCode, String)> {
+    let network = app.p2p_network.clone().ok_or(()).map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "network unavailable".to_string(),
+        )
+    })?;
+
+    let listen_address = network.get_listening_address();
+    let announce_address = network.get_announce_address();
+    let peer_addresses = network.get_peers();
+    let local_peer_count = app.peer_count.load(Ordering::Relaxed);
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(internal_error)?;
+
+    let statuses = join_all(peer_addresses.into_iter().map(|address| {
+        let client = client.clone();
+        async move { fetch_peer_status(client, address).await }
+    }))
+    .await;
+
+    let mut peers = Vec::new();
+    let mut connected = 0usize;
+    let mut details = Vec::with_capacity(statuses.len());
+
+    for status in statuses {
+        if status.connected {
+            connected += 1;
+            if let Some(ref node_id) = status.node_id {
+                peers.push(node_id.clone());
+            } else {
+                peers.push(status.address.clone());
+            }
+        }
+        details.push(status);
+    }
+
+    let response = PeerListResponse {
+        peers,
+        total: details.len(),
+        connected,
+        local_peer: LocalPeerSummary {
+            node_id: app.node_id.clone(),
+            listen_address,
+            announce_address,
+            peer_count: local_peer_count,
+        },
+        details,
+    };
+
+    Ok(Json(response))
+}
+
+async fn fetch_peer_status(client: Client, address: String) -> PeerStatus {
+    let mut status = PeerStatus {
+        address: address.clone(),
+        node_id: None,
+        connected: false,
+        latency_ms: None,
+        last_seen: None,
+        peer_count: None,
+        status: None,
+        error: None,
+    };
+
+    let start = Instant::now();
+    let request = client.get(format!("{address}/health"));
+
+    match request.send().await {
+        Ok(response) => {
+            status.latency_ms = Some(start.elapsed().as_millis());
+            let code = response.status();
+            if code.is_success() {
+                status.connected = true;
+                match response.json::<RemoteHealth>().await {
+                    Ok(health) => {
+                        status.node_id = health.node_id;
+                        status.peer_count = health.peer_count;
+                        status.status = health.status;
+                        status.last_seen = OffsetDateTime::now_utc().format(&Rfc3339).ok();
+                    }
+                    Err(err) => {
+                        status.error = Some(format!("decode error: {err}"));
+                    }
+                }
+            } else {
+                status.error = Some(format!("status {}", code));
+            }
+        }
+        Err(err) => {
+            status.error = Some(err.to_string());
+        }
+    }
+
+    status
 }
 
 async fn api_mempool(
