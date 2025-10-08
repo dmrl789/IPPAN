@@ -145,8 +145,6 @@ jobs:
                 ports:
                   - "0.0.0.0:${P2P_PORT}:${P2P_PORT}"
                   - "127.0.0.1:${API_HOST_PORT}:8080"
-            YML
-
             docker compose -f docker-compose.yml -f docker-compose.full-stack.yml \
               -f docker-compose.override.clear-node-ports.yml -f docker-compose.override.node.yml \
               up -d --no-build --no-deps ippan-node-1
