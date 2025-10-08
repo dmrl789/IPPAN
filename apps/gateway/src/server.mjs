@@ -33,11 +33,13 @@ function isOriginAllowed(origin) {
 
 const corsOptions = {
   origin(origin, callback) {
-    if (isOriginAllowed(origin)) {
+    if (!origin || isOriginAllowed(origin)) {
       callback(null, true)
-    } else {
-      callback(new Error('Not allowed by CORS'))
+      return
     }
+
+    console.warn(`Blocked CORS origin: ${origin}`)
+    callback(null, false)
   },
   credentials: false,
 }
