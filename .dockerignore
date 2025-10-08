@@ -1,0 +1,15 @@
+# Exclude Git metadata and local build artefacts
+.git
+.gitignore
+.github
+Dockerfile.production
+Dockerfile.optimized
+node_modules
+**/node_modules
+target
+**/target
+.tmp
+.vscode
+.idea
+npm-debug.log*
+*.swp

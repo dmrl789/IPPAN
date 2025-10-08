@@ -55,18 +55,37 @@ COPY . .
 # Use --locked to respect Cargo.lock in CI
 RUN cargo build --release --workspace --locked --verbose
 
+# ---- Unified UI build stage -------------------------------------------------
+FROM node:20-bullseye-slim AS ui-builder
+
+WORKDIR /app/apps/unified-ui
+
+COPY apps/unified-ui/package*.json ./
+
+RUN npm ci
+
+COPY apps/unified-ui/ ./
+
+RUN npm run build
+
 # ---- Runtime stage ---------------------------------------------------------
 FROM debian:bullseye-slim AS runtime
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
+RUN useradd -m -u 10001 ippan
+
 WORKDIR /app
 # Copy the binaries you actually ship (adjust names)
 COPY --from=builder /app/target/release/ippan-node /usr/local/bin/ippan-node
 
+# Copy pre-built Unified UI assets so the node can serve them
+COPY --from=ui-builder /app/apps/unified-ui/dist /app/apps/unified-ui/dist
+
+RUN chown -R ippan:ippan /app
+
 # Drop privileges
-RUN useradd -m -u 10001 ippan
 USER ippan
 
 # Healthcheck if you expose HTTP: adjust as needed
