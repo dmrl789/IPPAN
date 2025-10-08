@@ -59,7 +59,7 @@ jobs:
             echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
           } >> "$GITHUB_OUTPUT"
 
-      - name: SSH: enforce .env, restart, health-check
+      - name: "SSH: enforce .env, restart, health-check"
         uses: appleboy/ssh-action@v1.2.0
         env:
           NEXT_PUBLIC_GATEWAY_URL: ${{ steps.envs.outputs.NP_GATEWAY_URL }}
@@ -112,6 +112,6 @@ jobs:
             curl -sS -m 5 -I "https://ui.ippan.org/" || exit 1
             curl -sS -m 5 -I "https://ui.ippan.org/api/" || exit 1
 
-      - name: Sanity: fail if short-menu likely
+      - name: "Sanity: fail if short-menu likely"
         run: |
           echo "If the UI still renders the short menu, check browser console/network for /api and /ws errors."
