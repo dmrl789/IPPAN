@@ -16,37 +16,61 @@ jobs:
   fix:
     runs-on: ubuntu-latest
 
-    env:
-      # Defaults used if apply_defaults == true and a secret is empty
-      DEF_NEXT_PUBLIC_GATEWAY_URL: https://ui.ippan.org/api
-      DEF_NEXT_PUBLIC_API_BASE_URL: https://ui.ippan.org/api
-      DEF_NEXT_PUBLIC_WS_URL: wss://ui.ippan.org/ws
-      DEF_NEXT_PUBLIC_ENABLE_FULL_UI: "1"
-      DEF_GATEWAY_ALLOWED_ORIGINS: https://ui.ippan.org
-
     steps:
-      - name: Resolve build-time env (use secrets or defaults)
+      - name: Resolve build-time env (use secrets, then vars, then defaults)
         id: envs
         shell: bash
         env:
-          APPLY_DEFAULTS: ${{ inputs.apply_defaults }}
+          # Raw inputs and contexts
+          APPLY_DEFAULTS_IN: ${{ inputs.apply_defaults }}
           S_NEXT_PUBLIC_GATEWAY_URL: ${{ secrets.NEXT_PUBLIC_GATEWAY_URL }}
           S_NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
           S_NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
           S_NEXT_PUBLIC_ENABLE_FULL_UI: ${{ secrets.NEXT_PUBLIC_ENABLE_FULL_UI }}
           S_GATEWAY_ALLOWED_ORIGINS: ${{ secrets.GATEWAY_ALLOWED_ORIGINS }}
+
+          V_NEXT_PUBLIC_GATEWAY_URL: ${{ vars.NEXT_PUBLIC_GATEWAY_URL }}
+          V_NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+          V_NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
+          V_NEXT_PUBLIC_ENABLE_FULL_UI: ${{ vars.NEXT_PUBLIC_ENABLE_FULL_UI }}
+          V_GATEWAY_ALLOWED_ORIGINS: ${{ vars.GATEWAY_ALLOWED_ORIGINS }}
+
+          # Defaults
+          DEF_NEXT_PUBLIC_GATEWAY_URL: https://ui.ippan.org/api
+          DEF_NEXT_PUBLIC_API_BASE_URL: https://ui.ippan.org/api
+          DEF_NEXT_PUBLIC_WS_URL: wss://ui.ippan.org/ws
+          DEF_NEXT_PUBLIC_ENABLE_FULL_UI: "1"
+          DEF_GATEWAY_ALLOWED_ORIGINS: https://ui.ippan.org
         run: |
           set -euo pipefail
-          pick() { local v="${1:-}" def="${2:-}"; if [ -n "$v" ]; then echo "$v"; elif [ "${APPLY_DEFAULTS}" = "true" ]; then echo "$def"; else echo ""; fi; }
-          NP_GATEWAY_URL="$(pick "${S_NEXT_PUBLIC_GATEWAY_URL:-}" "${DEF_NEXT_PUBLIC_GATEWAY_URL}")"
-          NP_API_BASE_URL="$(pick "${S_NEXT_PUBLIC_API_BASE_URL:-}" "${DEF_NEXT_PUBLIC_API_BASE_URL}")"
-          NP_WS_URL="$(pick "${S_NEXT_PUBLIC_WS_URL:-}" "${DEF_NEXT_PUBLIC_WS_URL}")"
-          NP_FULL_UI="$(pick "${S_NEXT_PUBLIC_ENABLE_FULL_UI:-}" "${DEF_NEXT_PUBLIC_ENABLE_FULL_UI}")"
-          ALLOWED_ORIGINS="$(pick "${S_GATEWAY_ALLOWED_ORIGINS:-}" "${DEF_GATEWAY_ALLOWED_ORIGINS}")"
+          # Normalize boolean (accept true/1/yes/on)
+          norm_bool() {
+            case "$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+              true|1|yes|on) echo "true" ;;
+              *) echo "false" ;;
+            esac
+          }
+          APPLY_DEFAULTS="$(norm_bool "${APPLY_DEFAULTS_IN:-true}")"
+
+          # pick: prefer secrets, then vars, then (optionally) defaults
+          pick() {
+            local secret_val="${1:-}" var_val="${2:-}" def_val="${3:-}"
+            if [ -n "$secret_val" ]; then echo "$secret_val"
+            elif [ -n "$var_val" ]; then echo "$var_val"
+            elif [ "$APPLY_DEFAULTS" = "true" ]; then echo "$def_val"
+            else echo ""
+            fi
+          }
+
+          NP_GATEWAY_URL="$(pick "${S_NEXT_PUBLIC_GATEWAY_URL:-}" "${V_NEXT_PUBLIC_GATEWAY_URL:-}" "${DEF_NEXT_PUBLIC_GATEWAY_URL}")"
+          NP_API_BASE_URL="$(pick "${S_NEXT_PUBLIC_API_BASE_URL:-}" "${V_NEXT_PUBLIC_API_BASE_URL:-}" "${DEF_NEXT_PUBLIC_API_BASE_URL}")"
+          NP_WS_URL="$(pick "${S_NEXT_PUBLIC_WS_URL:-}" "${V_NEXT_PUBLIC_WS_URL:-}" "${DEF_NEXT_PUBLIC_WS_URL}")"
+          NP_FULL_UI="$(pick "${S_NEXT_PUBLIC_ENABLE_FULL_UI:-}" "${V_NEXT_PUBLIC_ENABLE_FULL_UI:-}" "${DEF_NEXT_PUBLIC_ENABLE_FULL_UI}")"
+          ALLOWED_ORIGINS="$(pick "${S_GATEWAY_ALLOWED_ORIGINS:-}" "${V_GATEWAY_ALLOWED_ORIGINS:-}" "${DEF_GATEWAY_ALLOWED_ORIGINS}")"
 
           for k in NP_GATEWAY_URL NP_API_BASE_URL NP_WS_URL NP_FULL_UI ALLOWED_ORIGINS; do
             if [ -z "${!k}" ]; then
-              echo "::error::$k is empty and apply_defaults=false; set repo secrets or re-run with defaults."
+              echo "::error::$k is empty and apply_defaults=false; set repo secrets/variables or re-run with defaults."
               exit 1
             fi
           done
