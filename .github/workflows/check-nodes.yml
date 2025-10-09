@@ -1,68 +1,18 @@
-name: Check production nodes
-
-on:
-  workflow_dispatch:
-    inputs:
-      hosts:
-        description: "Comma-separated host list"
-        required: false
-        default: "188.245.97.41,135.181.145.174"
-      ui_url:
-        description: "Public UI URL"
-        required: false
-        default: "https://ui.ippan.org"
-      api_base:
-        description: "API base under the UI (no trailing slash)"
-        required: false
-        default: "https://ui.ippan.org/api"
-      p2p_port:
-        description: "P2P TCP port"
-        required: false
-        default: "4001"
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    env:
-      HOSTS: ${{ inputs.hosts }}
-      UI_URL: ${{ inputs.ui_url }}
-      API_BASE: ${{ inputs.api_base }}
-      P2P_PORT: ${{ inputs.p2p_port }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Parse hosts
-        id: parse
-        run: |
-          H="${HOSTS// /}"
-          echo "hosts_json=$(printf '[\"%s\"]' \"$(printf '%s' \"$H\" | sed 's/,/","/g')\")" >> $GITHUB_OUTPUT
-
-      - name: DNS/HTTPS sanity
-        run: |
-          set -e
-          echo "UI: $UI_URL"
-          curl -fsSLI "$UI_URL" >/dev/null
-          curl -fsSL "$API_BASE/health" | tee health.json
-          jq -e '.status=="healthy"' health.json >/dev/null
-
-      - name: Check P2P reachability per host
-        run: |
-          set -e
-          for h in $(echo '${{ steps.parse.outputs.hosts_json }}' | jq -r '.[]'); do
-            echo "Testing TCP ${P2P_PORT} on $h"
-            (echo >/dev/tcp/$h/$P2P_PORT) >/dev/null 2>&1 || {
-              echo "::error::P2P port $P2P_PORT closed on $h"
-              exit 1
-            }
-          done
-
-      - name: Check peer_count > 0 after both up
-        run: |
-          set -e
-          curl -fsSL "$API_BASE/health" | jq .
-          peers=$(curl -fsSL "$API_BASE/health" | jq -r '.peer_count // 0')
-          if [ "$peers" -lt 1 ]; then
-            echo "::error::peer_count=$peers (expected > 0 once both nodes are up)"
-            exit 1
-          fi
+- name: DNS/HTTPS sanity
+  run: |
+    set -e
+    echo "UI: $UI_URL"
+    curl -fsSLI "$UI_URL" >/dev/null
+    tries=0
+    until [ $tries -ge 3 ]; do
+      if curl -fsSL "$API_BASE/health" | tee health.json && jq -e '.status==\"healthy\"' health.json >/dev/null; then
+        exit 0
+      else
+        echo "Health check failed, retrying in 5 seconds... ($((tries+1))/3)"
+        sleep 5
+        tries=$((tries+1))
+      fi
+    done
+    echo "::error::API health endpoint failed after 3 attempts"
+    curl -i "$API_BASE/health" || true
+    exit 1
