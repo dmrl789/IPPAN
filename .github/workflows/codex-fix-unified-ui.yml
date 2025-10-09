@@ -4,9 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       apply_defaults:
-        description: "Force sane defaults if secrets are missing"
+        description: "Apply sane defaults if secrets/variables are missing (recommended: true)"
         type: boolean
         default: true
+        required: false
 
 permissions:
   contents: read
@@ -68,12 +69,33 @@ jobs:
           NP_FULL_UI="$(pick "${S_NEXT_PUBLIC_ENABLE_FULL_UI:-}" "${V_NEXT_PUBLIC_ENABLE_FULL_UI:-}" "${DEF_NEXT_PUBLIC_ENABLE_FULL_UI}")"
           ALLOWED_ORIGINS="$(pick "${S_GATEWAY_ALLOWED_ORIGINS:-}" "${V_GATEWAY_ALLOWED_ORIGINS:-}" "${DEF_GATEWAY_ALLOWED_ORIGINS}")"
 
+          # Validate that all required variables are set
+          missing_vars=""
           for k in NP_GATEWAY_URL NP_API_BASE_URL NP_WS_URL NP_FULL_UI ALLOWED_ORIGINS; do
             if [ -z "${!k}" ]; then
-              echo "::error::$k is empty and apply_defaults=false; set repo secrets/variables or re-run with defaults."
-              exit 1
+              missing_vars="$missing_vars $k"
             fi
           done
+
+          if [ -n "$missing_vars" ]; then
+            echo "::error::The following variables are empty:$missing_vars"
+            echo "::error::"
+            echo "::error::To fix this issue, either:"
+            echo "::error::1. Set the required secrets/variables in Settings → Secrets and variables → Actions"
+            echo "::error::   Required secrets/variables: NEXT_PUBLIC_GATEWAY_URL, NEXT_PUBLIC_API_BASE_URL,"
+            echo "::error::   NEXT_PUBLIC_WS_URL, NEXT_PUBLIC_ENABLE_FULL_UI, GATEWAY_ALLOWED_ORIGINS"
+            echo "::error::2. Re-run this workflow with 'apply_defaults' set to true (recommended for dev/test)"
+            echo "::error::"
+            echo "::error::Current setting: apply_defaults=$APPLY_DEFAULTS"
+            echo "::error::"
+            echo "::error::Default values when apply_defaults=true:"
+            echo "::error::  NEXT_PUBLIC_GATEWAY_URL: $DEF_NEXT_PUBLIC_GATEWAY_URL"
+            echo "::error::  NEXT_PUBLIC_API_BASE_URL: $DEF_NEXT_PUBLIC_API_BASE_URL"
+            echo "::error::  NEXT_PUBLIC_WS_URL: $DEF_NEXT_PUBLIC_WS_URL"
+            echo "::error::  NEXT_PUBLIC_ENABLE_FULL_UI: $DEF_NEXT_PUBLIC_ENABLE_FULL_UI"
+            echo "::error::  GATEWAY_ALLOWED_ORIGINS: $DEF_GATEWAY_ALLOWED_ORIGINS"
+            exit 1
+          fi
 
           {
             echo "NP_GATEWAY_URL=$NP_GATEWAY_URL"
@@ -82,6 +104,14 @@ jobs:
             echo "NP_FULL_UI=$NP_FULL_UI"
             echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
           } >> "$GITHUB_OUTPUT"
+
+          # Log resolved values (masked for security)
+          echo "::notice::Resolved environment variables successfully"
+          echo "::notice::NP_GATEWAY_URL is set to: ${NP_GATEWAY_URL:0:20}..."
+          echo "::notice::NP_API_BASE_URL is set to: ${NP_API_BASE_URL:0:20}..."
+          echo "::notice::NP_WS_URL is set to: ${NP_WS_URL:0:20}..."
+          echo "::notice::NP_FULL_UI is set to: $NP_FULL_UI"
+          echo "::notice::ALLOWED_ORIGINS is set to: ${ALLOWED_ORIGINS:0:20}..."
 
       - name: "SSH: enforce .env, restart, health-check"
         uses: appleboy/ssh-action@v1.2.0
@@ -102,6 +132,27 @@ jobs:
           envs: NEXT_PUBLIC_GATEWAY_URL,NEXT_PUBLIC_API_BASE_URL,NEXT_PUBLIC_WS_URL,NEXT_PUBLIC_ENABLE_FULL_UI,GATEWAY_ALLOWED_ORIGINS,UI_HOST_PORT,GATEWAY_HOST_PORT
           script: |
             set -euo pipefail
+            
+            # Validate that environment variables are not empty
+            echo "Validating environment variables..."
+            errors=0
+            for var in NEXT_PUBLIC_GATEWAY_URL NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_WS_URL \
+                       NEXT_PUBLIC_ENABLE_FULL_UI GATEWAY_ALLOWED_ORIGINS; do
+              if [ -z "${!var:-}" ]; then
+                echo "ERROR: $var is empty or not set" >&2
+                errors=$((errors + 1))
+              else
+                echo "✓ $var is set"
+              fi
+            done
+            
+            if [ $errors -gt 0 ]; then
+              echo "ERROR: $errors environment variable(s) are missing" >&2
+              echo "This would cause Docker Compose to fail with 'invalid reference format'" >&2
+              echo "Check the workflow configuration and ensure secrets/variables are set or apply_defaults=true" >&2
+              exit 1
+            fi
+            
             APP_DIR="${DEPLOY_APP_DIR:-$HOME/apps/ippan-ui}"
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
@@ -122,6 +173,14 @@ jobs:
             upsert NEXT_PUBLIC_ENABLE_FULL_UI "${NEXT_PUBLIC_ENABLE_FULL_UI}"
             upsert ENABLE_FULL_UI "${NEXT_PUBLIC_ENABLE_FULL_UI}"
             upsert ALLOWED_ORIGINS "${GATEWAY_ALLOWED_ORIGINS}"
+
+            # Validate .env file
+            echo "Validating .env file..."
+            cat .env
+            if grep -q "=\s*$" .env; then
+              echo "WARNING: .env contains empty values" >&2
+              grep "=\s*$" .env >&2
+            fi
 
             # Restart stack
             if docker compose version >/dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
