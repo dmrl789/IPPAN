@@ -1,18 +1,75 @@
-- name: DNS/HTTPS sanity
-  run: |
-    set -e
-    echo "UI: $UI_URL"
-    curl -fsSLI "$UI_URL" >/dev/null
-    tries=0
-    until [ $tries -ge 3 ]; do
-      if curl -fsSL "$API_BASE/health" | tee health.json && jq -e '.status==\"healthy\"' health.json >/dev/null; then
-        exit 0
-      else
-        echo "Health check failed, retrying in 5 seconds... ($((tries+1))/3)"
-        sleep 5
-        tries=$((tries+1))
-      fi
-    done
-    echo "::error::API health endpoint failed after 3 attempts"
-    curl -i "$API_BASE/health" || true
-    exit 1
+name: Check Nodes (UI & API health)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ui_url:
+        description: "UI base URL to check (e.g., https://ui.ippan.org)"
+        required: false
+        default: ""
+      api_base:
+        description: "API base URL to check (e.g., https://ui.ippan.org/api)"
+        required: false
+        default: ""
+  schedule:
+    # Run every 30 minutes
+    - cron: "*/30 * * * *"
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+
+    env:
+      # Allow overrides via workflow_dispatch; otherwise fall back to repo-level Variables
+      UI_URL: ${{ inputs.ui_url != '' && inputs.ui_url || vars.NEXT_PUBLIC_GATEWAY_URL }}
+      API_BASE: ${{ inputs.api_base != '' && inputs.api_base || vars.NEXT_PUBLIC_API_BASE_URL }}
+
+    steps:
+      - name: Show effective targets
+        run: |
+          echo "UI_URL=${UI_URL}"
+          echo "API_BASE=${API_BASE}"
+          if [ -z "${UI_URL}" ] || [ -z "${API_BASE}" ]; then
+            echo "::error::UI_URL or API_BASE is empty. Provide inputs or define repo Variables: NEXT_PUBLIC_GATEWAY_URL, NEXT_PUBLIC_API_BASE_URL"
+            exit 1
+          fi
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y curl jq
+
+      - name: DNS/HTTPS sanity (HEAD on UI)
+        run: |
+          set -euo pipefail
+          echo "Checking UI HEAD: ${UI_URL}"
+          curl -fsSLI "${UI_URL}" >/dev/null
+          echo "UI reachable ✅"
+
+      - name: API /health (retry up to 3 times)
+        run: |
+          set -euo pipefail
+          tries=0
+          until [ $tries -ge 3 ]; do
+            echo "Probe $((tries+1))/3: ${API_BASE}/health"
+            if curl -fsSL "${API_BASE}/health" | tee health.json && jq -e '.status=="healthy"' health.json >/dev/null; then
+              echo "API health is healthy ✅"
+              exit 0
+            fi
+            tries=$((tries+1))
+            echo "Health check failed; sleeping 5s before retry..."
+            sleep 5
+          done
+
+          echo "::error::API health endpoint failed after 3 attempts"
+          echo "Last response:"
+          curl -i "${API_BASE}/health" || true
+          exit 1
+
+      - name: (Optional) API /status summary
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          echo "Attempting to fetch ${API_BASE}/status (non-fatal)"
+          curl -fsSL "${API_BASE}/status" | jq '.' || true
