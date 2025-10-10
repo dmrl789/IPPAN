@@ -2,12 +2,6 @@ name: "Codex: Fix Unified UI (env + restart + health)"
 
 on:
   workflow_dispatch:
-    inputs:
-      apply_defaults:
-        description: "Apply sane defaults if secrets/variables are missing (recommended: true)"
-        type: boolean
-        default: true
-        required: false
 
 permissions:
   contents: read
@@ -22,8 +16,8 @@ jobs:
         id: envs
         shell: bash
         env:
-          # Raw inputs and contexts
-          APPLY_DEFAULTS_IN: ${{ inputs.apply_defaults }}
+          # Raw contexts
+          APPLY_DEFAULTS_IN: "true"
           S_NEXT_PUBLIC_GATEWAY_URL: ${{ secrets.NEXT_PUBLIC_GATEWAY_URL }}
           S_NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
           S_NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
@@ -80,15 +74,10 @@ jobs:
           if [ -n "$missing_vars" ]; then
             echo "::error::The following variables are empty:$missing_vars"
             echo "::error::"
-            echo "::error::To fix this issue, either:"
-            echo "::error::1. Set the required secrets/variables in Settings → Secrets and variables → Actions"
-            echo "::error::   Required secrets/variables: NEXT_PUBLIC_GATEWAY_URL, NEXT_PUBLIC_API_BASE_URL,"
-            echo "::error::   NEXT_PUBLIC_WS_URL, NEXT_PUBLIC_ENABLE_FULL_UI, GATEWAY_ALLOWED_ORIGINS"
-            echo "::error::2. Re-run this workflow with 'apply_defaults' set to true (recommended for dev/test)"
+            echo "::error::To fix this issue, set the required secrets/variables in Settings → Secrets and variables → Actions"
+            echo "::error::Required secrets/variables: NEXT_PUBLIC_GATEWAY_URL, NEXT_PUBLIC_API_BASE_URL, NEXT_PUBLIC_WS_URL, NEXT_PUBLIC_ENABLE_FULL_UI, GATEWAY_ALLOWED_ORIGINS"
             echo "::error::"
-            echo "::error::Current setting: apply_defaults=$APPLY_DEFAULTS"
-            echo "::error::"
-            echo "::error::Default values when apply_defaults=true:"
+            echo "::error::Default values automatically applied by this workflow:"
             echo "::error::  NEXT_PUBLIC_GATEWAY_URL: $DEF_NEXT_PUBLIC_GATEWAY_URL"
             echo "::error::  NEXT_PUBLIC_API_BASE_URL: $DEF_NEXT_PUBLIC_API_BASE_URL"
             echo "::error::  NEXT_PUBLIC_WS_URL: $DEF_NEXT_PUBLIC_WS_URL"
@@ -149,7 +138,7 @@ jobs:
             if [ $errors -gt 0 ]; then
               echo "ERROR: $errors environment variable(s) are missing" >&2
               echo "This would cause Docker Compose to fail with 'invalid reference format'" >&2
-              echo "Check the workflow configuration and ensure secrets/variables are set or apply_defaults=true" >&2
+              echo "Check the workflow configuration and ensure secrets/variables are set; defaults are applied automatically" >&2
               exit 1
             fi
             
