@@ -7,19 +7,30 @@ on:
         description: "Use default env values if repo Variables are missing"
         required: false
         default: "false"
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
   push:
     branches: [ "main" ]
     paths:
       - "apps/unified-ui/**"
+      - "apps/gateway/**"
       - "deploy/server/**"
       - ".github/workflows/deploy-unified-ui.yml"
 
 concurrency:
-  group: deploy-unified-ui
+  group: deploy-unified-ui-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
+  packages: write
+  deployments: write
 
 env:
   APP_DIR: "apps/ippan-ui" # remote relative path under $HOME
@@ -80,7 +91,7 @@ jobs:
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
           source: |
             deploy/server/*
           target: ~/deploy/unified-ui/
@@ -91,7 +102,7 @@ jobs:
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
           script_stop: true
           script: |
             set -euo pipefail

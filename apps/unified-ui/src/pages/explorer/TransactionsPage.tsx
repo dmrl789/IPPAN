@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Card, Button, Badge, LoadingSpinner, Field, Input } from '../../components/UI'
-import { getWalletTransactions } from '../../lib/walletApi'
+import { api } from '../../lib/api'
 
 interface Transaction {
   id: string
@@ -57,8 +57,8 @@ export default function TransactionsPage() {
     setTransactions([])
 
     try {
-      const response = await getWalletTransactions(address)
-      const parsed: Transaction[] = (response || []).map((tx: any) => ({
+      const response = await api.get(`/api/v1/transactions?address=${encodeURIComponent(address)}`)
+      const parsed: Transaction[] = (response.data?.transactions || []).map((tx: any) => ({
         id: tx.id ?? tx.tx_hash ?? '',
         from: tx.from ?? '',
         to: tx.to ?? '',

@@ -2,8 +2,13 @@ name: Build & Test (Rust)
 
 on:
   pull_request:
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/build-and-test-rust.yml"
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
     paths:
       - "crates/**"
       - "Cargo.toml"
@@ -16,13 +21,16 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: stable
+  RUST_BACKTRACE: 1
 
 jobs:
   rust:
+    name: Rust Build & Test
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -57,3 +65,7 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --all-features -- --nocapture
+
+      - name: Security audit
+        run: cargo audit
+        continue-on-error: true

@@ -2,6 +2,25 @@ name: Deploy nodes + Unified UI
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      force_rebuild:
+        description: 'Force rebuild of all images'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+  deployments: write
 
 env:
   UI_DOMAIN: ui.ippan.org
@@ -276,13 +295,12 @@ jobs:
           HEALTH=$(curl -fsSL "https://ui.ippan.org/api/health")
           echo "$HEALTH"
           HEALTH_JSON="$HEALTH" python3 - <<'PY'
-import json, os, sys
-health = json.loads(os.environ["HEALTH_JSON"])
-if health.get("status") != "healthy":
-    print("status != healthy", file=sys.stderr)
-    sys.exit(1)
-PY
-        shell: bash
+          import json, os, sys
+          health = json.loads(os.environ["HEALTH_JSON"])
+          if health.get("status") != "healthy":
+              print("status != healthy", file=sys.stderr)
+              sys.exit(1)
+          PY
 
       - name: Verify P2P reachability (both hosts)
         run: |
@@ -299,7 +317,7 @@ PY
         run: |
           set -euo pipefail
           curl -fsSL "https://ui.ippan.org/api/health" | python3 - <<'PY'
-import json, sys
-health = json.load(sys.stdin)
-print(json.dumps({"peer_count": health.get("peer_count"), "status": health.get("status")}, indent=2))
-PY
+          import json, sys
+          health = json.load(sys.stdin)
+          print(json.dumps({"peer_count": health.get("peer_count"), "status": health.get("status")}, indent=2))
+          PY

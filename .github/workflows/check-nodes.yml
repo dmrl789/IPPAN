@@ -11,18 +11,28 @@ on:
         description: "API base URL to check (e.g., https://ui.ippan.org/api)"
         required: false
         default: ""
+      timeout_seconds:
+        description: "Health check timeout in seconds"
+        required: false
+        default: "30"
+        type: number
   schedule:
     # Runs every 30 minutes
     - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
 
 jobs:
   health-check:
     name: Node Health Check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     env:
       UI_URL: ${{ inputs.ui_url != '' && inputs.ui_url || vars.NEXT_PUBLIC_GATEWAY_URL }}
       API_BASE: ${{ inputs.api_base != '' && inputs.api_base || vars.NEXT_PUBLIC_API_BASE_URL }}
+      TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
 
     steps:
       - name: Display effective targets

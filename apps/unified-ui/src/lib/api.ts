@@ -70,76 +70,12 @@ export function initializeApiBaseUrl(): string {
   return API_BASE_URL;
 }
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: DEFAULT_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 });
-
-// Neural Network API
-export interface ModelAsset {
-  id: Uint8Array;
-  owner: Uint8Array;
-  arch_id: number;
-  version: number;
-  weights_hash: Uint8Array;
-  size_bytes: number;
-  train_parent: Uint8Array | null;
-  train_config: number[];
-  license_id: number;
-  metrics: any[];
-  provenance: any[];
-  created_at: { us: number; round_id: number };
-}
-
-export async function postModel(model: ModelAsset): Promise<string> {
-  const response = await api.post('/api/models', model);
-  return response.data;
-}
-
-export async function getModels(): Promise<ModelAsset[]> {
-  const response = await api.get('/api/models');
-  return response.data;
-}
-
-// Dataset API
-export interface Dataset {
-  id: Uint8Array;
-  owner: Uint8Array;
-  name: string;
-  description: string;
-  size_bytes: number;
-  created_at: { us: number; round_id: number };
-}
-
-export async function postDataset(dataset: Dataset): Promise<string> {
-  const response = await api.post('/api/datasets', dataset);
-  return response.data;
-}
-
-export async function getDatasets(): Promise<Dataset[]> {
-  const response = await api.get('/api/datasets');
-  return response.data;
-}
-
-// Accounts API
-export interface AccountSummary {
-  address: string;
-  balance: number;
-  nonce: number;
-}
-
-export async function getAccounts(): Promise<AccountSummary[]> {
-  const response = await api.get('/accounts');
-  const body = response.data;
-
-  if (body?.success && Array.isArray(body.data)) {
-    return body.data as AccountSummary[];
-  }
-
-  return [];
-}
 
 // Wallet API - Updated for real IPPAN nodes
 export interface WalletBalance {
@@ -167,37 +103,6 @@ export async function sendTransaction(transaction: any): Promise<string> {
 
   const error = body?.error || 'Failed to submit transaction';
   throw new Error(error);
-}
-
-// Domain API
-export interface Domain {
-  name: string;
-  owner: string;
-  expires_at: number;
-  price: number;
-}
-
-export async function getDomains(): Promise<Domain[]> {
-  const response = await api.get('/api/domains');
-  return response.data;
-}
-
-export async function registerDomain(domain: Partial<Domain>): Promise<string> {
-  const response = await api.post('/api/domains', domain);
-  return response.data;
-}
-
-// Storage API
-export async function uploadFile(file: File): Promise<string> {
-  const formData = new FormData();
-  formData.append('file', file);
-  
-  const response = await api.post('/api/storage/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-  return response.data;
 }
 
 // IPPAN Node API - Real backend endpoints

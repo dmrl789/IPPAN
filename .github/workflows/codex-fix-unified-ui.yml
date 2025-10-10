@@ -7,13 +7,23 @@ on:
         description: "Use defaults when Variables are missing"
         required: false
         default: "false"
+      environment:
+        description: 'Environment to test against'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
   pull_request:
     paths:
       - ".github/workflows/codex-fix-unified-ui.yml"
       - "apps/unified-ui/**"
+      - "apps/gateway/**"
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   sanity:
