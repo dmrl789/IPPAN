@@ -1,189 +1,47 @@
-name: "Codex: Fix Unified UI (env + restart + health)"
+name: Codex Fix Unified UI
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_defaults:
+        description: "Use defaults when Variables are missing"
+        required: false
+        default: "false"
+  pull_request:
+    paths:
+      - ".github/workflows/codex-fix-unified-ui.yml"
+      - "apps/unified-ui/**"
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
-  fix:
+  sanity:
     runs-on: ubuntu-latest
-
+    env:
+      NP_GATEWAY_URL: ${{ vars.NEXT_PUBLIC_GATEWAY_URL }}
+      NP_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+      NP_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
+      NP_FULL_UI: ${{ vars.NEXT_PUBLIC_ENABLE_FULL_UI }}
+      ALLOWED_ORIGINS: ${{ vars.GATEWAY_ALLOWED_ORIGINS }}
     steps:
-      - name: Resolve build-time env (use secrets, then vars, then defaults)
-        id: envs
-        shell: bash
-        env:
-          # Raw contexts
-          APPLY_DEFAULTS_IN: "true"
-          S_NEXT_PUBLIC_GATEWAY_URL: ${{ secrets.NEXT_PUBLIC_GATEWAY_URL }}
-          S_NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
-          S_NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
-          S_NEXT_PUBLIC_ENABLE_FULL_UI: ${{ secrets.NEXT_PUBLIC_ENABLE_FULL_UI }}
-          S_GATEWAY_ALLOWED_ORIGINS: ${{ secrets.GATEWAY_ALLOWED_ORIGINS }}
-
-          V_NEXT_PUBLIC_GATEWAY_URL: ${{ vars.NEXT_PUBLIC_GATEWAY_URL }}
-          V_NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
-          V_NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
-          V_NEXT_PUBLIC_ENABLE_FULL_UI: ${{ vars.NEXT_PUBLIC_ENABLE_FULL_UI }}
-          V_GATEWAY_ALLOWED_ORIGINS: ${{ vars.GATEWAY_ALLOWED_ORIGINS }}
-
-          # Defaults
-          DEF_NEXT_PUBLIC_GATEWAY_URL: https://ui.ippan.org/api
-          DEF_NEXT_PUBLIC_API_BASE_URL: https://ui.ippan.org/api
-          DEF_NEXT_PUBLIC_WS_URL: wss://ui.ippan.org/ws
-          DEF_NEXT_PUBLIC_ENABLE_FULL_UI: "1"
-          DEF_GATEWAY_ALLOWED_ORIGINS: https://ui.ippan.org
+      - name: Validate env or fall back
         run: |
           set -euo pipefail
-          # Normalize boolean (accept true/1/yes/on)
-          norm_bool() {
-            case "$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')" in
-              true|1|yes|on) echo "true" ;;
-              *) echo "false" ;;
-            esac
-          }
-          APPLY_DEFAULTS="$(norm_bool "${APPLY_DEFAULTS_IN:-true}")"
-
-          # pick: prefer secrets, then vars, then (optionally) defaults
-          pick() {
-            local secret_val="${1:-}" var_val="${2:-}" def_val="${3:-}"
-            if [ -n "$secret_val" ]; then echo "$secret_val"
-            elif [ -n "$var_val" ]; then echo "$var_val"
-            elif [ "$APPLY_DEFAULTS" = "true" ]; then echo "$def_val"
-            else echo ""
-            fi
-          }
-
-          NP_GATEWAY_URL="$(pick "${S_NEXT_PUBLIC_GATEWAY_URL:-}" "${V_NEXT_PUBLIC_GATEWAY_URL:-}" "${DEF_NEXT_PUBLIC_GATEWAY_URL}")"
-          NP_API_BASE_URL="$(pick "${S_NEXT_PUBLIC_API_BASE_URL:-}" "${V_NEXT_PUBLIC_API_BASE_URL:-}" "${DEF_NEXT_PUBLIC_API_BASE_URL}")"
-          NP_WS_URL="$(pick "${S_NEXT_PUBLIC_WS_URL:-}" "${V_NEXT_PUBLIC_WS_URL:-}" "${DEF_NEXT_PUBLIC_WS_URL}")"
-          NP_FULL_UI="$(pick "${S_NEXT_PUBLIC_ENABLE_FULL_UI:-}" "${V_NEXT_PUBLIC_ENABLE_FULL_UI:-}" "${DEF_NEXT_PUBLIC_ENABLE_FULL_UI}")"
-          ALLOWED_ORIGINS="$(pick "${S_GATEWAY_ALLOWED_ORIGINS:-}" "${V_GATEWAY_ALLOWED_ORIGINS:-}" "${DEF_GATEWAY_ALLOWED_ORIGINS}")"
-
-          # Validate that all required variables are set
-          missing_vars=""
-          for k in NP_GATEWAY_URL NP_API_BASE_URL NP_WS_URL NP_FULL_UI ALLOWED_ORIGINS; do
-            if [ -z "${!k}" ]; then
-              missing_vars="$missing_vars $k"
-            fi
-          done
-
-          if [ -n "$missing_vars" ]; then
-            echo "::error::The following variables are empty:$missing_vars"
-            echo "::error::"
-            echo "::error::To fix this issue, set the required secrets/variables in Settings → Secrets and variables → Actions"
-            echo "::error::Required secrets/variables: NEXT_PUBLIC_GATEWAY_URL, NEXT_PUBLIC_API_BASE_URL, NEXT_PUBLIC_WS_URL, NEXT_PUBLIC_ENABLE_FULL_UI, GATEWAY_ALLOWED_ORIGINS"
-            echo "::error::"
-            echo "::error::Default values automatically applied by this workflow:"
-            echo "::error::  NEXT_PUBLIC_GATEWAY_URL: $DEF_NEXT_PUBLIC_GATEWAY_URL"
-            echo "::error::  NEXT_PUBLIC_API_BASE_URL: $DEF_NEXT_PUBLIC_API_BASE_URL"
-            echo "::error::  NEXT_PUBLIC_WS_URL: $DEF_NEXT_PUBLIC_WS_URL"
-            echo "::error::  NEXT_PUBLIC_ENABLE_FULL_UI: $DEF_NEXT_PUBLIC_ENABLE_FULL_UI"
-            echo "::error::  GATEWAY_ALLOWED_ORIGINS: $DEF_GATEWAY_ALLOWED_ORIGINS"
-            exit 1
+          apply_defaults="${{ github.event.inputs.apply_defaults || 'false' }}"
+          keys="NP_GATEWAY_URL NP_API_BASE_URL NP_WS_URL NP_FULL_UI ALLOWED_ORIGINS"
+          if [ "$apply_defaults" = "true" ]; then
+            : "${NP_GATEWAY_URL:=https://ui.ippan.org}"
+            : "${NP_API_BASE_URL:=https://ui.ippan.org/api}"
+            : "${NP_WS_URL:=wss://ui.ippan.org/ws}"
+            : "${NP_FULL_UI:=1}"
+            : "${ALLOWED_ORIGINS:=https://ui.ippan.org}"
           fi
-
-          {
-            echo "NP_GATEWAY_URL=$NP_GATEWAY_URL"
-            echo "NP_API_BASE_URL=$NP_API_BASE_URL"
-            echo "NP_WS_URL=$NP_WS_URL"
-            echo "NP_FULL_UI=$NP_FULL_UI"
-            echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
-          } >> "$GITHUB_OUTPUT"
-
-          # Log resolved values (masked for security)
-          echo "::notice::Resolved environment variables successfully"
-          echo "::notice::NP_GATEWAY_URL is set to: ${NP_GATEWAY_URL:0:20}..."
-          echo "::notice::NP_API_BASE_URL is set to: ${NP_API_BASE_URL:0:20}..."
-          echo "::notice::NP_WS_URL is set to: ${NP_WS_URL:0:20}..."
-          echo "::notice::NP_FULL_UI is set to: $NP_FULL_UI"
-          echo "::notice::ALLOWED_ORIGINS is set to: ${ALLOWED_ORIGINS:0:20}..."
-
-      - name: "SSH: enforce .env, restart, health-check"
-        uses: appleboy/ssh-action@v1.2.0
-        env:
-          NEXT_PUBLIC_GATEWAY_URL: ${{ steps.envs.outputs.NP_GATEWAY_URL }}
-          NEXT_PUBLIC_API_BASE_URL: ${{ steps.envs.outputs.NP_API_BASE_URL }}
-          NEXT_PUBLIC_WS_URL: ${{ steps.envs.outputs.NP_WS_URL }}
-          NEXT_PUBLIC_ENABLE_FULL_UI: ${{ steps.envs.outputs.NP_FULL_UI }}
-          GATEWAY_ALLOWED_ORIGINS: ${{ steps.envs.outputs.ALLOWED_ORIGINS }}
-          UI_HOST_PORT: "3001"
-          GATEWAY_HOST_PORT: "8081"
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          fingerprint: ${{ secrets.DEPLOY_FINGERPRINT }}
-          envs: NEXT_PUBLIC_GATEWAY_URL,NEXT_PUBLIC_API_BASE_URL,NEXT_PUBLIC_WS_URL,NEXT_PUBLIC_ENABLE_FULL_UI,GATEWAY_ALLOWED_ORIGINS,UI_HOST_PORT,GATEWAY_HOST_PORT
-          script: |
-            set -euo pipefail
-            
-            # Validate that environment variables are not empty
-            echo "Validating environment variables..."
-            errors=0
-            for var in NEXT_PUBLIC_GATEWAY_URL NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_WS_URL \
-                       NEXT_PUBLIC_ENABLE_FULL_UI GATEWAY_ALLOWED_ORIGINS; do
-              if [ -z "${!var:-}" ]; then
-                echo "ERROR: $var is empty or not set" >&2
-                errors=$((errors + 1))
-              else
-                echo "✓ $var is set"
-              fi
-            done
-            
-            if [ $errors -gt 0 ]; then
-              echo "ERROR: $errors environment variable(s) are missing" >&2
-              echo "This would cause Docker Compose to fail with 'invalid reference format'" >&2
-              echo "Check the workflow configuration and ensure secrets/variables are set; defaults are applied automatically" >&2
+          for k in $keys; do
+            v="${!k:-}"
+            if [ -z "$v" ]; then
+              echo "::error::$k is empty and apply_defaults=false; set repo Variables or re-run with defaults."
               exit 1
             fi
-            
-            APP_DIR="${DEPLOY_APP_DIR:-$HOME/apps/ippan-ui}"
-            mkdir -p "$APP_DIR"
-            cd "$APP_DIR"
-
-            # Ensure .env has the right values (create or update in place)
-            touch .env
-            upsert() {
-              key="$1"; val="$2"
-              if grep -q "^${key}=" .env; then
-                sed -i "s|^${key}=.*|${key}=${val//|/\|}|" .env
-              else
-                echo "${key}=${val}" >> .env
-              fi
-            }
-            upsert NEXT_PUBLIC_GATEWAY_URL "${NEXT_PUBLIC_GATEWAY_URL}"
-            upsert NEXT_PUBLIC_API_BASE_URL "${NEXT_PUBLIC_API_BASE_URL}"
-            upsert NEXT_PUBLIC_WS_URL "${NEXT_PUBLIC_WS_URL}"
-            upsert NEXT_PUBLIC_ENABLE_FULL_UI "${NEXT_PUBLIC_ENABLE_FULL_UI}"
-            upsert ENABLE_FULL_UI "${NEXT_PUBLIC_ENABLE_FULL_UI}"
-            upsert ALLOWED_ORIGINS "${GATEWAY_ALLOWED_ORIGINS}"
-
-            # Validate .env file
-            echo "Validating .env file..."
-            cat .env
-            if grep -q "=\s*$" .env; then
-              echo "WARNING: .env contains empty values" >&2
-              grep "=\s*$" .env >&2
-            fi
-
-            # Restart stack
-            if docker compose version >/dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
-            $DC up -d --force-recreate
-
-            # Local health checks (gateway, then UI via Nginx)
-            echo "Gateway health:"
-            (curl -sS -m 5 -i "http://127.0.0.1:${GATEWAY_HOST_PORT}/" || true)
-            (curl -sS -m 5 "http://127.0.0.1:${GATEWAY_HOST_PORT}/health" || true)
-
-            echo "Public checks (UI + API)"
-            curl -sS -m 5 -I "https://ui.ippan.org/" || exit 1
-            curl -sS -m 5 -I "https://ui.ippan.org/api/" || exit 1
-
-      - name: "Sanity: fail if short-menu likely"
-        run: |
-          echo "If the UI still renders the short menu, check browser console/network for /api and /ws errors."
+          done
+          echo "All required env present ✅"
