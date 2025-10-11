@@ -3,6 +3,6 @@
 // ... (other code lines)
 
 // Line 870
-status.error = Some(format!("status {code}"));
+status.error = Some(format!("status {}", code));
 
 // ... (other code lines)
