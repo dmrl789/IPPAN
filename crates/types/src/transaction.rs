@@ -439,4 +439,52 @@ mod tests {
         tx.sign(&private_key).unwrap();
         assert!(!tx.is_valid());
     }
+
+    #[test]
+    fn test_sign_rejects_mismatched_private_key() {
+        let (legit_private_key, from) = generate_account();
+        let (_, to) = generate_account();
+        let mut tx = Transaction::new(from, to, 42, 9);
+
+        // Signing with the correct private key succeeds.
+        assert!(tx.sign(&legit_private_key).is_ok());
+
+        // Reset signature so we can test the failure path with a wrong key.
+        tx.signature = [0u8; 64];
+
+        let (other_private_key, _) = generate_account();
+        let err = tx
+            .sign(&other_private_key)
+            .expect_err("expected mismatch error");
+        assert!(err.contains("private key does not match"));
+    }
+
+    #[test]
+    fn test_hashtimer_generation_matches_expected() {
+        let (private_key, from) = generate_account();
+        let (_, to) = generate_account();
+        let amount = 500u64;
+        let nonce = 17u64;
+
+        let mut tx = Transaction::new(from, to, amount, nonce);
+        tx.sign(&private_key).unwrap();
+
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&from);
+        payload.extend_from_slice(&to);
+        payload.extend_from_slice(&amount.to_be_bytes());
+        payload.extend_from_slice(&nonce.to_be_bytes());
+
+        let expected_hashtimer = HashTimer::derive(
+            "transaction",
+            tx.timestamp,
+            b"transaction",
+            &payload,
+            &nonce.to_be_bytes(),
+            &from,
+        );
+
+        assert_eq!(expected_hashtimer, tx.hashtimer);
+        assert!(tx.is_valid());
+    }
 }
