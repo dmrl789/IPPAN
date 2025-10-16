@@ -1,14 +1,14 @@
-﻿# IPPAN Deployment Instructions
+# IPPAN Deployment Instructions
 
 ## Current Status
 - Server 1 (188.245.97.41): RPC API accessible, P2P port issues
 - Server 2 (135.181.145.174): Not accessible
-- Unified UI: Not deployed
+- Unified UI: intentionally removed (servers should run nodes only)
 
 ## Fix Steps
 
 ### 1. Fix Server 2 Connectivity
-`ash
+```bash
 # SSH to Server 2
 ssh root@135.181.145.174
 
@@ -25,39 +25,26 @@ docker ps -a | grep ippan
 
 # Start IPPAN node if not running
 docker-compose -f docker-compose.production.yml up -d
-`
+```
 
-### 2. Deploy Unified UI to Server 1
-`ash
-# SSH to Server 1
-ssh root@188.245.97.41
+### 2. Verify Unified UI is Disabled
+```bash
+# Ensure no UI containers are running
+ssh root@188.245.97.41 "docker ps --format '{{.Names}}' | grep -i ui" || echo "Unified UI not running"
 
-# Upload deployment files
-scp deploy-unified-ui.yml root@188.245.97.41:/root/
-scp nginx.conf root@188.245.97.41:/root/
+# Confirm HTTP ports 80/443 are closed (UI removed)
+nc -zv 188.245.97.41 80 || echo "Port 80 closed as expected"
+nc -zv 188.245.97.41 443 || echo "Port 443 closed as expected"
+```
 
-# Deploy services
-cd /root
-docker-compose -f deploy-unified-ui.yml up -d
+### 3. Test Node Deployment
+```bash
+# Test API on Server 1
+curl http://188.245.97.41:8080/health
 
-# Check status
-docker-compose -f deploy-unified-ui.yml ps
-`
-
-### 3. Configure DNS
-Point ui.ippan.org to 188.245.97.41
-
-### 4. Test Deployment
-`ash
-# Test UI
-curl -I http://188.245.97.41
-curl -I https://ui.ippan.org
-
-# Test API
-curl http://188.245.97.41:8081/health
-curl https://ui.ippan.org/api/health
-`
+# Test API on Server 2 (if reachable)
+curl http://135.181.145.174:8080/health
+```
 
 ## Files Created
-- deploy-unified-ui.yml (Docker Compose configuration)
-- nginx.conf (Nginx reverse proxy configuration)
+No additional files are required for the Unified UI.

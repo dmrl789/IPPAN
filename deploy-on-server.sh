@@ -1,14 +1,14 @@
 ﻿#!/bin/bash
 set -euo pipefail
 
-echo "ðŸš€ Deploying IPPAN Unified UI..."
+echo "🚀 Deploying IPPAN nodes (Unified UI disabled)..."
 
 # Stop any existing containers
 docker-compose down 2>/dev/null || true
 
 # Free up ports
 echo "Freeing up ports..."
-lsof -ti:80,443,8080,8081,9000,3001 | xargs -r kill -9 2>/dev/null || true
+lsof -ti:8080,8081,9000 | xargs -r kill -9 2>/dev/null || true
 
 # Pull latest images
 echo "Pulling latest images..."
@@ -30,8 +30,6 @@ docker-compose ps
 echo "Testing endpoints..."
 curl -s http://localhost:8080/health || echo "Node health check failed"
 curl -s http://localhost:8081/health || echo "Gateway health check failed"
-curl -s http://localhost:3001 || echo "UI health check failed"
 
-echo "âœ… Deployment completed!"
-echo "UI should be available at: http://188.245.97.41"
-echo "API should be available at: http://"
+echo "✅ Deployment completed!"
+echo "Nodes are online. Unified UI is no longer served from this host."

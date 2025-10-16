@@ -69,47 +69,6 @@ services:
     networks:
       - ippan-network
 
-  # IPPAN Unified UI
-  ippan-ui:
-    build:
-      context: ../apps/unified-ui
-      dockerfile: Dockerfile
-    container_name: ippan-ui
-    ports:
-      - "80:3000"    # Web UI
-      - "443:443"    # HTTPS (if configured)
-    restart: unless-stopped
-    depends_on:
-      - ippan-node-1
-      - ippan-node-2
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "3"
-    networks:
-      - ippan-network
-    environment:
-      - REACT_APP_API_URL=http://localhost:8080
-      - REACT_APP_NODE_1_URL=http://localhost:8080
-      - REACT_APP_NODE_2_URL=http://localhost:8081
-
-  # Load Balancer (Optional)
-  nginx-lb:
-    image: nginx:alpine
-    container_name: ippan-nginx-lb
-    ports:
-      - "${UI_HOST_PORT:-3001}:80"
-    volumes:
-      - ./deploy/nginx/load-balancer.conf:/etc/nginx/conf.d/default.conf
-    restart: unless-stopped
-    depends_on:
-      - ippan-node-1
-      - ippan-node-2
-      - ippan-ui
-    networks:
-      - ippan-network
-
 volumes:
   node1_data:
   node2_data:
