@@ -46,5 +46,10 @@ curl http://188.245.97.41:8080/health
 curl http://135.181.145.174:8080/health
 ```
 
+### 4. GitHub Workflow Guardrails
+- `.github/workflows/deploy-unified-ui.yml` now exits immediately with an error to prevent any attempt to redeploy the Unified UI from CI.
+- `.github/workflows/check-nodes.yml` only probes the node API health endpoint and no longer expects a UI URL.
+- Any automation or operator runbook referencing Unified UI deployment must be updated or removed to keep servers node-only.
+
 ## Files Created
 No additional files are required for the Unified UI.

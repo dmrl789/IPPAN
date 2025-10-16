@@ -1,16 +1,16 @@
-name: Check Nodes (UI & API Health)
+name: Check Nodes (API Health)
 
 on:
   workflow_dispatch:
     inputs:
-      ui_url:
-        description: "UI base URL to check (e.g., https://ui.ippan.org)"
-        required: false
-        default: ""
       api_base:
         description: "API base URL to check (e.g., https://ui.ippan.org/api)"
         required: false
         default: ""
+      health_path:
+        description: "Override health path (defaults to /health)"
+        required: false
+        default: "/health"
       timeout_seconds:
         description: "Health check timeout in seconds"
         required: false
@@ -30,17 +30,17 @@ jobs:
     timeout-minutes: 5
 
     env:
-      UI_URL: ${{ inputs.ui_url != '' && inputs.ui_url || vars.NEXT_PUBLIC_GATEWAY_URL }}
       API_BASE: ${{ inputs.api_base != '' && inputs.api_base || vars.NEXT_PUBLIC_API_BASE_URL }}
+      HEALTH_PATH: ${{ inputs.health_path != '' && inputs.health_path || '/health' }}
       TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
 
     steps:
       - name: Display effective targets
         run: |
-          echo "UI_URL=${UI_URL}"
           echo "API_BASE=${API_BASE}"
-          if [ -z "${UI_URL}" ] || [ -z "${API_BASE}" ]; then
-            echo "::error::UI_URL or API_BASE is empty. Provide inputs or define repo Variables: NEXT_PUBLIC_GATEWAY_URL, NEXT_PUBLIC_API_BASE_URL."
+          echo "HEALTH_PATH=${HEALTH_PATH}"
+          if [ -z "${API_BASE}" ]; then
+            echo "::error::API_BASE is empty. Provide the api_base input or define repo Variable: NEXT_PUBLIC_API_BASE_URL."
             exit 1
           fi
 
@@ -50,24 +50,13 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y curl jq
 
-      - name: Check DNS & HTTPS (UI)
-        run: |
-          set -euo pipefail
-          echo "Checking UI endpoint: ${UI_URL}"
-          if curl -fsSLI "${UI_URL}" >/dev/null; then
-            echo "✅ UI reachable"
-          else
-            echo "::error::UI not reachable at ${UI_URL}"
-            exit 1
-          fi
-
       - name: Check API /health (retry up to 3 times)
         run: |
           set -euo pipefail
           tries=0
           until [ $tries -ge 3 ]; do
-            echo "Probe $((tries+1))/3: ${API_BASE}/health"
-            if curl -fsSL "${API_BASE}/health" -o health.json && jq -e '.status=="healthy"' health.json >/dev/null; then
+            echo "Probe $((tries+1))/3: ${API_BASE}${HEALTH_PATH}"
+            if curl -fsSL "${API_BASE}${HEALTH_PATH}" -o health.json && jq -e '.status=="healthy"' health.json >/dev/null; then
               echo "✅ API health OK"
               exit 0
             fi

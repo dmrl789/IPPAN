@@ -1,157 +1,25 @@
-name: Deploy Unified UI
+name: Deploy Unified UI (Decommissioned)
 
 on:
   workflow_dispatch:
     inputs:
-      apply_defaults:
-        description: "Use default env values if repo Variables are missing"
-        required: false
-        default: "false"
-      environment:
-        description: 'Deployment environment'
-        required: false
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
-  push:
-    branches: [ "main" ]
-    paths:
-      - "apps/unified-ui/**"
-      - "apps/gateway/**"
-      - "deploy/server/**"
-      - ".github/workflows/deploy-unified-ui.yml"
-
-concurrency:
-  group: deploy-unified-ui-${{ github.ref }}
-  cancel-in-progress: true
+      acknowledgement:
+        description: "Type 'I understand' to acknowledge that the Unified UI is no longer deployed."
+        required: true
+        default: ""
 
 permissions:
   contents: read
-  packages: write
-  deployments: write
-
-env:
-  APP_DIR: "apps/ippan-ui" # remote relative path under $HOME
-  COMPOSE_FILE: "docker-compose.yml"
-  # Pull from repo Variables by default; workflow_dispatch can flip apply_defaults on the runner side.
-  UI_URL: ${{ vars.NEXT_PUBLIC_GATEWAY_URL }}
-  API_BASE: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
-  WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
-  ENABLE_FULL_UI: ${{ vars.NEXT_PUBLIC_ENABLE_FULL_UI }}
-  ALLOWED_ORIGINS: ${{ vars.GATEWAY_ALLOWED_ORIGINS }}
-  HEALTH_PATH: ${{ vars.TARGET_HEALTH_PATH || '/health' }}
-  HEALTH_TIMEOUT_MS: ${{ vars.HEALTH_TIMEOUT_MS || '5000' }}
 
 jobs:
-  deploy:
+  abort:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Validate inputs / variables
+      - name: Fail because Unified UI is retired
         run: |
-          set -euo pipefail
-          apply_defaults="${{ github.event.inputs.apply_defaults || 'false' }}"
-          missing=0
-          for k in UI_URL API_BASE WS_URL ENABLE_FULL_UI ALLOWED_ORIGINS; do
-            v="${!k:-}"
-            if [ -z "$v" ] && [ "$apply_defaults" = "false" ]; then
-              echo "::error::$k is empty and apply_defaults=false; set repo Variables or re-run with apply_defaults=true."
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then exit 1; fi
-
-      - name: (Optional) Set defaults when apply_defaults=true
-        if: ${{ github.event.inputs.apply_defaults == 'true' }}
-        run: |
-          set -euo pipefail
-          : "${UI_URL:=https://ui.ippan.org}"
-          : "${API_BASE:=https://ui.ippan.org/api}"
-          : "${WS_URL:=wss://ui.ippan.org/ws}"
-          : "${ENABLE_FULL_UI:=1}"
-          : "${ALLOWED_ORIGINS:=https://ui.ippan.org}"
-
-      - name: Show effective env
-        run: |
-          echo "UI_URL=$UI_URL"
-          echo "API_BASE=$API_BASE"
-          echo "WS_URL=$WS_URL"
-          echo "ENABLE_FULL_UI=$ENABLE_FULL_UI"
-          echo "ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
-          echo "HEALTH_PATH=$HEALTH_PATH"
-          echo "HEALTH_TIMEOUT_MS=$HEALTH_TIMEOUT_MS"
-
-      - name: Copy deploy bundle (docker compose + nginx) to runner
-        uses: actions/checkout@v4
-
-      - name: Push deploy artifacts to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: |
-            deploy/server/*
-          target: ~/deploy/unified-ui/
-          strip_components: 2
-
-      - name: SSH deploy & restart
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            APP_DIR="$HOME/${APP_DIR}"
-            mkdir -p "$APP_DIR"
-            cd "$APP_DIR"
-
-            # Bring in compose + config (kept under ~/deploy/unified-ui on the server)
-            cp -f "$HOME/deploy/unified-ui/docker-compose.yml" . 2>/dev/null || true
-            [ -f docker-compose.yml ] || { echo "::error::docker-compose.yml not found on server"; exit 1; }
-
-            # Write .env for the UI container runtime
-            cat > .env <<EOF
-            NEXT_PUBLIC_GATEWAY_URL=${UI_URL}
-            NEXT_PUBLIC_API_BASE_URL=${API_BASE}
-            NEXT_PUBLIC_WS_URL=${WS_URL}
-            NEXT_PUBLIC_ENABLE_FULL_UI=${ENABLE_FULL_UI}
-            GATEWAY_ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
-            TARGET_HEALTH_PATH=${HEALTH_PATH}
-            HEALTH_TIMEOUT_MS=${HEALTH_TIMEOUT_MS}
-            EOF
-
-            # Free port 8080 if used (gateway) — safe on ephemeral runners/hosts
-            if command -v lsof >/dev/null 2>&1; then
-              lsof -ti:8080 | xargs --no-run-if-empty kill -9 || true
-            elif command -v fuser >/dev/null 2>&1; then
-              fuser -k 8080/tcp || true
-            fi
-
-            # Pull and restart
-            docker compose pull || true
-            docker compose up -d --force-recreate
-
-            # Simple health check (internal gateway expected on 127.0.0.1:8080)
-            echo "Waiting for gateway to be healthy..."
-            tries=0
-            until [ $tries -ge 12 ]; do
-              if curl -fsS "http://127.0.0.1:8080${HEALTH_PATH}"; then
-                echo "Gateway healthy ✅"
-                break
-              fi
-              tries=$((tries+1))
-              sleep 5
-            done
-            [ $tries -lt 12 ] || { echo "::error::Gateway failed health after 60s"; exit 1; }
-
-      - name: External health (UI and API)
-        run: |
-          set -euo pipefail
-          curl -fsSLI "$UI_URL" >/dev/null
-          echo "UI reachable ✅"
-          curl -fsSL "$API_BASE/health" | grep -q '"healthy"' && echo "API healthy ✅"
+          if [ "${{ github.event.inputs.acknowledgement }}" != 'I understand' ]; then
+            echo "::error::Unified UI deployment workflow has been retired. Nodes no longer serve the Unified UI."
+          else
+            echo "::error::Unified UI deployment workflow has been retired. Nodes no longer serve the Unified UI."
+          fi
+          exit 1
