@@ -1,57 +1,17 @@
-name: Codex Fix Unified UI
+name: Codex Fix Unified UI (Decommissioned)
 
 on:
-  workflow_dispatch:
-    inputs:
-      apply_defaults:
-        description: "Use defaults when Variables are missing"
-        required: false
-        default: "false"
-      environment:
-        description: 'Environment to test against'
-        required: false
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
-  pull_request:
-    paths:
-      - ".github/workflows/codex-fix-unified-ui.yml"
-      - "apps/unified-ui/**"
-      - "apps/gateway/**"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
   pull-requests: write
 
 jobs:
-  sanity:
+  notify:
     runs-on: ubuntu-latest
-    env:
-      NP_GATEWAY_URL: ${{ vars.NEXT_PUBLIC_GATEWAY_URL }}
-      NP_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
-      NP_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
-      NP_FULL_UI: ${{ vars.NEXT_PUBLIC_ENABLE_FULL_UI }}
-      ALLOWED_ORIGINS: ${{ vars.GATEWAY_ALLOWED_ORIGINS }}
     steps:
-      - name: Validate env or fall back
+      - name: Unified UI is no longer managed
         run: |
-          set -euo pipefail
-          apply_defaults="${{ github.event.inputs.apply_defaults || 'false' }}"
-          keys="NP_GATEWAY_URL NP_API_BASE_URL NP_WS_URL NP_FULL_UI ALLOWED_ORIGINS"
-          if [ "$apply_defaults" = "true" ]; then
-            : "${NP_GATEWAY_URL:=https://ui.ippan.org}"
-            : "${NP_API_BASE_URL:=https://ui.ippan.org/api}"
-            : "${NP_WS_URL:=wss://ui.ippan.org/ws}"
-            : "${NP_FULL_UI:=1}"
-            : "${ALLOWED_ORIGINS:=https://ui.ippan.org}"
-          fi
-          for k in $keys; do
-            v="${!k:-}"
-            if [ -z "$v" ]; then
-              echo "::error::$k is empty and apply_defaults=false; set repo Variables or re-run with defaults."
-              exit 1
-            fi
-          done
-          echo "All required env present ✅"
+          echo "::error::The Unified UI has been decommissioned. Use node-only deployment playbooks instead."
+          exit 1
