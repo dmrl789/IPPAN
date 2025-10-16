@@ -5,6 +5,11 @@ import LiveBlocksPage from './pages/explorer/LiveBlocksPage'
 import TransactionsPage from './pages/explorer/TransactionsPage'
 import ValidatorsPage from './pages/explorer/ValidatorsPage'
 import NodeSelector from './components/NodeSelector'
+import CreateWallet from './pages/CreateWallet'
+import WalletOverview from './pages/WalletOverview'
+import SendPayment from './pages/SendPayment'
+import Staking from './pages/Staking'
+import Domains from './pages/Domains'
 import { getApiBaseUrl, getHealth } from './lib/api'
 import { UIConfig } from './lib/config'
 
@@ -17,6 +22,16 @@ const FULL_NAVIGATION: ReadonlyArray<NavigationGroup> = [
   {
     title: 'Overview',
     items: [{ name: 'Node Dashboard', path: '/dashboard', icon: '📊' }],
+  },
+  {
+    title: 'Wallet',
+    items: [
+      { name: 'Create Wallet', path: '/wallet/create', icon: '🔑' },
+      { name: 'Wallet Overview', path: '/wallet/overview', icon: '💼' },
+      { name: 'Send Payment', path: '/wallet/send', icon: '💸' },
+      { name: 'Staking', path: '/wallet/staking', icon: '🛡️' },
+      { name: 'Domains', path: '/wallet/domains', icon: '🌐' },
+    ],
   },
   {
     title: 'Explorer',
@@ -136,6 +151,12 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+
+              <Route path="/wallet/create" element={<CreateWallet />} />
+              <Route path="/wallet/overview" element={<WalletOverview />} />
+              <Route path="/wallet/send" element={<SendPayment />} />
+              <Route path="/wallet/staking" element={<Staking />} />
+              <Route path="/wallet/domains" element={<Domains />} />
 
               <Route path="/explorer/live-blocks" element={<LiveBlocksPage />} />
               <Route path="/explorer/transactions" element={<TransactionsPage />} />

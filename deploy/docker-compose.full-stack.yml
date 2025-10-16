@@ -4,7 +4,7 @@ services:
   # IPPAN Blockchain Node 1
   ippan-node-1:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.production
     container_name: ippan-node-1
     environment:
@@ -14,7 +14,7 @@ services:
       - RPC_PORT=8080
       - P2P_HOST=0.0.0.0
       - P2P_PORT=9000
-      - P2P_BOOTNODES=http://135.181.145.174:9001
+      - P2P_BOOTNODES=http://ippan-node-2:9001
       - STORAGE_PATH=/var/lib/ippan/db
       - CONSENSUS_SLOT_DURATION_MS=1000
       - CONSENSUS_MAX_TX_PER_BLOCK=100
@@ -38,7 +38,7 @@ services:
   # IPPAN Blockchain Node 2
   ippan-node-2:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.production
     container_name: ippan-node-2
     environment:
@@ -48,7 +48,7 @@ services:
       - RPC_PORT=8080
       - P2P_HOST=0.0.0.0
       - P2P_PORT=9001
-      - P2P_BOOTNODES=http://188.245.97.41:9000
+      - P2P_BOOTNODES=http://ippan-node-1:9000
       - STORAGE_PATH=/var/lib/ippan/db
       - CONSENSUS_SLOT_DURATION_MS=1000
       - CONSENSUS_MAX_TX_PER_BLOCK=100
@@ -72,11 +72,11 @@ services:
   # IPPAN Unified UI
   ippan-ui:
     build:
-      context: ./apps/unified-ui
+      context: ../apps/unified-ui
       dockerfile: Dockerfile
     container_name: ippan-ui
     ports:
-      - "80:80"      # Web UI
+      - "80:3000"    # Web UI
       - "443:443"    # HTTPS (if configured)
     restart: unless-stopped
     depends_on:
@@ -90,9 +90,9 @@ services:
     networks:
       - ippan-network
     environment:
-      - REACT_APP_API_URL=http://188.245.97.41:8080
-      - REACT_APP_NODE_1_URL=http://188.245.97.41:8080
-      - REACT_APP_NODE_2_URL=http://135.181.145.174:8080
+      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_NODE_1_URL=http://localhost:8080
+      - REACT_APP_NODE_2_URL=http://localhost:8081
 
   # Load Balancer (Optional)
   nginx-lb:

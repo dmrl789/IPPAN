@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  ippan-node-1:
+    build:
+      context: ..
+      dockerfile: Dockerfile.production
+    container_name: ippan-node-1
+    ports:
+      - "8080:8080"  # RPC API
+      - "9000:9000"  # P2P
+    environment:
+      - NODE_ID=1
+      - RPC_PORT=8080
+      - P2P_PORT=9000
+      - P2P_BOOTNODES=http://ippan-node-2:9001
+      - LOG_LEVEL=info
+    volumes:
+      - ../data:/app/data
+    networks:
+      - ippan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ippan-node-2:
+    build:
+      context: ..
+      dockerfile: Dockerfile.production
+    container_name: ippan-node-2
+    ports:
+      - "8081:8080"  # RPC API
+      - "9001:9001"  # P2P
+    environment:
+      - NODE_ID=2
+      - RPC_PORT=8080
+      - P2P_PORT=9001
+      - P2P_BOOTNODES=http://ippan-node-1:9000
+      - LOG_LEVEL=info
+    volumes:
+      - ../data:/app/data
+    networks:
+      - ippan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  ippan-network:
+    driver: bridge
+
