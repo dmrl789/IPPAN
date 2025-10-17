@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">IPPAN Wallet</string>
+    <string name="nav_overview">Overview</string>
+    <string name="nav_activity">Activity</string>
+    <string name="nav_settings">Settings</string>
+    <string name="action_send">Send</string>
+    <string name="action_receive">Receive</string>
+    <string name="label_total_balance">Total Balance</string>
+    <string name="label_primary_account">Primary account</string>
+    <string name="label_address_copied">Address copied to clipboard</string>
+    <string name="placeholder_note">Optional note</string>
+</resources>
