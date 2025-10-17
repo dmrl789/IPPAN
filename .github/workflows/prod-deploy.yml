@@ -45,8 +45,17 @@ jobs:
             API_HOST_PORT="${{ env.API_HOST_PORT }}"
             P2P_PORT="${{ env.P2P_PORT }}"
 
-            apt-get update -y
-            DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              echo "🔄 Updating packages via sudo..."
+              sudo apt-get update -y
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            elif [ "$(id -u)" -eq 0 ]; then
+              echo "🔄 Updating packages as root..."
+              apt-get update -y
+              DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            else
+              echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
+            fi
 
             mkdir -p /opt/ippan && cd /opt/ippan
 
@@ -110,8 +119,17 @@ jobs:
             API_HOST_PORT="${{ env.API_HOST_PORT }}"
             P2P_PORT="${{ env.P2P_PORT }}"
 
-            apt-get update -y
-            DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              echo "🔄 Updating packages via sudo..."
+              sudo apt-get update -y
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            elif [ "$(id -u)" -eq 0 ]; then
+              echo "🔄 Updating packages as root..."
+              apt-get update -y
+              DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            else
+              echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
+            fi
 
             mkdir -p /opt/ippan && cd /opt/ippan
 
