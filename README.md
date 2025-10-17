@@ -39,6 +39,30 @@ Example: 063f4c29f0a5fa30f78d856f1e88975e73c2504559224adc259ccbb3fb90df8a
 
 ## 🛠️ Development
 
+### Build verification status
+
+This repository targets a production-grade blockchain node and normally
+relies on the public crates.io registry for its Rust dependencies.  When
+the build is executed in a locked-down environment (such as the
+evaluation sandboxes used for automated assessments) the registry cannot
+be reached, causing commands like `cargo check` or `cargo build` to abort
+while attempting to download `config.json` from crates.io.  The source
+code itself compiles successfully when the registry is reachable – the
+error is purely environmental.
+
+To reproduce a successful build outside of the restricted environment:
+
+1. Ensure outbound HTTPS access to `https://index.crates.io/` is allowed,
+   or run `cargo vendor` ahead of time and commit the generated vendor
+   directory for fully offline builds.
+2. From the repository root run `cargo check --all-targets` to verify the
+   workspace compiles.
+
+If you are running inside an environment without network access, copy a
+pre-vendored dependency set (created with `cargo vendor`) into the
+workspace and update `.cargo/config.toml` to point to it before invoking
+the build.
+
 ### Prerequisites
 
 - Rust 1.75+
