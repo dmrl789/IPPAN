@@ -1353,14 +1353,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "ippan-core"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "ippan-time",
+ "rand_core",
+ "serde",
+ "sha2",
+]
+
+[[package]]
+name = "ippan-time"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "blake3",
+ "ed25519-dalek",
+ "hex",
+ "libp2p",
+ "log",
+ "once_cell",
+ "rand_core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "ippan-types"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "ed25519-dalek",
  "hex",
- "once_cell",
- "parking_lot 0.12.4",
+ "ippan-time",
  "rand_core",
  "serde",
  "serde_bytes",

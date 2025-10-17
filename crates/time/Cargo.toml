@@ -1,0 +1,20 @@
+[package]
+name = "ippan-time"
+version = "0.3.0"
+edition = "2021"
+description = "Deterministic IPPAN Time service with libp2p synchronization and HashTimer emission."
+license = "MIT"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+blake3 = { workspace = true }
+ed25519-dalek = { workspace = true }
+hex = { workspace = true }
+libp2p = { workspace = true }
+log = { workspace = true }
+once_cell = { workspace = true }
+rand_core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

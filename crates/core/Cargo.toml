@@ -1,0 +1,23 @@
+[package]
+name = "ippan-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core IPPAN BlockDAG primitives with HashTimer anchoring."
+license = "MIT"
+
+[dependencies]
+anyhow = { workspace = true }
+blake3 = { workspace = true }
+ed25519-dalek = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+ippan-time = { path = "../time" }
+libp2p = { workspace = true }
+log = { workspace = true }
+rand_core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sled = { workspace = true }
+sha2 = "0.10"
+tempfile = { workspace = true }
+tokio = { workspace = true }
