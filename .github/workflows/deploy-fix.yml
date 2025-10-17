@@ -40,9 +40,9 @@ jobs:
             
             echo "🔧 Fixing IPPAN deployment on primary server..."
             
-            # Update system packages
-            apt-get update -y
-            DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            # Update system packages (requires elevated privileges)
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
             
             # Navigate to deployment directory
             cd /opt/ippan
@@ -55,7 +55,7 @@ jobs:
             docker system prune -f || true
             
             # Restart Docker daemon
-            systemctl restart docker
+            sudo systemctl restart docker
             
             # Start blockchain nodes
             echo "🚀 Starting blockchain nodes..."
@@ -96,9 +96,9 @@ jobs:
             
             echo "🔧 Fixing IPPAN deployment on secondary server..."
             
-            # Update system packages
-            apt-get update -y
-            DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            # Update system packages (requires elevated privileges)
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
             
             # Navigate to deployment directory
             cd /opt/ippan
@@ -111,7 +111,7 @@ jobs:
             docker system prune -f || true
             
             # Restart Docker daemon
-            systemctl restart docker
+            sudo systemctl restart docker
             
             # Start blockchain nodes
             echo "🚀 Starting blockchain nodes..."
@@ -131,8 +131,8 @@ jobs:
             
             # Configure firewall
             echo "🔥 Configuring firewall..."
-            ufw allow ${P2P_PORT}/tcp || true
-            ufw reload || true
+            sudo ufw allow ${P2P_PORT}/tcp || true
+            sudo ufw reload || true
             
             echo "✅ Secondary server fix completed!"
 
