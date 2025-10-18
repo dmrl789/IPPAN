@@ -142,7 +142,7 @@ struct HealthResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct ConsensusStateView {
+pub struct ConsensusStateView {
     current_slot: u64,
     current_round: u64,
     latest_block_height: u64,
@@ -361,7 +361,7 @@ async fn handle_version(State(state): State<SharedState>) -> impl IntoResponse {
 
 async fn handle_metrics(State(state): State<SharedState>) -> impl IntoResponse {
     let total = state.record_request();
-    let body = format!("ippan_rpc_requests_total {}\n", total);
+    let body = format!("ippan_rpc_requests_total {total}\n");
     ([(header::CONTENT_TYPE, "text/plain; version=0.0.4")], body)
 }
 

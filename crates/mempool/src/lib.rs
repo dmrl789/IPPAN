@@ -65,10 +65,10 @@ impl Mempool {
         }
 
         // Check mempool size limit - remove oldest low-fee transactions if needed
-        if transactions.len() >= self.max_size {
-            if !self.make_space_for_transaction(&mut transactions, &mut sender_nonces, 0) {
-                return Ok(false);
-            }
+        if transactions.len() >= self.max_size
+            && !self.make_space_for_transaction(&mut transactions, &mut sender_nonces, 0)
+        {
+            return Ok(false);
         }
 
         // Validate confidential payloads before admission

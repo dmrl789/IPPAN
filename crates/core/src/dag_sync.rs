@@ -6,6 +6,8 @@
 //! that freshly discovered peers can request the data immediately after joining.
 
 use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -14,11 +16,12 @@ use futures::StreamExt;
 use libp2p::core::transport::upgrade;
 use libp2p::identity;
 use libp2p::noise;
-use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
+use libp2p::swarm::derive::NetworkBehaviour;
+use libp2p::swarm::{self, Executor, SwarmEvent};
 use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{gossipsub, mdns};
-use libp2p::{Multiaddr, PeerId, Swarm, SwarmBuilder, Transport};
+use libp2p::{Multiaddr, PeerId, Swarm, Transport};
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::time::interval;
@@ -38,6 +41,15 @@ pub enum GossipMsg {
     Tip([u8; 32]),
     /// Broadcasts the full block so late-joining peers can catch up.
     Block(Block),
+}
+
+#[derive(Clone, Copy, Default)]
+struct TokioExecutor;
+
+impl Executor for TokioExecutor {
+    fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        tokio::spawn(future);
+    }
 }
 
 /// Combined network behaviour: gossipsub for fan-out plus mDNS for discovery.
@@ -81,19 +93,17 @@ impl DagSyncService {
             hex::encode(verifying_key.to_bytes())
         );
 
-        let noise_keys = noise::Keypair::<noise::X25519Spec>::new()
-            .into_authentic(&local_key)
-            .context("failed to create authenticated noise keys")?;
+        let noise = noise::Config::new(&local_key).context("failed to initialise noise config")?;
 
         let transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true))
             .upgrade(upgrade::Version::V1)
-            .authenticate(noise::Config::xx(noise_keys))
+            .authenticate(noise)
             .multiplex(yamux::Config::default())
             .boxed();
 
         let message_id_fn = |message: &gossipsub::Message| {
             let digest = blake3::hash(&message.data);
-            gossipsub::MessageId::from(digest.to_hex())
+            gossipsub::MessageId::from(digest.as_bytes())
         };
 
         let gossip_config = gossipsub::ConfigBuilder::default()
@@ -106,17 +116,20 @@ impl DagSyncService {
         let mut gossip = gossipsub::Behaviour::new(
             gossipsub::MessageAuthenticity::Signed(local_key.clone()),
             gossip_config,
-        )?;
+        )
+        .context("failed to create gossipsub behaviour")?;
         let topic = gossipsub::IdentTopic::new(DAG_TOPIC);
-        gossip.subscribe(&topic)?;
+        gossip
+            .subscribe(&topic)
+            .context("failed to subscribe to DAG gossip topic")?;
 
         let mdns = mdns::tokio::Behaviour::new(mdns::Config::default())
             .await
             .context("failed to initialise mDNS discovery")?;
 
         let behaviour = DagBehaviour { gossip, mdns };
-        let mut swarm =
-            SwarmBuilder::with_tokio_executor(transport, behaviour, local_peer_id).build();
+        let swarm_config = swarm::Config::with_executor(TokioExecutor);
+        let mut swarm = Swarm::new(transport, behaviour, local_peer_id, swarm_config);
 
         let addr: Multiaddr = listen_addr
             .parse()

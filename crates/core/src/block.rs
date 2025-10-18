@@ -5,7 +5,7 @@
 //! stream. The helpers in this module construct new blocks, compute their
 //! hashes, and validate incoming blocks before they are inserted into the DAG.
 
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use ippan_time::{now_us, sign_hashtimer, verify_hashtimer, HashTimer};
@@ -115,7 +115,7 @@ impl Block {
                 Ok(bytes) => bytes,
                 Err(_) => return false,
             };
-        let signature = match Signature::from_bytes(&signature_bytes) {
+        let signature = match Signature::try_from(&signature_bytes[..]) {
             Ok(sig) => sig,
             Err(_) => return false,
         };

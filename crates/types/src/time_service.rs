@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 
 pub use ippan_time::{
     generate_entropy, ingest_sample, init, now, now_us, sign_hashtimer, start_time_sync, status,
-    verify_hashtimer, HashTimer, TimeSyncService,
+    verify_hashtimer, TimeSyncService,
 };
 
 /// Convenience function to get current IPPAN time in microseconds as `u64`.
