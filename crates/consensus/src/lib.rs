@@ -330,6 +330,23 @@ impl PoAConsensus {
         // Store block
         storage.store_block(block.clone())?;
 
+        // Remove processed transactions from the mempool to avoid re-proposing them
+        for tx in &block.transactions {
+            let tx_hash = hex::encode(tx.hash());
+            match mempool.remove_transaction(&tx_hash) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    warn!("transaction {} was not found in mempool during cleanup", tx_hash);
+                }
+                Err(err) => {
+                    warn!(
+                        "failed to remove transaction {} from mempool after proposing block: {}",
+                        tx_hash, err
+                    );
+                }
+            }
+        }
+
         {
             let mut tracker = round_tracker.write();
             tracker.current_round_blocks.push(block.header.id);
