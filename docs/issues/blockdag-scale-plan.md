@@ -1,3 +1,15 @@
+---
+codex:
+  action: implement
+  priority: high
+  type: development
+  phase: parallel-dag-scaling
+  output:
+    - crates/consensus/parallel_dag.rs
+    - crates/network/parallel_gossip.rs
+    - benchmarks/throughput_report.md
+---
+
 # BlockDAG Scale Initiative — Issue Breakdown
 
 This document enumerates the issue cards to open for Codex in order to evolve the IPPAN node from the current single-thread PoA implementation toward the PRD target of 3–10 million TPS. Each issue includes a recommended title, scope summary, key file paths, labels, and an initial branch name. All issues should carry the parent label `initiative/blockdag-scale` once created.
