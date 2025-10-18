@@ -8,6 +8,14 @@ codex:
     - crates/consensus/parallel_dag.rs
     - crates/network/parallel_gossip.rs
     - benchmarks/throughput_report.md
+  watch:
+    - crates/**
+    - docs/issues/blockdag-scale-plan.md
+  description: >
+    Execute the BlockDAG Scale Initiative. Implement all phases (runtime async migration,
+    concurrent DAG scheduler, QUIC gossip networking, lock-free mempool, storage v2,
+    consensus DAG, and benchmarks) as defined below. Automatically generate issues,
+    branches, and pull requests according to the phase structure.
 ---
 
 # BlockDAG Scale Initiative — Issue Breakdown
