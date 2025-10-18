@@ -5,10 +5,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
+use axum::body::Body;
 use axum::extract::{Path as AxumPath, Query, State};
-use axum::http::{header, StatusCode};
-use axum::response::IntoResponse;
-use axum::routing::{get, get_service, post};
+use axum::http::{header, Request, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use hex::FromHex;
 use ippan_consensus::{ConsensusState, PoAConsensus};
@@ -266,27 +267,12 @@ fn build_router(state: SharedState) -> Router {
         .route("/l2/commits", get(handle_list_l2_commits))
         .route("/l2/commits/:l2_id", get(handle_list_l2_commits_for_l2))
         .route("/l2/exits", get(handle_list_l2_exits))
-        .route("/l2/exits/:l2_id", get(handle_list_l2_exits_for_l2))
-        .with_state(state.clone())
-        .layer(TraceLayer::new_for_http());
+        .route("/l2/exits/:l2_id", get(handle_list_l2_exits_for_l2));
 
     if let Some(static_root) = state.static_assets_root() {
         if Path::new(&static_root).exists() {
             info!("Serving Unified UI assets from {:?}", static_root);
-            let index_path = static_root.join("index.html");
-            let service = ServeDir::new(static_root.clone())
-                .append_index_html_on_directories(true)
-                .not_found_service(ServeFile::new(index_path));
-
-            router = router.fallback_service(get_service(service).handle_error(
-                |err: std::io::Error| async move {
-                    warn!("Static asset error: {}", err);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("failed to serve static asset: {err}"),
-                    )
-                },
-            ));
+            router = router.fallback(serve_static_assets);
         } else {
             warn!(
                 "Unified UI assets directory {:?} does not exist",
@@ -295,7 +281,34 @@ fn build_router(state: SharedState) -> Router {
         }
     }
 
-    router
+    router.layer(TraceLayer::new_for_http()).with_state(state)
+}
+
+async fn serve_static_assets(State(state): State<SharedState>, req: Request<Body>) -> Response {
+    if let Some(static_root) = state.static_assets_root() {
+        if Path::new(&static_root).exists() {
+            let index_path = static_root.join("index.html");
+            let service = ServeDir::new(static_root)
+                .append_index_html_on_directories(true)
+                .not_found_service(ServeFile::new(index_path));
+
+            match service.oneshot(req).await {
+                Ok(response) => response.into_response(),
+                Err(err) => {
+                    warn!("Static asset error: {}", err);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("failed to serve static asset: {err}"),
+                    )
+                        .into_response()
+                }
+            }
+        } else {
+            (StatusCode::NOT_FOUND, "Not Found").into_response()
+        }
+    } else {
+        (StatusCode::NOT_FOUND, "Not Found").into_response()
+    }
 }
 
 async fn handle_health(State(state): State<SharedState>) -> impl IntoResponse {
