@@ -327,25 +327,9 @@ impl PoAConsensus {
         validate_confidential_block(&block)
             .map_err(|err| anyhow::anyhow!("invalid confidential transaction: {err}"))?;
 
-        // Store block
+        // Store block and clean up the mempool entries that were just included
         storage.store_block(block.clone())?;
-
-        // Remove processed transactions from the mempool to avoid re-proposing them
-        for tx in &block.transactions {
-            let tx_hash = hex::encode(tx.hash());
-            match mempool.remove_transaction(&tx_hash) {
-                Ok(Some(_)) => {}
-                Ok(None) => {
-                    warn!("transaction {} was not found in mempool during cleanup", tx_hash);
-                }
-                Err(err) => {
-                    warn!(
-                        "failed to remove transaction {} from mempool after proposing block: {}",
-                        tx_hash, err
-                    );
-                }
-            }
-        }
+        Self::cleanup_mempool(mempool, &block);
 
         {
             let mut tracker = round_tracker.write();
@@ -366,15 +350,35 @@ impl PoAConsensus {
             }
         });
 
+        let block_hash = hex::encode(block.hash());
+        let transaction_count = block.transactions.len();
         info!(
             "Proposed and stored block {} at height {} (round {}) with {} transactions",
-            hex::encode(block.hash()),
-            block.header.round,
-            final_round,
-            block.transactions.len()
+            block_hash, block.header.round, final_round, transaction_count
         );
 
         Ok(())
+    }
+
+    fn cleanup_mempool(mempool: &Arc<Mempool>, block: &Block) {
+        for tx in &block.transactions {
+            let tx_hash = hex::encode(tx.hash());
+            match mempool.remove_transaction(&tx_hash) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    warn!(
+                        "transaction {} was not found in mempool during cleanup",
+                        tx_hash
+                    );
+                }
+                Err(err) => {
+                    warn!(
+                        "failed to remove transaction {} from mempool after proposing block: {}",
+                        tx_hash, err
+                    );
+                }
+            }
+        }
     }
 
     fn finalize_round_if_ready(
