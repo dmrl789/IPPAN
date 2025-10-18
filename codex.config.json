@@ -1,0 +1,8 @@
+{
+  "watch": [
+    "docs/issues/*.md"
+  ],
+  "rules": {
+    "default_action": "implement"
+  }
+}
