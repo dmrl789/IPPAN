@@ -117,7 +117,8 @@ class FakeWalletRepository : WalletRepository {
             fiatCurrency = "USD",
             tokens = tokens,
             transactions = transactions,
-            lastSync = Instant.now()
+            lastSync = Instant.now(),
+            activeNode = "https://api.sandbox.ippan.net"
         )
     }
 

@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun SettingsScreen(onRefreshClick: () -> Unit) {
+fun SettingsScreen(activeEndpoint: String, onRefreshClick: () -> Unit) {
     val biometricLogin = remember { mutableStateOf(true) }
     val pushNotifications = remember { mutableStateOf(true) }
 
@@ -29,6 +29,23 @@ fun SettingsScreen(onRefreshClick: () -> Unit) {
             text = "Preferences",
             style = MaterialTheme.typography.headlineMedium
         )
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Network",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "Connected to",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Text(
+                    text = activeEndpoint,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
         SettingsRow(
             title = "Biometric unlock",
             description = "Require biometrics when sending funds",
