@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="ippan_nodes">
+        <item>https://api.ippan.net</item>
+        <item>https://api.ippan.network</item>
+        <item>https://api-eu.ippan.net</item>
+    </string-array>
+</resources>

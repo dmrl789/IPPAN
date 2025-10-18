@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("app.cash.paparazzi")
 }
 
 android {
@@ -56,6 +57,10 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -84,6 +89,7 @@ dependencies {
     // Security and Biometrics
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     
     // Camera and QR Code scanning
     implementation("androidx.camera:camera-core:1.3.1")
@@ -100,6 +106,10 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("app.cash.paparazzi:paparazzi:1.3.1")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.11.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

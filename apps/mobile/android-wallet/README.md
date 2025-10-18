@@ -1,287 +1,101 @@
-# IPPAN Android Wallet - Production Ready
+# IPPAN Android Wallet
 
-A modern, secure Android wallet for the IPPAN blockchain network built with Jetpack Compose and Material 3.
+A Jetpack Compose reference wallet for the IPPAN network. The module focuses on
+showing how the app boots, persists keys with the Android Keystore, talks to
+multiple IPPAN HTTP nodes, and renders wallet data with Material 3 components.
+It is not yet a feature complete production wallet, but it provides a solid
+baseline for teams that want to continue the build out.
 
-## 🚀 Features
+## Current capabilities
 
-### Core Functionality
-- **🔐 Secure Wallet Management**: ECDSA key generation and secure storage
-- **💰 Balance Tracking**: Real-time balance updates from IPPAN network
-- **📱 Transaction History**: Complete transaction history with status tracking
-- **💸 Send/Receive**: Easy token transfers with QR code scanning
-- **🔒 Biometric Security**: Fingerprint/Face ID authentication
+- ✅ Hardware-backed key generation and storage via `CryptoUtils` and
+  `SecureKeyStorage`
+- ✅ Multi-endpoint REST client with automatic failover (`IppanApiClient`)
+- ✅ Wallet state flow exposed through `WalletRepository` and
+  `WalletViewModel`
+- ✅ Compose UI for overview, history, settings, and send flows
+- ✅ Biometric authentication helper (not yet wired into the send flow)
+- ✅ Snapshot tests (Paparazzi) for each screen to assist design reviews
 
-### Security Features
-- **🛡️ Hardware Security**: Android Keystore integration
-- **🔐 Encrypted Storage**: AES-GCM encryption for sensitive data
-- **👆 Biometric Authentication**: Secure transaction signing
-- **🔑 Key Management**: Secure private key storage and backup
+## Roadmap and known gaps
 
-### User Experience
-- **🎨 Modern UI**: Material 3 design with dark/light themes
-- **📱 Responsive Design**: Optimized for phones and tablets
-- **🔄 Real-time Updates**: Live balance and transaction updates
-- **📷 QR Scanner**: Easy address sharing and receiving
-- **🌐 Network Status**: Connection health monitoring
+The following items still need implementation before the wallet is production
+ready:
 
-## 🏗️ Architecture
+- 🔲 Real fiat conversion rates – a placeholder multiplier is used in the data
+  layer until price feeds are available.
+- 🔲 Push notifications and background sync.
+- 🔲 Camera / QR code scanning wiring in the send sheet.
+- 🔲 Certificate pinning and custom TLS trust management.
+- 🔲 Comprehensive unit/UI test coverage and Play Store hardening.
+
+See [`PRODUCTION_STATUS.md`](PRODUCTION_STATUS.md) for a more detailed checklist.
+
+## Project structure
 
 ```
-📱 IPPAN Android Wallet
-├── 🎨 UI Layer (Jetpack Compose)
-│   ├── MainActivity (Navigation)
-│   ├── OverviewScreen (Balance/Assets)
-│   ├── SendTokenSheet (Transaction Form)
-│   ├── QRCodeScanner (Address Scanning)
-│   └── ActivityScreen (Transaction History)
-├── 🧠 ViewModel Layer
-│   └── WalletViewModel (State Management)
-├── 📊 Data Layer
-│   ├── ProductionWalletRepository (Real Blockchain)
-│   ├── IppanApiClient (Network Operations)
-│   └── SecureKeyStorage (Encrypted Storage)
-├── 🔐 Security Layer
-│   ├── CryptoUtils (Cryptographic Operations)
-│   ├── BiometricAuthManager (Authentication)
-│   └── SecureKeyStorage (Key Management)
-└── 🌐 Network Layer
-    └── IppanApiClient (Blockchain API)
+app/
+├── src/main/java/org/ippan/wallet/
+│   ├── MainActivity.kt                # Compose navigation shell
+│   ├── WalletViewModel.kt             # State, intents and validation
+│   ├── crypto/                        # Key generation & signing helpers
+│   ├── data/                          # Repository and domain models
+│   ├── network/                       # OkHttp powered IPPAN client
+│   ├── security/                      # Secure storage & biometrics
+│   └── ui/components/                 # Screen level Compose components
+├── src/test/java/                     # JVM unit tests & Paparazzi snapshots
+└── src/androidTest/java/              # Instrumented tests (placeholder)
 ```
 
-## 🛠️ Setup Instructions
+## Getting started
 
-### Prerequisites
-- Android Studio Hedgehog (2023.1.1) or newer
-- Android SDK 26+ (Android 8.0+)
-- Java 17 or newer
-- Kotlin 1.9.0+
+> **Note:** The Gradle wrapper JAR is stored with [Git LFS](https://git-lfs.com/).
+> Make sure LFS is installed (`git lfs install`) before cloning or running the
+> wrapper so the build tooling is pulled down automatically.
 
-### Installation
+1. Open the `apps/mobile/android-wallet` folder in Android Studio Hedgehog or
+   newer.
+2. When prompted, let the IDE download the Android Gradle Plugin and all
+   dependencies.
+3. Configure the list of preferred IPPAN nodes in
+   [`app/src/main/res/values/nodes.xml`](app/src/main/res/values/nodes.xml).
+4. Build and run the `app` configuration on an API 26+ device or emulator.
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/dmrl789/IPPAN.git
-   cd IPPAN/apps/mobile/android-wallet
-   ```
+## Generating screenshots
 
-2. **Open in Android Studio**
-   - Launch Android Studio
-   - Select "Open an existing project"
-   - Navigate to `apps/mobile/android-wallet`
-   - Click "Open"
+The project ships with [Paparazzi](https://github.com/cashapp/paparazzi)
+snapshot tests. Once dependencies have been resolved, run:
 
-3. **Sync dependencies**
-   - Android Studio will automatically sync Gradle
-   - Wait for all dependencies to download
-
-4. **Configure IPPAN Network**
-   - Update `IppanApiClient` base URL in `network/IppanApiClient.kt`
-   - Set your IPPAN node endpoint (e.g., `https://api.ippan.org`)
-
-5. **Build and Run**
-   - Connect Android device or start emulator
-   - Click "Run" button or press `Shift+F10`
-
-### Configuration
-
-#### Network Configuration
-```kotlin
-// In IppanApiClient.kt
-private val baseUrl = "https://your-ippan-node.com" // Update this
-```
-
-#### Security Configuration
-```kotlin
-// In SecureKeyStorage.kt
-private const val KEYSTORE_ALIAS = "ippan_wallet_key" // Customize if needed
-```
-
-## 🔧 Development
-
-### Project Structure
-```
-app/src/main/java/org/ippan/wallet/
-├── MainActivity.kt                 # Main app entry point
-├── WalletViewModel.kt             # State management
-├── data/                          # Data layer
-│   ├── Models.kt                  # Data models
-│   ├── WalletRepository.kt       # Repository interface
-│   ├── FakeWalletRepository.kt   # Mock implementation
-│   └── ProductionWalletRepository.kt # Real implementation
-├── network/                       # Network layer
-│   └── IppanApiClient.kt         # API client
-├── crypto/                        # Cryptographic utilities
-│   └── CryptoUtils.kt            # Crypto operations
-├── security/                      # Security features
-│   ├── BiometricAuthManager.kt   # Biometric auth
-│   └── SecureKeyStorage.kt      # Secure storage
-└── ui/                           # UI components
-    ├── components/               # Reusable components
-    └── theme/                   # Design system
-```
-
-### Key Components
-
-#### WalletViewModel
-- Manages wallet state and user interactions
-- Handles transaction submission and validation
-- Coordinates between UI and data layers
-
-#### ProductionWalletRepository
-- Real blockchain integration
-- Transaction signing and submission
-- Balance and history fetching
-
-#### CryptoUtils
-- ECDSA key generation and management
-- Transaction signing and verification
-- Address generation and validation
-
-#### SecureKeyStorage
-- Encrypted private key storage
-- Biometric authentication integration
-- Secure backup and recovery
-
-## 🧪 Testing
-
-### Unit Tests
 ```bash
-./gradlew test
+./gradlew :app:paparazziDebug
 ```
 
-### Integration Tests
-```bash
-./gradlew connectedAndroidTest
-```
+The resulting PNG files are stored under
+`app/build/reports/paparazzi/images/`. Copy the desired renders into the
+`docs/screenshots/` folder (see below) when updating documentation or release
+notes.
 
-### Test Coverage
-```bash
-./gradlew jacocoTestReport
-```
+## Testing
 
-## 🔒 Security Considerations
+| Type            | Command                            | Notes                                      |
+| --------------- | ---------------------------------- | ------------------------------------------ |
+| Unit tests      | `./gradlew :app:testDebugUnitTest` | Requires Android Gradle Plugin and SDK     |
+| Snapshot tests  | `./gradlew :app:paparazziDebug`    | Produces Compose renders without emulators |
+| Instrumentation | `./gradlew :app:connectedCheck`    | Requires an attached device/emulator       |
 
-### Private Key Security
-- Private keys are stored in Android Keystore
-- Encrypted with hardware-backed security
-- Never stored in plain text
+## Screenshots
 
-### Transaction Signing
-- All transactions require biometric authentication
-- Private keys never leave the secure hardware
-- Signatures generated in secure environment
+Generated screenshots live in [`docs/screenshots/`](docs/screenshots/) so that
+non-technical collaborators can review the UI without building the app. Run the
+Paparazzi task above and copy the latest renders into that directory before
+committing visual changes.
 
-### Network Security
-- All API calls use HTTPS
-- Certificate pinning for production
-- Request/response validation
 
-## 📱 Production Deployment
+## Automated release builds
 
-### Build Configuration
-```kotlin
-// In build.gradle.kts
-buildTypes {
-    getByName("release") {
-        isMinifyEnabled = true
-        isShrinkResources = true
-        proguardFiles(
-            getDefaultProguardFile("proguard-android-optimize.txt"),
-            "proguard-rules.pro"
-        )
-    }
-}
-```
-
-### Signing Configuration
-1. Generate signing key:
-   ```bash
-   keytool -genkey -v -keystore ippan-wallet.keystore -alias ippan-wallet -keyalg RSA -keysize 2048 -validity 10000
-   ```
-
-2. Configure signing in `build.gradle.kts`:
-   ```kotlin
-   android {
-       signingConfigs {
-           create("release") {
-               storeFile = file("ippan-wallet.keystore")
-               storePassword = "your_store_password"
-               keyAlias = "ippan-wallet"
-               keyPassword = "your_key_password"
-           }
-       }
-   }
-   ```
-
-### Play Store Deployment
-1. Build release APK:
-   ```bash
-   ./gradlew assembleRelease
-   ```
-
-2. Upload to Google Play Console
-3. Configure app signing
-4. Submit for review
-
-## 🌐 Network Integration
-
-### IPPAN Node Requirements
-- REST API endpoints for balance/transactions
-- WebSocket support for real-time updates
-- CORS configuration for mobile access
-
-### API Endpoints
-```
-GET /api/balance/{address}          # Get account balance
-GET /api/transactions/{address}     # Get transaction history
-POST /api/transactions              # Submit transaction
-GET /api/status                     # Network status
-GET /api/gas-price                  # Current gas price
-```
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-#### Build Errors
-- Ensure Android Studio is up to date
-- Clean and rebuild project
-- Check Java/Kotlin versions
-
-#### Network Issues
-- Verify IPPAN node is accessible
-- Check network permissions
-- Validate API endpoints
-
-#### Security Issues
-- Ensure device supports biometrics
-- Check Android Keystore availability
-- Verify permissions in manifest
-
-### Debug Mode
-```kotlin
-// Enable debug logging
-BuildConfig.DEBUG = true
-```
-
-## 📄 License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## 📞 Support
-
-- **Documentation**: [IPPAN Docs](https://docs.ippan.org)
-- **Issues**: [GitHub Issues](https://github.com/dmrl789/IPPAN/issues)
-- **Discord**: [IPPAN Community](https://discord.gg/ippan)
-
----
-
-**⚠️ Security Notice**: This is production-ready software. Always verify the integrity of your builds and use official distribution channels.
+Publishing a GitHub Release (or manually running the workflow) will trigger the
+[`Android Wallet Release Build`](../../../.github/workflows/android-wallet-release.yml)
+workflow. The job provisions the Android SDK, builds the release APK via
+`./gradlew :app:assembleRelease`, uploads the artifact for inspection, and—when
+triggered by a tagged release—attaches the APK to the corresponding GitHub
+Release.

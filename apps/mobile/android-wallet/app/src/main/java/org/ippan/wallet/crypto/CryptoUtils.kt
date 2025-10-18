@@ -3,50 +3,72 @@ package org.ippan.wallet.crypto
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import java.security.*
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.MessageDigest
+import java.security.PrivateKey
+import java.security.PublicKey
+import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 import kotlin.random.Random
 
 /**
  * Cryptographic utilities for IPPAN wallet operations
  */
 object CryptoUtils {
-    
+
     private const val KEYSTORE_ALIAS = "ippan_wallet_key"
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-    private const val KEY_ALGORITHM = "EC"
     private const val SIGNATURE_ALGORITHM = "SHA256withECDSA"
     private const val ENCRYPTION_ALGORITHM = "AES/GCM/NoPadding"
     private const val GCM_IV_LENGTH = 12
     private const val GCM_TAG_LENGTH = 16
 
+    init {
+        if (java.security.Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+            java.security.Security.addProvider(BouncyCastleProvider())
+        }
+    }
+
     /**
      * Generate a new ECDSA key pair for wallet operations
      */
-    fun generateKeyPair(): KeyPair {
-        val keyGenerator = KeyGenerator.getInstance(KEY_ALGORITHM, ANDROID_KEYSTORE)
-        val keyGenParameterSpec = KeyGenParameterSpec.Builder(
-            KEYSTORE_ALIAS,
+    fun generateKeyPair(alias: String = KEYSTORE_ALIAS): KeyPair {
+        val generator = KeyPairGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_EC,
+            ANDROID_KEYSTORE
+        )
+        val parameterSpec = KeyGenParameterSpec.Builder(
+            alias,
             KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
         )
-            .setDigests(KeyProperties.DIGEST_SHA256)
-            .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-            .setKeySize(256)
+            .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512)
+            .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
             .build()
 
-        keyGenerator.init(keyGenParameterSpec)
-        keyGenerator.generateKey()
+        generator.initialize(parameterSpec)
+        return generator.generateKeyPair()
+    }
 
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
-        keyStore.load(null)
-        val privateKey = keyStore.getKey(KEYSTORE_ALIAS, null) as PrivateKey
-        val publicKey = keyStore.getCertificate(KEYSTORE_ALIAS).publicKey
+    fun getPrivateKey(alias: String = KEYSTORE_ALIAS): PrivateKey {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val key = keyStore.getKey(alias, null)
+            ?: throw IllegalStateException("No private key found for alias $alias")
+        return key as PrivateKey
+    }
 
-        return KeyPair(publicKey, privateKey)
+    fun getPublicKey(alias: String = KEYSTORE_ALIAS): PublicKey {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        return keyStore.getCertificate(alias)?.publicKey
+            ?: throw IllegalStateException("No public key certificate for alias $alias")
     }
 
     /**
@@ -134,7 +156,7 @@ object CryptoUtils {
      */
     private fun hash160(data: ByteArray): ByteArray {
         val sha256 = MessageDigest.getInstance("SHA-256")
-        val ripemd160 = MessageDigest.getInstance("RIPEMD160")
+        val ripemd160 = MessageDigest.getInstance("RipeMD160", BouncyCastleProvider.PROVIDER_NAME)
         val sha256Hash = sha256.digest(data)
         return ripemd160.digest(sha256Hash)
     }
@@ -143,24 +165,23 @@ object CryptoUtils {
      * Generate AES key from password
      */
     private fun generateAESKey(password: String): SecretKey {
-        val keyGenerator = KeyGenerator.getInstance("AES")
         val salt = password.toByteArray()
-        val keySpec = javax.crypto.spec.PBEKeySpec(
+        val keySpec = PBEKeySpec(
             password.toCharArray(),
             salt,
             10000, // iterations
             256 // key length
         )
-        val keyFactory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
         val key = keyFactory.generateSecret(keySpec)
-        return javax.crypto.spec.SecretKeySpec(key.encoded, "AES")
+        return SecretKeySpec(key.encoded, "AES")
     }
 
     /**
      * Validate wallet address format
      */
     fun isValidAddress(address: String): Boolean {
-        return address.startsWith("ippan_") && address.length == 44
+        return address.startsWith("ippan_") && address.length in 34..48
     }
 
     /**

@@ -32,5 +32,6 @@ data class WalletSnapshot(
     val fiatCurrency: String,
     val tokens: List<TokenBalance>,
     val transactions: List<WalletTransaction>,
-    val lastSync: Instant
+    val lastSync: Instant,
+    val activeNode: String
 )
