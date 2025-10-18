@@ -5,7 +5,6 @@
 Your IPPAN deployment includes:
 
 - **Blockchain Nodes**: 2 IPPAN blockchain nodes for consensus
-- **Unified UI**: React-based web interface for blockchain interaction
 - **Load Balancer**: Nginx for distributing requests
 - **API Gateway**: Unified API access across all nodes
 
@@ -36,7 +35,7 @@ docker-compose -f deploy/docker-compose.full-stack.yml ps
 git clone <your-repo-url>
 cd ippan
 
-# Start only the blockchain node (UI runs on Server 1)
+# Start the blockchain node
 docker-compose -f deploy/docker-compose.production.yml up -d
 
 # Check status
@@ -45,33 +44,13 @@ docker-compose -f deploy/docker-compose.production.yml ps
 
 ---
 
-### **Option 2: Separate UI Deployment**
-
-#### **UI on Server 1 (188.245.97.41):**
-
-```bash
-# Build and run UI
-cd apps/unified-ui
-docker build -t ippan-ui:latest .
-docker run -d \
-  --name ippan-ui \
-  --restart unless-stopped \
-  -p 80:80 \
-  -e REACT_APP_API_URL=https://ui.ippan.org/api \
-  -e REACT_APP_NODE_1_URL=https://ui.ippan.org/api \
-  -e REACT_APP_NODE_2_URL=https://ui.ippan.org/api \
-  -e REACT_APP_WS_URL=wss://ui.ippan.org/ws \
-  -e REACT_APP_ENABLE_FULL_UI=1 \
-  ippan-ui:latest
-```
-
-#### **Blockchain Nodes on Both Servers:**
+### **Option 2: Blockchain Nodes Only**
 
 ```bash
 # Server 1
 docker-compose -f deploy/docker-compose.production.yml up -d
 
-# Server 2
+# Server 2  
 docker-compose -f deploy/docker-compose.production.yml up -d
 ```
 

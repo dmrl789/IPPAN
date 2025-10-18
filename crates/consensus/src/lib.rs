@@ -1,6 +1,7 @@
 use anyhow::Result;
 use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
+use ippan_mempool::Mempool;
 use ippan_storage::{Account, Storage};
 use ippan_types::IppanTimeMicros;
 use ippan_types::{
@@ -91,7 +92,7 @@ pub struct PoAConsensus {
     current_slot: Arc<RwLock<u64>>,
     tx_receiver: Option<mpsc::UnboundedReceiver<Transaction>>,
     tx_sender: mpsc::UnboundedSender<Transaction>,
-    mempool: Arc<RwLock<Vec<Transaction>>>,
+    mempool: Arc<Mempool>,
     round_tracker: Arc<RwLock<RoundTracker>>,
     finalization_interval: Duration,
 }
@@ -133,7 +134,7 @@ impl PoAConsensus {
             current_slot: Arc::new(RwLock::new(0)),
             tx_receiver: Some(tx_receiver),
             tx_sender,
-            mempool: Arc::new(RwLock::new(Vec::new())),
+            mempool: Arc::new(Mempool::new(10000)), // 10k transaction limit
             round_tracker: Arc::new(RwLock::new(round_tracker)),
             finalization_interval,
         }
@@ -145,7 +146,7 @@ impl PoAConsensus {
     }
 
     /// Get a handle to the current mempool
-    pub fn mempool(&self) -> Arc<RwLock<Vec<Transaction>>> {
+    pub fn mempool(&self) -> Arc<Mempool> {
         self.mempool.clone()
     }
 
@@ -184,7 +185,9 @@ impl PoAConsensus {
 
                     // Process incoming transactions
                     while let Ok(tx) = tx_receiver.try_recv() {
-                        mempool.write().push(tx);
+                        if let Err(e) = mempool.add_transaction(tx) {
+                            warn!("Failed to add transaction to mempool: {}", e);
+                        }
                     }
 
                     if let Err(e) = Self::finalize_round_if_ready(
@@ -278,18 +281,14 @@ impl PoAConsensus {
     /// Propose a new block
     async fn propose_block(
         storage: &Arc<dyn Storage + Send + Sync>,
-        mempool: &Arc<RwLock<Vec<Transaction>>>,
+        mempool: &Arc<Mempool>,
         config: &PoAConfig,
         round_tracker: &Arc<RwLock<RoundTracker>>,
         _slot: u64,
         proposer_id: [u8; 32],
     ) -> Result<()> {
         // Get transactions from mempool
-        let block_transactions = {
-            let mut transactions = mempool.write();
-            let tx_count = transactions.len().min(config.max_transactions_per_block);
-            transactions.drain(..tx_count).collect::<Vec<_>>()
-        };
+        let block_transactions = mempool.get_transactions_for_block(config.max_transactions_per_block);
 
         if block_transactions.is_empty() {
             return Ok(());

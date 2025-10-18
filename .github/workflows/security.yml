@@ -54,9 +54,7 @@ jobs:
 
       - name: Node.js Security Audit
         run: |
-          cd apps/unified-ui
-          npm audit --audit-level=moderate --json > audit-results.json || true
-          cd ../gateway
+          cd apps/gateway
           npm audit --audit-level=moderate --json > audit-results.json || true
 
       - name: Upload audit results
@@ -65,7 +63,7 @@ jobs:
         with:
           name: security-audit-results
           path: |
-            apps/*/audit-results.json
+            apps/gateway/audit-results.json
           retention-days: 30
 
   license-check:
@@ -84,7 +82,5 @@ jobs:
 
       - name: Node.js License Check
         run: |
-          cd apps/unified-ui
-          npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC' || true
-          cd ../gateway
+          cd apps/gateway
           npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC' || true

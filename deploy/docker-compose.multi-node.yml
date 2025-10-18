@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  ippan-node-1:
+    image: ghcr.io/dmrl789/ippan:latest
+    container_name: ippan-node-1
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        echo 'deb http://deb.debian.org/debian bookworm main' > /etc/apt/sources.list.d/bookworm.list
+        apt-get update -y
+        apt-get install -y --no-install-recommends -t bookworm libssl3 ca-certificates
+        exec ippan-node
+    ports:
+      - "8080:8080"  # RPC API
+      - "9000:9000"  # P2P
+    environment:
+      - NODE_ID=node-1
+      - RPC_HOST=0.0.0.0
+      - RPC_PORT=8080
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9000
+      - P2P_ANNOUNCE=/ip4/127.0.0.1/tcp/9000
+      - DATA_DIR=/data
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    volumes:
+      - ./data/node1:/data
+      - ./logs/node1:/logs
+    networks:
+      - ippan-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  ippan-node-2:
+    image: ghcr.io/dmrl789/ippan:latest
+    container_name: ippan-node-2
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        echo 'deb http://deb.debian.org/debian bookworm main' > /etc/apt/sources.list.d/bookworm.list
+        apt-get update -y
+        apt-get install -y --no-install-recommends -t bookworm libssl3 ca-certificates
+        exec ippan-node
+    ports:
+      - "8081:8081"  # RPC API
+      - "9001:9001"  # P2P
+    environment:
+      - NODE_ID=node-2
+      - RPC_HOST=0.0.0.0
+      - RPC_PORT=8081
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9001
+      - P2P_ANNOUNCE=/ip4/127.0.0.1/tcp/9001
+      - P2P_BOOTSTRAP=/ip4/127.0.0.1/tcp/9000
+      - DATA_DIR=/data
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    volumes:
+      - ./data/node2:/data
+      - ./logs/node2:/logs
+    networks:
+      - ippan-network
+    depends_on:
+      - ippan-node-1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  ippan-node-3:
+    image: ghcr.io/dmrl789/ippan:latest
+    container_name: ippan-node-3
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        echo 'deb http://deb.debian.org/debian bookworm main' > /etc/apt/sources.list.d/bookworm.list
+        apt-get update -y
+        apt-get install -y --no-install-recommends -t bookworm libssl3 ca-certificates
+        exec ippan-node
+    ports:
+      - "8082:8082"  # RPC API
+      - "9002:9002"  # P2P
+    environment:
+      - NODE_ID=node-3
+      - RPC_HOST=0.0.0.0
+      - RPC_PORT=8082
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9002
+      - P2P_ANNOUNCE=/ip4/127.0.0.1/tcp/9002
+      - P2P_BOOTSTRAP=/ip4/127.0.0.1/tcp/9000,/ip4/127.0.0.1/tcp/9001
+      - DATA_DIR=/data
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    volumes:
+      - ./data/node3:/data
+      - ./logs/node3:/logs
+    networks:
+      - ippan-network
+    depends_on:
+      - ippan-node-1
+      - ippan-node-2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  ippan-network:
+    driver: bridge

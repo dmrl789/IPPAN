@@ -37,15 +37,6 @@ COPY scripts/ scripts/
 # Build the application with production optimizations
 RUN cargo build --release --bin ippan
 
-# Frontend build stage
-FROM node:20-alpine as frontend-builder
-
-WORKDIR /app/frontend
-COPY apps/unified-ui/package*.json ./
-RUN rm -f package-lock.json && npm install --silent
-
-COPY apps/unified-ui/ ./
-RUN rm -rf node_modules && npm install --silent && npm run build
 
 # Production runtime stage
 FROM debian:bookworm-slim
@@ -56,57 +47,41 @@ RUN apt-get update && apt-get install -y \
     curl \
     jq \
     openssl \
-    nginx \
-    supervisor \
     dumb-init \
     && rm -rf /var/lib/apt/lists/*
 
 # Create ippan user and group
 RUN groupadd -r ippan && useradd -r -g ippan -d /data -s /bin/false ippan
 
-# Create nginx user and group
-RUN groupadd -r nginx && useradd -r -g nginx nginx
 
 # Create required directories with proper permissions
-RUN mkdir -p /data /keys /logs /config /var/www/html /var/log/supervisor /tmp/ippan /var/lib/nginx /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi /var/lib/nginx/uwsgi /var/lib/nginx/scgi && \
-    chown -R ippan:ippan /data /keys /logs /config /tmp/ippan /var/log/supervisor && \
-    chown -R nginx:nginx /var/lib/nginx /var/www/html /var/log/nginx && \
-    chmod 755 /data /keys /logs /config /tmp/ippan && \
-    chmod 755 /var/log/supervisor && \
-    chmod 755 /var/lib/nginx && \
-    touch /var/log/supervisor/supervisord.log && \
-    chown ippan:ippan /var/log/supervisor/supervisord.log
+RUN mkdir -p /data /keys /logs /config /tmp/ippan && \
+    chown -R ippan:ippan /data /keys /logs /config /tmp/ippan && \
+    chmod 755 /data /keys /logs /config /tmp/ippan
 
 # Copy the built binary
 COPY --from=builder /app/target/release/ippan /usr/local/bin/ippan
 RUN chmod +x /usr/local/bin/ippan
 
-# Copy frontend build
-COPY --from=frontend-builder /app/frontend/dist /var/www/html
 
 # Copy configuration files
 COPY --from=builder /app/config/ /config/
 COPY --from=builder /app/scripts/ /scripts/
 
-# Copy production configurations
-COPY deployments/nginx/nginx.conf /etc/nginx/nginx.conf
-COPY deployments/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Make scripts executable
 RUN chmod +x /scripts/*.sh
 
-# Set nginx permissions
-RUN chown -R nginx:nginx /var/www/html /var/log/nginx
 
 # Switch to ippan user
 USER ippan
 
 # Expose ports
-EXPOSE 8080 3000 80 443
+EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:80/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Set environment variables
 ENV RUST_LOG=info
@@ -120,5 +95,5 @@ ENV RUST_BACKTRACE=1
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
-# Start the application with supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Start the application
+CMD ["ippan"]

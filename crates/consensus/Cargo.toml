@@ -12,6 +12,7 @@ integration-tests = []
 ippan-types = { path = "../types" }
 ippan-storage = { path = "../storage" }
 ippan-crypto = { path = "../crypto" }
+ippan-mempool = { path = "../mempool" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

@@ -22,7 +22,7 @@ You can automate the setup with the provided bootstrap script:
 ssh root@<SERVER_IP>
 
 # 2) Paste the *public* key that matches your GitHub Actions `DEPLOY_SSH_KEY` secret
-PUBKEY="ssh-ed25519 AAAA... ippan-ui-ci"
+PUBKEY="ssh-ed25519 AAAA... ippan-ci"
 
 # 3) Fetch and run the bootstrap script
 bash -lc 'cd /root && curl -fsSLO https://raw.githubusercontent.com/dmrl789/IPPAN/main/deploy/server/bootstrap_deploy_user.sh &&   bash bootstrap_deploy_user.sh '"$PUBKEY"''
@@ -36,7 +36,7 @@ id -u deploy >/dev/null 2>&1 || adduser --disabled-password --gecos "" deploy
 
 # authorize the GitHub Actions public key
 install -d -m 700 /home/deploy/.ssh
-echo "ssh-ed25519 AAAA... ippan-ui-ci" >> /home/deploy/.ssh/authorized_keys
+echo "ssh-ed25519 AAAA... ippan-ci" >> /home/deploy/.ssh/authorized_keys
 chown -R deploy:deploy /home/deploy/.ssh
 chmod 600 /home/deploy/.ssh/authorized_keys
 
