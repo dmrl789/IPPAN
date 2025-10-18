@@ -5,6 +5,8 @@
 //! samples are fed into [`crate::ippan_time::ingest_sample`] to keep
 //! deterministic IPPAN Time aligned with the peer median.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -16,10 +18,10 @@ use libp2p::futures::StreamExt;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::request_response::{
-    ProtocolSupport, RequestResponse, RequestResponseCodec, RequestResponseConfig,
-    RequestResponseEvent, RequestResponseMessage,
+    self, Config as RequestResponseConfig, Event as RequestResponseEvent,
+    Message as RequestResponseMessage, ProtocolSupport,
 };
-use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
+use libp2p::swarm::{Executor, SwarmEvent};
 use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{Multiaddr, PeerId, Swarm, Transport};
@@ -31,8 +33,17 @@ use tokio::time::interval;
 use crate::hashtimer::{sign_hashtimer, verify_hashtimer};
 use crate::ippan_time::{ingest_sample, now_us};
 
-const PROTOCOL_NAME: &[u8] = b"/ippan/time/1.0.0";
+const PROTOCOL_NAME: &str = "/ippan/time/1.0.0";
 const SYNC_INTERVAL: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Copy, Default)]
+struct TokioExecutor;
+
+impl Executor for TokioExecutor {
+    fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        tokio::spawn(future);
+    }
+}
 
 /// Request payload for time synchronization.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -44,28 +55,28 @@ pub struct TimeResponse {
     pub time_us: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct TimeProtocol;
 
-impl libp2p::request_response::ProtocolName for TimeProtocol {
-    fn protocol_name(&self) -> &[u8] {
+impl AsRef<str> for TimeProtocol {
+    fn as_ref(&self) -> &str {
         PROTOCOL_NAME
     }
 }
 
 /// Codec used for serializing [`TimeRequest`] and [`TimeResponse`] messages.
 #[derive(Clone, Default)]
-pub struct TimeCodec;
+struct TimeCodec;
 
 #[async_trait]
-impl RequestResponseCodec for TimeCodec {
+impl request_response::Codec for TimeCodec {
     type Protocol = TimeProtocol;
     type Request = TimeRequest;
     type Response = TimeResponse;
 
     async fn read_request<T>(
         &mut self,
-        _: &TimeProtocol,
+        _: &Self::Protocol,
         io: &mut T,
     ) -> std::io::Result<Self::Request>
     where
@@ -79,7 +90,7 @@ impl RequestResponseCodec for TimeCodec {
 
     async fn read_response<T>(
         &mut self,
-        _: &TimeProtocol,
+        _: &Self::Protocol,
         io: &mut T,
     ) -> std::io::Result<Self::Response>
     where
@@ -93,7 +104,7 @@ impl RequestResponseCodec for TimeCodec {
 
     async fn write_request<T>(
         &mut self,
-        _: &TimeProtocol,
+        _: &Self::Protocol,
         io: &mut T,
         request: Self::Request,
     ) -> std::io::Result<()>
@@ -108,7 +119,7 @@ impl RequestResponseCodec for TimeCodec {
 
     async fn write_response<T>(
         &mut self,
-        _: &TimeProtocol,
+        _: &Self::Protocol,
         io: &mut T,
         response: Self::Response,
     ) -> std::io::Result<()>
@@ -122,21 +133,12 @@ impl RequestResponseCodec for TimeCodec {
     }
 }
 
-#[derive(NetworkBehaviour)]
-pub struct TimeSyncBehaviour {
-    protocol: RequestResponse<TimeCodec>,
-}
+type TimeSyncBehaviour = request_response::Behaviour<TimeCodec>;
 
-impl TimeSyncBehaviour {
-    fn new() -> Self {
-        let mut config = RequestResponseConfig::default();
-        config.set_connection_keep_alive(SYNC_INTERVAL * 3);
-
-        let protocols = std::iter::once((TimeProtocol, ProtocolSupport::Full));
-        let protocol = RequestResponse::new(TimeCodec::default(), protocols, config);
-
-        Self { protocol }
-    }
+fn build_time_sync_behaviour() -> TimeSyncBehaviour {
+    let config = RequestResponseConfig::default().with_request_timeout(SYNC_INTERVAL * 3);
+    let protocols = std::iter::once((TimeProtocol, ProtocolSupport::Full));
+    request_response::Behaviour::new(protocols, config)
 }
 
 /// Background service that maintains a libp2p swarm dedicated to time exchange.
@@ -163,10 +165,11 @@ impl TimeSyncService {
             .multiplex(yamux::Config::default())
             .boxed();
 
-        let behaviour = TimeSyncBehaviour::new();
+        let behaviour = build_time_sync_behaviour();
 
-        let mut swarm =
-            libp2p::SwarmBuilder::with_tokio_executor(transport, behaviour, local_peer_id).build();
+        let swarm_config = libp2p::swarm::Config::with_executor(TokioExecutor)
+            .with_idle_connection_timeout(SYNC_INTERVAL * 3);
+        let mut swarm = Swarm::new(transport, behaviour, local_peer_id, swarm_config);
 
         let addr: Multiaddr = listen_addr.parse().context("invalid listen multiaddr")?;
         Swarm::listen_on(&mut swarm, addr.clone())
@@ -185,8 +188,8 @@ impl TimeSyncService {
                             match message {
                                 RequestResponseMessage::Request { channel, .. } => {
                                     let response = TimeResponse { time_us: now_us() };
-                                    if let Err(err) = swarm.behaviour_mut().protocol.send_response(channel, response) {
-                                        warn!("failed to send time response to {peer}: {err:?}");
+                                    if swarm.behaviour_mut().send_response(channel, response).is_err() {
+                                        warn!("failed to send time response to {peer}");
                                     }
                                 }
                                 RequestResponseMessage::Response { response, .. } => {
@@ -210,9 +213,9 @@ impl TimeSyncService {
                     } else {
                         warn!("generated HashTimer failed verification");
                     }
-                    let peers: Vec<PeerId> = swarm.behaviour().protocol.connected_peers().cloned().collect();
+                    let peers: Vec<PeerId> = swarm.connected_peers().cloned().collect();
                     for peer in peers {
-                        swarm.behaviour_mut().protocol.send_request(&peer, TimeRequest);
+                        swarm.behaviour_mut().send_request(&peer, TimeRequest);
                     }
                 }
             }
