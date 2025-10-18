@@ -1682,6 +1682,7 @@ dependencies = [
  "hex",
  "igd",
  "ippan-consensus",
+ "ippan-mempool",
  "ippan-p2p",
  "ippan-storage",
  "ippan-types",
