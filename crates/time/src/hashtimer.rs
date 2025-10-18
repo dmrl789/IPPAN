@@ -9,9 +9,7 @@
 use std::convert::TryInto;
 
 use blake3::Hasher;
-use ed25519_dalek::{
-    Signature, Signer, SigningKey, Verifier, VerifyingKey, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH,
-};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hex::ToHex;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -84,9 +82,7 @@ pub fn verify_hashtimer(timer: &HashTimer) -> bool {
         return false;
     };
 
-    let Ok(signature) = Signature::from_bytes(&signature_bytes) else {
-        return false;
-    };
+    let signature = Signature::from_bytes(&signature_bytes);
     let Ok(public_key) = VerifyingKey::from_bytes(&public_key_bytes) else {
         return false;
     };
