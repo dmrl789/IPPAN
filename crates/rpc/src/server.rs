@@ -143,12 +143,12 @@ struct HealthResponse {
 
 #[derive(Debug, Serialize)]
 pub struct ConsensusStateView {
-    current_slot: u64,
-    current_round: u64,
-    latest_block_height: u64,
-    validator_count: usize,
-    is_proposing: bool,
-    current_proposer: Option<String>,
+    pub current_slot: u64,
+    pub current_round: u64,
+    pub latest_block_height: u64,
+    pub validator_count: usize,
+    pub is_proposing: bool,
+    pub current_proposer: Option<String>,
 }
 
 impl From<ConsensusState> for ConsensusStateView {

@@ -6,8 +6,6 @@
 //! that freshly discovered peers can request the data immediately after joining.
 
 use std::collections::HashSet;
-use std::future::Future;
-use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -17,7 +15,7 @@ use libp2p::core::transport::upgrade;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::derive::NetworkBehaviour;
-use libp2p::swarm::{self, Executor, SwarmEvent};
+use libp2p::swarm::{self, SwarmEvent};
 use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{gossipsub, mdns};
@@ -41,15 +39,6 @@ pub enum GossipMsg {
     Tip([u8; 32]),
     /// Broadcasts the full block so late-joining peers can catch up.
     Block(Block),
-}
-
-#[derive(Clone, Copy, Default)]
-struct TokioExecutor;
-
-impl Executor for TokioExecutor {
-    fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) {
-        tokio::spawn(future);
-    }
 }
 
 /// Combined network behaviour: gossipsub for fan-out plus mDNS for discovery.
@@ -128,7 +117,7 @@ impl DagSyncService {
             .context("failed to initialise mDNS discovery")?;
 
         let behaviour = DagBehaviour { gossip, mdns };
-        let swarm_config = swarm::Config::with_executor(TokioExecutor);
+        let swarm_config = swarm::Config::with_tokio_executor();
         let mut swarm = Swarm::new(transport, behaviour, local_peer_id, swarm_config);
 
         let addr: Multiaddr = listen_addr
