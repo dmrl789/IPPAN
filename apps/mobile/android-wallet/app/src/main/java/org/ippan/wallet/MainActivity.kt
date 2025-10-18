@@ -1,5 +1,6 @@
 package org.ippan.wallet
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,8 +31,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -43,6 +45,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavHostController
+import org.ippan.wallet.data.ProductionWalletRepository
+import org.ippan.wallet.R
+import org.ippan.wallet.crypto.CryptoUtils
+import org.ippan.wallet.network.IppanApiClient
+import org.ippan.wallet.security.SecureKeyStorage
 import org.ippan.wallet.ui.components.ActivityScreen
 import org.ippan.wallet.ui.components.OverviewScreen
 import org.ippan.wallet.ui.components.SendTokenSheet
@@ -64,7 +71,26 @@ enum class WalletDestination(val route: String, val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun IppanWalletApp(viewModel: WalletViewModel = viewModel()) {
+fun IppanWalletApp() {
+    val context = LocalContext.current
+    val appContext = remember(context) { context.applicationContext as Context }
+    val nodeEndpoints = remember(appContext) {
+        val configured = (appContext.resources.getStringArray(R.array.ippan_nodes))
+            .map { it.trim().trimEnd('/') }
+            .filter { it.isNotEmpty() }
+        if (configured.isNotEmpty()) configured else listOf("https://api.ippan.net")
+    }
+    val repository = remember(nodeEndpoints) {
+        ProductionWalletRepository(
+            apiClient = IppanApiClient(nodeEndpoints),
+            secureStorage = SecureKeyStorage(appContext),
+            cryptoUtils = CryptoUtils
+        )
+    }
+    val viewModel: WalletViewModel = viewModel(
+        factory = WalletViewModelFactory { repository }
+    )
+
     IppanWalletTheme {
         val navController = rememberNavController()
         val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -192,7 +218,7 @@ private fun WalletNavHost(
                 ActivityRoute(uiState = uiState)
             }
             composable(WalletDestination.Settings.route) {
-                SettingsRoute(onRefreshClick = onRefresh)
+                SettingsRoute(uiState = uiState, onRefreshClick = onRefresh)
             }
         }
     }
@@ -217,8 +243,15 @@ private fun ActivityRoute(uiState: WalletUiState) {
 }
 
 @Composable
-private fun SettingsRoute(onRefreshClick: () -> Unit) {
-    SettingsScreen(onRefreshClick = onRefreshClick)
+private fun SettingsRoute(uiState: WalletUiState, onRefreshClick: () -> Unit) {
+    when (uiState) {
+        is WalletUiState.Success -> SettingsScreen(
+            activeEndpoint = uiState.activeEndpoint,
+            onRefreshClick = onRefreshClick
+        )
+        WalletUiState.Loading -> LoadingScreen()
+        is WalletUiState.Error -> ErrorScreen(uiState.message)
+    }
 }
 
 @Composable

@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import org.ippan.wallet.data.FakeWalletRepository
 import org.ippan.wallet.data.TokenBalance
 import org.ippan.wallet.data.TransferRequest
 import org.ippan.wallet.data.WalletRepository
@@ -23,6 +22,7 @@ sealed interface WalletUiState {
         val totalBalance: String,
         val fiatCurrency: String,
         val lastSync: Instant,
+        val activeEndpoint: String,
         val tokens: List<TokenBalance>,
         val transactions: List<WalletTransaction>,
         val lastTransferResult: TransferResult?
@@ -48,7 +48,7 @@ data class SendFormState(
 )
 
 class WalletViewModel(
-    private val repository: WalletRepository = FakeWalletRepository()
+    private val repository: WalletRepository
 ) : ViewModel() {
 
     private val _uiState: MutableStateFlow<WalletUiState> = MutableStateFlow(WalletUiState.Loading)
@@ -59,6 +59,7 @@ class WalletViewModel(
 
     init {
         observeWallet()
+        refresh()
     }
 
     private fun observeWallet() {
@@ -71,6 +72,7 @@ class WalletViewModel(
                     totalBalance = formatCurrency(snapshot.totalBalance, snapshot.fiatCurrency),
                     fiatCurrency = snapshot.fiatCurrency,
                     lastSync = snapshot.lastSync,
+                    activeEndpoint = snapshot.activeNode,
                     tokens = snapshot.tokens,
                     transactions = snapshot.transactions,
                     lastTransferResult = lastTransfer
@@ -165,5 +167,17 @@ class WalletViewModel(
         private fun formatCurrency(amount: Double, currency: String): String {
             return "${"%,.2f".format(amount)} $currency"
         }
+    }
+}
+
+class WalletViewModelFactory(
+    private val repositoryProvider: () -> WalletRepository
+) : androidx.lifecycle.ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(WalletViewModel::class.java)) {
+            return WalletViewModel(repositoryProvider()) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }
 }
