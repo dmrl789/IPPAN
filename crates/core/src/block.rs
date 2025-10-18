@@ -115,10 +115,7 @@ impl Block {
                 Ok(bytes) => bytes,
                 Err(_) => return false,
             };
-        let signature = match Signature::from_bytes(&signature_bytes) {
-            Ok(sig) => sig,
-            Err(_) => return false,
-        };
+        let signature = Signature::from_bytes(&signature_bytes);
 
         let digest = signing_digest(
             self.header.version,

@@ -13,11 +13,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use hex::FromHex;
 use ippan_consensus::{ConsensusState, PoAConsensus};
+use ippan_mempool::Mempool;
 use ippan_p2p::HttpP2PNetwork;
 use ippan_storage::{Account, Storage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, IppanTimeMicros, Transaction};
-use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -39,14 +39,14 @@ pub struct L2Config {
 pub struct ConsensusHandle {
     consensus: Arc<Mutex<PoAConsensus>>,
     tx_sender: mpsc::UnboundedSender<Transaction>,
-    mempool: Arc<RwLock<Vec<Transaction>>>,
+    mempool: Arc<Mempool>,
 }
 
 impl ConsensusHandle {
     pub fn new(
         consensus: Arc<Mutex<PoAConsensus>>,
         tx_sender: mpsc::UnboundedSender<Transaction>,
-        mempool: Arc<RwLock<Vec<Transaction>>>,
+        mempool: Arc<Mempool>,
     ) -> Self {
         Self {
             consensus,
@@ -67,7 +67,7 @@ impl ConsensusHandle {
     }
 
     pub fn mempool_size(&self) -> usize {
-        self.mempool.read().len()
+        self.mempool.size()
     }
 }
 
@@ -81,7 +81,7 @@ pub struct AppState {
     pub node_id: String,
     pub consensus: Option<ConsensusHandle>,
     pub l2_config: L2Config,
-    pub mempool: Arc<RwLock<Vec<Transaction>>>,
+    pub mempool: Arc<Mempool>,
     pub unified_ui_dist: Option<PathBuf>,
     pub req_count: Arc<AtomicUsize>,
 }
@@ -118,7 +118,7 @@ impl AppState {
     }
 
     fn mempool_size(&self) -> usize {
-        self.mempool.read().len()
+        self.mempool.size()
     }
 
     fn static_assets_root(&self) -> Option<PathBuf> {
@@ -142,7 +142,7 @@ struct HealthResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct ConsensusStateView {
+pub struct ConsensusStateView {
     current_slot: u64,
     current_round: u64,
     latest_block_height: u64,
