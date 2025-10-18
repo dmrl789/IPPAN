@@ -288,7 +288,8 @@ impl PoAConsensus {
         proposer_id: [u8; 32],
     ) -> Result<()> {
         // Get transactions from mempool
-        let block_transactions = mempool.get_transactions_for_block(config.max_transactions_per_block);
+        let block_transactions =
+            mempool.get_transactions_for_block(config.max_transactions_per_block);
 
         if block_transactions.is_empty() {
             return Ok(());
@@ -820,19 +821,19 @@ mod tests {
         for nonce in 0..transfers_per_side {
             let mut tx = Transaction::new(validator_one, validator_two, 10, nonce);
             tx.sign(&secret_one).unwrap();
-            mempool_one.write().push(tx);
+            let _ = mempool_one.add_transaction(tx).unwrap();
         }
         for nonce in 0..transfers_per_side {
             let mut tx = Transaction::new(validator_two, validator_one, 10, nonce);
             tx.sign(&secret_two).unwrap();
-            mempool_two.write().push(tx);
+            let _ = mempool_two.add_transaction(tx).unwrap();
         }
 
         let mut slot = 0u64;
         let mut produced_blocks = 0u64;
         loop {
-            let empty1 = { mempool_one.read().is_empty() };
-            let empty2 = { mempool_two.read().is_empty() };
+            let empty1 = mempool_one.size() == 0;
+            let empty2 = mempool_two.size() == 0;
             if empty1 && empty2 {
                 break;
             }
@@ -871,8 +872,8 @@ mod tests {
         }
 
         let expected_nonce = transfers_per_side;
-        assert_eq!(mempool_one.read().len(), 0);
-        assert_eq!(mempool_two.read().len(), 0);
+        assert_eq!(mempool_one.size(), 0);
+        assert_eq!(mempool_two.size(), 0);
 
         let latest_height = storage.get_latest_height().unwrap();
         assert!(latest_height >= 4);

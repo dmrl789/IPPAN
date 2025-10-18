@@ -4,7 +4,6 @@ use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
-use std::sync::Arc;
 
 /// Transaction metadata for mempool management
 #[derive(Debug, Clone)]
@@ -116,7 +115,10 @@ impl Mempool {
 
     /// Get a transaction by hash
     pub fn get_transaction(&self, tx_hash: &str) -> Option<Transaction> {
-        self.transactions.read().get(tx_hash).map(|meta| meta.transaction.clone())
+        self.transactions
+            .read()
+            .get(tx_hash)
+            .map(|meta| meta.transaction.clone())
     }
 
     /// Get all transactions for a sender
@@ -139,7 +141,6 @@ impl Mempool {
     /// Uses fee-based prioritization with proper nonce ordering
     pub fn get_transactions_for_block(&self, max_count: usize) -> Vec<Transaction> {
         let transactions = self.transactions.read();
-        let sender_nonces = self.sender_nonces.read();
 
         // Collect all transactions with their metadata
         let mut all_transactions = Vec::new();
@@ -148,16 +149,14 @@ impl Mempool {
         }
 
         // Sort by fee (descending) then by age (ascending)
-        all_transactions.sort_by(|a, b| {
-            b.1.fee.cmp(&a.1.fee)
-                .then(a.1.added_at.cmp(&b.1.added_at))
-        });
+        all_transactions
+            .sort_by(|a, b| b.1.fee.cmp(&a.1.fee).then(a.1.added_at.cmp(&b.1.added_at)));
 
         let mut selected = Vec::new();
         let mut used_senders: HashMap<String, u64> = HashMap::new();
 
         // Select transactions maintaining nonce order per sender
-        for (tx_hash, meta) in all_transactions {
+        for (_, meta) in all_transactions {
             if selected.len() >= max_count {
                 break;
             }
@@ -197,9 +196,12 @@ impl Mempool {
     fn cleanup_expired_transactions(&self) {
         let now = Instant::now();
         let last_cleanup = *self.last_cleanup.read();
-        
+
         // Only cleanup if enough time has passed (avoid excessive cleanup)
-        if now.duration_since(last_cleanup) < Duration::from_secs(30) {
+        let since_last_cleanup = now.duration_since(last_cleanup);
+        if since_last_cleanup < Duration::from_secs(30)
+            && since_last_cleanup < self.expiration_duration
+        {
             return;
         }
 
@@ -232,8 +234,47 @@ impl Mempool {
     fn calculate_transaction_fee(&self, tx: &Transaction) -> u64 {
         // In production, this would be more sophisticated
         // For now, use a simple calculation based on transaction size
-        let base_fee = 1000; // Base fee
-        let size_fee = tx.payload.len() as u64 * 10; // Size-based fee
+        let base_fee = 1000; // Base fee component for all transactions
+
+        // Estimate transaction size using accessible public fields. This keeps fee
+        // calculation consistent without relying on private serialization helpers.
+        let mut estimated_size = 0usize;
+
+        // Fixed-size fields (id, from, to, amount, nonce, signature, hashtimer, timestamp).
+        estimated_size += 32; // id
+        estimated_size += 32; // from
+        estimated_size += 32; // to
+        estimated_size += 8; // amount
+        estimated_size += 8; // nonce
+        estimated_size += 64; // signature
+        estimated_size += tx.hashtimer.time_prefix.len();
+        estimated_size += tx.hashtimer.hash_suffix.len();
+        estimated_size += std::mem::size_of_val(&tx.timestamp.0);
+
+        // Dynamic fields.
+        estimated_size += tx.topics.iter().map(|topic| topic.len()).sum::<usize>();
+
+        if let Some(envelope) = &tx.confidential {
+            estimated_size += envelope.enc_algo.len();
+            estimated_size += envelope.iv.len();
+            estimated_size += envelope.ciphertext.len();
+            estimated_size += envelope
+                .access_keys
+                .iter()
+                .map(|key| key.recipient_pub.len() + key.enc_key.len())
+                .sum::<usize>();
+        }
+
+        if let Some(proof) = &tx.zk_proof {
+            estimated_size += proof.proof.len();
+            estimated_size += proof
+                .public_inputs
+                .iter()
+                .map(|(key, value)| key.len() + value.len())
+                .sum::<usize>();
+        }
+
+        let size_fee = estimated_size as u64 * 10; // Size-based fee (10 wei per byte)
         base_fee + size_fee
     }
 
@@ -307,7 +348,6 @@ pub struct MempoolStats {
     pub total_fee: u64,
     pub oldest_tx_age: Duration,
     pub newest_tx_age: Duration,
-}
 }
 
 #[cfg(test)]
@@ -391,11 +431,8 @@ mod tests {
 
         // Check that nonce ordering is maintained
         let block_txs = mempool.get_transactions_for_block(3);
-        let sender_block_txs: Vec<_> = block_txs
-            .iter()
-            .filter(|tx| tx.from == sender)
-            .collect();
-        
+        let sender_block_txs: Vec<_> = block_txs.iter().filter(|tx| tx.from == sender).collect();
+
         // Should include transactions in nonce order
         assert!(sender_block_txs.len() >= 1);
     }
@@ -410,11 +447,11 @@ mod tests {
 
         // Wait for expiration
         std::thread::sleep(Duration::from_millis(150));
-        
+
         // Trigger cleanup by adding another transaction
         let tx2 = Transaction::new([3u8; 32], [4u8; 32], 1000, 1);
         assert!(mempool.add_transaction(tx2).unwrap());
-        
+
         // First transaction should be expired and removed
         assert_eq!(mempool.size(), 1);
     }
