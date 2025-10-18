@@ -288,7 +288,8 @@ impl PoAConsensus {
         proposer_id: [u8; 32],
     ) -> Result<()> {
         // Get transactions from mempool
-        let block_transactions = mempool.get_transactions_for_block(config.max_transactions_per_block);
+        let block_transactions =
+            mempool.get_transactions_for_block(config.max_transactions_per_block);
 
         if block_transactions.is_empty() {
             return Ok(());
