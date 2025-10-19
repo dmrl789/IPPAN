@@ -69,7 +69,7 @@ batch_validation_size = 1000
 [api]
 # API configuration for mainnet
 listen_addr = "0.0.0.0:3000"
-cors_origins = ["https://ippan.network", "https://app.ippan.network"]
+cors_origins = ["https://ippan.network", "https://app.ippan.network", "https://ippan.com"]
 rate_limit = 100000
 timeout = 30
 enable_metrics = true

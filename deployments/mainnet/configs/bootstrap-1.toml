@@ -55,7 +55,12 @@ enable_api = true
 api_port = 8080
 api_host = "0.0.0.0"
 enable_cors = true
-cors_origins = ["https://ippan.net", "https://wallet.ippan.net", "https://explorer.ippan.net"]
+cors_origins = [
+    "https://ippan.net",
+    "https://wallet.ippan.net",
+    "https://explorer.ippan.net",
+    "https://ippan.com",
+]
 enable_auth = true
 auth_type = "jwt"
 jwt_secret = "mainnet-jwt-secret-bootstrap1"
