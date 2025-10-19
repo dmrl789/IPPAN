@@ -6,17 +6,22 @@
 //! immediately after joining.
 
 use std::collections::HashSet;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context as AnyhowContext, Result};
 use ed25519_dalek::SigningKey;
 use futures::StreamExt;
 use libp2p::core::transport::upgrade;
 use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
-use libp2p::swarm::derive::NetworkBehaviour;
-use libp2p::swarm::{self, SwarmEvent};
+use libp2p::swarm::behaviour::FromSwarm;
+use libp2p::swarm::derive_prelude::Either;
+use libp2p::swarm::{
+    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId,
+    NetworkBehaviour, SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
+};
 use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{gossipsub as gsub, mdns};
@@ -43,10 +48,206 @@ pub enum GossipMsg {
 }
 
 /// Combined network behaviour for DAG gossip + mDNS peer discovery.
-#[derive(NetworkBehaviour)]
 struct DagBehaviour {
     pub gossip: gsub::Behaviour,
     pub mdns: mdns::tokio::Behaviour,
+}
+
+#[derive(Debug)]
+enum DagEvent {
+    Gossip(gossipsub::Event),
+    Mdns(mdns::Event),
+}
+
+type GossipHandler = <gsub::Behaviour as NetworkBehaviour>::ConnectionHandler;
+type MdnsHandler = <mdns::tokio::Behaviour as NetworkBehaviour>::ConnectionHandler;
+
+impl NetworkBehaviour for DagBehaviour {
+    type ConnectionHandler = ConnectionHandlerSelect<GossipHandler, MdnsHandler>;
+    type ToSwarm = DagEvent;
+
+    fn handle_pending_inbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        local_addr: &Multiaddr,
+        remote_addr: &Multiaddr,
+    ) -> Result<(), ConnectionDenied> {
+        self.gossip
+            .handle_pending_inbound_connection(connection_id, local_addr, remote_addr)?;
+        self.mdns
+            .handle_pending_inbound_connection(connection_id, local_addr, remote_addr)?;
+        Ok(())
+    }
+
+    fn handle_established_inbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        peer: PeerId,
+        local_addr: &Multiaddr,
+        remote_addr: &Multiaddr,
+    ) -> Result<THandler<Self>, ConnectionDenied> {
+        let gossip = self
+            .gossip
+            .handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)?;
+        let mdns = self
+            .mdns
+            .handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)?;
+
+        Ok(gossip.select(mdns))
+    }
+
+    fn handle_pending_outbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        maybe_peer: Option<PeerId>,
+        addresses: &[Multiaddr],
+        effective_role: libp2p::core::Endpoint,
+    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
+        let mut addrs = self.gossip.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )?;
+        addrs.extend(self.mdns.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )?);
+        Ok(addrs)
+    }
+
+    fn handle_established_outbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        peer: PeerId,
+        addr: &Multiaddr,
+        role_override: libp2p::core::Endpoint,
+    ) -> Result<THandler<Self>, ConnectionDenied> {
+        let gossip = self
+            .gossip
+            .handle_established_outbound_connection(connection_id, peer, addr, role_override)?;
+        let mdns = self
+            .mdns
+            .handle_established_outbound_connection(connection_id, peer, addr, role_override)?;
+        Ok(gossip.select(mdns))
+    }
+
+    fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
+        match event {
+            FromSwarm::ConnectionEstablished(ev) => {
+                self.gossip
+                    .on_swarm_event(FromSwarm::ConnectionEstablished(ev));
+                self.mdns
+                    .on_swarm_event(FromSwarm::ConnectionEstablished(ev));
+            }
+            FromSwarm::ConnectionClosed(ev) => {
+                self.gossip.on_swarm_event(FromSwarm::ConnectionClosed(ev));
+                self.mdns.on_swarm_event(FromSwarm::ConnectionClosed(ev));
+            }
+            FromSwarm::AddressChange(ev) => {
+                self.gossip.on_swarm_event(FromSwarm::AddressChange(ev));
+                self.mdns.on_swarm_event(FromSwarm::AddressChange(ev));
+            }
+            FromSwarm::DialFailure(ev) => {
+                self.gossip.on_swarm_event(FromSwarm::DialFailure(ev));
+                self.mdns.on_swarm_event(FromSwarm::DialFailure(ev));
+            }
+            FromSwarm::ListenFailure(ev) => {
+                self.gossip
+                    .on_swarm_event(FromSwarm::ListenFailure(ev));
+                self.mdns
+                    .on_swarm_event(FromSwarm::ListenFailure(ev));
+            }
+            FromSwarm::NewListener(ev) => {
+                self.gossip.on_swarm_event(FromSwarm::NewListener(ev));
+                self.mdns.on_swarm_event(FromSwarm::NewListener(ev));
+            }
+            FromSwarm::NewListenAddr(ev) => {
+                self.gossip.on_swarm_event(FromSwarm::NewListenAddr(ev));
+                self.mdns.on_swarm_event(FromSwarm::NewListenAddr(ev));
+            }
+            FromSwarm::ExpiredListenAddr(ev) => {
+                self.gossip
+                    .on_swarm_event(FromSwarm::ExpiredListenAddr(ev));
+                self.mdns
+                    .on_swarm_event(FromSwarm::ExpiredListenAddr(ev));
+            }
+            FromSwarm::ListenerError(ev) => {
+                self.gossip.on_swarm_event(FromSwarm::ListenerError(ev));
+                self.mdns.on_swarm_event(FromSwarm::ListenerError(ev));
+            }
+            FromSwarm::ListenerClosed(ev) => {
+                self.gossip.on_swarm_event(FromSwarm::ListenerClosed(ev));
+                self.mdns.on_swarm_event(FromSwarm::ListenerClosed(ev));
+            }
+            FromSwarm::NewExternalAddrCandidate(addr) => {
+                self.gossip
+                    .on_swarm_event(FromSwarm::NewExternalAddrCandidate(addr));
+                self.mdns
+                    .on_swarm_event(FromSwarm::NewExternalAddrCandidate(addr));
+            }
+            FromSwarm::ExternalAddrConfirmed(addr) => {
+                self.gossip
+                    .on_swarm_event(FromSwarm::ExternalAddrConfirmed(addr));
+                self.mdns
+                    .on_swarm_event(FromSwarm::ExternalAddrConfirmed(addr));
+            }
+            FromSwarm::ExternalAddrExpired(addr) => {
+                self.gossip
+                    .on_swarm_event(FromSwarm::ExternalAddrExpired(addr));
+                self.mdns
+                    .on_swarm_event(FromSwarm::ExternalAddrExpired(addr));
+            }
+            FromSwarm::NewExternalAddrOfPeer(ev) => {
+                self.gossip
+                    .on_swarm_event(FromSwarm::NewExternalAddrOfPeer(ev));
+                self.mdns
+                    .on_swarm_event(FromSwarm::NewExternalAddrOfPeer(ev));
+            }
+            _ => {}
+        }
+    }
+
+    fn on_connection_handler_event(
+        &mut self,
+        peer_id: PeerId,
+        connection_id: ConnectionId,
+        event: THandlerOutEvent<Self>,
+    ) {
+        match event {
+            Either::Left(event) => self
+                .gossip
+                .on_connection_handler_event(peer_id, connection_id, event),
+            Either::Right(event) => self
+                .mdns
+                .on_connection_handler_event(peer_id, connection_id, event),
+        }
+    }
+
+    fn poll(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        if let Poll::Ready(event) = self.gossip.poll(cx) {
+            return Poll::Ready(
+                event
+                    .map_in(|ev| Either::Left(ev))
+                    .map_out(DagEvent::Gossip),
+            );
+        }
+
+        if let Poll::Ready(event) = self.mdns.poll(cx) {
+            return Poll::Ready(
+                event
+                    .map_in(|ev| Either::Right(ev))
+                    .map_out(DagEvent::Mdns),
+            );
+        }
+
+        Poll::Pending
+    }
 }
 
 /// Background swarm responsible for synchronizing BlockDAG data with peers.
@@ -87,14 +288,13 @@ impl DagSyncService {
             gossipsub::MessageAuthenticity::Signed(local_key.clone()),
             gossip_config,
         )
-        .context("failed to create gossipsub behaviour")?;
+        .map_err(|err| anyhow!("failed to create gossipsub behaviour: {err}"))?;
         let topic = gossipsub::IdentTopic::new(DAG_TOPIC);
         gossip
             .subscribe(&topic)
             .context("failed to subscribe to DAG gossip topic")?;
 
-        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default())
-            .await
+        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)
             .context("failed to initialise mDNS discovery")?;
 
         let behaviour = DagBehaviour { gossip, mdns };
@@ -116,16 +316,20 @@ impl DagSyncService {
                         SwarmEvent::NewListenAddr { address, .. } => {
                             info!("DAG sync listening on {address}");
                         }
-                        SwarmEvent::Behaviour(event) => {
+                        SwarmEvent::Behaviour(DagEvent::Gossip(event)) => {
                             if let Err(err) = handle_gossip_event(event, &dag, &mut seen) {
                                 warn!("error handling gossip event: {err:?}");
                             }
+                        }
+                        SwarmEvent::Behaviour(DagEvent::Mdns(event)) => {
+                            handle_mdns_event(swarm.behaviour_mut(), event);
                         }
                         _ => {}
                     }
                 }
                 _ = ticker.tick() => {
-                    if let Err(err) = broadcast_tips(&dag, swarm.behaviour_mut(), &topic, &mut seen) {
+                    let behaviour = swarm.behaviour_mut();
+                    if let Err(err) = broadcast_tips(&dag, &mut behaviour.gossip, &topic, &mut seen) {
                         warn!("failed to broadcast DAG tips: {err:?}");
                     }
                 }
@@ -175,6 +379,27 @@ fn handle_gossip_event(
         }
     }
     Ok(())
+}
+
+fn handle_mdns_event(behaviour: &mut DagBehaviour, event: mdns::Event) {
+    match event {
+        mdns::Event::Discovered(peers) => {
+            for (peer, _addr) in peers {
+                behaviour.gossip.add_explicit_peer(&peer);
+            }
+        }
+        mdns::Event::Expired(peers) => {
+            for (peer, _addr) in peers {
+                if !behaviour
+                    .mdns
+                    .discovered_nodes()
+                    .any(|p| p == &peer)
+                {
+                    behaviour.gossip.remove_explicit_peer(&peer);
+                }
+            }
+        }
+    }
 }
 
 fn broadcast_tips(
