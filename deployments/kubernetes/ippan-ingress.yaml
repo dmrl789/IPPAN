@@ -17,7 +17,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
     nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "https://ippan.network"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://ippan.network,https://ippan.com"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
@@ -27,6 +27,7 @@ spec:
     - ippan.network
     - api.ippan.network
     - explorer.ippan.network
+    - ippan.com
     secretName: ippan-tls
   rules:
   - host: ippan.network
@@ -53,6 +54,16 @@ spec:
     http:
       paths:
       - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ippan-explorer
+            port:
+              number: 3001
+  - host: ippan.com
+    http:
+      paths:
+      - path: /explorer
         pathType: Prefix
         backend:
           service:

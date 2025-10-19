@@ -7,7 +7,7 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - **IPPAN Time**: Monotonic microsecond precision time service with peer synchronization
 - **HashTimer**: 256-bit temporal identifiers (14 hex prefix + 50 hex suffix) embedded in all blockchain operations
 - **Real Blockchain**: Complete implementation with transactions, blocks, consensus, and P2P networking
-- **Unified UI**: Modern React-based frontend for blockchain interaction
+- **Web Explorer**: Hosted blockchain explorer at https://ippan.com/explorer for transaction and block visibility
 - **Production Ready**: Docker, systemd, and CI/CD configurations
 
 ## 🏗️ Architecture
@@ -66,7 +66,6 @@ the build.
 ### Prerequisites
 
 - Rust 1.75+
-- Node.js 18+ (for UI)
 - Docker (optional)
 
 ### Building
@@ -147,30 +146,7 @@ sudo systemctl enable ippan-node
 sudo systemctl start ippan-node
 ```
 
-## 🎯 Unified UI
-
-The `apps/unified-ui/` directory contains a modern React frontend:
-
-```bash
-cd apps/unified-ui
-npm install
-npm run dev
-```
-
-Features:
-- Wallet management
-- Transaction submission
-- Block explorer
-- Network monitoring
-- Validator registration
-
-The Rust RPC server can serve the compiled Unified UI directly. Build the frontend (`npm run build`) so the assets are available in `apps/unified-ui/dist`, or point the node to another build directory using the `UNIFIED_UI_DIST_DIR` environment variable before starting the node.
-
-### 🧭 If the Unified UI does not appear
-
-- The RPC layer only mounts the UI when a build output directory exists. By default it looks for `./apps/unified-ui/dist`; if that folder is missing, only the JSON API routes are exposed.
-- Run `npm run build` inside `apps/unified-ui/` (or set `UNIFIED_UI_DIST_DIR` to a folder containing `index.html` and assets) before launching the node.
-- After rebuilding the UI, restart the node so the static assets are picked up. The home page should then load alongside the API routes.
+Production explorer: https://ippan.com/explorer
 
 ## 📊 HashTimer Examples
 
