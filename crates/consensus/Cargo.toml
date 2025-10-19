@@ -27,3 +27,4 @@ blake3 = { workspace = true }
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
 tempfile = { workspace = true }
+rand = { version = "0.8", features = ["std", "std_rng"] }
