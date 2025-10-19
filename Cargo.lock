@@ -1629,6 +1629,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ippan-network"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "ippan-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "ippan-node"
 version = "0.1.0"
 dependencies = [
