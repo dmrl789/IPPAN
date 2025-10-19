@@ -93,7 +93,12 @@ pub fn ingest_sample(peer_time_us: i64) {
 
 /// Return the current IPPAN time as a Duration since UNIX_EPOCH.
 pub fn now() -> Duration {
-    Duration::from_micros(now_us() as u64)
+    let micros = now_us();
+    if micros <= 0 {
+        Duration::ZERO
+    } else {
+        Duration::from_micros(micros as u64)
+    }
 }
 
 /// Debug dump: (last_time_us, base_offset_us, sample_count)
@@ -128,5 +133,17 @@ mod tests {
         let (_, offset, count) = status();
         assert!(count <= MEDIAN_WINDOW);
         assert!(offset.abs() < 1_000);
+    }
+
+    #[test]
+    fn test_now_clamps_negative_values() {
+        init();
+        let current = system_time_now_us();
+        *BASE_OFFSET_US.lock().unwrap() = -current - 1;
+
+        let duration = now();
+        assert_eq!(duration, Duration::ZERO);
+
+        init();
     }
 }
