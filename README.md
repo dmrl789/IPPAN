@@ -107,6 +107,17 @@ The node will:
 
 - Query `http://<rpc-host>:<rpc-port>/health` once the node is up. When at least one peer is reachable, the response shows a `peer_count` greater than zero and keeps updating every 10 seconds via the background poller.
 
+#### Automated node health check
+
+Use the bundled `ippan-check-nodes` utility to confirm that a set of nodes respond to the health endpoints and are connected to peers:
+
+```bash
+cargo run --bin ippan-check-nodes -- \
+  --api http://127.0.0.1:8080,http://127.0.0.1:8081
+```
+
+The command queries `/health`, `/status`, and `/peers` on every target, prints a human-readable summary, and exits with a non-zero status when a node is unhealthy or has fewer peers than required. By default the checker expects each node to see every other node provided via `--api` as a peer; override the threshold with `--require-peers`. Pass `--json` to obtain a machine-readable report.
+
 ## 🌐 API Endpoints
 
 - `POST /tx` - Submit transaction
