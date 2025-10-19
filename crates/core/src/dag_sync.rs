@@ -15,10 +15,12 @@ use libp2p::core::transport::upgrade;
 use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
-use libp2p::swarm::{Config as SwarmConfig, Swarm, SwarmEvent};
+use libp2p::swarm::derive::NetworkBehaviour;
+use libp2p::swarm::{self, SwarmEvent};
 use libp2p::tcp;
 use libp2p::yamux;
-use libp2p::{Multiaddr, PeerId, Transport};
+use libp2p::{gossipsub as gsub, mdns};
+use libp2p::{Multiaddr, PeerId, Swarm, Transport};
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::time::interval;
@@ -40,6 +42,13 @@ pub enum GossipMsg {
     Block(Block),
 }
 
+/// Combined network behaviour for DAG gossip + mDNS peer discovery.
+#[derive(NetworkBehaviour)]
+struct DagBehaviour {
+    pub gossip: gsub::Behaviour,
+    pub mdns: mdns::tokio::Behaviour,
+}
+
 /// Background swarm responsible for synchronizing BlockDAG data with peers.
 pub struct DagSyncService;
 
@@ -54,18 +63,17 @@ impl DagSyncService {
             hex::encode(verifying_key.to_bytes())
         );
 
-        let noise_config = noise::Config::new(&local_key)
-            .context("failed to create authenticated noise config")?;
+        let noise = noise::Config::new(&local_key).context("failed to initialise noise config")?;
 
         let transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true))
-            .upgrade(upgrade::Version::V1Lazy)
-            .authenticate(noise_config)
+            .upgrade(upgrade::Version::V1)
+            .authenticate(noise)
             .multiplex(yamux::Config::default())
             .boxed();
 
         let message_id_fn = |message: &gossipsub::Message| {
             let digest = blake3::hash(&message.data);
-            gossipsub::MessageId::from(digest.as_bytes().to_vec())
+            gossipsub::MessageId::from(digest.as_bytes())
         };
 
         let gossip_config = gossipsub::ConfigBuilder::default()
@@ -79,18 +87,19 @@ impl DagSyncService {
             gossipsub::MessageAuthenticity::Signed(local_key.clone()),
             gossip_config,
         )
-        .map_err(|err| anyhow!(err))?;
+        .context("failed to create gossipsub behaviour")?;
         let topic = gossipsub::IdentTopic::new(DAG_TOPIC);
-        gossip.subscribe(&topic)?;
+        gossip
+            .subscribe(&topic)
+            .context("failed to subscribe to DAG gossip topic")?;
 
-        let mut swarm = Swarm::new(
-            transport,
-            gossip,
-            local_peer_id,
-            SwarmConfig::with_executor(|future| {
-                tokio::spawn(future);
-            }),
-        );
+        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default())
+            .await
+            .context("failed to initialise mDNS discovery")?;
+
+        let behaviour = DagBehaviour { gossip, mdns };
+        let swarm_config = swarm::Config::with_tokio_executor();
+        let mut swarm = Swarm::new(transport, behaviour, local_peer_id, swarm_config);
 
         let addr: Multiaddr = listen_addr
             .parse()
