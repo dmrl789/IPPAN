@@ -2,22 +2,21 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use axum::body::Body;
 use axum::extract::{Path as AxumPath, Query, State};
-use axum::http::{header, Request, StatusCode};
+use axum::http::{header, HeaderValue, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use hex::FromHex;
 use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_mempool::Mempool;
 use ippan_p2p::HttpP2PNetwork;
 use ippan_storage::{Account, Storage};
 use ippan_types::time_service::ippan_time_now;
-use ippan_types::{Block, IppanTimeMicros, Transaction};
+use ippan_types::{Block, IppanTimeMicros, L2Commit, L2ExitRecord, L2Network, Transaction};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -308,5 +307,389 @@ async fn serve_static_assets(State(state): State<SharedState>, req: Request<Body
         }
     } else {
         (StatusCode::NOT_FOUND, "Not Found").into_response()
+    }
+}
+
+async fn handle_health(State(state): State<SharedState>) -> Result<Json<HealthResponse>, ApiError> {
+    let req_total = state.record_request();
+    let consensus =
+        if let Some(consensus) = state.consensus.clone() {
+            Some(consensus.snapshot().await.map_err(|err| {
+                ApiError::internal(format!("failed to snapshot consensus: {err}"))
+            })?)
+        } else {
+            None
+        };
+
+    let response = HealthResponse {
+        status: "ok",
+        node_id: state.node_id.clone(),
+        uptime_secs: state.uptime_seconds(),
+        peer_count: state.current_peer_count(),
+        mempool_size: state.mempool_size(),
+        consensus,
+        req_total,
+        time_us: ippan_time_now(),
+        l2_config: state.l2_config.clone(),
+    };
+
+    Ok(Json(response))
+}
+
+async fn handle_time(State(state): State<SharedState>) -> Json<TimeResponse> {
+    let req_total = state.record_request();
+    let ippan_time = IppanTimeMicros::now();
+    let unix_time_us = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|dur| dur.as_micros() as u64)
+        .unwrap_or_default();
+
+    Json(TimeResponse {
+        node_id: state.node_id.clone(),
+        ippan_time,
+        unix_time_us,
+        req_total,
+    })
+}
+
+async fn handle_version(State(state): State<SharedState>) -> Json<VersionResponse> {
+    state.record_request();
+    Json(VersionResponse {
+        node_id: state.node_id.clone(),
+        version: env!("CARGO_PKG_VERSION"),
+    })
+}
+
+async fn handle_metrics(State(state): State<SharedState>) -> Result<Response, ApiError> {
+    let req_total = state.record_request();
+    let uptime = state.uptime_seconds();
+    let peer_count = state.current_peer_count();
+    let mempool_size = state.mempool_size();
+
+    let mut metrics =
+        format!("# HELP ippan_http_requests_total Total number of RPC requests handled\n");
+    metrics.push_str("# TYPE ippan_http_requests_total counter\n");
+    metrics.push_str(&format!("ippan_http_requests_total {}\n", req_total));
+    metrics.push_str("# HELP ippan_uptime_seconds Uptime of the node in seconds\n");
+    metrics.push_str("# TYPE ippan_uptime_seconds gauge\n");
+    metrics.push_str(&format!("ippan_uptime_seconds {}\n", uptime));
+    metrics.push_str("# HELP ippan_peer_count Current connected peer count\n");
+    metrics.push_str("# TYPE ippan_peer_count gauge\n");
+    metrics.push_str(&format!("ippan_peer_count {}\n", peer_count));
+    metrics.push_str("# HELP ippan_mempool_size Number of transactions in mempool\n");
+    metrics.push_str("# TYPE ippan_mempool_size gauge\n");
+    metrics.push_str(&format!("ippan_mempool_size {}\n", mempool_size));
+
+    if let Some(consensus) = state.consensus.clone() {
+        if let Ok(snapshot) = consensus.snapshot().await {
+            metrics.push_str(
+                "# HELP ippan_consensus_latest_block_height Latest finalized block height\n",
+            );
+            metrics.push_str("# TYPE ippan_consensus_latest_block_height gauge\n");
+            metrics.push_str(&format!(
+                "ippan_consensus_latest_block_height {}\n",
+                snapshot.latest_block_height
+            ));
+            metrics.push_str("# HELP ippan_consensus_current_slot Current consensus slot\n");
+            metrics.push_str("# TYPE ippan_consensus_current_slot gauge\n");
+            metrics.push_str(&format!(
+                "ippan_consensus_current_slot {}\n",
+                snapshot.current_slot
+            ));
+        }
+    }
+
+    let mut response = Response::new(Body::from(metrics));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; version=0.0.4"),
+    );
+    Ok(response)
+}
+
+async fn handle_submit_tx(
+    State(state): State<SharedState>,
+    Json(tx): Json<Transaction>,
+) -> Result<Json<SubmitTransactionResponse>, ApiError> {
+    let req_total = state.record_request();
+
+    let sender_result = if let Some(consensus) = state.consensus.clone() {
+        consensus
+            .submit_transaction(tx.clone())
+            .map_err(|err| ApiError::internal(format!("failed to queue transaction: {err}")))
+    } else if let Some(sender) = state.tx_sender.clone() {
+        sender
+            .send(tx.clone())
+            .map_err(|err| ApiError::internal(format!("failed to enqueue transaction: {err}")))
+    } else {
+        Err(ApiError::service_unavailable(
+            "transaction submission is disabled",
+        ))
+    };
+
+    sender_result?;
+
+    let response = SubmitTransactionResponse {
+        status: "ok",
+        queued: true,
+        mempool_size: state.mempool_size(),
+        req_total,
+    };
+
+    Ok(Json(response))
+}
+
+async fn handle_get_transaction(
+    State(state): State<SharedState>,
+    AxumPath(hash): AxumPath<String>,
+) -> Result<Json<Transaction>, ApiError> {
+    state.record_request();
+    let hash_bytes = parse_hex_array::<32>(&hash, "transaction hash")?;
+
+    let transaction = state
+        .storage
+        .get_transaction(&hash_bytes)
+        .map_err(|err| ApiError::internal(format!("failed to fetch transaction: {err}")))?;
+
+    transaction
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found("transaction not found"))
+}
+
+async fn handle_get_block(
+    State(state): State<SharedState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Block>, ApiError> {
+    state.record_request();
+
+    let maybe_block = match parse_block_lookup(&id)? {
+        BlockLookup::Height(height) => state
+            .storage
+            .get_block_by_height(height)
+            .map_err(|err| ApiError::internal(format!("failed to fetch block by height: {err}")))?,
+        BlockLookup::Hash(hash) => state
+            .storage
+            .get_block(&hash)
+            .map_err(|err| ApiError::internal(format!("failed to fetch block by hash: {err}")))?,
+    };
+
+    maybe_block
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found("block not found"))
+}
+
+async fn handle_get_account(
+    State(state): State<SharedState>,
+    AxumPath(address): AxumPath<String>,
+) -> Result<Json<Account>, ApiError> {
+    state.record_request();
+    let address_bytes = parse_hex_array::<32>(&address, "account address")?;
+
+    let account = state
+        .storage
+        .get_account(&address_bytes)
+        .map_err(|err| ApiError::internal(format!("failed to fetch account: {err}")))?;
+
+    account
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found("account not found"))
+}
+
+async fn handle_get_peers(State(state): State<SharedState>) -> Json<PeersResponse> {
+    let req_total = state.record_request();
+    Json(PeersResponse {
+        node_id: state.node_id.clone(),
+        local_peer_id: state.local_peer_id(),
+        peer_count: state.current_peer_count(),
+        peers: state.peers(),
+        req_total,
+    })
+}
+
+async fn handle_get_l2_config(State(state): State<SharedState>) -> Json<L2ConfigResponse> {
+    let req_total = state.record_request();
+    Json(L2ConfigResponse {
+        config: state.l2_config.clone(),
+        req_total,
+    })
+}
+
+async fn handle_list_l2_networks(
+    State(state): State<SharedState>,
+) -> Result<Json<L2NetworksResponse>, ApiError> {
+    let req_total = state.record_request();
+    let networks = state
+        .storage
+        .list_l2_networks()
+        .map_err(|err| ApiError::internal(format!("failed to list L2 networks: {err}")))?;
+
+    let total = networks.len() as u64;
+    let response = L2NetworksResponse {
+        networks,
+        total,
+        req_total,
+    };
+
+    Ok(Json(response))
+}
+
+async fn handle_list_l2_commits(
+    State(state): State<SharedState>,
+    Query(filter): Query<L2Filter>,
+) -> Result<Json<L2CommitsResponse>, ApiError> {
+    let req_total = state.record_request();
+    let commits = state
+        .storage
+        .list_l2_commits(filter.l2_id.as_deref())
+        .map_err(|err| ApiError::internal(format!("failed to list L2 commits: {err}")))?;
+
+    let total = commits.len() as u64;
+    let response = L2CommitsResponse {
+        commits,
+        total,
+        req_total,
+        l2_id: filter.l2_id,
+    };
+
+    Ok(Json(response))
+}
+
+async fn handle_list_l2_commits_for_l2(
+    State(state): State<SharedState>,
+    AxumPath(l2_id): AxumPath<String>,
+) -> Result<Json<L2CommitsResponse>, ApiError> {
+    let req_total = state.record_request();
+    let commits = state
+        .storage
+        .list_l2_commits(Some(l2_id.as_str()))
+        .map_err(|err| ApiError::internal(format!("failed to list L2 commits: {err}")))?;
+
+    let total = commits.len() as u64;
+    let response = L2CommitsResponse {
+        total,
+        req_total,
+        commits,
+        l2_id: Some(l2_id),
+    };
+
+    Ok(Json(response))
+}
+
+async fn handle_list_l2_exits(
+    State(state): State<SharedState>,
+    Query(filter): Query<L2Filter>,
+) -> Result<Json<L2ExitsResponse>, ApiError> {
+    let req_total = state.record_request();
+    let exits = state
+        .storage
+        .list_l2_exits(filter.l2_id.as_deref())
+        .map_err(|err| ApiError::internal(format!("failed to list L2 exits: {err}")))?;
+
+    let total = exits.len() as u64;
+    let response = L2ExitsResponse {
+        exits,
+        total,
+        req_total,
+        l2_id: filter.l2_id,
+    };
+
+    Ok(Json(response))
+}
+
+async fn handle_list_l2_exits_for_l2(
+    State(state): State<SharedState>,
+    AxumPath(l2_id): AxumPath<String>,
+) -> Result<Json<L2ExitsResponse>, ApiError> {
+    let req_total = state.record_request();
+    let exits = state
+        .storage
+        .list_l2_exits(Some(l2_id.as_str()))
+        .map_err(|err| ApiError::internal(format!("failed to list L2 exits: {err}")))?;
+
+    let total = exits.len() as u64;
+    let response = L2ExitsResponse {
+        exits,
+        total,
+        req_total,
+        l2_id: Some(l2_id),
+    };
+
+    Ok(Json(response))
+}
+
+fn parse_block_lookup(id: &str) -> Result<BlockLookup, ApiError> {
+    if let Ok(height) = id.parse::<u64>() {
+        Ok(BlockLookup::Height(height))
+    } else {
+        let hash = parse_hex_array::<32>(id, "block identifier")?;
+        Ok(BlockLookup::Hash(hash))
+    }
+}
+
+fn parse_hex_array<const N: usize>(value: &str, field: &str) -> Result<[u8; N], ApiError> {
+    let normalized = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .unwrap_or(value)
+        .trim();
+
+    let mut output = [0u8; N];
+    hex::decode_to_slice(normalized, &mut output).map_err(|_| {
+        ApiError::bad_request(format!("invalid {field}: expected {}-byte hex string", N))
+    })?;
+    Ok(output)
+}
+
+enum BlockLookup {
+    Height(u64),
+    Hash([u8; 32]),
+}
+
+#[derive(Debug, Serialize)]
+struct L2ConfigResponse {
+    config: L2Config,
+    req_total: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct L2NetworksResponse {
+    networks: Vec<L2Network>,
+    total: u64,
+    req_total: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct L2CommitsResponse {
+    commits: Vec<L2Commit>,
+    total: u64,
+    req_total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    l2_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct L2ExitsResponse {
+    exits: Vec<L2ExitRecord>,
+    total: u64,
+    req_total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    l2_id: Option<String>,
+}
+
+impl ApiError {
+    fn bad_request<S: Into<String>>(message: S) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, message)
+    }
+
+    fn not_found<S: Into<String>>(message: S) -> Self {
+        Self::new(StatusCode::NOT_FOUND, message)
+    }
+
+    fn internal<S: Into<String>>(message: S) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, message)
+    }
+
+    fn service_unavailable<S: Into<String>>(message: S) -> Self {
+        Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
     }
 }
