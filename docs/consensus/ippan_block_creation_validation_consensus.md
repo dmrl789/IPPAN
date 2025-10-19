@@ -1,175 +1,203 @@
 # IPPAN — Block Creation, Validation, zk-STARK Verification, and Consensus
 
-### 1. Overview
+## 1. Implementation overview
 
-IPPAN is a **high-throughput deterministic BlockDAG blockchain** designed for *verifiable computation* and *financial-grade integrity*.
-It achieves this through three pillars:
+IPPAN’s consensus stack is implemented across the Rust crates that live in this
+repository:
 
-1. **Parallel block creation and validation**
-2. **Deterministic time ordering via HashTimer™ and IPPAN Time**
-3. **Zero-Knowledge proofs (zk-STARKs)** providing cryptographic attestation that every transaction, state transition, and consensus decision was computed correctly — without revealing private data.
+- `crates/types` defines the canonical [`Block`](../../crates/types/src/block.rs),
+  [`Transaction`](../../crates/types/src/transaction.rs), and
+  [`HashTimer`](../../crates/types/src/hashtimer.rs) types.
+- `crates/consensus` provides a Proof-of-Authority (PoA) round loop,
+  deterministic ordering utilities, and the [`ParallelDag`](../../crates/consensus/src/parallel_dag.rs)
+  primitives used for high-throughput block intake.
+- `crates/crypto` houses the confidential transaction verifier. Its
+  [`zk_stark`](../../crates/crypto/src/zk_stark.rs) module exposes the STARK
+  verifier that powers confidentiality guarantees.
+- `crates/mempool`, `crates/storage`, and `crates/time` supply the transaction
+  queue, persistent ledger, and deterministic time base that the consensus
+  engine consumes.
 
-IPPAN thereby combines *scalability, privacy,* and *verifiable integrity* in a single consensus model.
+The sections below connect those modules into a single creation → validation →
+finalization pipeline and highlight where zk-STARK verification happens.
 
 ---
 
-### 2. Block Creation
+## 2. Block model and HashTimer anchors
 
-#### 2.1 Parallel Mempool Partitioning
-
-Transactions entering the mempool are partitioned into chunks according to block size and CPU availability:
-
-```rust
-let chunks = pending_txs.chunks(max_txs_per_block);
-chunks.into_par_iter().map(|subset| create_block(subset));
-```
-
-Each subset is processed by an independent worker thread through the **Parallel DAG Engine**, producing multiple candidate blocks simultaneously.
-
-#### 2.2 Deterministic Timestamp — HashTimer™
-
-Every block begins with a **HashTimer**, a cryptographic timestamp derived from:
-
-```
-HashTimer = BLAKE3(median(IPPAN Time) || entropy || node_id || nanos)
-```
-
-This provides global temporal determinism and unique block ordering independent of wall-clock drift.
-
-#### 2.3 Block Structure
+Every block produced by the validator loop is an instance of
+[`types::block::Block`](../../crates/types/src/block.rs). Its header embeds a
+`HashTimer` (`header.hashtimer`) that anchors the block to deterministic IPPAN
+Time, the parent set, payload merkle summaries, and optional receipt/state
+roots.
 
 ```rust
-struct Block {
-    id: Vec<u8>,
-    timestamp: u64,                 // IPPAN Time (ns)
-    transactions: Vec<Transaction>,
-    proposer: String,
-    hash_timer: HashTimer,
-    parent_refs: Vec<BlockID>,
-    zk_proof: Option<ZkStarkProof>, // optional zero-knowledge proof
+pub struct BlockHeader {
+    pub id: BlockId,
+    pub creator: ValidatorId,
+    pub round: RoundId,
+    pub hashtimer: HashTimer,
+    pub parent_ids: Vec<BlockId>,
+    pub payload_ids: Vec<[u8; 32]>,
+    pub merkle_payload: [u8; 32],
+    pub merkle_parents: [u8; 32],
+    // ... state/receipt metadata elided
 }
 ```
 
-The optional `zk_proof` field carries a succinct STARK proof attesting to the block’s computation validity.
+`Block::new` deterministically derives the HashTimer by hashing the round, the
+creator key, parent identifiers, and the ordered payload roots. The `HashTimer`
+domain separation strings (`"block"`) and nonce derivation logic inside
+`Block::derive_hashtimer_nonce` guarantee that independent validators derive the
+same temporal anchor for the same inputs.
 
 ---
 
-### 3. Validation
+## 3. Block creation pipeline
 
-#### 3.1 Parallel Transaction Checks
+### 3.1 Slot-driven proposal loop
 
-Transactions are verified concurrently using multi-threaded iterators (`rayon::par_iter`), ensuring signature and nonce correctness across CPU cores.
-
-#### 3.2 zk-STARK Verification
-
-For blocks containing a proof, IPPAN validates the STARK before accepting any state transition.
+`PoAConsensus::start` (in `crates/consensus/src/lib.rs`) spins an async task that
+rotates proposers every `slot_duration_ms`. When a validator’s identifier
+matches the active slot, `propose_block` is invoked:
 
 ```rust
-use stark_verifier::verify_stark_proof;
-
-if let Some(proof) = &block.zk_proof {
-    if !verify_stark_proof(proof, &block.id, &public_inputs) {
-        return ValidationResult::Invalid("Invalid zk-STARK proof".into());
-    }
-}
+let block = Block::new(
+    parent_ids,
+    block_transactions,
+    latest_height + 1,
+    proposer_id,
+);
 ```
 
-The STARK proof guarantees:
+Parent selection prefers the previous round’s committed blocks tracked inside
+`RoundTracker`. If no prior round data exists the engine falls back to the last
+persisted block height in storage.
 
-* Each transaction’s balance updates and contract executions were computed from valid prior states.
-* No double-spend or overflow occurred.
-* All validation rules were applied identically across validators.
+The mempool contribution is bounded by
+`PoAConfig::max_transactions_per_block` so that block construction cost is
+predictable and parallel validation stays within CPU budgets.
 
-Because zk-STARKs are transparent (no trusted setup) and post-quantum secure, they maintain auditability without sacrificing decentralization.
+### 3.2 Parallel DAG utilities
 
-#### 3.3 Conflict Resolution via HashTimer
-
-Conflicting transactions (same account, nonce, or UTXO) are resolved deterministically:
-
-```
-txA.HashTimer < txB.HashTimer ⇒ txA valid, txB discarded
-```
-
-This eliminates forks and rollbacks even under heavy parallelization.
-
----
-
-### 4. Consensus and Finality
-
-#### 4.1 Validator Selection
-
-Validators are pseudo-randomly selected each round through a VRF seeded by the previous round’s aggregate HashTimer.
-Weights favor nodes with high reputation and uptime, but selection remains unpredictable.
-
-#### 4.2 Parallel Round Execution
-
-Each active validator:
-
-1. Builds and validates blocks in parallel.
-2. Generates or verifies zk-STARK proofs for those blocks.
-3. Propagates validated blocks via **Parallel Gossip**.
-4. Collects peers’ block headers and proof commitments for final aggregation.
-
-#### 4.3 Parallel Gossip Propagation
-
-Blocks and proofs are broadcast asynchronously to all peers using the `parallel_gossip` engine, which spawns lightweight Tokio tasks per connection:
+While `propose_block` currently emits a single block per slot, the
+`ParallelDagEngine` (also in `crates/consensus/src/parallel_dag.rs`) provides a
+ready-made path to fan out large transaction batches:
 
 ```rust
-gossip.broadcast_blocks_parallel(valid_blocks).await;
+let blocks = ParallelDagEngine::new(storage.clone())
+    .create_blocks_parallel(pending_txs, max_txs_per_block, round, parent_ids, proposer);
 ```
 
-This ensures rapid propagation and redundancy without bandwidth contention.
-
-#### 4.4 Round Aggregation and Finality
-
-At the close of each ~200 ms round:
-
-1. Validators merge all valid blocks by ascending `HashTimer`.
-2. The merged state root and combined proof commitments are hashed to a **Round Root**.
-3. A zk-STARK “aggregation proof” is optionally produced to attest that *the entire round’s state transition* is consistent with all included block proofs.
-4. Once ≥ ⅔ validators sign the same round root (or proof commitment), finality is achieved.
+Internally the engine partitions transactions via Rayon, allowing independent
+worker threads to materialize candidate blocks that share the same round and
+parent set. The same engine exposes `process_pending_transactions` which
+pipelines creation, validation, and persistence using background Tokio workers
+for storage I/O.
 
 ---
 
-### 5. Parallel Consensus Pipeline
+## 4. Structural validation and mempool hygiene
 
-| Stage | Action            | Parallelism         | zk-STARK Role          |
-| ----- | ----------------- | ------------------- | ---------------------- |
-| 1     | Mempool partition | Rayon               | —                      |
-| 2     | Block creation    | Rayon workers       | STARK proof generation |
-| 3     | Validation        | Parallel threads    | Proof verification     |
-| 4     | Persistence       | Async writes        | Store proof data       |
-| 5     | Gossip            | Tokio tasks         | Proof propagation      |
-| 6     | Round aggregation | Deterministic merge | Aggregated round proof |
+Before a proposed block is persisted, the consensus loop performs a series of
+structural checks:
 
-The result: **multi-core, multi-validator, cryptographically verifiable consensus** capable of millions of TPS while ensuring each block and round is *mathematically correct*.
+1. `Block::is_valid` enforces header invariants (merkle roots, parent list
+   consistency, signature presence).
+2. `validate_confidential_block` (re-exported from `crates/crypto`) walks every
+   transaction to ensure that required envelopes and zero-knowledge proofs are
+   present.
+3. If validation succeeds the block is stored and all included transactions are
+   pruned from the mempool via `cleanup_mempool` so that replay and double spend
+   attempts are eliminated for the next round.
 
----
-
-### 6. Determinism, Privacy, and Compliance
-
-| Principle                  | Mechanism                 | Benefit                               |
-| -------------------------- | ------------------------- | ------------------------------------- |
-| **Deterministic ordering** | HashTimer + IPPAN Time    | Identical sequence for all validators |
-| **Verifiable computation** | zk-STARK proofs           | Mathematical assurance of correctness |
-| **Transparency**           | Public STARK verifier     | Auditable without trusted setup       |
-| **Confidentiality**        | Zero-knowledge execution  | Hides transaction internals           |
-| **Regulatory compliance**  | Timestamped proofs        | Enables cryptographic audit trails    |
-| **Quantum resilience**     | STARK hashing (Fq fields) | Post-quantum security baseline        |
+Any validation error aborts the proposal and leaves the mempool untouched.
 
 ---
 
-### 7. Summary
+## 5. zk-STARK verification
 
-IPPAN’s consensus architecture fuses **parallelism**, **deterministic time**, and **zero-knowledge proofs** into a single verifiable pipeline:
+`crates/crypto/src/confidential.rs` is responsible for verifying the
+cryptographic proofs that accompany confidential transactions. The `Stark`
+variant of `ConfidentialProofType` dispatches to `validate_stark_proof`, which:
 
-* Multiple blocks created and validated **simultaneously**
-* Every computation attested by **zk-STARKs**
-* Global ordering enforced by **HashTimer**
-* Finality reached through **deterministic aggregation**
+1. Decodes the base64 proof blob and parses the public input map.
+2. Recomputes the canonical transaction identifier (`Transaction::message_digest`)
+   to ensure the proof binds to the payload.
+3. Verifies sender and receiver commitments derived from the transaction body.
+4. Ensures the Fibonacci trace length is a supported power of two.
+5. Constructs a `StarkProof` and calls `verify_fibonacci_proof` from
+   `zk_stark.rs`.
 
-The outcome is a **trustless yet auditable** distributed ledger capable of exceeding **millions of TPS** while preserving **privacy, regulatory traceability, and mathematical integrity**.
+If any check fails, `ConfidentialTransactionError` bubbles up and the enclosing
+block is rejected by the proposer. Because verification runs inside Rayon
+iterators (`block.transactions.par_iter()`), all proofs within a block can be
+checked concurrently.
 
 ---
 
-Would you like me to add a **diagram (SVG/PNG)** showing the zk-STARK flow — from transaction input → proof generation → parallel validation → round aggregation → final STARK proof — for inclusion under `docs/assets/` and your pitch deck?
+## 6. Deterministic ordering and conflict handling
+
+Once enough blocks accumulate for a round, `finalize_round_if_ready` aggregates
+and orders them. It delegates to `order_round` (`crates/consensus/src/ordering.rs`),
+which sorts blocks lexicographically by `(HashTimer.time_prefix, creator, id)`
+and then flattens transaction payloads. The helper deduplicates transaction
+hashes, reports conflicts through a callback, and ensures that parents referenced
+within the round actually exist in storage.
+
+Conflicting payloads are recorded in the round’s `fork_drops` list. Validators
+log each conflict with the offending transaction hash to support offline audits
+and remediation.
+
+---
+
+## 7. Round finalization and persistence
+
+When a round satisfies the finalization interval, the consensus engine builds a
+`RoundCertificate` and `RoundFinalizationRecord`:
+
+- `RoundCertificate` contains the round identifier, the ordered block ids, and a
+  placeholder aggregate signature (`aggregate_round_signature`) that will later
+  be replaced by BLS or VRF attestations.
+- `RoundFinalizationRecord` combines the window start/end timestamps (`RoundWindow`),
+  the ordered transactions, dropped conflicts, and the deterministic state root
+  derived from hashing the previous state root, block ids, ordered tx ids, and
+  conflicts.
+
+Both artifacts are persisted through the storage trait so that other components
+(e.g. RPC, analytics, archival nodes) can serve finalized state snapshots.
+
+---
+
+## 8. Parallel DAG metrics and observability
+
+`ParallelDag` maintains per-vertex metadata and a lock-free ready queue. Its
+`DagMetricsSnapshot` exposes counters for inserted vertices, ready transitions,
+committed nodes, queue overflows, duplicates, and orphan commits. `snapshot()`
+returns aggregate width/depth estimates that can be wired into telemetry so
+operators understand backlog health and tuning opportunities for `max_parents`
+and `ready_queue_bound`.
+
+---
+
+## 9. End-to-end pipeline summary
+
+| Stage | Module / Function                                                                 | Parallelism                                   | zk-STARK involvement                |
+| ----- | ---------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------- |
+| 1     | `PoAConsensus::propose_block`                                                      | Sequential per slot                           | —                                   |
+| 2     | `ParallelDagEngine::create_blocks_parallel` / `process_pending_transactions`      | Rayon workers + Tokio blocking pool           | Proof verification per candidate    |
+| 3     | `validate_confidential_block` → `validate_stark_proof`                             | Rayon `par_iter` over transactions            | Verifies STARK commitments          |
+| 4     | `cleanup_mempool`                                                                  | Sequential                                    | —                                   |
+| 5     | `order_round`                                                                      | CPU-bound sorting + conflict callbacks        | Proofs already checked              |
+| 6     | `aggregate_round_signature` + `RoundFinalizationRecord` persistence                | Sequential hashing, storage writes on threads | Final state reflects verified blocks |
+
+---
+
+## 10. Summary
+
+IPPAN’s PoA consensus engine coordinates deterministic block creation with
+HashTimer anchors, validates every payload (including confidential transactions)
+in parallel, and persists finalized rounds together with the data needed for
+cryptographic audits. zk-STARK verification is a first-class step in the
+validation pipeline, ensuring that confidentiality features do not weaken
+consensus safety while preserving high throughput through parallel execution.
