@@ -356,6 +356,7 @@ mod tests {
         let mut report = NodeReport {
             health_status_code: Some(200),
             health_status: Some("healthy".into()),
+            peers_status_code: Some(200),
             peer_count_reported: Some(2),
             peer_count_listed: Some(1),
             ..Default::default()
