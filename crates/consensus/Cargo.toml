@@ -23,7 +23,9 @@ serde_json = { workspace = true }
 futures = { workspace = true }
 parking_lot = { workspace = true }
 blake3 = { workspace = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
 tempfile = { workspace = true }
+rand = { version = "0.8", features = ["std", "std_rng"] }

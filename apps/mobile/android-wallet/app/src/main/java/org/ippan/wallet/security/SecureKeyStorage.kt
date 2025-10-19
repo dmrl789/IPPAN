@@ -41,6 +41,7 @@ class SecureKeyStorage(private val context: Context) {
         private const val KEY_WALLET_ADDRESS = "wallet_address"
         private const val KEY_PUBLIC_KEY = "public_key"
         private const val KEY_ENCRYPTED_PRIVATE_KEY = "encrypted_private_key"
+        private const val KEY_PRIVATE_KEY_ALIAS = "private_key_alias"
         private const val KEY_WALLET_CREATED = "wallet_created"
         private const val KEY_LAST_BACKUP = "last_backup"
         private const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
@@ -86,12 +87,28 @@ class SecureKeyStorage(private val context: Context) {
             .putString(KEY_ENCRYPTED_PRIVATE_KEY, encryptedPrivateKey)
             .apply()
     }
-    
+
     /**
      * Get encrypted private key
      */
     fun getEncryptedPrivateKey(): String? {
         return encryptedPrefs.getString(KEY_ENCRYPTED_PRIVATE_KEY, null)
+    }
+
+    /**
+     * Store reference to the Android Keystore alias that contains the wallet key pair
+     */
+    fun storePrivateKeyAlias(alias: String) {
+        encryptedPrefs.edit()
+            .putString(KEY_PRIVATE_KEY_ALIAS, alias)
+            .apply()
+    }
+
+    /**
+     * Retrieve the stored Android Keystore alias
+     */
+    fun getPrivateKeyAlias(): String? {
+        return encryptedPrefs.getString(KEY_PRIVATE_KEY_ALIAS, null)
     }
     
     /**
@@ -153,7 +170,10 @@ class SecureKeyStorage(private val context: Context) {
      * Check if wallet exists
      */
     fun hasWallet(): Boolean {
-        return isWalletCreated() && getWalletAddress() != null && getPublicKey() != null
+        return isWalletCreated() &&
+            getWalletAddress() != null &&
+            getPublicKey() != null &&
+            getPrivateKeyAlias() != null
     }
     
     /**

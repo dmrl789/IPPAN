@@ -1,24 +1,25 @@
 //! DAG synchronization with automatic peer discovery and gossip fan-out.
 //!
 //! This module wires the [`BlockDAG`](crate::dag::BlockDAG) storage into a
-//! libp2p swarm that combines mDNS peer discovery with gossipsub fan-out. Each
-//! node periodically advertises its local tips and republishes full blocks so
-//! that freshly discovered peers can request the data immediately after joining.
+//! libp2p gossipsub swarm. Each node periodically advertises its local tips and
+//! republishes full blocks so freshly discovered peers can request the data
+//! immediately after joining.
 
 use std::collections::HashSet;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use ed25519_dalek::SigningKey;
 use futures::StreamExt;
 use libp2p::core::transport::upgrade;
+use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::derive::NetworkBehaviour;
 use libp2p::swarm::{self, SwarmEvent};
 use libp2p::tcp;
 use libp2p::yamux;
-use libp2p::{gossipsub, mdns};
+use libp2p::{gossipsub as gsub, mdns};
 use libp2p::{Multiaddr, PeerId, Swarm, Transport};
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
@@ -41,31 +42,11 @@ pub enum GossipMsg {
     Block(Block),
 }
 
-/// Combined network behaviour: gossipsub for fan-out plus mDNS for discovery.
+/// Combined network behaviour for DAG gossip + mDNS peer discovery.
 #[derive(NetworkBehaviour)]
-#[behaviour(to_swarm = "DagEvent")]
 struct DagBehaviour {
-    gossip: gossipsub::Behaviour,
-    mdns: mdns::tokio::Behaviour,
-}
-
-/// Events emitted by the composed swarm behaviour.
-#[derive(Debug)]
-enum DagEvent {
-    Gossip(gossipsub::Event),
-    Mdns(mdns::Event),
-}
-
-impl From<gossipsub::Event> for DagEvent {
-    fn from(event: gossipsub::Event) -> Self {
-        DagEvent::Gossip(event)
-    }
-}
-
-impl From<mdns::Event> for DagEvent {
-    fn from(event: mdns::Event) -> Self {
-        DagEvent::Mdns(event)
-    }
+    pub gossip: gsub::Behaviour,
+    pub mdns: mdns::tokio::Behaviour,
 }
 
 /// Background swarm responsible for synchronizing BlockDAG data with peers.
@@ -135,39 +116,19 @@ impl DagSyncService {
                         SwarmEvent::NewListenAddr { address, .. } => {
                             info!("DAG sync listening on {address}");
                         }
-                        SwarmEvent::Behaviour(DagEvent::Gossip(event)) => {
+                        SwarmEvent::Behaviour(event) => {
                             if let Err(err) = handle_gossip_event(event, &dag, &mut seen) {
                                 warn!("error handling gossip event: {err:?}");
                             }
-                        }
-                        SwarmEvent::Behaviour(DagEvent::Mdns(event)) => {
-                            handle_mdns_event(event, &mut swarm.behaviour_mut().gossip);
                         }
                         _ => {}
                     }
                 }
                 _ = ticker.tick() => {
-                    if let Err(err) = broadcast_tips(&dag, &mut swarm.behaviour_mut().gossip, &topic, &mut seen) {
+                    if let Err(err) = broadcast_tips(&dag, swarm.behaviour_mut(), &topic, &mut seen) {
                         warn!("failed to broadcast DAG tips: {err:?}");
                     }
                 }
-            }
-        }
-    }
-}
-
-fn handle_mdns_event(event: mdns::Event, gossip: &mut gossipsub::Behaviour) {
-    match event {
-        mdns::Event::Discovered(list) => {
-            for (peer, _addr) in list {
-                debug!("discovered peer {peer}");
-                gossip.add_explicit_peer(&peer);
-            }
-        }
-        mdns::Event::Expired(list) => {
-            for (peer, _addr) in list {
-                debug!("mdns peer expired {peer}");
-                gossip.remove_explicit_peer(&peer);
             }
         }
     }
@@ -212,7 +173,6 @@ fn handle_gossip_event(
         gossipsub::Event::GossipsubNotSupported { peer_id } => {
             warn!("peer {peer_id} does not support gossipsub");
         }
-        _ => {}
     }
     Ok(())
 }

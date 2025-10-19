@@ -1,163 +1,64 @@
-# 🚀 IPPAN Android Wallet - Production Status
+# IPPAN Android Wallet – Production Readiness Snapshot
 
-## ✅ **COMPLETED - Production Ready Implementation**
+_Last updated: October 2025_
 
-### 🏗️ **Build System & Infrastructure**
-- ✅ **Gradle Wrapper**: Complete build system with `gradlew` and `gradlew.bat`
-- ✅ **Dependencies**: All production dependencies configured
-- ✅ **Permissions**: Camera, biometric, network permissions added
-- ✅ **ProGuard**: Release build optimization configured
+The Android wallet is **pre-production**. The foundations (secure key storage,
+network client, Compose UI) are in place, but several operational and compliance
+tasks remain before a public release. Use the checklist below to track progress.
 
-### 🔐 **Security Implementation**
-- ✅ **Biometric Authentication**: Fingerprint/Face ID integration
-- ✅ **Secure Key Storage**: Android Keystore with hardware security
-- ✅ **Encrypted Storage**: AES-GCM encryption for sensitive data
-- ✅ **Transaction Signing**: ECDSA signature generation and verification
-- ✅ **Address Validation**: IPPAN address format validation
+## Build & Tooling
 
-### 🌐 **Blockchain Integration**
-- ✅ **IPPAN API Client**: Complete REST API integration
-- ✅ **Real-time Updates**: Balance and transaction synchronization
-- ✅ **Transaction Submission**: Signed transaction broadcasting
-- ✅ **Network Status**: Connection health monitoring
-- ✅ **Gas Price**: Dynamic fee calculation
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| Gradle wrapper & settings | ⚠️ In progress | Wrapper JAR must be generated locally; AGP download required |
+| CI pipelines | ⛔ Not started | No workflows for lint/tests/builds |
+| Release configuration | ⚠️ In progress | ProGuard file present, signing config not defined |
 
-### 📱 **User Experience**
-- ✅ **Modern UI**: Material 3 design with dark/light themes
-- ✅ **QR Code Scanner**: Camera-based address scanning
-- ✅ **Navigation**: Bottom tab navigation with proper state management
-- ✅ **Form Validation**: Transaction input validation
-- ✅ **Error Handling**: Comprehensive error states and recovery
+## Security
 
-### 🧪 **Testing & Quality**
-- ✅ **Unit Tests**: ViewModel and crypto utilities testing
-- ✅ **Integration Tests**: Repository and API client testing
-- ✅ **Security Tests**: Cryptographic operations validation
-- ✅ **UI Tests**: Component and navigation testing
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| Hardware backed keys | ✅ Complete | Generated with Android Keystore (secp256r1) |
+| Biometric gating | ⚠️ In progress | Helper exists, not wired into send flow |
+| Certificate pinning | ⛔ Not started | HTTPS relies on system trust store |
+| Encrypted preferences | ✅ Complete | `EncryptedSharedPreferences` wraps wallet metadata |
 
-## 📊 **Production Architecture Overview**
+## Blockchain integration
 
-```
-📱 IPPAN Android Wallet (Production Ready)
-├── 🎨 UI Layer (Jetpack Compose + Material 3)
-│   ├── MainActivity (Navigation & State Management)
-│   ├── OverviewScreen (Balance Display & Quick Actions)
-│   ├── SendTokenSheet (Transaction Form with Validation)
-│   ├── QRCodeScanner (Camera-based Address Scanning)
-│   ├── ActivityScreen (Transaction History)
-│   └── SettingsScreen (Configuration & Security)
-├── 🧠 ViewModel Layer (MVVM Architecture)
-│   └── WalletViewModel (State Management & Business Logic)
-├── 📊 Data Layer (Repository Pattern)
-│   ├── ProductionWalletRepository (Real Blockchain Integration)
-│   ├── IppanApiClient (Network Operations & API Calls)
-│   └── SecureKeyStorage (Encrypted Data Persistence)
-├── 🔐 Security Layer (Hardware-backed Security)
-│   ├── CryptoUtils (ECDSA Operations & Key Management)
-│   ├── BiometricAuthManager (Authentication & Authorization)
-│   └── SecureKeyStorage (Hardware Keystore Integration)
-└── 🌐 Network Layer (IPPAN Blockchain)
-    ├── REST API Integration (Balance, Transactions, Status)
-    ├── WebSocket Support (Real-time Updates)
-    └── Transaction Broadcasting (Signed Transaction Submission)
-```
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| Multi-node failover | ✅ Complete | `IppanApiClient` rotates through configured nodes |
+| Balance & history | ✅ Complete | REST endpoints mapped to domain models |
+| Transaction submit | ✅ Complete | Hashing, signing, and broadcast implemented |
+| Gas price discovery | ✅ Complete | Uses `/api/gas-price` response |
+| Fiat conversion | ⚠️ Placeholder | Static multiplier until real oracle is available |
 
-## 🔧 **Key Production Features**
+## User experience
 
-### **Security Features**
-- **🔒 Hardware Security**: Android Keystore with hardware-backed keys
-- **👆 Biometric Authentication**: Fingerprint/Face ID for transaction signing
-- **🔐 Encrypted Storage**: AES-GCM encryption for private keys
-- **🛡️ Secure Communication**: HTTPS with certificate pinning
-- **🔑 Key Management**: Secure key generation, storage, and backup
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| Compose navigation shell | ✅ Complete | Overview, Activity, Settings, Send sheet |
+| QR / camera integration | ⛔ Not started | UI component present but not hooked |
+| Error & empty states | ⚠️ In progress | Toast/snackbar feedback only |
+| Accessibility review | ⛔ Not started | No TalkBack or font scaling audits |
+| Localization | ⛔ Not started | English-only strings |
 
-### **Blockchain Features**
-- **💰 Real-time Balance**: Live balance updates from IPPAN network
-- **📊 Transaction History**: Complete transaction history with status
-- **💸 Send/Receive**: Easy token transfers with validation
-- **📷 QR Scanner**: Camera-based address scanning
-- **⛽ Gas Management**: Dynamic gas price calculation
-- **🌐 Network Status**: Connection health and node status
+## Quality
 
-### **User Experience**
-- **🎨 Modern Design**: Material 3 with dark/light themes
-- **📱 Responsive UI**: Optimized for phones and tablets
-- **🔄 Real-time Updates**: Live data synchronization
-- **📝 Form Validation**: Input validation and error handling
-- **🔔 Notifications**: Transaction status and network updates
+| Item | Status | Notes |
+| ---- | ------ | ----- |
+| JVM unit tests | ⚠️ In progress | API client tests and snapshots available |
+| Instrumented tests | ⛔ Not started | Need Compose UI tests on device |
+| Snapshot coverage | ✅ Complete | Paparazzi renders for each screen |
+| Performance profiling | ⛔ Not started | No baseline profiles |
 
-## 🚀 **Deployment Ready**
+## Next steps
 
-### **Build Configuration**
-- ✅ **Release Build**: Optimized APK with ProGuard
-- ✅ **Signing**: Production signing configuration
-- ✅ **Permissions**: All required permissions configured
-- ✅ **Dependencies**: Production-ready dependency versions
+1. Bring the Gradle wrapper JAR under version control and wire up CI so the
+   project can be built outside Android Studio.
+2. Hook the biometric prompt into the transfer submission flow and add negative
+   path instrumentation tests.
+3. Replace the placeholder fiat conversion with a price service integration.
+4. Implement QR code scanning and add feature flag driven by `SecureKeyStorage`.
+5. Add crash reporting, logging, and analytics guards for production rollout.
 
-### **Security Configuration**
-- ✅ **Keystore**: Hardware-backed key storage
-- ✅ **Biometrics**: Fingerprint/Face ID integration
-- ✅ **Encryption**: AES-GCM for sensitive data
-- ✅ **Network**: HTTPS with proper certificate handling
-
-### **Network Integration**
-- ✅ **API Endpoints**: Complete IPPAN blockchain integration
-- ✅ **Real-time**: WebSocket support for live updates
-- ✅ **Error Handling**: Comprehensive network error recovery
-- ✅ **Status Monitoring**: Network health and connectivity
-
-## 📋 **Production Checklist**
-
-### **Security** ✅
-- [x] Hardware-backed key storage
-- [x] Biometric authentication
-- [x] Encrypted data storage
-- [x] Secure network communication
-- [x] Private key protection
-
-### **Functionality** ✅
-- [x] Wallet creation and management
-- [x] Balance tracking and display
-- [x] Transaction sending and receiving
-- [x] QR code scanning
-- [x] Transaction history
-- [x] Network status monitoring
-
-### **User Experience** ✅
-- [x] Modern Material 3 design
-- [x] Intuitive navigation
-- [x] Form validation and error handling
-- [x] Real-time updates
-- [x] Responsive design
-
-### **Testing** ✅
-- [x] Unit tests for core functionality
-- [x] Integration tests for API
-- [x] Security tests for crypto operations
-- [x] UI tests for user flows
-
-### **Deployment** ✅
-- [x] Production build configuration
-- [x] Signing and security setup
-- [x] Documentation and setup guides
-- [x] Error handling and recovery
-
-## 🎯 **Production Status: 100% Complete**
-
-The IPPAN Android Wallet is **production-ready** with:
-
-- ✅ **Complete Security Implementation**
-- ✅ **Full Blockchain Integration** 
-- ✅ **Modern User Experience**
-- ✅ **Comprehensive Testing**
-- ✅ **Production Deployment Ready**
-
-### **Ready for:**
-- 🏪 **Google Play Store** deployment
-- 🔒 **Enterprise** security requirements
-- 🌐 **Production** IPPAN network integration
-- 👥 **User** adoption and usage
-
----
-
-**🚀 The IPPAN Android Wallet is now production-ready and can be deployed to users!**

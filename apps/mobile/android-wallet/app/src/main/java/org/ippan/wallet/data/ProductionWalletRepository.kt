@@ -1,5 +1,6 @@
 package org.ippan.wallet.data
 
+import android.util.Base64
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -7,12 +8,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import org.ippan.wallet.crypto.CryptoUtils
 import org.ippan.wallet.network.IppanApiClient
-import org.ippan.wallet.network.TransactionResponse
 import org.ippan.wallet.security.SecureKeyStorage
-import java.security.KeyPair
 import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 /**
  * Production wallet repository that integrates with real IPPAN blockchain
@@ -33,103 +30,85 @@ class ProductionWalletRepository(
             fiatCurrency = "USD",
             tokens = emptyList(),
             transactions = emptyList(),
-            lastSync = Instant.now()
+            lastSync = Instant.now(),
+            activeNode = apiClient.activeNode
         )
     }
-    
+
     override fun snapshot(): Flow<WalletSnapshot> = state.asStateFlow()
-    
+
     override suspend fun refresh() {
-        if (!secureStorage.hasWallet()) {
-            state.update { currentState ->
-                currentState.copy(
-                    accountAddress = "No wallet found",
-                    totalBalance = 0.0,
-                    tokens = emptyList(),
-                    transactions = emptyList()
-                )
-            }
-            return
+        val address = ensureWalletAddress()
+
+        val balanceResponse = apiClient.getBalance(address).getOrElse { error ->
+            throw IllegalStateException("Failed to fetch balance", error)
         }
-        
-        try {
-            val address = secureStorage.getWalletAddress()!!
-            
-            // Fetch balance
-            val balanceResult = apiClient.getBalance(address)
-            if (balanceResult.isFailure) {
-                throw Exception("Failed to fetch balance: ${balanceResult.exceptionOrNull()?.message}")
-            }
-            
-            val balanceResponse = balanceResult.getOrThrow()
-            
-            // Fetch transactions
-            val transactionsResult = apiClient.getTransactions(address, 50)
-            if (transactionsResult.isFailure) {
-                throw Exception("Failed to fetch transactions: ${transactionsResult.exceptionOrNull()?.message}")
-            }
-            
-            val transactionResponses = transactionsResult.getOrThrow()
-            
-            // Convert API responses to domain models
-            val tokens = listOf(
-                TokenBalance(
-                    symbol = balanceResponse.currency,
-                    name = "IPPAN Token",
-                    balance = balanceResponse.balance,
-                    fiatValue = balanceResponse.balance * 0.1 // Mock fiat conversion
-                )
+
+        val transactionResponses = apiClient.getTransactions(address, 50).getOrElse { error ->
+            throw IllegalStateException("Failed to fetch transactions", error)
+        }
+
+        val tokens = listOf(
+            TokenBalance(
+                symbol = balanceResponse.currency,
+                name = "IPPAN Token",
+                balance = balanceResponse.balance,
+                fiatValue = balanceResponse.balance * FIAT_PLACEHOLDER_MULTIPLIER
             )
-            
-            val transactions = transactionResponses.map { response ->
-                WalletTransaction(
-                    id = response.id,
-                    type = if (response.from == address) TransactionType.SEND else TransactionType.RECEIVE,
-                    amount = response.amount,
-                    symbol = response.currency,
-                    counterparty = if (response.from == address) response.to else response.from,
-                    timestamp = Instant.parse(response.timestamp),
-                    status = if (response.status == "confirmed") TransactionStatus.CONFIRMED else TransactionStatus.PENDING
-                )
-            }
-            
-            state.update { currentState ->
-                currentState.copy(
-                    accountAddress = address,
-                    totalBalance = balanceResponse.balance,
-                    fiatCurrency = "USD",
-                    tokens = tokens,
-                    transactions = transactions,
-                    lastSync = Instant.now()
-                )
-            }
-            
-        } catch (e: Exception) {
-            // Update state with error information
-            state.update { currentState ->
-                currentState.copy(
-                    accountAddress = "Error: ${e.message}",
-                    totalBalance = 0.0,
-                    tokens = emptyList(),
-                    transactions = emptyList()
-                )
-            }
+        )
+
+        val transactions = transactionResponses.map { response ->
+            WalletTransaction(
+                id = response.id,
+                type = if (response.from.equals(address, ignoreCase = true)) {
+                    TransactionType.SEND
+                } else {
+                    TransactionType.RECEIVE
+                },
+                amount = response.amount,
+                symbol = response.currency,
+                counterparty = if (response.from.equals(address, ignoreCase = true)) {
+                    response.to
+                } else {
+                    response.from
+                },
+                timestamp = Instant.parse(response.timestamp),
+                status = if (response.status.equals("confirmed", ignoreCase = true)) {
+                    TransactionStatus.CONFIRMED
+                } else {
+                    TransactionStatus.PENDING
+                }
+            )
+        }
+
+        state.update {
+            it.copy(
+                accountAddress = address,
+                totalBalance = balanceResponse.balance,
+                fiatCurrency = balanceResponse.currency,
+                tokens = tokens,
+                transactions = transactions,
+                lastSync = Instant.now(),
+                activeNode = apiClient.activeNode
+            )
         }
     }
-    
+
     override suspend fun submitTransfer(request: TransferRequest) {
-        if (!secureStorage.hasWallet()) {
-            throw Exception("No wallet found. Please create a wallet first.")
+        if (!cryptoUtils.isValidAddress(request.toAddress)) {
+            throw IllegalArgumentException("Destination address is not a valid IPPAN address")
         }
-        
+
         try {
-            val address = secureStorage.getWalletAddress()!!
-            val publicKey = secureStorage.getPublicKey()!!
-            val encryptedPrivateKey = secureStorage.getEncryptedPrivateKey()!!
-            
+            val address = ensureWalletAddress()
+            val publicKey = ensurePublicKey()
+            val privateKeyAlias = secureStorage.getPrivateKeyAlias()
+                ?: throw IllegalStateException("Missing private key alias")
+            val privateKey = cryptoUtils.getPrivateKey(privateKeyAlias)
+
             // Get current nonce (in production, this would come from the API)
             val nonce = cryptoUtils.generateNonce()
-            
+
             // Get gas price
             val gasPriceResult = apiClient.getGasPrice()
             if (gasPriceResult.isFailure) {
@@ -149,11 +128,10 @@ class ProductionWalletRepository(
                 gasPrice = gasPrice,
                 gasLimit = gasLimit
             )
-            
-            // TODO: Decrypt private key and sign transaction
-            // This would require the user's password/biometric authentication
-            val signature = "mock_signature" // In production, this would be the actual signature
-            
+
+            // Sign transaction payload using hardware-backed key
+            val signature = cryptoUtils.signTransaction(transactionHash, privateKey)
+
             // Create signed transaction request
             val signedTransaction = org.ippan.wallet.network.SignedTransactionRequest(
                 from = address,
@@ -181,36 +159,38 @@ class ProductionWalletRepository(
             // Refresh wallet state after successful submission
             delay(2000) // Wait a bit for transaction to be processed
             refresh()
-            
+
         } catch (e: Exception) {
-            throw Exception("Transfer failed: ${e.message}")
+            throw IllegalStateException("Transfer failed", e)
         }
     }
-    
+
     /**
      * Initialize a new wallet
      */
     suspend fun initializeWallet(): String {
         try {
-            // Generate new key pair
-            val keyPair = cryptoUtils.generateKeyPair()
-            
-            // Generate wallet address
+            val alias = "ippan_wallet_${System.currentTimeMillis()}"
+            val keyPair = cryptoUtils.generateKeyPair(alias)
+
+            val publicKeyEncoded = Base64.encodeToString(keyPair.public.encoded, Base64.NO_WRAP)
             val address = cryptoUtils.generateAddress(keyPair.public)
-            
-            // Store wallet data securely
+
             secureStorage.storeWalletAddress(address)
-            secureStorage.storePublicKey(Base64.encodeToString(keyPair.public.encoded, Base64.NO_WRAP))
-            secureStorage.storeEncryptedPrivateKey(Base64.encodeToString(keyPair.private.encoded, Base64.NO_WRAP))
+            secureStorage.storePublicKey(publicKeyEncoded)
+            secureStorage.storePrivateKeyAlias(alias)
             secureStorage.setWalletCreated(true)
-            
-            // Refresh state
-            refresh()
-            
+
+            state.update {
+                it.copy(
+                    accountAddress = address,
+                    activeNode = apiClient.activeNode
+                )
+            }
+
             return address
-            
         } catch (e: Exception) {
-            throw Exception("Failed to initialize wallet: ${e.message}")
+            throw IllegalStateException("Failed to initialize wallet", e)
         }
     }
     
@@ -226,5 +206,32 @@ class ProductionWalletRepository(
      */
     suspend fun getNetworkStatus(): Result<org.ippan.wallet.network.NetworkStatusResponse> {
         return apiClient.getNetworkStatus()
+    }
+
+    private fun ensurePublicKey(): String {
+        val alias = secureStorage.getPrivateKeyAlias()
+        val stored = secureStorage.getPublicKey()
+        if (alias == null) {
+            return stored ?: throw IllegalStateException("Wallet not initialized")
+        }
+        if (stored != null) {
+            return stored
+        }
+        val publicKey = cryptoUtils.getPublicKey(alias)
+        val encoded = Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP)
+        secureStorage.storePublicKey(encoded)
+        return encoded
+    }
+
+    private suspend fun ensureWalletAddress(): String {
+        if (!secureStorage.hasWallet()) {
+            initializeWallet()
+        }
+        return secureStorage.getWalletAddress()
+            ?: throw IllegalStateException("Wallet not initialized")
+    }
+
+    companion object {
+        private const val FIAT_PLACEHOLDER_MULTIPLIER = 0.1
     }
 }

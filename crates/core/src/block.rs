@@ -115,6 +115,7 @@ impl Block {
                 Ok(bytes) => bytes,
                 Err(_) => return false,
             };
+
         let signature = match Signature::try_from(&signature_bytes[..]) {
             Ok(sig) => sig,
             Err(_) => return false,

@@ -17,7 +17,12 @@ use tokio::time::{interval, sleep};
 use tracing::{error, info, warn};
 
 pub mod ordering;
+pub mod parallel_dag;
 pub use ordering::order_round;
+pub use parallel_dag::{
+    DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
+    ValidationResult,
+};
 
 /// Consensus errors
 #[derive(thiserror::Error, Debug)]
@@ -327,8 +332,9 @@ impl PoAConsensus {
         validate_confidential_block(&block)
             .map_err(|err| anyhow::anyhow!("invalid confidential transaction: {err}"))?;
 
-        // Store block
+        // Store block and clean up the mempool entries that were just included
         storage.store_block(block.clone())?;
+        Self::cleanup_mempool(mempool, &block);
 
         {
             let mut tracker = round_tracker.write();
@@ -349,15 +355,35 @@ impl PoAConsensus {
             }
         });
 
+        let block_hash = hex::encode(block.hash());
+        let transaction_count = block.transactions.len();
         info!(
             "Proposed and stored block {} at height {} (round {}) with {} transactions",
-            hex::encode(block.hash()),
-            block.header.round,
-            final_round,
-            block.transactions.len()
+            block_hash, block.header.round, final_round, transaction_count
         );
 
         Ok(())
+    }
+
+    fn cleanup_mempool(mempool: &Arc<Mempool>, block: &Block) {
+        for tx in &block.transactions {
+            let tx_hash = hex::encode(tx.hash());
+            match mempool.remove_transaction(&tx_hash) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    warn!(
+                        "transaction {} was not found in mempool during cleanup",
+                        tx_hash
+                    );
+                }
+                Err(err) => {
+                    warn!(
+                        "failed to remove transaction {} from mempool after proposing block: {}",
+                        tx_hash, err
+                    );
+                }
+            }
+        }
     }
 
     fn finalize_round_if_ready(
@@ -821,19 +847,19 @@ mod tests {
         for nonce in 0..transfers_per_side {
             let mut tx = Transaction::new(validator_one, validator_two, 10, nonce);
             tx.sign(&secret_one).unwrap();
-            mempool_one.write().push(tx);
+            let _ = mempool_one.add_transaction(tx).unwrap();
         }
         for nonce in 0..transfers_per_side {
             let mut tx = Transaction::new(validator_two, validator_one, 10, nonce);
             tx.sign(&secret_two).unwrap();
-            mempool_two.write().push(tx);
+            let _ = mempool_two.add_transaction(tx).unwrap();
         }
 
         let mut slot = 0u64;
         let mut produced_blocks = 0u64;
         loop {
-            let empty1 = { mempool_one.read().is_empty() };
-            let empty2 = { mempool_two.read().is_empty() };
+            let empty1 = mempool_one.size() == 0;
+            let empty2 = mempool_two.size() == 0;
             if empty1 && empty2 {
                 break;
             }
@@ -872,8 +898,8 @@ mod tests {
         }
 
         let expected_nonce = transfers_per_side;
-        assert_eq!(mempool_one.read().len(), 0);
-        assert_eq!(mempool_two.read().len(), 0);
+        assert_eq!(mempool_one.size(), 0);
+        assert_eq!(mempool_two.size(), 0);
 
         let latest_height = storage.get_latest_height().unwrap();
         assert!(latest_height >= 4);

@@ -1,3 +1,9 @@
+pub mod parallel_gossip;
+pub use parallel_gossip::{
+    DagVertexAnnouncement, GossipConfig, GossipError, GossipMessage, GossipMetricsSnapshot,
+    GossipPayload, GossipTopic, ParallelGossipNetwork,
+};
+
 use anyhow::{anyhow, Result};
 use igd::aio::search_gateway;
 use igd::PortMappingProtocol;

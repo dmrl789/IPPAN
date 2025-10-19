@@ -3,6 +3,7 @@ members = [
   "crates/types",
   "crates/crypto",
   "crates/storage",
+  "crates/network",
   "crates/p2p",
   "crates/mempool",
   "crates/consensus",
@@ -22,7 +23,7 @@ authors = ["IPPAN Contributors"]
 [workspace.dependencies]
 anyhow = "1"
 thiserror = "1"
-tokio = { version = "1", features = ["rt-multi-thread","macros","time","sync","net","fs","signal"] }
+tokio = { version = "1", features = ["rt-multi-thread","macros","time","sync","net","fs","signal","io-util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
@@ -37,6 +38,7 @@ parking_lot = "0.12"
 heapless = "0.8"
 winterfell = "0.13.1"
 base64 = "0.21"
+rayon = "1.10"
 
 # Production dependencies
 axum = { version = "0.7", features = ["macros", "tracing"] }
