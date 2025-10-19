@@ -15,7 +15,7 @@ use libp2p::core::transport::upgrade;
 use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
-use libp2p::swarm::derive::NetworkBehaviour;
+use libp2p::swarm::NetworkBehaviour;
 use libp2p::swarm::{self, SwarmEvent};
 use libp2p::tcp;
 use libp2p::yamux;
@@ -87,14 +87,13 @@ impl DagSyncService {
             gossipsub::MessageAuthenticity::Signed(local_key.clone()),
             gossip_config,
         )
-        .context("failed to create gossipsub behaviour")?;
+        .map_err(|err| anyhow!(err))?;
         let topic = gossipsub::IdentTopic::new(DAG_TOPIC);
         gossip
             .subscribe(&topic)
             .context("failed to subscribe to DAG gossip topic")?;
 
-        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default())
-            .await
+        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id.clone())
             .context("failed to initialise mDNS discovery")?;
 
         let behaviour = DagBehaviour { gossip, mdns };
