@@ -19,7 +19,10 @@ use tracing::{error, info, warn};
 pub mod ordering;
 pub mod parallel_dag;
 pub use ordering::order_round;
-pub use parallel_dag::{DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig};
+pub use parallel_dag::{
+    DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
+    ValidationResult,
+};
 
 /// Consensus errors
 #[derive(thiserror::Error, Debug)]

@@ -1,9 +1,14 @@
 use parking_lot::{Mutex, RwLock};
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use tokio::task::spawn_blocking;
 
-use ippan_types::{Block, BlockId};
+use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
+use ippan_storage::Storage;
+use ippan_types::{Block, BlockId, RoundId, Transaction, ValidatorId};
+use tracing::error;
 
 /// Configuration knobs controlling the behaviour of the [`ParallelDag`].
 #[derive(Debug, Clone)]
@@ -462,6 +467,163 @@ fn has_duplicates(values: &[BlockId]) -> bool {
         }
     }
     false
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationResult {
+    Valid,
+    Invalid(Vec<String>),
+}
+
+/// Parallel DAG engine enabling concurrent block creation, validation, and persistence.
+pub struct ParallelDagEngine {
+    storage: Arc<dyn Storage + Send + Sync>,
+}
+
+impl ParallelDagEngine {
+    /// Create a new parallel DAG engine backed by the supplied storage.
+    pub fn new(storage: Arc<dyn Storage + Send + Sync>) -> Self {
+        Self { storage }
+    }
+
+    /// Creates blocks in parallel by splitting the pending transactions into
+    /// fixed-size chunks.
+    pub fn create_blocks_parallel(
+        &self,
+        pending_txs: Vec<Transaction>,
+        max_txs_per_block: usize,
+        round: RoundId,
+        parent_ids: Vec<BlockId>,
+        proposer: ValidatorId,
+    ) -> Vec<Block> {
+        if pending_txs.is_empty() || max_txs_per_block == 0 {
+            return Vec::new();
+        }
+
+        let parent_ids = Arc::new(parent_ids);
+
+        let chunks: Vec<Vec<Transaction>> = pending_txs
+            .chunks(max_txs_per_block)
+            .map(|chunk| chunk.to_vec())
+            .collect();
+
+        chunks
+            .into_par_iter()
+            .map(|tx_chunk| Block::new((*parent_ids).clone(), tx_chunk, round, proposer))
+            .collect()
+    }
+
+    /// Validates a block by checking structural invariants and the confidential
+    /// proofs for every transaction in parallel.
+    #[allow(clippy::unused_self)]
+    pub fn validate_block_parallel(&self, block: &Block) -> ValidationResult {
+        let mut errors = Vec::new();
+
+        if !block.is_valid() {
+            errors.push("block structure invalid".to_string());
+        }
+
+        if let Err(err) = validate_confidential_block(block) {
+            errors.push(format!("confidential block validation failed: {err}"));
+        }
+
+        let tx_errors: Vec<String> = block
+            .transactions
+            .par_iter()
+            .enumerate()
+            .filter_map(|(idx, tx)| {
+                if !tx.is_valid() {
+                    return Some(format!("transaction #{idx} failed structural validation"));
+                }
+
+                if let Err(err) = validate_confidential_transaction(tx) {
+                    return Some(format!(
+                        "transaction #{idx} failed confidential validation: {err}"
+                    ));
+                }
+
+                None
+            })
+            .collect();
+
+        errors.extend(tx_errors);
+
+        if errors.is_empty() {
+            ValidationResult::Valid
+        } else {
+            ValidationResult::Invalid(errors)
+        }
+    }
+
+    /// Persists blocks concurrently using Tokio's blocking pool to isolate
+    /// storage writes from the async scheduler.
+    pub async fn persist_blocks_parallel(&self, blocks: Vec<Block>) {
+        let handles: Vec<_> = blocks
+            .into_iter()
+            .map(|block| {
+                let storage = Arc::clone(&self.storage);
+                spawn_blocking(move || storage.store_block(block))
+            })
+            .collect();
+
+        for handle in handles {
+            match handle.await {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => error!("Parallel persist error: {err:?}"),
+                Err(join_err) => error!("Parallel persist join error: {join_err}"),
+            }
+        }
+    }
+
+    /// Full end-to-end pipeline that creates, validates, and persists blocks
+    /// derived from the supplied transactions.
+    pub async fn process_pending_transactions(
+        &self,
+        pending_txs: Vec<Transaction>,
+        max_txs_per_block: usize,
+        round: RoundId,
+        parent_ids: Vec<BlockId>,
+        proposer: ValidatorId,
+    ) {
+        let blocks = self.create_blocks_parallel(
+            pending_txs,
+            max_txs_per_block,
+            round,
+            parent_ids,
+            proposer,
+        );
+
+        if blocks.is_empty() {
+            return;
+        }
+
+        let validated: Vec<(Block, ValidationResult)> = blocks
+            .into_par_iter()
+            .map(|block| {
+                let result = self.validate_block_parallel(&block);
+                (block, result)
+            })
+            .collect();
+
+        let mut valid_blocks = Vec::new();
+
+        for (block, result) in validated {
+            match result {
+                ValidationResult::Valid => valid_blocks.push(block),
+                ValidationResult::Invalid(errors) => {
+                    error!(
+                        "Invalid block {} skipped: {}",
+                        hex::encode(block.hash()),
+                        errors.join("; ")
+                    );
+                }
+            }
+        }
+
+        if !valid_blocks.is_empty() {
+            self.persist_blocks_parallel(valid_blocks).await;
+        }
+    }
 }
 
 #[cfg(test)]
