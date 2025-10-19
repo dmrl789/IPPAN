@@ -312,10 +312,14 @@ impl ParallelDag {
             self.ready.push(block_id);
         }
 
+        let was_ready = node.is_ready();
+        let mut missing_parents: Vec<_> = missing.into_iter().collect();
+        missing_parents.sort();
+
         Ok(InsertionOutcome {
             block_id,
-            missing_parents: missing.into_iter().collect(),
-            was_ready: node.is_ready(),
+            missing_parents,
+            was_ready,
         })
     }
 
