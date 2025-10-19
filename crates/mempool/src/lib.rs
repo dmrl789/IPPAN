@@ -2,7 +2,8 @@ use anyhow::Result;
 use ippan_crypto::validate_confidential_transaction;
 use ippan_types::Transaction;
 use parking_lot::RwLock;
-use std::collections::{BTreeMap, HashMap};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BinaryHeap, HashMap};
 use std::time::{Duration, Instant};
 
 /// Transaction metadata for mempool management
@@ -11,6 +12,30 @@ struct TransactionMeta {
     transaction: Transaction,
     added_at: Instant,
     fee: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BlockCandidate {
+    fee: u64,
+    added_at: Instant,
+    sender: String,
+    nonce: u64,
+    tx_hash: String,
+}
+
+impl Ord for BlockCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.fee
+            .cmp(&other.fee)
+            .then_with(|| other.added_at.cmp(&self.added_at))
+            .then_with(|| self.tx_hash.cmp(&other.tx_hash))
+    }
+}
+
+impl PartialOrd for BlockCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// Mempool for managing pending transactions
@@ -140,41 +165,84 @@ impl Mempool {
     /// Get transactions for block creation (up to max_count)
     /// Uses fee-based prioritization with proper nonce ordering
     pub fn get_transactions_for_block(&self, max_count: usize) -> Vec<Transaction> {
-        let transactions = self.transactions.read();
-
-        // Collect all transactions with their metadata
-        let mut all_transactions = Vec::new();
-        for (tx_hash, meta) in transactions.iter() {
-            all_transactions.push((tx_hash.clone(), meta.clone()));
+        if max_count == 0 {
+            return Vec::new();
         }
 
-        // Sort by fee (descending) then by age (ascending)
-        all_transactions
-            .sort_by(|a, b| b.1.fee.cmp(&a.1.fee).then(a.1.added_at.cmp(&b.1.added_at)));
+        let transactions = self.transactions.read();
+        let sender_nonces = self.sender_nonces.read();
+
+        let mut per_sender_entries: HashMap<String, Vec<(u64, String)>> = HashMap::new();
+        let mut next_index: HashMap<String, usize> = HashMap::new();
+        let mut heap = BinaryHeap::new();
+
+        for (sender, nonces) in sender_nonces.iter() {
+            let entries: Vec<(u64, String)> = nonces
+                .iter()
+                .map(|(&nonce, tx_hash)| (nonce, tx_hash.clone()))
+                .collect();
+
+            if let Some((nonce, tx_hash)) = entries.first() {
+                if let Some(meta) = transactions.get(tx_hash) {
+                    heap.push(BlockCandidate {
+                        fee: meta.fee,
+                        added_at: meta.added_at,
+                        sender: sender.clone(),
+                        nonce: *nonce,
+                        tx_hash: tx_hash.clone(),
+                    });
+                    per_sender_entries.insert(sender.clone(), entries);
+                    next_index.insert(sender.clone(), 1);
+                }
+            }
+        }
 
         let mut selected = Vec::new();
-        let mut used_senders: HashMap<String, u64> = HashMap::new();
+        let mut last_selected_nonce: HashMap<String, u64> = HashMap::new();
 
-        // Select transactions maintaining nonce order per sender
-        for (_, meta) in all_transactions {
-            if selected.len() >= max_count {
+        while selected.len() < max_count {
+            let Some(candidate) = heap.pop() else {
                 break;
-            }
-
-            let sender = hex::encode(meta.transaction.from);
-            let nonce = meta.transaction.nonce;
-
-            // Check if we can include this transaction based on nonce ordering
-            let can_include = if let Some(&last_nonce) = used_senders.get(&sender) {
-                nonce == last_nonce + 1
-            } else {
-                // First transaction from this sender - can start with any nonce
-                true
             };
 
-            if can_include {
-                selected.push(meta.transaction.clone());
-                used_senders.insert(sender, nonce);
+            if let Some(&last_nonce) = last_selected_nonce.get(&candidate.sender) {
+                if candidate.nonce != last_nonce + 1 {
+                    continue;
+                }
+            }
+
+            let Some(meta) = transactions.get(&candidate.tx_hash) else {
+                continue;
+            };
+
+            selected.push(meta.transaction.clone());
+            last_selected_nonce.insert(candidate.sender.clone(), candidate.nonce);
+
+            if let Some(entries) = per_sender_entries.get(&candidate.sender) {
+                if let Some(next_idx) = next_index.get_mut(&candidate.sender) {
+                    let mut idx = *next_idx;
+                    while idx < entries.len() {
+                        let (next_nonce, next_hash) = &entries[idx];
+                        if *next_nonce == candidate.nonce + 1 {
+                            if let Some(next_meta) = transactions.get(next_hash) {
+                                heap.push(BlockCandidate {
+                                    fee: next_meta.fee,
+                                    added_at: next_meta.added_at,
+                                    sender: candidate.sender.clone(),
+                                    nonce: *next_nonce,
+                                    tx_hash: next_hash.clone(),
+                                });
+                                idx += 1;
+                            }
+                            break;
+                        } else if *next_nonce <= candidate.nonce {
+                            idx += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    *next_idx = idx;
+                }
             }
         }
 
@@ -435,6 +503,29 @@ mod tests {
 
         // Should include transactions in nonce order
         assert!(sender_block_txs.len() >= 1);
+    }
+
+    #[test]
+    fn test_mempool_skips_nonce_gaps_until_contiguous() {
+        let mempool = Mempool::new(100);
+
+        let sender = [1u8; 32];
+        let tx1 = Transaction::new(sender, [2u8; 32], 1000, 1);
+        let tx2 = Transaction::new(sender, [3u8; 32], 3000, 3);
+        let tx3 = Transaction::new(sender, [4u8; 32], 2000, 2);
+
+        mempool.add_transaction(tx2.clone()).unwrap();
+        mempool.add_transaction(tx1.clone()).unwrap();
+        mempool.add_transaction(tx3.clone()).unwrap();
+
+        let nonces: Vec<_> = mempool
+            .get_transactions_for_block(3)
+            .into_iter()
+            .filter(|tx| tx.from == sender)
+            .map(|tx| tx.nonce)
+            .collect();
+
+        assert_eq!(nonces, vec![1, 2, 3]);
     }
 
     #[test]

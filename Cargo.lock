@@ -1779,6 +1779,7 @@ dependencies = [
  "anyhow",
  "blake3",
  "ed25519-dalek",
+ "either",
  "futures",
  "hex",
  "ippan-time",
