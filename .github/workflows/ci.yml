@@ -22,6 +22,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev protobuf-compiler
+
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -70,8 +76,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: apps/gateway/package-lock.json
 
       - name: Install dependencies
         run: |
