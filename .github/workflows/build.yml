@@ -47,7 +47,8 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=sha,prefix={{branch}}-
+            # Use a stable SHA tag that works for PRs and branches
+            type=sha,format=short
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
