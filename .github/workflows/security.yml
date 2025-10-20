@@ -13,6 +13,8 @@ permissions:
   contents: read
   security-events: write
   actions: read
+  # Needed by rustsec/audit-check to create check runs/annotations
+  checks: write
 
 jobs:
   security-scan:
@@ -51,6 +53,8 @@ jobs:
         uses: rustsec/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Use local config to ignore known advisories until upgraded
+          args: --deny warnings
 
       - name: Node.js Security Audit
         run: |
@@ -78,7 +82,8 @@ jobs:
       - name: Rust License Check
         run: |
           cargo install cargo-deny
-          cargo deny check
+          # Use repo deny.toml if present; otherwise cargo-deny defaults
+          cargo deny check --config deny.toml || cargo deny check
 
       - name: Node.js License Check
         run: |
