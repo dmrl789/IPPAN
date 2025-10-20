@@ -20,7 +20,7 @@ use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::{
-    self, ConnectionDenied, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
+    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
     SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
 };
 use libp2p::tcp;
@@ -41,19 +41,21 @@ const TIP_INTERVAL: Duration = Duration::from_secs(8);
 
 /// Messages distributed across the DAG gossip topic.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum GossipMsg {
-    /// Announces a tip hash that peers should track.
-    Tip([u8; 32]),
-    /// Broadcasts the full block so late-joining peers can catch up.
-    /// Each block carries its zk-STARK proof for deterministic verification.
-    Block {
-        block: Block,
-        stark_proof: Option<Vec<u8>>,
-    },
-}
+    #[allow(clippy::large_enum_variant)]
+    pub enum GossipMsg {
+        /// Announces a tip hash that peers should track.
+        Tip([u8; 32]),
+        /// Broadcasts the full block so late-joining peers can catch up.
+        /// Each block carries its zk-STARK proof for deterministic verification.
+        Block {
+            block: Block,
+            stark_proof: Option<Vec<u8>>,
+        },
+    }
 
 /// Events emitted by the combined DAG sync behaviour.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum DagEvent {
     Gossip(gsub::Event),
     Mdns(mdns::Event),
@@ -162,7 +164,7 @@ impl NetworkBehaviour for DagBehaviour {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-        self.gossip.on_swarm_event(event.clone());
+        self.gossip.on_swarm_event(event);
         self.mdns.on_swarm_event(event);
     }
 
@@ -245,7 +247,7 @@ impl DagSyncService {
             .subscribe(&topic)
             .context("failed to subscribe to DAG gossip topic")?;
 
-        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id.clone())
+        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)
             .context("failed to initialise mDNS discovery")?;
 
         let behaviour = DagBehaviour { gossip, mdns };
@@ -324,7 +326,11 @@ fn handle_gossip_event(
 
                     // TODO: integrate zk-STARK verification
                     if let Some(proof) = stark_proof {
-                        debug!("received zk-STARK proof of length {} for block {}", proof.len(), hex::encode(hash));
+                        debug!(
+                            "received zk-STARK proof of length {} for block {}",
+                            proof.len(),
+                            hex::encode(hash)
+                        );
                         // verify_stark_proof(block, proof)?;  <-- integrate verifier here
                     }
 

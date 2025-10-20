@@ -17,6 +17,7 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum GossipMessage {
     Block(Block),
     Transactions { id: String, txs: Vec<Value> },

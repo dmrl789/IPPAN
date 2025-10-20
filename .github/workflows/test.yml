@@ -20,6 +20,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
