@@ -324,7 +324,11 @@ fn handle_gossip_event(
 
                     // TODO: integrate zk-STARK verification
                     if let Some(proof) = stark_proof {
-                        debug!("received zk-STARK proof of length {} for block {}", proof.len(), hex::encode(hash));
+                        debug!(
+                            "received zk-STARK proof of length {} for block {}",
+                            proof.len(),
+                            hex::encode(hash)
+                        );
                         // verify_stark_proof(block, proof)?;  <-- integrate verifier here
                     }
 
