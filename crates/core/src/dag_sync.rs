@@ -20,7 +20,7 @@ use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::{
-    self, ConnectionDenied, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
+    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
     SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
 };
 use libp2p::tcp;
@@ -47,7 +47,7 @@ pub enum GossipMsg {
     /// Broadcasts the full block so late-joining peers can catch up.
     /// Each block carries its zk-STARK proof for deterministic verification.
     Block {
-        block: Block,
+        block: Box<Block>,
         stark_proof: Option<Vec<u8>>,
     },
 }
@@ -55,13 +55,13 @@ pub enum GossipMsg {
 /// Events emitted by the combined DAG sync behaviour.
 #[derive(Debug)]
 enum DagEvent {
-    Gossip(gsub::Event),
+    Gossip(Box<gsub::Event>),
     Mdns(mdns::Event),
 }
 
 impl From<gsub::Event> for DagEvent {
     fn from(event: gsub::Event) -> Self {
-        DagEvent::Gossip(event)
+        DagEvent::Gossip(Box::new(event))
     }
 }
 
@@ -162,7 +162,7 @@ impl NetworkBehaviour for DagBehaviour {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-        self.gossip.on_swarm_event(event.clone());
+        self.gossip.on_swarm_event(event);
         self.mdns.on_swarm_event(event);
     }
 
@@ -245,7 +245,7 @@ impl DagSyncService {
             .subscribe(&topic)
             .context("failed to subscribe to DAG gossip topic")?;
 
-        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id.clone())
+        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)
             .context("failed to initialise mDNS discovery")?;
 
         let behaviour = DagBehaviour { gossip, mdns };
@@ -268,7 +268,7 @@ impl DagSyncService {
                             info!("DAG sync listening on {address}");
                         }
                         SwarmEvent::Behaviour(DagEvent::Gossip(event)) => {
-                            if let Err(err) = handle_gossip_event(event, &dag, &mut seen) {
+                            if let Err(err) = handle_gossip_event(*event, &dag, &mut seen) {
                                 warn!("error handling gossip event: {err:?}");
                             }
                         }
@@ -324,7 +324,11 @@ fn handle_gossip_event(
 
                     // TODO: integrate zk-STARK verification
                     if let Some(proof) = stark_proof {
-                        debug!("received zk-STARK proof of length {} for block {}", proof.len(), hex::encode(hash));
+                        debug!(
+                            "received zk-STARK proof of length {} for block {}",
+                            proof.len(),
+                            hex::encode(hash)
+                        );
                         // verify_stark_proof(block, proof)?;  <-- integrate verifier here
                     }
 
@@ -371,7 +375,7 @@ fn broadcast_tips(
                 if seen.insert(hash) {
                     // TODO: generate zk-STARK proof before broadcasting
                     let stark_proof: Option<Vec<u8>> = None;
-                    let payload = serde_json::to_vec(&GossipMsg::Block { block, stark_proof })
+                    let payload = serde_json::to_vec(&GossipMsg::Block { block: Box::new(block), stark_proof })
                         .context("failed to serialize block gossip message")?;
                     if let Err(err) = gossip.publish(topic.clone(), payload) {
                         warn!("failed to publish block gossip: {err:?}");

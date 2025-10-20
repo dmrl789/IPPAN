@@ -52,6 +52,7 @@ struct HealthPayload {
 struct StatusPayload {
     version: Option<String>,
     #[serde(flatten)]
+    #[allow(dead_code)]
     extra: serde_json::Value,
 }
 
@@ -171,7 +172,7 @@ async fn check_node(
         fetch_json::<HealthPayload>(client, &health_url).await;
     report.health_status_code = health_code;
     if let Some(err) = health_error {
-        report.flag_error(format!("health: {}", err));
+        report.flag_error(format!("health: {err}"));
     }
     if let Some(payload) = health_payload {
         report.health_status = payload.status.clone();
@@ -186,7 +187,7 @@ async fn check_node(
         fetch_json::<StatusPayload>(client, &status_url).await;
     report.status_status_code = status_code;
     if let Some(err) = status_error {
-        report.flag_error(format!("status: {}", err));
+        report.flag_error(format!("status: {err}"));
     }
     if let Some(payload) = status_payload {
         if report.version.is_none() {
@@ -198,7 +199,7 @@ async fn check_node(
         fetch_json::<PeersPayload>(client, &peers_url).await;
     report.peers_status_code = peers_code;
     if let Some(err) = peers_error {
-        report.flag_error(format!("peers: {}", err));
+        report.flag_error(format!("peers: {err}"));
     }
     if let Some(payload) = peers_payload {
         let count = payload.peers.map(|p| p.len());
@@ -236,9 +237,8 @@ fn evaluate_connectivity(report: &mut NodeReport, require_peers: usize) {
     report.connected = health_ok && peers_ok;
 
     if !peers_ok {
-        report.add_message(format!(
-            "peer count below required minimum ({}) — reported={}, listed={}",
-            require_peers, reported, listed
+          report.add_message(format!(
+            "peer count below required minimum ({require_peers}) — reported={reported}, listed={listed}"
         ));
     }
 
@@ -282,7 +282,7 @@ where
                 Err(err) => (
                     Some(code),
                     None,
-                    Some(format!("failed to read body: {}", err)),
+                    Some(format!("failed to read body: {err}")),
                 ),
             }
         }
@@ -297,9 +297,9 @@ fn join_url(base: &str, path: &str) -> String {
     }
 
     if path.starts_with('/') {
-        format!("{}{}", trimmed, path)
+        format!("{trimmed}{path}")
     } else {
-        format!("{}/{}", trimmed, path)
+        format!("{trimmed}/{path}")
     }
 }
 
@@ -332,16 +332,16 @@ fn print_table(reports: &[NodeReport]) {
             report.peer_count_listed
         );
         if let Some(version) = &report.version {
-            println!("  Version: {}", version);
+            println!("  Version: {version}");
         }
         if let Some(node_id) = &report.node_id {
-            println!("  Node ID: {}", node_id);
+            println!("  Node ID: {node_id}");
         }
         for msg in &report.messages {
-            println!("  • {}", msg);
+            println!("  • {msg}");
         }
         for err in &report.errors {
-            println!("  ! {}", err);
+            println!("  ! {err}");
         }
         println!();
     }
