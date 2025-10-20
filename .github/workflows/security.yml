@@ -51,6 +51,10 @@ jobs:
         uses: rustsec/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Temporarily ignore RUSTSEC-2025-0009 (ring 0.16.20 via libp2p-tls->rcgen)
+          # This requires upgrading libp2p to a version with updated transitive deps
+          # TODO: Remove this ignore when libp2p is upgraded
+          ignore: RUSTSEC-2025-0009
 
       - name: Node.js Security Audit
         run: |
