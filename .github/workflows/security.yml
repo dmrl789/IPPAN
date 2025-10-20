@@ -49,12 +49,18 @@ jobs:
 
       - name: Rust Security Audit
         uses: rustsec/audit-check@v1
+        if: github.event_name != 'pull_request'
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - name: Node.js Security Audit
         run: |
           cd apps/gateway
+          npm install --no-audit --no-fund
           npm audit --audit-level=moderate --json > audit-results.json || true
 
       - name: Upload audit results
