@@ -24,6 +24,9 @@ COPY crates/p2p/Cargo.toml       crates/p2p/Cargo.toml
 COPY crates/rpc/Cargo.toml       crates/rpc/Cargo.toml
 COPY crates/storage/Cargo.toml   crates/storage/Cargo.toml
 COPY crates/types/Cargo.toml     crates/types/Cargo.toml
+COPY crates/core/Cargo.toml      crates/core/Cargo.toml
+COPY crates/network/Cargo.toml   crates/network/Cargo.toml
+COPY crates/time/Cargo.toml      crates/time/Cargo.toml
 COPY node/Cargo.toml             node/Cargo.toml
 
 # Create empty src to satisfy cargo before copying full sources
@@ -43,6 +46,10 @@ RUN mkdir -p \
     && echo "pub fn placeholder() {}" > crates/rpc/src/lib.rs \
     && echo "pub fn placeholder() {}" > crates/storage/src/lib.rs \
     && echo "pub fn placeholder() {}" > crates/types/src/lib.rs \
+    && mkdir -p crates/core/src crates/network/src crates/time/src \
+    && echo "pub fn placeholder() {}" > crates/core/src/lib.rs \
+    && echo "pub fn placeholder() {}" > crates/network/src/lib.rs \
+    && echo "pub fn placeholder() {}" > crates/time/src/lib.rs \
     && echo "fn main() {}" > node/src/main.rs
 
 # Fetch and build dependencies only (this layer will cache well)
