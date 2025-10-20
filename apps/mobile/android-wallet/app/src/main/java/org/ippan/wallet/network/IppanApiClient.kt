@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.ippan.wallet.security.CertificatePinner
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -30,11 +31,7 @@ class IppanApiClient(
     val activeNode: String
         get() = nodes[activeNodeIndex]
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(timeoutSeconds, TimeUnit.SECONDS)
-        .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
-        .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
-        .build()
+    private val client = CertificatePinner.createSecureClient(nodes, timeoutSeconds)
 
     private val json = Json {
         ignoreUnknownKeys = true

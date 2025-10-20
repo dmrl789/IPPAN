@@ -21,8 +21,8 @@ services:
       - LOG_LEVEL=info
       - LOG_FORMAT=json
     ports:
-      - "8080:8080"  # RPC API
-      - "9000:9000"  # P2P
+      - "0.0.0.0:8080:8080"  # RPC API
+      - "0.0.0.0:9000:9000"  # P2P
     volumes:
       - node1_data:/var/lib/ippan/db
     restart: unless-stopped
@@ -52,8 +52,8 @@ services:
       - LOG_LEVEL=info
       - LOG_FORMAT=json
     ports:
-      - "8080:8080"  # RPC API
-      - "9001:9001"  # P2P
+      - "0.0.0.0:8080:8080"  # RPC API
+      - "0.0.0.0:9001:9001"  # P2P
     volumes:
       - node2_data:/var/lib/ippan/db
     restart: unless-stopped

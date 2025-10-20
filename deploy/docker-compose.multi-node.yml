@@ -16,8 +16,8 @@ services:
         apt-get install -y --no-install-recommends -t bookworm libssl3 ca-certificates
         exec ippan-node
     ports:
-      - "8080:8080"  # RPC API
-      - "9000:9000"  # P2P
+      - "0.0.0.0:8080:8080"  # RPC API
+      - "0.0.0.0:9000:9000"  # P2P
     environment:
       - NODE_ID=node-1
       - RPC_HOST=0.0.0.0
@@ -55,8 +55,8 @@ services:
         apt-get install -y --no-install-recommends -t bookworm libssl3 ca-certificates
         exec ippan-node
     ports:
-      - "8081:8081"  # RPC API
-      - "9001:9001"  # P2P
+      - "0.0.0.0:8081:8081"  # RPC API
+      - "0.0.0.0:9001:9001"  # P2P
     environment:
       - NODE_ID=node-2
       - RPC_HOST=0.0.0.0
@@ -97,8 +97,8 @@ services:
         apt-get install -y --no-install-recommends -t bookworm libssl3 ca-certificates
         exec ippan-node
     ports:
-      - "8082:8082"  # RPC API
-      - "9002:9002"  # P2P
+      - "0.0.0.0:8082:8082"  # RPC API
+      - "0.0.0.0:9002:9002"  # P2P
     environment:
       - NODE_ID=node-3
       - RPC_HOST=0.0.0.0

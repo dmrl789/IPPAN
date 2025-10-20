@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cartera IPPAN</string>
+    
+    <!-- Navigation -->
+    <string name="nav_overview">Resumen</string>
+    <string name="nav_activity">Actividad</string>
+    <string name="nav_settings">Configuración</string>
+    
+    <!-- Wallet Overview -->
+    <string name="wallet_balance">Saldo de Cartera</string>
+    <string name="total_balance">Saldo Total</string>
+    <string name="last_sync">Última Sincronización</string>
+    <string name="active_node">Nodo Activo</string>
+    <string name="refresh_wallet">Actualizar Cartera</string>
+    <string name="send_tokens">Enviar Tokens</string>
+    
+    <!-- Send Form -->
+    <string name="send_tokens_title">Enviar Tokens</string>
+    <string name="to_address">Dirección Destino</string>
+    <string name="amount">Cantidad</string>
+    <string name="token_symbol">Token</string>
+    <string name="note_optional">Nota (opcional)</string>
+    <string name="send_now">Enviar Ahora</string>
+    <string name="cancel">Cancelar</string>
+    <string name="scan_qr_code">Escanear Código QR</string>
+    <string name="authenticating">Autenticando…</string>
+    <string name="sending">Enviando…</string>
+    
+    <!-- QR Scanner -->
+    <string name="qr_scanner_title">Escanear Código QR</string>
+    <string name="qr_scanner_instructions">Posiciona el código QR dentro del marco</string>
+    <string name="close_scanner">Cerrar Escáner</string>
+    <string name="toggle_flash">Alternar Flash</string>
+    <string name="flash_on">Encender flash</string>
+    <string name="flash_off">Apagar flash</string>
+    
+    <!-- Biometric Authentication -->
+    <string name="biometric_auth_title">Autenticar</string>
+    <string name="biometric_auth_subtitle">Usa tu biometría para acceder a tu cartera</string>
+    <string name="biometric_auth_transaction_title">Firmar Transacción</string>
+    <string name="biometric_auth_transaction_subtitle">Usa tu biometría para firmar esta transacción</string>
+    <string name="biometric_auth_cancel">Cancelar</string>
+    
+    <!-- Error Messages -->
+    <string name="error_network">Error de Red</string>
+    <string name="error_network_message">No se puede conectar a la red. Por favor verifica tu conexión a internet.</string>
+    <string name="error_authentication">Autenticación Fallida</string>
+    <string name="error_authentication_message">La autenticación biométrica falló. Por favor intenta de nuevo.</string>
+    <string name="error_transaction">Transacción Fallida</string>
+    <string name="error_transaction_message">No se puede enviar la transacción. Por favor verifica los detalles e intenta de nuevo.</string>
+    <string name="error_insufficient_funds">Fondos Insuficientes</string>
+    <string name="error_insufficient_funds_message">No tienes suficientes tokens para completar esta transacción.</string>
+    <string name="error_invalid_address">Dirección Inválida</string>
+    <string name="error_invalid_address_message">La dirección del destinatario no es válida.</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">Configuración</string>
+    <string name="settings_security">Seguridad</string>
+    <string name="settings_network">Red</string>
+    <string name="settings_about">Acerca de</string>
+    <string name="settings_biometric_enabled">Autenticación Biométrica</string>
+    <string name="settings_biometric_description">Usar huella dactilar o reconocimiento facial para transacciones</string>
+    <string name="settings_node_endpoint">Endpoint del Nodo</string>
+    <string name="settings_version">Versión</string>
+    
+    <!-- Transaction Types -->
+    <string name="transaction_send">Enviar</string>
+    <string name="transaction_receive">Recibir</string>
+    <string name="transaction_pending">Pendiente</string>
+    <string name="transaction_confirmed">Confirmado</string>
+    <string name="transaction_failed">Fallido</string>
+    
+    <!-- Accessibility -->
+    <string name="content_description_wallet_icon">Icono de Cartera</string>
+    <string name="content_description_send_button">Botón Enviar Tokens</string>
+    <string name="content_description_refresh_button">Botón Actualizar Cartera</string>
+    <string name="content_description_qr_scanner">Escáner de Código QR</string>
+    <string name="content_description_close_button">Botón Cerrar</string>
+    <string name="content_description_flash_toggle">Botón Alternar Flash</string>
+    
+    <!-- Loading States -->
+    <string name="loading_wallet">Cargando cartera…</string>
+    <string name="loading_transactions">Cargando transacciones…</string>
+    <string name="loading_balance">Cargando saldo…</string>
+    
+    <!-- Success Messages -->
+    <string name="transaction_sent">Transacción enviada exitosamente</string>
+    <string name="wallet_refreshed">Cartera actualizada</string>
+    <string name="biometric_enabled">Autenticación biométrica habilitada</string>
+    <string name="biometric_disabled">Autenticación biométrica deshabilitada</string>
+    
+    <!-- Empty States -->
+    <string name="no_transactions">No hay transacciones aún</string>
+    <string name="no_transactions_description">Tu historial de transacciones aparecerá aquí</string>
+    <string name="no_tokens">No se encontraron tokens</string>
+    <string name="no_tokens_description">Agrega tokens a tu cartera para comenzar</string>
+</resources>

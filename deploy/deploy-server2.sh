@@ -47,7 +47,7 @@ services:
       - LOG_FORMAT=json
     ports:
       - "0.0.0.0:9001:9001"
-      - "127.0.0.1:8081:8081"
+      - "0.0.0.0:8081:8081"
     volumes:
       - ./data:/data
       - ./logs:/logs

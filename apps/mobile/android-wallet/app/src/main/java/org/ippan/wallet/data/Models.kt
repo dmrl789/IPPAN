@@ -35,3 +35,78 @@ data class WalletSnapshot(
     val lastSync: Instant,
     val activeNode: String
 )
+
+// TransferRequest lives in WalletRepository.kt to avoid duplicate declarations
+
+/** Comprehensive error handling for wallet operations */
+data class WalletError(
+    val title: String,
+    val message: String,
+    val severity: Severity,
+    val suggestion: String? = null,
+    val isRetryable: Boolean = true,
+    val errorCode: String? = null
+) {
+    enum class Severity {
+        INFO, WARNING, ERROR
+    }
+    
+    companion object {
+        fun networkError(message: String): WalletError {
+            return WalletError(
+                title = "Network Error",
+                message = message,
+                severity = Severity.ERROR,
+                suggestion = "Check your internet connection and try again",
+                isRetryable = true,
+                errorCode = "NETWORK_ERROR"
+            )
+        }
+        
+        fun authenticationError(message: String): WalletError {
+            return WalletError(
+                title = "Authentication Failed",
+                message = message,
+                severity = Severity.ERROR,
+                suggestion = "Please try authenticating again",
+                isRetryable = true,
+                errorCode = "AUTH_ERROR"
+            )
+        }
+        
+        fun transactionError(message: String): WalletError {
+            return WalletError(
+                title = "Transaction Failed",
+                message = message,
+                severity = Severity.ERROR,
+                suggestion = "Check the recipient address and try again",
+                isRetryable = true,
+                errorCode = "TX_ERROR"
+            )
+        }
+        
+        fun insufficientFundsError(required: Double, available: Double): WalletError {
+            return WalletError(
+                title = "Insufficient Funds",
+                message = "You need ${required} tokens but only have ${available}",
+                severity = Severity.ERROR,
+                suggestion = "Add more tokens to your wallet or reduce the amount",
+                isRetryable = false,
+                errorCode = "INSUFFICIENT_FUNDS"
+            )
+        }
+        
+        fun invalidAddressError(address: String): WalletError {
+            return WalletError(
+                title = "Invalid Address",
+                message = "The address '$address' is not valid",
+                severity = Severity.ERROR,
+                suggestion = "Please check the address and try again",
+                isRetryable = false,
+                errorCode = "INVALID_ADDRESS"
+            )
+        }
+    }
+}
+
+// WalletRepository interface lives in WalletRepository.kt to avoid duplicates

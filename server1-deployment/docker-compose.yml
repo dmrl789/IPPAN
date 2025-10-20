@@ -1,0 +1,30 @@
+services:
+  ippan:
+    image: ghcr.io/dmrl789/ippan:latest
+    container_name: ippan
+    restart: unless-stopped
+    env_file: /opt/ippan/.env
+    ports:
+      - "7070:7070"
+    volumes:
+      - /opt/ippan/data:/var/lib/ippan
+    command: []
+    networks:
+      - ippannet
+
+  edge:
+    image: nginx:alpine
+    container_name: ippan-edge
+    restart: unless-stopped
+    depends_on:
+      - ippan
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - ippannet
+
+networks:
+  ippannet:
+    driver: bridge

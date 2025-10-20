@@ -1,5 +1,7 @@
 package org.ippan.wallet
 
+import android.content.Context
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +13,7 @@ import org.ippan.wallet.data.TokenBalance
 import org.ippan.wallet.data.TransferRequest
 import org.ippan.wallet.data.WalletRepository
 import org.ippan.wallet.data.WalletTransaction
+import org.ippan.wallet.security.BiometricAuthManager
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -44,11 +47,13 @@ data class SendFormState(
     val symbol: String = "IPP",
     val note: String = "",
     val isSubmitting: Boolean = false,
+    val isAuthenticating: Boolean = false,
     val error: String? = null
 )
 
 class WalletViewModel(
-    private val repository: WalletRepository
+    private val repository: WalletRepository,
+    private val biometricAuthManager: BiometricAuthManager? = null
 ) : ViewModel() {
 
     private val _uiState: MutableStateFlow<WalletUiState> = MutableStateFlow(WalletUiState.Loading)
@@ -107,7 +112,7 @@ class WalletViewModel(
         _sendFormState.value = _sendFormState.value.copy(note = note)
     }
 
-    fun submitTransfer() {
+    fun submitTransfer(activity: FragmentActivity? = null) {
         val state = _sendFormState.value
         val amount = state.amount.toDoubleOrNull()
         if (state.toAddress.isBlank()) {
@@ -122,6 +127,23 @@ class WalletViewModel(
         _sendFormState.value = state.copy(isSubmitting = true, error = null)
         viewModelScope.launch {
             try {
+                // Check if biometric authentication is required and available
+                if (biometricAuthManager?.isBiometricAvailable() == true && activity != null) {
+                    _sendFormState.value = state.copy(isAuthenticating = true, isSubmitting = false)
+                    
+                    val authResult = biometricAuthManager.authenticateForTransaction(activity)
+                    if (authResult.isFailure) {
+                        _sendFormState.value = state.copy(
+                            isAuthenticating = false,
+                            isSubmitting = false,
+                            error = "Authentication failed. Please try again."
+                        )
+                        return@launch
+                    }
+                    
+                    _sendFormState.value = state.copy(isAuthenticating = false, isSubmitting = true)
+                }
+
                 repository.submitTransfer(
                     TransferRequest(
                         toAddress = state.toAddress,
@@ -145,6 +167,7 @@ class WalletViewModel(
             } catch (ex: Exception) {
                 _sendFormState.value = state.copy(
                     isSubmitting = false,
+                    isAuthenticating = false,
                     error = ex.message ?: "Failed to submit transaction"
                 )
             }
@@ -171,12 +194,13 @@ class WalletViewModel(
 }
 
 class WalletViewModelFactory(
-    private val repositoryProvider: () -> WalletRepository
+    private val repositoryProvider: () -> WalletRepository,
+    private val biometricAuthManager: BiometricAuthManager? = null
 ) : androidx.lifecycle.ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(WalletViewModel::class.java)) {
-            return WalletViewModel(repositoryProvider()) as T
+            return WalletViewModel(repositoryProvider(), biometricAuthManager) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }

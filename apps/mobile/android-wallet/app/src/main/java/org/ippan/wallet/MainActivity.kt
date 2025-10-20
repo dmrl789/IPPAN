@@ -2,7 +2,7 @@ package org.ippan.wallet
 
 import android.content.Context
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,7 +24,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSnackbarHostState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +49,7 @@ import org.ippan.wallet.data.ProductionWalletRepository
 import org.ippan.wallet.R
 import org.ippan.wallet.crypto.CryptoUtils
 import org.ippan.wallet.network.IppanApiClient
+import org.ippan.wallet.security.BiometricAuthManager
 import org.ippan.wallet.security.SecureKeyStorage
 import org.ippan.wallet.ui.components.ActivityScreen
 import org.ippan.wallet.ui.components.OverviewScreen
@@ -56,7 +57,7 @@ import org.ippan.wallet.ui.components.SendTokenSheet
 import org.ippan.wallet.ui.components.SettingsScreen
 import org.ippan.wallet.ui.theme.IppanWalletTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { IppanWalletApp() }
@@ -74,6 +75,7 @@ enum class WalletDestination(val route: String, val label: String) {
 fun IppanWalletApp() {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext as Context }
+    val activity = remember(context) { context as? FragmentActivity }
     val nodeEndpoints = remember(appContext) {
         val configured = (appContext.resources.getStringArray(R.array.ippan_nodes))
             .map { it.trim().trimEnd('/') }
@@ -87,8 +89,11 @@ fun IppanWalletApp() {
             cryptoUtils = CryptoUtils
         )
     }
+    val biometricAuthManager = remember(appContext) {
+        BiometricAuthManager(appContext)
+    }
     val viewModel: WalletViewModel = viewModel(
-        factory = WalletViewModelFactory { repository }
+        factory = WalletViewModelFactory({ repository }, biometricAuthManager)
     )
 
     IppanWalletTheme {
@@ -96,7 +101,7 @@ fun IppanWalletApp() {
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentDestination = navBackStackEntry?.destination
 
-        val snackbarHostState: SnackbarHostState = rememberSnackbarHostState()
+        val snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
         val sendForm by viewModel.sendFormState.collectAsStateWithLifecycle()
 
@@ -188,7 +193,7 @@ fun IppanWalletApp() {
             SendTokenSheet(
                 state = sendForm,
                 onDismiss = { isSendSheetVisible = false },
-                onSubmit = viewModel::submitTransfer,
+                onSubmit = { viewModel.submitTransfer(activity) },
                 onAmountChange = viewModel::updateAmount,
                 onAddressChange = viewModel::updateToAddress,
                 onNoteChange = viewModel::updateNote,

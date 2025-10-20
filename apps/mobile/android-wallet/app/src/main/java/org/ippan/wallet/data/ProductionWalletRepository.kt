@@ -17,7 +17,8 @@ import java.time.Instant
 class ProductionWalletRepository(
     private val apiClient: IppanApiClient,
     private val secureStorage: SecureKeyStorage,
-    private val cryptoUtils: CryptoUtils
+    private val cryptoUtils: CryptoUtils,
+    private val fiatConversionService: FiatConversionService = FiatConversionService()
 ) : WalletRepository {
     
     private val state = MutableStateFlow(createInitialState())
@@ -48,12 +49,27 @@ class ProductionWalletRepository(
             throw IllegalStateException("Failed to fetch transactions", error)
         }
 
+        // Get real fiat conversion rate
+        val fiatRate = fiatConversionService.getExchangeRate(
+            fromCurrency = balanceResponse.currency,
+            toCurrency = "USD"
+        ).getOrElse { 
+            // Fallback to placeholder if conversion fails
+            ExchangeRate(
+                from = balanceResponse.currency,
+                to = "USD", 
+                rate = FIAT_PLACEHOLDER_MULTIPLIER,
+                timestamp = System.currentTimeMillis(),
+                source = "fallback"
+            )
+        }
+
         val tokens = listOf(
             TokenBalance(
                 symbol = balanceResponse.currency,
                 name = "IPPAN Token",
                 balance = balanceResponse.balance,
-                fiatValue = balanceResponse.balance * FIAT_PLACEHOLDER_MULTIPLIER
+                fiatValue = balanceResponse.balance * fiatRate.rate
             )
         )
 
