@@ -144,3 +144,6 @@ temp/
 *.njsproj
 *.sln
 *.sw?
+
+# Gateway package-lock is tracked
+!apps/gateway/package-lock.json
