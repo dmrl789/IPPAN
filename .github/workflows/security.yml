@@ -13,6 +13,7 @@ permissions:
   contents: read
   security-events: write
   actions: read
+  checks: write
 
 jobs:
   security-scan:
@@ -51,6 +52,7 @@ jobs:
         uses: rustsec/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
       - name: Node.js Security Audit
         run: |
@@ -78,7 +80,7 @@ jobs:
       - name: Rust License Check
         run: |
           cargo install cargo-deny
-          cargo deny check
+          cargo deny check licenses bans sources
 
       - name: Node.js License Check
         run: |

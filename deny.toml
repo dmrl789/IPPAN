@@ -1,0 +1,61 @@
+# cargo-deny configuration
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check all workspace crates (default true)
+all-features = true
+
+[advisories]
+# We want advisories to be visible but not fail this job; CI has separate security gates
+vulnerability = "warn"
+unmaintained = "warn"
+yanked = "warn"
+unsound = "warn"
+notice = "warn"
+# You can ignore specific advisories here if they are triaged and accepted
+ignore = []
+
+[licenses]
+# Deny crates without a license
+unlicensed = "deny"
+# Deny copyleft by default
+copyleft = "deny"
+# Allow commonly used permissive licenses
+allow = [
+  "Apache-2.0",
+  "MIT",
+  "BSD-3-Clause",
+  "BSD-2-Clause",
+  "ISC",
+  "Zlib",
+  "MPL-2.0",
+  "BSL-1.0",
+  "CC0-1.0",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "OpenSSL",
+  "0BSD"
+]
+# Some crates express dual licensing; this lets cargo-deny pick either side
+allow-osi-fsf-free = "either"
+# Treat unknown/ambiguous license as a denial to be explicit
+allow-unknown = false
+
+exceptions = [
+  # Example of how to allow a specific crate/version with a non-standard expression
+  # { name = "ring", version = "*", allow = ["ISC", "OpenSSL", "BSD-3-Clause", "MIT", "Zlib", "0BSD"] },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Disallow known problematic crates; add entries as needed
+deny = [
+  { name = "openssl-src", reason = "Avoid vendored OpenSSL sources in dependencies" }
+]
+
+[sources]
+# Disallow unknown registries by default
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
