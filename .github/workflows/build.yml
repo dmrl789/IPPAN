@@ -45,9 +45,11 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
+            # Branch builds: ghcr.io/...:<branch>-<sha7>
             type=ref,event=branch
-            type=ref,event=pr
             type=sha,prefix={{branch}}-
+            # PR builds: ghcr.io/...:pr-<pr>-<sha7>
+            type=ref,event=pr
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
