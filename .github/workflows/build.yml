@@ -20,11 +20,11 @@ jobs:
           - name: ippan
             path: .
             dockerfile: Dockerfile
-            image: ghcr.io/${{ github.repository }}/ippan
+            image: ghcr.io/${{ github.repository_owner }}/ippan
           - name: gateway
             path: apps/gateway
             dockerfile: Dockerfile
-            image: ghcr.io/${{ github.repository }}/gateway
+            image: ghcr.io/${{ github.repository_owner }}/gateway
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=sha,prefix={{branch}}-
+            type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
