@@ -656,7 +656,7 @@ mod tests {
     }
 
     fn build_block(rng: &mut StdRng, round: RoundId, parents: Vec<BlockId>) -> (Block, BlockId) {
-        let tx = build_transaction(rng, round as u64 + 1);
+        let tx = build_transaction(rng, round + 1);
         let creator = random_validator(rng);
         let block = Block::new(parents, vec![tx], round, creator);
         let id = block.hash();
@@ -711,7 +711,7 @@ mod tests {
         let mut handles = Vec::new();
         for round in 2..6 {
             let dag_clone = dag.clone();
-            let mut local_rng = StdRng::seed_from_u64(round as u64 * 11);
+            let mut local_rng = StdRng::seed_from_u64(round * 11);
             let parent_id_copy = parent_id;
             handles.push(thread::spawn(move || {
                 let (block, _) = build_block(&mut local_rng, round, vec![parent_id_copy]);
