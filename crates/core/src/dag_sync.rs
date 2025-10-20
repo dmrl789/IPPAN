@@ -20,8 +20,8 @@ use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::{
-    self, ConnectionDenied, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
-    SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
+    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm,
+    NetworkBehaviour, SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
 };
 use libp2p::tcp;
 use libp2p::yamux;
@@ -324,7 +324,11 @@ fn handle_gossip_event(
 
                     // TODO: integrate zk-STARK verification
                     if let Some(proof) = stark_proof {
-                        debug!("received zk-STARK proof of length {} for block {}", proof.len(), hex::encode(hash));
+                        debug!(
+                            "received zk-STARK proof of length {} for block {}",
+                            proof.len(),
+                            hex::encode(hash)
+                        );
                         // verify_stark_proof(block, proof)?;  <-- integrate verifier here
                     }
 
