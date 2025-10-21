@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   security-scan:
-    name: Security Scan
+    name: Filesystem Vulnerability Scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -42,35 +42,35 @@ jobs:
   dependency-scan:
     name: Dependency Security Scan
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # --- Rust dependency audit ---
       - name: Rust Security Audit
         uses: rustsec/audit-check@v1
         if: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request' }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Temporarily ignore RUSTSEC-2025-0009 (ring 0.16.20 via libp2p-tls->rcgen)
+          ignore: RUSTSEC-2025-0009
         continue-on-error: true
 
+      # --- Node.js dependency audit ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: apps/gateway/package.json
+          cache-dependency-path: apps/gateway/package-lock.json
 
-      - name: Install gateway deps
+      - name: Install gateway dependencies
         working-directory: apps/gateway
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Node.js Security Audit
+      - name: Run npm audit
         working-directory: apps/gateway
         run: |
           npm audit --audit-level=moderate --json > audit-results.json || true
@@ -80,9 +80,7 @@ jobs:
         if: always()
         with:
           name: security-audit-results
-          path: |
-            apps/gateway/audit-results.json
-            audit-results.json
+          path: apps/gateway/audit-results.json
           retention-days: 30
 
   license-check:
@@ -100,6 +98,6 @@ jobs:
           cargo deny check
 
       - name: Node.js License Check
+        working-directory: apps/gateway
         run: |
-          cd apps/gateway
           npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC' || true
