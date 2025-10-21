@@ -20,7 +20,7 @@ use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::{
-    self, ConnectionDenied, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
+    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
     SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
 };
 use libp2p::tcp;

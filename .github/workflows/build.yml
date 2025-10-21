@@ -39,15 +39,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sanitize branch name
+        id: branch
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+          echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
+          echo "Original: $BRANCH_NAME"
+          echo "Sanitized: $SANITIZED_BRANCH"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix={{branch}}-
+            type=raw,value=${{ steps.branch.outputs.branch }}-{{sha}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
