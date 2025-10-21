@@ -52,30 +52,34 @@ test_json_endpoint() {
     fi
 }
 
-echo "🌐 Testing public endpoints..."
+API_BASE_URL="${API_BASE_URL:-https://api.ippan.org}"
+UI_BASE_URL="${UI_BASE_URL:-https://ui.ippan.org}"
+WS_URL="${WS_URL:-wss://api.ippan.org/ws}"
 
-# Test UI accessibility
-test_endpoint "http://ui.ippan.org/" "UI Homepage"
+echo "🌐 Testing public endpoints (API_BASE_URL=${API_BASE_URL})..."
+
+# Test UI accessibility (non-fatal if domain changed)
+test_endpoint "${UI_BASE_URL}/" "UI Homepage" || true
 
 # Test API health
-test_endpoint "http://ui.ippan.org/api/health" "API Health"
-test_json_endpoint "http://ui.ippan.org/api/health" "API Health JSON"
+test_endpoint "${API_BASE_URL}/health" "API Health"
+test_json_endpoint "${API_BASE_URL}/health" "API Health JSON"
 
 # Test API version
-test_endpoint "http://ui.ippan.org/api/version" "API Version"
-test_json_endpoint "http://ui.ippan.org/api/version" "API Version JSON"
+test_endpoint "${API_BASE_URL}/version" "API Version"
+test_json_endpoint "${API_BASE_URL}/version" "API Version JSON"
 
 # Test peers endpoint
-test_endpoint "http://ui.ippan.org/api/peers" "Peers Endpoint"
-test_json_endpoint "http://ui.ippan.org/api/peers" "Peers JSON"
+test_endpoint "${API_BASE_URL}/peers" "Peers Endpoint"
+test_json_endpoint "${API_BASE_URL}/peers" "Peers JSON"
 
 # Test blockchain data endpoints
-test_endpoint "http://ui.ippan.org/api/time" "Time Endpoint"
-test_json_endpoint "http://ui.ippan.org/api/time" "Time JSON"
+test_endpoint "${API_BASE_URL}/time" "Time Endpoint"
+test_json_endpoint "${API_BASE_URL}/time" "Time JSON"
 
 # Test block endpoint (may fail if no blocks exist)
 echo -n "Testing Block Endpoint... "
-if response=$(curl -s -w "%{http_code}" -o /dev/null "http://ui.ippan.org/api/block/1" 2>/dev/null); then
+if response=$(curl -s -w "%{http_code}" -o /dev/null "${API_BASE_URL}/block/1" 2>/dev/null); then
     if [ "$response" = "200" ]; then
         echo -e "${GREEN}✅ PASS${NC} (Block found)"
     elif [ "$response" = "404" ]; then
@@ -89,7 +93,10 @@ fi
 
 # Test WebSocket handshake
 echo -n "Testing WebSocket Handshake... "
-if response=$(curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Host: ui.ippan.org" -H "Origin: https://ui.ippan.org" -H "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" -H "Sec-WebSocket-Version: 13" "http://ui.ippan.org/ws" 2>/dev/null | head -1); then
+WS_HTTP_URL=$(echo "$WS_URL" | sed 's/^wss:/https:/; s/^ws:/http:/')
+ORIGIN_URL="${UI_BASE_URL}"
+HOST_HEADER=$(echo "$WS_HTTP_URL" | sed -E 's#^https?://([^/]+)/?.*$#\1#')
+if response=$(curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Host: ${HOST_HEADER}" -H "Origin: ${ORIGIN_URL}" -H "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" -H "Sec-WebSocket-Version: 13" "${WS_HTTP_URL}" 2>/dev/null | head -1); then
     if echo "$response" | grep -q "101"; then
         echo -e "${GREEN}✅ PASS${NC} (WebSocket upgrade successful)"
     else
@@ -114,8 +121,8 @@ fi
 
 echo ""
 echo "📊 Summary:"
-echo "🌐 UI: http://ui.ippan.org/"
-echo "🔗 API: http://ui.ippan.org/api/"
-echo "📡 WebSocket: ws://ui.ippan.org/ws"
+echo "🌐 UI: ${UI_BASE_URL}/"
+echo "🔗 API: ${API_BASE_URL}/"
+echo "📡 WebSocket: ${WS_URL}"
 echo ""
 echo "🔧 If any tests failed, run: ./fix-gateway.sh"

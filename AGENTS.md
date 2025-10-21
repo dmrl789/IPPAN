@@ -149,9 +149,9 @@ This section defines **manual commands** and the **`/gateway-check`** automation
 
 ```
 NEXT_PUBLIC_ENABLE_FULL_UI=1
-NEXT_PUBLIC_GATEWAY_URL=https://ui.ippan.org/api
-NEXT_PUBLIC_API_BASE_URL=https://ui.ippan.org/api
-NEXT_PUBLIC_WS_URL=wss://ui.ippan.org/ws
+NEXT_PUBLIC_GATEWAY_URL=https://api.ippan.org
+NEXT_PUBLIC_API_BASE_URL=https://api.ippan.org
+NEXT_PUBLIC_WS_URL=wss://api.ippan.org/ws
 GATEWAY_ALLOWED_ORIGINS=https://ui.ippan.org
 ```
 
@@ -199,11 +199,11 @@ uptime
 curl -sS -I "https://ui.ippan.org/"
 
 # Gateway/API front door
-curl -sS -I "https://ui.ippan.org/api/"
-curl -sS    "https://ui.ippan.org/api/health" || true
+curl -sS -I "https://api.ippan.org/"
+curl -sS    "https://api.ippan.org/health" || true
 
 # TLS certificate expiry
-echo | openssl s_client -servername ui.ippan.org -connect ui.ippan.org:443 2>/dev/null \
+echo | openssl s_client -servername api.ippan.org -connect api.ippan.org:443 2>/dev/null \
   | openssl x509 -noout -dates
 ```
 
@@ -217,18 +217,18 @@ echo | openssl s_client -servername ui.ippan.org -connect ui.ippan.org:443 2>/de
 curl -i -N \
   -H "Connection: Upgrade" \
   -H "Upgrade: websocket" \
-  -H "Host: ui.ippan.org" \
+  -H "Host: api.ippan.org" \
   -H "Origin: https://ui.ippan.org" \
   -H "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" \
   -H "Sec-WebSocket-Version: 13" \
-  "https://ui.ippan.org/ws"
+  "https://api.ippan.org/ws"
 ```
 
 **End-to-end (if `websocat` installed):**
 
 ```bash
 # Should connect and allow sending/receiving small ping messages
-websocat -t wss://ui.ippan.org/ws
+websocat -t wss://api.ippan.org/ws
 ```
 
 ### 7.5 Fast restart & recovery
@@ -261,8 +261,8 @@ When you comment **`/gateway-check`** on a PR/Issue:
 3. **Public checks**:
 
    * `https://ui.ippan.org/` returns 200/304.
-   * `https://ui.ippan.org/api/` returns 200/3xx (not 4xx/5xx).
-   * (If enabled) attempts WS handshake to `wss://ui.ippan.org/ws` and expects **101**.
+   * `https://api.ippan.org/` returns 200/3xx (not 4xx/5xx).
+   * (If enabled) attempts WS handshake to `wss://api.ippan.org/ws` and expects **101**.
 4. **Outputs** a short report in the PR comment with pass/fail and next steps.
 
 **Pass criteria** (all true):
@@ -306,9 +306,9 @@ When you comment **`/gateway-check`** on a PR/Issue:
 
    ```
    NEXT_PUBLIC_ENABLE_FULL_UI=1
-   NEXT_PUBLIC_GATEWAY_URL=https://ui.ippan.org/api
-   NEXT_PUBLIC_API_BASE_URL=https://ui.ippan.org/api
-   NEXT_PUBLIC_WS_URL=wss://ui.ippan.org/ws
+   NEXT_PUBLIC_GATEWAY_URL=https://api.ippan.org
+   NEXT_PUBLIC_API_BASE_URL=https://api.ippan.org
+   NEXT_PUBLIC_WS_URL=wss://api.ippan.org/ws
    ```
 3. `/restart ui` then verify `/api` and `/ws` in browser network tab.
 
