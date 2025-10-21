@@ -20,8 +20,8 @@ use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::{
-    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
-    SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
+    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm,
+    NetworkBehaviour, SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
 };
 use libp2p::tcp;
 use libp2p::yamux;
@@ -41,29 +41,29 @@ const TIP_INTERVAL: Duration = Duration::from_secs(8);
 
 /// Messages distributed across the DAG gossip topic.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    #[allow(clippy::large_enum_variant)]
-    pub enum GossipMsg {
-        /// Announces a tip hash that peers should track.
-        Tip([u8; 32]),
-        /// Broadcasts the full block so late-joining peers can catch up.
-        /// Each block carries its zk-STARK proof for deterministic verification.
-        Block {
-            block: Block,
-            stark_proof: Option<Vec<u8>>,
-        },
-    }
+#[allow(clippy::large_enum_variant)]
+pub enum GossipMsg {
+    /// Announces a tip hash that peers should track.
+    Tip([u8; 32]),
+    /// Broadcasts the full block so late-joining peers can catch up.
+    /// Each block carries its zk-STARK proof for deterministic verification.
+    Block {
+        block: Box<Block>,
+        stark_proof: Option<Vec<u8>>,
+    },
+}
 
 /// Events emitted by the combined DAG sync behaviour.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 enum DagEvent {
-    Gossip(gsub::Event),
+    Gossip(Box<gsub::Event>),
     Mdns(mdns::Event),
 }
 
 impl From<gsub::Event> for DagEvent {
     fn from(event: gsub::Event) -> Self {
-        DagEvent::Gossip(event)
+        DagEvent::Gossip(Box::new(event))
     }
 }
 
@@ -270,7 +270,7 @@ impl DagSyncService {
                             info!("DAG sync listening on {address}");
                         }
                         SwarmEvent::Behaviour(DagEvent::Gossip(event)) => {
-                            if let Err(err) = handle_gossip_event(event, &dag, &mut seen) {
+                            if let Err(err) = handle_gossip_event(*event, &dag, &mut seen) {
                                 warn!("error handling gossip event: {err:?}");
                             }
                         }
@@ -377,8 +377,11 @@ fn broadcast_tips(
                 if seen.insert(hash) {
                     // TODO: generate zk-STARK proof before broadcasting
                     let stark_proof: Option<Vec<u8>> = None;
-                    let payload = serde_json::to_vec(&GossipMsg::Block { block, stark_proof })
-                        .context("failed to serialize block gossip message")?;
+                    let payload = serde_json::to_vec(&GossipMsg::Block {
+                        block: Box::new(block),
+                        stark_proof,
+                    })
+                    .context("failed to serialize block gossip message")?;
                     if let Err(err) = gossip.publish(topic.clone(), payload) {
                         warn!("failed to publish block gossip: {err:?}");
                     }

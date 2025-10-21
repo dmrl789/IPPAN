@@ -137,12 +137,13 @@ async fn main() -> anyhow::Result<()> {
         print_table(&reports);
     }
 
-    let mut exit_code = 0;
-    if reports.iter().any(|r| !r.healthy) {
-        exit_code = 1;
+    let exit_code = if reports.iter().any(|r| !r.healthy) {
+        1
     } else if reports.iter().any(|r| !r.connected) {
-        exit_code = 2;
-    }
+        2
+    } else {
+        0
+    };
 
     if exit_code == 0 {
         Ok(())
@@ -237,7 +238,7 @@ fn evaluate_connectivity(report: &mut NodeReport, require_peers: usize) {
     report.connected = health_ok && peers_ok;
 
     if !peers_ok {
-          report.add_message(format!(
+        report.add_message(format!(
             "peer count below required minimum ({require_peers}) — reported={reported}, listed={listed}"
         ));
     }
@@ -295,7 +296,6 @@ fn join_url(base: &str, path: &str) -> String {
     if path.is_empty() {
         return trimmed.to_string();
     }
-
     if path.starts_with('/') {
         format!("{trimmed}{path}")
     } else {
