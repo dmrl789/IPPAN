@@ -375,8 +375,11 @@ fn broadcast_tips(
                 if seen.insert(hash) {
                     // TODO: generate zk-STARK proof before broadcasting
                     let stark_proof: Option<Vec<u8>> = None;
-                    let payload = serde_json::to_vec(&GossipMsg::Block { block: Box::new(block), stark_proof })
-                        .context("failed to serialize block gossip message")?;
+                    let payload = serde_json::to_vec(&GossipMsg::Block {
+                        block: Box::new(block),
+                        stark_proof,
+                    })
+                    .context("failed to serialize block gossip message")?;
                     if let Err(err) = gossip.publish(topic.clone(), payload) {
                         warn!("failed to publish block gossip: {err:?}");
                     }
