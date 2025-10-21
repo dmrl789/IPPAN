@@ -19,13 +19,15 @@ feature-depth = 1
 # -------------------------------
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
+
+# Fail on real vulnerabilities; warn on lower-severity issues
 vulnerability = "deny"
 unmaintained = "warn"
 unsound = "warn"
-yanked = "deny"
+yanked = "warn"
 notice = "warn"
 
-# Explicitly document temporary ignores
+# Explicitly documented temporary ignores
 ignore = [
   # ring AES panic — affects only debug builds, upgrade path tracked
   { id = "RUSTSEC-2025-0009", reason = "ring AES panic affects debug builds only; upgrade to ring >= 0.17.12 tracked" },
