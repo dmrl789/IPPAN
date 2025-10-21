@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("app.cash.paparazzi")
+    id("org.owasp.dependencycheck")
 }
 
 android {
@@ -118,4 +119,9 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }
 
-// OWASP Dependency Check temporarily disabled for build. Re-enable in CI pipeline.
+// OWASP Dependency Check configuration
+dependencyCheck {
+    format = "ALL"
+    suppressionFile = "dependency-check-suppressions.xml"
+    failBuildOnCVSS = 7.0f
+}
