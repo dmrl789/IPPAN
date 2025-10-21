@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 5
 
     env:
-      API_BASE: ${{ inputs.api_base != '' && inputs.api_base || vars.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8080' }}
+      API_BASE: ${{ inputs.api_base != '' && inputs.api_base || (vars.NEXT_PUBLIC_API_BASE_URL != '' && vars.NEXT_PUBLIC_API_BASE_URL) || 'http://127.0.0.1:8080' }}
       HEALTH_PATH: ${{ inputs.health_path != '' && inputs.health_path || '/health' }}
       TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
 
@@ -39,9 +39,13 @@ jobs:
         run: |
           echo "API_BASE=${API_BASE}"
           echo "HEALTH_PATH=${HEALTH_PATH}"
+          echo "TIMEOUT_SECONDS=${TIMEOUT_SECONDS}"
           if [ -z "${API_BASE}" ]; then
             echo "::error::API_BASE is empty. Provide the api_base input or define repo Variable: NEXT_PUBLIC_API_BASE_URL."
             exit 1
+          fi
+          if [ "${API_BASE}" = "http://127.0.0.1:8080" ]; then
+            echo "::warning::Using default localhost API_BASE. This may not work in CI environment."
           fi
 
       - name: Install dependencies
@@ -56,7 +60,7 @@ jobs:
           tries=0
           until [ $tries -ge 3 ]; do
             echo "Probe $((tries+1))/3: ${API_BASE}${HEALTH_PATH}"
-            if curl -fsSL "${API_BASE}${HEALTH_PATH}" -o health.json && jq -e '.status=="healthy"' health.json >/dev/null; then
+            if curl -fsSL "${API_BASE}${HEALTH_PATH}" --max-time "${TIMEOUT_SECONDS}" -o health.json && jq -e '.status=="healthy"' health.json >/dev/null; then
               echo "✅ API health OK"
               exit 0
             fi
@@ -75,4 +79,4 @@ jobs:
         run: |
           set -euo pipefail
           echo "Fetching ${API_BASE}/status (non-fatal)..."
-          curl -fsSL "${API_BASE}/status" | jq '.' || true
+          curl -fsSL "${API_BASE}/status" --max-time "${TIMEOUT_SECONDS}" | jq '.' || true

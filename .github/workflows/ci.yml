@@ -12,21 +12,28 @@ permissions:
 
 jobs:
   rust:
-    name: Rust checks
+    name: Rust Checks
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: 1
       CARGO_TERM_COLOR: always
       toolchain: stable
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install toolchain
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.toolchain }}
-          components: clippy,rustfmt
+          components: clippy, rustfmt
 
       - name: Cache cargo dependencies
         uses: actions/cache@v4
@@ -39,7 +46,9 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Show tool versions
-        run: rustc -Vv && cargo -V
+        run: |
+          rustc -Vv
+          cargo -V
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -57,11 +66,12 @@ jobs:
         run: cargo test --workspace --all-features --no-run
 
   gateway:
-    name: Gateway checks
+    name: Gateway Checks
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/gateway
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,16 +81,22 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: apps/gateway/package-lock.json
+          cache-dependency-path: |
+            apps/gateway/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
 
       - name: Lint
-        run: npm run lint || echo "No lint script found, skipping"
+        run: npm run lint || echo "⚠️ No lint script found, skipping"
 
       - name: Build
-        run: npm run build || echo "No build script found, skipping"
+        run: npm run build || echo "⚠️ No build script found, skipping"
 
       - name: Security audit
         run: npm audit --audit-level=moderate

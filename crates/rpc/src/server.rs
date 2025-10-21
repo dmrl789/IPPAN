@@ -367,18 +367,18 @@ async fn handle_metrics(State(state): State<SharedState>) -> Result<Response, Ap
     let mempool_size = state.mempool_size();
 
     let mut metrics =
-        format!("# HELP ippan_http_requests_total Total number of RPC requests handled\n");
+        "# HELP ippan_http_requests_total Total number of RPC requests handled\n".to_string();
     metrics.push_str("# TYPE ippan_http_requests_total counter\n");
-    metrics.push_str(&format!("ippan_http_requests_total {}\n", req_total));
+    metrics.push_str(&format!("ippan_http_requests_total {req_total}\n"));
     metrics.push_str("# HELP ippan_uptime_seconds Uptime of the node in seconds\n");
     metrics.push_str("# TYPE ippan_uptime_seconds gauge\n");
-    metrics.push_str(&format!("ippan_uptime_seconds {}\n", uptime));
+    metrics.push_str(&format!("ippan_uptime_seconds {uptime}\n"));
     metrics.push_str("# HELP ippan_peer_count Current connected peer count\n");
     metrics.push_str("# TYPE ippan_peer_count gauge\n");
-    metrics.push_str(&format!("ippan_peer_count {}\n", peer_count));
+    metrics.push_str(&format!("ippan_peer_count {peer_count}\n"));
     metrics.push_str("# HELP ippan_mempool_size Number of transactions in mempool\n");
     metrics.push_str("# TYPE ippan_mempool_size gauge\n");
-    metrics.push_str(&format!("ippan_mempool_size {}\n", mempool_size));
+    metrics.push_str(&format!("ippan_mempool_size {mempool_size}\n"));
 
     if let Some(consensus) = state.consensus.clone() {
         if let Ok(snapshot) = consensus.snapshot().await {
@@ -635,7 +635,7 @@ fn parse_hex_array<const N: usize>(value: &str, field: &str) -> Result<[u8; N], 
 
     let mut output = [0u8; N];
     hex::decode_to_slice(normalized, &mut output).map_err(|_| {
-        ApiError::bad_request(format!("invalid {field}: expected {}-byte hex string", N))
+        ApiError::bad_request(format!("invalid {field}: expected {N}-byte hex string"))
     })?;
     Ok(output)
 }
