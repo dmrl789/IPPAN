@@ -268,7 +268,7 @@ mod tests {
     }
 
     fn build_block(rng: &mut StdRng, round: RoundId, parents: Vec<BlockId>) -> Block {
-        let tx = build_transaction(rng, round as u64 + 11);
+        let tx = build_transaction(rng, round + 11);
         let creator = random_validator(rng);
         Block::new(parents, vec![tx], round, creator)
     }
@@ -325,8 +325,10 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_wrapper_returns_ok() {
-        let mut config = GossipConfig::default();
-        config.publish_timeout = Duration::from_micros(1);
+        let config = GossipConfig {
+            publish_timeout: Duration::from_micros(1),
+            ..Default::default()
+        };
         let network = ParallelGossipNetwork::new(config);
         let mut rng = StdRng::seed_from_u64(8080);
         let block = build_block(&mut rng, 5, Vec::new());
@@ -338,7 +340,7 @@ mod tests {
             ))
             .await;
 
-        assert!(matches!(result, Ok(_)));
+        assert!(result.is_ok());
         let metrics = network.metrics();
         assert_eq!(metrics.dropped, 1);
     }

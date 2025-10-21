@@ -1,57 +1,109 @@
-# cargo-deny configuration for IPPAN project
-# See https://embarkstudios.github.io/cargo-deny/
+# Cargo Deny Configuration for IPPAN
+# https://embarkstudios.github.io/cargo-deny/
+# Blockchain-grade dependency and license compliance
 
+# -------------------------------
+# Dependency Graph
+# -------------------------------
+[graph]
+# Check all workspace crates and features
+all-features = true
+no-default-features = false
+targets = []
+
+[output]
+feature-depth = 1
+
+# -------------------------------
+# Security Advisory Checks
+# -------------------------------
 [advisories]
-# The url(s) of the advisory databases to use
 db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"
+unsound = "warn"
 yanked = "deny"
+notice = "warn"
 
-# Ignore unmaintained crate warnings
-# These are informational and don't represent security vulnerabilities
-# See AGENTS.md section on SecurityBot for policy
+# Explicitly document temporary ignores
 ignore = [
-    # fxhash - unmaintained but safe for our use
-    { id = "RUSTSEC-2025-0057", reason = "fxhash is unmaintained but poses no security risk" },
-    # instant - unmaintained but still functional
-    { id = "RUSTSEC-2024-0384", reason = "instant is unmaintained but still functional" },
-    # paste - unmaintained but widely used
-    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained but still functional" },
+  # ring AES panic — affects only debug builds, upgrade path tracked
+  { id = "RUSTSEC-2025-0009", reason = "ring AES panic affects debug builds only; upgrade to ring >= 0.17.12 tracked" },
+  # fxhash — unmaintained but safe
+  { id = "RUSTSEC-2025-0057", reason = "fxhash is unmaintained but poses no security risk" },
+  # instant — unmaintained but stable
+  { id = "RUSTSEC-2024-0384", reason = "instant is unmaintained but still functional" },
+  # paste — unmaintained but safe
+  { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained but still functional" },
 ]
 
+# -------------------------------
+# License Checks
+# -------------------------------
 [licenses]
 version = 2
-# We're building an L1 blockchain, so we need permissive licenses
-allow = [
-    "MIT",
-    "Apache-2.0",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
-    "0BSD",
-    "Unlicense",
-    "MPL-2.0",
-    "CC0-1.0",
-    "Zlib",
-    "Unicode-3.0",
-]
-
+unlicensed = "deny"
+allow-unknown = false
+copyleft = "deny"
 confidence-threshold = 0.8
 
-# Allow licenses with OR expressions (e.g., "MIT OR Apache-2.0")
+# Allow only permissive and standard open-source licenses
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "0BSD",
+  "Unlicense",
+  "MPL-2.0",
+  "CC0-1.0",
+  "Zlib",
+  "BSL-1.0",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "OpenSSL"
+]
+
+# Accept dual-licensed crates if either side is compliant
+allow-osi-fsf-free = "either"
+
+# Clarify complex multi-license crate
 [[licenses.clarify]]
 name = "ring"
 expression = "MIT AND ISC AND OpenSSL"
 license-files = [
-    { path = "LICENSE", hash = 0xbd0eed23 }
+  { path = "LICENSE", hash = 0xbd0eed23 }
 ]
 
+[licenses.private]
+ignore = false
+registries = []
+
+# -------------------------------
+# Bans and Duplicates
+# -------------------------------
 [bans]
-multiple-versions = "allow"  # Allow multiple versions for now
-wildcards = "allow"
+multiple-versions = "warn"
+wildcards = "deny"
 highlight = "all"
 
+# Block problematic or vendored crates
+deny = [
+  { name = "openssl-src", reason = "Avoid vendored OpenSSL sources in dependencies" }
+]
+
+# -------------------------------
+# Source Verification
+# -------------------------------
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []
