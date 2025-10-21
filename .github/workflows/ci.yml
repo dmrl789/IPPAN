@@ -30,7 +30,7 @@ jobs:
             pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.88.0
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.toolchain }}
           components: clippy, rustfmt
