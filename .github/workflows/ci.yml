@@ -17,7 +17,7 @@ jobs:
     env:
       RUST_BACKTRACE: 1
       CARGO_TERM_COLOR: always
-      toolchain: stable
+      toolchain: 1.88.0
 
     steps:
       - name: Checkout
@@ -30,7 +30,7 @@ jobs:
             pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.88.0
         with:
           toolchain: ${{ env.toolchain }}
           components: clippy, rustfmt

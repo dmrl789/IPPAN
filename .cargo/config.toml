@@ -1,5 +1,4 @@
+# Use crates.io by default. To enable offline vendoring, run `cargo vendor`
+# and configure the vendored sources explicitly in CI.
 [source.crates-io]
-replace-with = "vendored-sources"
-
-[source.vendored-sources]
-directory = "vendor"
+registry = "https://github.com/rust-lang/crates.io-index"

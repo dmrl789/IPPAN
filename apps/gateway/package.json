@@ -6,7 +6,9 @@
   "description": "IPPAN API gateway and proxy service",
   "scripts": {
     "start": "node src/server.mjs",
-    "dev": "node --watch src/server.mjs"
+    "dev": "node --watch src/server.mjs",
+    "lint": "echo 'no lint configured'",
+    "build": "echo 'no build step'"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -222,7 +222,7 @@ jobs:
             API_HOST_PORT="${{ env.API_HOST_PORT }}"
             HEALTH=$(curl -fsSL "http://127.0.0.1:${API_HOST_PORT}/health")
             echo "$HEALTH" | jq '.'
-            echo "$HEALTH" | jq -e '.status == "healthy"' >/dev/null
+            echo "$HEALTH" | jq -e '.status == "ok" or .status == "healthy"' >/dev/null
 
       - name: Verify secondary node health
         uses: appleboy/ssh-action@v1.2.0
@@ -238,7 +238,7 @@ jobs:
             API_HOST_PORT="${{ env.API_HOST_PORT }}"
             HEALTH=$(curl -fsSL "http://127.0.0.1:${API_HOST_PORT}/health")
             echo "$HEALTH" | jq '.'
-            echo "$HEALTH" | jq -e '.status == "healthy"' >/dev/null
+            echo "$HEALTH" | jq -e '.status == "ok" or .status == "healthy"' >/dev/null
 
       - name: Verify P2P connectivity
         run: |

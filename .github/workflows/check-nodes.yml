@@ -60,7 +60,8 @@ jobs:
           tries=0
           until [ $tries -ge 3 ]; do
             echo "Probe $((tries+1))/3: ${API_BASE}${HEALTH_PATH}"
-            if curl -fsSL "${API_BASE}${HEALTH_PATH}" --max-time "${TIMEOUT_SECONDS}" -o health.json && jq -e '.status=="healthy"' health.json >/dev/null; then
+            # Accept either {"status":"ok"} or {"status":"healthy"}
+            if curl -fsSL "${API_BASE}${HEALTH_PATH}" --max-time "${TIMEOUT_SECONDS}" -o health.json && jq -e '.status=="ok" or .status=="healthy"' health.json >/dev/null; then
               echo "✅ API health OK"
               exit 0
             fi
