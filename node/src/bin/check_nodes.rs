@@ -237,7 +237,7 @@ fn evaluate_connectivity(report: &mut NodeReport, require_peers: usize) {
     report.connected = health_ok && peers_ok;
 
     if !peers_ok {
-          report.add_message(format!(
+        report.add_message(format!(
             "peer count below required minimum ({require_peers}) — reported={reported}, listed={listed}"
         ));
     }
