@@ -57,9 +57,9 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: ippan-explorer
+            name: ippan-api
             port:
-              number: 3001
+              number: 3000
   - host: ippan.com
     http:
       paths:
@@ -67,6 +67,6 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: ippan-explorer
+            name: ippan-api
             port:
-              number: 3001
+              number: 3000

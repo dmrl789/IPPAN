@@ -32,7 +32,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.toolchain }}
+          toolchain: stable
           components: clippy, rustfmt
 
       - name: Cache cargo dependencies
