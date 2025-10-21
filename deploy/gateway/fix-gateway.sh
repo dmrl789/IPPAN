@@ -70,7 +70,7 @@ else
     echo "❌ Block endpoint failed (may be normal if no blocks exist yet)"
 fi
 
-API_BASE_URL="${API_BASE_URL:-https://api.ippan.org}"
+API_BASE_URL="${API_BASE_URL:-http://188.245.97.41:7080}"
 echo "🌐 Testing public endpoints (API_BASE_URL=${API_BASE_URL})..."
 if curl -fsS "${API_BASE_URL}/health" > /dev/null 2>&1; then
     echo "✅ Public API health endpoint working"
@@ -90,5 +90,5 @@ echo "=== UI logs ==="
 docker compose logs --tail=10 unified-ui
 
 echo "✅ Gateway fix complete!"
-echo "🌐 You can now access the blockchain explorer at: ${UI_BASE_URL:-https://ui.ippan.org}/"
+echo "🌐 You can now access the blockchain explorer at: ${UI_BASE_URL:-http://188.245.97.41:3001}/"
 echo "🔗 API endpoints are available at: ${API_BASE_URL}/"

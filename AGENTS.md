@@ -149,10 +149,10 @@ This section defines **manual commands** and the **`/gateway-check`** automation
 
 ```
 NEXT_PUBLIC_ENABLE_FULL_UI=1
-NEXT_PUBLIC_GATEWAY_URL=https://api.ippan.org
-NEXT_PUBLIC_API_BASE_URL=https://api.ippan.org
-NEXT_PUBLIC_WS_URL=wss://api.ippan.org/ws
-GATEWAY_ALLOWED_ORIGINS=https://ui.ippan.org
+NEXT_PUBLIC_GATEWAY_URL=http://188.245.97.41:8081/api
+NEXT_PUBLIC_API_BASE_URL=http://188.245.97.41:7080
+NEXT_PUBLIC_WS_URL=ws://188.245.97.41:7080/ws
+GATEWAY_ALLOWED_ORIGINS=http://188.245.97.41:3001
 ```
 
 > The deploy workflow upserts these keys automatically if you run with defaults.
@@ -199,8 +199,8 @@ uptime
 curl -sS -I "https://ui.ippan.org/"
 
 # Gateway/API front door
-curl -sS -I "https://api.ippan.org/"
-curl -sS    "https://api.ippan.org/health" || true
+curl -sS -I "http://188.245.97.41:7080/"
+curl -sS    "http://188.245.97.41:7080/health" || true
 
 # TLS certificate expiry
 echo | openssl s_client -servername api.ippan.org -connect api.ippan.org:443 2>/dev/null \
@@ -306,9 +306,9 @@ When you comment **`/gateway-check`** on a PR/Issue:
 
    ```
    NEXT_PUBLIC_ENABLE_FULL_UI=1
-   NEXT_PUBLIC_GATEWAY_URL=https://api.ippan.org
-   NEXT_PUBLIC_API_BASE_URL=https://api.ippan.org
-   NEXT_PUBLIC_WS_URL=wss://api.ippan.org/ws
+   NEXT_PUBLIC_GATEWAY_URL=http://188.245.97.41:8081/api
+   NEXT_PUBLIC_API_BASE_URL=http://188.245.97.41:7080
+   NEXT_PUBLIC_WS_URL=ws://188.245.97.41:7080/ws
    ```
 3. `/restart ui` then verify `/api` and `/ws` in browser network tab.
 

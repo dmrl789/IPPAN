@@ -17,9 +17,9 @@
 - Respect port assignments; avoid binding to 8080 if reserved by gateway.
 
 ## Frontend
-- Next.js app (Unified UI) uses env flags:
-  `NEXT_PUBLIC_ENABLE_FULL_UI=1`, `NEXT_PUBLIC_GATEWAY_URL=https://api.ippan.org`,
-  `NEXT_PUBLIC_API_BASE_URL=https://api.ippan.org`, `NEXT_PUBLIC_WS_URL=wss://api.ippan.org/ws`.
+- Next.js app (Unified UI) uses env flags: 
+  `NEXT_PUBLIC_ENABLE_FULL_UI=1`, `NEXT_PUBLIC_GATEWAY_URL=http://188.245.97.41:8081/api`, 
+  `NEXT_PUBLIC_API_BASE_URL=http://188.245.97.41:7080`, `NEXT_PUBLIC_WS_URL=ws://188.245.97.41:7080/ws`.
 
 ## CI/CD
 - Workflows must run on `ubuntu-latest`, avoid privileged steps when possible.

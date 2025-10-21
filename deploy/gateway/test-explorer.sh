@@ -9,6 +9,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Set default values
+API_BASE_URL="${API_BASE_URL:-http://188.245.97.41:7080}"
+UI_BASE_URL="${UI_BASE_URL:-http://188.245.97.41:3001}"
+WS_URL="${WS_URL:-ws://188.245.97.41:7080/ws}"
+
 # Test function
 test_endpoint() {
     local url="$1"
@@ -80,6 +85,7 @@ test_json_endpoint "${API_BASE_URL}/time" "Time JSON"
 # Test block endpoint (may fail if no blocks exist)
 echo -n "Testing Block Endpoint... "
 if response=$(curl -s -w "%{http_code}" -o /dev/null "${API_BASE_URL}/block/1" 2>/dev/null); then
+>>>>>>> origin/main
     if [ "$response" = "200" ]; then
         echo -e "${GREEN}✅ PASS${NC} (Block found)"
     elif [ "$response" = "404" ]; then
@@ -121,8 +127,8 @@ fi
 
 echo ""
 echo "📊 Summary:"
-echo "🌐 UI: ${UI_BASE_URL}/"
-echo "🔗 API: ${API_BASE_URL}/"
-echo "📡 WebSocket: ${WS_URL}"
+echo "🌐 UI: ${UI_BASE_URL:-http://188.245.97.41:3001}/"
+echo "🔗 API: ${API_BASE_URL:-http://188.245.97.41:7080}/"
+echo "📡 WebSocket: ${WS_URL:-ws://188.245.97.41:7080/ws}"
 echo ""
 echo "🔧 If any tests failed, run: ./fix-gateway.sh"
