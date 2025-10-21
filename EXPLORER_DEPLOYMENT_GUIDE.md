@@ -102,6 +102,8 @@ kubectl get ingress ippan-ingress -n ippan -o yaml
 
 ### Step 3: Update Nginx (if using mainnet nginx)
 
+**IMPORTANT**: The nginx configuration does NOT include CORS headers. CORS is handled entirely by the gateway service to ensure proper origin whitelisting and security.
+
 1. **Copy new nginx config:**
    ```bash
    scp deployments/mainnet/nginx/nginx.conf user@server:/etc/nginx/nginx.conf
@@ -347,10 +349,26 @@ histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{path=~"/explo
 ## Security Considerations
 
 1. **Rate Limiting**: Explorer endpoints have rate limits (configured in nginx)
-2. **CORS**: Public CORS allowed for GET requests, restricted for POST
+2. **CORS**: Handled exclusively by the gateway service
+   - ⚠️ **CRITICAL**: Nginx does NOT add CORS headers to avoid conflicts
+   - Gateway respects `ALLOWED_ORIGINS` environment variable
+   - No wildcard "*" origins in production
+   - Prevents CORS header duplication that browsers reject
 3. **SSL/TLS**: All explorer traffic uses HTTPS with TLS 1.2+
 4. **Input Validation**: All API inputs validated by blockchain node
 5. **DDoS Protection**: Nginx rate limiting and connection limits active
+
+### CORS Architecture
+
+```
+Request → Nginx (no CORS headers) → Gateway (adds CORS) → Response
+```
+
+**Why this matters:**
+- Nginx adding CORS headers would create duplicates with gateway headers
+- Duplicate `Access-Control-Allow-Origin` headers cause browser errors
+- Wildcard CORS in nginx would bypass gateway's origin whitelist
+- Gateway CORS is configurable per deployment via environment variables
 
 ## Performance Tuning
 
