@@ -502,7 +502,7 @@ mod tests {
         let sender_block_txs: Vec<_> = block_txs.iter().filter(|tx| tx.from == sender).collect();
 
         // Should include transactions in nonce order
-        assert!(sender_block_txs.len() >= 1);
+        assert!(!sender_block_txs.is_empty());
     }
 
     #[test]
