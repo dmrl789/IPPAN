@@ -61,7 +61,7 @@ allow = [
 
 # Clarify complex multi-license crate
 [[licenses.clarify]]
-crate = "ring"
+name = "ring"
 expression = "MIT AND ISC AND OpenSSL"
 license-files = [
   { path = "LICENSE", hash = 0xbd0eed23 }
@@ -81,7 +81,7 @@ highlight = "all"
 
 # Block problematic or vendored crates
 deny = [
-  { crate = "openssl-src", reason = "Avoid vendored OpenSSL sources in dependencies" }
+  { name = "openssl-src", reason = "Avoid vendored OpenSSL sources in dependencies" }
 ]
 
 # -------------------------------
