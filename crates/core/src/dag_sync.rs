@@ -41,6 +41,7 @@ const TIP_INTERVAL: Duration = Duration::from_secs(8);
 
 /// Messages distributed across the DAG gossip topic.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum GossipMsg {
     /// Announces a tip hash that peers should track.
     Tip([u8; 32]),
@@ -54,6 +55,7 @@ pub enum GossipMsg {
 
 /// Events emitted by the combined DAG sync behaviour.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum DagEvent {
     Gossip(Box<gsub::Event>),
     Mdns(mdns::Event),

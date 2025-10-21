@@ -137,12 +137,13 @@ async fn main() -> anyhow::Result<()> {
         print_table(&reports);
     }
 
-    let mut exit_code = 0;
-    if reports.iter().any(|r| !r.healthy) {
-        exit_code = 1;
+    let exit_code = if reports.iter().any(|r| !r.healthy) {
+        1
     } else if reports.iter().any(|r| !r.connected) {
-        exit_code = 2;
-    }
+        2
+    } else {
+        0
+    };
 
     if exit_code == 0 {
         Ok(())
@@ -295,7 +296,6 @@ fn join_url(base: &str, path: &str) -> String {
     if path.is_empty() {
         return trimmed.to_string();
     }
-
     if path.starts_with('/') {
         format!("{trimmed}{path}")
     } else {

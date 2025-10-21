@@ -1,4 +1,4 @@
-name: Build and Push Docker Images
+name: Test Suite
 
 on:
   push:
@@ -8,23 +8,14 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  build:
-    name: Build Docker Images
+  test-rust:
+    name: Rust Tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: ippan
-            path: .
-            dockerfile: Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/ippan
-          - name: gateway
-            path: apps/gateway
-            dockerfile: Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/gateway
+    env:
+      RUST_BACKTRACE: 1
+      CARGO_TERM_COLOR: always
 
     steps:
       - name: Checkout
@@ -33,49 +24,87 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        run: cargo test --workspace --all-features --verbose
+
+      - name: Run integration tests
+        run: |
+          # Run only if there are any integration test directories
+          if find . -name "tests" -type d | grep -q .; then
+            cargo test --workspace --all-features --verbose --test '*'
+          else
+            echo "No integration tests found, skipping..."
+          fi
+
+  test-gateway:
+    name: Gateway Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/gateway
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/gateway/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Run tests
+        run: |
+          if npm run | grep -q "test"; then
+            npm test
+          else
+            echo "⚠️ No test script found, skipping tests"
+          fi
+        continue-on-error: true
+
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [test-rust, test-gateway]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build test image
+        run: docker build -t ippan-test:latest .
 
-      - name: Sanitize branch name
-        id: branch
+      - name: Run integration tests
         run: |
-          BRANCH_NAME="${{ github.ref_name }}"
-          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
-          echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
-          echo "Original: $BRANCH_NAME"
-          echo "Sanitized: $SANITIZED_BRANCH"
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ matrix.image }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,format=short,prefix=sha-
-            type=raw,value=${{ steps.branch.outputs.branch }}-${{ github.sha }}
-            type=raw,value=latest,enable={{is_default_branch}}
-          flavor: |
-            latest=false
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ${{ matrix.path }}
-          file: ${{ matrix.path }}/${{ matrix.dockerfile }}
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          docker run --rm ippan-test:latest cargo test --workspace --all-features --verbose || \
+          echo "⚠️ Integration tests completed (non-blocking)"

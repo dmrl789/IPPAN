@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            pkg-config libssl-dev protobuf-compiler
+            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -47,7 +47,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          # Check if there are any integration tests to run
+          # Only run if there are integration test directories
           if find . -name "tests" -type d | grep -q .; then
             cargo test --workspace --all-features --verbose --test '*'
           else
