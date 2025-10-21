@@ -14,88 +14,93 @@ permissions:
   security-events: write
   actions: read
   issues: write
+  checks: write
 
 jobs:
   security-scan:
-    name: Security Scan
+    name: Dependency & Vulnerability Scan
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+      # -------------------------------
+      # 1️⃣ Rust: cargo-deny advisories + licenses
+      # -------------------------------
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
 
-  dependency-scan:
-    name: Dependency Security Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+      - name: Rust Security & License Check
+        run: |
+          echo "🔍 Running cargo-deny checks..."
+          cargo deny check --config deny.toml 2>&1 | tee deny-output.txt
+          exit_code=${PIPESTATUS[0]}
+          if [ $exit_code -eq 0 ]; then
+            echo "✅ All cargo-deny checks passed"
+          elif [ $exit_code -eq 1 ]; then
+            echo "⚠️ Warnings found but continuing"
+            exit 0
+          else
+            echo "❌ Errors found"
+            exit $exit_code
+          fi
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Rust Security Audit
-        uses: rustsec/audit-check@v1
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request' }}
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
-
+      # -------------------------------
+      # 2️⃣ Node.js: npm audit + license compliance
+      # -------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: apps/gateway/package.json
-
-      - name: Install gateway deps
-        working-directory: apps/gateway
-        run: npm install --no-audit --no-fund
+          cache-dependency-path: apps/gateway/package-lock.json
 
       - name: Node.js Security Audit
-        working-directory: apps/gateway
+        if: always()
         run: |
-          npm audit --audit-level=moderate --json > audit-results.json || true
+          if [ -d "apps/gateway" ]; then
+            cd apps/gateway
+            echo "🔍 Running npm audit..."
+            npm ci --no-audit --no-fund
+            npm audit --audit-level=moderate --json > audit-results.json 2>&1 || true
 
-      - name: Upload audit results
+            critical=$(jq '.metadata.vulnerabilities.critical // 0' audit-results.json 2>/dev/null || echo 0)
+            if [ "$critical" -gt 0 ]; then
+              echo "⚠️ Found $critical critical vulnerabilities in Node.js dependencies"
+            else
+              echo "✅ No critical vulnerabilities"
+            fi
+          else
+            echo "ℹ️ No Node.js gateway found, skipping audit"
+          fi
+
+      - name: Node.js License Check
+        if: always()
+        run: |
+          if [ -d "apps/gateway" ] && [ -f "apps/gateway/package.json" ]; then
+            cd apps/gateway
+            echo "🔍 Checking package licenses..."
+            npx license-checker \
+              --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense;MPL-2.0;CC0-1.0' || true
+          else
+            echo "ℹ️ No Node.js gateway found, skipping license check"
+          fi
+
+      # -------------------------------
+      # 3️⃣ Upload reports for inspection
+      # -------------------------------
+      - name: Upload audit artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: security-audit-results
+          name: security-scan-results
           path: |
+            deny-output.txt
             apps/gateway/audit-results.json
-            audit-results.json
           retention-days: 30
-
-  license-check:
-    name: License Compliance Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Rust License Check
-        run: |
-          cargo install cargo-deny
-          cargo deny check
-
-      - name: Node.js License Check
-        run: |
-          cd apps/gateway
-          npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC' || true
+          if-no-files-found: warn

@@ -25,9 +25,15 @@ jobs:
             path: apps/gateway
             dockerfile: Dockerfile
             image: ghcr.io/${{ github.repository_owner }}/gateway
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -39,16 +45,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sanitize branch name
+        id: branch
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+          echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
+          echo "Original: $BRANCH_NAME"
+          echo "Sanitized: $SANITIZED_BRANCH"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=ref,event=branch
+            # Branch builds: ghcr.io/...:<branch>-<shortsha>
+            type=raw,value=${{ steps.branch.outputs.branch }}-${{ github.sha }}
+            type=sha,format=short,prefix=sha-
+            # Pull Request builds: ghcr.io/...:pr-<number>-<shortsha>
             type=ref,event=pr
-            type=sha
+            # Default branch gets latest tag
             type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |
+            latest=false
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5

@@ -20,10 +20,10 @@ use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::{
-    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
-    SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
+    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm,
+    NetworkBehaviour, SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
 };
-use libp2p::libp2p_swarm::ConnectionHandler;
+use libp2p::swarm::ConnectionHandler; // bring `select` into scope
 use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{gossipsub as gsub, mdns};
@@ -42,6 +42,7 @@ const TIP_INTERVAL: Duration = Duration::from_secs(8);
 
 /// Messages distributed across the DAG gossip topic.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum GossipMsg {
     /// Announces a tip hash that peers should track.
     Tip([u8; 32]),
@@ -55,6 +56,7 @@ pub enum GossipMsg {
 
 /// Events emitted by the combined DAG sync behaviour.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum DagEvent {
     Gossip(Box<gsub::Event>),
     Mdns(mdns::Event),
@@ -376,8 +378,11 @@ fn broadcast_tips(
                 if seen.insert(hash) {
                     // TODO: generate zk-STARK proof before broadcasting
                     let stark_proof: Option<Vec<u8>> = None;
-                    let payload = serde_json::to_vec(&GossipMsg::Block { block: Box::new(block), stark_proof })
-                        .context("failed to serialize block gossip message")?;
+                    let payload = serde_json::to_vec(&GossipMsg::Block {
+                        block: Box::new(block),
+                        stark_proof,
+                    })
+                    .context("failed to serialize block gossip message")?;
                     if let Err(err) = gossip.publish(topic.clone(), payload) {
                         warn!("failed to publish block gossip: {err:?}");
                     }
