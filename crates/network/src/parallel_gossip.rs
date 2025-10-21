@@ -18,7 +18,7 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GossipMessage {
-    Block(Block),
+    Block(Box<Block>),
     Transactions { id: String, txs: Vec<Value> },
 }
 
@@ -66,7 +66,7 @@ impl ParallelGossip {
             .for_each_concurrent(None, |block| {
                 let peers_snapshot = peers_snapshot.clone();
                 async move {
-                    let payload = match serde_json::to_vec(&GossipMessage::Block(block)) {
+                    let payload = match serde_json::to_vec(&GossipMessage::Block(Box::new(block))) {
                         Ok(bytes) => Arc::<[u8]>::from(bytes),
                         Err(err) => {
                             warn!(

@@ -22,6 +22,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev protobuf-compiler
+
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -74,7 +80,12 @@ jobs:
           cache-dependency-path: apps/gateway/package.json
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
 
       - name: Lint
         run: npm run lint || echo "No lint script found, skipping"
