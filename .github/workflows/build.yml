@@ -60,10 +60,12 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,format=short,prefix=sha-
+            # Branch builds: ghcr.io/...:<branch>-<shortsha>
             type=raw,value=${{ steps.branch.outputs.branch }}-${{ github.sha }}
+            type=sha,format=short,prefix=sha-
+            # Pull Request builds: ghcr.io/...:pr-<number>-<shortsha>
+            type=ref,event=pr
+            # Default branch gets latest tag
             type=raw,value=latest,enable={{is_default_branch}}
           flavor: |
             latest=false

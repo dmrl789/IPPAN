@@ -2,7 +2,7 @@
 # https://embarkstudios.github.io/cargo-deny/
 
 # -------------------------------
-# Dependency graph configuration
+# Dependency Graph
 # -------------------------------
 [graph]
 # Check all workspace crates and all features
@@ -14,39 +14,36 @@ targets = []
 feature-depth = 1
 
 # -------------------------------
-# Security advisory checks
+# Security Advisory Checks
 # -------------------------------
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 
-# We want advisories to be visible but not fail builds automatically
-vulnerability = "warn"
+# Fail on real vulnerabilities; warn on lower-severity issues
+vulnerability = "deny"
 unmaintained = "warn"
-yanked = "warn"
 unsound = "warn"
+yanked = "warn"
 notice = "warn"
 
-# Ignore specific advisories only when triaged and accepted
+# Temporary ignores (document each with a reason)
 ignore = [
-    # "RUSTSEC-2025-0009", # ring - AES panic issue
-    # "RUSTSEC-2025-0057", # fxhash - unmaintained
-    # "RUSTSEC-2024-0384", # instant - unmaintained
-    # "RUSTSEC-2024-0436", # paste - unmaintained
+  { id = "RUSTSEC-2025-0009", reason = "ring AES panic affects debug builds only; upgrade to ring >= 0.17.12 tracked" }
 ]
 
 # -------------------------------
-# License checks
+# License Checks
 # -------------------------------
 [licenses]
 # Deny unlicensed or unknown crates
 unlicensed = "deny"
 allow-unknown = false
 
-# Deny copyleft by default (GPL, AGPL, etc.)
+# Deny strong copyleft by default (GPL, AGPL, LGPL)
 copyleft = "deny"
 
-# Allow only known permissive or industry-standard licenses
+# Allow only permissive and widely accepted open-source licenses
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
@@ -67,12 +64,12 @@ allow = [
 # Accept dual-licensed crates if either license is acceptable
 allow-osi-fsf-free = "either"
 
-# Clarify for complex license expressions
+# Clarify complex license expressions for specific crates
 [[licenses.clarify]]
 name = "ring"
 expression = "MIT AND ISC AND OpenSSL"
 license-files = [
-    { path = "LICENSE", hash = 0xbd0eed23 },
+  { path = "LICENSE", hash = 0xbd0eed23 },
 ]
 
 [licenses.private]
@@ -93,12 +90,13 @@ deny = [
 ]
 
 # -------------------------------
-# Source verification
+# Source Verification
 # -------------------------------
 [sources]
 # Disallow unknown registries and git sources by default
 unknown-registry = "deny"
 unknown-git = "deny"
+
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
 

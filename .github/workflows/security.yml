@@ -102,7 +102,12 @@ jobs:
       - name: Rust License Check
         run: |
           cargo install cargo-deny
-          cargo deny check licenses bans sources
+          # Use deny.toml if present, otherwise fall back to default checks
+          if [ -f deny.toml ]; then
+            cargo deny check --config deny.toml
+          else
+            cargo deny check licenses bans sources
+          fi
 
       - name: Node.js License Check
         working-directory: apps/gateway
