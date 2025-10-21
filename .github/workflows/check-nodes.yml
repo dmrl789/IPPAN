@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       api_base:
-        description: "API base URL to check (e.g., https://ui.ippan.org/api)"
+        description: "API base URL to check (e.g., https://api.ippan.org)"
         required: false
         default: ""
       health_path:

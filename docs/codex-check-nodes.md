@@ -34,6 +34,6 @@ Run the workflow manually from your terminal with the updated defaults.
 gh workflow run "Check IPPAN Nodes" \
   -f hosts="188.245.97.41,135.181.145.174" \
   -f ui_url="https://ui.ippan.org" \
-  -f api_base="http://127.0.0.1:8080" \
+  -f api_base="https://api.ippan.org" \
   -f lb_health="http://127.0.0.1:3000/lb-health"
 ```
