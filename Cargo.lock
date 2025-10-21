@@ -2343,11 +2343,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
-<<<<<<< HEAD
  "syn 2.0.107",
-=======
- "syn 2.0.107",
->>>>>>> origin/main
 ]
 
 [[package]]
