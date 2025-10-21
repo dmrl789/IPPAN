@@ -18,30 +18,39 @@ COPY Cargo.toml Cargo.lock ./
 # If you use a workspace, copy each member's Cargo.toml
 # (adjust the list below to your actual workspace layout)
 COPY crates/consensus/Cargo.toml crates/consensus/Cargo.toml
+COPY crates/core/Cargo.toml      crates/core/Cargo.toml
 COPY crates/crypto/Cargo.toml    crates/crypto/Cargo.toml
 COPY crates/mempool/Cargo.toml   crates/mempool/Cargo.toml
+COPY crates/network/Cargo.toml   crates/network/Cargo.toml
 COPY crates/p2p/Cargo.toml       crates/p2p/Cargo.toml
 COPY crates/rpc/Cargo.toml       crates/rpc/Cargo.toml
 COPY crates/storage/Cargo.toml   crates/storage/Cargo.toml
+COPY crates/time/Cargo.toml      crates/time/Cargo.toml
 COPY crates/types/Cargo.toml     crates/types/Cargo.toml
 COPY node/Cargo.toml             node/Cargo.toml
 
 # Create empty src to satisfy cargo before copying full sources
 RUN mkdir -p \
         crates/consensus/src \
+        crates/core/src \
         crates/crypto/src \
         crates/mempool/src \
+        crates/network/src \
         crates/p2p/src \
         crates/rpc/src \
         crates/storage/src \
+        crates/time/src \
         crates/types/src \
         node/src \
     && echo "pub fn placeholder() {}" > crates/consensus/src/lib.rs \
+    && echo "pub fn placeholder() {}" > crates/core/src/lib.rs \
     && echo "pub fn placeholder() {}" > crates/crypto/src/lib.rs \
     && echo "pub fn placeholder() {}" > crates/mempool/src/lib.rs \
+    && echo "pub fn placeholder() {}" > crates/network/src/lib.rs \
     && echo "pub fn placeholder() {}" > crates/p2p/src/lib.rs \
     && echo "pub fn placeholder() {}" > crates/rpc/src/lib.rs \
     && echo "pub fn placeholder() {}" > crates/storage/src/lib.rs \
+    && echo "pub fn placeholder() {}" > crates/time/src/lib.rs \
     && echo "pub fn placeholder() {}" > crates/types/src/lib.rs \
     && echo "fn main() {}" > node/src/main.rs
 
