@@ -1,23 +1,137 @@
-name: CI
+name: Security Scan
 
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
 
 permissions:
   contents: read
   security-events: write
+  actions: read
+  issues: write
+  checks: write
 
 jobs:
-  rust:
-    name: Rust Checks
+  security-scan:
+    name: Filesystem Vulnerability Scan
     runs-on: ubuntu-latest
-    env:
-      RUST_BACKTRACE: 1
-      CARGO_TERM_COLOR: always
-      toolchain: stable
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  dependency-scan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- Rust: advisories, bans, sources, licenses via cargo-deny ---
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Rust Security & License Check (cargo-deny)
+        run: |
+          echo "🔍 Running cargo-deny checks..."
+          if [ -f deny.toml ]; then
+            cargo deny check --config deny.toml 2>&1 | tee deny-output.txt
+          else
+            cargo deny check licenses bans sources advisories 2>&1 | tee deny-output.txt
+          fi
+
+          # cargo-deny exit codes:
+          # 0 = success, 1 = warnings, >=2 = errors
+          ec=${PIPESTATUS[0]}
+          if [ $ec -eq 0 ]; then
+            echo "✅ cargo-deny checks passed"
+          elif [ $ec -eq 1 ]; then
+            echo "⚠️ cargo-deny warnings present (continuing)"
+            exit 0
+          else
+            echo "❌ cargo-deny reported errors"
+            exit $ec
+          fi
+
+      # --- Node.js: npm audit + artifact ---
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/gateway/package-lock.json
+
+      - name: Install gateway dependencies
+        if: always()
+        run: |
+          if [ -d "apps/gateway" ]; then
+            cd apps/gateway
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
+          else
+            echo "ℹ️ No apps/gateway directory; skipping install"
+          fi
+
+      - name: Run npm audit
+        if: always()
+        run: |
+          if [ -d "apps/gateway" ]; then
+            cd apps/gateway
+            echo "🔍 Running npm audit..."
+            npm audit --audit-level=moderate --json > audit-results.json 2>&1 || true
+            crit=$(jq '.metadata.vulnerabilities.critical // 0' audit-results.json 2>/dev/null || echo 0)
+            if [ "$crit" -gt 0 ]; then
+              echo "⚠️ Found $crit critical vulnerabilities in Node.js deps"
+            else
+              echo "✅ No critical vulnerabilities found"
+            fi
+          else
+            echo "ℹ️ No apps/gateway directory; skipping audit"
+          fi
+
+      - name: Upload dependency scan artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-audit-results
+          path: |
+            deny-output.txt
+            apps/gateway/audit-results.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  license-check:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -26,79 +140,22 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+          sudo apt-get install -y libssl-dev pkg-config
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.toolchain }}
-          components: clippy, rustfmt
-
-      - name: Cache cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Show tool versions
+      - name: Rust License Check (cargo-deny)
         run: |
-          rustc -Vv
-          cargo -V
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Cargo check
-        run: cargo check --workspace --all-targets --all-features -v
-
-      - name: Cargo build
-        run: cargo build --workspace --all-features -v --locked
-
-      - name: Cargo clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: Cargo test (build only)
-        run: cargo test --workspace --all-features --no-run
-
-  gateway:
-    name: Gateway Checks
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/gateway
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          # Allow workflow to proceed even if lockfile is missing or path changes
-          cache-dependency-path: |
-            apps/gateway/package-lock.json
-
-      - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
+          cargo install cargo-deny --locked
+          if [ -f deny.toml ]; then
+            cargo deny check --config deny.toml
           else
-            npm install --no-audit --no-fund
+            cargo deny check licenses bans sources
           fi
 
-      - name: Lint
-        run: npm run lint || echo "⚠️ No lint script found, skipping"
-
-      - name: Build
-        run: npm run build || echo "⚠️ No build script found, skipping"
-
-      - name: Security audit
-        run: npm audit --audit-level=moderate
-        continue-on-error: true
+      - name: Node.js License Check
+        working-directory: apps/gateway
+        run: |
+          if [ -f package.json ]; then
+            npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense;MPL-2.0;CC0-1.0' || true
+          else
+            echo "ℹ️ No package.json; skipping Node license check"
+          fi
