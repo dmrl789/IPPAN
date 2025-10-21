@@ -3,7 +3,7 @@
 
 param(
     [string]$ServerIP = "188.245.97.41",
-    [string]$UIDomain = "ui.ippan.org"
+    [string]$UIDomain = "188.245.97.41:3001"
 )
 
 Write-Host "🚀 IPPAN Quick Deployment" -ForegroundColor Blue

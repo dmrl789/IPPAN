@@ -66,15 +66,15 @@ This configuration enables a full blockchain explorer for IPPAN at `ui.ippan.org
    docker compose ps
    
    # Test API endpoints
-   curl http://ui.ippan.org/api/health
-   curl http://ui.ippan.org/api/version
-   curl http://ui.ippan.org/api/peers
+   curl http://188.245.97.41:7080/health
+   curl http://188.245.97.41:7080/version
+   curl http://188.245.97.41:7080/peers
    ```
 
 3. **Access the explorer:**
    - Main UI: http://ui.ippan.org/
-   - API Health: http://ui.ippan.org/api/health
-   - Blockchain Data: http://ui.ippan.org/api/block/1
+   - API Health: http://188.245.97.41:7080/health
+   - Blockchain Data: http://188.245.97.41:7080/block/1
 
 ## Explorer Features
 
@@ -125,10 +125,10 @@ This configuration enables a full blockchain explorer for IPPAN at `ui.ippan.org
 docker compose ps
 
 # API health
-curl -s http://ui.ippan.org/api/health | jq
+curl -s http://188.245.97.41:7080/health | jq
 
 # Node health
-curl -s http://ui.ippan.org/api/version | jq
+curl -s http://188.245.97.41:7080/version | jq
 
 # WebSocket test
 curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" -H "Sec-WebSocket-Version: 13" http://ui.ippan.org/ws

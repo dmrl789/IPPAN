@@ -58,24 +58,24 @@ echo "🌐 Testing public endpoints..."
 test_endpoint "http://ui.ippan.org/" "UI Homepage"
 
 # Test API health
-test_endpoint "http://ui.ippan.org/api/health" "API Health"
-test_json_endpoint "http://ui.ippan.org/api/health" "API Health JSON"
+test_endpoint "http://188.245.97.41:7080/health" "API Health"
+test_json_endpoint "http://188.245.97.41:7080/health" "API Health JSON"
 
 # Test API version
-test_endpoint "http://ui.ippan.org/api/version" "API Version"
-test_json_endpoint "http://ui.ippan.org/api/version" "API Version JSON"
+test_endpoint "http://188.245.97.41:7080/version" "API Version"
+test_json_endpoint "http://188.245.97.41:7080/version" "API Version JSON"
 
 # Test peers endpoint
-test_endpoint "http://ui.ippan.org/api/peers" "Peers Endpoint"
-test_json_endpoint "http://ui.ippan.org/api/peers" "Peers JSON"
+test_endpoint "http://188.245.97.41:7080/peers" "Peers Endpoint"
+test_json_endpoint "http://188.245.97.41:7080/peers" "Peers JSON"
 
 # Test blockchain data endpoints
-test_endpoint "http://ui.ippan.org/api/time" "Time Endpoint"
-test_json_endpoint "http://ui.ippan.org/api/time" "Time JSON"
+test_endpoint "http://188.245.97.41:7080/time" "Time Endpoint"
+test_json_endpoint "http://188.245.97.41:7080/time" "Time JSON"
 
 # Test block endpoint (may fail if no blocks exist)
 echo -n "Testing Block Endpoint... "
-if response=$(curl -s -w "%{http_code}" -o /dev/null "http://ui.ippan.org/api/block/1" 2>/dev/null); then
+if response=$(curl -s -w "%{http_code}" -o /dev/null "http://188.245.97.41:7080/block/1" 2>/dev/null); then
     if [ "$response" = "200" ]; then
         echo -e "${GREEN}✅ PASS${NC} (Block found)"
     elif [ "$response" = "404" ]; then
@@ -115,7 +115,7 @@ fi
 echo ""
 echo "📊 Summary:"
 echo "🌐 UI: http://ui.ippan.org/"
-echo "🔗 API: http://ui.ippan.org/api/"
+echo "🔗 API: http://188.245.97.41:7080/"
 echo "📡 WebSocket: ws://ui.ippan.org/ws"
 echo ""
 echo "🔧 If any tests failed, run: ./fix-gateway.sh"

@@ -71,7 +71,7 @@ else
 fi
 
 echo "🌐 Testing public endpoints..."
-if curl -fsS http://ui.ippan.org/api/health > /dev/null 2>&1; then
+if curl -fsS http://188.245.97.41:7080/health > /dev/null 2>&1; then
     echo "✅ Public API health endpoint working"
 else
     echo "❌ Public API health endpoint failed"
@@ -90,4 +90,4 @@ docker compose logs --tail=10 unified-ui
 
 echo "✅ Gateway fix complete!"
 echo "🌐 You can now access the blockchain explorer at: http://ui.ippan.org/"
-echo "🔗 API endpoints are available at: http://ui.ippan.org/api/"
+echo "🔗 API endpoints are available at: http://188.245.97.41:7080/"

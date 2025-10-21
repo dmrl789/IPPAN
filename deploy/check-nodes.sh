@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # Usage:
-#   HOST="188.245.97.41" UI_URL="https://ui.ippan.org" API_BASE="http://127.0.0.1:8080" ./deploy/check-nodes.sh
+#   HOST="188.245.97.41" UI_URL="http://188.245.97.41:3001" API_BASE="http://188.245.97.41:7080" ./deploy/check-nodes.sh
 # or pass via env; defaults try common ports.
 
 HOST="${HOST:-}"
 UI_URL="${UI_URL:-}"
-API_BASE="${API_BASE:-http://127.0.0.1:8080}"
+API_BASE="${API_BASE:-http://188.245.97.41:7080}"
 LB_HEALTH="${LB_HEALTH:-http://127.0.0.1:3000/lb-health}"
 HTTP_HEALTH="${HTTP_HEALTH:-$API_BASE/health}"
 HTTP_STATUS="${HTTP_STATUS:-$API_BASE/status}"
