@@ -34,7 +34,7 @@ services:
       - TARGET_RPC_URL=http://ippan-node:8080
       - TARGET_WS_URL=ws://ippan-node:8080
       - TARGET_HEALTH_PATH=/health
-      - ALLOWED_ORIGINS=https://ui.ippan.org,http://ui.ippan.org
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://ui.ippan.org,http://ui.ippan.org}
       - API_PREFIX=/api
       - WS_PREFIX=/ws
       - PROXY_LOG_LEVEL=info

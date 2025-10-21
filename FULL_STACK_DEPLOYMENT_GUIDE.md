@@ -73,10 +73,10 @@ docker-compose -f deploy/docker-compose.production.yml up -d
 
 **UI Configuration:**
 ```bash
-REACT_APP_API_URL=https://ui.ippan.org/api
-REACT_APP_NODE_1_URL=https://ui.ippan.org/api
-REACT_APP_NODE_2_URL=https://ui.ippan.org/api
-REACT_APP_WS_URL=wss://ui.ippan.org/ws
+REACT_APP_API_URL=https://api.ippan.org
+REACT_APP_NODE_1_URL=https://api.ippan.org
+REACT_APP_NODE_2_URL=https://api.ippan.org
+REACT_APP_WS_URL=wss://api.ippan.org/ws
 REACT_APP_ENABLE_FULL_UI=1
 ```
 
@@ -86,18 +86,14 @@ REACT_APP_ENABLE_FULL_UI=1
 
 ### **Web Interface**
 - **Primary UI**: https://ui.ippan.org
-- **Load Balancer**: https://ui.ippan.org/api
+- **Gateway**: https://api.ippan.org
 
 ### **API Endpoints**
-- **Node 1 API**: https://ui.ippan.org/api
-- **Node 2 API**: https://ui.ippan.org/api
-- **Load Balanced API**: https://ui.ippan.org/api
+- **Gateway API**: https://api.ippan.org
 
 ### **Health Checks**
 - **UI Health**: https://ui.ippan.org/health
-- **Node 1 Health**: https://ui.ippan.org/api/health
-- **Node 2 Health**: https://ui.ippan.org/api/health
-- **Load Balancer Health**: https://ui.ippan.org/api/health
+- **Gateway Health**: https://api.ippan.org/health
 
 ---
 
@@ -139,10 +135,10 @@ docker-compose -f deploy/docker-compose.production.yml ps
 curl https://ui.ippan.org/health
 
 # Check Node 1
-curl https://ui.ippan.org/api/health
+curl https://api.ippan.org/health
 
 # Check Node 2
-curl https://ui.ippan.org/api/health
+curl https://api.ippan.org/health
 
 # Check WebSocket upgrade
 curl -I -H 'Connection: Upgrade' -H 'Upgrade: websocket' https://ui.ippan.org/ws
@@ -155,7 +151,7 @@ curl -I -H 'Connection: Upgrade' -H 'Upgrade: websocket' https://ui.ippan.org/ws
 # https://ui.ippan.org
 
 # Test API through UI
-curl https://ui.ippan.org/api/health
+curl https://api.ippan.org/health
 ```
 
 ### **3. Verify Network Connectivity**
@@ -169,10 +165,10 @@ sudo ufw allow 4001/tcp
 sudo ufw reload
 
 # Check peer connections from the HTTPS gateway
-curl https://ui.ippan.org/api/peers
+curl https://api.ippan.org/peers
 
 # Test transaction propagation through the HTTPS gateway
-curl -X POST https://ui.ippan.org/api/tx \
+curl -X POST https://api.ippan.org/tx \
   -H "Content-Type: application/json" \
   -d '{
     "from": "0000000000000000000000000000000000000000000000000000000000000001",
@@ -230,10 +226,10 @@ The UI can be configured via environment variables:
 ```bash
 # In docker-compose.full-stack.yml
 environment:
-  - REACT_APP_API_URL=https://ui.ippan.org/api
-  - REACT_APP_NODE_1_URL=https://ui.ippan.org/api
-  - REACT_APP_NODE_2_URL=https://ui.ippan.org/api
-  - REACT_APP_WS_URL=wss://ui.ippan.org/ws
+  - REACT_APP_API_URL=https://api.ippan.org
+  - REACT_APP_NODE_1_URL=https://api.ippan.org
+  - REACT_APP_NODE_2_URL=https://api.ippan.org
+  - REACT_APP_WS_URL=wss://api.ippan.org/ws
   - REACT_APP_ENABLE_FULL_UI=1
   - REACT_APP_NETWORK_NAME=IPPAN Production
   - REACT_APP_CHAIN_ID=ippan-mainnet
@@ -362,6 +358,4 @@ sudo certbot --nginx -d your-domain.com
 
 ### **Access Your System:**
 - **Web UI**: https://ui.ippan.org
-- **API**: https://ui.ippan.org/api
-- **Node 1**: https://ui.ippan.org/api
-- **Node 2**: https://ui.ippan.org/api
+- **API**: https://api.ippan.org
