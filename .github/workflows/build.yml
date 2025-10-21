@@ -20,11 +20,11 @@ jobs:
           - name: ippan
             path: .
             dockerfile: Dockerfile
-            image: ghcr.io/${{ github.repository }}/ippan
+            image: ghcr.io/${{ github.repository_owner }}/ippan
           - name: gateway
             path: apps/gateway
             dockerfile: Dockerfile
-            image: ghcr.io/${{ github.repository }}/gateway
+            image: ghcr.io/${{ github.repository_owner }}/gateway
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,7 +55,8 @@ jobs:
         with:
           context: ${{ matrix.path }}
           file: ${{ matrix.path }}/${{ matrix.dockerfile }}
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
