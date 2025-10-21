@@ -9,6 +9,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Set default values
+API_BASE_URL="${API_BASE_URL:-http://188.245.97.41:7080}"
+UI_BASE_URL="${UI_BASE_URL:-http://188.245.97.41:3001}"
+WS_URL="${WS_URL:-ws://188.245.97.41:7080/ws}"
+
 # Test function
 test_endpoint() {
     local url="$1"
@@ -62,26 +67,6 @@ echo "🌐 Testing public endpoints (API_BASE_URL=${API_BASE_URL})..."
 test_endpoint "${UI_BASE_URL}/" "UI Homepage" || true
 
 # Test API health
-<<<<<<< HEAD
-test_endpoint "http://188.245.97.41:7080/health" "API Health"
-test_json_endpoint "http://188.245.97.41:7080/health" "API Health JSON"
-
-# Test API version
-test_endpoint "http://188.245.97.41:7080/version" "API Version"
-test_json_endpoint "http://188.245.97.41:7080/version" "API Version JSON"
-
-# Test peers endpoint
-test_endpoint "http://188.245.97.41:7080/peers" "Peers Endpoint"
-test_json_endpoint "http://188.245.97.41:7080/peers" "Peers JSON"
-
-# Test blockchain data endpoints
-test_endpoint "http://188.245.97.41:7080/time" "Time Endpoint"
-test_json_endpoint "http://188.245.97.41:7080/time" "Time JSON"
-
-# Test block endpoint (may fail if no blocks exist)
-echo -n "Testing Block Endpoint... "
-if response=$(curl -s -w "%{http_code}" -o /dev/null "http://188.245.97.41:7080/block/1" 2>/dev/null); then
-=======
 test_endpoint "${API_BASE_URL}/health" "API Health"
 test_json_endpoint "${API_BASE_URL}/health" "API Health JSON"
 
@@ -142,14 +127,8 @@ fi
 
 echo ""
 echo "📊 Summary:"
-<<<<<<< HEAD
-echo "🌐 UI: http://ui.ippan.org/"
-echo "🔗 API: http://188.245.97.41:7080/"
-echo "📡 WebSocket: ws://ui.ippan.org/ws"
-=======
-echo "🌐 UI: ${UI_BASE_URL}/"
-echo "🔗 API: ${API_BASE_URL}/"
-echo "📡 WebSocket: ${WS_URL}"
->>>>>>> origin/main
+echo "🌐 UI: ${UI_BASE_URL:-http://188.245.97.41:3001}/"
+echo "🔗 API: ${API_BASE_URL:-http://188.245.97.41:7080}/"
+echo "📡 WebSocket: ${WS_URL:-ws://188.245.97.41:7080/ws}"
 echo ""
 echo "🔧 If any tests failed, run: ./fix-gateway.sh"
