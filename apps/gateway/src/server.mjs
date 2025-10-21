@@ -18,6 +18,8 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '*')
 const healthTimeoutMs = Number.parseInt(process.env.HEALTH_TIMEOUT_MS ?? '5000', 10)
 const rewriteApiPrefix = process.env.API_PREFIX ?? '/api'
 const rewriteWsPrefix = process.env.WS_PREFIX ?? '/ws'
+const enableExplorer = process.env.ENABLE_EXPLORER !== 'false'
+const explorerPrefix = process.env.EXPLORER_PREFIX ?? '/explorer/api'
 
 function isOriginAllowed(origin) {
   if (!origin || allowedOrigins.length === 0) {
@@ -116,6 +118,50 @@ app.use(
   }),
 )
 
+// Blockchain Explorer routes
+if (enableExplorer) {
+  app.use(
+    explorerPrefix,
+    createProxyMiddleware({
+      target: targetRpcUrl,
+      changeOrigin: true,
+      ws: false,
+      pathRewrite: (path, req) => {
+        if (!explorerPrefix || explorerPrefix === '/') {
+          return path
+        }
+        return path.replace(new RegExp(`^${explorerPrefix}`), '') || '/'
+      },
+      logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
+    }),
+  )
+
+  // Explorer info endpoint
+  app.get('/explorer', (req, res) => {
+    res.json({
+      name: 'IPPAN Blockchain Explorer',
+      version: '1.0.0',
+      endpoints: {
+        health: `${explorerPrefix}/health`,
+        time: `${explorerPrefix}/time`,
+        version: `${explorerPrefix}/version`,
+        metrics: `${explorerPrefix}/metrics`,
+        blocks: `${explorerPrefix}/block/:id`,
+        transactions: `${explorerPrefix}/tx/:hash`,
+        accounts: `${explorerPrefix}/account/:address`,
+        peers: `${explorerPrefix}/peers`,
+        l2: {
+          config: `${explorerPrefix}/l2/config`,
+          networks: `${explorerPrefix}/l2/networks`,
+          commits: `${explorerPrefix}/l2/commits`,
+          exits: `${explorerPrefix}/l2/exits`,
+        },
+      },
+      documentation: 'https://docs.ippan.com/api',
+    })
+  })
+}
+
 app.use((req, res) => {
   res.status(404).json({
     error: 'Not found',
@@ -127,6 +173,9 @@ const server = app.listen(port, '0.0.0.0', () => {
   console.log(`Gateway listening on port ${port}`)
   console.log(`Proxying API requests to ${targetRpcUrl}`)
   console.log(`Proxying websocket requests to ${targetWsUrl}`)
+  if (enableExplorer) {
+    console.log(`Blockchain explorer enabled at ${explorerPrefix}`)
+  }
 })
 
 function shutdown() {
