@@ -11,6 +11,7 @@ coverage/
 # Rust
 target/
 **/*.rs.bk
+vendor/
 
 # Env
 .env
@@ -42,6 +43,7 @@ coverage/
 # Package manager
 package-lock.json
 !apps/unified-ui/package-lock.json
+!apps/gateway/package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
