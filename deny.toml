@@ -1,38 +1,106 @@
-[licenses]
-# Allow common OSS licenses used across our crates
-allow = [
-  "Apache-2.0",
-  "MIT",
-  "BSD-2-Clause",
-  "BSD-3-Clause",
-  "ISC",
-  "Zlib",
-  "MPL-2.0",
-  "Unicode-DFS-2016",
-  "0BSD"
-]
+# Cargo Deny Configuration
+# https://embarkstudios.github.io/cargo-deny/
 
-# Disallow copyleft and unclear licenses by default
-# (can be adjusted per project)
-denied = [
-  "GPL-3.0",
-  "AGPL-3.0",
-  "LGPL-3.0"
-]
+# -------------------------------
+# Dependency Graph
+# -------------------------------
+[graph]
+# Check all workspace crates and all features
+all-features = true
+no-default-features = false
+targets = []
 
+[output]
+feature-depth = 1
+
+# -------------------------------
+# Security Advisory Checks
+# -------------------------------
 [advisories]
-# Deny actual vulnerabilities, but allow informational warnings
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+
+# Fail on real vulnerabilities; warn on lower-severity issues
 vulnerability = "deny"
 unmaintained = "warn"
 unsound = "warn"
+yanked = "warn"
 notice = "warn"
 
-# Temporary ignores (document a tracking issue for each entry)
+# Temporary ignores (document each with a reason)
 ignore = [
-  # RUSTSEC-2025-0009: ring AES panic in overflow-check builds
-  # Safe in release builds; tracked to upgrade transitive deps to ring >= 0.17.12
-  { id = "RUSTSEC-2025-0009", reason = "Release builds unaffected; upgrade path tracked" },
+  { id = "RUSTSEC-2025-0009", reason = "ring AES panic affects debug builds only; upgrade to ring >= 0.17.12 tracked" }
 ]
 
+# -------------------------------
+# License Checks
+# -------------------------------
+[licenses]
+# Deny unlicensed or unknown crates
+unlicensed = "deny"
+allow-unknown = false
+
+# Deny strong copyleft by default (GPL, AGPL, LGPL)
+copyleft = "deny"
+
+# Allow only permissive and widely accepted open-source licenses
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "BSD-3-Clause",
+  "BSD-2-Clause",
+  "ISC",
+  "Zlib",
+  "MPL-2.0",
+  "BSL-1.0",
+  "CC0-1.0",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "OpenSSL",
+  "0BSD"
+]
+
+# Accept dual-licensed crates if either license is acceptable
+allow-osi-fsf-free = "either"
+
+# Clarify complex license expressions for specific crates
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+  { path = "LICENSE", hash = 0xbd0eed23 },
+]
+
+[licenses.private]
+ignore = false
+registries = []
+
+# -------------------------------
+# Bans (duplicate / wildcard / restricted crates)
+# -------------------------------
 [bans]
 multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+# Disallow known problematic or vendored crates
+deny = [
+  { name = "openssl-src", reason = "Avoid vendored OpenSSL sources in dependencies" }
+]
+
+# -------------------------------
+# Source Verification
+# -------------------------------
+[sources]
+# Disallow unknown registries and git sources by default
+unknown-registry = "deny"
+unknown-git = "deny"
+
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []
