@@ -50,11 +50,7 @@ jobs:
 
       - name: Rust Security Audit
         uses: rustsec/audit-check@v1
-<<<<<<< HEAD
         if: ${{ github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request' }}
-=======
-        continue-on-error: true
->>>>>>> dc43c51 (feat: Add cargo-deny for security and license checks)
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
