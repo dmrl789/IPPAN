@@ -21,8 +21,8 @@ use libp2p::identity;
 use libp2p::noise;
 use libp2p::swarm::ConnectionHandler; // bring `select` into scope
 use libp2p::swarm::{
-    self, ConnectionDenied, ConnectionHandler, ConnectionHandlerSelect, ConnectionId, FromSwarm,
-    NetworkBehaviour, SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
+    self, ConnectionDenied, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
+    SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
 };
 use libp2p::tcp;
 use libp2p::yamux;
