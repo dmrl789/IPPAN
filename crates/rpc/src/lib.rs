@@ -838,7 +838,7 @@ impl HttpP2PNetwork {
         let url = Url::parse(&candidate)?;
         match url.scheme() {
             "http" | "https" => {}
-            other => return Err(anyhow!("unsupported scheme for peer address: {}", other)),
+            other => return Err(anyhow!("unsupported scheme for peer address: {other}")),
         }
 
         let scheme = url.scheme().to_string();

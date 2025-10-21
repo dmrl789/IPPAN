@@ -146,7 +146,7 @@ fn compute_merkle_root(transactions: &[Vec<u8>]) -> [u8; 32] {
         .collect();
 
     while level.len() > 1 {
-        let mut next = Vec::with_capacity((level.len() + 1) / 2);
+        let mut next = Vec::with_capacity(level.len().div_ceil(2));
         for chunk in level.chunks(2) {
             let mut hasher = Sha256::new();
             hasher.update(chunk[0]);
@@ -178,7 +178,7 @@ fn signing_digest(
         hasher.update(parent);
     }
     hasher.update(hash_timer.digest());
-    hasher.update(&median_time_us.to_be_bytes());
+    hasher.update(median_time_us.to_be_bytes());
     hasher.update(merkle_root);
     hasher.finalize().into()
 }
@@ -191,8 +191,8 @@ fn header_hash(header: &BlockHeader) -> [u8; 32] {
         hasher.update(parent);
     }
     hasher.update(header.hash_timer.digest());
-    hasher.update(&header.median_time_us.to_be_bytes());
-    hasher.update(&header.merkle_root);
+    hasher.update(header.median_time_us.to_be_bytes());
+    hasher.update(header.merkle_root);
     hasher.update(&header.signature);
     hasher.finalize().into()
 }
