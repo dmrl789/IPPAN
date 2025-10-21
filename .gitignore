@@ -11,6 +11,7 @@ coverage/
 # Rust
 target/
 **/*.rs.bk
+vendor/
 
 # Env
 .env
