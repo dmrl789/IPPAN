@@ -1,0 +1,55 @@
+{
+  "metadata": {
+    "model_id": "reputation_v1",
+    "version": 1,
+    "model_type": "gbdt",
+    "hash_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "feature_count": 6,
+    "output_scale": 10000,
+    "output_min": 0,
+    "output_max": 10000
+  },
+  "model": {
+    "trees": [
+      {
+        "nodes": [
+          {"feature_index": 0, "threshold": 5000, "left": 1, "right": 2, "value": null},
+          {"feature_index": 1, "threshold": 5000, "left": 3, "right": 4, "value": null},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 500},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 800},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 1200}
+        ]
+      },
+      {
+        "nodes": [
+          {"feature_index": 2, "threshold": 7000, "left": 1, "right": 2, "value": null},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 300},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 600}
+        ]
+      },
+      {
+        "nodes": [
+          {"feature_index": 3, "threshold": 8000, "left": 1, "right": 2, "value": null},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": -200},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 400}
+        ]
+      },
+      {
+        "nodes": [
+          {"feature_index": 4, "threshold": 5000, "left": 1, "right": 2, "value": null},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 200},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 800}
+        ]
+      },
+      {
+        "nodes": [
+          {"feature_index": 5, "threshold": 3000, "left": 1, "right": 2, "value": null},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 100},
+          {"feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 500}
+        ]
+      }
+    ],
+    "bias": 5000,
+    "scale": 10000
+  }
+}
