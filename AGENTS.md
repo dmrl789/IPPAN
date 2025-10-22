@@ -196,7 +196,7 @@ uptime
 
 ```bash
 # UI front door
-curl -sS -I "https://ui.ippan.org/"
+curl -sS -I "http://188.245.97.41:3001/"
 
 # Gateway/API front door
 curl -sS -I "http://188.245.97.41:7080/"
@@ -218,7 +218,7 @@ curl -i -N \
   -H "Connection: Upgrade" \
   -H "Upgrade: websocket" \
   -H "Host: api.ippan.org" \
-  -H "Origin: https://ui.ippan.org" \
+  -H "Origin: http://188.245.97.41:3001" \
   -H "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" \
   -H "Sec-WebSocket-Version: 13" \
   "https://api.ippan.org/ws"
@@ -260,7 +260,7 @@ When you comment **`/gateway-check`** on a PR/Issue:
    * Optionally checks UI local port (e.g., `127.0.0.1:3001`).
 3. **Public checks**:
 
-   * `https://ui.ippan.org/` returns 200/304.
+   * `http://188.245.97.41:3001/` returns 200/304.
    * `https://api.ippan.org/` returns 200/3xx (not 4xx/5xx).
    * (If enabled) attempts WS handshake to `wss://api.ippan.org/ws` and expects **101**.
 4. **Outputs** a short report in the PR comment with pass/fail and next steps.
@@ -284,7 +284,7 @@ When you comment **`/gateway-check`** on a PR/Issue:
 | -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------- |
 | **UI shows short menu**    | Missing `NEXT_PUBLIC_ENABLE_FULL_UI=1` or bad `NEXT_PUBLIC_*` endpoints | Update `.env` then `docker compose up -d --force-recreate`          |                                  |
 | **API 502/504**            | Nginx upstream mismatch, gateway not listening                          | Check compose ports; `ss -ltnp` for 8081; restart gateway           |                                  |
-| **CORS errors in browser** | `GATEWAY_ALLOWED_ORIGINS` not set to `https://ui.ippan.org`             | Update `.env`, restart gateway                                      |                                  |
+| **CORS errors in browser** | `GATEWAY_ALLOWED_ORIGINS` not set to `http://188.245.97.41:3001`             | Update `.env`, restart gateway                                      |                                  |
 | **Port already allocated** | Stale process on 8081/3001                                              | `sudo lsof -ti:PORT                                                 | xargs sudo kill -9` then restart |
 | **WS fails (no 101)**      | Proxy missing `Upgrade`/`Connection` headers                            | Fix Nginx/Envoy config to forward WS upgrade; verify with handshake |                                  |
 | **TLS expired**            | Certbot/renewal failed                                                  | Renew certs; re-load Nginx; re-run public checks                    |                                  |

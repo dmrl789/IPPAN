@@ -1,0 +1,16 @@
+[package]
+name = "ippan-ai-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_bytes = "0.11"
+thiserror = { workspace = true }
+hex = { workspace = true }
+ed25519-dalek = { workspace = true }
+
+[dev-dependencies]

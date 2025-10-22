@@ -58,7 +58,7 @@ test_json_endpoint() {
 }
 
 API_BASE_URL="${API_BASE_URL:-https://api.ippan.org}"
-UI_BASE_URL="${UI_BASE_URL:-https://ui.ippan.org}"
+UI_BASE_URL="${UI_BASE_URL:-http://188.245.97.41:3001}"
 WS_URL="${WS_URL:-wss://api.ippan.org/ws}"
 
 echo "🌐 Testing public endpoints (API_BASE_URL=${API_BASE_URL})..."
@@ -85,7 +85,6 @@ test_json_endpoint "${API_BASE_URL}/time" "Time JSON"
 # Test block endpoint (may fail if no blocks exist)
 echo -n "Testing Block Endpoint... "
 if response=$(curl -s -w "%{http_code}" -o /dev/null "${API_BASE_URL}/block/1" 2>/dev/null); then
->>>>>>> origin/main
     if [ "$response" = "200" ]; then
         echo -e "${GREEN}✅ PASS${NC} (Block found)"
     elif [ "$response" = "404" ]; then
