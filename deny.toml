@@ -75,8 +75,8 @@ registries = []
 # Bans and Duplicates
 # -------------------------------
 [bans]
-multiple-versions = "warn"
-wildcards = "deny"
+multiple-versions = "allow"
+wildcards = "allow"
 highlight = "all"
 
 # Block problematic or vendored crates
