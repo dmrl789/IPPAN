@@ -1,38 +1,41 @@
-# Fee Caps and Emission Schedule
+# Fee Caps and DAG-Fair Emission System
 
-This document specifies the IPPAN protocol's fee caps, emission schedule, and reward distribution logic.
+This document defines IPPAN’s **fee system**, **DAG-Fair emission schedule**, and **reward distribution model**.  
+It merges the formal protocol specification (for implementation) with extended economic explanations (for the whitepaper and governance reference).
 
 ---
 
-## 🪙 Fee Caps
+## 1. Fee System
 
-### Overview
+### 1.1 Overview
 
-IPPAN enforces **hard, deterministic fee caps** at the protocol level to ensure predictable costs and prevent market manipulation.  
-Transactions exceeding the cap are rejected during both **mempool admission** and **block assembly**.
+IPPAN enforces **hard, deterministic fee caps** at the protocol level to ensure predictable costs, fairness, and resistance to manipulation.  
+Transactions that exceed their allowed fee cap are **rejected deterministically** during both **mempool admission** and **block assembly**, making fee behavior transparent and uniform across all nodes.
 
-### Cap Values (µIPN)
+This guarantees:
+- 💸 Predictable and capped transaction costs  
+- 🛡️ Protection against fee-based centralization  
+- ⚖️ Fair treatment of all transaction classes  
 
-| Transaction Type | Cap (µIPN) | Cap (IPN) | USD Equivalent* |
-|------------------|------------|-----------|-----------------|
-| Transfer         | 1,000      | 0.00001   | ~$0.0001        |
-| AI Call          | 100        | 0.000001  | ~$0.00001       |
-| Contract Deploy  | 100,000    | 0.001     | ~$0.01          |
-| Contract Call    | 10,000     | 0.0001    | ~$0.001         |
-| Governance       | 10,000     | 0.0001    | ~$0.001         |
-| Validator Ops    | 10,000     | 0.0001    | ~$0.001         |
+### 1.2 Fee Cap Table
 
-\*Assuming $10/IPN, illustrative only.
+| Transaction Type     | Cap (µIPN) | Cap (IPN)   | Description                     |
+|----------------------|------------|-------------|----------------------------------|
+| Transfer             | 1,000      | 0.00001     | Simple token transfer            |
+| AI Call              | 100        | 0.000001    | AI model inference call          |
+| Contract Deploy      | 100,000    | 0.001       | Deploy smart contract            |
+| Contract Call        | 10,000     | 0.0001      | Execute contract method          |
+| Governance           | 10,000     | 0.0001      | Governance proposal or vote      |
+| Validator Operations | 10,000     | 0.0001      | Stake, register, or update node  |
 
-### Enforcement
+> *1 IPN = 100 000 000 µIPN*
+
+### 1.3 Fee Validation
+
+Each transaction’s fee is checked using deterministic validation logic during admission:
 
 ```rust
-// In mempool admission
-if tx.fee > fee_cap_for_type(tx.type) {
-    return Err(FeeError::FeeAboveCap);
-}
-
-// In block proposal
+// Example (in PoAConsensus block proposal)
 for tx in block.transactions {
     validate_fee(&tx, tx.fee, &fee_config)?;
 }

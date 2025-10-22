@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  node:
+    build: 
+      context: ..
+      dockerfile: docker/Dockerfile.node
+    environment:
+      - IPPAN_ACTIVE_MODEL=reputation_v1
+      - IPPAN_ENABLE_AI_REPUTATION=true
+      - IPPAN_ENABLE_FEE_CAPS=true
+      - IPPAN_ENABLE_DAG_FAIR_EMISSION=true
+    volumes:
+      - ../models:/models:ro
+      - ../data:/data
+    ports:
+      - "7080:7080"
+      - "8081:8081"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional AI agent service (disabled by default)
+  # ai-agent:
+  #   image: ippan/ai-agent:latest
+  #   environment:
+  #     - AI_MODEL_PATH=/models
+  #     - AI_ENABLED=false
+  #   volumes:
+  #     - ../models:/models:ro
+  #   deploy:
+  #     replicas: 0
+  #   restart: unless-stopped

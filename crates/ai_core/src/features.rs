@@ -1,6 +1,6 @@
-/// Feature extraction and normalization for AI models
-///
-/// All operations use integer arithmetic for determinism
+//! Feature extraction and normalization for AI models
+//!
+//! All operations use integer arithmetic for determinism
 use serde::{Deserialize, Serialize};
 
 /// Feature vector (scaled integers)
@@ -45,9 +45,9 @@ impl Default for FeatureConfig {
         Self {
             scale: 10000,
             max_blocks_proposed: 100000,
-            max_latency_us: 1000000,       // 1 second
-            max_stake: 1_000_000_00000000, // 1M IPN
-            max_age_rounds: 10_000_000,    // ~231 days at 200ms/round
+            max_latency_us: 1_000_000,       // 1 second
+            max_stake: 1_000_000_00000000,   // 1M IPN
+            max_age_rounds: 10_000_000,      // ~231 days at 200ms/round
         }
     }
 }
@@ -57,8 +57,8 @@ impl Default for FeatureConfig {
 /// Features (all scaled to [0, scale]):
 /// 0. Proposal rate (blocks_proposed / rounds_active)
 /// 1. Verification rate (blocks_verified / rounds_active)
-/// 2. Average latency (normalized)
-/// 3. Slash penalty (scale - slash_count * penalty)
+/// 2. Average latency (normalized, inverted)
+/// 3. Slash penalty (scale - slash_count * 1000)
 /// 4. Stake weight (normalized)
 /// 5. Longevity (normalized age)
 pub fn extract_features(telemetry: &ValidatorTelemetry, config: &FeatureConfig) -> FeatureVector {
@@ -162,12 +162,12 @@ mod tests {
         let features = extract_features(&telemetry, &config);
 
         assert_eq!(features.len(), 6);
-        assert_eq!(features[0], 0); // proposal_rate
-        assert_eq!(features[1], 0); // verification_rate
-        assert_eq!(features[2], config.scale); // latency (perfect when 0)
-        assert_eq!(features[3], config.scale); // no slashes
-        assert_eq!(features[4], 0); // no stake
-        assert_eq!(features[5], 0); // no age
+        assert_eq!(features[0], 0);
+        assert_eq!(features[1], 0);
+        assert_eq!(features[2], config.scale);
+        assert_eq!(features[3], config.scale);
+        assert_eq!(features[4], 0);
+        assert_eq!(features[5], 0);
     }
 
     #[test]
@@ -176,9 +176,9 @@ mod tests {
             blocks_proposed: 1000,
             blocks_verified: 5000,
             rounds_active: 10000,
-            avg_latency_us: 100000, // 100ms
+            avg_latency_us: 100000,
             slash_count: 0,
-            stake: 100000_00000000, // 100k IPN
+            stake: 100000_00000000,
             age_rounds: 1000000,
         };
 
@@ -186,12 +186,12 @@ mod tests {
         let features = extract_features(&telemetry, &config);
 
         assert_eq!(features.len(), 6);
-        assert!(features[0] > 0); // Has proposal activity
-        assert!(features[1] > 0); // Has verification activity
-        assert!(features[2] > 8000); // Good latency
-        assert_eq!(features[3], config.scale); // No slashes
-        assert!(features[4] > 0); // Has stake
-        assert!(features[5] > 0); // Has age
+        assert!(features[0] > 0);
+        assert!(features[1] > 0);
+        assert!(features[2] > 8000);
+        assert_eq!(features[3], config.scale);
+        assert!(features[4] > 0);
+        assert!(features[5] > 0);
     }
 
     #[test]
@@ -209,7 +209,6 @@ mod tests {
         let config = FeatureConfig::default();
         let features = extract_features(&telemetry, &config);
 
-        // Slash penalty should be reduced
         assert!(features[3] < config.scale);
         assert_eq!(features[3], config.scale - 5000);
     }
@@ -217,23 +216,22 @@ mod tests {
     #[test]
     fn test_extract_features_clamping() {
         let telemetry = ValidatorTelemetry {
-            blocks_proposed: 1000000, // Exceeds max
-            blocks_verified: 1000000,
+            blocks_proposed: 1_000_000,
+            blocks_verified: 1_000_000,
             rounds_active: 1,
-            avg_latency_us: 5000000,    // Very high latency
-            slash_count: 100,           // Many slashes
-            stake: 10_000_000_00000000, // Exceeds max
-            age_rounds: 100_000_000,    // Very old
+            avg_latency_us: 5_000_000,
+            slash_count: 100,
+            stake: 10_000_000_00000000,
+            age_rounds: 100_000_000,
         };
 
         let config = FeatureConfig::default();
         let features = extract_features(&telemetry, &config);
 
-        // Values should be clamped to valid range
         assert!(features[0] <= config.scale);
         assert!(features[1] <= config.scale);
         assert!(features[2] >= 0);
-        assert!(features[3] >= 0); // Slash penalty clamped to 0
+        assert!(features[3] >= 0);
         assert!(features[4] <= config.scale);
         assert!(features[5] <= config.scale);
     }
@@ -247,10 +245,7 @@ mod tests {
 
         let normalized = normalize_features(&raw, &min, &max, scale);
 
-        assert_eq!(normalized.len(), 3);
-        assert_eq!(normalized[0], 5000); // 50/100 * 10000
-        assert_eq!(normalized[1], 5000); // 100/200 * 10000
-        assert_eq!(normalized[2], 7500); // 150/200 * 10000
+        assert_eq!(normalized, vec![5000, 5000, 7500]);
     }
 
     #[test]
@@ -262,9 +257,9 @@ mod tests {
 
         let normalized = normalize_features(&raw, &min, &max, scale);
 
-        assert_eq!(normalized[0], 0); // Clamped to 0
-        assert_eq!(normalized[1], 0); // 0/100 * 10000
-        assert_eq!(normalized[2], 10000); // Clamped to scale
+        assert_eq!(normalized[0], 0);
+        assert_eq!(normalized[1], 0);
+        assert_eq!(normalized[2], 10000);
     }
 
     #[test]
@@ -275,8 +270,6 @@ mod tests {
         let scale = 10000;
 
         let normalized = normalize_features(&raw, &min, &max, scale);
-
-        // Should return middle value when range is 0
         assert_eq!(normalized[0], scale / 2);
     }
 
@@ -294,13 +287,11 @@ mod tests {
 
         let config = FeatureConfig::default();
 
-        // Extract features multiple times
-        let features1 = extract_features(&telemetry, &config);
-        let features2 = extract_features(&telemetry, &config);
-        let features3 = extract_features(&telemetry, &config);
+        let f1 = extract_features(&telemetry, &config);
+        let f2 = extract_features(&telemetry, &config);
+        let f3 = extract_features(&telemetry, &config);
 
-        // Should be identical every time
-        assert_eq!(features1, features2);
-        assert_eq!(features2, features3);
+        assert_eq!(f1, f2);
+        assert_eq!(f2, f3);
     }
 }

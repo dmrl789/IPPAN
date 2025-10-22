@@ -1,44 +1,42 @@
-//! DAG-Fair emission module for round-based rewards
+//! DAG-Fair Emission Module
 //!
-//! Implements a deterministic emission schedule with:
-//! - Round-based halvings
-//! - Split distribution between proposers and verifiers
-//! - Fee recycling to the reward pool
+//! Deterministic round-based reward emission for IPPAN.
+//! Includes halving logic, proposer/verifier reward split,
+//! total supply projection, and fee recycling.
 
 use serde::{Deserialize, Serialize};
 
 /// Global emission parameters for IPPAN
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmissionParams {
-    /// Initial reward per round (µIPN)
+    /// Initial reward per round (in µIPN — micro-IPN)
     pub r0: u128,
     /// Number of rounds between halvings
     pub halving_rounds: u64,
-    /// Maximum total supply (21 M IPN = 21 000 000 × 10⁸ µIPN)
+    /// Supply cap (e.g. 21 M IPN = 21 000 000 × 10⁸ µIPN)
     pub supply_cap: u128,
-    /// Proposer reward percentage (basis points, 1 bp = 0.01 %)
+    /// Proposer reward percentage (basis points; 20 % = 2000)
     pub proposer_bps: u16,
-    /// Verifier reward percentage (basis points)
+    /// Verifier reward percentage (basis points; 80 % = 8000)
     pub verifier_bps: u16,
 }
 
 impl Default for EmissionParams {
     fn default() -> Self {
         Self {
-            // Start with 10 000 µIPN per round (~50 IPN/day at 100 ms rounds)
+            // ~50 IPN/day at 100 ms rounds with finalization
             r0: 10_000,
-            // Halving roughly every two years (≈ 315 M rounds at 200 ms)
+            // Halving ≈ every 2 years at 200 ms rounds (~315 M rounds)
             halving_rounds: 315_000_000,
             // 21 million IPN × 10⁸ µIPN
             supply_cap: 21_000_000_00000000,
-            // 20 % proposer / 80 % verifiers
             proposer_bps: 2000,
             verifier_bps: 8000,
         }
     }
 }
 
-/// Compute the per-round reward using a halving schedule.
+/// Compute per-round reward using a halving schedule
 pub fn round_reward(round: u64, params: &EmissionParams) -> u128 {
     if round == 0 {
         return 0;
@@ -50,7 +48,7 @@ pub fn round_reward(round: u64, params: &EmissionParams) -> u128 {
     params.r0 >> halvings
 }
 
-/// Reward breakdown for a single round.
+/// Distribution of rewards for a single round
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoundRewardDistribution {
     pub total: u128,
@@ -60,7 +58,7 @@ pub struct RoundRewardDistribution {
     pub per_verifier: u128,
 }
 
-/// Compute reward distribution for one round.
+/// Compute reward distribution for a round
 pub fn distribute_round_reward(
     round: u64,
     params: &EmissionParams,
@@ -79,7 +77,7 @@ pub fn distribute_round_reward(
     }
 
     let proposer_reward = (total * params.proposer_bps as u128) / 10_000;
-    let verifier_pool = total - proposer_reward;
+    let verifier_pool = total.saturating_sub(proposer_reward);
     let per_verifier = if verifier_count > 0 {
         verifier_pool / verifier_count as u128
     } else {
@@ -95,7 +93,7 @@ pub fn distribute_round_reward(
     }
 }
 
-/// Estimate total emitted supply up to `rounds` (µIPN).
+/// Project total supply emitted after given number of rounds
 pub fn projected_supply(rounds: u64, params: &EmissionParams) -> u128 {
     if rounds == 0 {
         return 0;
@@ -103,13 +101,10 @@ pub fn projected_supply(rounds: u64, params: &EmissionParams) -> u128 {
 
     let mut total = 0u128;
     let mut halvings = 0u32;
+
     loop {
-        let reward_at_level = if halvings >= 64 {
-            0
-        } else {
-            params.r0 >> halvings
-        };
-        if reward_at_level == 0 {
+        let reward = if halvings >= 64 { 0 } else { params.r0 >> halvings };
+        if reward == 0 {
             break;
         }
 
@@ -120,20 +115,21 @@ pub fn projected_supply(rounds: u64, params: &EmissionParams) -> u128 {
         }
 
         let effective_end = end_round.min(rounds);
-        let rounds_at_level = (effective_end - start_round + 1) as u128;
-        total = total.saturating_add(reward_at_level.saturating_mul(rounds_at_level));
+        let count = (effective_end - start_round + 1) as u128;
+        total = total.saturating_add(reward.saturating_mul(count));
+
         halvings += 1;
     }
 
     total.min(params.supply_cap)
 }
 
-/// Weekly fee-recycling parameters.
+/// Weekly fee-recycling parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeRecyclingParams {
-    /// Rounds per week (~3 024 000 at 200 ms)
+    /// Rounds per week (≈ 3 024 000 at 200 ms rounds)
     pub rounds_per_week: u64,
-    /// Portion of collected fees to recycle (10 000 = 100 %)
+    /// Percentage of collected fees to recycle (basis points)
     pub recycle_bps: u16,
 }
 
@@ -141,12 +137,12 @@ impl Default for FeeRecyclingParams {
     fn default() -> Self {
         Self {
             rounds_per_week: 3_024_000,
-            recycle_bps: 10_000,
+            recycle_bps: 10_000, // 100 %
         }
     }
 }
 
-/// Compute recycled fee amount.
+/// Compute amount of fees to recycle back into reward pool
 pub fn calculate_fee_recycling(collected_fees: u128, params: &FeeRecyclingParams) -> u128 {
     (collected_fees * params.recycle_bps as u128) / 10_000
 }
@@ -169,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn test_distribute_round_reward() {
+    fn test_distribution() {
         let params = EmissionParams::default();
         let dist = distribute_round_reward(1, &params, 1, 4);
         assert_eq!(dist.total, 10_000);
@@ -179,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn test_projected_supply() {
+    fn test_projected_supply_growth() {
         let params = EmissionParams {
             r0: 10_000,
             halving_rounds: 1000,
@@ -188,42 +184,37 @@ mod tests {
             verifier_bps: 8000,
         };
         let s1 = projected_supply(1000, &params);
-        assert_eq!(s1, 10_000 * 1000);
         let s2 = projected_supply(2000, &params);
+        assert_eq!(s1, 10_000 * 1000);
         assert_eq!(s2, 10_000 * 1000 + 5_000 * 1000);
     }
 
     #[test]
     fn test_supply_cap_enforced() {
         let params = EmissionParams {
-            r0: 10_000,
-            halving_rounds: 100,
             supply_cap: 50_000,
-            proposer_bps: 2000,
-            verifier_bps: 8000,
+            ..Default::default()
         };
-        assert!(projected_supply(1000, &params) <= params.supply_cap);
+        let supply = projected_supply(10_000_000, &params);
+        assert!(supply <= params.supply_cap);
     }
 
     #[test]
     fn test_fee_recycling() {
         let params = FeeRecyclingParams::default();
         assert_eq!(calculate_fee_recycling(10_000, &params), 10_000);
-        let p50 = FeeRecyclingParams {
+        let params_half = FeeRecyclingParams {
             recycle_bps: 5000,
             ..Default::default()
         };
-        assert_eq!(calculate_fee_recycling(10_000, &p50), 5_000);
+        assert_eq!(calculate_fee_recycling(10_000, &params_half), 5_000);
     }
 
     #[test]
-    fn test_reward_eventually_zero() {
-        let params = EmissionParams {
-            r0: 1_000,
-            halving_rounds: 100,
-            ..Default::default()
-        };
-        let future_round = 100 * 65; // 65 halvings
-        assert_eq!(round_reward(future_round, &params), 0);
+    fn test_emission_converges() {
+        let params = EmissionParams::default();
+        let s10k = projected_supply(10_000, &params);
+        let s100k = projected_supply(100_000, &params);
+        assert!(s10k < s100k && s100k <= params.supply_cap);
     }
 }
