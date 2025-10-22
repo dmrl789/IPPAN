@@ -65,6 +65,10 @@ jobs:
       - name: Cargo test (build only)
         run: cargo test --workspace --all-features --no-run
 
+      - name: AI Core determinism tests
+        run: |
+          cargo test -p ippan-ai-core -- --nocapture
+
   gateway:
     name: Gateway Checks
     runs-on: ubuntu-latest

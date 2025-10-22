@@ -1,0 +1,12 @@
+[package]
+name = "ippan-ai-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "AI model registry interfaces for IPPAN."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
