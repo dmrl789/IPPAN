@@ -35,7 +35,6 @@ This guarantees:
 Each transaction’s fee is checked using deterministic validation logic during admission:
 
 ```rust
-// Example (in PoAConsensus block proposal)
 for tx in block.transactions {
     validate_fee(&tx, tx.fee, &fee_config)?;
 }

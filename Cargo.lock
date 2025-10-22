@@ -1,38 +1,74 @@
-# Fee Caps and Emission Schedule
+version: "3.9"
 
-This document specifies the IPPAN protocol's fee caps, emission schedule, and reward distribution logic.
+services:
+  ippan-node-1:
+    image: ghcr.io/dmrl789/ippan/ippan-node:latest
+    container_name: ippan-node-1
+    restart: unless-stopped
+    environment:
+      - NODE_ID=ippan_production_node_001
+      - NODE_ROLE=validator
+      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000001
+      - RPC_HOST=0.0.0.0
+      - RPC_PORT=8080
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9000
+      - P2P_BOOTNODES=/ip4/188.245.97.41/tcp/9001
+      - STORAGE_PATH=/var/lib/ippan/db
+      - CONSENSUS_SLOT_DURATION_MS=100
+      - CONSENSUS_MAX_TX_PER_BLOCK=1000
+      - CONSENSUS_BLOCK_REWARD=10000
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    ports:
+      - "8080:8080"     # RPC API
+      - "9000:9000"     # P2P network
+    volumes:
+      - node1_data:/var/lib/ippan/db
+    networks:
+      - ippan-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
----
+  ippan-node-2:
+    image: ghcr.io/dmrl789/ippan/ippan-node:latest
+    container_name: ippan-node-2
+    restart: unless-stopped
+    environment:
+      - NODE_ID=ippan_production_node_002
+      - NODE_ROLE=validator
+      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000002
+      - RPC_HOST=0.0.0.0
+      - RPC_PORT=8081
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9001
+      - P2P_BOOTNODES=/ip4/188.245.97.41/tcp/9000
+      - STORAGE_PATH=/var/lib/ippan/db
+      - CONSENSUS_SLOT_DURATION_MS=100
+      - CONSENSUS_MAX_TX_PER_BLOCK=1000
+      - CONSENSUS_BLOCK_REWARD=10000
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    ports:
+      - "8081:8081"     # RPC API
+      - "9001:9001"     # P2P network
+    volumes:
+      - node2_data:/var/lib/ippan/db
+    networks:
+      - ippan-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
-## 🪙 Fee Caps
+networks:
+  ippan-net:
+    driver: bridge
 
-### Overview
-
-IPPAN enforces **hard, deterministic fee caps** at the protocol level to ensure predictable costs and prevent market manipulation.  
-Transactions exceeding the cap are rejected during both **mempool admission** and **block assembly**.
-
-### Cap Values (µIPN)
-
-| Transaction Type | Cap (µIPN) | Cap (IPN) | USD Equivalent* |
-|------------------|------------|-----------|-----------------|
-| Transfer         | 1,000      | 0.00001   | ~$0.0001        |
-| AI Call          | 100        | 0.000001  | ~$0.00001       |
-| Contract Deploy  | 100,000    | 0.001     | ~$0.01          |
-| Contract Call    | 10,000     | 0.0001    | ~$0.001         |
-| Governance       | 10,000     | 0.0001    | ~$0.001         |
-| Validator Ops    | 10,000     | 0.0001    | ~$0.001         |
-
-\*Assuming $10/IPN, illustrative only.
-
-### Enforcement
-
-```rust
-// In mempool admission
-if tx.fee > fee_cap_for_type(tx.type) {
-    return Err(FeeError::FeeAboveCap);
-}
-
-// In block proposal
-for tx in block.transactions {
-    validate_fee(&tx, tx.fee, &fee_config)?;
-}
+volumes:
+  node1_data:
+  node2_data:
