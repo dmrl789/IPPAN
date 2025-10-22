@@ -6,10 +6,10 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Emission parameters for the blockchain
+/// Global emission parameters for IPPAN
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmissionParams {
-    /// Initial reward per round (in µIPN — micro IPN)
+    /// Initial reward per round (in µIPN — micro-IPN)
     pub r0: u128,
     /// Number of rounds between halvings
     pub halving_rounds: u64,
@@ -36,7 +36,7 @@ impl Default for EmissionParams {
     }
 }
 
-/// Compute round reward using halving schedule
+/// Compute per-round reward using a halving schedule
 pub fn round_reward(round: u64, params: &EmissionParams) -> u128 {
     if round == 0 {
         return 0;
@@ -66,7 +66,6 @@ pub fn distribute_round_reward(
     verifier_count: usize,
 ) -> RoundRewardDistribution {
     let total = round_reward(round, params);
-
     if total == 0 || block_count == 0 {
         return RoundRewardDistribution {
             total: 0,
@@ -104,11 +103,7 @@ pub fn projected_supply(rounds: u64, params: &EmissionParams) -> u128 {
     let mut halvings = 0u32;
 
     loop {
-        let reward = if halvings >= 64 {
-            0
-        } else {
-            params.r0 >> halvings
-        };
+        let reward = if halvings >= 64 { 0 } else { params.r0 >> halvings };
         if reward == 0 {
             break;
         }
@@ -175,6 +170,7 @@ mod tests {
         let dist = distribute_round_reward(1, &params, 1, 4);
         assert_eq!(dist.total, 10_000);
         assert_eq!(dist.proposer_reward, 2_000);
+        assert_eq!(dist.verifier_pool, 8_000);
         assert_eq!(dist.per_verifier, 2_000);
     }
 
@@ -207,7 +203,10 @@ mod tests {
     fn test_fee_recycling() {
         let params = FeeRecyclingParams::default();
         assert_eq!(calculate_fee_recycling(10_000, &params), 10_000);
-        let params_half = FeeRecyclingParams { recycle_bps: 5000, ..Default::default() };
+        let params_half = FeeRecyclingParams {
+            recycle_bps: 5000,
+            ..Default::default()
+        };
         assert_eq!(calculate_fee_recycling(10_000, &params_half), 5_000);
     }
 

@@ -9,12 +9,21 @@ use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
 use ippan_mempool::Mempool;
 use ippan_storage::{Account, Storage};
-use ippan_types::{IppanTimeMicros, Block, BlockId, RoundCertificate,
-    RoundFinalizationRecord, RoundId, RoundWindow, Transaction};
+use ippan_types::{
+    IppanTimeMicros, Block, BlockId, RoundCertificate, RoundFinalizationRecord,
+    RoundId, RoundWindow, Transaction,
+};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
-use tokio::{sync::mpsc, time::{interval, sleep}};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use tokio::{
+    sync::mpsc,
+    time::{interval, sleep},
+};
 use tracing::{error, info, warn};
 
 // ---------------------------------------------------------------------
@@ -39,12 +48,12 @@ pub use emission::{
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
 pub use parallel_dag::{
-    DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig,
-    ParallelDagEngine, ValidationResult,
+    DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
+    ValidationResult,
 };
 pub use reputation::{
-    apply_reputation_weight, calculate_reputation, ReputationScore,
-    ValidatorTelemetry, DEFAULT_REPUTATION,
+    apply_reputation_weight, calculate_reputation, ReputationScore, ValidatorTelemetry,
+    DEFAULT_REPUTATION,
 };
 use round::RoundConsensus;
 
@@ -141,17 +150,21 @@ pub struct PoAConsensus {
 
 impl PoAConsensus {
     /// Create a new PoA consensus engine
-    pub fn new(config: PoAConfig,
-               storage: Arc<dyn Storage + Send + Sync>,
-               validator_id: [u8; 32]) -> Self {
-        let (tx_sender, tx_receiver) = mpsc::unbounded_channel();
+    pub fn new(
+        config: PoAConfig,
+        storage: Arc<dyn Storage + Send + Sync>,
+        validator_id: [u8; 32],
+    ) -> Self {
+        let (tx_sender, _rx) = mpsc::unbounded_channel();
         let latest_height = storage.get_latest_height().unwrap_or(0);
 
         let previous_round_blocks = if latest_height == 0 {
             vec![]
         } else if let Ok(Some(block)) = storage.get_block_by_height(latest_height) {
             vec![block.hash()]
-        } else { vec![] };
+        } else {
+            vec![]
+        };
 
         let tracker = RoundTracker {
             current_round: latest_height.saturating_add(1),
@@ -170,8 +183,7 @@ impl PoAConsensus {
             tx_sender,
             mempool: Arc::new(Mempool::new(10_000)),
             round_tracker: Arc::new(RwLock::new(tracker)),
-            finalization_interval:
-                Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
+            finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
         }
@@ -196,36 +208,39 @@ impl PoAConsensus {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
         *self.current_slot.write() = now / self.config.slot_duration_ms;
 
-        let (is_running, current_slot, config, storage, mempool, round_tracker,
-             round_consensus, finalization_interval, validator_id)
-            = (self.is_running.clone(), self.current_slot.clone(), self.config.clone(),
-               self.storage.clone(), self.mempool.clone(), self.round_tracker.clone(),
-               self.round_consensus.clone(), self.finalization_interval, self.validator_id);
+        let (is_running, current_slot, config, storage, mempool, round_tracker, round_consensus, finalization_interval, validator_id) =
+            (
+                self.is_running.clone(),
+                self.current_slot.clone(),
+                self.config.clone(),
+                self.storage.clone(),
+                self.mempool.clone(),
+                self.round_tracker.clone(),
+                self.round_consensus.clone(),
+                self.finalization_interval,
+                self.validator_id,
+            );
 
-        let mut rx = self.tx_sender.subscribe();
+        let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
         tokio::spawn(async move {
-            let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
             loop {
-                if !*is_running.read() { break; }
-
-                while let Ok(tx) = rx.try_recv() {
-                    if let Err(e) = mempool.add_transaction(tx) {
-                        warn!("Failed to add tx to mempool: {e}");
-                    }
+                if !*is_running.read() {
+                    break;
                 }
 
-                if let Err(e) = Self::finalize_round_if_ready(&storage, &round_tracker, finalization_interval) {
+                if let Err(e) =
+                    Self::finalize_round_if_ready(&storage, &round_tracker, finalization_interval)
+                {
                     error!("Round finalization error: {e}");
                 }
 
                 let slot = *current_slot.read();
-                if let Some(proposer) =
-                    Self::select_proposer(&config, &round_consensus, slot)
-                {
+                if let Some(proposer) = Self::select_proposer(&config, &round_consensus, slot) {
                     if proposer == validator_id {
-                        if let Err(e) = Self::propose_block(
-                            &storage, &mempool, &config,
-                            &round_tracker, slot, validator_id).await {
+                        if let Err(e) =
+                            Self::propose_block(&storage, &mempool, &config, &round_tracker, slot, validator_id)
+                                .await
+                        {
                             error!("Block proposal failed: {e}");
                         }
                     }
@@ -256,18 +271,20 @@ impl PoAConsensus {
         round_consensus: &Arc<RwLock<RoundConsensus>>,
         slot: u64,
     ) -> Option<[u8; 32]> {
-        let active: Vec<_> = config.validators.iter()
-            .filter(|v| v.is_active)
-            .map(|v| v.id)
-            .collect();
-        if active.is_empty() { return None; }
+        let active: Vec<_> = config.validators.iter().filter(|v| v.is_active).map(|v| v.id).collect();
+        if active.is_empty() {
+            return None;
+        }
 
         if config.enable_ai_reputation {
-            let weights: HashMap<[u8; 32], u64> = config.validators.iter()
-                .map(|v| (v.id, v.stake)).collect();
+            let weights: HashMap<[u8; 32], u64> =
+                config.validators.iter().map(|v| (v.id, v.stake)).collect();
             match round_consensus.write().select_validators(&active, &weights) {
                 Ok(sel) => Some(sel.proposer),
-                Err(e) => { warn!("AI selection failed: {e}"); Self::fallback_proposer(&active, slot) }
+                Err(e) => {
+                    warn!("AI selection failed: {e}");
+                    Self::fallback_proposer(&active, slot)
+                }
             }
         } else {
             Self::fallback_proposer(&active, slot)
@@ -275,8 +292,11 @@ impl PoAConsensus {
     }
 
     fn fallback_proposer(validators: &[[u8; 32]], slot: u64) -> Option<[u8; 32]> {
-        if validators.is_empty() { None }
-        else { Some(validators[(slot % validators.len() as u64) as usize]) }
+        if validators.is_empty() {
+            None
+        } else {
+            Some(validators[(slot % validators.len() as u64) as usize])
+        }
     }
 
     async fn propose_block(
@@ -288,22 +308,29 @@ impl PoAConsensus {
         proposer: [u8; 32],
     ) -> Result<()> {
         let txs = mempool.get_transactions_for_block(config.max_transactions_per_block);
-        if txs.is_empty() { return Ok(()); }
+        if txs.is_empty() {
+            return Ok(());
+        }
 
         let height = storage.get_latest_height()?;
         let parents = {
             let t = tracker.read();
-            if !t.previous_round_blocks.is_empty() { t.previous_round_blocks.clone() }
-            else if height == 0 { vec![] }
-            else {
-                vec![storage.get_block_by_height(height)?
+            if !t.previous_round_blocks.is_empty() {
+                t.previous_round_blocks.clone()
+            } else if height == 0 {
+                vec![]
+            } else {
+                vec![storage
+                    .get_block_by_height(height)?
                     .ok_or_else(|| anyhow::anyhow!("Previous block not found"))?
                     .hash()]
             }
         };
 
         let block = Block::new(parents, txs, height + 1, proposer);
-        if !block.is_valid() { return Err(anyhow::anyhow!("Invalid block")); }
+        if !block.is_valid() {
+            return Err(anyhow::anyhow!("Invalid block"));
+        }
         validate_confidential_block(&block)?;
 
         storage.store_block(block.clone())?;
@@ -318,7 +345,9 @@ impl PoAConsensus {
 
         info!(
             "Proposed block {} at height {} ({} txs)",
-            hex::encode(block.hash()), block.header.round, block.transactions.len()
+            hex::encode(block.hash()),
+            block.header.round,
+            block.transactions.len()
         );
         Ok(())
     }
@@ -330,7 +359,9 @@ impl PoAConsensus {
     ) -> Result<()> {
         let (round_id, block_ids, start, end) = {
             let mut t = tracker.write();
-            if t.round_start.elapsed() < interval { return Ok(()); }
+            if t.round_start.elapsed() < interval {
+                return Ok(());
+            }
             if t.current_round_blocks.is_empty() {
                 t.round_start = Instant::now();
                 t.round_start_time = IppanTimeMicros::now();
@@ -347,13 +378,15 @@ impl PoAConsensus {
             (id, blocks, ws, t.round_start_time)
         };
 
-        let blocks: Vec<_> = block_ids.iter()
-            .filter_map(|id| storage.get_block(id).ok().flatten())
-            .collect();
-        if blocks.is_empty() { return Ok(()); }
+        let blocks: Vec<_> = block_ids.iter().filter_map(|id| storage.get_block(id).ok().flatten()).collect();
+        if blocks.is_empty() {
+            return Ok(());
+        }
 
         let mut map = HashMap::new();
-        for b in &blocks { map.insert(b.header.id, b.clone()); }
+        for b in &blocks {
+            map.insert(b.header.id, b.clone());
+        }
 
         let mut conflicts = Vec::new();
         let ordered = order_round(
@@ -379,15 +412,25 @@ impl PoAConsensus {
         let mut hasher = Blake3::new();
         hasher.update(&round_id.to_be_bytes());
         hasher.update(&prev_root);
-        for id in &block_ids { hasher.update(id); }
-        for tx in &ordered { hasher.update(tx); }
-        for c in &conflicts { hasher.update(c); }
+        for id in &block_ids {
+            hasher.update(id);
+        }
+        for tx in &ordered {
+            hasher.update(tx);
+        }
+        for c in &conflicts {
+            hasher.update(c);
+        }
 
         let digest = hasher.finalize();
         let mut state_root = [0u8; 32];
         state_root.copy_from_slice(digest.as_bytes());
 
-        let window = RoundWindow { id: round_id, start_us: start, end_us: end };
+        let window = RoundWindow {
+            id: round_id,
+            start_us: start,
+            end_us: end,
+        };
         let record = RoundFinalizationRecord {
             round: round_id,
             window,
@@ -404,13 +447,11 @@ impl PoAConsensus {
     fn aggregate_round_signature(round: RoundId, blocks: &[BlockId]) -> Vec<u8> {
         let mut h = Blake3::new();
         h.update(&round.to_be_bytes());
-        for id in blocks { h.update(id); }
+        for id in blocks {
+            h.update(id);
+        }
         h.finalize().as_bytes()[..32].to_vec()
     }
-
-    // ---------------------------------------------------------------
-    // Utilities
-    // ---------------------------------------------------------------
 
     pub fn get_state(&self) -> ConsensusState {
         let slot = *self.current_slot.read();
@@ -437,7 +478,7 @@ impl PoAConsensus {
 }
 
 // ---------------------------------------------------------------------
-// Legacy Trait for Compatibility
+// ConsensusEngine Trait
 // ---------------------------------------------------------------------
 
 #[allow(async_fn_in_trait)]
@@ -450,18 +491,31 @@ pub trait ConsensusEngine {
 }
 
 impl ConsensusEngine for PoAConsensus {
-    async fn start(&mut self) -> Result<()> { PoAConsensus::start(self).await }
-    async fn stop(&mut self) -> Result<()> { PoAConsensus::stop(self).await }
+    async fn start(&mut self) -> Result<()> {
+        PoAConsensus::start(self).await
+    }
+    async fn stop(&mut self) -> Result<()> {
+        PoAConsensus::stop(self).await
+    }
     async fn propose_block(&self, txs: Vec<Transaction>) -> Result<Block> {
         let h = self.storage.get_latest_height()?;
-        let prev = if h == 0 { [0u8; 32] }
-        else {
-            self.storage.get_block_by_height(h)?
+        let prev = if h == 0 {
+            [0u8; 32]
+        } else {
+            self.storage
+                .get_block_by_height(h)?
                 .ok_or_else(|| anyhow::anyhow!("Missing previous block"))?
                 .hash()
         };
         Ok(Block::new(if h == 0 { vec![] } else { vec![prev] }, txs, h + 1, self.validator_id))
     }
-    async fn validate_block(&self, b: &Block) -> Result<bool> { PoAConsensus::validate_block(self, b).await }
-    fn get_state(&self) -> ConsensusState { PoAConsensus::get_state(self) }
+    async fn validate_block(&self, block: &Block) -> Result<bool> {
+        if block.transactions.iter().any(|tx| validate_confidential_transaction(tx).is_err()) {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+    fn get_state(&self) -> ConsensusState {
+        PoAConsensus::get_state(self)
+    }
 }

@@ -51,6 +51,7 @@ impl Default for FeeCapConfig {
 }
 
 impl FeeCapConfig {
+    /// Return the cap value for the given transaction kind
     pub fn get_cap(&self, kind: TxKind) -> u128 {
         match kind {
             TxKind::Transfer => self.cap_transfer,
@@ -107,9 +108,13 @@ pub fn validate_fee(tx: &Transaction, fee: u128, config: &FeeCapConfig) -> Resul
 /// Fee collector and recycler
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeCollector {
+    /// Total fees accumulated since last recycling
     pub accumulated: u128,
+    /// Round number when last recycling occurred
     pub last_recycle_round: u64,
+    /// Lifetime total fees collected
     pub total_collected: u128,
+    /// Lifetime total recycled fees
     pub total_recycled: u128,
 }
 
@@ -123,15 +128,18 @@ impl FeeCollector {
         }
     }
 
+    /// Collect a transaction fee into the accumulator
     pub fn collect(&mut self, fee: u128) {
         self.accumulated = self.accumulated.saturating_add(fee);
         self.total_collected = self.total_collected.saturating_add(fee);
     }
 
+    /// Check if recycling should trigger at current round
     pub fn should_recycle(&self, current_round: u64, recycle_interval: u64) -> bool {
         self.accumulated > 0 && current_round >= self.last_recycle_round + recycle_interval
     }
 
+    /// Perform recycling and return the amount recycled
     pub fn recycle(&mut self, current_round: u64, recycle_bps: u16) -> u128 {
         let amount = (self.accumulated * recycle_bps as u128) / 10_000;
         self.accumulated = self.accumulated.saturating_sub(amount);
@@ -163,6 +171,7 @@ mod tests {
         assert_eq!(classify_transaction(&tx_with_topic("contract_deploy")), TxKind::ContractDeploy);
         assert_eq!(classify_transaction(&tx_with_topic("governance")), TxKind::Governance);
         assert_eq!(classify_transaction(&tx_with_topic("validator_stake")), TxKind::Validator);
+        assert_eq!(classify_transaction(&tx_with_topic("random_topic")), TxKind::Transfer);
     }
 
     #[test]
@@ -171,6 +180,9 @@ mod tests {
         let tx = tx_with_topic("ai_call");
         assert!(validate_fee(&tx, 50, &cfg).is_ok());
         assert!(validate_fee(&tx, 101, &cfg).is_err());
+        let tx2 = tx_with_topic("contract_deploy");
+        assert!(validate_fee(&tx2, 99_999, &cfg).is_ok());
+        assert!(validate_fee(&tx2, 100_001, &cfg).is_err());
     }
 
     #[test]
@@ -181,5 +193,6 @@ mod tests {
         let recycled = c.recycle(100, 5000);
         assert_eq!(recycled, 500);
         assert_eq!(c.total_recycled, 500);
+        assert_eq!(c.accumulated, 500);
     }
 }

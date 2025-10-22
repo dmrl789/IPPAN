@@ -102,6 +102,13 @@ impl Mempool {
         // Calculate fee (simplified - in production, this would be more sophisticated)
         let fee = self.calculate_transaction_fee(&tx);
 
+        // Enforce a hard fee cap at mempool admission to prevent DoS via
+        // over-priced transactions; keep this conservative to match consensus.
+        const MAX_FEE_PER_TX: u64 = 10_000_000; // must mirror consensus cap
+        if fee > MAX_FEE_PER_TX {
+            return Ok(false);
+        }
+
         // Add transaction with metadata
         let meta = TransactionMeta {
             transaction: tx.clone(),
