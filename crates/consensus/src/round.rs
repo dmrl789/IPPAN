@@ -2,6 +2,7 @@ use anyhow::Result;
 use ippan_ai_core::{features::ValidatorTelemetry, gbdt::GbdtEvaluator, model::Model};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use rand::Rng;
 
 /// Round-based consensus with AI reputation scoring
 pub struct RoundConsensus {

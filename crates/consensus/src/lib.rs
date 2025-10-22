@@ -250,7 +250,7 @@ impl PoAConsensus {
                             .map(|v| (v.id, v.stake))
                             .collect();
                         
-                        match round_consensus.write().select_validators(&active_validators, &stake_weights) {
+                        match self.round_consensus.write().select_validators(&active_validators, &stake_weights) {
                             Ok(selection) => Some(selection.proposer),
                             Err(e) => {
                                 warn!("AI-based proposer selection failed: {}, falling back to round-robin", e);
