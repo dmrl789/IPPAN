@@ -1,189 +1,297 @@
-use anyhow::Result;
+//! Feature extraction and normalization for AI models
+//!
+//! All operations use integer arithmetic for determinism
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-/// Telemetry data collected from validators
+/// Feature vector (scaled integers)
+pub type FeatureVector = Vec<i64>;
+
+/// Telemetry data for feature extraction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorTelemetry {
-    /// Validator ID
-    pub validator_id: [u8; 32],
-    /// Block production rate (blocks per hour)
-    pub block_production_rate: f64,
-    /// Average block size (bytes)
-    pub avg_block_size: f64,
-    /// Uptime percentage (0.0 to 1.0)
-    pub uptime: f64,
-    /// Network latency (milliseconds)
-    pub network_latency: f64,
-    /// Transaction validation accuracy (0.0 to 1.0)
-    pub validation_accuracy: f64,
-    /// Stake amount
-    pub stake: u64,
+    /// Total blocks proposed by this validator
+    pub blocks_proposed: u64,
+    /// Total blocks verified by this validator
+    pub blocks_verified: u64,
+    /// Number of rounds this validator has been active
+    pub rounds_active: u64,
+    /// Average block proposal latency (microseconds)
+    pub avg_latency_us: u64,
     /// Number of slashing events
-    pub slashing_events: u32,
-    /// Time since last activity (seconds)
-    pub last_activity: u64,
-    /// Additional custom metrics
-    #[serde(default)]
-    pub custom_metrics: HashMap<String, f64>,
+    pub slash_count: u32,
+    /// Current stake amount
+    pub stake: u64,
+    /// Age of validator (rounds since registration)
+    pub age_rounds: u64,
 }
 
-/// Feature extraction and normalization
-pub struct FeatureExtractor {
-    /// Feature scaling parameters
-    scaling_params: HashMap<String, (f64, f64)>, // (mean, std) for normalization
+/// Feature extraction configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureConfig {
+    /// Scale factor for normalization (e.g., 10000 for 4 decimals)
+    pub scale: i64,
+    /// Maximum expected blocks proposed (for normalization)
+    pub max_blocks_proposed: u64,
+    /// Maximum expected latency in microseconds
+    pub max_latency_us: u64,
+    /// Maximum expected stake
+    pub max_stake: u64,
+    /// Maximum expected age in rounds
+    pub max_age_rounds: u64,
 }
 
-impl FeatureExtractor {
-    /// Create a new feature extractor with default scaling parameters
-    pub fn new() -> Self {
-        let mut scaling_params = HashMap::new();
-        
-        // Default scaling parameters (can be updated based on historical data)
-        scaling_params.insert("block_production_rate".to_string(), (10.0, 5.0));
-        scaling_params.insert("avg_block_size".to_string(), (1000.0, 500.0));
-        scaling_params.insert("uptime".to_string(), (0.95, 0.1));
-        scaling_params.insert("network_latency".to_string(), (100.0, 50.0));
-        scaling_params.insert("validation_accuracy".to_string(), (0.98, 0.05));
-        scaling_params.insert("stake".to_string(), (1000000.0, 500000.0));
-        scaling_params.insert("slashing_events".to_string(), (0.0, 1.0));
-        scaling_params.insert("last_activity".to_string(), (3600.0, 1800.0));
-        
-        Self { scaling_params }
-    }
-
-    /// Extract and normalize features from telemetry data
-    pub fn extract_features(&self, telemetry: &ValidatorTelemetry) -> Result<Vec<i64>> {
-        let mut features = Vec::new();
-        
-        // Block production rate (normalized)
-        let bp_rate = self.normalize_feature("block_production_rate", telemetry.block_production_rate);
-        features.push(self.quantize_feature(bp_rate));
-        
-        // Average block size (normalized)
-        let avg_size = self.normalize_feature("avg_block_size", telemetry.avg_block_size);
-        features.push(self.quantize_feature(avg_size));
-        
-        // Uptime (normalized)
-        let uptime = self.normalize_feature("uptime", telemetry.uptime);
-        features.push(self.quantize_feature(uptime));
-        
-        // Network latency (inverted and normalized - lower is better)
-        let latency = self.normalize_feature("network_latency", telemetry.network_latency);
-        features.push(self.quantize_feature(-latency)); // Invert so lower latency = higher score
-        
-        // Validation accuracy (normalized)
-        let accuracy = self.normalize_feature("validation_accuracy", telemetry.validation_accuracy);
-        features.push(self.quantize_feature(accuracy));
-        
-        // Stake (normalized)
-        let stake = self.normalize_feature("stake", telemetry.stake as f64);
-        features.push(self.quantize_feature(stake));
-        
-        // Slashing events (inverted and normalized - fewer is better)
-        let slashing = self.normalize_feature("slashing_events", telemetry.slashing_events as f64);
-        features.push(self.quantize_feature(-slashing)); // Invert so fewer slashing = higher score
-        
-        // Last activity (inverted and normalized - more recent is better)
-        let activity = self.normalize_feature("last_activity", telemetry.last_activity as f64);
-        features.push(self.quantize_feature(-activity)); // Invert so more recent = higher score
-        
-        Ok(features)
-    }
-
-    /// Normalize a feature using z-score normalization
-    fn normalize_feature(&self, name: &str, value: f64) -> f64 {
-        if let Some((mean, std)) = self.scaling_params.get(name) {
-            if *std > 0.0 {
-                (value - mean) / std
-            } else {
-                0.0
-            }
-        } else {
-            value // No scaling if parameter not found
+impl Default for FeatureConfig {
+    fn default() -> Self {
+        Self {
+            scale: 10000,
+            max_blocks_proposed: 100000,
+            max_latency_us: 1_000_000,       // 1 second
+            max_stake: 1_000_000_00000000,   // 1M IPN
+            max_age_rounds: 10_000_000,      // ~231 days at 200ms/round
         }
     }
-
-    /// Quantize a normalized feature to integer range
-    fn quantize_feature(&self, normalized_value: f64) -> i64 {
-        // Clamp to reasonable range and scale to integer
-        let clamped = normalized_value.clamp(-3.0, 3.0); // 3-sigma range
-        (clamped * 1000.0).round() as i64 // Scale to [-3000, 3000] range
-    }
-
-    /// Update scaling parameters based on historical data
-    pub fn update_scaling_params(&mut self, name: &str, mean: f64, std: f64) {
-        self.scaling_params.insert(name.to_string(), (mean, std));
-    }
 }
 
-impl Default for FeatureExtractor {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Extract features from validator telemetry
+///
+/// Features (all scaled to [0, scale]):
+/// 0. Proposal rate (blocks_proposed / rounds_active)
+/// 1. Verification rate (blocks_verified / rounds_active)
+/// 2. Average latency (normalized, inverted)
+/// 3. Slash penalty (scale - slash_count * 1000)
+/// 4. Stake weight (normalized)
+/// 5. Longevity (normalized age)
+pub fn extract_features(telemetry: &ValidatorTelemetry, config: &FeatureConfig) -> FeatureVector {
+    let scale = config.scale;
+
+    // Feature 0: Proposal rate
+    let proposal_rate = if telemetry.rounds_active > 0 {
+        let rate = (telemetry.blocks_proposed * scale as u64) / telemetry.rounds_active;
+        let normalized = (rate * scale as u64) / config.max_blocks_proposed;
+        normalized.min(scale as u64) as i64
+    } else {
+        0
+    };
+
+    // Feature 1: Verification rate
+    let verification_rate = if telemetry.rounds_active > 0 {
+        let rate = (telemetry.blocks_verified * scale as u64) / telemetry.rounds_active;
+        let normalized = (rate * scale as u64) / config.max_blocks_proposed;
+        normalized.min(scale as u64) as i64
+    } else {
+        0
+    };
+
+    // Feature 2: Latency (inverted - lower is better)
+    let latency_score = if telemetry.avg_latency_us > 0 {
+        let normalized = (telemetry.avg_latency_us * scale as u64) / config.max_latency_us;
+        (scale - normalized.min(scale as u64) as i64).max(0)
+    } else {
+        scale
+    };
+
+    // Feature 3: Slash penalty (scale - count * 1000)
+    let slash_penalty = (scale - (telemetry.slash_count as i64 * 1000)).max(0);
+
+    // Feature 4: Stake weight
+    let stake_weight = {
+        let normalized = (telemetry.stake * scale as u64) / config.max_stake;
+        normalized.min(scale as u64) as i64
+    };
+
+    // Feature 5: Longevity
+    let longevity = {
+        let normalized = (telemetry.age_rounds * scale as u64) / config.max_age_rounds;
+        normalized.min(scale as u64) as i64
+    };
+
+    vec![
+        proposal_rate,
+        verification_rate,
+        latency_score,
+        slash_penalty,
+        stake_weight,
+        longevity,
+    ]
 }
 
-/// Convenience function to extract features from telemetry
-pub fn from_telemetry(telemetry: &ValidatorTelemetry) -> Result<Vec<i64>> {
-    let extractor = FeatureExtractor::new();
-    extractor.extract_features(telemetry)
+/// Normalize raw feature values to scaled integers
+///
+/// # Arguments
+/// * `raw_values` - Raw feature values
+/// * `min_values` - Minimum value for each feature
+/// * `max_values` - Maximum value for each feature
+/// * `scale` - Output scale
+pub fn normalize_features(
+    raw_values: &[i64],
+    min_values: &[i64],
+    max_values: &[i64],
+    scale: i64,
+) -> FeatureVector {
+    raw_values
+        .iter()
+        .zip(min_values.iter())
+        .zip(max_values.iter())
+        .map(|((&val, &min), &max)| {
+            if max == min {
+                return scale / 2; // Middle value if no range
+            }
+            let normalized = ((val - min) * scale) / (max - min);
+            normalized.clamp(0, scale)
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn create_test_telemetry() -> ValidatorTelemetry {
-        ValidatorTelemetry {
-            validator_id: [1u8; 32],
-            block_production_rate: 12.5,
-            avg_block_size: 1200.0,
-            uptime: 0.98,
-            network_latency: 80.0,
-            validation_accuracy: 0.99,
-            stake: 1500000,
-            slashing_events: 0,
-            last_activity: 300,
-            custom_metrics: HashMap::new(),
-        }
+    #[test]
+    fn test_extract_features_all_zero() {
+        let telemetry = ValidatorTelemetry {
+            blocks_proposed: 0,
+            blocks_verified: 0,
+            rounds_active: 0,
+            avg_latency_us: 0,
+            slash_count: 0,
+            stake: 0,
+            age_rounds: 0,
+        };
+
+        let config = FeatureConfig::default();
+        let features = extract_features(&telemetry, &config);
+
+        assert_eq!(features.len(), 6);
+        assert_eq!(features[0], 0);
+        assert_eq!(features[1], 0);
+        assert_eq!(features[2], config.scale);
+        assert_eq!(features[3], config.scale);
+        assert_eq!(features[4], 0);
+        assert_eq!(features[5], 0);
     }
 
     #[test]
-    fn test_feature_extraction() {
-        let telemetry = create_test_telemetry();
-        let features = from_telemetry(&telemetry).unwrap();
-        
-        // Should have 8 features
-        assert_eq!(features.len(), 8);
-        
-        // All features should be in reasonable range
-        for feature in &features {
-            assert!(*feature >= -3000 && *feature <= 3000);
-        }
+    fn test_extract_features_good_validator() {
+        let telemetry = ValidatorTelemetry {
+            blocks_proposed: 1000,
+            blocks_verified: 5000,
+            rounds_active: 10000,
+            avg_latency_us: 100000,
+            slash_count: 0,
+            stake: 100000_00000000,
+            age_rounds: 1000000,
+        };
+
+        let config = FeatureConfig::default();
+        let features = extract_features(&telemetry, &config);
+
+        assert_eq!(features.len(), 6);
+        assert!(features[0] > 0);
+        assert!(features[1] > 0);
+        assert!(features[2] > 8000);
+        assert_eq!(features[3], config.scale);
+        assert!(features[4] > 0);
+        assert!(features[5] > 0);
     }
 
     #[test]
-    fn test_feature_consistency() {
-        let telemetry = create_test_telemetry();
-        let features1 = from_telemetry(&telemetry).unwrap();
-        let features2 = from_telemetry(&telemetry).unwrap();
-        
-        // Same input should produce same features
-        assert_eq!(features1, features2);
+    fn test_extract_features_slashed_validator() {
+        let telemetry = ValidatorTelemetry {
+            blocks_proposed: 1000,
+            blocks_verified: 1000,
+            rounds_active: 10000,
+            avg_latency_us: 100000,
+            slash_count: 5,
+            stake: 100000_00000000,
+            age_rounds: 1000000,
+        };
+
+        let config = FeatureConfig::default();
+        let features = extract_features(&telemetry, &config);
+
+        assert!(features[3] < config.scale);
+        assert_eq!(features[3], config.scale - 5000);
     }
 
     #[test]
-    fn test_feature_extractor_custom_params() {
-        let mut extractor = FeatureExtractor::new();
-        extractor.update_scaling_params("block_production_rate", 15.0, 3.0);
-        
-        let telemetry = create_test_telemetry();
-        let features = extractor.extract_features(&telemetry).unwrap();
-        
-        // Should still produce valid features
-        assert_eq!(features.len(), 8);
-        for feature in &features {
-            assert!(*feature >= -3000 && *feature <= 3000);
-        }
+    fn test_extract_features_clamping() {
+        let telemetry = ValidatorTelemetry {
+            blocks_proposed: 1_000_000,
+            blocks_verified: 1_000_000,
+            rounds_active: 1,
+            avg_latency_us: 5_000_000,
+            slash_count: 100,
+            stake: 10_000_000_00000000,
+            age_rounds: 100_000_000,
+        };
+
+        let config = FeatureConfig::default();
+        let features = extract_features(&telemetry, &config);
+
+        assert!(features[0] <= config.scale);
+        assert!(features[1] <= config.scale);
+        assert!(features[2] >= 0);
+        assert!(features[3] >= 0);
+        assert!(features[4] <= config.scale);
+        assert!(features[5] <= config.scale);
+    }
+
+    #[test]
+    fn test_normalize_features() {
+        let raw = vec![50, 100, 150];
+        let min = vec![0, 0, 0];
+        let max = vec![100, 200, 200];
+        let scale = 10000;
+
+        let normalized = normalize_features(&raw, &min, &max, scale);
+
+        assert_eq!(normalized, vec![5000, 5000, 7500]);
+    }
+
+    #[test]
+    fn test_normalize_features_clamps() {
+        let raw = vec![-10, 0, 150];
+        let min = vec![0, 0, 0];
+        let max = vec![100, 100, 100];
+        let scale = 10000;
+
+        let normalized = normalize_features(&raw, &min, &max, scale);
+
+        assert_eq!(normalized[0], 0);
+        assert_eq!(normalized[1], 0);
+        assert_eq!(normalized[2], 10000);
+    }
+
+    #[test]
+    fn test_normalize_features_same_min_max() {
+        let raw = vec![50];
+        let min = vec![100];
+        let max = vec![100];
+        let scale = 10000;
+
+        let normalized = normalize_features(&raw, &min, &max, scale);
+        assert_eq!(normalized[0], scale / 2);
+    }
+
+    #[test]
+    fn test_feature_determinism() {
+        let telemetry = ValidatorTelemetry {
+            blocks_proposed: 1234,
+            blocks_verified: 5678,
+            rounds_active: 10000,
+            avg_latency_us: 123456,
+            slash_count: 2,
+            stake: 123456_00000000,
+            age_rounds: 2000000,
+        };
+
+        let config = FeatureConfig::default();
+
+        let f1 = extract_features(&telemetry, &config);
+        let f2 = extract_features(&telemetry, &config);
+        let f3 = extract_features(&telemetry, &config);
+
+        assert_eq!(f1, f2);
+        assert_eq!(f2, f3);
     }
 }

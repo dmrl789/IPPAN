@@ -1,235 +1,162 @@
-use crate::model::Model;
-use anyhow::Result;
-use thiserror::Error;
+//! Integer-only GBDT (Gradient Boosted Decision Tree) evaluator
+//!
+//! This module provides deterministic, reproducible evaluation of GBDT models
+//! using only integer arithmetic. No floating point operations are used.
+use serde::{Deserialize, Serialize};
 
-/// GBDT evaluation errors
-#[derive(Error, Debug)]
-pub enum GbdtError {
-    #[error("Invalid feature index: {0}")]
-    InvalidFeatureIndex(usize),
-    #[error("Model validation failed: {0}")]
-    ModelValidation(String),
-    #[error("Feature count mismatch: expected {expected}, got {actual}")]
-    FeatureCountMismatch { expected: usize, actual: usize },
+/// A decision tree node (internal or leaf)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Node {
+    /// Feature index to compare (for internal nodes)
+    pub feature_index: u16,
+    /// Threshold value for comparison (integer, scaled)
+    pub threshold: i64,
+    /// Index of left child node
+    pub left: u16,
+    /// Index of right child node
+    pub right: u16,
+    /// Leaf value (None for internal nodes, Some for leaves)
+    pub value: Option<i32>,
 }
 
-/// Deterministic GBDT evaluator for L1 consensus
-pub struct GbdtEvaluator {
-    model: Model,
+/// A single decision tree
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Tree {
+    /// Nodes in breadth-first or depth-first order
+    pub nodes: Vec<Node>,
 }
 
-impl GbdtEvaluator {
-    /// Create a new GBDT evaluator with the given model
-    pub fn new(model: Model) -> Result<Self, GbdtError> {
-        // Validate model structure
-        if model.trees.is_empty() {
-            return Err(GbdtError::ModelValidation("Model has no trees".to_string()));
+/// Complete GBDT model
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GBDTModel {
+    /// Collection of trees
+    pub trees: Vec<Tree>,
+    /// Base bias/intercept value (scaled integer)
+    pub bias: i32,
+    /// Output scale factor (e.g., 10000 for 4 decimal places)
+    pub scale: i32,
+}
+
+/// Evaluate a single tree with integer features
+fn eval_tree(tree: &Tree, features: &[i64]) -> i32 {
+    let mut idx = 0usize;
+    loop {
+        if idx >= tree.nodes.len() {
+            return 0; // Safety: invalid tree structure
         }
-
-        for (i, tree) in model.trees.iter().enumerate() {
-            if tree.nodes.is_empty() {
-                return Err(GbdtError::ModelValidation(format!("Tree {} has no nodes", i)));
-            }
+        let node = &tree.nodes[idx];
+        if let Some(value) = node.value {
+            return value;
         }
-
-        Ok(Self { model })
-    }
-
-    /// Evaluate the GBDT model on the given features
-    /// Returns a reputation score in the range [0, model.scale]
-    pub fn evaluate(&self, features: &[i64]) -> Result<i32, GbdtError> {
-        if features.len() != self.model.feature_count {
-            return Err(GbdtError::FeatureCountMismatch {
-                expected: self.model.feature_count,
-                actual: features.len(),
-            });
+        let feature_idx = node.feature_index as usize;
+        if feature_idx >= features.len() {
+            return 0; // Safety: feature index out of bounds
         }
-
-        let mut sum: i32 = self.model.bias;
-        
-        for tree in &self.model.trees {
-            let mut node_index = 0usize;
-            
-            loop {
-                let node = &tree.nodes[node_index];
-                
-                // Check if this is a leaf node
-                if let Some(value) = node.value {
-                    sum = sum.saturating_add(value as i32);
-                    break;
-                }
-                
-                // Validate feature index
-                if node.feature_index >= features.len() {
-                    return Err(GbdtError::InvalidFeatureIndex(node.feature_index));
-                }
-                
-                // Traverse to next node based on feature comparison
-                let feature_value = features[node.feature_index];
-                node_index = if feature_value <= node.threshold {
-                    node.left as usize
-                } else {
-                    node.right as usize
-                };
-                
-                // Safety check to prevent infinite loops
-                if node_index >= tree.nodes.len() {
-                    return Err(GbdtError::ModelValidation(
-                        "Invalid tree structure: node index out of bounds".to_string()
-                    ));
-                }
-            }
-        }
-        
-        // Clamp the result to the model's scale range
-        Ok(sum.clamp(0, self.model.scale))
-    }
-
-    /// Get the model's feature count
-    pub fn feature_count(&self) -> usize {
-        self.model.feature_count
-    }
-
-    /// Get the model's scale (maximum possible score)
-    pub fn scale(&self) -> i32 {
-        self.model.scale
+        let feature_value = features[feature_idx];
+        idx = if feature_value <= node.threshold {
+            node.left as usize
+        } else {
+            node.right as usize
+        };
     }
 }
 
-/// Convenience function to evaluate a model directly
-pub fn eval_gbdt(model: &Model, features: &[i64]) -> Result<i32, GbdtError> {
-    let evaluator = GbdtEvaluator::new(model.clone())?;
-    evaluator.evaluate(features)
+/// Evaluate GBDT model with integer features
+///
+/// Returns a clamped scaled integer in [0, scale].
+pub fn eval_gbdt(model: &GBDTModel, features: &[i64]) -> i32 {
+    let mut sum: i32 = model.bias;
+    for tree in &model.trees {
+        let tree_value = eval_tree(tree, features);
+        sum = sum.saturating_add(tree_value);
+    }
+    sum.clamp(0, model.scale)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Model, Tree, Node};
 
-    fn create_test_model() -> Model {
-        Model {
-            version: 1,
-            feature_count: 3,
-            bias: 100,
-            scale: 10000,
-            trees: vec![
-                Tree {
-                    nodes: vec![
-                        Node {
-                            feature_index: 0,
-                            threshold: 50,
-                            left: 1,
-                            right: 2,
-                            value: None,
-                        },
-                        Node {
-                            feature_index: 0,
-                            threshold: 0,
-                            left: 0,
-                            right: 0,
-                            value: Some(1000),
-                        },
-                        Node {
-                            feature_index: 1,
-                            threshold: 25,
-                            left: 3,
-                            right: 4,
-                            value: None,
-                        },
-                        Node {
-                            feature_index: 0,
-                            threshold: 0,
-                            left: 0,
-                            right: 0,
-                            value: Some(2000),
-                        },
-                        Node {
-                            feature_index: 0,
-                            threshold: 0,
-                            left: 0,
-                            right: 0,
-                            value: Some(500),
-                        },
-                    ],
-                },
+    fn create_simple_tree() -> Tree {
+        Tree {
+            nodes: vec![
+                Node { feature_index: 0, threshold: 50, left: 1, right: 2, value: None },
+                Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(10) },
+                Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(20) },
             ],
-            metadata: std::collections::HashMap::new(),
         }
     }
 
     #[test]
-    fn test_gbdt_evaluation() {
-        let model = create_test_model();
-        let evaluator = GbdtEvaluator::new(model.clone()).unwrap();
-        
-        // Test case 1: features = [30, 20, 10] -> should go left-left -> 1000
-        let features1 = vec![30, 20, 10];
-        let result1 = evaluator.evaluate(&features1).unwrap();
-        assert_eq!(result1, 1100); // bias (100) + leaf value (1000)
-        
-        // Test case 2: features = [60, 30, 10] -> should go right-right -> 500
-        let features2 = vec![60, 30, 10];
-        let result2 = evaluator.evaluate(&features2).unwrap();
-        assert_eq!(result2, 600); // bias (100) + leaf value (500)
-        
-        // Test case 3: features = [60, 20, 10] -> should go right-left -> 2000
-        let features3 = vec![60, 20, 10];
-        let result3 = evaluator.evaluate(&features3).unwrap();
-        assert_eq!(result3, 2100); // bias (100) + leaf value (2000)
+    fn test_eval_tree_branches() {
+        let tree = create_simple_tree();
+        assert_eq!(eval_tree(&tree, &vec![30]), 10);
+        assert_eq!(eval_tree(&tree, &vec![60]), 20);
+        assert_eq!(eval_tree(&tree, &vec![50]), 10);
     }
 
     #[test]
-    fn test_feature_count_mismatch() {
-        let model = create_test_model();
-        let evaluator = GbdtEvaluator::new(model).unwrap();
-        
-        let wrong_features = vec![1, 2]; // Only 2 features, but model expects 3
-        let result = evaluator.evaluate(&wrong_features);
-        assert!(matches!(result, Err(GbdtError::FeatureCountMismatch { .. })));
+    fn test_eval_gbdt_basic() {
+        let model = GBDTModel { trees: vec![create_simple_tree()], bias: 0, scale: 100 };
+        assert_eq!(eval_gbdt(&model, &vec![30]), 10);
+        assert_eq!(eval_gbdt(&model, &vec![60]), 20);
     }
 
     #[test]
-    fn test_scale_clamping() {
-        let mut model = create_test_model();
-        model.scale = 100; // Very low scale
-        
-        let evaluator = GbdtEvaluator::new(model).unwrap();
-        let features = vec![30, 20, 10];
-        let result = evaluator.evaluate(&features).unwrap();
-        
-        // Should be clamped to scale (100)
-        assert_eq!(result, 100);
+    fn test_eval_gbdt_with_bias() {
+        let model = GBDTModel { trees: vec![create_simple_tree()], bias: 5, scale: 100 };
+        assert_eq!(eval_gbdt(&model, &vec![30]), 15);
+        assert_eq!(eval_gbdt(&model, &vec![60]), 25);
+    }
+
+    #[test]
+    fn test_eval_gbdt_multiple_trees() {
+        let model = GBDTModel { trees: vec![create_simple_tree(), create_simple_tree()], bias: 0, scale: 100 };
+        assert_eq!(eval_gbdt(&model, &vec![30]), 20);
+        assert_eq!(eval_gbdt(&model, &vec![60]), 40);
+    }
+
+    #[test]
+    fn test_eval_gbdt_clamping() {
+        let model = GBDTModel {
+            trees: vec![Tree { nodes: vec![Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(200) }] }],
+            bias: 0,
+            scale: 100,
+        };
+        assert_eq!(eval_gbdt(&model, &vec![0]), 100);
+    }
+
+    #[test]
+    fn test_eval_gbdt_negative() {
+        let model = GBDTModel {
+            trees: vec![Tree { nodes: vec![Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(-50) }] }],
+            bias: -100,
+            scale: 100,
+        };
+        assert_eq!(eval_gbdt(&model, &vec![0]), 0);
+    }
+
+    #[test]
+    fn test_multi_level_tree() {
+        let tree = Tree {
+            nodes: vec![
+                Node { feature_index: 0, threshold: 50, left: 1, right: 2, value: None },
+                Node { feature_index: 1, threshold: 30, left: 3, right: 4, value: None },
+                Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(100) },
+                Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(10) },
+                Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(50) },
+            ],
+        };
+        assert_eq!(eval_tree(&tree, &vec![40, 20]), 10);
+        assert_eq!(eval_tree(&tree, &vec![40, 40]), 50);
+        assert_eq!(eval_tree(&tree, &vec![60, 0]), 100);
     }
 
     #[test]
     fn test_determinism() {
-        let model = create_test_model();
-        let evaluator = GbdtEvaluator::new(model).unwrap();
-        let features = vec![30, 20, 10];
-        
-        // Run evaluation multiple times
-        let result1 = evaluator.evaluate(&features).unwrap();
-        let result2 = evaluator.evaluate(&features).unwrap();
-        let result3 = evaluator.evaluate(&features).unwrap();
-        
-        // Results should be identical
-        assert_eq!(result1, result2);
-        assert_eq!(result2, result3);
-    }
-
-    #[test]
-    fn test_cross_platform() {
-        let model = create_test_model();
-        let evaluator = GbdtEvaluator::new(model).unwrap();
-        let features = vec![30, 20, 10];
-        
-        // This test ensures the same inputs produce the same outputs
-        // across different platforms
-        let result = evaluator.evaluate(&features).unwrap();
-        
-        // The result should be deterministic
-        assert!(result >= 0);
-        assert!(result <= 10000);
+        let model = GBDTModel { trees: vec![create_simple_tree()], bias: 3, scale: 100 };
+        let f = vec![45];
+        assert_eq!(eval_gbdt(&model, &f), eval_gbdt(&model, &f));
+        assert_eq!(eval_gbdt(&model, &f), eval_gbdt(&model, &f));
     }
 }
