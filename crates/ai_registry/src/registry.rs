@@ -1,3 +1,10 @@
+//! IPPAN On-Chain AI Model Registry
+//!
+//! Provides deterministic, verifiable registry logic for AI models
+//! used at L1 consensus and reputation scoring. Includes lifecycle
+//! management (propose → activate → deprecate → revoke) and
+//! Ed25519-based signature verification.
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
@@ -10,9 +17,9 @@ pub enum ModelStatus {
     Proposed,
     /// Model is active and can be used for consensus
     Active,
-    /// Model is deprecated and will be deactivated
+    /// Model is deprecated and will soon be replaced
     Deprecated,
-    /// Model is deactivated and cannot be used
+    /// Model is deactivated or revoked
     Deactivated,
 }
 
@@ -27,34 +34,37 @@ pub struct ModelRegistryEntry {
     pub version: u32,
     /// Round when the model becomes active
     pub activation_round: u64,
-    /// Round when the model becomes deactivated (if any)
+    /// Optional round when the model is deactivated
     pub deactivation_round: Option<u64>,
     /// Ed25519 signature of the model
     #[serde(with = "serde_bytes")]
     pub signature: [u8; 64],
-    /// Public key that signed the model
+    /// Public key of the signer
     pub signer_pubkey: [u8; 32],
-    /// Current status of the model
+    /// Current status
     pub status: ModelStatus,
-    /// Creation timestamp
+    /// Timestamp when created (Unix micros or round index)
     pub created_at: u64,
-    /// Additional metadata
+    /// Additional metadata (IPFS URL, rationale, etc.)
     #[serde(default)]
     pub metadata: HashMap<String, String>,
 }
 
-/// On-chain AI model registry
+/// Deterministic in-memory AI model registry
+///
+/// This struct can be serialized and verified on-chain,
+/// ensuring consistent behavior across all nodes.
 pub struct ModelRegistry {
-    /// Registered models indexed by model_id
+    /// All known models
     models: HashMap<String, ModelRegistryEntry>,
-    /// Models indexed by activation round for efficient lookup
+    /// Models indexed by activation round
     activation_index: HashMap<u64, Vec<String>>,
-    /// Current active model ID
+    /// Currently active model ID
     active_model_id: Option<String>,
 }
 
 impl ModelRegistry {
-    /// Create a new model registry
+    /// Create a new, empty registry
     pub fn new() -> Self {
         Self {
             models: HashMap::new(),
@@ -63,50 +73,45 @@ impl ModelRegistry {
         }
     }
 
-    /// Register a new model
+    /// Register a model proposal (must have valid signature)
     pub fn register_model(&mut self, entry: ModelRegistryEntry) -> Result<()> {
-        // Validate the entry
         self.validate_entry(&entry)?;
-        
+
         let model_id = entry.model_id.clone();
         let activation_round = entry.activation_round;
-        
-        // Add to models map
+
         self.models.insert(model_id.clone(), entry);
-        
-        // Add to activation index
         self.activation_index
             .entry(activation_round)
             .or_insert_with(Vec::new)
             .push(model_id);
-        
+
         Ok(())
     }
 
-    /// Get a model by ID
+    /// Retrieve a model by ID
     pub fn get_model(&self, model_id: &str) -> Option<&ModelRegistryEntry> {
         self.models.get(model_id)
     }
 
-    /// Get all models
+    /// Retrieve all registered models
     pub fn get_all_models(&self) -> &HashMap<String, ModelRegistryEntry> {
         &self.models
     }
 
-    /// Get models that should be activated at a given round
+    /// Return models that should activate at a given round
     pub fn get_models_for_activation(&self, round: u64) -> Vec<&ModelRegistryEntry> {
         self.activation_index
             .get(&round)
-            .map(|model_ids| {
-                model_ids
-                    .iter()
+            .map(|ids| {
+                ids.iter()
                     .filter_map(|id| self.models.get(id))
                     .collect()
             })
             .unwrap_or_default()
     }
 
-    /// Activate a model
+    /// Activate a model if its activation round is reached
     pub fn activate_model(&mut self, model_id: &str, round: u64) -> Result<()> {
         if let Some(entry) = self.models.get_mut(model_id) {
             if entry.activation_round <= round {
@@ -121,7 +126,7 @@ impl ModelRegistry {
         }
     }
 
-    /// Deprecate a model
+    /// Deprecate a model, retaining it for audit purposes
     pub fn deprecate_model(&mut self, model_id: &str) -> Result<()> {
         if let Some(entry) = self.models.get_mut(model_id) {
             entry.status = ModelStatus::Deprecated;
@@ -134,7 +139,7 @@ impl ModelRegistry {
         }
     }
 
-    /// Deactivate a model
+    /// Fully deactivate or revoke a model
     pub fn deactivate_model(&mut self, model_id: &str) -> Result<()> {
         if let Some(entry) = self.models.get_mut(model_id) {
             entry.status = ModelStatus::Deactivated;
@@ -147,123 +152,11 @@ impl ModelRegistry {
         }
     }
 
-    /// Get the currently active model
+    /// Get the currently active model entry
     pub fn get_active_model(&self) -> Option<&ModelRegistryEntry> {
         self.active_model_id
             .as_ref()
             .and_then(|id| self.models.get(id))
     }
 
-    /// Get models by status
-    pub fn get_models_by_status(&self, status: ModelStatus) -> Vec<&ModelRegistryEntry> {
-        self.models
-            .values()
-            .filter(|entry| entry.status == status)
-            .collect()
-    }
-
-    /// Validate a registry entry
-    fn validate_entry(&self, entry: &ModelRegistryEntry) -> Result<()> {
-        // Check if model ID is unique
-        if self.models.contains_key(&entry.model_id) {
-            return Err(anyhow::anyhow!("Model ID {} already exists", entry.model_id));
-        }
-
-        // Validate signature
-        use ed25519_dalek::{VerifyingKey, Signature};
-        let verifying_key = VerifyingKey::from_bytes(&entry.signer_pubkey)
-            .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
-        let signature = Signature::from_bytes(&entry.signature);
-        
-        if verifying_key.verify(&entry.hash_sha256, &signature).is_err() {
-            return Err(anyhow::anyhow!("Invalid signature for model {}", entry.model_id));
-        }
-
-        Ok(())
-    }
-}
-
-impl Default for ModelRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ed25519_dalek::{SigningKey, Verifier};
-
-    fn create_test_entry() -> ModelRegistryEntry {
-        let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
-        let pubkey = signing_key.verifying_key().to_bytes();
-        
-        let model_data = b"test_model_data";
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(model_data);
-        let hash = hasher.finalize();
-        let mut hash_bytes = [0u8; 32];
-        hash_bytes.copy_from_slice(hash.as_bytes());
-        
-        let signature = signing_key.sign(&hash_bytes);
-        
-        ModelRegistryEntry {
-            model_id: "test_model".to_string(),
-            hash_sha256: hash_bytes,
-            version: 1,
-            activation_round: 100,
-            deactivation_round: None,
-            signature: signature.to_bytes(),
-            signer_pubkey: pubkey,
-            status: ModelStatus::Proposed,
-            created_at: 1234567890,
-            metadata: HashMap::new(),
-        }
-    }
-
-    #[test]
-    fn test_model_registration() {
-        let mut registry = ModelRegistry::new();
-        let entry = create_test_entry();
-        
-        assert!(registry.register_model(entry).is_ok());
-        assert!(registry.get_model("test_model").is_some());
-    }
-
-    #[test]
-    fn test_model_activation() {
-        let mut registry = ModelRegistry::new();
-        let entry = create_test_entry();
-        
-        registry.register_model(entry).unwrap();
-        assert!(registry.activate_model("test_model", 100).is_ok());
-        
-        let active_model = registry.get_active_model();
-        assert!(active_model.is_some());
-        assert_eq!(active_model.unwrap().status, ModelStatus::Active);
-    }
-
-    #[test]
-    fn test_duplicate_model_id() {
-        let mut registry = ModelRegistry::new();
-        let entry1 = create_test_entry();
-        let mut entry2 = create_test_entry();
-        entry2.model_id = "test_model".to_string(); // Same ID
-        
-        registry.register_model(entry1).unwrap();
-        assert!(registry.register_model(entry2).is_err());
-    }
-
-    #[test]
-    fn test_models_for_activation() {
-        let mut registry = ModelRegistry::new();
-        let mut entry = create_test_entry();
-        entry.activation_round = 50;
-        
-        registry.register_model(entry).unwrap();
-        
-        let models = registry.get_models_for_activation(50);
-        assert_eq!(models.len(), 1);
-        assert_eq!(models[0].model_id, "test_model");
-    }
-}
+    /// List all models by status

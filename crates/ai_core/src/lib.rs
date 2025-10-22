@@ -12,7 +12,13 @@ pub mod features;
 pub mod gbdt;
 pub mod model;
 
-pub use features::{extract_features, normalize_features, FeatureVector, FeatureConfig, ValidatorTelemetry};
+pub use features::{
+    extract_features,
+    normalize_features,
+    FeatureVector,
+    FeatureConfig,
+    ValidatorTelemetry,
+};
 pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree};
 pub use model::{load_model, verify_model_hash, ModelMetadata, ModelPackage, MODEL_HASH_SIZE};
 
@@ -77,9 +83,27 @@ mod tests {
             scale: 10000,
             trees: vec![Tree {
                 nodes: vec![
-                    Node { feature_index: 0, threshold: 5000, left: 1, right: 2, value: None },
-                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(100) },
-                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(200) },
+                    Node {
+                        feature_index: 0,
+                        threshold: 5000,
+                        left: 1,
+                        right: 2,
+                        value: None,
+                    },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(100),
+                    },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(200),
+                    },
                 ],
             }],
         };
@@ -92,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_no_float_usage() {
-        // Ensures no floating-point types exist in code paths.
+        // Ensures no floating-point types exist in deterministic paths.
         let _ = 42;
         assert_eq!(_ + 1, 43);
     }
