@@ -85,14 +85,14 @@ REACT_APP_ENABLE_FULL_UI=1
 ## 🌐 **Access Points**
 
 ### **Web Interface**
-- **Primary UI**: https://ui.ippan.org
+- **Primary UI**: http://188.245.97.41:3001
 - **Gateway**: https://api.ippan.org
 
 ### **API Endpoints**
 - **Gateway API**: https://api.ippan.org
 
 ### **Health Checks**
-- **UI Health**: https://ui.ippan.org/health
+- **UI Health**: http://188.245.97.41:3001/health
 - **Gateway Health**: https://api.ippan.org/health
 
 ---
@@ -132,7 +132,7 @@ docker-compose -f deploy/docker-compose.production.yml ps
 
 ```bash
 # Check UI
-curl https://ui.ippan.org/health
+curl http://188.245.97.41:3001/health
 
 # Check Node 1
 curl https://api.ippan.org/health
@@ -141,14 +141,14 @@ curl https://api.ippan.org/health
 curl https://api.ippan.org/health
 
 # Check WebSocket upgrade
-curl -I -H 'Connection: Upgrade' -H 'Upgrade: websocket' https://ui.ippan.org/ws
+curl -I -H 'Connection: Upgrade' -H 'Upgrade: websocket' http://188.245.97.41:3001/ws
 ```
 
 ### **2. Test UI Functionality**
 
 ```bash
 # Open web browser and navigate to:
-# https://ui.ippan.org
+# http://188.245.97.41:3001
 
 # Test API through UI
 curl https://api.ippan.org/health
@@ -264,7 +264,7 @@ docker exec ippan-ui nginx -t
 docker logs ippan-nginx-lb
 
 # Test direct node access through the gateway
-curl https://ui.ippan.org/api/health
+curl http://188.245.97.41:3001/api/health
 ```
 
 **3. Nodes not connecting:**
@@ -338,7 +338,7 @@ sudo certbot --nginx -d your-domain.com
 ## 🎯 **Next Steps**
 
 1. **Deploy the full stack** using Docker Compose
-2. **Access the web UI** at https://ui.ippan.org
+2. **Access the web UI** at http://188.245.97.41:3001
 3. **Test blockchain functionality** through the UI
 4. **Monitor system performance** and logs
 5. **Set up automated backups** for blockchain data
@@ -357,5 +357,5 @@ sudo certbot --nginx -d your-domain.com
 **Your IPPAN blockchain network with unified UI is ready for production!** 🚀
 
 ### **Access Your System:**
-- **Web UI**: https://ui.ippan.org
+- **Web UI**: http://188.245.97.41:3001
 - **API**: https://api.ippan.org

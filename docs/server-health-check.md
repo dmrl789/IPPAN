@@ -4,14 +4,14 @@ Date: 2025-10-08T08:12:03Z
 
 ## Summary
 
-- The public unified UI health endpoint at `https://ui.ippan.org/health` is still unreachable from this environment; the outbound proxy blocks the TLS tunnel with HTTP 403 so no live metrics were retrieved.
+- The public unified UI health endpoint at `http://188.245.97.41:3001/health` is still unreachable from this environment; the outbound proxy blocks the TLS tunnel with HTTP 403 so no live metrics were retrieved.
 - Because `/health` could not be queried, peer connectivity (for example the `peer_count` metric) remains unknown for this run.
 - Unified UI static assets must exist on disk (default: `apps/unified-ui/dist` or the path in `UNIFIED_UI_DIST_DIR`) for the interface to render; when they are missing the node serves JSON APIs only.
 
 ## Command Output
 
 ```
-curl -I https://ui.ippan.org/health
+curl -I http://188.245.97.41:3001/health
 HTTP/1.1 403 Forbidden
 content-length: 9
 content-type: text/plain

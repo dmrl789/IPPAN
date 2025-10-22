@@ -58,7 +58,7 @@ test_json_endpoint() {
 }
 
 API_BASE_URL="${API_BASE_URL:-https://api.ippan.org}"
-UI_BASE_URL="${UI_BASE_URL:-https://ui.ippan.org}"
+UI_BASE_URL="${UI_BASE_URL:-http://188.245.97.41:3001}"
 WS_URL="${WS_URL:-wss://api.ippan.org/ws}"
 
 echo "🌐 Testing public endpoints (API_BASE_URL=${API_BASE_URL})..."
