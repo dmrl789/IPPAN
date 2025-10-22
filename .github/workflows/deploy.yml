@@ -1,0 +1,157 @@
+name: 🚀 IPPAN Full-Stack Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NODE: ghcr.io/${{ github.repository }}/ippan-node
+  IMAGE_GATEWAY: ghcr.io/${{ github.repository }}/ippan-gateway
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy IPPAN Network
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧩 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔑 Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🛠️ Build & Push Node image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.production
+          push: true
+          tags: ${{ env.IMAGE_NODE }}:latest
+
+      - name: 🛠️ Build & Push Gateway image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/gateway
+          file: ./apps/gateway/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_GATEWAY }}:latest
+
+      # ----------------------------------------------------------------------
+      # 🔹 Deploy to Server 1 (Full-Stack)
+      # ----------------------------------------------------------------------
+      - name: 🚀 Deploy to Server 1 (188.245.97.41)
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER1_HOST }}
+          username: ${{ secrets.SERVER1_USER }}
+          key: ${{ secrets.SERVER1_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/ippan || (git clone https://github.com/${{ github.repository }}.git /opt/ippan && cd /opt/ippan)
+            git fetch --all
+            git reset --hard origin/main
+            docker compose -f deploy/docker-compose.full-stack.yml pull
+            docker compose -f deploy/docker-compose.full-stack.yml up -d --build
+            docker system prune -f
+            echo "✅ Server 1 updated successfully"
+
+      # ----------------------------------------------------------------------
+      # 🔹 Deploy to Server 2 (Node-Only)
+      # ----------------------------------------------------------------------
+      - name: 🚀 Deploy to Server 2 (135.181.145.174)
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER2_HOST }}
+          username: ${{ secrets.SERVER2_USER }}
+          key: ${{ secrets.SERVER2_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/ippan || (git clone https://github.com/${{ github.repository }}.git /opt/ippan && cd /opt/ippan)
+            git fetch --all
+            git reset --hard origin/main
+            docker compose -f deploy/docker-compose.production.yml pull
+            docker compose -f deploy/docker-compose.production.yml up -d --build
+            docker system prune -f
+            echo "✅ Server 2 updated successfully"
+
+      # ----------------------------------------------------------------------
+      # 🔹 Health Checks
+      # ----------------------------------------------------------------------
+      - name: 🏥 Health Check Server 1
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER1_HOST }}
+          username: ${{ secrets.SERVER1_USER }}
+          key: ${{ secrets.SERVER1_SSH_KEY }}
+          script: |
+            echo "Waiting for services to start..."
+            sleep 30
+            
+            # Check node health
+            if curl -f http://localhost:8080/health; then
+              echo "✅ Node 1 health check passed"
+            else
+              echo "❌ Node 1 health check failed"
+              exit 1
+            fi
+            
+            # Check gateway if running
+            if docker ps | grep -q gateway; then
+              if curl -f http://localhost:8081/health; then
+                echo "✅ Gateway health check passed"
+              else
+                echo "❌ Gateway health check failed"
+                exit 1
+              fi
+            fi
+
+      - name: 🏥 Health Check Server 2
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER2_HOST }}
+          username: ${{ secrets.SERVER2_USER }}
+          key: ${{ secrets.SERVER2_SSH_KEY }}
+          script: |
+            echo "Waiting for services to start..."
+            sleep 30
+            
+            # Check node health
+            if curl -f http://localhost:8080/health; then
+              echo "✅ Node 2 health check passed"
+            else
+              echo "❌ Node 2 health check failed"
+              exit 1
+            fi
+
+      # ----------------------------------------------------------------------
+      # 🔹 Verify P2P Connectivity
+      # ----------------------------------------------------------------------
+      - name: 🔗 Verify P2P Connectivity
+        run: |
+          echo "Testing P2P connectivity between nodes..."
+          
+          # Test Server 1 P2P port
+          if timeout 10 bash -c "</dev/tcp/${{ secrets.SERVER1_HOST }}/9000"; then
+            echo "✅ Server 1 P2P port 9000 is accessible"
+          else
+            echo "❌ Server 1 P2P port 9000 is not accessible"
+            exit 1
+          fi
+          
+          # Test Server 2 P2P port
+          if timeout 10 bash -c "</dev/tcp/${{ secrets.SERVER2_HOST }}/9001"; then
+            echo "✅ Server 2 P2P port 9001 is accessible"
+          else
+            echo "❌ Server 2 P2P port 9001 is not accessible"
+            exit 1
+          fi
+          
+          echo "🎉 All connectivity checks passed!"

@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   ippan-node-1:
-    build:
-      context: .
-      dockerfile: Dockerfile.production
+    image: ghcr.io/dmrl789/ippan/ippan-node:latest
     container_name: ippan-node-1
     environment:
       - NODE_ID=ippan_production_node_001
@@ -33,9 +31,7 @@ services:
         max-file: "5"
 
   ippan-node-2:
-    build:
-      context: .
-      dockerfile: Dockerfile.production
+    image: ghcr.io/dmrl789/ippan/ippan-node:latest
     container_name: ippan-node-2
     environment:
       - NODE_ID=ippan_production_node_002
