@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use std::collections::HashMap;
 
 /// A single decision tree node in the GBDT model
@@ -49,10 +50,13 @@ pub struct ModelPackage {
     /// The actual model
     pub model: Model,
     /// SHA-256 hash of the model for verification
+    #[serde(with = "serde_bytes")]
     pub hash_sha256: [u8; 32],
     /// Ed25519 signature of the model hash
+    #[serde(with = "serde_bytes")]
     pub signature: [u8; 64],
     /// Public key that signed the model
+    #[serde(with = "serde_bytes")]
     pub signer_pubkey: [u8; 32],
     /// Creation timestamp
     pub created_at: u64,
@@ -161,13 +165,12 @@ impl ModelPackage {
 
     /// Verify the model package signature
     pub fn verify_signature(&self) -> Result<bool> {
-        use ed25519_dalek::{VerifyingKey, Signature};
+        use ed25519_dalek::{VerifyingKey, Signature, Verifier};
         
         let verifying_key = VerifyingKey::from_bytes(&self.signer_pubkey)
             .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
         
-        let signature = Signature::from_bytes(&self.signature)
-            .map_err(|e| anyhow::anyhow!("Invalid signature: {}", e))?;
+        let signature = Signature::from_bytes(&self.signature);
         
         Ok(verifying_key.verify(&self.hash_sha256, &signature).is_ok())
     }

@@ -154,6 +154,7 @@ mod tests {
                     ],
                 },
             ],
+            metadata: std::collections::HashMap::new(),
         }
     }
 

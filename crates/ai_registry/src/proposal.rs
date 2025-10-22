@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use std::collections::HashMap;
 
 /// AI model proposal for governance
@@ -16,6 +17,7 @@ pub struct AiModelProposal {
     /// SHA-256 hash of the model
     pub model_hash: [u8; 32],
     /// Ed25519 signature of the model hash
+    #[serde(with = "serde_bytes")]
     pub signature: [u8; 64],
     /// Public key that signed the model
     pub signer_pubkey: [u8; 32],
@@ -176,8 +178,7 @@ impl ProposalManager {
         use ed25519_dalek::{VerifyingKey, Signature};
         let verifying_key = VerifyingKey::from_bytes(&proposal.signer_pubkey)
             .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
-        let signature = Signature::from_bytes(&proposal.signature)
-            .map_err(|e| anyhow::anyhow!("Invalid signature: {}", e))?;
+        let signature = Signature::from_bytes(&proposal.signature);
         
         if verifying_key.verify(&proposal.model_hash, &signature).is_err() {
             return Err(anyhow::anyhow!("Invalid signature for proposal {}", proposal.proposal_id));

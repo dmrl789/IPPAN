@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use std::collections::HashMap;
 
 /// Status of a model in the registry
@@ -29,6 +30,7 @@ pub struct ModelRegistryEntry {
     /// Round when the model becomes deactivated (if any)
     pub deactivation_round: Option<u64>,
     /// Ed25519 signature of the model
+    #[serde(with = "serde_bytes")]
     pub signature: [u8; 64],
     /// Public key that signed the model
     pub signer_pubkey: [u8; 32],
@@ -123,7 +125,7 @@ impl ModelRegistry {
     pub fn deprecate_model(&mut self, model_id: &str) -> Result<()> {
         if let Some(entry) = self.models.get_mut(model_id) {
             entry.status = ModelStatus::Deprecated;
-            if self.active_model_id.as_ref() == Some(model_id) {
+            if self.active_model_id.as_ref() == Some(&model_id.to_string()) {
                 self.active_model_id = None;
             }
             Ok(())
@@ -136,7 +138,7 @@ impl ModelRegistry {
     pub fn deactivate_model(&mut self, model_id: &str) -> Result<()> {
         if let Some(entry) = self.models.get_mut(model_id) {
             entry.status = ModelStatus::Deactivated;
-            if self.active_model_id.as_ref() == Some(model_id) {
+            if self.active_model_id.as_ref() == Some(&model_id.to_string()) {
                 self.active_model_id = None;
             }
             Ok(())
@@ -171,8 +173,7 @@ impl ModelRegistry {
         use ed25519_dalek::{VerifyingKey, Signature};
         let verifying_key = VerifyingKey::from_bytes(&entry.signer_pubkey)
             .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
-        let signature = Signature::from_bytes(&entry.signature)
-            .map_err(|e| anyhow::anyhow!("Invalid signature: {}", e))?;
+        let signature = Signature::from_bytes(&entry.signature);
         
         if verifying_key.verify(&entry.hash_sha256, &signature).is_err() {
             return Err(anyhow::anyhow!("Invalid signature for model {}", entry.model_id));

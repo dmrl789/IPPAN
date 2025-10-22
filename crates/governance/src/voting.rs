@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use std::collections::HashMap;
 
 /// Vote on a governance proposal
@@ -16,6 +17,7 @@ pub struct Vote {
     /// Vote timestamp
     pub timestamp: u64,
     /// Vote signature
+    #[serde(with = "serde_bytes")]
     pub signature: [u8; 64],
 }
 
@@ -186,15 +188,12 @@ impl VotingSession {
             Err(_) => return false,
         };
         
-        let signature = match Signature::from_bytes(&vote.signature) {
-            Ok(sig) => sig,
-            Err(_) => return false,
-        };
+        let signature = Signature::from_bytes(&vote.signature);
         
         // Create message for signature verification
         let mut message = Vec::new();
         message.extend_from_slice(&vote.proposal_id.as_bytes());
-        message.extend_from_slice(&vote.approve.to_be_bytes());
+        message.extend_from_slice(&(vote.approve as u8).to_be_bytes());
         message.extend_from_slice(&vote.stake_weight.to_be_bytes());
         message.extend_from_slice(&vote.timestamp.to_be_bytes());
         

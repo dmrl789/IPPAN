@@ -1,6 +1,5 @@
 use anyhow::Result;
 use ippan_ai_core::{features::ValidatorTelemetry, gbdt::GbdtEvaluator, model::Model};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use rand::Rng;
 
@@ -206,7 +205,7 @@ pub fn calculate_reputation_score(
 ) -> Result<i32> {
     let features = ippan_ai_core::features::from_telemetry(telemetry)?;
     let evaluator = GbdtEvaluator::new(model.clone())?;
-    evaluator.evaluate(&features)
+    Ok(evaluator.evaluate(&features)?)
 }
 
 #[cfg(test)]

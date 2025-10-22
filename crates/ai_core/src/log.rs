@@ -106,8 +106,6 @@ pub fn create_hashtimer_proof(
     score: i32,
     timestamp: u64,
 ) -> String {
-    use crate::hashtimer::HashTimer;
-    
     // Create a deterministic proof of the evaluation
     let mut proof_data = Vec::new();
     proof_data.extend_from_slice(model_id.as_bytes());
@@ -118,16 +116,16 @@ pub fn create_hashtimer_proof(
         proof_data.extend_from_slice(&feature.to_be_bytes());
     }
     
-    let hashtimer = HashTimer::derive(
-        "ai_evaluation",
-        crate::types::IppanTimeMicros(timestamp * 1_000_000),
-        b"ai_evaluation",
-        &proof_data,
-        &score.to_be_bytes(),
-        &[0u8; 32], // Placeholder for validator ID
-    );
+    // Create a simple hash-based proof for now
+    use blake3::Hasher;
+    let mut hasher = Hasher::new();
+    hasher.update(b"ai_evaluation");
+    hasher.update(&proof_data);
+    hasher.update(&score.to_be_bytes());
+    hasher.update(&timestamp.to_be_bytes());
     
-    hashtimer.to_hex()
+    let hash = hasher.finalize();
+    format!("ai_proof_{}", hex::encode(hash.as_bytes()))
 }
 
 #[cfg(test)]
@@ -205,9 +203,9 @@ mod tests {
         
         let proof = create_hashtimer_proof("test_model", &features, score, timestamp);
         
-        // Proof should be a valid hex string
+        // Proof should be a valid proof string
         assert!(!proof.is_empty());
-        assert!(proof.len() % 2 == 0); // Even length for hex
+        assert!(proof.starts_with("ai_proof_"));
     }
 
     #[test]

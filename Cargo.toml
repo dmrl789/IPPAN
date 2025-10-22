@@ -16,9 +16,6 @@ members = [
   "node",
 ]
 
-[[bin]]
-name = "test_integration"
-path = "test_integration.rs"
 resolver = "2"
 
 [workspace.package]

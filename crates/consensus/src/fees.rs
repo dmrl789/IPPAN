@@ -1,6 +1,5 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Transaction types for fee calculation
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
