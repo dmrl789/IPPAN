@@ -10,8 +10,15 @@ members = [
   "crates/rpc",
   "crates/core",
   "crates/time",
+  "crates/ai_core",
+  "crates/ai_registry",
+  "crates/governance",
   "node",
 ]
+
+[[bin]]
+name = "test_integration"
+path = "test_integration.rs"
 resolver = "2"
 
 [workspace.package]
@@ -53,3 +60,5 @@ dirs = "5"
 tempfile = "3"
 async-trait = "0.1"
 log = "0.4"
+sha2 = "0.10"
+sha3 = "0.10"

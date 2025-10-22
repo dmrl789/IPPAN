@@ -13,6 +13,7 @@ ippan-types = { path = "../types" }
 ippan-storage = { path = "../storage" }
 ippan-crypto = { path = "../crypto" }
 ippan-mempool = { path = "../mempool" }
+ippan-ai-core = { path = "../ai_core" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -24,6 +25,7 @@ futures = { workspace = true }
 parking_lot = { workspace = true }
 blake3 = { workspace = true }
 rayon = { workspace = true }
+rand = "0.8"
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }

@@ -1,0 +1,19 @@
+[package]
+name = "ippan-ai-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+ippan-types = { path = "../types" }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+blake3 = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+ed25519-dalek = { workspace = true }
+base64 = { workspace = true }

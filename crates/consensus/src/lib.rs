@@ -16,8 +16,17 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
 use tracing::{error, info, warn};
 
+// Import new modules
+use crate::emission::{EmissionCalculator, EmissionParams, RoundContext};
+use crate::fees::{FeeManager, FeeCaps, FeeRecyclingConfig, TransactionType};
+use crate::round::RoundConsensus;
+
 pub mod ordering;
 pub mod parallel_dag;
+pub mod emission;
+pub mod fees;
+pub mod round;
+
 pub use ordering::order_round;
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
@@ -54,6 +63,12 @@ pub struct PoAConfig {
     pub max_transactions_per_block: usize,
     pub block_reward: u64,
     pub finalization_interval_ms: u64,
+    /// Enable AI-based reputation scoring
+    pub enable_ai_reputation: bool,
+    /// Enable fee caps
+    pub enable_fee_caps: bool,
+    /// Enable DAG-Fair emission
+    pub enable_dag_fair_emission: bool,
 }
 
 impl Default for PoAConfig {
@@ -64,6 +79,9 @@ impl Default for PoAConfig {
             max_transactions_per_block: 1000,
             block_reward: 10,
             finalization_interval_ms: 200,
+            enable_ai_reputation: false,
+            enable_fee_caps: true,
+            enable_dag_fair_emission: true,
         }
     }
 }
@@ -100,6 +118,12 @@ pub struct PoAConsensus {
     mempool: Arc<Mempool>,
     round_tracker: Arc<RwLock<RoundTracker>>,
     finalization_interval: Duration,
+    /// AI-based round consensus
+    round_consensus: Arc<RwLock<RoundConsensus>>,
+    /// Fee manager for fee caps and recycling
+    fee_manager: Arc<RwLock<FeeManager>>,
+    /// Emission calculator for DAG-Fair rewards
+    emission_calculator: Arc<RwLock<EmissionCalculator>>,
 }
 
 impl PoAConsensus {
@@ -142,6 +166,14 @@ impl PoAConsensus {
             mempool: Arc::new(Mempool::new(10000)), // 10k transaction limit
             round_tracker: Arc::new(RwLock::new(round_tracker)),
             finalization_interval,
+            round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
+            fee_manager: Arc::new(RwLock::new(FeeManager::new(
+                FeeCaps::default(),
+                FeeRecyclingConfig::default(),
+            ))),
+            emission_calculator: Arc::new(RwLock::new(EmissionCalculator::new(
+                EmissionParams::default(),
+            ))),
         }
     }
 
@@ -205,7 +237,29 @@ impl PoAConsensus {
 
                     // Check if it's our turn to propose
                     let slot_number = *current_slot.read();
-                    let proposer = Self::get_proposer_for_slot(&config.validators, slot_number);
+                    let proposer = if config.enable_ai_reputation {
+                        // Use AI-based selection
+                        let active_validators: Vec<[u8; 32]> = config.validators
+                            .iter()
+                            .filter(|v| v.is_active)
+                            .map(|v| v.id)
+                            .collect();
+                        let stake_weights: HashMap<[u8; 32], u64> = config.validators
+                            .iter()
+                            .filter(|v| v.is_active)
+                            .map(|v| (v.id, v.stake))
+                            .collect();
+                        
+                        match round_consensus.write().select_validators(&active_validators, &stake_weights) {
+                            Ok(selection) => Some(selection.proposer),
+                            Err(e) => {
+                                warn!("AI-based proposer selection failed: {}, falling back to round-robin", e);
+                                Self::get_proposer_for_slot(&config.validators, slot_number)
+                            }
+                        }
+                    } else {
+                        Self::get_proposer_for_slot(&config.validators, slot_number)
+                    };
 
                     if let Some(proposer_id) = proposer {
                         if proposer_id == validator_id {
@@ -281,6 +335,43 @@ impl PoAConsensus {
 
         let proposer_index = (slot % active_validators.len() as u64) as usize;
         Some(active_validators[proposer_index].id)
+    }
+
+    /// Get the proposer for a given slot using AI reputation
+    fn get_proposer_for_slot_with_ai(
+        &self,
+        validators: &[Validator],
+        slot: u64,
+    ) -> Option<[u8; 32]> {
+        if !self.config.enable_ai_reputation {
+            return Self::get_proposer_for_slot(validators, slot);
+        }
+
+        let active_validators: Vec<[u8; 32]> = validators
+            .iter()
+            .filter(|v| v.is_active)
+            .map(|v| v.id)
+            .collect();
+
+        if active_validators.is_empty() {
+            return None;
+        }
+
+        // Create stake weights
+        let stake_weights: HashMap<[u8; 32], u64> = validators
+            .iter()
+            .filter(|v| v.is_active)
+            .map(|v| (v.id, v.stake))
+            .collect();
+
+        // Use AI-based selection
+        match self.round_consensus.write().select_validators(&active_validators, &stake_weights) {
+            Ok(selection) => Some(selection.proposer),
+            Err(e) => {
+                warn!("AI-based proposer selection failed: {}, falling back to round-robin", e);
+                Self::get_proposer_for_slot(validators, slot)
+            }
+        }
     }
 
     /// Propose a new block
@@ -577,6 +668,20 @@ impl PoAConsensus {
 
         // Process each transaction
         for tx in transactions {
+            // Validate fee if fee caps are enabled
+            if let Some(fee_manager) = storage.get_fee_manager() {
+                let tx_type = Self::determine_transaction_type(&tx);
+                let fee = Self::calculate_transaction_fee(&tx);
+                
+                if let Err(e) = fee_manager.write().validate_fee(tx_type, fee) {
+                    warn!("Transaction fee validation failed: {}", e);
+                    continue;
+                }
+                
+                // Collect fee
+                fee_manager.write().collect_fee(fee);
+            }
+
             // Get sender account
             if let Some(mut sender_account) = storage.get_account(&tx.from)? {
                 // Check balance and nonce
@@ -666,6 +771,62 @@ impl PoAConsensus {
     /// Get validator list
     pub fn get_validators(&self) -> &[Validator] {
         &self.config.validators
+    }
+
+    /// Determine transaction type for fee calculation
+    fn determine_transaction_type(tx: &Transaction) -> TransactionType {
+        // Simple heuristic based on transaction properties
+        if tx.topics.contains(&"governance".to_string()) {
+            TransactionType::Governance
+        } else if tx.topics.contains(&"validator_registration".to_string()) {
+            TransactionType::ValidatorRegistration
+        } else if tx.topics.contains(&"contract_deploy".to_string()) {
+            TransactionType::ContractDeployment
+        } else if tx.topics.contains(&"contract_call".to_string()) {
+            TransactionType::ContractExecution
+        } else if tx.topics.contains(&"ai_call".to_string()) {
+            TransactionType::AiCall
+        } else {
+            TransactionType::Transfer
+        }
+    }
+
+    /// Calculate transaction fee
+    fn calculate_transaction_fee(tx: &Transaction) -> u128 {
+        // Simple fee calculation based on transaction size
+        let base_fee = 1000; // 0.000001 IPN
+        let size_fee = (tx.canonical_bytes().len() / 100) as u128;
+        base_fee + size_fee
+    }
+
+    /// Set AI model for reputation scoring
+    pub fn set_ai_model(&self, model: ippan_ai_core::Model) -> Result<()> {
+        if !self.config.enable_ai_reputation {
+            return Err(anyhow::anyhow!("AI reputation is disabled"));
+        }
+        self.round_consensus.write().set_active_model(model)
+    }
+
+    /// Update validator telemetry
+    pub fn update_validator_telemetry(&self, validator_id: [u8; 32], telemetry: ippan_ai_core::features::ValidatorTelemetry) {
+        if self.config.enable_ai_reputation {
+            self.round_consensus.write().update_telemetry(validator_id, telemetry);
+        }
+    }
+
+    /// Get fee manager
+    pub fn get_fee_manager(&self) -> Arc<RwLock<FeeManager>> {
+        self.fee_manager.clone()
+    }
+
+    /// Get emission calculator
+    pub fn get_emission_calculator(&self) -> Arc<RwLock<EmissionCalculator>> {
+        self.emission_calculator.clone()
+    }
+
+    /// Process fee recycling
+    pub fn process_fee_recycling(&self, current_round: u64) -> Result<u128> {
+        self.fee_manager.write().process_recycling(current_round)
     }
 }
 
