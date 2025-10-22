@@ -1,78 +1,72 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  # IPPAN Blockchain Node 1
+  ippan-ui:
+    image: ghcr.io/dmrl789/ippan-ui:latest
+    container_name: ippan-ui
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - REACT_APP_API_URL=http://188.245.97.41:8080
+      - REACT_APP_NODE_1_URL=http://188.245.97.41:8080
+      - REACT_APP_NODE_2_URL=http://135.181.145.174:8080
+      - REACT_APP_WS_URL=ws://188.245.97.41:3001/ws
+      - REACT_APP_ENABLE_FULL_UI=1
+      - REACT_APP_NETWORK_NAME=IPPAN Production
+      - REACT_APP_CHAIN_ID=ippan-mainnet
+    depends_on:
+      - ippan-gateway
+    networks:
+      - ippan-net
+
   ippan-node-1:
-    build:
-      context: ..
-      dockerfile: Dockerfile.production
+    image: ghcr.io/dmrl789/ippan-node:latest
     container_name: ippan-node-1
-    environment:
-      - NODE_ID=ippan_production_node_001
-      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000001
-      - RPC_HOST=0.0.0.0
-      - RPC_PORT=8080
-      - P2P_HOST=0.0.0.0
-      - P2P_PORT=9000
-      - P2P_BOOTNODES=http://ippan-node-2:9001
-      - STORAGE_PATH=/var/lib/ippan/db
-      - CONSENSUS_SLOT_DURATION_MS=1000
-      - CONSENSUS_MAX_TX_PER_BLOCK=100
-      - CONSENSUS_BLOCK_REWARD=1000
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
-    ports:
-      - "8080:8080"  # RPC API
-      - "9000:9000"  # P2P
-    volumes:
-      - node1_data:/var/lib/ippan/db
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-    networks:
-      - ippan-network
-
-  # IPPAN Blockchain Node 2
-  ippan-node-2:
-    build:
-      context: ..
-      dockerfile: Dockerfile.production
-    container_name: ippan-node-2
-    environment:
-      - NODE_ID=ippan_production_node_002
-      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000002
-      - RPC_HOST=0.0.0.0
-      - RPC_PORT=8080
-      - P2P_HOST=0.0.0.0
-      - P2P_PORT=9001
-      - P2P_BOOTNODES=http://ippan-node-1:9000
-      - STORAGE_PATH=/var/lib/ippan/db
-      - CONSENSUS_SLOT_DURATION_MS=1000
-      - CONSENSUS_MAX_TX_PER_BLOCK=100
-      - CONSENSUS_BLOCK_REWARD=1000
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
     ports:
-      - "8081:8080"  # RPC API
-      - "9001:9001"  # P2P
+      - "8080:8080"
+      - "4001:4001/tcp"
+    environment:
+      - NODE_ROLE=validator
+      - NODE_ID=node-1
+      - P2P_PORT=4001
+      - RPC_PORT=8080
+      - BOOTSTRAP_PEERS=/ip4/135.181.145.174/tcp/4001
     volumes:
-      - node2_data:/var/lib/ippan/db
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+      - ./data/node1:/data
     networks:
-      - ippan-network
+      - ippan-net
 
-volumes:
-  node1_data:
-  node2_data:
+  ippan-gateway:
+    image: ghcr.io/dmrl789/ippan-gateway:latest
+    container_name: ippan-gateway
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      - GATEWAY_BIND=0.0.0.0:8080
+      - GATEWAY_UPSTREAM=http://ippan-node-1:8080
+    depends_on:
+      - ippan-node-1
+    networks:
+      - ippan-net
+
+  nginx:
+    image: nginx:latest
+    container_name: ippan-nginx-lb
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/load-balancer.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - ippan-ui
+      - ippan-gateway
+    networks:
+      - ippan-net
 
 networks:
-  ippan-network:
+  ippan-net:
     driver: bridge

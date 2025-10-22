@@ -1,92 +1,71 @@
 #!/bin/bash
-set -euo pipefail
 
-echo "🔧 Deploying Node 2 on Server 2 (135.181.145.174)..."
+# Deploy IPPAN Node 2 to Server 2 (135.181.145.174)
+# This script deploys only Node 2
 
-# Update system and install dependencies
-apt-get update -y
-DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq curl ufw
+set -e
 
-# Start Docker
-systemctl start docker
-systemctl enable docker
+echo "🚀 Deploying IPPAN Node 2 to Server 2..."
 
-# Create IPPAN directory
-mkdir -p /opt/ippan
-cd /opt/ippan
-
-# Create docker-compose.yml for production
-cat > docker-compose.yml << 'EOF'
-version: '3.8'
-
-services:
-  ippan-node:
-    image: ghcr.io/dmrl789/ippan:latest
-    container_name: ippan-node-2
-    restart: unless-stopped
-    user: "0:0"
-    command:
-      - sh
-      - -lc
-      - |
-        set -e
-        echo 'deb http://deb.debian.org/debian bookworm main' > /etc/apt/sources.list.d/bookworm.list
-        apt-get update -y
-        apt-get install -y --no-install-recommends -t bookworm libssl3 ca-certificates
-        exec ippan-node
-    environment:
-      - NODE_ID=node-2
-      - RPC_HOST=0.0.0.0
-      - RPC_PORT=8081
-      - P2P_HOST=0.0.0.0
-      - P2P_PORT=9001
-      - P2P_ANNOUNCE=/ip4/135.181.145.174/tcp/9001
-      - P2P_BOOTSTRAP=/ip4/188.245.97.41/tcp/9000
-      - DATA_DIR=/data
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
-    ports:
-      - "0.0.0.0:9001:9001"
-      - "0.0.0.0:8081:8081"
-    volumes:
-      - ./data:/data
-      - ./logs:/logs
-    networks:
-      - ippan-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-networks:
-  ippan-network:
-    driver: bridge
-EOF
-
-# Configure firewall
-ufw allow 9001/tcp comment "IPPAN P2P"
-ufw allow 8081/tcp comment "IPPAN API"
-ufw --force enable
-
-# Start the node
-docker compose up -d
-
-# Wait for node to start
-echo "⏳ Waiting for node to initialize..."
-sleep 60
-
-# Verify deployment
-echo "🏥 Verifying deployment..."
-if curl -f http://localhost:8081/health >/dev/null 2>&1; then
-    echo "✅ Node 2 is healthy and running!"
-    echo "📊 Node Status:"
-    curl -s http://localhost:8081/health | jq '.'
-else
-    echo "❌ Node 2 health check failed"
-    docker compose logs ippan-node
+# Check if Docker and Docker Compose are available
+if ! command -v docker &> /dev/null; then
+    echo "❌ Docker is not installed. Please install Docker first."
     exit 1
 fi
 
-echo "🎉 Node 2 deployment complete!"
+if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+    echo "❌ Docker Compose is not available. Please install Docker Compose first."
+    exit 1
+fi
+
+# Create data directories
+echo "📁 Creating data directories..."
+mkdir -p ./data/node2
+
+# Pull latest images
+echo "📥 Pulling latest Docker images..."
+docker-compose -f docker-compose.production.yml pull
+
+# Stop existing containers if running
+echo "🛑 Stopping existing containers..."
+docker-compose -f docker-compose.production.yml down --remove-orphans || true
+
+# Start Node 2
+echo "🏃 Starting IPPAN Node 2..."
+docker-compose -f docker-compose.production.yml up -d
+
+# Wait for services to be ready
+echo "⏳ Waiting for services to start..."
+sleep 10
+
+# Check service status
+echo "📊 Checking service status..."
+docker-compose -f docker-compose.production.yml ps
+
+# Health checks
+echo "🏥 Running health checks..."
+
+# Check Node 2
+if curl -f -s http://localhost:8080/health > /dev/null 2>&1; then
+    echo "✅ Node 2 is responding on port 8080"
+else
+    echo "⚠️  Node 2 health check failed"
+fi
+
+# Check P2P connectivity
+echo "🔗 Checking P2P connectivity..."
+if ss -ltnp | grep :4001 > /dev/null; then
+    echo "✅ P2P port 4001 is listening"
+else
+    echo "⚠️  P2P port 4001 is not listening"
+fi
+
+echo ""
+echo "🎉 Deployment complete!"
+echo ""
+echo "📋 Service URLs:"
+echo "   Node 2:   http://135.181.145.174:8080"
+echo "   P2P:      135.181.145.174:4001"
+echo ""
+echo "🔍 To check logs: docker-compose -f docker-compose.production.yml logs -f"
+echo "🛑 To stop:       docker-compose -f docker-compose.production.yml down"
