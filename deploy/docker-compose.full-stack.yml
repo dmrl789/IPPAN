@@ -1,100 +1,30 @@
-version: '3.8'
+# Fee Caps and DAG-Fair Emission System
 
-services:
-  # IPPAN Blockchain Node 1
-  ippan-node-1:
-    image: ghcr.io/dmrl789/ippan/ippan-node:latest
-    container_name: ippan-node-1
-    environment:
-      - NODE_ID=ippan_production_node_001
-      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000001
-      - RPC_HOST=0.0.0.0
-      - RPC_PORT=8080
-      - P2P_HOST=0.0.0.0
-      - P2P_PORT=9000
-      - P2P_BOOTNODES=http://ippan-node-2:9001
-      - STORAGE_PATH=/var/lib/ippan/db
-      - CONSENSUS_SLOT_DURATION_MS=1000
-      - CONSENSUS_MAX_TX_PER_BLOCK=100
-      - CONSENSUS_BLOCK_REWARD=1000
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
-    ports:
-      - "8080:8080"  # RPC API
-      - "9000:9000"  # P2P
-    volumes:
-      - node1_data:/var/lib/ippan/db
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-    networks:
-      - ippan-network
+This document defines IPPAN’s **fee system**, **DAG-Fair emission schedule**, and **reward distribution model**.  
+It merges the protocol specification (for implementation) with concise economic rationale (for whitepaper/governance).
 
-  # IPPAN Blockchain Node 2
-  ippan-node-2:
-    image: ghcr.io/dmrl789/ippan/ippan-node:latest
-    container_name: ippan-node-2
-    environment:
-      - NODE_ID=ippan_production_node_002
-      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000002
-      - RPC_HOST=0.0.0.0
-      - RPC_PORT=8080
-      - P2P_HOST=0.0.0.0
-      - P2P_PORT=9001
-      - P2P_BOOTNODES=http://ippan-node-1:9000
-      - STORAGE_PATH=/var/lib/ippan/db
-      - CONSENSUS_SLOT_DURATION_MS=1000
-      - CONSENSUS_MAX_TX_PER_BLOCK=100
-      - CONSENSUS_BLOCK_REWARD=1000
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
-    ports:
-      - "8081:8080"  # RPC API
-      - "9001:9001"  # P2P
-    volumes:
-      - node2_data:/var/lib/ippan/db
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-    networks:
-      - ippan-network
+---
 
-  # API Gateway
-  gateway:
-    image: ghcr.io/dmrl789/ippan/ippan-gateway:latest
-    container_name: gateway
-    environment:
-      - PORT=8081
-      - TARGET_RPC_URL=http://ippan-node-1:8080
-      - TARGET_WS_URL=ws://ippan-node-1:8080
-      - TARGET_HEALTH_PATH=/health
-      - ALLOWED_ORIGINS=http://188.245.97.41:3001
-      - API_PREFIX=/api
-      - WS_PREFIX=/ws
-      - PROXY_LOG_LEVEL=info
-    ports:
-      - "8081:8081"  # Gateway API
-    restart: unless-stopped
-    depends_on:
-      - ippan-node-1
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-    networks:
-      - ippan-network
+## 1. Fee System
 
-volumes:
-  node1_data:
-  node2_data:
+### 1.1 Overview
 
-networks:
-  ippan-network:
-    driver: bridge
+IPPAN enforces **hard, deterministic fee caps** at the protocol level to ensure predictable costs, fairness, and resistance to manipulation.  
+Transactions that exceed their allowed fee cap are **rejected deterministically** during both **mempool admission** and **block assembly**.
+
+### 1.2 Fee Cap Table
+
+| Transaction Type     | Cap (µIPN) | Cap (IPN)  | Description                         |
+|----------------------|------------|------------|-------------------------------------|
+| Transfer             | 1,000      | 0.00001    | Simple token transfer               |
+| AI Call              | 100        | 0.000001   | AI model inference call             |
+| Contract Deploy      | 100,000    | 0.001      | Deploy smart contract               |
+| Contract Call        | 10,000     | 0.0001     | Execute contract method             |
+| Governance           | 10,000     | 0.0001     | Governance proposal or vote         |
+| Validator Operations | 10,000     | 0.0001     | Stake, register, or update node     |
+
+> **Unit**: 1 IPN = 100,000,000 µIPN
+
+### 1.3 Fee Formula
+
+Protocol-fee calculation (issuer-facing) is simple and deterministic:
