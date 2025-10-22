@@ -1,72 +1,30 @@
-version: "3.9"
+# Fee Caps and DAG-Fair Emission System
 
-services:
-  ippan-ui:
-    image: ghcr.io/dmrl789/ippan-ui:latest
-    container_name: ippan-ui
-    restart: unless-stopped
-    ports:
-      - "3001:3001"
-    environment:
-      - REACT_APP_API_URL=http://188.245.97.41:8080
-      - REACT_APP_NODE_1_URL=http://188.245.97.41:8080
-      - REACT_APP_NODE_2_URL=http://135.181.145.174:8080
-      - REACT_APP_WS_URL=ws://188.245.97.41:3001/ws
-      - REACT_APP_ENABLE_FULL_UI=1
-      - REACT_APP_NETWORK_NAME=IPPAN Production
-      - REACT_APP_CHAIN_ID=ippan-mainnet
-    depends_on:
-      - ippan-gateway
-    networks:
-      - ippan-net
+This document defines IPPAN’s **fee system**, **DAG-Fair emission schedule**, and **reward distribution model**.  
+It merges the protocol specification (for implementation) with concise economic rationale (for whitepaper/governance).
 
-  ippan-node-1:
-    image: ghcr.io/dmrl789/ippan-node:latest
-    container_name: ippan-node-1
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "4001:4001/tcp"
-    environment:
-      - NODE_ROLE=validator
-      - NODE_ID=node-1
-      - P2P_PORT=4001
-      - RPC_PORT=8080
-      - BOOTSTRAP_PEERS=/ip4/135.181.145.174/tcp/4001
-    volumes:
-      - ./data/node1:/data
-    networks:
-      - ippan-net
+---
 
-  ippan-gateway:
-    image: ghcr.io/dmrl789/ippan-gateway:latest
-    container_name: ippan-gateway
-    restart: unless-stopped
-    ports:
-      - "8081:8080"
-    environment:
-      - GATEWAY_BIND=0.0.0.0:8080
-      - GATEWAY_UPSTREAM=http://ippan-node-1:8080
-    depends_on:
-      - ippan-node-1
-    networks:
-      - ippan-net
+## 1. Fee System
 
-  nginx:
-    image: nginx:latest
-    container_name: ippan-nginx-lb
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/load-balancer.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - ippan-ui
-      - ippan-gateway
-    networks:
-      - ippan-net
+### 1.1 Overview
 
-networks:
-  ippan-net:
-    driver: bridge
+IPPAN enforces **hard, deterministic fee caps** at the protocol level to ensure predictable costs, fairness, and resistance to manipulation.  
+Transactions that exceed their allowed fee cap are **rejected deterministically** during both **mempool admission** and **block assembly**.
+
+### 1.2 Fee Cap Table
+
+| Transaction Type     | Cap (µIPN) | Cap (IPN)  | Description                         |
+|----------------------|------------|------------|-------------------------------------|
+| Transfer             | 1,000      | 0.00001    | Simple token transfer               |
+| AI Call              | 100        | 0.000001   | AI model inference call             |
+| Contract Deploy      | 100,000    | 0.001      | Deploy smart contract               |
+| Contract Call        | 10,000     | 0.0001     | Execute contract method             |
+| Governance           | 10,000     | 0.0001     | Governance proposal or vote         |
+| Validator Operations | 10,000     | 0.0001     | Stake, register, or update node     |
+
+> **Unit**: 1 IPN = 100,000,000 µIPN
+
+### 1.3 Fee Formula
+
+Protocol-fee calculation (issuer-facing) is simple and deterministic:

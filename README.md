@@ -126,17 +126,33 @@ The command queries `/health`, `/status`, and `/peers` on every target, prints a
 
 ## 🐳 Deployment
 
-### Docker
+### Automated Deployment (Recommended)
+
+The IPPAN network uses automated GitHub Actions deployment:
+
+- **Automatic**: Deploys on every push to `main` branch
+- **Multi-Server**: Deploys to Server 1 (full-stack) and Server 2 (node-only)
+- **Docker Registry**: Uses GitHub Container Registry (GHCR)
+- **Health Checks**: Verifies deployment success
+
+See [Automated Deployment Guide](docs/automated-deployment-guide.md) for setup instructions.
+
+### Manual Docker Deployment
 
 ```bash
 # Build production image
 docker build -f Dockerfile.production -t ippan-node .
 
 # Run container
-docker run -p 3000:3000 ippan-node
+docker run -p 8080:8080 -p 9000:9000 ippan-node
 ```
 
-### Systemd
+### Production Servers
+
+- **Server 1** (188.245.97.41): Full-stack with UI and gateway
+- **Server 2** (135.181.145.174): Node-only deployment
+
+### Systemd (Legacy)
 
 ```bash
 # Install service

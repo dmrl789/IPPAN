@@ -1,24 +1,74 @@
 version: "3.9"
 
 services:
-  ippan-node-2:
-    image: ghcr.io/dmrl789/ippan-node:latest
-    container_name: ippan-node-2
+  ippan-node-1:
+    image: ghcr.io/dmrl789/ippan/ippan-node:latest
+    container_name: ippan-node-1
     restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "4001:4001/tcp"
     environment:
+      - NODE_ID=ippan_production_node_001
       - NODE_ROLE=validator
-      - NODE_ID=node-2
-      - P2P_PORT=4001
+      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000001
+      - RPC_HOST=0.0.0.0
       - RPC_PORT=8080
-      - BOOTSTRAP_PEERS=/ip4/188.245.97.41/tcp/4001
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9000
+      - P2P_BOOTNODES=/ip4/188.245.97.41/tcp/9001
+      - STORAGE_PATH=/var/lib/ippan/db
+      - CONSENSUS_SLOT_DURATION_MS=100
+      - CONSENSUS_MAX_TX_PER_BLOCK=1000
+      - CONSENSUS_BLOCK_REWARD=10000
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    ports:
+      - "8080:8080"    # RPC API
+      - "9000:9000"    # P2P port
     volumes:
-      - ./data/node2:/data
+      - node1_data:/var/lib/ippan/db
     networks:
       - ippan-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  ippan-node-2:
+    image: ghcr.io/dmrl789/ippan/ippan-node:latest
+    container_name: ippan-node-2
+    restart: unless-stopped
+    environment:
+      - NODE_ID=ippan_production_node_002
+      - NODE_ROLE=validator
+      - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000002
+      - RPC_HOST=0.0.0.0
+      - RPC_PORT=8081
+      - P2P_HOST=0.0.0.0
+      - P2P_PORT=9001
+      - P2P_BOOTNODES=/ip4/188.245.97.41/tcp/9000
+      - STORAGE_PATH=/var/lib/ippan/db
+      - CONSENSUS_SLOT_DURATION_MS=100
+      - CONSENSUS_MAX_TX_PER_BLOCK=1000
+      - CONSENSUS_BLOCK_REWARD=10000
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+    ports:
+      - "8081:8081"    # RPC API
+      - "9001:9001"    # P2P port
+    volumes:
+      - node2_data:/var/lib/ippan/db
+    networks:
+      - ippan-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 networks:
   ippan-net:
     driver: bridge
+
+volumes:
+  node1_data:
+  node2_data:
