@@ -20,10 +20,20 @@ pub mod emission;
 pub mod fees;
 pub mod ordering;
 pub mod parallel_dag;
+pub mod reputation;
+pub use emission::{
+    calculate_fee_recycling, distribute_round_reward, projected_supply, round_reward,
+    EmissionParams, FeeRecyclingParams, RoundRewardDistribution,
+};
+pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
     ValidationResult,
+};
+pub use reputation::{
+    apply_reputation_weight, calculate_reputation, ReputationScore, ValidatorTelemetry,
+    DEFAULT_REPUTATION,
 };
 
 /// Consensus errors

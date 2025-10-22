@@ -1,7 +1,7 @@
 # IPPAN Blockchain Explorer Configuration
 
 ## Overview
-This configuration enables a full blockchain explorer for IPPAN at `ui.ippan.org/explorer` with the API served from `api.ippan.org` with the following features:
+This configuration enables a full blockchain explorer for IPPAN at `http://188.245.97.41:3001/explorer` with the API served from `api.ippan.org` with the following features:
 
 ### Available Blockchain Data Endpoints
 
@@ -49,7 +49,7 @@ This configuration enables a full blockchain explorer for IPPAN at `ui.ippan.org
 
 ### 3. Environment Variables (`.env`)
 - Gateway configuration for API routing
-- CORS origins for ui.ippan.org
+- CORS origins for http://188.245.97.41:3001
 - Node configuration for blockchain
 
 ## Deployment Steps
@@ -136,7 +136,7 @@ curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Ke
 
 ## Security Considerations
 
-- CORS is configured for ui.ippan.org
+- CORS is configured for http://188.245.97.41:3001
 - API endpoints are rate-limited
 - WebSocket connections are properly proxied
 - No sensitive data exposed in logs

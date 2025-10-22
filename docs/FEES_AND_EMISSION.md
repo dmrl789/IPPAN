@@ -1,37 +1,38 @@
-# Fees and Emission
+# Fee Caps and Emission Schedule
 
-This document summarizes the deterministic, integer-only logic used for protocol fees and DAG-Fair round emission.
+This document specifies the IPPAN protocol's fee caps, emission schedule, and reward distribution logic.
 
-## Emission (Round-based)
+---
 
-- Emission per round is computed with integer halving:
-  - `R(t) = R0 >> floor(t / HALVING_ROUNDS)`
-- The split follows a proposer bonus and verifier remainder:
-  - Proposer receives `PROPOSER_BONUS_BPS` basis points of the pool
-  - The remaining pool is split equally across verifiers; any remainder is recycled
-- Implementation: see `crates/consensus/src/emission.rs`
-  - `EmissionParams { r0, halving_rounds, proposer_bonus_bps }`
-  - `round_reward(round, &params)` – per-round pool
-  - `split_proposer_and_verifiers(pool, verifier_count, &params)` – 20/80 by default
-  - `per_block_slice(pool, block_count)` – equal per-block slice + remainder
+## 🪙 Fee Caps
 
-## Fee Caps (Protocol-level)
+### Overview
 
-- Transactions have an estimated fee derived from their size-like features.
-- A hard cap `MAX_FEE_PER_TX` is enforced at:
-  - Mempool admission (reject over-cap)
-  - Consensus block proposal (filter over-cap)
-- The estimator is deterministic and mirrors the mempool logic to avoid cycles.
-- Implementation:
-  - `crates/mempool/src/lib.rs` – admission check with the local constant
-  - `crates/consensus/src/fees.rs` – estimator and `within_cap(tx)` for proposal-time filtering
+IPPAN enforces **hard, deterministic fee caps** at the protocol level to ensure predictable costs and prevent market manipulation.  
+Transactions exceeding the cap are rejected during both **mempool admission** and **block assembly**.
 
-## Parameters
+### Cap Values (µIPN)
 
-- Example defaults (tunable via code/config):
-  - `R0`: 10_000 (µIPN per round, example)
-  - `HALVING_ROUNDS`: 100 (example)
-  - `PROPOSER_BONUS_BPS`: 2000 (20%)
-  - `MAX_FEE_PER_TX`: 10_000_000 (example cap)
+| Transaction Type | Cap (µIPN) | Cap (IPN) | USD Equivalent* |
+|------------------|------------|-----------|-----------------|
+| Transfer         | 1,000      | 0.00001   | ~$0.0001        |
+| AI Call          | 100        | 0.000001  | ~$0.00001       |
+| Contract Deploy  | 100,000    | 0.001     | ~$0.01          |
+| Contract Call    | 10,000     | 0.0001    | ~$0.001         |
+| Governance       | 10,000     | 0.0001    | ~$0.001         |
+| Validator Ops    | 10,000     | 0.0001    | ~$0.001         |
 
-All logic is integer-only and architecture-independent to preserve determinism across nodes.
+\*Assuming $10/IPN, illustrative only.
+
+### Enforcement
+
+```rust
+// In mempool admission
+if tx.fee > fee_cap_for_type(tx.type) {
+    return Err(FeeError::FeeAboveCap);
+}
+
+// In block proposal
+for tx in block.transactions {
+    validate_fee(&tx, tx.fee, &fee_config)?;
+}
