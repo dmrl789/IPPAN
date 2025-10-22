@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 5
 
     env:
-      API_BASE: ${{ inputs.api_base != '' && inputs.api_base || (vars.NEXT_PUBLIC_API_BASE_URL != '' && vars.NEXT_PUBLIC_API_BASE_URL) || 'http://188.245.97.41:7080' }}
+      API_BASE: ${{ inputs.api_base != '' && inputs.api_base || 'https://api.ippan.org' }}
       HEALTH_PATH: ${{ inputs.health_path != '' && inputs.health_path || '/health' }}
       TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
 

@@ -10,7 +10,7 @@ Paste this comment verbatim so Codex runs the workflow with the correct hosts an
 Codex: run the “Check IPPAN Nodes” workflow
 – hosts: 188.245.97.41,135.181.145.174
 – ui_url: http://188.245.97.41:3001
-– api_base: http://127.0.0.1:8080
+– api_base: https://api.ippan.org
 – lb_health: http://127.0.0.1:3000/lb-health
 – Verify services active, /health /status /peers = 200, peer_count > 0, versions match
 – Upload JSON summaries as artifacts and post a pass/fail summary per host

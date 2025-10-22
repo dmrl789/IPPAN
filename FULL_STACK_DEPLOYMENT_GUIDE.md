@@ -264,7 +264,7 @@ docker exec ippan-ui nginx -t
 docker logs ippan-nginx-lb
 
 # Test direct node access through the gateway
-curl http://188.245.97.41:3001/api/health
+curl https://api.ippan.org/health
 ```
 
 **3. Nodes not connecting:**

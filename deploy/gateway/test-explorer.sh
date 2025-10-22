@@ -85,7 +85,6 @@ test_json_endpoint "${API_BASE_URL}/time" "Time JSON"
 # Test block endpoint (may fail if no blocks exist)
 echo -n "Testing Block Endpoint... "
 if response=$(curl -s -w "%{http_code}" -o /dev/null "${API_BASE_URL}/block/1" 2>/dev/null); then
->>>>>>> origin/main
     if [ "$response" = "200" ]; then
         echo -e "${GREEN}✅ PASS${NC} (Block found)"
     elif [ "$response" = "404" ]; then
