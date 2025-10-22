@@ -16,6 +16,8 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
 use tracing::{error, info, warn};
 
+pub mod emission;
+pub mod fees;
 pub mod ordering;
 pub mod parallel_dag;
 pub use ordering::order_round;
@@ -293,8 +295,14 @@ impl PoAConsensus {
         proposer_id: [u8; 32],
     ) -> Result<()> {
         // Get transactions from mempool
-        let block_transactions =
+        let candidate_transactions =
             mempool.get_transactions_for_block(config.max_transactions_per_block);
+
+        // Enforce protocol fee caps deterministically at assembly time
+        let block_transactions: Vec<_> = candidate_transactions
+            .into_iter()
+            .filter(|tx| crate::fees::within_cap(tx))
+            .collect();
 
         if block_transactions.is_empty() {
             return Ok(());
@@ -643,6 +651,10 @@ impl PoAConsensus {
                 return Ok(false);
             }
             if validate_confidential_transaction(tx).is_err() {
+                return Ok(false);
+            }
+            // Enforce fee cap at validation time for consensus safety
+            if !crate::fees::within_cap(tx) {
                 return Ok(false);
             }
         }
