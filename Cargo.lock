@@ -1702,6 +1702,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
 
 [[package]]
+name = "ippan-ai-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "hex",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
+name = "ippan-ai-registry"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "ippan-consensus"
 version = "0.1.0"
 dependencies = [
@@ -1710,6 +1734,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "ippan-ai-core",
  "ippan-crypto",
  "ippan-mempool",
  "ippan-storage",

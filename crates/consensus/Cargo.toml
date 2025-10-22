@@ -6,13 +6,17 @@ license.workspace = true
 authors.workspace = true
 
 [features]
+default = []
 integration-tests = []
+# Enable L1 AI for reputation-weighted validator selection
+ai_l1 = ["ippan-ai-core"]
 
 [dependencies]
 ippan-types = { path = "../types" }
 ippan-storage = { path = "../storage" }
 ippan-crypto = { path = "../crypto" }
 ippan-mempool = { path = "../mempool" }
+ippan-ai-core = { path = "../ai_core", optional = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
