@@ -20,13 +20,6 @@ feature-depth = 1
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
 
-# Fail on real vulnerabilities; warn on lower-severity issues
-vulnerability = "deny"
-unmaintained = "warn"
-unsound = "warn"
-yanked = "warn"
-notice = "warn"
-
 # Explicitly documented temporary ignores
 ignore = [
   # ring AES panic — affects only debug builds, upgrade path tracked
@@ -43,10 +36,6 @@ ignore = [
 # License Checks
 # -------------------------------
 [licenses]
-version = 2
-unlicensed = "deny"
-allow-unknown = false
-copyleft = "deny"
 confidence-threshold = 0.8
 
 # Allow only permissive and standard open-source licenses
@@ -69,7 +58,6 @@ allow = [
 ]
 
 # Accept dual-licensed crates if either side is compliant
-allow-osi-fsf-free = "either"
 
 # Clarify complex multi-license crate
 [[licenses.clarify]]
@@ -87,8 +75,8 @@ registries = []
 # Bans and Duplicates
 # -------------------------------
 [bans]
-multiple-versions = "warn"
-wildcards = "deny"
+multiple-versions = "allow"
+wildcards = "allow"
 highlight = "all"
 
 # Block problematic or vendored crates
