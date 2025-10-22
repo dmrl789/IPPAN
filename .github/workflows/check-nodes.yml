@@ -35,6 +35,23 @@ jobs:
       TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
 
     steps:
+      - name: Sanitize API_BASE (disallow ui.ippan.org and normalize)
+        run: |
+          set -euo pipefail
+          api="${API_BASE}"
+          # trim trailing slash
+          api="${api%/}"
+          # drop trailing /api if present
+          case "$api" in
+            */api) api="${api%/api}" ;;
+          esac
+          # reject UI host for API
+          if [[ "$api" =~ (^https?://)?ui\.ippan\.org(/|$) ]]; then
+            echo "::warning::API_BASE points to ui.ippan.org (UI domain). Overriding to default API host."
+            api="http://188.245.97.41:7080"
+          fi
+          echo "API_BASE=$api" >> "$GITHUB_ENV"
+
       - name: Display effective targets
         run: |
           echo "API_BASE=${API_BASE}"

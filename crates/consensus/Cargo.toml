@@ -4,17 +4,22 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+description = "IPPAN Proof-of-Authority + AI Reputation Consensus Engine with DAG-Fair emission and deterministic block scheduling."
 
 [features]
+default = []
 integration-tests = []
+# Enables L1 AI for validator reputation and selection
+ai_l1 = ["ippan-ai-core", "ippan-ai-registry"]
 
 [dependencies]
 ippan-types = { path = "../types" }
 ippan-storage = { path = "../storage" }
 ippan-crypto = { path = "../crypto" }
 ippan-mempool = { path = "../mempool" }
-ai_core = { path = "../ai_core" }
-ai_registry = { path = "../ai_registry" }
+ippan-ai-core = { path = "../ai_core", optional = true }
+ippan-ai-registry = { path = "../ai_registry", optional = true }
+
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -26,6 +31,7 @@ futures = { workspace = true }
 parking_lot = { workspace = true }
 blake3 = { workspace = true }
 rayon = { workspace = true }
+rand = "0.8"
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }

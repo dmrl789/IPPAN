@@ -1,21 +1,20 @@
-//! Governance module for IPPAN blockchain
-//! 
-//! This module provides governance capabilities for the IPPAN blockchain,
-//! including voting, proposals, and decision making processes.
+//! IPPAN Governance Module
+//!
+//! Provides on-chain governance primitives for:
+//! - ✅ Proposal creation and voting
+//! - 🤖 AI model approval (via `ippan-ai-registry`)
+//! - ⚙️ Protocol parameter updates
+//!
+//! All governance actions are deterministic, time-bounded by HashTimer rounds,
+//! and cryptographically signed by authorized validators or domain owners.
 
+pub mod ai_models;
 pub mod voting;
-pub mod proposals;
-pub mod delegation;
-pub mod treasury;
-pub mod types;
-pub mod errors;
+pub mod parameters;
 
+pub use ai_models::*;
 pub use voting::*;
-pub use proposals::*;
-pub use delegation::*;
-pub use treasury::*;
-pub use types::*;
-pub use errors::*;
+pub use parameters::*;
 
-/// Version of the Governance module
+/// Governance module version (for API introspection)
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
