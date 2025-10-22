@@ -60,7 +60,7 @@ curl -I http://188.245.97.41
 
 Once DNS/TLS is pointed:
 
-curl -I https://ui.ippan.org
+curl -I http://188.245.97.41:3001
 
 If the job still fails
 
