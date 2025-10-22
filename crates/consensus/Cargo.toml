@@ -13,6 +13,8 @@ ippan-types = { path = "../types" }
 ippan-storage = { path = "../storage" }
 ippan-crypto = { path = "../crypto" }
 ippan-mempool = { path = "../mempool" }
+ai_core = { path = "../ai_core" }
+ai_registry = { path = "../ai_registry" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

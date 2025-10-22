@@ -1,0 +1,56 @@
+[package]
+name = "ippan-governance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Governance module for IPPAN blockchain - voting, proposals, and decision making"
+
+[dependencies]
+# Workspace dependencies
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
+rand_core.workspace = true
+once_cell.workspace = true
+parking_lot.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+
+# IPPAN crates
+ippan-types = { path = "../types" }
+ippan-crypto = { path = "../crypto" }
+ippan-storage = { path = "../storage" }
+
+# AI crates
+ai_core = { path = "../ai_core" }
+ai_registry = { path = "../ai_registry" }
+
+# Time and utilities
+time.workspace = true
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Database and storage
+sled.workspace = true
+bincode = "1.3"
+
+# Error handling and logging
+tracing-subscriber.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+criterion = "0.5"
+proptest = "1.4"
+
+
+[features]
+default = ["std"]
+std = []

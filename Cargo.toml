@@ -10,6 +10,9 @@ members = [
   "crates/rpc",
   "crates/core",
   "crates/time",
+  "crates/ai_core",
+  "crates/ai_registry",
+  "crates/governance",
   "node",
 ]
 resolver = "2"
