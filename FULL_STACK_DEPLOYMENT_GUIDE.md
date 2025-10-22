@@ -140,8 +140,8 @@ curl https://api.ippan.org/health
 # Check Node 2
 curl https://api.ippan.org/health
 
-# Check WebSocket upgrade
-curl -I -H 'Connection: Upgrade' -H 'Upgrade: websocket' https://ui.ippan.org/ws
+# Check WebSocket upgrade (API domain)
+curl -I -H 'Connection: Upgrade' -H 'Upgrade: websocket' https://api.ippan.org/ws
 ```
 
 ### **2. Test UI Functionality**
@@ -263,8 +263,8 @@ docker exec ippan-ui nginx -t
 # Check load balancer
 docker logs ippan-nginx-lb
 
-# Test direct node access through the gateway
-curl https://ui.ippan.org/api/health
+# Test API health directly on the API domain
+curl https://api.ippan.org/health
 ```
 
 **3. Nodes not connecting:**
