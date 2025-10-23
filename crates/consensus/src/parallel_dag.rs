@@ -650,7 +650,7 @@ mod tests {
         if to == from {
             to[0] ^= 0xFF;
         }
-        let mut tx = Transaction::new(from, to, 1, nonce);
+        let mut tx = Transaction::new(from, to, ippan_types::Amount::from_atomic(1), nonce);
         tx.id = tx.hash();
         tx
     }
