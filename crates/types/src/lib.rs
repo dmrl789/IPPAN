@@ -21,3 +21,6 @@ pub use time_service::{
     verify_hashtimer, TimeSyncService,
 };
 pub use transaction::*;
+
+#[cfg(test)]
+mod tests;
