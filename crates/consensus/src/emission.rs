@@ -8,21 +8,25 @@
 //! - 21M IPN supply cap
 //! - Fee recycling and AI micro-service commissions
 //! - Governance-controlled parameters
+//!
+//! All amounts use atomic IPN units with 24 decimal precision.
 
+use ippan_types::{Amount, SUPPLY_CAP};
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use std::collections::HashMap;
 
 /// DAG-Fair emission parameters for IPPAN BlockDAG
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DAGEmissionParams {
-    /// Initial reward per round (in µIPN — micro-IPN)
+    /// Initial reward per round (in atomic IPN units with 24 decimal precision)
     /// Default: 0.0001 IPN = 10,000 µIPN per round
-    pub r0: u128,
+    pub r0: Amount,
     /// Number of rounds between halvings (≈ 2 years at 100ms rounds)
     /// Default: 315,000,000 rounds (≈ 2 years)
     pub halving_rounds: u64,
-    /// Total supply cap (21 M IPN = 21,000,000,000,000 µIPN)
-    pub supply_cap: u128,
+    /// Total supply cap (21 M IPN in atomic units)
+    pub supply_cap: Amount,
     /// Round duration in milliseconds (for emission rate calculations)
     pub round_duration_ms: u64,
     /// Fee cap as percentage of round reward (basis points)
@@ -40,6 +44,10 @@ pub struct DAGEmissionParams {
     /// Transaction fee percentage (basis points)
     /// Default: 25% = 2500 basis points
     pub tx_fee_bps: u16,
+    /// Proposer reward percentage (basis points; 20% = 2000)
+    pub proposer_bps: u16,
+    /// Verifier reward percentage (basis points; 80% = 8000)
+    pub verifier_bps: u16,
 }
 
 /// Validator role in a round
@@ -116,11 +124,11 @@ impl Default for DAGEmissionParams {
     fn default() -> Self {
         Self {
             // 0.0001 IPN per round = 10,000 µIPN
-            r0: 10_000,
+            r0: Amount::from_micro_ipn(10_000),
             // Halving every ~2 years at 100ms rounds (315,000,000 rounds)
             halving_rounds: 315_000_000,
-            // 21 million IPN = 21,000,000,000,000 µIPN
-            supply_cap: 21_000_000_00000000,
+            // 21 million IPN in atomic units
+            supply_cap: Amount(SUPPLY_CAP),
             // 100ms round duration
             round_duration_ms: 100,
             // Fee cap at 10% of round reward
@@ -133,6 +141,10 @@ impl Default for DAGEmissionParams {
             base_emission_bps: 6000,
             // Transaction fees at 25%
             tx_fee_bps: 2500,
+            // Proposer reward at 20%
+            proposer_bps: 2000,
+            // Verifier reward at 80%
+            verifier_bps: 8000,
         }
     }
 }
@@ -140,13 +152,13 @@ impl Default for DAGEmissionParams {
 impl DAGEmissionParams {
     /// Validate emission parameters
     pub fn validate(&self) -> Result<()> {
-        if self.r0 == 0 {
+        if self.r0.is_zero() {
             return Err(anyhow::anyhow!("Initial reward must be positive"));
         }
         if self.halving_rounds == 0 {
             return Err(anyhow::anyhow!("Halving rounds must be positive"));
         }
-        if self.supply_cap == 0 {
+        if self.supply_cap.is_zero() {
             return Err(anyhow::anyhow!("Supply cap must be positive"));
         }
         if self.round_duration_ms == 0 {
@@ -177,8 +189,8 @@ impl DAGEmissionParams {
     /// Get annual emission rate (IPN per year)
     pub fn annual_emission_rate(&self) -> f64 {
         let rounds_per_year = (365.25 * 24.0 * 3600.0 * 1000.0) / self.round_duration_ms as f64;
-        let ipn_per_round = self.r0 as f64 / 1_000_000.0; // Convert µIPN to IPN
-        rounds_per_year * ipn_per_round
+        let ipn_per_round = self.r0.to_ipn();
+        rounds_per_year * ipn_per_round as f64
     }
     
     /// Get projected total emission time (years)
@@ -187,20 +199,24 @@ impl DAGEmissionParams {
         let mut halvings = 0u32;
         
         loop {
-            let reward = if halvings >= 64 { 0 } else { self.r0 >> halvings };
-            if reward == 0 {
+            let reward = if halvings >= 64 { 
+                Amount::zero() 
+            } else { 
+                Amount(self.r0.atomic() >> halvings) 
+            };
+            if reward.is_zero() {
                 break;
             }
             
             let rounds_in_halving = self.halving_rounds;
-            let _total_reward_in_halving = reward.saturating_mul(rounds_in_halving as u128);
+            let _total_reward_in_halving = reward.atomic().saturating_mul(rounds_in_halving as u128);
             
-            if total_rounds.saturating_add(rounds_in_halving) as u128 * reward > self.supply_cap {
+            if total_rounds.saturating_add(rounds_in_halving) as u128 * reward.atomic() > self.supply_cap.atomic() {
                 // Calculate partial halving period
-                let remaining_supply = self.supply_cap.saturating_sub(
-                    total_rounds as u128 * reward
+                let remaining_supply = self.supply_cap.atomic().saturating_sub(
+                    total_rounds as u128 * reward.atomic()
                 );
-                let remaining_rounds = remaining_supply / reward;
+                let remaining_rounds = remaining_supply / reward.atomic();
                 total_rounds += remaining_rounds as u64;
                 break;
             }
@@ -215,15 +231,15 @@ impl DAGEmissionParams {
 
 /// Compute per-round reward using DAG-Fair halving schedule
 /// Formula: R(t) = R₀ / 2^(⌊t/Th⌋)
-pub fn calculate_round_reward(round: u64, params: &DAGEmissionParams) -> u128 {
+pub fn calculate_round_reward(round: u64, params: &DAGEmissionParams) -> Amount {
     if round == 0 {
-        return 0;
+        return Amount::zero();
     }
     let halvings = (round / params.halving_rounds) as u32;
     if halvings >= 64 {
-        return 0;
+        return Amount::zero();
     }
-    params.r0 >> halvings
+    Amount(params.r0.atomic() >> halvings)
 }
 
 /// Calculate comprehensive round emission breakdown
@@ -231,22 +247,32 @@ pub fn calculate_round_emission(round: u64, params: &DAGEmissionParams) -> Round
     let total_reward = calculate_round_reward(round, params);
     let halvings_applied = (round / params.halving_rounds) as u32;
     
-    let base_emission = (total_reward * params.base_emission_bps as u128) / 10_000;
-    let tx_fee_portion = (total_reward * params.tx_fee_bps as u128) / 10_000;
-    let ai_commission_portion = (total_reward * params.ai_commission_bps as u128) / 10_000;
-    let network_pool_portion = (total_reward * params.network_pool_bps as u128) / 10_000;
-    let fee_cap_limit = (total_reward * params.fee_cap_bps as u128) / 10_000;
+    let base_emission = total_reward.percentage(params.base_emission_bps);
+    let tx_fee_portion = total_reward.percentage(params.tx_fee_bps);
+    let ai_commission_portion = total_reward.percentage(params.ai_commission_bps);
+    let network_pool_portion = total_reward.percentage(params.network_pool_bps);
+    let fee_cap_limit = total_reward.percentage(params.fee_cap_bps);
     
     RoundEmission {
         round,
-        total_reward,
-        base_emission,
-        tx_fee_portion,
-        ai_commission_portion,
-        network_pool_portion,
-        fee_cap_limit,
+        total_reward: total_reward.atomic(),
+        base_emission: base_emission.atomic(),
+        tx_fee_portion: tx_fee_portion.atomic(),
+        ai_commission_portion: ai_commission_portion.atomic(),
+        network_pool_portion: network_pool_portion.atomic(),
+        fee_cap_limit: fee_cap_limit.atomic(),
         halvings_applied,
     }
+}
+
+/// Distribution of rewards for a single round
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoundRewardDistribution {
+    pub total: Amount,
+    pub proposer_reward: Amount,
+    pub verifier_pool: Amount,
+    pub verifier_count: usize,
+    pub per_verifier: Amount,
 }
 
 /// DAG-Fair reward distribution for a round
@@ -254,8 +280,8 @@ pub fn distribute_dag_fair_rewards(
     round: u64,
     params: &DAGEmissionParams,
     participations: &[ValidatorParticipation],
-    collected_fees: u128,
-    ai_commissions: u128,
+    collected_fees: Amount,
+    ai_commissions: Amount,
 ) -> Result<Vec<ValidatorReward>> {
     let round_emission = calculate_round_emission(round, params);
     
@@ -264,7 +290,7 @@ pub fn distribute_dag_fair_rewards(
     }
     
     // Apply fee cap
-    let effective_fees = collected_fees.min(round_emission.fee_cap_limit);
+    let effective_fees = collected_fees.min(Amount::from_atomic(round_emission.fee_cap_limit));
     
     // Calculate total participation score
     let total_participation_score: f64 = participations.iter()
@@ -289,40 +315,79 @@ pub fn distribute_dag_fair_rewards(
         };
         
         // Base emission reward
-        let base_reward = ((round_emission.base_emission as f64 * participation_ratio) as u128)
-            .saturating_mul((role_multiplier * 1000.0) as u128) / 1000;
+        let base_reward = Amount::from_atomic(round_emission.base_emission)
+            .percentage((participation_ratio * 1000.0) as u16)
+            .percentage((role_multiplier * 1000.0) as u16);
         
         // Transaction fee reward (proportional to participation)
-        let tx_fee_reward = ((effective_fees as f64 * participation_ratio) as u128)
-            .saturating_mul((role_multiplier * 1000.0) as u128) / 1000;
+        let tx_fee_reward = effective_fees
+            .percentage((participation_ratio * 1000.0) as u16)
+            .percentage((role_multiplier * 1000.0) as u16);
         
         // AI commission reward (only for AI service providers)
         let ai_commission_reward = if participation.role == ValidatorRole::AIService {
-            ((ai_commissions as f64 * participation_ratio) as u128)
-                .saturating_mul((role_multiplier * 1000.0) as u128) / 1000
+            ai_commissions
+                .percentage((participation_ratio * 1000.0) as u16)
+                .percentage((role_multiplier * 1000.0) as u16)
         } else {
-            0
+            Amount::zero()
         };
         
         // Network pool dividend (distributed equally among all participants)
-        let network_pool_dividend = (round_emission.network_pool_portion / participations.len() as u128)
-            .saturating_mul((role_multiplier * 1000.0) as u128) / 1000;
+        let network_pool_dividend = Amount::from_atomic(round_emission.network_pool_portion)
+            .percentage((1000.0 / participations.len() as f64) as u16)
+            .percentage((role_multiplier * 1000.0) as u16);
         
         let total_reward = base_reward + tx_fee_reward + ai_commission_reward + network_pool_dividend;
         
         rewards.push(ValidatorReward {
             validator_id: participation.validator_id,
-            total_reward,
-            base_reward,
-            tx_fee_reward,
-            ai_commission_reward,
-            network_pool_dividend,
+            total_reward: total_reward.atomic(),
+            base_reward: base_reward.atomic(),
+            tx_fee_reward: tx_fee_reward.atomic(),
+            ai_commission_reward: ai_commission_reward.atomic(),
+            network_pool_dividend: network_pool_dividend.atomic(),
             role_multiplier,
             participation_score,
         });
     }
     
     Ok(rewards)
+}
+
+/// Legacy distribution function for backward compatibility
+pub fn distribute_round_reward(
+    round: u64,
+    params: &DAGEmissionParams,
+    block_count: usize,
+    verifier_count: usize,
+) -> RoundRewardDistribution {
+    let total = calculate_round_reward(round, params);
+    if total.is_zero() || block_count == 0 {
+        return RoundRewardDistribution {
+            total: Amount::zero(),
+            proposer_reward: Amount::zero(),
+            verifier_pool: Amount::zero(),
+            verifier_count: 0,
+            per_verifier: Amount::zero(),
+        };
+    }
+    
+    let proposer_reward = total.percentage(params.proposer_bps);
+    let verifier_pool = total.saturating_sub(proposer_reward);
+    let per_verifier = if verifier_count > 0 {
+        verifier_pool / verifier_count as u128
+    } else {
+        Amount::zero()
+    };
+
+    RoundRewardDistribution {
+        total,
+        proposer_reward,
+        verifier_pool,
+        verifier_count,
+        per_verifier,
+    }
 }
 
 /// Calculate participation score for a validator
@@ -337,17 +402,21 @@ fn calculate_participation_score(participation: &ValidatorParticipation) -> f64 
 }
 
 /// Project total supply emitted after given number of rounds
-pub fn projected_supply(rounds: u64, params: &DAGEmissionParams) -> u128 {
+pub fn projected_supply(rounds: u64, params: &DAGEmissionParams) -> Amount {
     if rounds == 0 {
-        return 0;
+        return Amount::zero();
     }
 
-    let mut total = 0u128;
+    let mut total = Amount::zero();
     let mut halvings = 0u32;
 
     loop {
-        let reward = if halvings >= 64 { 0 } else { params.r0 >> halvings };
-        if reward == 0 {
+        let reward = if halvings >= 64 { 
+            Amount::zero() 
+        } else { 
+            Amount(params.r0.atomic() >> halvings) 
+        };
+        if reward.is_zero() {
             break;
         }
 
@@ -359,12 +428,16 @@ pub fn projected_supply(rounds: u64, params: &DAGEmissionParams) -> u128 {
 
         let effective_end = end_round.min(rounds);
         let count = (effective_end - start_round + 1) as u128;
-        total = total.saturating_add(reward.saturating_mul(count));
+        total = Amount(total.atomic().saturating_add(reward.atomic().saturating_mul(count)));
 
         halvings += 1;
     }
 
-    total.min(params.supply_cap)
+    if total > params.supply_cap {
+        params.supply_cap
+    } else {
+        total
+    }
 }
 
 /// Calculate emission curve data for visualization
@@ -378,7 +451,7 @@ pub fn calculate_emission_curve(
     for round in (0..=max_rounds).step_by(sample_interval as usize) {
         let round_reward = calculate_round_reward(round, params);
         let cumulative_supply = projected_supply(round, params);
-        curve.push((round, round_reward, cumulative_supply));
+        curve.push((round, round_reward.atomic(), cumulative_supply.atomic()));
     }
     
     curve
@@ -396,13 +469,13 @@ pub fn calculate_annual_emission_schedule(
         let start_round = ((year - 1) as f64 * rounds_per_year) as u64 + 1;
         let end_round = (year as f64 * rounds_per_year) as u64;
         
-        let mut annual_emission = 0u128;
+        let mut annual_emission = Amount::zero();
         for round in start_round..=end_round {
-            annual_emission = annual_emission.saturating_add(calculate_round_reward(round, params));
+            annual_emission = annual_emission + calculate_round_reward(round, params);
         }
         
         let cumulative_supply = projected_supply(end_round, params);
-        schedule.push((year, annual_emission, cumulative_supply));
+        schedule.push((year, annual_emission.atomic(), cumulative_supply.atomic()));
     }
     
     schedule
@@ -415,13 +488,13 @@ pub struct DAGEmissionSystem {
     /// Current round
     current_round: u64,
     /// Total supply emitted so far
-    total_emitted: u128,
+    total_emitted: Amount,
     /// Fee collection pool
-    fee_pool: u128,
+    fee_pool: Amount,
     /// AI commission pool
-    ai_commission_pool: u128,
+    ai_commission_pool: Amount,
     /// Network reward pool
-    network_pool: u128,
+    network_pool: Amount,
 }
 
 impl DAGEmissionSystem {
@@ -431,10 +504,10 @@ impl DAGEmissionSystem {
         Ok(Self {
             params,
             current_round: 0,
-            total_emitted: 0,
-            fee_pool: 0,
-            ai_commission_pool: 0,
-            network_pool: 0,
+            total_emitted: Amount::zero(),
+            fee_pool: Amount::zero(),
+            ai_commission_pool: Amount::zero(),
+            network_pool: Amount::zero(),
         })
     }
     
@@ -442,14 +515,14 @@ impl DAGEmissionSystem {
     pub fn process_round(
         &mut self,
         participations: &[ValidatorParticipation],
-        collected_fees: u128,
-        ai_commissions: u128,
+        collected_fees: Amount,
+        ai_commissions: Amount,
     ) -> Result<Vec<ValidatorReward>> {
         self.current_round += 1;
         
         // Add to pools
-        self.fee_pool = self.fee_pool.saturating_add(collected_fees);
-        self.ai_commission_pool = self.ai_commission_pool.saturating_add(ai_commissions);
+        self.fee_pool = self.fee_pool + collected_fees;
+        self.ai_commission_pool = self.ai_commission_pool + ai_commissions;
         
         // Distribute rewards
         let rewards = distribute_dag_fair_rewards(
@@ -462,11 +535,11 @@ impl DAGEmissionSystem {
         
         // Update total emitted
         let round_emission = calculate_round_emission(self.current_round, &self.params);
-        self.total_emitted = self.total_emitted.saturating_add(round_emission.total_reward);
+        self.total_emitted = self.total_emitted + Amount::from_atomic(round_emission.total_reward);
         
         // Clear pools after distribution
-        self.fee_pool = 0;
-        self.ai_commission_pool = 0;
+        self.fee_pool = Amount::zero();
+        self.ai_commission_pool = Amount::zero();
         
         Ok(rewards)
     }
@@ -489,12 +562,12 @@ impl DAGEmissionSystem {
     }
     
     /// Get total emitted supply
-    pub fn total_emitted(&self) -> u128 {
+    pub fn total_emitted(&self) -> Amount {
         self.total_emitted
     }
     
     /// Get remaining supply
-    pub fn remaining_supply(&self) -> u128 {
+    pub fn remaining_supply(&self) -> Amount {
         self.params.supply_cap.saturating_sub(self.total_emitted)
     }
     
@@ -507,14 +580,34 @@ impl DAGEmissionSystem {
     pub fn get_emission_stats(&self) -> EmissionStats {
         EmissionStats {
             current_round: self.current_round,
-            total_emitted: self.total_emitted,
-            remaining_supply: self.remaining_supply(),
-            supply_cap: self.params.supply_cap,
-            emission_percentage: (self.total_emitted as f64 / self.params.supply_cap as f64) * 100.0,
+            total_emitted: self.total_emitted.atomic(),
+            remaining_supply: self.remaining_supply().atomic(),
+            supply_cap: self.params.supply_cap.atomic(),
+            emission_percentage: (self.total_emitted.to_ipn() as f64 / self.params.supply_cap.to_ipn() as f64) * 100.0,
             annual_emission_rate: self.params.annual_emission_rate(),
             projected_completion_years: self.params.projected_emission_years(),
         }
     }
+}
+
+/// Fee recycling parameters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeeRecyclingParams {
+    /// Percentage of fees to recycle (basis points)
+    pub recycle_bps: u16,
+}
+
+impl Default for FeeRecyclingParams {
+    fn default() -> Self {
+        Self {
+            recycle_bps: 10_000, // 100% by default
+        }
+    }
+}
+
+/// Compute amount of fees to recycle back into reward pool
+pub fn calculate_fee_recycling(collected_fees: Amount, params: &FeeRecyclingParams) -> Amount {
+    collected_fees.percentage(params.recycle_bps)
 }
 
 /// Emission statistics
@@ -529,21 +622,187 @@ pub struct EmissionStats {
     pub projected_completion_years: f64,
 }
 
+// ============================================================================
+// Advanced DAG-Fair Emission Types and Functions (for integration tests)
+// ============================================================================
+
+/// Type alias for micro-IPN (smallest unit: 1 IPN = 10^8 µIPN)
+pub type MicroIPN = u128;
+
+/// Constant: micro-IPN per IPN
+pub const MICRO_PER_IPN: u128 = 100_000_000;
+
+/// Validator identifier
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ValidatorId(pub String);
+
+/// Validator role in a round
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Role {
+    Proposer,
+    Verifier,
+}
+
+/// Participation record for a validator in a round
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Participation {
+    pub role: Role,
+    pub blocks: u64,
+}
+
+/// Set of validator participations for a round
+pub type ParticipationSet = HashMap<ValidatorId, Participation>;
+
+/// Enhanced economics parameters with additional controls
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EconomicsParams {
+    pub r0: u128,
+    pub halving_interval_rounds: u64,
+    pub hard_cap_micro: MicroIPN,
+    pub proposer_bps: u16,
+    pub verifier_bps: u16,
+}
+
+impl Default for EconomicsParams {
+    fn default() -> Self {
+        Self {
+            r0: 10_000,
+            halving_interval_rounds: 315_000_000,
+            hard_cap_micro: 21_000_000 * MICRO_PER_IPN,
+            proposer_bps: 2000,
+            verifier_bps: 8000,
+        }
+    }
+}
+
+/// Compute emission for a specific round
+pub fn emission_for_round(round: u64, params: &EconomicsParams) -> MicroIPN {
+    if round == 0 {
+        return 0;
+    }
+    let halvings = (round / params.halving_interval_rounds) as u32;
+    if halvings >= 64 {
+        return 0;
+    }
+    params.r0 >> halvings
+}
+
+/// Compute emission with hard cap enforcement
+pub fn emission_for_round_capped(
+    round: u64,
+    total_issued: MicroIPN,
+    params: &EconomicsParams,
+) -> Result<MicroIPN, &'static str> {
+    if total_issued >= params.hard_cap_micro {
+        return Err("hard cap exceeded");
+    }
+    let base_emission = emission_for_round(round, params);
+    let remaining = params.hard_cap_micro.saturating_sub(total_issued);
+    Ok(base_emission.min(remaining))
+}
+
+/// Distribution result
+pub type Payouts = HashMap<ValidatorId, MicroIPN>;
+
+/// Distribute emission and fees among validators based on participation
+pub fn distribute_round(
+    emission_micro: MicroIPN,
+    fees_micro: MicroIPN,
+    parts: &ParticipationSet,
+    params: &EconomicsParams,
+) -> Result<(Payouts, MicroIPN, MicroIPN), &'static str> {
+    if parts.is_empty() {
+        return Ok((HashMap::new(), 0, 0));
+    }
+
+    let total_pool = emission_micro.saturating_add(fees_micro);
+    if total_pool == 0 {
+        return Ok((HashMap::new(), 0, 0));
+    }
+
+    // Calculate total blocks by proposers and verifiers
+    let mut proposer_blocks = 0u64;
+    let mut verifier_blocks = 0u64;
+
+    for participation in parts.values() {
+        match participation.role {
+            Role::Proposer => proposer_blocks += participation.blocks,
+            Role::Verifier => verifier_blocks += participation.blocks,
+        }
+    }
+
+    let total_blocks = proposer_blocks.saturating_add(verifier_blocks);
+    if total_blocks == 0 {
+        return Ok((HashMap::new(), 0, 0));
+    }
+
+    // Split pool according to proposer/verifier basis points
+    let proposer_pool = (total_pool * params.proposer_bps as u128) / 10_000;
+    let verifier_pool = total_pool.saturating_sub(proposer_pool);
+
+    let mut payouts = HashMap::new();
+    let mut emission_paid = 0u128;
+    let mut fees_paid = 0u128;
+
+    // Distribute to each validator proportionally
+    for (vid, participation) in parts.iter() {
+        let payout = match participation.role {
+            Role::Proposer if proposer_blocks > 0 => {
+                (proposer_pool * participation.blocks as u128) / proposer_blocks as u128
+            }
+            Role::Verifier if verifier_blocks > 0 => {
+                (verifier_pool * participation.blocks as u128) / verifier_blocks as u128
+            }
+            _ => 0,
+        };
+
+        if payout > 0 {
+            payouts.insert(vid.clone(), payout);
+            // Track what portion came from emission vs fees
+            let emission_portion = (payout * emission_micro) / total_pool;
+            let fee_portion = payout.saturating_sub(emission_portion);
+            emission_paid = emission_paid.saturating_add(emission_portion);
+            fees_paid = fees_paid.saturating_add(fee_portion);
+        }
+    }
+
+    Ok((payouts, emission_paid, fees_paid))
+}
+
+/// Sum emission over a range of rounds
+pub fn sum_emission_over_rounds<F>(start: u64, end: u64, mut emission_fn: F) -> MicroIPN
+where
+    F: FnMut(u64) -> MicroIPN,
+{
+    let mut total = 0u128;
+    for round in start..=end {
+        total = total.saturating_add(emission_fn(round));
+    }
+    total
+}
+
+/// Calculate auto-burn amount due to rounding errors
+pub fn epoch_auto_burn(expected: MicroIPN, actual: MicroIPN) -> MicroIPN {
+    expected.saturating_sub(actual)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn create_test_params() -> DAGEmissionParams {
         DAGEmissionParams {
-            r0: 10_000,
+            r0: Amount::from_micro_ipn(10_000),
             halving_rounds: 1000,
-            supply_cap: 21_000_000_00000000,
+            supply_cap: Amount::from_atomic(21_000_000_00000000),
             round_duration_ms: 100,
             fee_cap_bps: 1000,
             ai_commission_bps: 1000,
             network_pool_bps: 500,
             base_emission_bps: 6000,
             tx_fee_bps: 2500,
+            proposer_bps: 2000,
+            verifier_bps: 8000,
         }
     }
 
@@ -561,10 +820,10 @@ mod tests {
     #[test]
     fn test_round_reward_halving() {
         let params = create_test_params();
-        assert_eq!(calculate_round_reward(999, &params), 10_000);
-        assert_eq!(calculate_round_reward(1000, &params), 5_000);
-        assert_eq!(calculate_round_reward(2000, &params), 2_500);
-        assert_eq!(calculate_round_reward(3000, &params), 1_250);
+        assert_eq!(calculate_round_reward(999, &params).atomic(), 10_000);
+        assert_eq!(calculate_round_reward(1000, &params).atomic(), 5_000);
+        assert_eq!(calculate_round_reward(2000, &params).atomic(), 2_500);
+        assert_eq!(calculate_round_reward(3000, &params).atomic(), 1_250);
     }
 
     #[test]
@@ -589,7 +848,7 @@ mod tests {
             create_test_participation([3u8; 32], ValidatorRole::AIService),
         ];
         
-        let rewards = distribute_dag_fair_rewards(1, &params, &participations, 1000, 500).unwrap();
+        let rewards = distribute_dag_fair_rewards(1, &params, &participations, Amount::from_micro_ipn(1000), Amount::from_micro_ipn(500)).unwrap();
         
         assert_eq!(rewards.len(), 3);
         
@@ -608,14 +867,14 @@ mod tests {
         let params = create_test_params();
         let s1 = projected_supply(1000, &params);
         let s2 = projected_supply(2000, &params);
-        assert_eq!(s1, 10_000 * 1000);
-        assert_eq!(s2, 10_000 * 1000 + 5_000 * 1000);
+        assert_eq!(s1.atomic(), 10_000 * 1000);
+        assert_eq!(s2.atomic(), 10_000 * 1000 + 5_000 * 1000);
     }
 
     #[test]
     fn test_supply_cap_enforced() {
         let params = DAGEmissionParams {
-            supply_cap: 50_000,
+            supply_cap: Amount::from_atomic(50_000),
             ..create_test_params()
         };
         let supply = projected_supply(10_000_000, &params);
@@ -628,16 +887,27 @@ mod tests {
         let mut system = DAGEmissionSystem::new(params).unwrap();
         
         assert_eq!(system.current_round(), 0);
-        assert_eq!(system.total_emitted(), 0);
+        assert_eq!(system.total_emitted(), Amount::zero());
         
         let participations = vec![
             create_test_participation([1u8; 32], ValidatorRole::Proposer),
         ];
         
-        let rewards = system.process_round(&participations, 1000, 500).unwrap();
+        let rewards = system.process_round(&participations, Amount::from_micro_ipn(1000), Amount::from_micro_ipn(500)).unwrap();
         assert_eq!(system.current_round(), 1);
-        assert!(system.total_emitted() > 0);
+        assert!(system.total_emitted() > Amount::zero());
         assert!(!rewards.is_empty());
+    }
+
+    #[test]
+    fn test_fee_recycling() {
+        let params = FeeRecyclingParams::default();
+        assert_eq!(calculate_fee_recycling(Amount::from_atomic(10_000), &params).atomic(), 10_000);
+        let params_half = FeeRecyclingParams {
+            recycle_bps: 5000,
+            ..Default::default()
+        };
+        assert_eq!(calculate_fee_recycling(Amount::from_atomic(10_000), &params_half).atomic(), 5_000);
     }
 
     #[test]
@@ -684,5 +954,31 @@ mod tests {
         
         assert!(score > 0.0);
         assert!(score <= 10.0); // Reasonable upper bound
+    }
+
+    #[test]
+    fn test_ultra_fine_precision() {
+        // Test yocto-IPN precision in reward distribution
+        let micro_reward = Amount::from_str_ipn("0.0001").unwrap();
+        let (per_block, remainder) = micro_reward.split(1000);
+        
+        // Each block should get exactly 0.0000001 IPN (100 nanoIPN)
+        assert_eq!(per_block.atomic(), 100_000_000_000_000_000);
+        assert_eq!(remainder.atomic(), 0);
+        
+        // Verify no loss in splitting
+        let reconstructed = per_block * 1000 + remainder;
+        assert_eq!(reconstructed, micro_reward);
+    }
+
+    #[test]
+    fn test_atomic_precision_no_loss() {
+        // Distribute a very small amount among many recipients
+        let total = Amount::from_atomic(999_999_999_999_999_999_999_999);
+        let (per_unit, remainder) = total.split(1_000_000);
+        
+        // Verify no rounding loss
+        let reconstructed = per_unit * 1_000_000 + remainder;
+        assert_eq!(reconstructed, total);
     }
 }

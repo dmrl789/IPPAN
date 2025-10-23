@@ -6,6 +6,9 @@ use rand::Rng;
 use ippan_ai_core::{features::ValidatorTelemetry, gbdt::GbdtEvaluator, model::Model};
 
 #[cfg(not(feature = "ai_l1"))]
+use serde::{Deserialize, Serialize};
+
+#[cfg(not(feature = "ai_l1"))]
 #[derive(Debug, Clone)]
 pub struct ValidatorTelemetry {
     pub validator_id: [u8; 32],
@@ -91,6 +94,7 @@ pub mod features {
     }
 }
 
+
 /// Round-based consensus with AI reputation scoring
 pub struct RoundConsensus {
     /// Current round number
@@ -144,13 +148,16 @@ impl RoundConsensus {
         Ok(())
     }
 
+
     /// Update validator telemetry data
     pub fn update_telemetry(&mut self, validator_id: [u8; 32], telemetry: ValidatorTelemetry) {
         self.validator_telemetry.insert(validator_id, telemetry);
         self.reputation_scores.remove(&validator_id); // Clear cached score
     }
 
+
     /// Calculate reputation score for a validator
+    #[cfg(feature = "ai_l1")]
     pub fn calculate_reputation_score(&self, validator_id: &[u8; 32]) -> Result<i32> {
         // Check cache first
         if let Some(score) = self.reputation_scores.get(validator_id) {
@@ -173,6 +180,12 @@ impl RoundConsensus {
         let score = evaluator.evaluate(&features)?;
 
         Ok(score)
+    }
+
+    #[cfg(not(feature = "ai_l1"))]
+    pub fn calculate_reputation_score(&self, _validator_id: &[u8; 32]) -> Result<i32> {
+        // Return default reputation score when AI is disabled
+        Ok(5000)
     }
 
     /// Select proposer and verifiers for the next round
@@ -296,6 +309,7 @@ impl Default for RoundConsensus {
 }
 
 /// Convenience function to calculate reputation score
+#[cfg(feature = "ai_l1")]
 pub fn calculate_reputation_score(
     model: &Model,
     telemetry: &ValidatorTelemetry,
@@ -305,7 +319,15 @@ pub fn calculate_reputation_score(
     Ok(evaluator.evaluate(&features)?)
 }
 
-#[cfg(test)]
+#[cfg(not(feature = "ai_l1"))]
+pub fn calculate_reputation_score(
+    _model: &Model,
+    _telemetry: &ValidatorTelemetry,
+) -> Result<i32> {
+    Ok(5000)
+}
+
+#[cfg(all(test, feature = "ai_l1"))]
 mod tests {
     use super::*;
 

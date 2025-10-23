@@ -1,3 +1,4 @@
+use crate::currency::Amount;
 use crate::hashtimer::{HashTimer, IppanTimeMicros};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -89,8 +90,8 @@ pub struct Transaction {
     pub from: [u8; 32],
     /// Recipient address (32 bytes)
     pub to: [u8; 32],
-    /// Amount to transfer
-    pub amount: u64,
+    /// Amount to transfer (in atomic units with 24 decimal precision)
+    pub amount: Amount,
     /// Nonce for replay protection
     pub nonce: u64,
     /// Visibility flag describing how the payload should be handled.
@@ -116,7 +117,7 @@ pub struct Transaction {
 
 impl Transaction {
     /// Create a new transaction
-    pub fn new(from: [u8; 32], to: [u8; 32], amount: u64, nonce: u64) -> Self {
+    pub fn new(from: [u8; 32], to: [u8; 32], amount: Amount, nonce: u64) -> Self {
         let timestamp = IppanTimeMicros::now();
         let payload = Self::create_payload(&from, &to, amount, nonce);
         let hashtimer = HashTimer::derive(
@@ -186,11 +187,11 @@ impl Transaction {
     }
 
     /// Create payload for HashTimer computation
-    fn create_payload(from: &[u8; 32], to: &[u8; 32], amount: u64, nonce: u64) -> Vec<u8> {
+    fn create_payload(from: &[u8; 32], to: &[u8; 32], amount: Amount, nonce: u64) -> Vec<u8> {
         let mut payload = Vec::new();
         payload.extend_from_slice(from);
         payload.extend_from_slice(to);
-        payload.extend_from_slice(&amount.to_be_bytes());
+        payload.extend_from_slice(&amount.atomic().to_be_bytes());
         payload.extend_from_slice(&nonce.to_be_bytes());
         payload
     }
@@ -199,11 +200,11 @@ impl Transaction {
     fn message_bytes(&self) -> Vec<u8> {
         // Capacity hint only; it may be slightly overestimated and that's fine.
         let mut bytes = Vec::with_capacity(
-            self.from.len() + self.to.len() + 8 + 8 + 7 + 25 + 8, // rough sizes
+            self.from.len() + self.to.len() + 16 + 8 + 7 + 25 + 8, // rough sizes (16 for u128)
         );
         bytes.extend_from_slice(&self.from);
         bytes.extend_from_slice(&self.to);
-        bytes.extend_from_slice(&self.amount.to_be_bytes());
+        bytes.extend_from_slice(&self.amount.atomic().to_be_bytes());
         bytes.extend_from_slice(&self.nonce.to_be_bytes());
         bytes.extend_from_slice(&self.hashtimer.time_prefix);
         bytes.extend_from_slice(&self.hashtimer.hash_suffix);
@@ -319,7 +320,7 @@ impl Transaction {
                 return false;
             }
         } else {
-            if self.amount == 0 {
+            if self.amount.is_zero() {
                 return false;
             }
 
@@ -377,7 +378,7 @@ mod tests {
     fn test_transaction_creation() {
         let (_, from) = generate_account();
         let (_, to) = generate_account();
-        let amount = 1000;
+        let amount = Amount::from_micro_ipn(1000);
         let nonce = 1;
 
         let tx = Transaction::new(from, to, amount, nonce);
@@ -393,7 +394,7 @@ mod tests {
     fn test_transaction_signing() {
         let (private_key, from) = generate_account();
         let (_, to) = generate_account();
-        let mut tx = Transaction::new(from, to, 1000, 1);
+        let mut tx = Transaction::new(from, to, Amount::from_micro_ipn(1000), 1);
 
         let result = tx.sign(&private_key);
         assert!(result.is_ok());
@@ -405,7 +406,7 @@ mod tests {
     fn test_transaction_verification() {
         let (private_key, from) = generate_account();
         let (_, to) = generate_account();
-        let mut tx = Transaction::new(from, to, 1000, 1);
+        let mut tx = Transaction::new(from, to, Amount::from_micro_ipn(1000), 1);
 
         tx.sign(&private_key).unwrap();
         assert!(tx.verify());
@@ -415,7 +416,7 @@ mod tests {
     fn test_transaction_validation() {
         let (private_key, from) = generate_account();
         let (_, to) = generate_account();
-        let mut tx = Transaction::new(from, to, 1000, 1);
+        let mut tx = Transaction::new(from, to, Amount::from_micro_ipn(1000), 1);
 
         tx.sign(&private_key).unwrap();
         assert!(tx.is_valid());
@@ -425,7 +426,7 @@ mod tests {
     fn test_invalid_transaction_zero_amount() {
         let (private_key, from) = generate_account();
         let (_, to) = generate_account();
-        let mut tx = Transaction::new(from, to, 0, 1);
+        let mut tx = Transaction::new(from, to, Amount::zero(), 1);
 
         tx.sign(&private_key).unwrap();
         assert!(!tx.is_valid());
@@ -434,7 +435,7 @@ mod tests {
     #[test]
     fn test_invalid_transaction_same_sender_recipient() {
         let (private_key, addr) = generate_account();
-        let mut tx = Transaction::new(addr, addr, 1000, 1);
+        let mut tx = Transaction::new(addr, addr, Amount::from_micro_ipn(1000), 1);
 
         tx.sign(&private_key).unwrap();
         assert!(!tx.is_valid());
