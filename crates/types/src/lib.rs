@@ -1,6 +1,6 @@
 pub mod address;
-pub mod atomic_units;
 pub mod block;
+pub mod currency;
 pub mod hashtimer;
 pub mod l2;
 pub mod receipt;
@@ -10,8 +10,8 @@ pub mod time_service;
 pub mod transaction;
 
 pub use address::*;
-pub use atomic_units::*;
 pub use block::*;
+pub use currency::{Amount, AtomicIPN, denominations, IPN_DECIMALS, ATOMIC_PER_IPN, SUPPLY_CAP};
 pub use hashtimer::{random_nonce, HashTimer, IppanTimeMicros};
 pub use l2::*;
 pub use receipt::*;
@@ -23,3 +23,6 @@ pub use time_service::{
     verify_hashtimer, TimeSyncService,
 };
 pub use transaction::*;
+
+#[cfg(test)]
+mod tests;
