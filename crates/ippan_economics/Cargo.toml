@@ -1,0 +1,23 @@
+[package]
+name = "ippan-economics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+rayon = { workspace = true }
+
+# Optional plotting support (enabled via `--features plotters`)
+plotters = { version = "0.3", optional = true, features = ["bitmap_backend"] }
+
+[dev-dependencies]
+rand = "0.8"
+rayon = "1.10"
+csv = "1.3"
+
+[features]
+plotters = ["dep:plotters"]
