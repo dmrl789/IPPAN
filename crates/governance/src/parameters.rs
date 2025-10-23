@@ -2,6 +2,39 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Economic parameters for the DAG-Fair emission system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EconomicsParams {
+    /// Initial reward per round (in µIPN — micro-IPN)
+    pub initial_round_reward_micro: u128,
+    /// Number of rounds between halvings
+    pub halving_interval_rounds: u64,
+    /// Supply cap (e.g. 21 M IPN = 21_000_000 × 10⁸ µIPN)
+    pub supply_cap_micro: u128,
+    /// Fee cap numerator (e.g., 1 for 1/10 = 10% max)
+    pub fee_cap_numer: u32,
+    /// Fee cap denominator
+    pub fee_cap_denom: u32,
+    /// Proposer weight (basis points, e.g., 2000 = 20%)
+    pub proposer_weight_bps: u16,
+    /// Verifier weight (basis points, e.g., 8000 = 80%)
+    pub verifier_weight_bps: u16,
+}
+
+impl Default for EconomicsParams {
+    fn default() -> Self {
+        Self {
+            initial_round_reward_micro: 10_000, // ~50 IPN/day at 100ms rounds
+            halving_interval_rounds: 315_000_000, // ~2 years at 200ms rounds
+            supply_cap_micro: 21_000_000_00000000, // 21M IPN
+            fee_cap_numer: 1,
+            fee_cap_denom: 10, // 10% fee cap
+            proposer_weight_bps: 2000, // 20%
+            verifier_weight_bps: 8000, // 80%
+        }
+    }
+}
+
 /// Governance parameters that can be modified through proposals
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceParameters {
@@ -19,6 +52,8 @@ pub struct GovernanceParameters {
     pub proposal_fee: u64,
     /// Fee for voting on a proposal
     pub voting_fee: u64,
+    /// Economics parameters for emission system
+    pub economics: EconomicsParams,
 }
 
 impl Default for GovernanceParameters {
@@ -31,6 +66,7 @@ impl Default for GovernanceParameters {
             min_proposal_interval: 24 * 3600, // 24 hours
             proposal_fee: 10_000, // 10K tokens
             voting_fee: 1_000, // 1K tokens
+            economics: EconomicsParams::default(),
         }
     }
 }
@@ -136,6 +172,12 @@ impl ParameterManager {
             "min_proposal_interval",
             "proposal_fee",
             "voting_fee",
+            "economics.initial_round_reward_micro",
+            "economics.halving_interval_rounds",
+            "economics.fee_cap_numer",
+            "economics.fee_cap_denom",
+            "economics.proposer_weight_bps",
+            "economics.verifier_weight_bps",
         ];
         
         if !valid_parameters.contains(&name) {
@@ -192,6 +234,24 @@ impl ParameterManager {
             }
             "voting_fee" => {
                 self.parameters.voting_fee = proposal.new_value.as_u64().unwrap();
+            }
+            "economics.initial_round_reward_micro" => {
+                self.parameters.economics.initial_round_reward_micro = proposal.new_value.as_u64().unwrap() as u128;
+            }
+            "economics.halving_interval_rounds" => {
+                self.parameters.economics.halving_interval_rounds = proposal.new_value.as_u64().unwrap();
+            }
+            "economics.fee_cap_numer" => {
+                self.parameters.economics.fee_cap_numer = proposal.new_value.as_u64().unwrap() as u32;
+            }
+            "economics.fee_cap_denom" => {
+                self.parameters.economics.fee_cap_denom = proposal.new_value.as_u64().unwrap() as u32;
+            }
+            "economics.proposer_weight_bps" => {
+                self.parameters.economics.proposer_weight_bps = proposal.new_value.as_u64().unwrap() as u16;
+            }
+            "economics.verifier_weight_bps" => {
+                self.parameters.economics.verifier_weight_bps = proposal.new_value.as_u64().unwrap() as u16;
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
         }

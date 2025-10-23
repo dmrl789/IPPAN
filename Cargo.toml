@@ -13,6 +13,7 @@ members = [
   "crates/ai_core",
   "crates/ai_registry",
   "crates/governance",
+  "crates/treasury",
   "node",
 ]
 

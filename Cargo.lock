@@ -1753,8 +1753,10 @@ dependencies = [
  "ippan-ai-core",
  "ippan-ai-registry",
  "ippan-crypto",
+ "ippan-governance",
  "ippan-mempool",
  "ippan-storage",
+ "ippan-treasury",
  "ippan-types",
  "parking_lot 0.12.5",
  "rand 0.8.5",
@@ -1957,6 +1959,20 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "ippan-treasury"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "parking_lot 0.12.5",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

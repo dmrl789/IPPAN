@@ -36,6 +36,7 @@ pub mod reputation;
 pub mod emission;
 pub mod fees;
 pub mod round;
+pub mod round_executor;
 
 // ---------------------------------------------------------------------
 // Public re-exports
@@ -47,6 +48,10 @@ pub use emission::{
 };
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
+pub use round_executor::{
+    distribute_round, emission_for_round_capped, finalize_round, Participation, ParticipationSet,
+    Role, MICRO_PER_IPN,
+};
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
     ValidationResult,
