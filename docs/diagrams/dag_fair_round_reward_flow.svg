@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="900" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">DAG-Fair Round Reward Flow</title>
+  <desc id="desc">Flow of per-round deterministic emission R(t) across validators, proposers, verifiers, and fee caps; includes halving-based governance parameters and burn of rounding excess.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.1"/>
+    </filter>
+    <style>
+      .box { fill: #ffffff; stroke: #e5e7eb; stroke-width: 1.5; rx: 10; ry: 10; }
+      .title { fill: #111827; font-family: Inter, Arial, sans-serif; font-size: 22px; font-weight: 700; }
+      .label { fill: #111827; font-family: Inter, Arial, sans-serif; font-size: 14px; }
+      .subtle { fill: #6b7280; font-family: Inter, Arial, sans-serif; font-size: 12px; }
+      .wire { stroke: #2563eb; stroke-width: 2.5; marker-end: url(#arrow); fill: none; }
+      .wire-grey { stroke: #9ca3af; stroke-width: 2; marker-end: url(#arrow-grey); fill: none; }
+      .capline { stroke: #10b981; stroke-width: 2; stroke-dasharray: 5 5; }
+      .pill { fill: #eff6ff; stroke: #bfdbfe; rx: 16; ry: 16; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-grey" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9ca3af"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <g transform="translate(40,36)">
+    <text class="title">DAG-Fair Round Reward Flow</text>
+    <text class="subtle" x="0" y="22">Per-round deterministic emission R(t) distributed proportionally across validators; fees capped to preserve fairness; governance controls parameters; rounding excess auto-burned.</text>
+  </g>
+
+  <!-- Governance / Parameters -->
+  <g transform="translate(40,90)" filter="url(#shadow)">
+    <rect class="box" width="500" height="130"/>
+    <text class="label" x="20" y="30">On-chain parameters</text>
+    <text class="subtle" x="20" y="55">R0 (initial round reward), Th (halving rounds), f(v) role weights, fee caps</text>
+    <text class="subtle" x="20" y="80">Changeable by super-majority governance; auditable via HashTimer logs</text>
+  </g>
+
+  <!-- Halving function -->
+  <g transform="translate(580,90)" filter="url(#shadow)">
+    <rect class="box" width="540" height="130"/>
+    <text class="label" x="20" y="30">Round reward function</text>
+    <text class="subtle" x="20" y="60">R(t) = R0 / 2^floor(t / Th)</text>
+    <text class="subtle" x="20" y="85">t: round index (HashTimer); Th: halving interval (rounds)</text>
+  </g>
+
+  <!-- Emission pool for round r -->
+  <g transform="translate(200,260)" filter="url(#shadow)">
+    <rect class="box" width="800" height="90"/>
+    <text class="label" x="20" y="30">Per-round emission pool</text>
+    <text class="subtle" x="20" y="55">Total reward available this round: R(t)</text>
+  </g>
+
+  <!-- Blocks in round -->
+  <g transform="translate(60,390)" filter="url(#shadow)">
+    <rect class="box" width="340" height="130"/>
+    <text class="label" x="20" y="30">Round DAG blocks</text>
+    <text class="subtle" x="20" y="55">B_r blocks confirmed in round r</text>
+    <g transform="translate(20,75)">
+      <rect class="pill" width="60" height="26"/>
+      <text class="subtle" x="12" y="18">b1</text>
+      <g transform="translate(70,0)"><rect class="pill" width="60" height="26"/><text class="subtle" x="12" y="18">b2</text></g>
+      <g transform="translate(140,0)"><rect class="pill" width="60" height="26"/><text class="subtle" x="12" y="18">b3</text></g>
+      <g transform="translate(210,0)"><rect class="pill" width="60" height="26"/><text class="subtle" x="12" y="18">…</text></g>
+    </g>
+  </g>
+
+  <!-- Validators set -->
+  <g transform="translate(420,390)" filter="url(#shadow)">
+    <rect class="box" width="340" height="130"/>
+    <text class="label" x="20" y="30">Validators active this round</text>
+    <text class="subtle" x="20" y="55">V_r validators (proposers + verifiers)</text>
+    <g transform="translate(20,75)">
+      <rect class="pill" width="80" height="26"/>
+      <text class="subtle" x="14" y="18">v_A</text>
+      <g transform="translate(90,0)"><rect class="pill" width="80" height="26"/><text class="subtle" x="14" y="18">v_B</text></g>
+      <g transform="translate(180,0)"><rect class="pill" width="80" height="26"/><text class="subtle" x="14" y="18">v_C</text></g>
+      <g transform="translate(270,0)"><rect class="pill" width="80" height="26"/><text class="subtle" x="14" y="18">…</text></g>
+    </g>
+  </g>
+
+  <!-- Fees with cap -->
+  <g transform="translate(780,390)" filter="url(#shadow)">
+    <rect class="box" width="340" height="130"/>
+    <text class="label" x="20" y="30">Per-round fees</text>
+    <text class="subtle" x="20" y="55">Sum of micro-fees across blocks: F_r</text>
+    <g transform="translate(20,80)">
+      <line class="capline" x1="0" y1="0" x2="220" y2="0"/>
+      <text class="subtle" x="0" y="-8">Cap: F_r ≤ 0.1 × R(t)</text>
+    </g>
+  </g>
+
+  <!-- Wiring from parameters to pool -->
+  <path class="wire-grey" d="M 540 155 C 560 155 560 210 600 230 C 640 250 660 260 700 260"/>
+  <path class="wire-grey" d="M 850 155 C 850 200 850 220 850 240"/>
+
+  <!-- Wiring from pool to blocks/validators/fees -->
+  <path class="wire" d="M 600 350 C 600 380 410 380 410 422"/>
+  <path class="wire" d="M 600 350 C 600 380 590 380 590 390"/>
+  <path class="wire" d="M 600 350 C 600 380 950 380 950 390"/>
+
+  <!-- Distribution math box -->
+  <g transform="translate(200,560)" filter="url(#shadow)">
+    <rect class="box" width="800" height="110"/>
+    <text class="label" x="20" y="30">Within-round distribution</text>
+    <text class="subtle" x="20" y="55">Per-block share: R(t) / B_r. Validator v reward = Σ_b∈B_r(v) [ (R(t) / B_r) × f(v) ]</text>
+  </g>
+
+  <!-- Payout buckets -->
+  <g transform="translate(120,710)" filter="url(#shadow)">
+    <rect class="box" width="300" height="120"/>
+    <text class="label" x="20" y="30">Emission share</text>
+    <text class="subtle" x="20" y="55">60% of total validator rewards</text>
+  </g>
+  <g transform="translate(450,710)" filter="url(#shadow)">
+    <rect class="box" width="300" height="120"/>
+    <text class="label" x="20" y="30">Transaction fees</text>
+    <text class="subtle" x="20" y="55">Up to cap; distributed by participation</text>
+  </g>
+  <g transform="translate(780,710)" filter="url(#shadow)">
+    <rect class="box" width="300" height="120"/>
+    <text class="label" x="20" y="30">AI commissions & pool</text>
+    <text class="subtle" x="20" y="55">AI 10%; Pool dividend 5% weekly</text>
+  </g>
+
+  <!-- Wires from distribution to buckets -->
+  <path class="wire" d="M 460 670 C 460 690 270 690 270 710"/>
+  <path class="wire" d="M 600 670 C 600 690 600 690 600 710"/>
+  <path class="wire" d="M 740 670 C 740 690 930 690 930 710"/>
+
+  <!-- Burn box -->
+  <g transform="translate(940,560)" filter="url(#shadow)">
+    <rect class="box" width="180" height="110"/>
+    <text class="label" x="20" y="30">Auto-burn</text>
+    <text class="subtle" x="20" y="55">Burn rounding excess at epoch close</text>
+  </g>
+
+  <!-- Wire to burn -->
+  <path class="wire-grey" d="M 900 615 C 930 615 930 615 940 615"/>
+</svg>
