@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 //! Core types for IPPAN economics
 
 use rust_decimal::Decimal;
