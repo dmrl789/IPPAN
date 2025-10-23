@@ -1,4 +1,5 @@
 use anyhow::Result;
+#[cfg(feature = "ai_l1")]
 use ippan_ai_core::{features::ValidatorTelemetry, gbdt::GbdtEvaluator, model::Model};
 use std::collections::HashMap;
 use rand::Rng;
@@ -7,9 +8,11 @@ use rand::Rng;
 pub struct RoundConsensus {
     /// Current round number
     current_round: u64,
-    /// Active AI model for reputation scoring
+    /// Active AI model for reputation scoring (only available with ai_l1 feature)
+    #[cfg(feature = "ai_l1")]
     active_model: Option<Model>,
-    /// Validator telemetry data
+    /// Validator telemetry data (only available with ai_l1 feature)
+    #[cfg(feature = "ai_l1")]
     validator_telemetry: HashMap<[u8; 32], ValidatorTelemetry>,
     /// Reputation scores cache
     reputation_scores: HashMap<[u8; 32], i32>,
@@ -33,13 +36,16 @@ impl RoundConsensus {
     pub fn new() -> Self {
         Self {
             current_round: 0,
+            #[cfg(feature = "ai_l1")]
             active_model: None,
+            #[cfg(feature = "ai_l1")]
             validator_telemetry: HashMap::new(),
             reputation_scores: HashMap::new(),
         }
     }
 
-    /// Set the active AI model for reputation scoring
+    /// Set the active AI model for reputation scoring (only available with ai_l1 feature)
+    #[cfg(feature = "ai_l1")]
     pub fn set_active_model(&mut self, model: Model) -> Result<()> {
         model.validate()?;
         self.active_model = Some(model);
@@ -47,13 +53,15 @@ impl RoundConsensus {
         Ok(())
     }
 
-    /// Update validator telemetry data
+    /// Update validator telemetry data (only available with ai_l1 feature)
+    #[cfg(feature = "ai_l1")]
     pub fn update_telemetry(&mut self, validator_id: [u8; 32], telemetry: ValidatorTelemetry) {
         self.validator_telemetry.insert(validator_id, telemetry);
         self.reputation_scores.remove(&validator_id); // Clear cached score
     }
 
-    /// Calculate reputation score for a validator
+    /// Calculate reputation score for a validator (only available with ai_l1 feature)
+    #[cfg(feature = "ai_l1")]
     pub fn calculate_reputation_score(&self, validator_id: &[u8; 32]) -> Result<i32> {
         // Check cache first
         if let Some(score) = self.reputation_scores.get(validator_id) {
@@ -76,6 +84,18 @@ impl RoundConsensus {
         let score = evaluator.evaluate(&features)?;
 
         Ok(score)
+    }
+
+    /// Calculate reputation score for a validator (fallback without ai_l1 feature)
+    #[cfg(not(feature = "ai_l1"))]
+    pub fn calculate_reputation_score(&self, validator_id: &[u8; 32]) -> Result<i32> {
+        // Check cache first
+        if let Some(score) = self.reputation_scores.get(validator_id) {
+            return Ok(*score);
+        }
+
+        // Without AI, use a simple default score
+        Ok(5000) // Default neutral score
     }
 
     /// Select proposer and verifiers for the next round
@@ -186,7 +206,8 @@ impl RoundConsensus {
         &self.reputation_scores
     }
 
-    /// Get validator telemetry
+    /// Get validator telemetry (only available with ai_l1 feature)
+    #[cfg(feature = "ai_l1")]
     pub fn get_validator_telemetry(&self) -> &HashMap<[u8; 32], ValidatorTelemetry> {
         &self.validator_telemetry
     }
@@ -198,7 +219,8 @@ impl Default for RoundConsensus {
     }
 }
 
-/// Convenience function to calculate reputation score
+/// Convenience function to calculate reputation score (only available with ai_l1 feature)
+#[cfg(feature = "ai_l1")]
 pub fn calculate_reputation_score(
     model: &Model,
     telemetry: &ValidatorTelemetry,
@@ -211,8 +233,10 @@ pub fn calculate_reputation_score(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ai_l1")]
     use ippan_ai_core::model::{Model, Tree, Node};
 
+    #[cfg(feature = "ai_l1")]
     fn create_test_model() -> Model {
         Model::new(
             1,
@@ -247,6 +271,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "ai_l1")]
     fn create_test_telemetry() -> ValidatorTelemetry {
         ValidatorTelemetry {
             validator_id: [1u8; 32],
@@ -262,6 +287,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "ai_l1")]
     #[test]
     fn test_reputation_score_calculation() {
         let model = create_test_model();
@@ -274,8 +300,12 @@ mod tests {
     #[test]
     fn test_validator_selection() {
         let mut consensus = RoundConsensus::new();
-        let model = create_test_model();
-        consensus.set_active_model(model).unwrap();
+        
+        #[cfg(feature = "ai_l1")]
+        {
+            let model = create_test_model();
+            consensus.set_active_model(model).unwrap();
+        }
         
         let validators = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
         let mut stake_weights = HashMap::new();
@@ -283,11 +313,14 @@ mod tests {
         stake_weights.insert([2u8; 32], 2000);
         stake_weights.insert([3u8; 32], 1500);
         
-        // Add telemetry for validators
-        for validator in &validators {
-            let mut telemetry = create_test_telemetry();
-            telemetry.validator_id = *validator;
-            consensus.update_telemetry(*validator, telemetry);
+        // Add telemetry for validators (only with ai_l1 feature)
+        #[cfg(feature = "ai_l1")]
+        {
+            for validator in &validators {
+                let mut telemetry = create_test_telemetry();
+                telemetry.validator_id = *validator;
+                consensus.update_telemetry(*validator, telemetry);
+            }
         }
         
         let selection = consensus.select_validators(&validators, &stake_weights).unwrap();
