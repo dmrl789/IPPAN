@@ -1,16 +1,18 @@
 use anyhow::Result;
-use ippan_ai_registry::{proposal::AiModelProposal, registry::ModelRegistryEntry};
+use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// AI model governance manager
 pub struct AiModelGovernance {
-    /// Proposal manager for AI models
-    proposal_manager: ippan_ai_registry::proposal::ProposalManager,
-    /// Model registry
-    model_registry: ippan_ai_registry::registry::ModelRegistry,
-    /// Activation manager
-    activation_manager: ippan_ai_registry::activation::ActivationManager,
+    /// Model registry entries
+    model_registry: HashMap<String, ModelRegistryEntry>,
+    /// Active proposals
+    active_proposals: HashMap<String, AiModelProposal>,
+    /// Voting threshold (0.0 to 1.0)
+    voting_threshold: f64,
+    /// Minimum stake required for proposals
+    min_proposal_stake: u64,
 }
 
 impl AiModelGovernance {
@@ -20,12 +22,10 @@ impl AiModelGovernance {
         min_proposal_stake: u64,
     ) -> Self {
         Self {
-            proposal_manager: ippan_ai_registry::proposal::ProposalManager::new(
-                voting_threshold,
-                min_proposal_stake,
-            ),
-            model_registry: ippan_ai_registry::registry::ModelRegistry::new(),
-            activation_manager: ippan_ai_registry::activation::ActivationManager::new(),
+            model_registry: HashMap::new(),
+            active_proposals: HashMap::new(),
+            voting_threshold,
+            min_proposal_stake,
         }
     }
 
@@ -35,56 +35,36 @@ impl AiModelGovernance {
         proposal: AiModelProposal,
         proposer_stake: u64,
     ) -> Result<()> {
-        self.proposal_manager.submit_proposal(proposal, proposer_stake)
-    }
-
-    /// Start voting on a proposal
-    pub fn start_voting(&mut self, proposal_id: &str) -> Result<()> {
-        self.proposal_manager.start_voting(proposal_id)
-    }
-
-    /// Vote on a proposal
-    pub fn vote(
-        &mut self,
-        proposal_id: &str,
-        voter: [u8; 32],
-        stake: u64,
-        approve: bool,
-    ) -> Result<()> {
-        self.proposal_manager.vote(proposal_id, voter, stake, approve)
-    }
-
-    /// Execute an approved proposal
-    pub fn execute_proposal(&mut self, proposal_id: &str) -> Result<()> {
-        let registry_entry = self.proposal_manager.execute_proposal(proposal_id)?;
-        self.model_registry.register_model(registry_entry)?;
+        if proposer_stake < self.min_proposal_stake {
+            return Err(anyhow::anyhow!("Insufficient stake for proposal"));
+        }
+        
+        self.active_proposals.insert(proposal.model_id.clone(), proposal);
         Ok(())
+    }
+
+    /// Get a model from the registry
+    pub fn get_model(&self, model_id: &str) -> Option<&ModelRegistryEntry> {
+        self.model_registry.get(model_id)
+    }
+
+    /// Get all active proposals
+    pub fn get_active_proposals(&self) -> &HashMap<String, AiModelProposal> {
+        &self.active_proposals
     }
 
     /// Process model activations for the current round
     pub fn process_round(&mut self, round: u64) -> Result<Vec<String>> {
-        let activated_models = self.activation_manager.process_round(round)?;
+        let mut activated_models = Vec::new();
         
-        for model_id in &activated_models {
-            self.model_registry.activate_model(model_id, round)?;
+        for (model_id, entry) in &mut self.model_registry {
+            if entry.activation_round == round && entry.status == ippan_ai_registry::ModelStatus::Approved {
+                entry.activate(round);
+                activated_models.push(model_id.clone());
+            }
         }
         
         Ok(activated_models)
-    }
-
-    /// Get the model registry
-    pub fn get_model_registry(&self) -> &ippan_ai_registry::registry::ModelRegistry {
-        &self.model_registry
-    }
-
-    /// Get the proposal manager
-    pub fn get_proposal_manager(&self) -> &ippan_ai_registry::proposal::ProposalManager {
-        &self.proposal_manager
-    }
-
-    /// Get the activation manager
-    pub fn get_activation_manager(&self) -> &ippan_ai_registry::activation::ActivationManager {
-        &self.activation_manager
     }
 }
 
@@ -141,10 +121,6 @@ pub fn parse_yaml_proposal(yaml: &str) -> Result<AiModelProposal> {
 
 /// Validate a proposal format
 pub fn validate_proposal_format(proposal: &AiModelProposal) -> Result<()> {
-    if proposal.proposal_id.is_empty() {
-        return Err(anyhow::anyhow!("Proposal ID cannot be empty"));
-    }
-    
     if proposal.model_id.is_empty() {
         return Err(anyhow::anyhow!("Model ID cannot be empty"));
     }
@@ -153,8 +129,8 @@ pub fn validate_proposal_format(proposal: &AiModelProposal) -> Result<()> {
         return Err(anyhow::anyhow!("Model URL cannot be empty"));
     }
     
-    if proposal.description.is_empty() {
-        return Err(anyhow::anyhow!("Description cannot be empty"));
+    if proposal.rationale.is_empty() {
+        return Err(anyhow::anyhow!("Rationale cannot be empty"));
     }
     
     if proposal.activation_round == 0 {
@@ -183,18 +159,15 @@ mod tests {
         let signature = signing_key.sign(&hash_bytes);
         
         AiModelProposal {
-            proposal_id: "test_proposal".to_string(),
             model_id: "test_model".to_string(),
             version: 1,
             model_url: "https://example.com/model.json".to_string(),
             model_hash: hash_bytes,
-            signature: signature.to_bytes(),
-            signer_pubkey: pubkey,
+            signature_foundation: signature.to_bytes(),
+            proposer_pubkey: pubkey,
             activation_round: 100,
-            description: "Test model".to_string(),
-            proposer: [1u8; 32],
-            created_at: 1234567890,
-            metadata: HashMap::new(),
+            rationale: "Test model".to_string(),
+            threshold_bps: 8000,
         }
     }
 
@@ -206,18 +179,8 @@ mod tests {
         // Submit proposal
         assert!(governance.submit_model_proposal(proposal, 2000000).is_ok());
         
-        // Start voting
-        assert!(governance.start_voting("test_proposal").is_ok());
-        
-        // Vote
-        assert!(governance.vote("test_proposal", [2u8; 32], 1000000, true).is_ok());
-        
-        // Execute proposal
-        assert!(governance.execute_proposal("test_proposal").is_ok());
-        
-        // Check that model is registered
-        let registry = governance.get_model_registry();
-        assert!(registry.get_model("test_model").is_some());
+        // Check that proposal is active
+        assert!(governance.get_active_proposals().contains_key("test_model"));
     }
 
     #[test]
@@ -226,8 +189,8 @@ mod tests {
         let json = serde_json::to_string(&proposal).unwrap();
         let parsed = parse_json_proposal(&json).unwrap();
         
-        assert_eq!(parsed.proposal_id, proposal.proposal_id);
         assert_eq!(parsed.model_id, proposal.model_id);
+        assert_eq!(parsed.version, proposal.version);
     }
 
     #[test]
@@ -236,8 +199,8 @@ mod tests {
         let yaml = serde_yaml::to_string(&proposal).unwrap();
         let parsed = parse_yaml_proposal(&yaml).unwrap();
         
-        assert_eq!(parsed.proposal_id, proposal.proposal_id);
         assert_eq!(parsed.model_id, proposal.model_id);
+        assert_eq!(parsed.version, proposal.version);
     }
 
     #[test]
@@ -245,7 +208,7 @@ mod tests {
         let mut proposal = create_test_proposal();
         assert!(validate_proposal_format(&proposal).is_ok());
         
-        proposal.proposal_id = String::new();
+        proposal.model_id = String::new();
         assert!(validate_proposal_format(&proposal).is_err());
     }
 }

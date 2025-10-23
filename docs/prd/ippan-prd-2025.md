@@ -117,7 +117,150 @@ The protocol is designed to serve as a foundation for finance, AI computation, I
 
 ---
 
-## 8. Data, Storage, and Availability
+## 🪙 8. DAG-Fair Emission Framework
+
+### 8.1 Rationale
+
+In IPPAN, **blocks are micro-events**, not emission units.
+Unlike linear blockchains (e.g., Bitcoin), where block intervals define issuance (1 block = 1 reward), IPPAN's **BlockDAG** creates thousands of micro-blocks per second within overlapping rounds.
+
+To maintain **scarcity, determinism, and fairness**, emission must therefore be **round-based**, not block-based.
+Each round (≈100–250 ms) aggregates many blocks from multiple validators.
+Rewards are computed **per round** and distributed proportionally to the nodes that participated in that round's validation and verification.
+
+---
+
+### 8.2 Core Parameters
+
+| Parameter                   | Description                      | Example                              |
+| --------------------------- | -------------------------------- | ------------------------------------ |
+| **Total Supply**            | Hard-capped monetary base        | 21 000 000 IPN                       |
+| **Round Duration**          | Average consensus interval       | 100 ms                               |
+| **Rounds per Second**       | Network heartbeat frequency      | ≈ 10                                 |
+| **Annual Rounds**           | 31.5 × 10⁶ s × 10 = 315 M rounds | deterministic                        |
+| **Halving Interval**        | Reward halving schedule          | every ≈ 6.3 × 10⁸ rounds (≈ 2 years) |
+| **Initial Round Reward R₀** | Base emission at genesis         | 0.0001 IPN per round                 |
+
+---
+
+### 8.3 Emission Function
+
+Each round *t* issues a deterministic amount R(t) according to:
+
+```
+R(t) = R₀ / 2^(⌊t/Tₕ⌋)
+```
+
+where
+
+* R₀ = 0.0001 IPN (initial reward per round)
+* Tₕ = halving interval (~2 years)
+* t = round index (HashTimer-based)
+
+The **total network reward per round** R(t) is then split among all participating validators.
+
+---
+
+### 8.4 Distribution Within a Round
+
+Let
+
+* Bᵣ = number of micro-blocks finalized in round r
+* Vᵣ = validators active in the quorum
+* R(t) = total reward pool for that round
+
+Then:
+
+```
+Reward_b = R(t) / Bᵣ
+Reward_v = Σ(b∈Bᵣ(v)) (R(t) / Bᵣ) × f(v)
+```
+
+where *f(v)* is a weighting factor based on node role and uptime:
+
+* Proposer = 1.2×
+* Verifier = 1.0×
+* Observer = 0×
+
+All micro-rewards accumulate into each validator's payout ledger and are periodically settled to the wallet.
+
+---
+
+### 8.5 Fairness Properties
+
+| Property                  | Description                                                          |
+| ------------------------- | -------------------------------------------------------------------- |
+| **Proportional fairness** | Rewards scale with actual participation — idle nodes earn nothing.   |
+| **Temporal determinism**  | Emission tied to HashTimer rounds, not unpredictable block creation. |
+| **Hardware neutrality**   | Each round carries the same reward pool regardless of local speed.   |
+| **Supply integrity**      | 21 M IPN hard cap, enforced mathematically.                          |
+
+---
+
+### 8.6 Emission Curve (Illustrative)
+
+| Period    | Reward per round (IPN) | Annual issuance (IPN) | Cumulative supply (IPN) |
+| --------- | ---------------------: | --------------------: | ----------------------: |
+| Years 1–2 |                 0.0001 |                3.15 M |                  3.15 M |
+| Years 3–4 |                0.00005 |                1.58 M |                  4.73 M |
+| Years 5–6 |               0.000025 |                0.79 M |                  5.52 M |
+| …         |                      … |                     … |   asymptotically → 21 M |
+
+(Parameters tuned to achieve ~10-year full emission.)
+
+---
+
+### 8.7 Validator Reward Composition
+
+| Component                   | Share | Description                                  |
+| --------------------------- | ----- | -------------------------------------------- |
+| **Round Emission R(t)**     | 60 %  | Base reward distributed per round            |
+| **Transaction Fees**        | 25 %  | Deterministic micro-fees per tx              |
+| **AI Service Commissions**  | 10 %  | From inference and compute tasks             |
+| **Network Reward Dividend** | 5 %   | Weekly redistribution by uptime × reputation |
+
+All components are logged and verifiable through HashTimer records and zk-STARK proofs.
+
+---
+
+### 8.8 Fee-Cap Integration
+
+Each transaction carries a micro-fee (≈ 1 µIPN), but the total fees per round are capped to prevent economic centralization:
+
+```
+Fᵣ ≤ 0.1 × R(t)
+```
+
+→ ensuring fees never dominate validator income and network participation remains open and balanced.
+
+---
+
+### 8.9 Governance Controls
+
+* All emission parameters (`R₀`, `Tₕ`, `f(v)`, fee caps) reside in **on-chain configuration**, modifiable only by super-majority validator vote.
+* Every epoch, nodes verify that the **total minted IPN** equals the deterministic emission schedule.
+* Any rounding excess is **auto-burned** at epoch closure, guaranteeing supply integrity.
+
+---
+
+### 8.10 DAG-Fair Summary
+
+| Goal                            | Mechanism                   | Outcome                              |
+| ------------------------------- | --------------------------- | ------------------------------------ |
+| Fair emission under parallelism | Round-based reward function | Equal opportunity for all validators |
+| Predictable monetary curve      | Deterministic halving       | Bitcoin-grade credibility            |
+| Inflation control               | Hard-cap + auto-burn        | Immutable supply                     |
+| Long-term sustainability        | Fee + AI revenue            | Continuous validator incentive       |
+| Transparency                    | HashTimer + zk-STARK proofs | Fully auditable economics            |
+
+---
+
+> **IPPAN's DAG-Fair Emission** transforms block mining into **time-anchored micro-rewards**.
+> Each HashTimer round defines a precise emission slice shared fairly among validators — enabling millions of blocks per second without inflation drift, ensuring a stable, transparent, and verifiable monetary policy.
+
+---
+
+## 9. Data, Storage, and Availability
 
 - Distributed Hash Table (DHT) used for file storage and HashTimer metadata.
 - Nodes optionally store user files, AI models, and zk-proof payloads.
