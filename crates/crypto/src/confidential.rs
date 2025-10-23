@@ -170,7 +170,7 @@ fn sender_commitment(tx: &Transaction) -> [u8; 32] {
 fn receiver_commitment(tx: &Transaction) -> [u8; 32] {
     let mut hasher = Hasher::new();
     hasher.update(&tx.to);
-    hasher.update(&tx.amount.to_be_bytes());
+    hasher.update(&tx.amount.atomic().to_be_bytes());
     hasher.finalize().into()
 }
 

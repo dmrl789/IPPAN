@@ -1,5 +1,6 @@
 pub mod address;
 pub mod block;
+pub mod currency;
 pub mod hashtimer;
 pub mod l2;
 pub mod receipt;
@@ -10,6 +11,7 @@ pub mod transaction;
 
 pub use address::*;
 pub use block::*;
+pub use currency::{Amount, AtomicIPN, denominations, IPN_DECIMALS, ATOMIC_PER_IPN, SUPPLY_CAP};
 pub use hashtimer::{random_nonce, HashTimer, IppanTimeMicros};
 pub use l2::*;
 pub use receipt::*;
