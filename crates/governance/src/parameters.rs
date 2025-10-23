@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use ippan_economics::{EconomicsParams, EconomicsParameterManager};
 
 /// Governance parameters that can be modified through proposals
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +20,8 @@ pub struct GovernanceParameters {
     pub proposal_fee: u64,
     /// Fee for voting on a proposal
     pub voting_fee: u64,
+    /// Economics parameters for emission and distribution
+    pub economics: EconomicsParams,
 }
 
 impl Default for GovernanceParameters {
@@ -31,6 +34,7 @@ impl Default for GovernanceParameters {
             min_proposal_interval: 24 * 3600, // 24 hours
             proposal_fee: 10_000, // 10K tokens
             voting_fee: 1_000, // 1K tokens
+            economics: EconomicsParams::default(),
         }
     }
 }
@@ -62,6 +66,8 @@ pub struct ParameterManager {
     change_history: Vec<ParameterChangeProposal>,
     /// Pending parameter changes
     pending_changes: HashMap<String, ParameterChangeProposal>,
+    /// Economics parameter manager
+    economics_manager: EconomicsParameterManager,
 }
 
 impl ParameterManager {
@@ -71,12 +77,25 @@ impl ParameterManager {
             parameters: GovernanceParameters::default(),
             change_history: Vec::new(),
             pending_changes: HashMap::new(),
+            economics_manager: EconomicsParameterManager::new(),
         }
     }
 
     /// Get current parameters
     pub fn get_parameters(&self) -> &GovernanceParameters {
         &self.parameters
+    }
+
+    /// Get current economics parameters
+    pub fn get_economics_params(&self) -> &EconomicsParams {
+        self.economics_manager.get_current_params()
+    }
+
+    /// Update economics parameters
+    pub fn update_economics_params(&mut self, params: EconomicsParams) {
+        self.parameters.economics = params.clone();
+        // Also update the economics manager
+        self.economics_manager = EconomicsParameterManager::with_params(params);
     }
 
     /// Submit a parameter change proposal
@@ -136,6 +155,15 @@ impl ParameterManager {
             "min_proposal_interval",
             "proposal_fee",
             "voting_fee",
+            // Economics parameters
+            "economics.initial_round_reward_micro",
+            "economics.halving_interval_rounds",
+            "economics.max_supply_micro",
+            "economics.fee_cap_numer",
+            "economics.fee_cap_denom",
+            "economics.proposer_weight_bps",
+            "economics.verifier_weight_bps",
+            "economics.fee_recycling_bps",
         ];
         
         if !valid_parameters.contains(&name) {
@@ -192,6 +220,31 @@ impl ParameterManager {
             }
             "voting_fee" => {
                 self.parameters.voting_fee = proposal.new_value.as_u64().unwrap();
+            }
+            // Economics parameters
+            "economics.initial_round_reward_micro" => {
+                self.parameters.economics.initial_round_reward_micro = proposal.new_value.as_u64().unwrap() as u128;
+            }
+            "economics.halving_interval_rounds" => {
+                self.parameters.economics.halving_interval_rounds = proposal.new_value.as_u64().unwrap();
+            }
+            "economics.max_supply_micro" => {
+                self.parameters.economics.max_supply_micro = proposal.new_value.as_u64().unwrap() as u128;
+            }
+            "economics.fee_cap_numer" => {
+                self.parameters.economics.fee_cap_numer = proposal.new_value.as_u64().unwrap();
+            }
+            "economics.fee_cap_denom" => {
+                self.parameters.economics.fee_cap_denom = proposal.new_value.as_u64().unwrap();
+            }
+            "economics.proposer_weight_bps" => {
+                self.parameters.economics.proposer_weight_bps = proposal.new_value.as_u64().unwrap() as u16;
+            }
+            "economics.verifier_weight_bps" => {
+                self.parameters.economics.verifier_weight_bps = proposal.new_value.as_u64().unwrap() as u16;
+            }
+            "economics.fee_recycling_bps" => {
+                self.parameters.economics.fee_recycling_bps = proposal.new_value.as_u64().unwrap() as u16;
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
         }

@@ -36,6 +36,7 @@ pub mod reputation;
 pub mod emission;
 pub mod fees;
 pub mod round;
+pub mod round_executor;
 
 // ---------------------------------------------------------------------
 // Public re-exports
@@ -54,6 +55,9 @@ pub use parallel_dag::{
 pub use reputation::{
     apply_reputation_weight, calculate_reputation, ReputationScore, ValidatorTelemetry,
     DEFAULT_REPUTATION,
+};
+pub use round_executor::{
+    create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
 };
 use round::RoundConsensus;
 

@@ -1,5 +1,6 @@
 pub mod address;
 pub mod block;
+pub mod chain_state;
 pub mod hashtimer;
 pub mod l2;
 pub mod receipt;
@@ -10,6 +11,7 @@ pub mod transaction;
 
 pub use address::*;
 pub use block::*;
+pub use chain_state::*;
 pub use hashtimer::{random_nonce, HashTimer, IppanTimeMicros};
 pub use l2::*;
 pub use receipt::*;
