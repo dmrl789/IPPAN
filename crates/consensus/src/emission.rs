@@ -8,6 +8,7 @@
 
 use ippan_types::{Amount, SUPPLY_CAP};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Global emission parameters for IPPAN
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +157,170 @@ impl Default for FeeRecyclingParams {
 /// Compute amount of fees to recycle back into reward pool
 pub fn calculate_fee_recycling(collected_fees: Amount, params: &FeeRecyclingParams) -> Amount {
     collected_fees.percentage(params.recycle_bps)
+}
+
+// ============================================================================
+// Advanced DAG-Fair Emission Types and Functions (for integration tests)
+// ============================================================================
+
+/// Type alias for micro-IPN (smallest unit: 1 IPN = 10^8 µIPN)
+pub type MicroIPN = u128;
+
+/// Constant: micro-IPN per IPN
+pub const MICRO_PER_IPN: u128 = 100_000_000;
+
+/// Validator identifier
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ValidatorId(pub String);
+
+/// Validator role in a round
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Role {
+    Proposer,
+    Verifier,
+}
+
+/// Participation record for a validator in a round
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Participation {
+    pub role: Role,
+    pub blocks: u64,
+}
+
+/// Set of validator participations for a round
+pub type ParticipationSet = HashMap<ValidatorId, Participation>;
+
+/// Enhanced economics parameters with additional controls
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EconomicsParams {
+    pub r0: u128,
+    pub halving_interval_rounds: u64,
+    pub hard_cap_micro: MicroIPN,
+    pub proposer_bps: u16,
+    pub verifier_bps: u16,
+}
+
+impl Default for EconomicsParams {
+    fn default() -> Self {
+        Self {
+            r0: 10_000,
+            halving_interval_rounds: 315_000_000,
+            hard_cap_micro: 21_000_000 * MICRO_PER_IPN,
+            proposer_bps: 2000,
+            verifier_bps: 8000,
+        }
+    }
+}
+
+/// Compute emission for a specific round
+pub fn emission_for_round(round: u64, params: &EconomicsParams) -> MicroIPN {
+    if round == 0 {
+        return 0;
+    }
+    let halvings = (round / params.halving_interval_rounds) as u32;
+    if halvings >= 64 {
+        return 0;
+    }
+    params.r0 >> halvings
+}
+
+/// Compute emission with hard cap enforcement
+pub fn emission_for_round_capped(
+    round: u64,
+    total_issued: MicroIPN,
+    params: &EconomicsParams,
+) -> Result<MicroIPN, &'static str> {
+    if total_issued >= params.hard_cap_micro {
+        return Err("hard cap exceeded");
+    }
+    let base_emission = emission_for_round(round, params);
+    let remaining = params.hard_cap_micro.saturating_sub(total_issued);
+    Ok(base_emission.min(remaining))
+}
+
+/// Distribution result
+pub type Payouts = HashMap<ValidatorId, MicroIPN>;
+
+/// Distribute emission and fees among validators based on participation
+pub fn distribute_round(
+    emission_micro: MicroIPN,
+    fees_micro: MicroIPN,
+    parts: &ParticipationSet,
+    params: &EconomicsParams,
+) -> Result<(Payouts, MicroIPN, MicroIPN), &'static str> {
+    if parts.is_empty() {
+        return Ok((HashMap::new(), 0, 0));
+    }
+
+    let total_pool = emission_micro.saturating_add(fees_micro);
+    if total_pool == 0 {
+        return Ok((HashMap::new(), 0, 0));
+    }
+
+    // Calculate total blocks by proposers and verifiers
+    let mut proposer_blocks = 0u64;
+    let mut verifier_blocks = 0u64;
+
+    for participation in parts.values() {
+        match participation.role {
+            Role::Proposer => proposer_blocks += participation.blocks,
+            Role::Verifier => verifier_blocks += participation.blocks,
+        }
+    }
+
+    let total_blocks = proposer_blocks.saturating_add(verifier_blocks);
+    if total_blocks == 0 {
+        return Ok((HashMap::new(), 0, 0));
+    }
+
+    // Split pool according to proposer/verifier basis points
+    let proposer_pool = (total_pool * params.proposer_bps as u128) / 10_000;
+    let verifier_pool = total_pool.saturating_sub(proposer_pool);
+
+    let mut payouts = HashMap::new();
+    let mut emission_paid = 0u128;
+    let mut fees_paid = 0u128;
+
+    // Distribute to each validator proportionally
+    for (vid, participation) in parts.iter() {
+        let payout = match participation.role {
+            Role::Proposer if proposer_blocks > 0 => {
+                (proposer_pool * participation.blocks as u128) / proposer_blocks as u128
+            }
+            Role::Verifier if verifier_blocks > 0 => {
+                (verifier_pool * participation.blocks as u128) / verifier_blocks as u128
+            }
+            _ => 0,
+        };
+
+        if payout > 0 {
+            payouts.insert(vid.clone(), payout);
+            // Track what portion came from emission vs fees
+            let emission_portion = (payout * emission_micro) / total_pool;
+            let fee_portion = payout.saturating_sub(emission_portion);
+            emission_paid = emission_paid.saturating_add(emission_portion);
+            fees_paid = fees_paid.saturating_add(fee_portion);
+        }
+    }
+
+    Ok((payouts, emission_paid, fees_paid))
+}
+
+/// Sum emission over a range of rounds
+pub fn sum_emission_over_rounds<F>(start: u64, end: u64, mut emission_fn: F) -> MicroIPN
+where
+    F: FnMut(u64) -> MicroIPN,
+{
+    let mut total = 0u128;
+    for round in start..=end {
+        total = total.saturating_add(emission_fn(round));
+    }
+    total
+}
+
+/// Calculate auto-burn amount due to rounding errors
+pub fn epoch_auto_burn(expected: MicroIPN, actual: MicroIPN) -> MicroIPN {
+    expected.saturating_sub(actual)
 }
 
 #[cfg(test)]
