@@ -4,7 +4,7 @@
 //! into the IPPAN blockchain, showing how emission, distribution, and governance work together.
 
 use ippan_consensus::{RoundExecutor, create_participation_set};
-use ippan_economics::{EconomicsParams, EconomicsParameterManager};
+use ippan_economics_core::{EconomicsParams, EconomicsParameterManager};
 use ippan_governance::ParameterManager;
 use ippan_treasury::{InMemoryAccountLedger, RewardSink, FeeCollector};
 use ippan_types::{ChainState, MicroIPN, RoundId};

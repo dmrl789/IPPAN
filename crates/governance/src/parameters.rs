@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use ippan_economics::{EconomicsParams, EconomicsParameterManager};
+use ippan_economics_core::{EconomicsParams, EconomicsParameterManager};
 
 /// Governance parameters that can be modified through proposals
 #[derive(Debug, Clone, Serialize, Deserialize)]

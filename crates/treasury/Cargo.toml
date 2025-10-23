@@ -10,8 +10,8 @@ anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-ippan_economics = { path = "../economics" }
-ippan_types = { path = "../types" }
+ippan_economics_core = { path = "../economics" }
+ippan-types = { path = "../types" }
 
 [dev-dependencies]
 criterion = "0.5"

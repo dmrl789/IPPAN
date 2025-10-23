@@ -1,7 +1,7 @@
 //! Reward pool management for DAG-Fair emission distribution
 
 use crate::account_ledger::AccountLedger;
-use ippan_economics::{MicroIPN, Payouts, ValidatorId};
+use ippan_economics_core::{MicroIPN, Payouts, ValidatorId};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

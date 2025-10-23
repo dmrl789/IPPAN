@@ -17,8 +17,8 @@ ippan-types = { path = "../types" }
 ippan-storage = { path = "../storage" }
 ippan-crypto = { path = "../crypto" }
 ippan-mempool = { path = "../mempool" }
-ippan-economics = { path = "../economics" }
-ippan-treasury = { path = "../treasury" }
+ippan_economics_core = { path = "../economics" }
+ippan_treasury = { path = "../treasury" }
 ippan-ai-core = { path = "../ai_core", optional = true }
 ippan-ai-registry = { path = "../ai_registry", optional = true }
 

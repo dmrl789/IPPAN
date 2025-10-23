@@ -1,7 +1,7 @@
 //! Comprehensive integration tests for the DAG-Fair Emission system
 
 use ippan_consensus::{RoundExecutor, create_participation_set};
-use ippan_economics::{EconomicsParams, EconomicsParameterManager, distribute_round, emission_for_round_capped};
+use ippan_economics_core::{EconomicsParams, EconomicsParameterManager, distribute_round, emission_for_round_capped};
 use ippan_governance::ParameterManager;
 use ippan_treasury::{MockAccountLedger, RewardSink, FeeCollector};
 use ippan_types::{ChainState, MicroIPN, RoundId};

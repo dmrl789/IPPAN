@@ -1,7 +1,7 @@
 //! Round execution and finalization with DAG-Fair emission integration
 
 use crate::fees::FeeCollector;
-use ippan_economics::{
+use ippan_economics_core::{
     distribute_round, emission_for_round_capped, EconomicsParams, Participation, ParticipationSet,
     Role, MICRO_PER_IPN,
 };
