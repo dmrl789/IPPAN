@@ -42,8 +42,11 @@ pub mod round;
 // ---------------------------------------------------------------------
 
 pub use emission::{
-    calculate_fee_recycling, distribute_round_reward, projected_supply, round_reward,
-    EmissionParams, FeeRecyclingParams, RoundRewardDistribution,
+    // DAG-Fair emission system
+    DAGEmissionParams, DAGEmissionSystem, ValidatorRole, ValidatorParticipation,
+    RoundEmission, ValidatorReward, EmissionStats,
+    calculate_round_reward, calculate_round_emission, distribute_dag_fair_rewards,
+    calculate_emission_curve, calculate_annual_emission_schedule, projected_supply,
 };
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
