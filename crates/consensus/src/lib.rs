@@ -44,6 +44,11 @@ pub mod round;
 pub use emission::{
     calculate_fee_recycling, distribute_round_reward, projected_supply, round_reward,
     EmissionParams, FeeRecyclingParams, RoundRewardDistribution,
+    // Advanced DAG-Fair emission types and functions
+    MicroIPN, ValidatorId, Role, Participation, ParticipationSet,
+    EconomicsParams, emission_for_round, emission_for_round_capped,
+    distribute_round, Payouts, sum_emission_over_rounds, epoch_auto_burn,
+    MICRO_PER_IPN,
 };
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
@@ -645,3 +650,6 @@ impl ConsensusEngine for PoAConsensus {
         PoAConsensus::get_state(self)
     }
 }
+
+#[cfg(test)]
+mod tests;

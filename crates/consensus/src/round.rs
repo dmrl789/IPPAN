@@ -1,27 +1,22 @@
 use anyhow::Result;
 #[cfg(feature = "ai_l1")]
 use ippan_ai_core::{features, gbdt::GbdtEvaluator, model::Model};
-#[cfg(not(feature = "ai_l1"))]
-#[derive(Clone, Debug)]
-pub struct Model;
 #[cfg(feature = "ai_l1")]
 pub use ippan_ai_core::features::ValidatorTelemetry;
 #[cfg(not(feature = "ai_l1"))]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+use serde::{Deserialize, Serialize};
+#[cfg(not(feature = "ai_l1"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Model;
+#[cfg(not(feature = "ai_l1"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorTelemetry {
     pub validator_id: [u8; 32],
-    pub block_production_rate: f64,
-    pub avg_block_size: f64,
-    pub uptime: f64,
-    pub network_latency: f64,
-    pub validation_accuracy: f64,
-    pub stake: u64,
-    pub slashing_events: u32,
-    pub last_activity: u64,
-    pub custom_metrics: std::collections::HashMap<String, f64>,
 }
 use std::collections::HashMap;
 use rand::Rng;
+
+// (Mock types handled above when ai_l1 is disabled)
 
 /// Round-based consensus with AI reputation scoring
 pub struct RoundConsensus {
@@ -60,7 +55,7 @@ impl RoundConsensus {
     }
 
     /// Set the active AI model for reputation scoring
-    #[allow(unused_variables)]
+    #[cfg(feature = "ai_l1")]
     pub fn set_active_model(&mut self, model: Model) -> Result<()> {
         #[cfg(feature = "ai_l1")]
         {
@@ -71,6 +66,11 @@ impl RoundConsensus {
         Ok(())
     }
 
+    #[cfg(not(feature = "ai_l1"))]
+    pub fn set_active_model(&mut self, _model: Model) -> Result<()> {
+        Ok(())
+    }
+
     /// Update validator telemetry data
     pub fn update_telemetry(&mut self, validator_id: [u8; 32], telemetry: ValidatorTelemetry) {
         self.validator_telemetry.insert(validator_id, telemetry);
@@ -78,6 +78,7 @@ impl RoundConsensus {
     }
 
     /// Calculate reputation score for a validator
+    #[cfg(feature = "ai_l1")]
     pub fn calculate_reputation_score(&self, validator_id: &[u8; 32]) -> Result<i32> {
         // Check cache first
         if let Some(score) = self.reputation_scores.get(validator_id) {
@@ -88,11 +89,6 @@ impl RoundConsensus {
         let telemetry = self.validator_telemetry.get(validator_id)
             .ok_or_else(|| anyhow::anyhow!("No telemetry data for validator"))?;
 
-        // When AI is disabled, return a neutral score
-        #[cfg(not(feature = "ai_l1"))]
-        let score = 0;
-
-        #[cfg(feature = "ai_l1")]
         let score = {
             // Get active model
             let model = self.active_model.as_ref()
@@ -105,6 +101,12 @@ impl RoundConsensus {
         };
 
         Ok(score)
+    }
+
+    #[cfg(not(feature = "ai_l1"))]
+    pub fn calculate_reputation_score(&self, _validator_id: &[u8; 32]) -> Result<i32> {
+        // Return default reputation score when AI is disabled
+        Ok(5000)
     }
 
     /// Select proposer and verifiers for the next round
@@ -236,11 +238,11 @@ pub fn calculate_reputation_score(model: &Model, telemetry: &ValidatorTelemetry)
 }
 
 #[cfg(not(feature = "ai_l1"))]
-pub fn calculate_reputation_score(_model: &(), _telemetry: &ValidatorTelemetry) -> Result<i32> {
-    Ok(0)
+pub fn calculate_reputation_score(_model: &Model, _telemetry: &ValidatorTelemetry) -> Result<i32> {
+    Ok(5000)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ai_l1"))]
 mod tests {
     use super::*;
     use ippan_ai_core::model::{Model, Tree, Node};
