@@ -35,7 +35,6 @@ pub struct FeeCapConfig {
     pub cap_contract_call: Amount,
     pub cap_governance: Amount,
     pub cap_validator: Amount,
->>>>>>> origin/main
 }
 
 impl Default for FeeCapConfig {
@@ -189,10 +188,12 @@ mod tests {
     #[test]
     fn fee_collector_recycling() {
         let mut c = FeeCollector::new();
-        assert!(validate_fee(&tx, Amount::from_micro_ipn(50), &cfg).is_ok());
-        assert!(validate_fee(&tx, Amount::from_micro_ipn(101), &cfg).is_err());
-        let tx2 = tx_with_topic("contract_deploy");
-        assert!(validate_fee(&tx2, Amount::from_micro_ipn(99_999), &cfg).is_ok());
-        assert!(validate_fee(&tx2, Amount::from_micro_ipn(100_001), &cfg).is_err());
+        let test_fee = Amount::from_micro_ipn(1000);
+        c.collect(test_fee);
+        assert!(c.should_recycle(100, 10));
+        let recycled = c.recycle(100, 5000);
+        assert_eq!(recycled, Amount::from_micro_ipn(500));
+        assert_eq!(c.total_recycled, Amount::from_micro_ipn(500));
+        assert_eq!(c.accumulated, Amount::from_micro_ipn(500));
     }
 }

@@ -83,7 +83,7 @@ pub fn distribute_round_reward(
     let proposer_reward = total.percentage(params.proposer_bps);
     let verifier_pool = total.saturating_sub(proposer_reward);
     let per_verifier = if verifier_count > 0 {
-        verifier_pool / verifier_count as AtomicIPN
+        verifier_pool / verifier_count as u128
     } else {
         Amount::zero()
     };
@@ -321,7 +321,6 @@ where
 /// Calculate auto-burn amount due to rounding errors
 pub fn epoch_auto_burn(expected: MicroIPN, actual: MicroIPN) -> MicroIPN {
     expected.saturating_sub(actual)
->>>>>>> origin/main
 }
 
 #[cfg(test)]
@@ -354,15 +353,9 @@ mod tests {
     #[test]
     fn test_projected_supply_growth() {
         let params = EmissionParams {
-<<<<<<< HEAD
-            r0: IPNAmount::from_unit(10_000, IPNUnit::MicroIPN).atomic(),
-            halving_rounds: 1000,
-            supply_cap: IPNAmount::from_unit(21_000_000, IPNUnit::IPN).atomic(),
-=======
             r0: Amount::from_atomic(10_000),
             halving_rounds: 1000,
             supply_cap: Amount(SUPPLY_CAP),
->>>>>>> origin/main
             proposer_bps: 2000,
             verifier_bps: 8000,
         };
