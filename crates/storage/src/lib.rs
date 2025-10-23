@@ -103,6 +103,21 @@ pub trait Storage {
 
     /// Fetch the most recent round finalization record
     fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>>;
+
+    /// Read an opaque metadata value by key
+    fn get_metadata(&self, key: &str) -> Result<Option<Vec<u8>>>;
+
+    /// Write an opaque metadata value by key
+    fn put_metadata(&self, key: &str, value: &[u8]) -> Result<()>;
+
+    /// Get total issued supply in micro-IPN (persisted in metadata)
+    fn get_total_issued_micro(&self) -> Result<u128>;
+
+    /// Add an amount to total issued supply in micro-IPN (saturating)
+    fn add_total_issued_micro(&self, amount: u128) -> Result<()>;
+
+    /// Credit an account balance by a micro-IPN amount (creates if missing)
+    fn credit_account_micro(&self, address: &[u8; 32], micro_amount: u128) -> Result<()>;
 }
 
 /// Sled-backed persistent storage implementation
@@ -179,6 +194,25 @@ impl SledStorage {
     /// Flush all pending writes to disk
     pub fn flush(&self) -> Result<()> {
         self.db.flush()?;
+        Ok(())
+    }
+
+    fn read_u128_metadata(&self, key: &[u8]) -> Result<u128> {
+        if let Some(value) = self.metadata.get(key)? {
+            // Stored as big-endian; accept shorter lengths for backward compatibility
+            let slice = value.as_ref();
+            let mut bytes = [0u8; 16];
+            let copy_len = slice.len().min(16);
+            bytes[16 - copy_len..].copy_from_slice(&slice[slice.len() - copy_len..]);
+            Ok(u128::from_be_bytes(bytes))
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn write_u128_metadata(&self, key: &[u8], value: u128) -> Result<()> {
+        let bytes = value.to_be_bytes();
+        self.metadata.insert(key, &bytes)?;
         Ok(())
     }
 }
@@ -429,6 +463,35 @@ impl Storage for SledStorage {
             Ok(None)
         }
     }
+
+    fn get_metadata(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        Ok(self.metadata.get(key.as_bytes())?.map(|ivec| ivec.to_vec()))
+    }
+
+    fn put_metadata(&self, key: &str, value: &[u8]) -> Result<()> {
+        self.metadata.insert(key.as_bytes(), value)?;
+        Ok(())
+    }
+
+    fn get_total_issued_micro(&self) -> Result<u128> {
+        self.read_u128_metadata(b"total_issued_micro")
+    }
+
+    fn add_total_issued_micro(&self, amount: u128) -> Result<()> {
+        let current = self.get_total_issued_micro()?;
+        let new_total = current.saturating_add(amount);
+        self.write_u128_metadata(b"total_issued_micro", new_total)
+    }
+
+    fn credit_account_micro(&self, address: &[u8; 32], micro_amount: u128) -> Result<()> {
+        let mut account = self
+            .get_account(address)?
+            .unwrap_or(Account { address: *address, balance: 0, nonce: 0 });
+        // Current account balance is in u64; saturate micro amount to fit
+        let added: u64 = micro_amount.min(u128::from(u64::MAX)).try_into().unwrap_or(u64::MAX);
+        account.balance = account.balance.saturating_add(added);
+        self.update_account(account)
+    }
 }
 
 /// In-memory storage implementation (for testing/development)
@@ -443,6 +506,8 @@ pub struct MemoryStorage {
     round_certificates: Arc<RwLock<HashMap<RoundId, RoundCertificate>>>,
     round_finalizations: Arc<RwLock<HashMap<RoundId, RoundFinalizationRecord>>>,
     latest_finalized_round: Arc<RwLock<Option<RoundId>>>,
+    total_issued_micro: Arc<RwLock<u128>>,
+    meta: Arc<RwLock<HashMap<String, Vec<u8>>>>,
 }
 
 impl MemoryStorage {
@@ -458,6 +523,8 @@ impl MemoryStorage {
             round_certificates: Arc::new(RwLock::new(HashMap::new())),
             round_finalizations: Arc::new(RwLock::new(HashMap::new())),
             latest_finalized_round: Arc::new(RwLock::new(None)),
+            total_issued_micro: Arc::new(RwLock::new(0)),
+            meta: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -621,6 +688,38 @@ impl Storage for MemoryStorage {
         } else {
             Ok(None)
         }
+    }
+
+    fn get_metadata(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        Ok(self.meta.read().get(key).cloned())
+    }
+
+    fn put_metadata(&self, key: &str, value: &[u8]) -> Result<()> {
+        self.meta
+            .write()
+            .insert(key.to_string(), value.to_vec());
+        Ok(())
+    }
+
+    fn get_total_issued_micro(&self) -> Result<u128> {
+        Ok(*self.total_issued_micro.read())
+    }
+
+    fn add_total_issued_micro(&self, amount: u128) -> Result<()> {
+        let mut guard = self.total_issued_micro.write();
+        *guard = guard.saturating_add(amount);
+        Ok(())
+    }
+
+    fn credit_account_micro(&self, address: &[u8; 32], micro_amount: u128) -> Result<()> {
+        let mut accounts = self.accounts.write();
+        let key = hex::encode(address);
+        let entry = accounts
+            .entry(key)
+            .or_insert(Account { address: *address, balance: 0, nonce: 0 });
+        let added: u64 = micro_amount.min(u128::from(u64::MAX)).try_into().unwrap_or(u64::MAX);
+        entry.balance = entry.balance.saturating_add(added);
+        Ok(())
     }
 }
 

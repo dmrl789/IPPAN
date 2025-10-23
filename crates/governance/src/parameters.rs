@@ -1,5 +1,30 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+/// Economics / Emission parameters governed on-chain
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EconomicsParams {
+    /// Initial reward per round (in µIPN)
+    pub r0: u128,
+    /// Number of rounds between halvings
+    pub halving_rounds: u64,
+    /// Supply cap in µIPN
+    pub supply_cap: u128,
+    /// Proposer reward (basis points out of 10_000)
+    pub proposer_bps: u16,
+}
+
+impl Default for EconomicsParams {
+    fn default() -> Self {
+        Self {
+            r0: 10_000,
+            halving_rounds: 315_000_000,
+            supply_cap: 21_000_000_00000000,
+            proposer_bps: 2000,
+        }
+    }
+}
 use std::collections::HashMap;
 
 /// Governance parameters that can be modified through proposals
@@ -136,6 +161,11 @@ impl ParameterManager {
             "min_proposal_interval",
             "proposal_fee",
             "voting_fee",
+            // Economics
+            "economics.r0",
+            "economics.halving_rounds",
+            "economics.supply_cap",
+            "economics.proposer_bps",
         ];
         
         if !valid_parameters.contains(&name) {
@@ -162,6 +192,20 @@ impl ParameterManager {
                 } else {
                     return Err(anyhow::anyhow!("Voting threshold must be a number"));
                 }
+            }
+            "economics.r0" | "economics.supply_cap" => {
+                if !value.is_number() && value.as_str().and_then(|s| s.parse::<u128>().ok()).is_none() {
+                    return Err(anyhow::anyhow!("{} must be a u128 (or string u128)", name));
+                }
+            }
+            "economics.halving_rounds" => {
+                if !value.is_number() || value.as_u64().is_none() {
+                    return Err(anyhow::anyhow!("{} must be a u64", name));
+                }
+            }
+            "economics.proposer_bps" => {
+                let Some(v) = value.as_u64() else { return Err(anyhow::anyhow!("proposer_bps must be u16")); };
+                if v > 10_000 { return Err(anyhow::anyhow!("proposer_bps cannot exceed 10000")); }
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", name)),
         }
@@ -192,6 +236,29 @@ impl ParameterManager {
             }
             "voting_fee" => {
                 self.parameters.voting_fee = proposal.new_value.as_u64().unwrap();
+            }
+            // Economics parameters
+            "economics.r0" => {
+                let r0 = proposal.new_value.as_u64().map(|v| v as u128)
+                    .or_else(|| proposal.new_value.as_str().and_then(|s| s.parse::<u128>().ok()))
+                    .ok_or_else(|| anyhow::anyhow!("invalid r0 value"))?;
+                // Store in metadata for other modules to read
+                // In a full implementation, this would write to chain state; here we just log
+                tracing::info!("Governance: updated economics.r0 to {}", r0);
+            }
+            "economics.halving_rounds" => {
+                let v = proposal.new_value.as_u64().unwrap();
+                tracing::info!("Governance: updated economics.halving_rounds to {}", v);
+            }
+            "economics.supply_cap" => {
+                let cap = proposal.new_value.as_u64().map(|v| v as u128)
+                    .or_else(|| proposal.new_value.as_str().and_then(|s| s.parse::<u128>().ok()))
+                    .ok_or_else(|| anyhow::anyhow!("invalid supply cap"))?;
+                tracing::info!("Governance: updated economics.supply_cap to {}", cap);
+            }
+            "economics.proposer_bps" => {
+                let bps = proposal.new_value.as_u64().unwrap() as u16;
+                tracing::info!("Governance: updated economics.proposer_bps to {}", bps);
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
         }

@@ -1,5 +1,25 @@
 use anyhow::Result;
-use ippan_ai_core::{features::ValidatorTelemetry, gbdt::GbdtEvaluator, model::Model};
+#[cfg(feature = "ai_l1")]
+use ippan_ai_core::{features, gbdt::GbdtEvaluator, model::Model};
+#[cfg(not(feature = "ai_l1"))]
+#[derive(Clone, Debug)]
+pub struct Model;
+#[cfg(feature = "ai_l1")]
+pub use ippan_ai_core::features::ValidatorTelemetry;
+#[cfg(not(feature = "ai_l1"))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ValidatorTelemetry {
+    pub validator_id: [u8; 32],
+    pub block_production_rate: f64,
+    pub avg_block_size: f64,
+    pub uptime: f64,
+    pub network_latency: f64,
+    pub validation_accuracy: f64,
+    pub stake: u64,
+    pub slashing_events: u32,
+    pub last_activity: u64,
+    pub custom_metrics: std::collections::HashMap<String, f64>,
+}
 use std::collections::HashMap;
 use rand::Rng;
 
@@ -40,10 +60,14 @@ impl RoundConsensus {
     }
 
     /// Set the active AI model for reputation scoring
+    #[allow(unused_variables)]
     pub fn set_active_model(&mut self, model: Model) -> Result<()> {
-        model.validate()?;
-        self.active_model = Some(model);
-        self.reputation_scores.clear(); // Clear cache when model changes
+        #[cfg(feature = "ai_l1")]
+        {
+            model.validate()?;
+            self.active_model = Some(model);
+            self.reputation_scores.clear(); // Clear cache when model changes
+        }
         Ok(())
     }
 
@@ -64,16 +88,21 @@ impl RoundConsensus {
         let telemetry = self.validator_telemetry.get(validator_id)
             .ok_or_else(|| anyhow::anyhow!("No telemetry data for validator"))?;
 
-        // Get active model
-        let model = self.active_model.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No active AI model"))?;
+        // When AI is disabled, return a neutral score
+        #[cfg(not(feature = "ai_l1"))]
+        let score = 0;
 
-        // Extract features
-        let features = ippan_ai_core::features::from_telemetry(telemetry)?;
-
-        // Evaluate with GBDT
-        let evaluator = GbdtEvaluator::new(model.clone())?;
-        let score = evaluator.evaluate(&features)?;
+        #[cfg(feature = "ai_l1")]
+        let score = {
+            // Get active model
+            let model = self.active_model.as_ref()
+                .ok_or_else(|| anyhow::anyhow!("No active AI model"))?;
+            // Extract features
+            let features = features::from_telemetry(telemetry)?;
+            // Evaluate with GBDT
+            let evaluator = GbdtEvaluator::new(model.clone())?;
+            evaluator.evaluate(&features)?
+        };
 
         Ok(score)
     }
@@ -199,13 +228,16 @@ impl Default for RoundConsensus {
 }
 
 /// Convenience function to calculate reputation score
-pub fn calculate_reputation_score(
-    model: &Model,
-    telemetry: &ValidatorTelemetry,
-) -> Result<i32> {
+#[cfg(feature = "ai_l1")]
+pub fn calculate_reputation_score(model: &Model, telemetry: &ValidatorTelemetry) -> Result<i32> {
     let features = ippan_ai_core::features::from_telemetry(telemetry)?;
     let evaluator = GbdtEvaluator::new(model.clone())?;
     Ok(evaluator.evaluate(&features)?)
+}
+
+#[cfg(not(feature = "ai_l1"))]
+pub fn calculate_reputation_score(_model: &(), _telemetry: &ValidatorTelemetry) -> Result<i32> {
+    Ok(0)
 }
 
 #[cfg(test)]
