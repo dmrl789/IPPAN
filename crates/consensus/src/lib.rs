@@ -519,3 +519,6 @@ impl ConsensusEngine for PoAConsensus {
         PoAConsensus::get_state(self)
     }
 }
+
+#[cfg(test)]
+mod tests;
