@@ -8,7 +8,7 @@ use anyhow::Result;
 use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
 use ippan_mempool::Mempool;
-use ippan_storage::{Account, Storage};
+use ippan_storage::Storage;
 use ippan_types::{
     IppanTimeMicros, Block, BlockId, RoundCertificate, RoundFinalizationRecord,
     RoundId, RoundWindow, Transaction,
@@ -34,6 +34,7 @@ pub mod ordering;
 pub mod parallel_dag;
 pub mod reputation;
 pub mod emission;
+pub mod emission_tracker;
 pub mod fees;
 pub mod round;
 
@@ -43,8 +44,10 @@ pub mod round;
 
 pub use emission::{
     calculate_fee_recycling, distribute_round_reward, projected_supply, round_reward,
-    EmissionParams, FeeRecyclingParams, RoundRewardDistribution,
+    rounds_until_cap, EmissionAuditRecord, EmissionParams, FeeRecyclingParams,
+    RoundRewardDistribution, ValidatorContribution, ValidatorRole,
 };
+pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
 pub use parallel_dag::{
@@ -146,6 +149,7 @@ pub struct PoAConsensus {
     pub finalization_interval: Duration,
     pub round_consensus: Arc<RwLock<RoundConsensus>>,
     pub fee_collector: Arc<RwLock<FeeCollector>>,
+    pub emission_tracker: Arc<RwLock<EmissionTracker>>,
 }
 
 impl PoAConsensus {
@@ -174,6 +178,10 @@ impl PoAConsensus {
             current_round_blocks: Vec::new(),
         };
 
+        let emission_params = EmissionParams::default();
+        let audit_interval = 6_048_000; // Weekly audits (≈1 week of rounds at 100ms)
+        let emission_tracker = EmissionTracker::new(emission_params, audit_interval);
+
         Self {
             config: config.clone(),
             storage: storage.clone(),
@@ -186,6 +194,7 @@ impl PoAConsensus {
             finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
+            emission_tracker: Arc::new(RwLock::new(emission_tracker)),
         }
     }
 
@@ -304,7 +313,7 @@ impl PoAConsensus {
         mempool: &Arc<Mempool>,
         config: &PoAConfig,
         tracker: &Arc<RwLock<RoundTracker>>,
-        slot: u64,
+        _slot: u64,
         proposer: [u8; 32],
     ) -> Result<()> {
         let txs = mempool.get_transactions_for_block(config.max_transactions_per_block);
