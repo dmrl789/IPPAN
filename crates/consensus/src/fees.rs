@@ -2,11 +2,11 @@
 //!
 //! Implements protocol-level fee validation and recycling.
 //! Includes:
-//! - Hard fee caps per transaction type (µIPN units)
+//! - Hard fee caps per transaction type (atomic units)
 //! - Deterministic validation
 //! - Weekly recycling into the reward pool
 
-use ippan_types::Transaction;
+use ippan_types::{AtomicIPN, IPNAmount, IPNUnit, Transaction};
 use serde::{Deserialize, Serialize};
 
 /// Transaction category for fee classification
@@ -26,33 +26,33 @@ pub enum TxKind {
     Validator,
 }
 
-/// Fee cap configuration (values in µIPN)
+/// Fee cap configuration (values in atomic units)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeCapConfig {
-    pub cap_transfer: u128,
-    pub cap_ai_call: u128,
-    pub cap_contract_deploy: u128,
-    pub cap_contract_call: u128,
-    pub cap_governance: u128,
-    pub cap_validator: u128,
+    pub cap_transfer: AtomicIPN,
+    pub cap_ai_call: AtomicIPN,
+    pub cap_contract_deploy: AtomicIPN,
+    pub cap_contract_call: AtomicIPN,
+    pub cap_governance: AtomicIPN,
+    pub cap_validator: AtomicIPN,
 }
 
 impl Default for FeeCapConfig {
     fn default() -> Self {
         Self {
-            cap_transfer: 1_000,          // 0.00001 IPN
-            cap_ai_call: 100,             // 0.000001 IPN
-            cap_contract_deploy: 100_000, // 0.001 IPN
-            cap_contract_call: 10_000,    // 0.0001 IPN
-            cap_governance: 10_000,       // 0.0001 IPN
-            cap_validator: 10_000,        // 0.0001 IPN
+            cap_transfer: IPNAmount::from_unit(1_000, IPNUnit::MicroIPN).atomic(),          // 0.00001 IPN
+            cap_ai_call: IPNAmount::from_unit(100, IPNUnit::MicroIPN).atomic(),             // 0.000001 IPN
+            cap_contract_deploy: IPNAmount::from_unit(100_000, IPNUnit::MicroIPN).atomic(), // 0.001 IPN
+            cap_contract_call: IPNAmount::from_unit(10_000, IPNUnit::MicroIPN).atomic(),    // 0.0001 IPN
+            cap_governance: IPNAmount::from_unit(10_000, IPNUnit::MicroIPN).atomic(),       // 0.0001 IPN
+            cap_validator: IPNAmount::from_unit(10_000, IPNUnit::MicroIPN).atomic(),        // 0.0001 IPN
         }
     }
 }
 
 impl FeeCapConfig {
     /// Return the cap value for the given transaction kind
-    pub fn get_cap(&self, kind: TxKind) -> u128 {
+    pub fn get_cap(&self, kind: TxKind) -> AtomicIPN {
         match kind {
             TxKind::Transfer => self.cap_transfer,
             TxKind::AiCall => self.cap_ai_call,
@@ -68,7 +68,7 @@ impl FeeCapConfig {
 #[derive(thiserror::Error, Debug)]
 pub enum FeeError {
     #[error("Fee {actual} exceeds cap {cap} for {kind:?}")]
-    FeeAboveCap { kind: TxKind, actual: u128, cap: u128 },
+    FeeAboveCap { kind: TxKind, actual: AtomicIPN, cap: AtomicIPN },
     #[error("Fee must be positive")]
     ZeroFee,
 }
@@ -90,7 +90,7 @@ pub fn classify_transaction(tx: &Transaction) -> TxKind {
 }
 
 /// Validate fee for a transaction
-pub fn validate_fee(tx: &Transaction, fee: u128, config: &FeeCapConfig) -> Result<(), FeeError> {
+pub fn validate_fee(tx: &Transaction, fee: AtomicIPN, config: &FeeCapConfig) -> Result<(), FeeError> {
     if fee == 0 {
         return Err(FeeError::ZeroFee);
     }
@@ -109,13 +109,13 @@ pub fn validate_fee(tx: &Transaction, fee: u128, config: &FeeCapConfig) -> Resul
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeCollector {
     /// Total fees accumulated since last recycling
-    pub accumulated: u128,
+    pub accumulated: AtomicIPN,
     /// Round number when last recycling occurred
     pub last_recycle_round: u64,
     /// Lifetime total fees collected
-    pub total_collected: u128,
+    pub total_collected: AtomicIPN,
     /// Lifetime total recycled fees
-    pub total_recycled: u128,
+    pub total_recycled: AtomicIPN,
 }
 
 impl FeeCollector {
@@ -129,7 +129,7 @@ impl FeeCollector {
     }
 
     /// Collect a transaction fee into the accumulator
-    pub fn collect(&mut self, fee: u128) {
+    pub fn collect(&mut self, fee: AtomicIPN) {
         self.accumulated = self.accumulated.saturating_add(fee);
         self.total_collected = self.total_collected.saturating_add(fee);
     }
@@ -140,7 +140,7 @@ impl FeeCollector {
     }
 
     /// Perform recycling and return the amount recycled
-    pub fn recycle(&mut self, current_round: u64, recycle_bps: u16) -> u128 {
+    pub fn recycle(&mut self, current_round: u64, recycle_bps: u16) -> AtomicIPN {
         let amount = (self.accumulated * recycle_bps as u128) / 10_000;
         self.accumulated = self.accumulated.saturating_sub(amount);
         self.total_recycled = self.total_recycled.saturating_add(amount);
@@ -178,21 +178,24 @@ mod tests {
     fn fee_validation_caps() {
         let cfg = FeeCapConfig::default();
         let tx = tx_with_topic("ai_call");
-        assert!(validate_fee(&tx, 50, &cfg).is_ok());
-        assert!(validate_fee(&tx, 101, &cfg).is_err());
+        let ai_call_cap = IPNAmount::from_unit(100, IPNUnit::MicroIPN).atomic();
+        assert!(validate_fee(&tx, ai_call_cap / 2, &cfg).is_ok());
+        assert!(validate_fee(&tx, ai_call_cap + 1, &cfg).is_err());
         let tx2 = tx_with_topic("contract_deploy");
-        assert!(validate_fee(&tx2, 99_999, &cfg).is_ok());
-        assert!(validate_fee(&tx2, 100_001, &cfg).is_err());
+        let deploy_cap = IPNAmount::from_unit(100_000, IPNUnit::MicroIPN).atomic();
+        assert!(validate_fee(&tx2, deploy_cap - 1, &cfg).is_ok());
+        assert!(validate_fee(&tx2, deploy_cap + 1, &cfg).is_err());
     }
 
     #[test]
     fn fee_collector_recycling() {
         let mut c = FeeCollector::new();
-        c.collect(1000);
+        let test_fee = IPNAmount::from_unit(1000, IPNUnit::MicroIPN).atomic();
+        c.collect(test_fee);
         assert!(c.should_recycle(100, 10));
         let recycled = c.recycle(100, 5000);
-        assert_eq!(recycled, 500);
-        assert_eq!(c.total_recycled, 500);
-        assert_eq!(c.accumulated, 500);
+        assert_eq!(recycled, test_fee / 2);
+        assert_eq!(c.total_recycled, test_fee / 2);
+        assert_eq!(c.accumulated, test_fee / 2);
     }
 }

@@ -1,4 +1,5 @@
 pub mod address;
+pub mod atomic_units;
 pub mod block;
 pub mod hashtimer;
 pub mod l2;
@@ -9,6 +10,7 @@ pub mod time_service;
 pub mod transaction;
 
 pub use address::*;
+pub use atomic_units::*;
 pub use block::*;
 pub use hashtimer::{random_nonce, HashTimer, IppanTimeMicros};
 pub use l2::*;
