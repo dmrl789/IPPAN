@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 //! Core emission calculation engine for DAG-Fair emission
 
 use crate::types::*;

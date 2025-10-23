@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 //! Error types for IPPAN economics
 
 use thiserror::Error;

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 //! Reward distribution logic for DAG-Fair emission
 
 use crate::types::*;
