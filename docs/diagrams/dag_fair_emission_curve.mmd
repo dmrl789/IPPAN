@@ -1,0 +1,42 @@
+%% DAG-Fair Emission Curve (Mermaid)
+%% Deterministic round-based issuance with halvings; capped at 21M IPN
+%% Note: Mermaid doesn't natively plot charts; we present a schematic timeline.
+
+flowchart LR
+  title["DAG-Fair Emission Curve (schematic)"]
+
+  subgraph Years
+    Y0[Year 0]
+    Y2[Year 2]
+    Y4[Year 4]
+    Y6[Year 6]
+    Y8[Year 8]
+    Y10[Year 10]
+    Y12[Year 12]
+    Y14[Year 14]
+    Y16[Year 16]
+  end
+
+  subgraph Supply
+    S0[0]
+    S2[~10.5M]
+    S4[~15.75M]
+    S6[~18.38M]
+    S8[~19.69M]
+    S10[~20.34M]
+    S12[~20.67M]
+    S14[~20.84M]
+    S16[~20.92M]
+  end
+
+  Y0 -->|halving every 2y| Y2 --> Y4 --> Y6 --> Y8 --> Y10 --> Y12 --> Y14 --> Y16
+  S0 --> S2 --> S4 --> S6 --> S8 --> S10 --> S12 --> S14 --> S16
+
+  cap["21M cap (asymptote)"]
+  cap -.-> S10
+  cap -.-> S12
+  cap -.-> S14
+  cap -.-> S16
+
+  note["R(t) = R0 / 2^floor(t/Th)\nRound-based issuance; cumulative supply approaches 21M"]
+  note -.-> S8
