@@ -1805,6 +1805,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ippan-economics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ippan-types",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "ippan-governance"
 version = "0.1.0"
 dependencies = [
