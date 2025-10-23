@@ -11,7 +11,7 @@ use std::{collections::HashMap, fs::File, io::Write, sync::Mutex};
 
 const ROUNDS: u64 = 10_000;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting IPPAN parallel emission simulation over {} rounds", ROUNDS);
 
     let mut params = EconomicsParams::default();
@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!(
-        "✅ Simulation complete: issued={} μIPN (≈ {:.3} IPN), burned={} μIPN",
+        "✅ Simulation complete: issued={} μIPN (≈ {:.6} IPN), burned={} μIPN",
         total_issued,
         total_issued as f64 / MICRO_PER_IPN as f64,
         total_burned
@@ -79,9 +79,9 @@ fn simulate_round(
     validators: &[ValidatorId],
     params: &EconomicsParams,
 ) -> RoundResult {
-    // Dummy total issued — for local deterministic emission computation
+    // Compute deterministic emission for this round
     let emission_micro = emission_for_round(round, params);
-    let fees_micro = rng.gen_range(0..=3);
+    let fees_micro = rng.gen_range(0..=10); // small random fee amount
 
     let mut parts = ParticipationSet::default();
     for vid in validators {
@@ -90,12 +90,15 @@ fn simulate_round(
         parts.insert(vid.clone(), Participation { role, blocks });
     }
 
+    // Distribute rewards according to participation
     let (payouts, emission_paid, _fees_paid) =
         distribute_round(emission_micro, fees_micro, &parts, params)
             .unwrap_or_default();
 
     let halving_index = round / params.halving_interval_rounds;
-    let burned = epoch_auto_burn(emission_micro, emission_paid);
+    
+    // Calculate "burned" amount (emission allocated but not distributed due to rounding)
+    let burned = emission_micro.saturating_sub(emission_paid);
 
     RoundResult {
         round,
@@ -120,7 +123,7 @@ fn analyze_fairness(balances: &HashMap<ValidatorId, MicroIPN>) {
 }
 
 #[cfg(feature = "plotters")]
-fn try_plot() -> anyhow::Result<()> {
+fn try_plot() -> Result<(), Box<dyn std::error::Error>> {
     use plotters::prelude::*;
     use plotters::style::RGBColor;
     
@@ -189,7 +192,7 @@ fn try_plot() -> anyhow::Result<()> {
 }
 
 #[cfg(not(feature = "plotters"))]
-fn try_plot() -> anyhow::Result<()> {
+fn try_plot() -> Result<(), Box<dyn std::error::Error>> {
     println!("(plot skipped — enable 'plotters' feature to generate PNG chart)");
     println!("(CSV data available in emission_data.csv)");
     Ok(())
