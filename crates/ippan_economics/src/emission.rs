@@ -61,28 +61,13 @@ pub fn emission_for_round_capped(
     Ok(allowed)
 }
 
-/// Sum total emission across a range of rounds `[start, end]` (inclusive).
-pub fn sum_emission_over_rounds<F>(start: RoundIndex, end: RoundIndex, f: F) -> MicroIPN
-where
-    F: Fn(RoundIndex) -> MicroIPN,
-{
-    let mut total = 0u128;
-    for r in start..=end {
-        total = total.saturating_add(f(r));
-    }
-    total
-}
-
-/// Automatic burn logic for epoch reconciliation.
-/// If more was produced than expected, burn the excess.
-pub fn epoch_auto_burn(expected: MicroIPN, actual: MicroIPN) -> MicroIPN {
-    expected.saturating_sub(actual)
-}
+// Note: sum_emission_over_rounds and epoch_auto_burn are in verify module
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::EconomicsParams;
+    use crate::params::EconomicsParams;
+    use crate::verify::{epoch_auto_burn, sum_emission_over_rounds};
 
     #[test]
     fn test_emission_halving() {
@@ -131,9 +116,10 @@ mod tests {
 
     #[test]
     fn test_epoch_auto_burn() {
-        assert_eq!(epoch_auto_burn(1000, 1000), 0);
-        assert_eq!(epoch_auto_burn(1000, 1200), 0);
-        assert_eq!(epoch_auto_burn(1200, 1000), 200);
+        // epoch_auto_burn burns excess: actual - expected
+        assert_eq!(epoch_auto_burn(1000, 1000), 0);  // expected 1000, got 1000 -> burn 0
+        assert_eq!(epoch_auto_burn(1000, 1200), 200); // expected 1000, got 1200 -> burn 200
+        assert_eq!(epoch_auto_burn(1200, 1000), 0);  // expected 1200, got 1000 -> burn 0 (under-minted)
     }
 
     #[test]

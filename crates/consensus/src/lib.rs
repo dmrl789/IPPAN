@@ -34,9 +34,10 @@ pub mod ordering;
 pub mod parallel_dag;
 pub mod reputation;
 pub mod emission;
-pub mod emission_tracker;
+// pub mod emission_tracker;  // TODO: Re-enable after adapting to new emission API
 pub mod fees;
 pub mod round;
+pub mod round_executor;
 
 // ---------------------------------------------------------------------
 // Public re-exports
@@ -46,11 +47,17 @@ pub use emission::{
     DAGEmissionParams, ValidatorRole, ValidatorParticipation,
     RoundEmission, ValidatorReward,
     calculate_round_reward, calculate_round_emission, distribute_dag_fair_rewards,
-    calculate_fee_recycling, FeeRecyclingParams, projected_supply,
+    calculate_fee_recycling, FeeRecyclingParams,
 };
-pub use emission_tracker::{EmissionStatistics, EmissionTracker};
+// TODO: Re-enable after adapting emission_tracker to new API
+// pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
+// Primary DAG-Fair emission integration from round_executor
+pub use round_executor::{
+    distribute_round, emission_for_round_capped, finalize_round, 
+    Participation, ParticipationSet, Role, MICRO_PER_IPN,
+};
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
     ValidationResult,
@@ -58,6 +65,9 @@ pub use parallel_dag::{
 pub use reputation::{
     apply_reputation_weight, calculate_reputation, ReputationScore, ValidatorTelemetry,
     DEFAULT_REPUTATION,
+};
+pub use round_executor::{
+    create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
 };
 use round::RoundConsensus;
 
@@ -150,7 +160,8 @@ pub struct PoAConsensus {
     pub finalization_interval: Duration,
     pub round_consensus: Arc<RwLock<RoundConsensus>>,
     pub fee_collector: Arc<RwLock<FeeCollector>>,
-    pub emission_tracker: Arc<RwLock<EmissionTracker>>,
+    // TODO: Re-enable after adapting emission_tracker to new API
+    // pub emission_tracker: Arc<RwLock<EmissionTracker>>,
 }
 
 impl PoAConsensus {
@@ -179,9 +190,10 @@ impl PoAConsensus {
             current_round_blocks: Vec::new(),
         };
 
-        let emission_params = DAGEmissionParams::default();
-        let audit_interval = 6_048_000; // ~1 week at 100ms
-        let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
+        // TODO: Re-enable after adapting emission_tracker to new API
+        // let emission_params = DAGEmissionParams::default();
+        // let audit_interval = 6_048_000; // ~1 week at 100ms
+        // let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
 
         Self {
             config: config.clone(),
@@ -195,7 +207,8 @@ impl PoAConsensus {
             finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
-            emission_tracker: Arc::new(RwLock::new(emission_tracker)),
+            // TODO: Re-enable after adapting emission_tracker to new API
+            // emission_tracker: Arc::new(RwLock::new(emission_tracker)),
         }
     }
 

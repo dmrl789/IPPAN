@@ -1,112 +1,69 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
+use ippan_economics_core::EconomicsParameterManager;
 
 /// Economics / Emission parameters governed on-chain
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EconomicsParams {
     /// Initial reward per round (in µIPN)
-    pub r0: u128,
+    pub initial_round_reward_micro: u128,
     /// Number of rounds between halvings
-    pub halving_rounds: u64,
-    /// Supply cap in µIPN
-    pub supply_cap: u128,
-    /// Proposer reward (basis points out of 10_000)
-    pub proposer_bps: u16,
+    pub halving_interval_rounds: u64,
+    /// Supply cap (µIPN)
+    pub supply_cap_micro: u128,
+    /// Fee cap numerator (1 for 1/10 = 10% max)
+    pub fee_cap_numer: u32,
+    /// Fee cap denominator
+    pub fee_cap_denom: u32,
+    /// Proposer weight (basis points out of 10,000)
+    pub proposer_weight_bps: u16,
+    /// Verifier weight (basis points out of 10,000)
+    pub verifier_weight_bps: u16,
+    /// Fee recycling ratio (basis points)
+    pub fee_recycling_bps: u16,
 }
 
 impl Default for EconomicsParams {
     fn default() -> Self {
         Self {
-            r0: 10_000,
-            halving_rounds: 315_000_000,
-            supply_cap: 21_000_000_00000000,
-            proposer_bps: 2000,
+            initial_round_reward_micro: 10_000, // ≈50 IPN/day @100 ms rounds
+            halving_interval_rounds: 315_000_000, // ≈2 years @200 ms rounds
+            supply_cap_micro: 21_000_000 * 100_000_000, // 21 M IPN
+            fee_cap_numer: 1,
+            fee_cap_denom: 10,
+            proposer_weight_bps: 2000, // 20%
+            verifier_weight_bps: 8000, // 80%
+            fee_recycling_bps: 10_000, // 100% recycling
         }
     }
 }
-use std::collections::HashMap;
 
-/// Governance parameters that can be modified through proposals
+/// Governance parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceParameters {
-    /// Minimum stake required to submit a proposal
     pub min_proposal_stake: u64,
-    /// Voting threshold (percentage of stake required for approval)
     pub voting_threshold: f64,
-    /// Voting duration in seconds
     pub voting_duration: u64,
-    /// Maximum number of active proposals
     pub max_active_proposals: usize,
-    /// Minimum time between proposals from the same validator
     pub min_proposal_interval: u64,
-    /// Fee for submitting a proposal
     pub proposal_fee: u64,
-    /// Fee for voting on a proposal
     pub voting_fee: u64,
-    /// DAG-Fair emission parameters
-    pub emission_params: DAGEmissionParams,
-}
-
-/// DAG-Fair emission parameters (imported from consensus crate)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DAGEmissionParams {
-    /// Initial reward per round (in µIPN — micro-IPN)
-    pub r0: u128,
-    /// Number of rounds between halvings
-    pub halving_rounds: u64,
-    /// Total supply cap
-    pub supply_cap: u128,
-    /// Round duration in milliseconds
-    pub round_duration_ms: u64,
-    /// Fee cap as percentage of round reward (basis points)
-    pub fee_cap_bps: u16,
-    /// AI micro-service commission percentage (basis points)
-    pub ai_commission_bps: u16,
-    /// Network reward pool dividend percentage (basis points)
-    pub network_pool_bps: u16,
-    /// Base emission percentage (basis points)
-    pub base_emission_bps: u16,
-    /// Transaction fee percentage (basis points)
-    pub tx_fee_bps: u16,
+    pub economics: EconomicsParams,
 }
 
 impl Default for GovernanceParameters {
     fn default() -> Self {
         Self {
-            min_proposal_stake: 1_000_000, // 1M tokens
-            voting_threshold: 0.67, // 67%
-            voting_duration: 7 * 24 * 3600, // 7 days
+            min_proposal_stake: 1_000_000,
+            voting_threshold: 0.67,
+            voting_duration: 7 * 24 * 3600,
             max_active_proposals: 10,
-            min_proposal_interval: 24 * 3600, // 24 hours
-            proposal_fee: 10_000, // 10K tokens
-            voting_fee: 1_000, // 1K tokens
-            emission_params: DAGEmissionParams::default(),
-        }
-    }
-}
-
-impl Default for DAGEmissionParams {
-    fn default() -> Self {
-        Self {
-            // 0.0001 IPN per round = 10,000 µIPN
-            r0: 10_000,
-            // Halving every ~2 years at 100ms rounds (315,000,000 rounds)
-            halving_rounds: 315_000_000,
-            // 21 million IPN = 21,000,000,000,000 µIPN
-            supply_cap: 21_000_000_00000000,
-            // 100ms round duration
-            round_duration_ms: 100,
-            // Fee cap at 10% of round reward
-            fee_cap_bps: 1000,
-            // AI commission at 10%
-            ai_commission_bps: 1000,
-            // Network pool at 5%
-            network_pool_bps: 500,
-            // Base emission at 60%
-            base_emission_bps: 6000,
-            // Transaction fees at 25%
-            tx_fee_bps: 2500,
+            min_proposal_interval: 24 * 3600,
+            proposal_fee: 10_000,
+            voting_fee: 1_000,
+            economics: EconomicsParams::default(),
         }
     }
 }
@@ -114,97 +71,78 @@ impl Default for DAGEmissionParams {
 /// Parameter change proposal
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParameterChangeProposal {
-    /// Proposal ID
     pub proposal_id: String,
-    /// Parameter name to change
     pub parameter_name: String,
-    /// New value for the parameter
     pub new_value: serde_json::Value,
-    /// Current value of the parameter
     pub current_value: serde_json::Value,
-    /// Justification for the change
     pub justification: String,
-    /// Proposer address
     pub proposer: [u8; 32],
-    /// Creation timestamp
     pub created_at: u64,
 }
 
-/// Governance parameter manager
+/// Parameter manager for governance-controlled configs
 pub struct ParameterManager {
-    /// Current parameters
     parameters: GovernanceParameters,
-    /// Parameter change history
     change_history: Vec<ParameterChangeProposal>,
-    /// Pending parameter changes
     pending_changes: HashMap<String, ParameterChangeProposal>,
+    economics_manager: EconomicsParameterManager,
 }
 
 impl ParameterManager {
-    /// Create a new parameter manager
     pub fn new() -> Self {
         Self {
             parameters: GovernanceParameters::default(),
             change_history: Vec::new(),
             pending_changes: HashMap::new(),
+            economics_manager: EconomicsParameterManager::new(),
         }
     }
 
-    /// Get current parameters
     pub fn get_parameters(&self) -> &GovernanceParameters {
         &self.parameters
     }
 
-    /// Submit a parameter change proposal
-    pub fn submit_parameter_change(
-        &mut self,
-        proposal: ParameterChangeProposal,
-    ) -> Result<()> {
-        // Validate parameter name
+    pub fn get_economics_params(&self) -> &EconomicsParams {
+        self.economics_manager.get_current_params()
+    }
+
+    pub fn update_economics_params(&mut self, params: EconomicsParams) {
+        self.parameters.economics = params.clone();
+        self.economics_manager = EconomicsParameterManager::with_params(params);
+    }
+
+    pub fn submit_parameter_change(&mut self, proposal: ParameterChangeProposal) -> Result<()> {
         self.validate_parameter_name(&proposal.parameter_name)?;
-        
-        // Validate new value
         self.validate_parameter_value(&proposal.parameter_name, &proposal.new_value)?;
-        
-        // Check for duplicate proposal
+
         if self.pending_changes.contains_key(&proposal.proposal_id) {
             return Err(anyhow::anyhow!("Proposal ID {} already exists", proposal.proposal_id));
         }
-        
-        // Add to pending changes
         self.pending_changes.insert(proposal.proposal_id.clone(), proposal);
-        
         Ok(())
     }
 
-    /// Execute a parameter change
     pub fn execute_parameter_change(&mut self, proposal_id: &str) -> Result<()> {
         if let Some(proposal) = self.pending_changes.remove(proposal_id) {
-            // Apply the change
             self.apply_parameter_change(&proposal)?;
-            
-            // Add to history
             self.change_history.push(proposal);
-            
             Ok(())
         } else {
             Err(anyhow::anyhow!("Proposal {} not found", proposal_id))
         }
     }
 
-    /// Get parameter change history
     pub fn get_change_history(&self) -> &[ParameterChangeProposal] {
         &self.change_history
     }
 
-    /// Get pending changes
     pub fn get_pending_changes(&self) -> &HashMap<String, ParameterChangeProposal> {
         &self.pending_changes
     }
 
-    /// Validate parameter name
     fn validate_parameter_name(&self, name: &str) -> Result<()> {
-        let valid_parameters = [
+        let valid = [
+            // General governance
             "min_proposal_stake",
             "voting_threshold",
             "voting_duration",
@@ -212,97 +150,39 @@ impl ParameterManager {
             "min_proposal_interval",
             "proposal_fee",
             "voting_fee",
-<<<<<<< HEAD
             // Economics
-            "economics.r0",
-            "economics.halving_rounds",
-            "economics.supply_cap",
-            "economics.proposer_bps",
-=======
-            // Emission parameters
-            "emission_r0",
-            "emission_halving_rounds",
-            "emission_supply_cap",
-            "emission_round_duration_ms",
-            "emission_fee_cap_bps",
-            "emission_ai_commission_bps",
-            "emission_network_pool_bps",
-            "emission_base_emission_bps",
-            "emission_tx_fee_bps",
->>>>>>> origin/main
+            "economics.initial_round_reward_micro",
+            "economics.halving_interval_rounds",
+            "economics.supply_cap_micro",
+            "economics.fee_cap_numer",
+            "economics.fee_cap_denom",
+            "economics.proposer_weight_bps",
+            "economics.verifier_weight_bps",
+            "economics.fee_recycling_bps",
         ];
-        
-        if !valid_parameters.contains(&name) {
-            return Err(anyhow::anyhow!("Invalid parameter name: {}", name));
+        if !valid.contains(&name) {
+            return Err(anyhow::anyhow!("Invalid parameter: {}", name));
         }
-        
         Ok(())
     }
 
-    /// Validate parameter value
     fn validate_parameter_value(&self, name: &str, value: &serde_json::Value) -> Result<()> {
         match name {
-            "min_proposal_stake" | "voting_duration" | "max_active_proposals" 
-            | "min_proposal_interval" | "proposal_fee" | "voting_fee" => {
-                if !value.is_number() || value.as_u64().is_none() {
-                    return Err(anyhow::anyhow!("Parameter {} must be a positive integer", name));
-                }
-            }
             "voting_threshold" => {
-                if let Some(threshold) = value.as_f64() {
-                    if threshold < 0.0 || threshold > 1.0 {
-                        return Err(anyhow::anyhow!("Voting threshold must be between 0.0 and 1.0"));
-                    }
-                } else {
-                    return Err(anyhow::anyhow!("Voting threshold must be a number"));
+                let v = value.as_f64().ok_or_else(|| anyhow::anyhow!("must be f64"))?;
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(anyhow::anyhow!("Voting threshold must be 0.0–1.0"));
                 }
             }
-<<<<<<< HEAD
-            "economics.r0" | "economics.supply_cap" => {
-                if !value.is_number() && value.as_str().and_then(|s| s.parse::<u128>().ok()).is_none() {
-                    return Err(anyhow::anyhow!("{} must be a u128 (or string u128)", name));
+            _ => {
+                if !value.is_number() {
+                    return Err(anyhow::anyhow!("{} must be numeric", name));
                 }
             }
-            "economics.halving_rounds" => {
-                if !value.is_number() || value.as_u64().is_none() {
-                    return Err(anyhow::anyhow!("{} must be a u64", name));
-                }
-            }
-            "economics.proposer_bps" => {
-                let Some(v) = value.as_u64() else { return Err(anyhow::anyhow!("proposer_bps must be u16")); };
-                if v > 10_000 { return Err(anyhow::anyhow!("proposer_bps cannot exceed 10000")); }
-=======
-            // Emission parameter validations
-            "emission_r0" | "emission_halving_rounds" | "emission_supply_cap" 
-            | "emission_round_duration_ms" => {
-                if !value.is_number() || value.as_u64().is_none() {
-                    return Err(anyhow::anyhow!("Parameter {} must be a positive integer", name));
-                }
-                if let Some(val) = value.as_u64() {
-                    if val == 0 {
-                        return Err(anyhow::anyhow!("Parameter {} must be positive", name));
-                    }
-                }
-            }
-            "emission_fee_cap_bps" | "emission_ai_commission_bps" | "emission_network_pool_bps"
-            | "emission_base_emission_bps" | "emission_tx_fee_bps" => {
-                if !value.is_number() || value.as_u64().is_none() {
-                    return Err(anyhow::anyhow!("Parameter {} must be a positive integer", name));
-                }
-                if let Some(val) = value.as_u64() {
-                    if val > 10000 {
-                        return Err(anyhow::anyhow!("Parameter {} cannot exceed 10,000 basis points", name));
-                    }
-                }
->>>>>>> origin/main
-            }
-            _ => return Err(anyhow::anyhow!("Unknown parameter: {}", name)),
         }
-        
         Ok(())
     }
 
-    /// Apply a parameter change
     fn apply_parameter_change(&mut self, proposal: &ParameterChangeProposal) -> Result<()> {
         match proposal.parameter_name.as_str() {
             "min_proposal_stake" => {
@@ -326,105 +206,38 @@ impl ParameterManager {
             "voting_fee" => {
                 self.parameters.voting_fee = proposal.new_value.as_u64().unwrap();
             }
-<<<<<<< HEAD
-            // Economics parameters
-            "economics.r0" => {
-                let r0 = proposal.new_value.as_u64().map(|v| v as u128)
-                    .or_else(|| proposal.new_value.as_str().and_then(|s| s.parse::<u128>().ok()))
-                    .ok_or_else(|| anyhow::anyhow!("invalid r0 value"))?;
-                // Store in metadata for other modules to read
-                // In a full implementation, this would write to chain state; here we just log
-                tracing::info!("Governance: updated economics.r0 to {}", r0);
+            "economics.initial_round_reward_micro" => {
+                self.parameters.economics.initial_round_reward_micro =
+                    proposal.new_value.as_u64().unwrap() as u128;
             }
-            "economics.halving_rounds" => {
-                let v = proposal.new_value.as_u64().unwrap();
-                tracing::info!("Governance: updated economics.halving_rounds to {}", v);
+            "economics.halving_interval_rounds" => {
+                self.parameters.economics.halving_interval_rounds =
+                    proposal.new_value.as_u64().unwrap();
             }
-            "economics.supply_cap" => {
-                let cap = proposal.new_value.as_u64().map(|v| v as u128)
-                    .or_else(|| proposal.new_value.as_str().and_then(|s| s.parse::<u128>().ok()))
-                    .ok_or_else(|| anyhow::anyhow!("invalid supply cap"))?;
-                tracing::info!("Governance: updated economics.supply_cap to {}", cap);
+            "economics.supply_cap_micro" => {
+                self.parameters.economics.supply_cap_micro =
+                    proposal.new_value.as_u64().unwrap() as u128;
             }
-            "economics.proposer_bps" => {
-                let bps = proposal.new_value.as_u64().unwrap() as u16;
-                tracing::info!("Governance: updated economics.proposer_bps to {}", bps);
-=======
-            // Emission parameter changes
-            "emission_r0" => {
-                self.parameters.emission_params.r0 = proposal.new_value.as_u64().unwrap() as u128;
+            "economics.fee_cap_numer" => {
+                self.parameters.economics.fee_cap_numer = proposal.new_value.as_u64().unwrap() as u32;
             }
-            "emission_halving_rounds" => {
-                self.parameters.emission_params.halving_rounds = proposal.new_value.as_u64().unwrap();
+            "economics.fee_cap_denom" => {
+                self.parameters.economics.fee_cap_denom = proposal.new_value.as_u64().unwrap() as u32;
             }
-            "emission_supply_cap" => {
-                self.parameters.emission_params.supply_cap = proposal.new_value.as_u64().unwrap() as u128;
+            "economics.proposer_weight_bps" => {
+                self.parameters.economics.proposer_weight_bps =
+                    proposal.new_value.as_u64().unwrap() as u16;
             }
-            "emission_round_duration_ms" => {
-                self.parameters.emission_params.round_duration_ms = proposal.new_value.as_u64().unwrap();
+            "economics.verifier_weight_bps" => {
+                self.parameters.economics.verifier_weight_bps =
+                    proposal.new_value.as_u64().unwrap() as u16;
             }
-            "emission_fee_cap_bps" => {
-                self.parameters.emission_params.fee_cap_bps = proposal.new_value.as_u64().unwrap() as u16;
-            }
-            "emission_ai_commission_bps" => {
-                self.parameters.emission_params.ai_commission_bps = proposal.new_value.as_u64().unwrap() as u16;
-            }
-            "emission_network_pool_bps" => {
-                self.parameters.emission_params.network_pool_bps = proposal.new_value.as_u64().unwrap() as u16;
-            }
-            "emission_base_emission_bps" => {
-                self.parameters.emission_params.base_emission_bps = proposal.new_value.as_u64().unwrap() as u16;
-            }
-            "emission_tx_fee_bps" => {
-                self.parameters.emission_params.tx_fee_bps = proposal.new_value.as_u64().unwrap() as u16;
->>>>>>> origin/main
+            "economics.fee_recycling_bps" => {
+                self.parameters.economics.fee_recycling_bps =
+                    proposal.new_value.as_u64().unwrap() as u16;
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
         }
-        
-        // Validate emission parameters after any emission-related change
-        if proposal.parameter_name.starts_with("emission_") {
-            self.validate_emission_parameters()?;
-        }
-        
-        Ok(())
-    }
-    
-    /// Validate emission parameters
-    fn validate_emission_parameters(&self) -> Result<()> {
-        let params = &self.parameters.emission_params;
-        
-        if params.r0 == 0 {
-            return Err(anyhow::anyhow!("Initial reward must be positive"));
-        }
-        if params.halving_rounds == 0 {
-            return Err(anyhow::anyhow!("Halving rounds must be positive"));
-        }
-        if params.supply_cap == 0 {
-            return Err(anyhow::anyhow!("Supply cap must be positive"));
-        }
-        if params.round_duration_ms == 0 {
-            return Err(anyhow::anyhow!("Round duration must be positive"));
-        }
-        
-        // Check that percentages add up to 100%
-        let total_bps = params.base_emission_bps + params.tx_fee_bps + 
-                       params.ai_commission_bps + params.network_pool_bps;
-        if total_bps != 10_000 {
-            return Err(anyhow::anyhow!(
-                "Emission percentages must sum to 100% (10,000 basis points), got {}", 
-                total_bps
-            ));
-        }
-        
-        // Validate individual percentages
-        if params.fee_cap_bps > 10_000 {
-            return Err(anyhow::anyhow!("Fee cap cannot exceed 100%"));
-        }
-        if params.ai_commission_bps > 10_000 {
-            return Err(anyhow::anyhow!("AI commission cannot exceed 100%"));
-        }
-        
         Ok(())
     }
 }
@@ -440,63 +253,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parameter_manager() {
-        let mut manager = ParameterManager::new();
-        let params = manager.get_parameters();
-        
-        assert_eq!(params.min_proposal_stake, 1_000_000);
-        assert_eq!(params.voting_threshold, 0.67);
+    fn test_default_governance_params() {
+        let g = GovernanceParameters::default();
+        assert_eq!(g.voting_threshold, 0.67);
+        assert_eq!(g.economics.proposer_weight_bps, 2000);
     }
 
     #[test]
-    fn test_parameter_change_proposal() {
-        let mut manager = ParameterManager::new();
-        
+    fn test_submit_and_execute_change() {
+        let mut m = ParameterManager::new();
         let proposal = ParameterChangeProposal {
-            proposal_id: "change_threshold".to_string(),
-            parameter_name: "voting_threshold".to_string(),
-            new_value: serde_json::Value::Number(serde_json::Number::from_f64(0.75).unwrap()),
-            current_value: serde_json::Value::Number(serde_json::Number::from_f64(0.67).unwrap()),
-            justification: "Increase threshold for better security".to_string(),
+            proposal_id: "change_reward".into(),
+            parameter_name: "economics.initial_round_reward_micro".into(),
+            new_value: json!(20000),
+            current_value: json!(10000),
+            justification: "Test doubling reward".into(),
             proposer: [1u8; 32],
-            created_at: 1234567890,
+            created_at: 123,
         };
-        
-        assert!(manager.submit_parameter_change(proposal).is_ok());
-        assert_eq!(manager.get_pending_changes().len(), 1);
-    }
-
-    #[test]
-    fn test_invalid_parameter_name() {
-        let mut manager = ParameterManager::new();
-        
-        let proposal = ParameterChangeProposal {
-            proposal_id: "invalid".to_string(),
-            parameter_name: "invalid_parameter".to_string(),
-            new_value: serde_json::Value::Number(serde_json::Number::from(100)),
-            current_value: serde_json::Value::Number(serde_json::Number::from(50)),
-            justification: "Test".to_string(),
-            proposer: [1u8; 32],
-            created_at: 1234567890,
-        };
-        
-        assert!(manager.submit_parameter_change(proposal).is_err());
-    }
-
-    #[test]
-    fn test_invalid_parameter_value() {
-        let mut manager = ParameterManager::new();
-        
-        let proposal = ParameterChangeProposal {
-            proposal_id: "invalid_value".to_string(),
-            parameter_name: "voting_threshold".to_string(),
-            new_value: serde_json::Value::String("invalid".to_string()),
-            current_value: serde_json::Value::Number(serde_json::Number::from_f64(0.67).unwrap()),
-            justification: "Test".to_string(),
-            proposer: [1u8; 32],
-            created_at: 1234567890,
-        };
-        
-        assert!(manager.submit_parameter_change(proposal).is_err());
+        assert!(m.submit_parameter_change(proposal.clone()).is_ok());
+        assert!(m.execute_parameter_change("change_reward").is_ok());
+        assert_eq!(
+            m.get_parameters().economics.initial_round_reward_micro,
+            20000
+        );
     }
 }

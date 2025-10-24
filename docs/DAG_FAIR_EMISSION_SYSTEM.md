@@ -68,7 +68,7 @@ Annual IPN Emission (Millions)
 │                    IPPAN DAG-Fair Emission Flow                │
 └─────────────────────────────────────────────────────────────────┘
 
-Round Start (100ms window)
+Round Start (200ms window)
 │
 ├─ HashTimer™ Synchronization
 │  └─ Deterministic round timing
@@ -117,7 +117,7 @@ pub struct DAGEmissionParams {
     pub r0: u128,                    // Initial reward per round
     pub halving_rounds: u64,         // Rounds between halvings
     pub supply_cap: u128,            // Total supply cap (21M IPN)
-    pub round_duration_ms: u64,      // Round duration (100ms)
+    pub round_duration_ms: u64,      // Round duration (200ms)
     pub fee_cap_bps: u16,            // Fee cap (10%)
     pub ai_commission_bps: u16,      // AI commission (10%)
     pub network_pool_bps: u16,       // Network pool (5%)
@@ -245,7 +245,7 @@ All emission parameters can be modified through on-chain governance:
 
 ### 3. For Users
 - **Low fees**: Capped transaction fees
-- **Fast finality**: 100ms round duration
+- **Fast finality**: 200ms round duration
 - **Fair access**: No MEV or front-running
 - **Predictable costs**: Transparent fee structure
 
