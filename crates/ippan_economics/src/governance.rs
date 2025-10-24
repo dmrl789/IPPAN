@@ -215,10 +215,13 @@ impl GovernanceParams {
         }
 
         // Calculate voting results
-        let (approve_power, reject_power, total_power) = self.calculate_voting_power(proposal);
+        let (approve_power, reject_power, _voting_power) = self.calculate_voting_power(proposal);
+        
+        // Calculate total power of ALL validators (not just those who voted)
+        let total_validator_power: u64 = self.validator_power.values().sum();
 
-        // Check if we have enough participation
-        let participation_threshold = (total_power * 50) / 100; // 50% participation required
+        // Check if we have enough participation (50% of total validator power)
+        let participation_threshold = (total_validator_power * 50) / 100;
         if (approve_power + reject_power) < participation_threshold {
             if let Some(proposal) = self.active_proposals.get_mut(&proposal_id) {
                 proposal.status = ProposalStatus::Expired;
@@ -226,19 +229,19 @@ impl GovernanceParams {
             return Ok(false);
         }
 
-        // Check if proposal is approved
-        let approval_threshold = (total_power * self.voting_threshold) / 100;
+        // Check if proposal is approved (66% of total validator power)
+        let approval_threshold = (total_validator_power * self.voting_threshold) / 100;
         if approve_power >= approval_threshold {
             if let Some(proposal) = self.active_proposals.get_mut(&proposal_id) {
                 proposal.status = ProposalStatus::Approved;
             }
-            info!("Proposal {} approved with {}% approval", proposal_id, (approve_power * 100) / total_power);
+            info!("Proposal {} approved with {}% approval of total power", proposal_id, (approve_power * 100) / total_validator_power);
             return Ok(true);
         } else {
             if let Some(proposal) = self.active_proposals.get_mut(&proposal_id) {
                 proposal.status = ProposalStatus::Rejected;
             }
-            info!("Proposal {} rejected with {}% approval", proposal_id, (approve_power * 100) / total_power);
+            info!("Proposal {} rejected with {}% approval of total power", proposal_id, (approve_power * 100) / total_validator_power);
             return Ok(false);
         }
     }
