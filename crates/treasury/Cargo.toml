@@ -1,0 +1,17 @@
+[package]
+name = "ippan_treasury"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+ippan_economics_core = { path = "../economics" }
+ippan-types = { path = "../types" }
+
+[dev-dependencies]
+criterion = "0.5"
