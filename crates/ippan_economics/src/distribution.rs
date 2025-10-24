@@ -1,5 +1,5 @@
-use crate::types::{MicroIPN, ParticipationSet, Payouts, Role};
 use crate::{EcoError, EconomicsParams};
+use crate::types::{MicroIPN, ParticipationSet, Payouts, Role};
 
 /// Distribute a round's emission across validators proportionally to their
 /// recorded micro-blocks, weighted by role (proposer/verifier).
@@ -19,7 +19,9 @@ pub fn distribute_round(
 ) -> Result<(Payouts, MicroIPN, MicroIPN), EcoError> {
     // Enforce fee cap
     let (numer, denom) = params.fee_cap_fraction();
-    let fee_cap = emission_micro.saturating_mul(numer as u128) / (denom as u128).max(1);
+    let fee_cap = emission_micro
+        .saturating_mul(numer as u128)
+        / (denom as u128).max(1);
     if fees_micro > fee_cap {
         return Err(EcoError::FeeCapExceeded {
             fees: fees_micro,

@@ -1,5 +1,5 @@
-use crate::types::{MicroIPN, RoundIndex};
 use crate::{EcoError, EconomicsParams};
+use crate::types::{MicroIPN, RoundIndex};
 
 /// Compute the deterministic per-round emission R(t).
 /// R(t) = R0 / 2^{ floor( t / T_h ) }

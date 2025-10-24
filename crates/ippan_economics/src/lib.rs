@@ -5,16 +5,16 @@
 //!
 //! Monetary unit: micro-IPN (μIPN). 1 IPN = 1_000_000 μIPN.
 
-pub mod distribution;
-pub mod emission;
+pub mod types;
 pub mod errors;
 pub mod params;
-pub mod types;
+pub mod emission;
+pub mod distribution;
 pub mod verify;
 
-pub use distribution::*;
-pub use emission::*;
+pub use types::*;
 pub use errors::*;
 pub use params::*;
-pub use types::*;
+pub use emission::*;
+pub use distribution::*;
 pub use verify::*;

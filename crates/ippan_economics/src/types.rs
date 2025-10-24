@@ -15,9 +15,9 @@ pub struct ValidatorId(pub String);
 /// Participation role within a round
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
-    Proposer,
     #[default]
     Verifier,
+    Proposer,
 }
 
 /// Per-validator participation in a round.
