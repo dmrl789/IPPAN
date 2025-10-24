@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use ed25519_dalek::{VerifyingKey, Signature, Verifier};
+use ed25519_dalek::{VerifyingKey, Signature, Verifier, Signer};
 use std::collections::HashMap;
 
 /// Vote on a governance proposal
@@ -231,7 +231,7 @@ mod tests {
         
         let mut message = Vec::new();
         message.extend_from_slice(proposal_id.as_bytes());
-        message.extend_from_slice(&approve.to_be_bytes());
+        message.extend_from_slice(&(approve as u8).to_be_bytes());
         message.extend_from_slice(&1000u64.to_be_bytes());
         message.extend_from_slice(&1234567890u64.to_be_bytes());
         
@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(results.approval_stake, 1000);
         assert_eq!(results.rejection_stake, 500);
         assert!((results.approval_percentage - 2.0 / 3.0).abs() < 0.001);
-        assert!(results.passed); // 67% threshold, we have 66.7%
+        assert!(!results.passed); // 67% threshold, we have 66.7% which is below threshold
     }
 
     #[test]

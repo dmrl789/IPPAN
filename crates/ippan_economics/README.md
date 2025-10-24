@@ -2,57 +2,134 @@
 
 Deterministic round-based emission and fair distribution for IPPAN BlockDAG.
 
-## Features
+## Overview
 
-- **DAG-Fair Emission**: Bitcoin-style halving with hard cap enforcement
-- **Role-weighted Distribution**: Proportional rewards for proposers and verifiers
-- **Fee Cap Enforcement**: Automatic validation of fee limits
-- **Supply Verification**: Deterministic supply tracking and projection
+This crate implements the core economics logic for the IPPAN blockchain, providing:
+
+- **Deterministic Emission**: Round-based emission with halving schedule
+- **Hard Cap Enforcement**: 21M IPN maximum supply with automatic clamping
+- **Fair Distribution**: Role-weighted proportional distribution across validators
+- **Fee Management**: Configurable fee caps per round
+- **Precision**: Uses micro-IPN (μIPN) for exact calculations without floating point
 - **Parallel Simulation**: High-performance multi-core simulation using Rayon
 
-## Architecture
+## Key Features
 
-The crate is organized into modular components:
+### Monetary Unit
+- **1 IPN = 1,000,000 μIPN** (micro-IPN)
+- All calculations use `u128` for micro-IPN to avoid floating point precision issues
+- Constants and conversion helpers provided
 
-- `emission`: Per-round emission calculation with halving schedule
-- `distribution`: Fair reward distribution across validators
-- `params`: Economic parameters and configuration
-- `types`: Core types (ValidatorId, Participation, Payouts, etc.)
-- `errors`: Error types for economic operations
-- `verify`: Supply and distribution verification
+### Emission Schedule
+- **Initial Reward**: 0.0001 IPN per round (100 μIPN)
+- **Halving Interval**: ~2 years (630,720,000 rounds at 10 rounds/second)
+- **Hard Cap**: 21,000,000 IPN total supply
+- **Formula**: `R(t) = R0 / 2^floor(t / T_h)`
+
+### Distribution Logic
+- **Role Weights**: Proposers get 1.2x weight vs Verifiers (1.0x)
+- **Proportional**: Based on number of micro-blocks contributed
+- **Fee Cap**: Maximum 10% of round emission can come from fees
+- **Fair**: All validators paid proportionally to their weighted contribution
 
 ## Usage
 
-### As a Library
+### Basic Example
+
+```rust
+use ippan_economics::*;
+use std::collections::HashMap;
+
+// Create economics parameters
+let params = EconomicsParams::default();
+
+// Calculate emission for a round
+let round = 1000;
+let emission = emission_for_round(round, &params);
+
+// Create participation set
+let mut participation = HashMap::new();
+participation.insert(
+    ValidatorId("alice".to_string()),
+    Participation { role: Role::Proposer, blocks: 5 },
+);
+participation.insert(
+    ValidatorId("bob".to_string()),
+    Participation { role: Role::Verifier, blocks: 10 },
+);
+
+// Distribute rewards
+let fees = 50_000; // 0.05 IPN in μIPN
+let (payouts, emission_paid, fees_paid) = distribute_round(
+    emission,
+    fees,
+    &participation,
+    &params,
+)?;
+
+// Process payouts
+for (validator, amount) in payouts {
+    println!("{}: {} μIPN", validator.0, amount);
+}
+```
+
+### Integration with Consensus
 
 ```rust
 use ippan_economics::*;
 
-// Configure economic parameters
-let params = EconomicsParams::default();
+fn settle_round(
+    round: u64,
+    already_issued: u128,
+    fees: u128,
+    participation: ParticipationSet,
+    params: &EconomicsParams,
+) -> Result<(), EcoError> {
+    // Compute capped emission
+    let emission = emission_for_round_capped(round, already_issued, params)?;
+    
+    // Distribute rewards
+    let (payouts, _, _) = distribute_round(emission, fees, &participation, params)?;
+    
+    // Apply payouts to validator balances
+    for (validator, amount) in payouts {
+        // credit_validator_balance(validator, amount);
+    }
+    
+    Ok(())
+}
+```
 
-// Calculate emission for a specific round
-let round = 1000;
-let emission = emission_for_round(round, &params);
+### Epoch Verification
 
-// Set up validator participation
-let mut participants = ParticipationSet::new();
-participants.insert(
-    ValidatorId("validator1".to_string()),
-    Participation { role: Role::Proposer, blocks: 2 },
+```rust
+use ippan_economics::*;
+
+// At end of epoch, verify total emission
+let expected_emission = sum_emission_over_rounds(
+    epoch_start, 
+    epoch_end, 
+    |r| emission_for_round(r, &params)
 );
-participants.insert(
-    ValidatorId("validator2".to_string()),
-    Participation { role: Role::Verifier, blocks: 1 },
-);
 
-// Distribute rewards
-let fees_collected = 100;
-let (payouts, emission_paid, fees_paid) = 
-    distribute_round(emission, fees_collected, &participants, &params)?;
+let actual_minted = get_total_minted_from_chain();
+let burn_amount = epoch_auto_burn(expected_emission, actual_minted);
+
+if burn_amount > 0 {
+    // Auto-burn excess tokens
+    burn_tokens(burn_amount);
+}
 ```
 
 ## Examples
+
+### Basic Usage
+
+Run the basic example demonstrating emission and distribution:
+
+```bash
+cargo run --example basic_usage -p ippan_economics
+```
 
 ### Parallel Emission Simulator
 
@@ -80,23 +157,7 @@ cargo run --package ippan_economics --example parallel_emission_sim --features p
    fairness ratio = 1.06× (max/min)
 ```
 
-## Economic Parameters
-
-Default configuration (per PRD):
-- **Hard cap**: 21M IPN (21,000,000,000,000 μIPN)
-- **Initial emission**: 0.0001 IPN per round (100 μIPN)
-- **Halving interval**: 630.72M rounds (~2 years at 10 rounds/sec)
-- **Fee cap**: 10% of per-round emission
-- **Proposer weight**: 1.2× (120%)
-- **Verifier weight**: 1.0× (100%)
-
-### Monetary Unit
-
-- **1 IPN = 1,000,000 μIPN** (micro-IPN)
-- Similar to Bitcoin's satoshi system
-- All internal calculations use μIPN for precision
-
-## CSV Output Format
+**CSV Output Format:**
 
 ```csv
 round,emission_micro,total_supply_micro,halving_index
@@ -106,20 +167,63 @@ round,emission_micro,total_supply_micro,halving_index
 ...
 ```
 
+## Configuration
+
+The `EconomicsParams` struct allows configuration of:
+
+- **Hard Cap**: Maximum total supply (default: 21M IPN)
+- **Initial Reward**: Base reward per round (default: 0.0001 IPN)
+- **Halving Interval**: Rounds between halvings (default: ~2 years)
+- **Fee Cap**: Maximum fee percentage (default: 10%)
+- **Role Weights**: Proposer vs Verifier weights (default: 1.2x vs 1.0x)
+
+These parameters should be stored on-chain and only modifiable through governance.
+
+## Error Handling
+
+The crate provides specific error types:
+
+- `EcoError::HardCapExceeded`: When emission would exceed total supply
+- `EcoError::FeeCapExceeded`: When fees exceed allowed percentage
+- `EcoError::NoBlocksInRound`: When no participation recorded
+
 ## Testing
 
-```bash
-# Run unit tests
-cargo test --package ippan_economics
+Run the test suite:
 
-# Run integration tests
-cargo test --package ippan_economics --test basic
+```bash
+cargo test -p ippan_economics
 ```
+
+## Architecture
+
+The crate is organized into modular components:
+
+- `emission`: Per-round emission calculation with halving schedule
+- `distribution`: Fair reward distribution across validators
+- `params`: Economic parameters and configuration
+- `types`: Core types (ValidatorId, Participation, Payouts, etc.)
+- `errors`: Error types for economic operations
+- `verify`: Supply and distribution verification
+
+## Dependencies
+
+- `serde`: Serialization support for on-chain storage
+- `thiserror`: Error handling
+- `ippan-types`: Core IPPAN types
+
+### Dev Dependencies (for examples)
+
+- `rand`: Random number generation for simulations
+- `rayon`: Parallel execution for multi-core simulations
+- `csv`: CSV output generation
+- `plotters`: Chart generation (optional)
+- `image`: Image format support for charts
 
 ## Notes
 
 - All emission calculations are deterministic and reproducible
-- The simulator uses per-thread RNG seeding for parallel execution
+- The parallel simulator uses per-thread RNG seeding for reproducibility
 - Chart generation gracefully handles headless/CI environments
 - CSV output is always generated regardless of plotting success
 - Fairness ratio measures max/min validator rewards (closer to 1.0 is more fair)
