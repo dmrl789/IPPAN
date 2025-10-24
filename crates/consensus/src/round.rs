@@ -12,13 +12,6 @@ use ippan_ai_core::{features, gbdt::GbdtEvaluator, model::Model};
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(feature = "ai_l1"))]
-impl Model {
-    pub fn validate(&self) -> Result<()> {
-        Ok(())
-    }
-}
-
-#[cfg(not(feature = "ai_l1"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorTelemetry {
     pub validator_id: [u8; 32],
