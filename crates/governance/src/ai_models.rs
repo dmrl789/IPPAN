@@ -9,6 +9,13 @@ pub struct AiModelGovernance {
     model_registry: HashMap<String, ModelRegistryEntry>,
     /// Active proposals
     active_proposals: HashMap<String, AiModelProposal>,
+<<<<<<< HEAD
+=======
+    /// Voting threshold (0.0 to 1.0)
+    voting_threshold: f64,
+    /// Minimum stake required for proposals
+    min_proposal_stake: u64,
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
 }
 
 impl AiModelGovernance {
@@ -17,6 +24,11 @@ impl AiModelGovernance {
         Self {
             model_registry: HashMap::new(),
             active_proposals: HashMap::new(),
+<<<<<<< HEAD
+=======
+            voting_threshold,
+            min_proposal_stake,
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
         }
     }
 
@@ -25,16 +37,32 @@ impl AiModelGovernance {
         &mut self,
         proposal: AiModelProposal,
     ) -> Result<()> {
+<<<<<<< HEAD
         // For now, just store the proposal
+=======
+        if proposer_stake < self.min_proposal_stake {
+            return Err(anyhow::anyhow!("Insufficient stake for proposal"));
+        }
+        
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
         self.active_proposals.insert(proposal.model_id.clone(), proposal);
         Ok(())
     }
 
+<<<<<<< HEAD
+=======
+    /// Get a model from the registry
+    pub fn get_model(&self, model_id: &str) -> Option<&ModelRegistryEntry> {
+        self.model_registry.get(model_id)
+    }
+
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
     /// Get all active proposals
     pub fn get_active_proposals(&self) -> &HashMap<String, AiModelProposal> {
         &self.active_proposals
     }
 
+<<<<<<< HEAD
     /// Get a specific proposal
     pub fn get_proposal(&self, model_id: &str) -> Option<&AiModelProposal> {
         self.active_proposals.get(model_id)
@@ -53,9 +81,21 @@ impl AiModelGovernance {
                 proposal.model_url,
             );
             self.model_registry.insert(model_id.to_string(), registry_entry);
+=======
+    /// Process model activations for the current round
+    pub fn process_round(&mut self, round: u64) -> Result<Vec<String>> {
+        let mut activated_models = Vec::new();
+        
+        for (model_id, entry) in &mut self.model_registry {
+            if entry.activation_round == round && entry.status == ippan_ai_registry::ModelStatus::Approved {
+                entry.activate(round);
+                activated_models.push(model_id.clone());
+            }
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
         }
         Ok(())
     }
+<<<<<<< HEAD
 
     /// Get the model registry
     pub fn get_model_registry(&self) -> &HashMap<String, ModelRegistryEntry> {
@@ -66,6 +106,8 @@ impl AiModelGovernance {
     pub fn get_model(&self, model_id: &str) -> Option<&ModelRegistryEntry> {
         self.model_registry.get(model_id)
     }
+=======
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
 }
 
 /// JSON template for AI model proposals
@@ -149,10 +191,16 @@ mod tests {
             model_id: "test_model".to_string(),
             version: 1,
             model_hash: hash_bytes,
+<<<<<<< HEAD
             model_url: "https://example.com/model.json".to_string(),
             activation_round: 100,
             signature_foundation: signature.to_bytes(),
             proposer_pubkey: pubkey,
+=======
+            signature_foundation: signature.to_bytes(),
+            proposer_pubkey: pubkey,
+            activation_round: 100,
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
             rationale: "Test model".to_string(),
             threshold_bps: 8000,
         }
@@ -166,6 +214,7 @@ mod tests {
         // Submit proposal
         assert!(governance.submit_model_proposal(proposal).is_ok());
         
+<<<<<<< HEAD
         // Check that proposal is stored
         assert!(governance.get_proposal("test_model").is_some());
         
@@ -174,6 +223,10 @@ mod tests {
         
         // Check that model is registered
         assert!(governance.get_model("test_model").is_some());
+=======
+        // Check that proposal is active
+        assert!(governance.get_active_proposals().contains_key("test_model"));
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
     }
 
     #[test]
@@ -186,7 +239,19 @@ mod tests {
         assert_eq!(parsed.version, proposal.version);
     }
 
+<<<<<<< HEAD
     // YAML parsing test removed due to byte array serialization limitations
+=======
+    #[test]
+    fn test_yaml_parsing() {
+        let proposal = create_test_proposal();
+        let yaml = serde_yaml::to_string(&proposal).unwrap();
+        let parsed = parse_yaml_proposal(&yaml).unwrap();
+        
+        assert_eq!(parsed.model_id, proposal.model_id);
+        assert_eq!(parsed.version, proposal.version);
+    }
+>>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
 
     #[test]
     fn test_proposal_validation() {

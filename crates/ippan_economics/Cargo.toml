@@ -1,10 +1,10 @@
 [package]
-name = "ippan-economics"
+name = "ippan_economics"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Deterministic round-based emission and fair distribution for IPPAN BlockDAG (DAG-Fair Emission, halving, and validator reward scheduling)"
+description = "IPPAN DAG-Fair Emission Framework - deterministic round-based token economics"
 repository = "https://github.com/dmrl789/IPPAN"
 
 [features]
@@ -13,19 +13,42 @@ integration-tests = []
 plotters = []
 
 [dependencies]
-# Core workspace crates
-ippan-types = { path = "../types" }
-
-# Common dependencies
+# Core dependencies
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+tracing = { workspace = true }
+
+# Math and precision
+num-bigint = "0.4"
+num-traits = "0.2"
+rust_decimal = "1.32"
+
+# Time and hashing
+time = { workspace = true }
+blake3 = { workspace = true }
+sha2 = { workspace = true }
+
+# Async and concurrency
+tokio = { workspace = true }
+parking_lot = { workspace = true }
+
+# IPPAN internal crates
+ippan-types = { path = "../types" }
+ippan-time = { path = "../time" }
+ippan-governance = { path = "../governance" }
 
 [dev-dependencies]
+proptest = "1.4"
+criterion = "0.5"
 rand = { version = "0.8", features = ["std", "std_rng"] }
 rayon = "1.10"
 csv = "1.3"
 plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "line_series"] }
 image = "0.24"
 tempfile = { workspace = true }
+
+[[bench]]
+name = "emission_calculations"
+harness = false

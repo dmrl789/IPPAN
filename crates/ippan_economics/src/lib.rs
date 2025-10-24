@@ -1,27 +1,41 @@
-//! IPPAN Economics — DAG-Fair Emission & Distribution
+//! # IPPAN Economics - DAG-Fair Emission Framework
 //!
-//! Core economic logic for the IPPAN blockchain.
+//! This crate implements the deterministic round-based token economics for IPPAN,
+//! providing fair emission distribution across the BlockDAG structure.
 //!
-//! Provides deterministic, auditable mechanisms for:
-//! - DAG-Fair emission and halving schedule
-//! - Supply cap enforcement and automatic burn
-//! - Role-weighted validator reward distribution
-//! - Fee caps and recycling
-//! - Parameter verification and consistency checks
+//! ## Core Concepts
 //!
-//! Monetary unit: **micro-IPN (μIPN)**  
-//! `1 IPN = 1_000_000 μIPN`
+//! - **Round-based emission**: Rewards are computed per round, not per block
+//! - **DAG-Fair distribution**: Proportional rewards based on validator participation
+//! - **Deterministic halving**: Bitcoin-style halving schedule with round precision
+//! - **Supply integrity**: Hard-capped 21M IPN with automatic burn of excess
+//!
+//! ## Key Components
+//!
+//! - [`EmissionEngine`]: Core emission calculation and distribution logic
+//! - [`RoundRewards`]: Per-round reward computation and validator distribution
+//! - [`SupplyTracker`]: Total supply monitoring and integrity verification
+//! - [`GovernanceParams`]: On-chain configurable emission parameters
 
-pub mod types;
-pub mod errors;
-pub mod params;
 pub mod emission;
 pub mod distribution;
-pub mod verify;
+pub mod supply;
+pub mod governance;
+pub mod types;
+pub mod errors;
 
+pub use emission::EmissionEngine;
+pub use distribution::RoundRewards;
+pub use supply::SupplyTracker;
+pub use governance::GovernanceParams;
 pub use types::*;
 pub use errors::*;
-pub use params::*;
-pub use emission::*;
-pub use distribution::*;
-pub use verify::*;
+
+/// Re-export commonly used types for convenience
+pub mod prelude {
+    pub use crate::{
+        EmissionEngine, RoundRewards, SupplyTracker, GovernanceParams,
+        EmissionParams, RoundIndex, RewardAmount, ValidatorReward,
+        EmissionError, DistributionError,
+    };
+}
