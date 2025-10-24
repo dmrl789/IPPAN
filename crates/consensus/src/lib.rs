@@ -1,14 +1,14 @@
 //! IPPAN Consensus Engine — Parallel PoA + DAG-Fair Emission
 //!
-//! This module implements the Proof-of-Authority + AI Reputation-weighted
-//! consensus used in IPPAN L1. It integrates deterministic BlockDAG ordering,
-//! fee capping, emission schedules, and round finalization.
+//! Implements Proof-of-Authority + AI Reputation-weighted consensus
+//! for the IPPAN L1. Integrates deterministic BlockDAG ordering,
+//! fee capping, emission schedules, and round-level finalization.
 
 use anyhow::Result;
 use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
 use ippan_mempool::Mempool;
-use ippan_storage::{Account, Storage};
+use ippan_storage::Storage;
 use ippan_types::{
     IppanTimeMicros, Block, BlockId, RoundCertificate, RoundFinalizationRecord,
     RoundId, RoundWindow, Transaction,
@@ -34,19 +34,30 @@ pub mod ordering;
 pub mod parallel_dag;
 pub mod reputation;
 pub mod emission;
+// pub mod emission_tracker;  // TODO: Re-enable after adapting to new emission API
 pub mod fees;
 pub mod round;
+pub mod round_executor;
 
 // ---------------------------------------------------------------------
 // Public re-exports
 // ---------------------------------------------------------------------
 
 pub use emission::{
-    calculate_fee_recycling, distribute_round_reward, projected_supply, round_reward,
-    EmissionParams, FeeRecyclingParams, RoundRewardDistribution,
+    DAGEmissionParams, ValidatorRole, ValidatorParticipation,
+    RoundEmission, ValidatorReward,
+    calculate_round_reward, calculate_round_emission, distribute_dag_fair_rewards,
+    calculate_fee_recycling, FeeRecyclingParams,
 };
+// TODO: Re-enable after adapting emission_tracker to new API
+// pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
+// Primary DAG-Fair emission integration from round_executor
+pub use round_executor::{
+    distribute_round, emission_for_round_capped, finalize_round, 
+    Participation, ParticipationSet, Role, MICRO_PER_IPN,
+};
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
     ValidationResult,
@@ -54,6 +65,9 @@ pub use parallel_dag::{
 pub use reputation::{
     apply_reputation_weight, calculate_reputation, ReputationScore, ValidatorTelemetry,
     DEFAULT_REPUTATION,
+};
+pub use round_executor::{
+    create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
 };
 use round::RoundConsensus;
 
@@ -146,6 +160,8 @@ pub struct PoAConsensus {
     pub finalization_interval: Duration,
     pub round_consensus: Arc<RwLock<RoundConsensus>>,
     pub fee_collector: Arc<RwLock<FeeCollector>>,
+    // TODO: Re-enable after adapting emission_tracker to new API
+    // pub emission_tracker: Arc<RwLock<EmissionTracker>>,
 }
 
 impl PoAConsensus {
@@ -174,6 +190,11 @@ impl PoAConsensus {
             current_round_blocks: Vec::new(),
         };
 
+        // TODO: Re-enable after adapting emission_tracker to new API
+        // let emission_params = DAGEmissionParams::default();
+        // let audit_interval = 6_048_000; // ~1 week at 100ms
+        // let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
+
         Self {
             config: config.clone(),
             storage: storage.clone(),
@@ -186,6 +207,8 @@ impl PoAConsensus {
             finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
+            // TODO: Re-enable after adapting emission_tracker to new API
+            // emission_tracker: Arc::new(RwLock::new(emission_tracker)),
         }
     }
 
@@ -208,7 +231,7 @@ impl PoAConsensus {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
         *self.current_slot.write() = now / self.config.slot_duration_ms;
 
-        let (is_running, current_slot, config, storage, mempool, round_tracker, round_consensus, finalization_interval, validator_id) =
+        let (is_running, current_slot, config, storage, mempool, round_tracker, round_consensus, finalization_interval, validator_id, fee_collector) =
             (
                 self.is_running.clone(),
                 self.current_slot.clone(),
@@ -219,6 +242,7 @@ impl PoAConsensus {
                 self.round_consensus.clone(),
                 self.finalization_interval,
                 self.validator_id,
+                self.fee_collector.clone(),
             );
 
         let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
@@ -229,7 +253,7 @@ impl PoAConsensus {
                 }
 
                 if let Err(e) =
-                    Self::finalize_round_if_ready(&storage, &round_tracker, finalization_interval)
+                    Self::finalize_round_if_ready(&storage, &round_tracker, finalization_interval, &config, &fee_collector)
                 {
                     error!("Round finalization error: {e}");
                 }
@@ -304,7 +328,7 @@ impl PoAConsensus {
         mempool: &Arc<Mempool>,
         config: &PoAConfig,
         tracker: &Arc<RwLock<RoundTracker>>,
-        slot: u64,
+        _slot: u64,
         proposer: [u8; 32],
     ) -> Result<()> {
         let txs = mempool.get_transactions_for_block(config.max_transactions_per_block);
@@ -356,6 +380,8 @@ impl PoAConsensus {
         storage: &Arc<dyn Storage + Send + Sync>,
         tracker: &Arc<RwLock<RoundTracker>>,
         interval: Duration,
+        config: &PoAConfig,
+        fee_collector: &Arc<RwLock<FeeCollector>>,
     ) -> Result<()> {
         let (round_id, block_ids, start, end) = {
             let mut t = tracker.write();
@@ -441,6 +467,129 @@ impl PoAConsensus {
         };
         storage.store_round_finalization(record)?;
         info!("Finalized round {} -> state root {}", round_id, hex::encode(state_root));
+
+        // -----------------------------------------------------------------
+        // DAG-Fair Emission + Reward Distribution
+        // -----------------------------------------------------------------
+        if config.enable_dag_fair_emission {
+            use crate::emission::EmissionParams;
+
+            let params = EmissionParams::default();
+            let issued_micro = storage.get_total_issued_micro().unwrap_or(0);
+            let remaining_cap = params.supply_cap.saturating_sub(issued_micro);
+            let planned_emission = round_reward(round_id, &params);
+            let emission_micro = planned_emission.min(remaining_cap);
+
+            // Fee recycling (weekly by default)
+            let mut recycled_fees: u128 = 0;
+            {
+                let mut fc = fee_collector.write();
+                let fr = FeeRecyclingParams::default();
+                if fc.should_recycle(round_id, fr.rounds_per_week) {
+                    recycled_fees = fc.recycle(round_id, fr.recycle_bps);
+                }
+            }
+
+            // Determine distribution pools
+            let proposer_pool = (emission_micro * params.proposer_bps as u128) / 10_000;
+            let verifier_pool = emission_micro.saturating_sub(proposer_pool);
+
+            // Aggregate blocks by creator for proposer weighting
+            let mut blocks_by_creator: HashMap<[u8; 32], u128> = HashMap::new();
+            for b in &blocks {
+                *blocks_by_creator.entry(b.header.creator).or_insert(0) += 1;
+            }
+            let total_blocks_in_round: u128 = blocks_by_creator.values().sum();
+
+            // Active validators are verifiers
+            let verifiers: Vec<[u8; 32]> = config
+                .validators
+                .iter()
+                .filter(|v| v.is_active)
+                .map(|v| v.id)
+                .collect();
+            let verifier_count = verifiers.len() as u128;
+
+            // Credit proposer pool proportionally to blocks produced
+            let mut distributed_proposer_total: u128 = 0;
+            let mut sorted_creators: Vec<[u8; 32]> = blocks_by_creator.keys().copied().collect();
+            sorted_creators.sort(); // deterministic tie-breaking
+            for (i, creator) in sorted_creators.iter().enumerate() {
+                let weight = *blocks_by_creator.get(creator).unwrap_or(&0);
+                let share = if total_blocks_in_round > 0 {
+                    (proposer_pool * weight) / total_blocks_in_round
+                } else {
+                    0
+                };
+                if share > 0 {
+                    let _ = storage.credit_account_micro(creator, share);
+                }
+                distributed_proposer_total = distributed_proposer_total.saturating_add(share);
+                // On last creator, add rounding remainder
+                if i + 1 == sorted_creators.len() {
+                    let remainder = proposer_pool.saturating_sub(distributed_proposer_total);
+                    if remainder > 0 {
+                        let _ = storage.credit_account_micro(creator, remainder);
+                        distributed_proposer_total = distributed_proposer_total.saturating_add(remainder);
+                    }
+                }
+            }
+
+            // Distribute verifier pool equally among active verifiers
+            let mut distributed_verifier_total: u128 = 0;
+            if verifier_count > 0 {
+                let per_verifier = verifier_pool / verifier_count;
+                for vid in &verifiers {
+                    if per_verifier > 0 {
+                        let _ = storage.credit_account_micro(vid, per_verifier);
+                    }
+                    distributed_verifier_total = distributed_verifier_total.saturating_add(per_verifier);
+                }
+                // Remainder due to integer division goes to the lowest-sorted validator deterministically
+                let remainder = verifier_pool.saturating_sub(distributed_verifier_total);
+                if remainder > 0 {
+                    let mut sorted = verifiers.clone();
+                    sorted.sort();
+                    if let Some(first) = sorted.first() {
+                        let _ = storage.credit_account_micro(first, remainder);
+                        distributed_verifier_total = distributed_verifier_total.saturating_add(remainder);
+                    }
+                }
+
+                // Distribute recycled fees equally among verifiers
+                if recycled_fees > 0 {
+                    let per = recycled_fees / verifier_count;
+                    for vid in &verifiers {
+                        if per > 0 {
+                            let _ = storage.credit_account_micro(vid, per);
+                        }
+                    }
+                    let leftover = recycled_fees.saturating_sub(per * verifier_count);
+                    if leftover > 0 {
+                        let mut sorted = verifiers.clone();
+                        sorted.sort();
+                        if let Some(first) = sorted.first() {
+                            let _ = storage.credit_account_micro(first, leftover);
+                        }
+                    }
+                }
+            }
+
+            // Update total issued supply by the emission amount actually paid
+            let emission_paid = distributed_proposer_total.saturating_add(distributed_verifier_total);
+            if emission_paid > 0 {
+                let _ = storage.add_total_issued_micro(emission_paid);
+                info!(
+                    target: "emission",
+                    "Round {} → emitted {} µIPN (proposers {} + verifiers {}), fees_recycled {} µIPN",
+                    round_id,
+                    emission_paid,
+                    distributed_proposer_total,
+                    distributed_verifier_total,
+                    recycled_fees
+                );
+            }
+        }
         Ok(())
     }
 
@@ -519,3 +668,6 @@ impl ConsensusEngine for PoAConsensus {
         PoAConsensus::get_state(self)
     }
 }
+
+#[cfg(test)]
+mod tests;
