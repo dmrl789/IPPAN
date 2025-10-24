@@ -152,6 +152,27 @@ impl RewardComposition {
         }
     }
 
+    /// Create a new reward composition using actual collected fees
+    pub fn new_with_fees(round_reward: RewardAmount, actual_fees: RewardAmount) -> Self {
+        // Use actual collected fees instead of minting from emission
+        let transaction_fees = actual_fees;
+        
+        // Calculate remaining reward after using actual fees
+        let remaining_reward = round_reward.saturating_sub(transaction_fees);
+        
+        // Distribute remaining reward among other components
+        let round_emission = (remaining_reward * 60) / 100;
+        let ai_commissions = (remaining_reward * 10) / 100;
+        let network_dividend = (remaining_reward * 5) / 100;
+
+        Self {
+            round_emission,
+            transaction_fees,
+            ai_commissions,
+            network_dividend,
+        }
+    }
+
     /// Get the total reward
     pub fn total(&self) -> RewardAmount {
         self.round_emission + self.transaction_fees + self.ai_commissions + self.network_dividend

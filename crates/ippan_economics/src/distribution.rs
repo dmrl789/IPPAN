@@ -43,8 +43,11 @@ impl RoundRewards {
             return Ok(self.create_empty_distribution(round_index, round_reward, fees_collected));
         }
 
-        // Create reward composition
-        let composition = RewardComposition::new(round_reward);
+        // Apply fee cap to collected fees
+        let capped_fees = self.apply_fee_cap(fees_collected, round_reward);
+        
+        // Create reward composition using actual collected fees instead of minting from emission
+        let composition = RewardComposition::new_with_fees(round_reward, capped_fees);
         
         // Distribute rewards proportionally
         let mut validator_rewards = HashMap::new();
@@ -78,14 +81,15 @@ impl RoundRewards {
             .map(|r| r.total_reward)
             .sum();
         
-        let excess = if total_distributed > round_reward {
-            total_distributed - round_reward
+        // Total available reward is round_reward + capped_fees
+        let total_available = round_reward + capped_fees;
+        let excess = if total_distributed > total_available {
+            total_distributed - total_available
         } else {
             0
         };
 
-        // Apply fee cap
-        let capped_fees = self.apply_fee_cap(fees_collected, round_reward);
+        // Calculate excess fees (fees that were capped and not used)
         let excess_fees = fees_collected.saturating_sub(capped_fees);
 
         info!(
@@ -98,7 +102,7 @@ impl RoundRewards {
 
         Ok(RoundRewardDistribution {
             round_index,
-            total_reward: round_reward,
+            total_reward: total_available,
             blocks_in_round: participations.iter().map(|p| p.blocks_contributed).sum(),
             validator_rewards,
             fees_collected: capped_fees,
@@ -252,7 +256,7 @@ mod tests {
         let distribution = rewards.distribute_round_rewards(1, 10_000, participations, 1_000).unwrap();
         
         assert_eq!(distribution.round_index, 1);
-        assert_eq!(distribution.total_reward, 10_000);
+        assert_eq!(distribution.total_reward, 11_000); // 10_000 round reward + 1_000 fees
         assert_eq!(distribution.validator_rewards.len(), 2);
         
         // Proposer should get more reward than verifier
