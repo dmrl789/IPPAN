@@ -11,6 +11,7 @@ This crate implements the core economics logic for the IPPAN blockchain, providi
 - **Fair Distribution**: Role-weighted proportional distribution across validators
 - **Fee Management**: Configurable fee caps per round
 - **Precision**: Uses micro-IPN (μIPN) for exact calculations without floating point
+- **Parallel Simulation**: High-performance multi-core simulation using Rayon
 
 ## Key Features
 
@@ -120,6 +121,52 @@ if burn_amount > 0 {
 }
 ```
 
+## Examples
+
+### Basic Usage
+
+Run the basic example demonstrating emission and distribution:
+
+```bash
+cargo run --example basic_usage -p ippan_economics
+```
+
+### Parallel Emission Simulator
+
+Simulates **10,000 rounds** of emission and validator participation using all CPU cores:
+
+```bash
+# Basic simulation (CSV output only)
+cargo run --package ippan_economics --example parallel_emission_sim
+
+# With chart generation (may require fonts)
+cargo run --package ippan_economics --example parallel_emission_sim --features plotters
+```
+
+**Output:**
+- `emission_data.csv` - Per-round emission, supply, and halving data
+- `emission_curve.png` - Visualization of emission curve (if plotters feature enabled)
+
+**Example output:**
+
+```
+🚀 Starting IPPAN parallel emission simulation over 10000 rounds
+✅ Simulation complete: issued=498750 μIPN (≈ 0.499 IPN), burned=0 μIPN
+⚖️  Validator reward distribution:
+   min=48234 μIPN, max=51023 μIPN, avg=49875.0 μIPN
+   fairness ratio = 1.06× (max/min)
+```
+
+**CSV Output Format:**
+
+```csv
+round,emission_micro,total_supply_micro,halving_index
+0,0,0,0
+1,100,100,0
+2,100,200,0
+...
+```
+
 ## Configuration
 
 The `EconomicsParams` struct allows configuration of:
@@ -148,16 +195,38 @@ Run the test suite:
 cargo test -p ippan_economics
 ```
 
-Run the example:
+## Architecture
 
-```bash
-cargo run --example basic_usage -p ippan_economics
-```
+The crate is organized into modular components:
+
+- `emission`: Per-round emission calculation with halving schedule
+- `distribution`: Fair reward distribution across validators
+- `params`: Economic parameters and configuration
+- `types`: Core types (ValidatorId, Participation, Payouts, etc.)
+- `errors`: Error types for economic operations
+- `verify`: Supply and distribution verification
 
 ## Dependencies
 
 - `serde`: Serialization support for on-chain storage
 - `thiserror`: Error handling
+- `ippan-types`: Core IPPAN types
+
+### Dev Dependencies (for examples)
+
+- `rand`: Random number generation for simulations
+- `rayon`: Parallel execution for multi-core simulations
+- `csv`: CSV output generation
+- `plotters`: Chart generation (optional)
+- `image`: Image format support for charts
+
+## Notes
+
+- All emission calculations are deterministic and reproducible
+- The parallel simulator uses per-thread RNG seeding for reproducibility
+- Chart generation gracefully handles headless/CI environments
+- CSV output is always generated regardless of plotting success
+- Fairness ratio measures max/min validator rewards (closer to 1.0 is more fair)
 
 ## License
 
