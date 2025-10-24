@@ -1,7 +1,36 @@
+//! AI Model Governance Module — voting and approval of AI models
 use anyhow::Result;
 use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Stub for proposal manager (TODO: implement full functionality)
+pub struct ProposalManager;
+impl ProposalManager {
+    pub fn new(_threshold: f64, _stake: u64) -> Self { Self }
+    pub fn submit_proposal(&mut self, _proposal: AiModelProposal, _stake: u64) -> Result<()> { Ok(()) }
+    pub fn start_voting(&mut self, _id: &str) -> Result<()> { Ok(()) }
+    pub fn vote(&mut self, _id: &str, _voter: [u8; 32], _stake: u64, _approve: bool) -> Result<()> { Ok(()) }
+    pub fn execute_proposal(&mut self, _id: &str) -> Result<ModelRegistryEntry> {
+        Ok(ModelRegistryEntry::new("stub".into(), [0u8; 32], 1, 0, [0u8; 64], 0, "stub".into()))
+    }
+}
+
+/// Stub for model registry (TODO: implement full functionality)
+pub struct ModelRegistry;
+impl ModelRegistry {
+    pub fn new() -> Self { Self }
+    pub fn register_model(&mut self, _entry: ModelRegistryEntry) -> Result<()> { Ok(()) }
+    pub fn activate_model(&mut self, _id: &str, _round: u64) -> Result<()> { Ok(()) }
+    pub fn get_model(&self, _id: &str) -> Option<ModelRegistryEntry> { None }
+}
+
+/// Stub for activation manager (TODO: implement full functionality)
+pub struct ActivationManager;
+impl ActivationManager {
+    pub fn new() -> Self { Self }
+    pub fn process_round(&mut self, _round: u64) -> Result<Vec<String>> { Ok(vec![]) }
+}
 
 /// AI model governance manager
 pub struct AiModelGovernance {

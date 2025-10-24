@@ -53,6 +53,11 @@ pub use emission::{
 // pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
+// Primary DAG-Fair emission integration from round_executor
+pub use round_executor::{
+    distribute_round, emission_for_round_capped, finalize_round, 
+    Participation, ParticipationSet, Role, MICRO_PER_IPN,
+};
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
     ValidationResult,

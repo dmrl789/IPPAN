@@ -33,6 +33,42 @@ pub struct Account {
     pub nonce: u64,
 }
 
+/// Chain state for tracking global metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChainState {
+    /// Total issued supply in micro-IPN (µIPN)
+    pub total_issued_micro: u128,
+    /// Last updated round
+    pub last_updated_round: u64,
+}
+
+impl Default for ChainState {
+    fn default() -> Self {
+        Self {
+            total_issued_micro: 0,
+            last_updated_round: 0,
+        }
+    }
+}
+
+impl ChainState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn total_issued_micro(&self) -> u128 {
+        self.total_issued_micro
+    }
+
+    pub fn add_issued_micro(&mut self, amount: u128) {
+        self.total_issued_micro = self.total_issued_micro.saturating_add(amount);
+    }
+
+    pub fn update_round(&mut self, round: u64) {
+        self.last_updated_round = round;
+    }
+}
+
 /// Storage interface for IPPAN blockchain
 pub trait Storage {
     /// Store a block
@@ -103,6 +139,12 @@ pub trait Storage {
 
     /// Fetch the most recent round finalization record
     fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>>;
+
+    /// Get current chain state
+    fn get_chain_state(&self) -> Result<ChainState>;
+
+    /// Update chain state
+    fn update_chain_state(&self, state: &ChainState) -> Result<()>;
 }
 
 /// Sled-backed persistent storage implementation
@@ -117,6 +159,7 @@ pub struct SledStorage {
     l2_exits: Tree,
     round_certificates: Tree,
     round_finalizations: Tree,
+    chain_state: Arc<RwLock<ChainState>>,
 }
 
 impl SledStorage {
@@ -134,6 +177,13 @@ impl SledStorage {
         let round_certificates = db.open_tree("round_certificates")?;
         let round_finalizations = db.open_tree("round_finalizations")?;
 
+        // Load chain state from metadata
+        let chain_state = if let Some(data) = metadata.get(b"chain_state")? {
+            serde_json::from_slice(&data).unwrap_or_default()
+        } else {
+            ChainState::default()
+        };
+
         Ok(Self {
             db,
             blocks,
@@ -145,6 +195,7 @@ impl SledStorage {
             l2_exits,
             round_certificates,
             round_finalizations,
+            chain_state: Arc::new(RwLock::new(chain_state)),
         })
     }
 
@@ -429,6 +480,22 @@ impl Storage for SledStorage {
             Ok(None)
         }
     }
+
+    fn get_chain_state(&self) -> Result<ChainState> {
+        Ok(self.chain_state.read().clone())
+    }
+
+    fn update_chain_state(&self, state: &ChainState) -> Result<()> {
+        *self.chain_state.write() = state.clone();
+        let data = serde_json::to_vec(state)?;
+        self.metadata.insert(b"chain_state", data.as_slice())?;
+        tracing::debug!(
+            "Updated chain state: issued={} μIPN, round={}",
+            state.total_issued_micro,
+            state.last_updated_round
+        );
+        Ok(())
+    }
 }
 
 /// In-memory storage implementation (for testing/development)
@@ -443,6 +510,7 @@ pub struct MemoryStorage {
     round_certificates: Arc<RwLock<HashMap<RoundId, RoundCertificate>>>,
     round_finalizations: Arc<RwLock<HashMap<RoundId, RoundFinalizationRecord>>>,
     latest_finalized_round: Arc<RwLock<Option<RoundId>>>,
+    chain_state: Arc<RwLock<ChainState>>,
 }
 
 impl MemoryStorage {
@@ -458,6 +526,7 @@ impl MemoryStorage {
             round_certificates: Arc::new(RwLock::new(HashMap::new())),
             round_finalizations: Arc::new(RwLock::new(HashMap::new())),
             latest_finalized_round: Arc::new(RwLock::new(None)),
+            chain_state: Arc::new(RwLock::new(ChainState::default())),
         }
     }
 }
@@ -621,6 +690,15 @@ impl Storage for MemoryStorage {
         } else {
             Ok(None)
         }
+    }
+
+    fn get_chain_state(&self) -> Result<ChainState> {
+        Ok(self.chain_state.read().clone())
+    }
+
+    fn update_chain_state(&self, state: &ChainState) -> Result<()> {
+        *self.chain_state.write() = state.clone();
+        Ok(())
     }
 }
 

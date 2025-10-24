@@ -3,6 +3,39 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use ippan_economics_core::{EconomicsParams, EconomicsParameterManager};
 
+/// Economic parameters for the DAG-Fair emission system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EconomicsParams {
+    /// Initial reward per round (in µIPN — micro-IPN)
+    pub initial_round_reward_micro: u128,
+    /// Number of rounds between halvings
+    pub halving_interval_rounds: u64,
+    /// Supply cap (e.g. 21 M IPN = 21_000_000 × 10⁸ µIPN)
+    pub supply_cap_micro: u128,
+    /// Fee cap numerator (e.g., 1 for 1/10 = 10% max)
+    pub fee_cap_numer: u32,
+    /// Fee cap denominator
+    pub fee_cap_denom: u32,
+    /// Proposer weight (basis points, e.g., 2000 = 20%)
+    pub proposer_weight_bps: u16,
+    /// Verifier weight (basis points, e.g., 8000 = 80%)
+    pub verifier_weight_bps: u16,
+}
+
+impl Default for EconomicsParams {
+    fn default() -> Self {
+        Self {
+            initial_round_reward_micro: 10_000, // ~50 IPN/day at 100ms rounds
+            halving_interval_rounds: 315_000_000, // ~2 years at 200ms rounds
+            supply_cap_micro: 21_000_000_00000000, // 21M IPN
+            fee_cap_numer: 1,
+            fee_cap_denom: 10, // 10% fee cap
+            proposer_weight_bps: 2000, // 20%
+            verifier_weight_bps: 8000, // 80%
+        }
+    }
+}
+
 /// Governance parameters that can be modified through proposals
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceParameters {
