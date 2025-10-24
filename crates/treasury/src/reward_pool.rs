@@ -1,50 +1,49 @@
 //! Reward Pool Module
 //!
-//! Manages the accumulation and distribution of rewards from emission and fees.
+//! Manages the accumulation and distribution of rewards from emission and fees
+//! integrated with the DAG-Fair emission system.
 
+use crate::account_ledger::AccountLedger;
+use ippan_economics::{MicroIPN, Payouts, ValidatorId};
 use anyhow::Result;
-use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use tracing::{debug, info};
 
-/// Validator identifier (32-byte address)
-pub type ValidatorId = [u8; 32];
-
-/// Micro-IPN (10^-8 IPN)
-pub type MicroIPN = u128;
-
-/// Mapping of validator to reward amount
-pub type Payouts = HashMap<ValidatorId, MicroIPN>;
-
-/// In-memory staging of payouts; in production this maps to state storage.
+/// In-memory staging of payouts; in production this maps to persistent state storage.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RewardSink {
     /// round_id -> (validator -> micro-IPN)
     pub rounds: HashMap<u64, Payouts>,
-    /// Total rewards credited per validator across all rounds
-    pub validator_totals: HashMap<ValidatorId, MicroIPN>,
+    /// Total rewards distributed across all rounds
+    pub total_distributed_micro: MicroIPN,
 }
 
 impl RewardSink {
     /// Create a new reward sink
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            rounds: HashMap::new(),
+            total_distributed_micro: 0,
+        }
     }
 
     /// Credit payouts for a finalized round
     pub fn credit_round_payouts(&mut self, round: u64, payouts: &Payouts) -> Result<()> {
-        // Store round-specific payouts
-        self.rounds.insert(round, payouts.clone());
-
-        // Update validator totals
-        for (vid, amount) in payouts {
-            *self.validator_totals.entry(*vid).or_insert(0) += amount;
+        if payouts.is_empty() {
+            debug!(target: "treasury", "Round {}: No payouts to credit", round);
+            return Ok(());
         }
 
-        tracing::debug!(
-            "Credited rewards for round {} to {} validators",
+        let round_total: MicroIPN = payouts.values().sum();
+        self.total_distributed_micro = self.total_distributed_micro.saturating_add(round_total);
+        self.rounds.insert(round, payouts.clone());
+
+        info!(
+            target: "treasury",
+            "Round {}: Credited {} μIPN across {} validators",
             round,
+            round_total,
             payouts.len()
         );
 
@@ -53,7 +52,11 @@ impl RewardSink {
 
     /// Retrieve total reward accrued by a validator across all rounds
     pub fn validator_total(&self, vid: &ValidatorId) -> MicroIPN {
-        self.validator_totals.get(vid).copied().unwrap_or(0)
+        self.rounds
+            .values()
+            .flat_map(|p| p.get(vid))
+            .copied()
+            .sum::<MicroIPN>()
     }
 
     /// Get payouts for a specific round
@@ -61,86 +64,157 @@ impl RewardSink {
         self.rounds.get(&round)
     }
 
-    /// Get all validator totals
-    pub fn get_all_validator_totals(&self) -> &HashMap<ValidatorId, MicroIPN> {
-        &self.validator_totals
+    /// Get all rounds with payouts
+    pub fn get_rounds(&self) -> Vec<u64> {
+        self.rounds.keys().copied().collect()
+    }
+
+    /// Get total distributed rewards
+    pub fn get_total_distributed(&self) -> MicroIPN {
+        self.total_distributed_micro
     }
 
     /// Flush payouts into on-chain accounts
     pub fn settle_to_accounts(&self, accounts: &mut dyn AccountLedger) -> Result<()> {
+        let mut total_settled = 0u128;
+        let mut rounds_settled = 0;
+
         for (round, payouts) in &self.rounds {
             for (vid, amount) in payouts {
                 accounts.credit_validator(vid, *amount)?;
-                tracing::debug!(
-                    "Settled {} μIPN to {:?} for round {}",
+                total_settled = total_settled.saturating_add(*amount);
+
+                debug!(
+                    target: "treasury",
+                    "Settled {} μIPN to validator {:?} for round {}",
                     amount,
                     hex::encode(vid),
                     round
                 );
             }
+            rounds_settled += 1;
         }
+
+        info!(
+            target: "treasury",
+            "Settled {} μIPN across {} rounds to accounts",
+            total_settled,
+            rounds_settled
+        );
+
         Ok(())
     }
 
-    /// Clear all historical round data (keep totals)
-    pub fn clear_history(&mut self) {
-        self.rounds.clear();
+    /// Clear settled payouts (after successful account settlement)
+    pub fn clear_settled_payouts(&mut self, up_to_round: u64) {
+        let rounds_to_remove: Vec<u64> = self
+            .rounds
+            .keys()
+            .filter(|&&round| round <= up_to_round)
+            .copied()
+            .collect();
+
+        for round in rounds_to_remove {
+            self.rounds.remove(&round);
+        }
+
+        debug!(
+            target: "treasury",
+            "Cleared settled payouts up to round {}",
+            up_to_round
+        );
     }
 
-    /// Get total number of rounds recorded
-    pub fn round_count(&self) -> usize {
-        self.rounds.len()
+    /// Get statistics about the reward pool
+    pub fn get_statistics(&self) -> RewardPoolStatistics {
+        let total_rounds = self.rounds.len();
+        let total_validators: usize = self
+            .rounds
+            .values()
+            .flat_map(|p| p.keys())
+            .collect::<HashSet<_>>()
+            .len();
+
+        RewardPoolStatistics {
+            total_rounds,
+            total_validators,
+            total_distributed_micro: self.total_distributed_micro,
+            average_per_round: if total_rounds > 0 {
+                self.total_distributed_micro / total_rounds as u128
+            } else {
+                0
+            },
+        }
     }
 }
 
-/// Interface expected from account ledger / wallet subsystem
-pub trait AccountLedger {
-    fn credit_validator(&mut self, vid: &ValidatorId, micro_amount: MicroIPN) -> Result<()>;
-    fn get_balance(&self, vid: &ValidatorId) -> Result<MicroIPN>;
+/// Summary statistics about the reward pool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewardPoolStatistics {
+    pub total_rounds: usize,
+    pub total_validators: usize,
+    pub total_distributed_micro: MicroIPN,
+    pub average_per_round: MicroIPN,
 }
 
-/// Thread-safe wrapper for RewardSink
-#[derive(Clone)]
-pub struct SharedRewardSink {
-    inner: Arc<RwLock<RewardSink>>,
+/// Reward pool manager coordinating between emission and account updates
+pub struct RewardPoolManager {
+    sink: RewardSink,
+    account_ledger: Box<dyn AccountLedger>,
 }
 
-impl SharedRewardSink {
-    pub fn new() -> Self {
+impl RewardPoolManager {
+    /// Create a new reward pool manager
+    pub fn new(account_ledger: Box<dyn AccountLedger>) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(RewardSink::new())),
+            sink: RewardSink::new(),
+            account_ledger,
         }
     }
 
-    pub fn credit_round_payouts(&self, round: u64, payouts: &Payouts) -> Result<()> {
-        self.inner.write().credit_round_payouts(round, payouts)
+    /// Process a round’s rewards
+    pub fn process_round_rewards(&mut self, round: u64, payouts: &Payouts) -> Result<()> {
+        self.sink.credit_round_payouts(round, payouts)?;
+        self.sink.settle_to_accounts(self.account_ledger.as_mut())?;
+        self.sink.clear_settled_payouts(round);
+        Ok(())
     }
 
-    pub fn validator_total(&self, vid: &ValidatorId) -> MicroIPN {
-        self.inner.read().validator_total(vid)
+    /// Inspect reward sink
+    pub fn get_sink(&self) -> &RewardSink {
+        &self.sink
     }
 
-    pub fn get_round_payouts(&self, round: u64) -> Option<Payouts> {
-        self.inner.read().get_round_payouts(round).cloned()
+    /// Mutable access to reward sink
+    pub fn get_sink_mut(&mut self) -> &mut RewardSink {
+        &mut self.sink
     }
 
-    pub fn get_all_validator_totals(&self) -> HashMap<ValidatorId, MicroIPN> {
-        self.inner.read().get_all_validator_totals().clone()
+    /// Get account ledger for queries
+    pub fn get_account_ledger(&self) -> &dyn AccountLedger {
+        self.account_ledger.as_ref()
     }
-}
 
-impl Default for SharedRewardSink {
-    fn default() -> Self {
-        Self::new()
+    /// Get account ledger for updates
+    pub fn get_account_ledger_mut(&mut self) -> &mut dyn AccountLedger {
+        self.account_ledger.as_mut()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::account_ledger::MockAccountLedger;
 
     #[test]
-    fn test_reward_sink_basic() {
+    fn test_reward_sink_creation() {
+        let sink = RewardSink::new();
+        assert_eq!(sink.get_total_distributed(), 0);
+        assert!(sink.get_rounds().is_empty());
+    }
+
+    #[test]
+    fn test_credit_round_payouts() {
         let mut sink = RewardSink::new();
         let mut payouts = HashMap::new();
         payouts.insert([1u8; 32], 1000);
@@ -148,41 +222,63 @@ mod tests {
 
         sink.credit_round_payouts(1, &payouts).unwrap();
 
+        assert_eq!(sink.get_total_distributed(), 3000);
+        assert_eq!(sink.get_rounds().len(), 1);
         assert_eq!(sink.validator_total(&[1u8; 32]), 1000);
         assert_eq!(sink.validator_total(&[2u8; 32]), 2000);
-        assert_eq!(sink.round_count(), 1);
     }
 
     #[test]
     fn test_multiple_rounds() {
         let mut sink = RewardSink::new();
-        let vid = [1u8; 32];
 
         // Round 1
         let mut payouts1 = HashMap::new();
-        payouts1.insert(vid, 1000);
+        payouts1.insert([1u8; 32], 1000);
         sink.credit_round_payouts(1, &payouts1).unwrap();
 
         // Round 2
         let mut payouts2 = HashMap::new();
-        payouts2.insert(vid, 1500);
+        payouts2.insert([1u8; 32], 500);
+        payouts2.insert([2u8; 32], 1500);
         sink.credit_round_payouts(2, &payouts2).unwrap();
 
-        assert_eq!(sink.validator_total(&vid), 2500);
-        assert_eq!(sink.round_count(), 2);
+        assert_eq!(sink.get_total_distributed(), 3000);
+        assert_eq!(sink.get_rounds().len(), 2);
+        assert_eq!(sink.validator_total(&[1u8; 32]), 1500);
+        assert_eq!(sink.validator_total(&[2u8; 32]), 1500);
     }
 
     #[test]
-    fn test_shared_reward_sink() {
-        let sink = SharedRewardSink::new();
+    fn test_statistics() {
+        let mut sink = RewardSink::new();
+        let mut payouts1 = HashMap::new();
+        payouts1.insert([1u8; 32], 1000);
+        payouts1.insert([2u8; 32], 2000);
+        sink.credit_round_payouts(1, &payouts1).unwrap();
+
+        let mut payouts2 = HashMap::new();
+        payouts2.insert([1u8; 32], 500);
+        sink.credit_round_payouts(2, &payouts2).unwrap();
+
+        let stats = sink.get_statistics();
+        assert_eq!(stats.total_rounds, 2);
+        assert_eq!(stats.total_validators, 2);
+        assert_eq!(stats.total_distributed_micro, 3500);
+        assert_eq!(stats.average_per_round, 1750);
+    }
+
+    #[test]
+    fn test_reward_pool_manager() {
+        let account_ledger = Box::new(MockAccountLedger::new());
+        let mut manager = RewardPoolManager::new(account_ledger);
+
         let mut payouts = HashMap::new();
-        payouts.insert([1u8; 32], 5000);
+        payouts.insert([1u8; 32], 1000);
 
-        sink.credit_round_payouts(10, &payouts).unwrap();
+        manager.process_round_rewards(1, &payouts).unwrap();
 
-        assert_eq!(sink.validator_total(&[1u8; 32]), 5000);
-        let retrieved = sink.get_round_payouts(10);
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().get(&[1u8; 32]), Some(&5000));
+        let sink = manager.get_sink();
+        assert_eq!(sink.get_total_distributed(), 1000);
     }
 }

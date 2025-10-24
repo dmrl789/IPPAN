@@ -1,239 +1,250 @@
-//! Round Executor - Integrates DAG-Fair Emission into Consensus
+//! Round execution and finalization with DAG-Fair emission integration
 //!
-//! This module provides the finalization logic that triggers emission
-//! calculation and reward distribution after each consensus round.
+//! Integrates deterministic emission, halving, supply-cap enforcement,
+//! and fair validator reward distribution into the consensus layer.
 
+use crate::fees::FeeCollector;
+use ippan_economics::{
+    distribute_round, emission_for_round_capped, EconomicsParams, Participation, ParticipationSet,
+    Role, MICRO_PER_IPN,
+};
+use ippan_treasury::{RewardSink, AccountLedger};
+use ippan_types::{ChainState, MicroIPN, RoundId};
 use anyhow::Result;
-use ippan_governance::parameters::EconomicsParams;
-use ippan_storage::{ChainState, Storage};
-use ippan_treasury::reward_pool::{Payouts, RewardSink, ValidatorId};
-use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info};
 
-/// Micro-IPN conversion constant (1 IPN = 10^8 µIPN)
-pub const MICRO_PER_IPN: u128 = 100_000_000;
-
-/// Role of a participant in a round
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    Proposer,
-    Verifier,
+/// Result of a finalized consensus round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoundExecutionResult {
+    pub round: RoundId,
+    pub emission_micro: MicroIPN,
+    pub fees_collected_micro: MicroIPN,
+    pub total_participants: usize,
+    pub total_payouts: MicroIPN,
+    pub state_root: [u8; 32],
 }
 
-/// Participation record for a validator in a round
-#[derive(Debug, Clone)]
-pub struct Participation {
-    pub validator_id: ValidatorId,
-    pub role: Role,
-    pub weight: u64, // Stake or reputation weight
+/// RoundExecutor coordinates consensus, emission, and reward distribution.
+pub struct RoundExecutor {
+    economics_params: EconomicsParams,
+    reward_sink: RewardSink,
+    fee_collector: FeeCollector,
+    account_ledger: Box<dyn AccountLedger>,
 }
 
-/// Set of participants in a round
-pub type ParticipationSet = Vec<Participation>;
-
-/// Calculate emission for a given round with hard-cap enforcement
-pub fn emission_for_round_capped(
-    round: u64,
-    current_issued_micro: u128,
-    economics: &EconomicsParams,
-) -> Result<u128> {
-    if round == 0 {
-        return Ok(0);
-    }
-
-    // Calculate halvings
-    let halvings = (round / economics.halving_interval_rounds) as u32;
-    if halvings >= 64 {
-        return Ok(0); // Emission has ceased
-    }
-
-    // Calculate base reward with halving
-    let base_reward = economics.initial_round_reward_micro >> halvings;
-
-    // Enforce supply cap
-    let remaining = economics
-        .supply_cap_micro
-        .saturating_sub(current_issued_micro);
-    let emission = base_reward.min(remaining);
-
-    Ok(emission)
-}
-
-/// Distribute rewards for a round with fee cap enforcement
-pub fn distribute_round(
-    emission_micro: u128,
-    fees_micro: u128,
-    participants: &ParticipationSet,
-    economics: &EconomicsParams,
-) -> Result<(Payouts, u128, u128)> {
-    let mut payouts = HashMap::new();
-
-    if emission_micro == 0 && fees_micro == 0 {
-        return Ok((payouts, 0, 0));
-    }
-
-    // Apply fee cap: fees cannot exceed (fee_cap_numer / fee_cap_denom) * emission
-    let max_fees = if economics.fee_cap_denom > 0 {
-        (emission_micro * economics.fee_cap_numer as u128) / economics.fee_cap_denom as u128
-    } else {
-        0
-    };
-    let capped_fees = fees_micro.min(max_fees);
-
-    let total_pool = emission_micro.saturating_add(capped_fees);
-    if total_pool == 0 {
-        return Ok((payouts, 0, 0));
-    }
-
-    // Separate proposers and verifiers
-    let proposers: Vec<_> = participants
-        .iter()
-        .filter(|p| p.role == Role::Proposer)
-        .collect();
-    let verifiers: Vec<_> = participants
-        .iter()
-        .filter(|p| p.role == Role::Verifier)
-        .collect();
-
-    // Calculate total weights
-    let proposer_total_weight: u64 = proposers.iter().map(|p| p.weight).sum();
-    let verifier_total_weight: u64 = verifiers.iter().map(|p| p.weight).sum();
-
-    // Split according to economics parameters
-    let proposer_pool = (total_pool * economics.proposer_weight_bps as u128) / 10_000;
-    let verifier_pool = total_pool.saturating_sub(proposer_pool);
-
-    // Distribute to proposers
-    if proposer_total_weight > 0 {
-        for p in proposers {
-            let share = (proposer_pool * p.weight as u128) / proposer_total_weight as u128;
-            *payouts.entry(p.validator_id).or_insert(0) += share;
+impl RoundExecutor {
+    /// Create a new round executor.
+    pub fn new(economics_params: EconomicsParams, account_ledger: Box<dyn AccountLedger>) -> Self {
+        Self {
+            economics_params,
+            reward_sink: RewardSink::new(),
+            fee_collector: FeeCollector::new(),
+            account_ledger,
         }
     }
 
-    // Distribute to verifiers
-    if verifier_total_weight > 0 {
-        for v in verifiers {
-            let share = (verifier_pool * v.weight as u128) / verifier_total_weight as u128;
-            *payouts.entry(v.validator_id).or_insert(0) += share;
-        }
+    /// Execute a single consensus round with DAG-Fair emission.
+    pub fn execute_round(
+        &mut self,
+        round: RoundId,
+        chain_state: &mut ChainState,
+        participants: ParticipationSet,
+        fees_micro: MicroIPN,
+    ) -> Result<RoundExecutionResult> {
+        // Collect transaction fees for this round
+        self.fee_collector.collect_round_fees(round, fees_micro)?;
+
+        // Calculate emission for this round (enforcing supply cap)
+        let issued = chain_state.total_issued_micro();
+        let emission_micro = emission_for_round_capped(round, issued, &self.economics_params)?;
+
+        // Distribute rewards proportionally to participants
+        let (payouts, emission_paid, fees_capped) =
+            distribute_round(emission_micro, fees_micro, &participants, &self.economics_params)?;
+
+        // Credit rewards to the treasury sink
+        self.reward_sink.credit_round_payouts(round, &payouts)?;
+
+        // Update chain state
+        chain_state.update_after_round(
+            round,
+            emission_paid,
+            self.calculate_state_root(round, &payouts),
+            self.get_current_timestamp(),
+        );
+
+        // Apply settlements
+        self.reward_sink
+            .settle_to_accounts(self.account_ledger.as_mut())?;
+        self.reward_sink.clear_settled_payouts(round);
+
+        // Build execution result
+        let result = RoundExecutionResult {
+            round,
+            emission_micro: emission_paid,
+            fees_collected_micro: fees_capped,
+            total_participants: participants.len(),
+            total_payouts: payouts.values().sum(),
+            state_root: chain_state.state_root(),
+        };
+
+        info!(
+            target: "round_executor",
+            "Round {} executed → emission={} μIPN (≈ {:.6} IPN), {} participants, total payouts={}",
+            round,
+            emission_paid,
+            (emission_paid as f64) / (MICRO_PER_IPN as f64),
+            participants.len(),
+            result.total_payouts
+        );
+
+        Ok(result)
     }
 
-    let total_paid: u128 = payouts.values().sum();
+    /// Get current economics parameters.
+    pub fn get_economics_params(&self) -> &EconomicsParams {
+        &self.economics_params
+    }
 
-    Ok((payouts, emission_micro, capped_fees))
+    /// Update parameters via governance.
+    pub fn update_economics_params(&mut self, params: EconomicsParams) {
+        self.economics_params = params;
+        info!(target: "round_executor", "Economics parameters updated via governance");
+    }
+
+    /// Internal: calculate deterministic round state root (includes payouts).
+    fn calculate_state_root(&self, round: RoundId, payouts: &HashMap<[u8; 32], MicroIPN>) -> [u8; 32] {
+        use blake3::Hasher as Blake3;
+        let mut hasher = Blake3::new();
+        hasher.update(&round.to_be_bytes());
+        let mut entries: Vec<_> = payouts.iter().collect();
+        entries.sort_by_key(|(vid, _)| *vid);
+        for (vid, amt) in entries {
+            hasher.update(vid);
+            hasher.update(&amt.to_be_bytes());
+        }
+        let digest = hasher.finalize();
+        let mut state_root = [0u8; 32];
+        state_root.copy_from_slice(digest.as_bytes());
+        state_root
+    }
+
+    /// Internal: current timestamp (seconds since UNIX epoch).
+    fn get_current_timestamp(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+    }
 }
 
-/// Called automatically when a round is finalized by the DAG consensus.
-pub fn finalize_round(
-    round: u64,
-    storage: &Arc<dyn Storage + Send + Sync>,
-    participants: ParticipationSet,
-    fees_micro: u128,
-    economics: &EconomicsParams,
-    reward_sink: &Arc<RwLock<RewardSink>>,
-) -> Result<()> {
-    // Get current chain state
-    let mut chain_state = storage.get_chain_state()?;
-    let issued = chain_state.total_issued_micro();
+/// Create participation set from validator tuples.
+/// Format: `(stake, id, blocks_proposed, reputation)`
+pub fn create_participation_set(
+    validators: &[(u64, [u8; 32], u64, f64)],
+    proposer_id: [u8; 32],
+) -> ParticipationSet {
+    let mut parts = Vec::new();
+    for (stake, id, blocks_proposed, reputation) in validators {
+        let role = if *id == proposer_id {
+            Role::Proposer
+        } else {
+            Role::Verifier
+        };
+        parts.push(Participation {
+            validator_id: *id,
+            role,
+            blocks_proposed: *blocks_proposed as u32,
+            blocks_verified: 0,
+            reputation_score: *reputation,
+            stake_weight: *stake,
+        });
+    }
+    parts
+}
 
-    // Deterministic per-round emission, hard-cap enforced
-    let emission_micro = emission_for_round_capped(round, issued, economics)?;
-
-    // Apply DAG-Fair distribution (enforcing fee cap)
-    let (payouts, emission_paid, fees_paid) =
-        distribute_round(emission_micro, fees_micro, &participants, economics)?;
-
-    // Record payouts into the treasury module
-    reward_sink.write().credit_round_payouts(round, &payouts)?;
-
-    // Update total supply
-    chain_state.add_issued_micro(emission_paid);
-    chain_state.update_round(round);
-    storage.update_chain_state(&chain_state)?;
-
-    info!(
-        target: "emission",
-        "Round {} → {} μIPN emitted (≈ {:.6} IPN), {} μIPN fees",
-        round,
-        emission_paid,
-        (emission_paid as f64) / (MICRO_PER_IPN as f64),
-        fees_paid
-    );
-
-    Ok(())
+/// Create participation set including both proposer and verifier roles.
+pub fn create_full_participation_set(
+    validators: &[(u64, [u8; 32], u32, u32, f64)],
+    proposer_id: [u8; 32],
+) -> ParticipationSet {
+    let mut parts = Vec::new();
+    for (stake, id, blocks_proposed, blocks_verified, reputation) in validators {
+        let role = if *id == proposer_id {
+            if *blocks_verified > 0 {
+                Role::Both
+            } else {
+                Role::Proposer
+            }
+        } else {
+            Role::Verifier
+        };
+        parts.push(Participation {
+            validator_id: *id,
+            role,
+            blocks_proposed: *blocks_proposed,
+            blocks_verified: *blocks_verified,
+            reputation_score: *reputation,
+            stake_weight: *stake,
+        });
+    }
+    parts
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ippan_treasury::MockAccountLedger;
 
-    fn default_economics() -> EconomicsParams {
-        EconomicsParams::default()
+    #[test]
+    fn test_round_executor_creation() {
+        let params = EconomicsParams::default();
+        let ledger = Box::new(MockAccountLedger::new());
+        let executor = RoundExecutor::new(params, ledger);
+        assert!(executor.get_economics_params().initial_round_reward_micro > 0);
     }
 
     #[test]
-    fn test_emission_halving() {
-        let economics = default_economics();
-        let round1 = emission_for_round_capped(1, 0, &economics).unwrap();
-        let round_halving = economics.halving_interval_rounds;
-        let round2 = emission_for_round_capped(round_halving, 0, &economics).unwrap();
-
-        assert_eq!(round1, economics.initial_round_reward_micro);
-        assert_eq!(round2, economics.initial_round_reward_micro / 2);
-    }
-
-    #[test]
-    fn test_supply_cap() {
-        let mut economics = default_economics();
-        economics.supply_cap_micro = 100_000;
-
-        let emission = emission_for_round_capped(1, 99_000, &economics).unwrap();
-        assert_eq!(emission, 1_000); // Capped to remaining supply
-    }
-
-    #[test]
-    fn test_distribute_round_basic() {
-        let economics = default_economics();
-        let participants = vec![
-            Participation {
-                validator_id: [1u8; 32],
-                role: Role::Proposer,
-                weight: 100,
-            },
-            Participation {
-                validator_id: [2u8; 32],
-                role: Role::Verifier,
-                weight: 100,
-            },
+    fn test_create_participation_set() {
+        let validators = vec![
+            (1000, [1u8; 32], 1, 1.0),
+            (2000, [2u8; 32], 0, 1.2),
         ];
-
-        let (payouts, _, _) = distribute_round(10_000, 1_000, &participants, &economics).unwrap();
-
-        let total: u128 = payouts.values().sum();
-        assert_eq!(total, 11_000); // emission + fees
+        let proposer_id = [1u8; 32];
+        let parts = create_participation_set(&validators, proposer_id);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].role, Role::Proposer);
+        assert_eq!(parts[1].role, Role::Verifier);
     }
 
     #[test]
-    fn test_fee_cap() {
-        let mut economics = default_economics();
-        economics.fee_cap_numer = 1;
-        economics.fee_cap_denom = 10; // 10% cap
+    fn test_create_full_participation_set() {
+        let validators = vec![
+            (1000, [1u8; 32], 1, 2, 1.0),
+            (2000, [2u8; 32], 0, 3, 1.2),
+        ];
+        let proposer_id = [1u8; 32];
+        let parts = create_full_participation_set(&validators, proposer_id);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].role, Role::Both);
+        assert_eq!(parts[1].role, Role::Verifier);
+    }
 
-        let participants = vec![Participation {
-            validator_id: [1u8; 32],
-            role: Role::Proposer,
-            weight: 100,
-        }];
-
-        let (payouts, emission, fees) =
-            distribute_round(10_000, 5_000, &participants, &economics).unwrap();
-
-        // Fees should be capped to 10% of emission = 1_000
-        assert_eq!(fees, 1_000);
-        let total: u128 = payouts.values().sum();
-        assert_eq!(total, 11_000); // 10_000 emission + 1_000 capped fees
+    #[test]
+    fn test_round_execution() {
+        let params = EconomicsParams::default();
+        let ledger = Box::new(MockAccountLedger::new());
+        let mut executor = RoundExecutor::new(params, ledger);
+        let mut state = ChainState::new();
+        let participants = create_participation_set(
+            &[(1000, [1u8; 32], 1, 1.0)],
+            [1u8; 32],
+        );
+        let result = executor.execute_round(1, &mut state, participants, 1000).unwrap();
+        assert_eq!(result.round, 1);
+        assert!(result.emission_micro > 0);
+        assert!(result.total_participants > 0);
     }
 }
