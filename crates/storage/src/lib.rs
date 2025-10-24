@@ -216,7 +216,7 @@ impl SledStorage {
             // Create genesis account with initial balance
             let genesis_account = Account {
                 address: [0u8; 32],
-                balance: 1_000_000_000, // 1 billion tokens
+                balance: 1_000_000, // 1 million tokens
                 nonce: 0,
             };
             self.update_account(genesis_account)?;

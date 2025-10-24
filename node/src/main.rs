@@ -294,6 +294,9 @@ async fn main() -> Result<()> {
         max_transactions_per_block: config.max_transactions_per_block,
         block_reward: config.block_reward,
         finalization_interval_ms: config.finalization_interval_ms,
+        enable_ai_reputation: false,
+        enable_fee_caps: true,
+        enable_dag_fair_emission: true,
     };
 
     let consensus_instance =

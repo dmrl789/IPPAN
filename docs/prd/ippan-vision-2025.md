@@ -27,7 +27,7 @@ The protocol is designed to serve as a foundation for **finance, AI computation,
 ## 3. Architecture Summary
 
 ### 3.1 Deterministic Core (Layer 1)
-- Parallel **BlockDAG (Roundchain)** consensus with 100–250 ms rounds.  
+- Parallel **BlockDAG (Roundchain)** consensus with 200–250 ms rounds.  
 - **HashTimer™** assigns deterministic timestamps to every transaction, guaranteeing global chronological order.  
 - **Validator reputation** is computed via lightweight AI (GBDT) models identical across all nodes.  
 - Consensus built on **Federated Byzantine Agreement (FBA)** principles with DAG-Fair emission scheduling.  
@@ -180,7 +180,7 @@ IPPAN can act as a **coordination overlay** for the global Internet:
 | **Ethereum** | PoS | ~15 k | 12 s | External | Inflationary |
 | **Solana** | PoH + BFT | ~60 k | ~400 ms | None | Inflationary |
 | **Gensyn / Bittensor** | PoS / Work Market | — | variable | AI-training focus | Dynamic |
-| **IPPAN** | Deterministic DAG (FBA) | **>10 M** | **100–250 ms** | **L1 + L2 AI integrated** | **21 M IPN (fixed)** |
+| **IPPAN** | Deterministic DAG (FBA) | **>10 M** | **200–250 ms** | **L1 + L2 AI integrated** | **21 M IPN (fixed)** |
 
 ---
 

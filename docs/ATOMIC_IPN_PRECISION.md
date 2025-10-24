@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-IPPAN implements **24-decimal precision** for IPN tokens, enabling sub-yocto granularity for micro-payments, AI inference, IoT settlements, and machine-to-machine economies. This ultra-fine divisibility is critical for HashTimer-anchored micropayments at ~100ms round intervals, ensuring fairness across thousands of parallel blocks without rounding loss.
+IPPAN implements **24-decimal precision** for IPN tokens, enabling sub-yocto granularity for micro-payments, AI inference, IoT settlements, and machine-to-machine economies. This ultra-fine divisibility is critical for HashTimer-anchored micropayments at ~200ms round intervals, ensuring fairness across thousands of parallel blocks without rounding loss.
 
 ---
 
@@ -44,7 +44,7 @@ pub const ATOMIC_PER_IPN: AtomicIPN = 10u128.pow(24);
 
 ### 2.1 HashTimer Micro-Events
 
-IPPAN's HashTimer produces deterministic rounds every ~100 milliseconds. Within each round:
+IPPAN's HashTimer produces deterministic rounds every ~200 milliseconds. Within each round:
 
 - **Hundreds to thousands** of parallel blocks may be created
 - Each block earns a fractional reward from the round pool
@@ -552,7 +552,7 @@ IPPAN's 24-decimal precision is **1 million times finer** than Ethereum, enablin
 IPPAN's **ultra-fractional IPN unit architecture** is purpose-built for:
 
 1. **High-frequency micro-rewards** in DAG-Fair emission
-2. **HashTimer-anchored precision** at ~100ms intervals
+2. **HashTimer-anchored precision** at ~200ms intervals
 3. **Machine-to-machine economies** (AI, IoT, DePIN)
 4. **Future-proof scalability** with 2.1 × 10³¹ atomic units
 
