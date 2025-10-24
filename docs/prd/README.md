@@ -33,7 +33,7 @@ This directory contains the complete set of Product Requirements Documents for t
 **Key Topics:**
 - Global Layer-1 design principles
 - BlockDAG + parallel block creation
-- Round-based finalization (100–250 ms)
+- Round-based finalization (200–250 ms)
 - L1 vs L2 data allocation strategy
 - Confidentiality and compliance model
 - DNS and human-readable identity (`@user.ipn`)

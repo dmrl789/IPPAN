@@ -173,7 +173,7 @@ Successfully implemented a comprehensive **DAG-Fair Emission System** for IPPAN 
 
 ### ✅ Round-Based Emission
 - **Problem Solved:** BlockDAG produces thousands of blocks/sec; per-block rewards would cause hyperinflation
-- **Solution:** Fixed reward per round (100-250ms window), distributed among all participants
+- **Solution:** Fixed reward per round (200-250ms window), distributed among all participants
 - **Result:** Emission independent of block production rate
 
 ### ✅ Proportional Fairness
