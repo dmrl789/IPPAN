@@ -66,12 +66,12 @@ impl Default for DAGEmissionParams {
         Self {
             // 0.0001 IPN per round = 10,000 µIPN
             r0: 10_000,
-            // Halving every ~2 years at 100ms rounds (315,000,000 rounds)
-            halving_rounds: 315_000_000,
+            // Halving every ~2 years at 200ms rounds (157,680,000 rounds)
+            halving_rounds: 157_680_000,
             // 21 million IPN = 21,000,000,000,000 µIPN
             supply_cap: 21_000_000_00000000,
-            // 100ms round duration
-            round_duration_ms: 100,
+            // 200ms round duration
+            round_duration_ms: 200,
             // Fee cap at 10% of round reward
             fee_cap_bps: 1000,
             // AI commission at 10%

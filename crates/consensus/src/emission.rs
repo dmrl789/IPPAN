@@ -29,9 +29,9 @@ impl Default for DAGEmissionParams {
     fn default() -> Self {
         Self {
             r0: Amount::from_micro_ipn(10_000),
-            halving_rounds: 315_000_000,
+            halving_rounds: 315_360_000,
             supply_cap: Amount(SUPPLY_CAP),
-            round_duration_ms: 100,
+            round_duration_ms: 200,
             fee_cap_bps: 1000,
             ai_commission_bps: 1000,
             network_pool_bps: 500,

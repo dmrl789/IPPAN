@@ -19,7 +19,7 @@
 //!
 //! ## Design Rationale
 //!
-//! 1. **HashTimer Precision**: With 100ms rounds, sub-microsecond payment granularity
+//! 1. **HashTimer Precision**: With 200ms rounds, sub-microsecond payment granularity
 //!    enables fair distribution across thousands of parallel blocks per round.
 //!
 //! 2. **Rounding-Free Math**: Integer arithmetic at atomic precision eliminates
