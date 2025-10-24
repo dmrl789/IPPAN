@@ -40,7 +40,7 @@ impl SupplyTracker {
     /// Record emission for a round
     pub fn record_emission(&mut self, round: RoundIndex, amount: RewardAmount) -> Result<(), SupplyError> {
         if round <= self.current_round {
-            return Err(SupplyError::InvalidSupplyState(format!(
+            return Err(SupplyError::InvalidSupplyData(format!(
                 "Cannot record emission for past round: {} <= {}",
                 round, self.current_round
             )));
@@ -62,7 +62,7 @@ impl SupplyTracker {
         } else {
             self.total_supply = self.total_supply
                 .checked_add(amount)
-                .ok_or(SupplyError::TrackingError("Supply addition overflow".to_string()))?;
+                .ok_or(SupplyError::SupplyCapViolation("Supply addition overflow".to_string()))?;
             self.emission_history.insert(round, amount);
         }
 
@@ -74,7 +74,7 @@ impl SupplyTracker {
     /// Record burn for a round (excess fees, rounding errors, etc.)
     pub fn record_burn(&mut self, round: RoundIndex, amount: RewardAmount) -> Result<(), SupplyError> {
         if amount > self.total_supply {
-            return Err(SupplyError::InvalidSupplyState(format!(
+            return Err(SupplyError::InvalidSupplyData(format!(
                 "Cannot burn more than total supply: {} > {}",
                 amount, self.total_supply
             )));
@@ -82,7 +82,7 @@ impl SupplyTracker {
 
         self.total_supply = self.total_supply
             .checked_sub(amount)
-            .ok_or(SupplyError::TrackingError("Supply subtraction underflow".to_string()))?;
+            .ok_or(SupplyError::SupplyCapViolation("Supply subtraction underflow".to_string()))?;
         
         self.burn_history.insert(round, amount);
         
@@ -103,10 +103,10 @@ impl SupplyTracker {
         };
 
         if difference > tolerance {
-            return Err(SupplyError::VerificationFailed {
-                expected: expected_supply,
-                actual: self.total_supply,
-            });
+            return Err(SupplyError::VerificationFailed(format!(
+                "Supply verification failed: expected {}, actual {}",
+                expected_supply, self.total_supply
+            )));
         }
 
         info!(

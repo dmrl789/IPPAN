@@ -208,7 +208,7 @@ fn test_overflow_protection() {
     // Should either succeed or fail gracefully with overflow error
     match result {
         Ok(reward) => assert!(reward >= 1),
-        Err(EmissionError::MathematicalOverflow) => {}, // Expected for very large rounds
+        Err(EmissionError::CalculationOverflow(_)) => {}, // Expected for very large rounds
         Err(e) => panic!("Unexpected error: {:?}", e),
     }
 }
