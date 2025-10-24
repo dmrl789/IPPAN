@@ -10,22 +10,25 @@ repository = "https://github.com/dmrl789/IPPAN"
 [features]
 default = []
 integration-tests = []
-plotters = []
+plotters = ["dep:plotters"]
 
 [dependencies]
 # Core workspace crates
 ippan-types = { path = "../types" }
 
-# Common dependencies
+# Shared workspace dependencies
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+rayon = { workspace = true }
+
+# Optional plotting and simulation
+plotters = { version = "0.3", optional = true, features = ["bitmap_backend", "line_series"] }
 
 [dev-dependencies]
 rand = { version = "0.8", features = ["std", "std_rng"] }
 rayon = "1.10"
 csv = "1.3"
-plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "line_series"] }
 image = "0.24"
 tempfile = { workspace = true }
