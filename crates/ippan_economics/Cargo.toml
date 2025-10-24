@@ -12,7 +12,10 @@ default = []
 integration-tests = []
 
 [dependencies]
+# Core workspace crates
 ippan-types = { path = "../types" }
+
+# Common dependencies
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -13,14 +13,14 @@ fn simulate_emission_across_many_rounds() {
     let mut rng = StdRng::seed_from_u64(42);
     let mut params = EconomicsParams::default();
 
-    // reduce halving interval for test speed (every 250 rounds)
+    // Reduce halving interval for test speed (every 250 rounds)
     params.halving_interval_rounds = 250;
 
     // Simulated blockchain state
     let mut total_issued: MicroIPN = 0;
     let mut total_burned: MicroIPN = 0;
 
-    // synthetic ledger
+    // Synthetic ledger
     let mut balances: HashMap<ValidatorId, MicroIPN> = HashMap::new();
 
     // Validators
@@ -31,19 +31,23 @@ fn simulate_emission_across_many_rounds() {
         ValidatorId("dave.ipn".into()),
     ];
 
-    // simulate 1000 rounds
+    // Simulate 1 000 rounds
     let rounds: u64 = 1_000;
     for round in 0..rounds {
         let emission_micro = emission_for_round_capped(round, total_issued, &params)
             .expect("hard cap not exceeded");
 
-        // random 0–5 μIPN of fees (small relative to emission)
+        // Random 0–5 μIPN of fees (small relative to emission)
         let fees_micro = rng.gen_range(0..=5);
 
-        // participation: each validator 1–5 blocks, random role
+        // Participation: each validator 1–5 blocks, random role
         let mut parts = ParticipationSet::default();
         for vid in &validators {
-            let role = if rng.gen_bool(0.25) { Role::Proposer } else { Role::Verifier };
+            let role = if rng.gen_bool(0.25) {
+                Role::Proposer
+            } else {
+                Role::Verifier
+            };
             let blocks = rng.gen_range(1..=5);
             parts.insert(vid.clone(), Participation { role, blocks });
         }
@@ -52,16 +56,16 @@ fn simulate_emission_across_many_rounds() {
             distribute_round(emission_micro, fees_micro, &parts, &params)
                 .expect("distribution succeeds");
 
-        // update total supply and balances
+        // Update total supply and balances
         total_issued = total_issued.saturating_add(emission_paid);
         for (vid, amt) in payouts {
             *balances.entry(vid).or_default() += amt;
         }
 
-        // sanity: emission ≤ remaining cap
+        // Sanity: emission ≤ remaining cap
         assert!(total_issued <= params.hard_cap_micro);
 
-        // occasionally simulate epoch reconciliation every 250 rounds
+        // Occasionally simulate epoch reconciliation every 250 rounds
         if round > 0 && round % 250 == 0 {
             let expected = sum_emission_over_rounds(
                 round - 249,
@@ -76,19 +80,19 @@ fn simulate_emission_across_many_rounds() {
 
     // === Post-conditions ===
 
-    // total minted ≤ 21 M IPN
+    // Total minted ≤ 21 M IPN
     assert!(total_issued <= params.hard_cap_micro);
 
-    // at least one halving occurred
+    // At least one halving occurred
     assert!(emission_for_round(1, &params) > emission_for_round(500, &params));
 
-    // all validators earned something
+    // All validators earned something
     for vid in &validators {
         let bal = balances.get(vid).copied().unwrap_or(0);
         assert!(bal > 0, "validator {:?} earned zero", vid);
     }
 
-    // fairness check: total ratio spread < 2× (no dominance)
+    // Fairness check: total ratio spread < 2× (no dominance)
     let min = balances.values().min().copied().unwrap_or(0);
     let max = balances.values().max().copied().unwrap_or(0);
     assert!(
