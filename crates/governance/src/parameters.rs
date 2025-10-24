@@ -44,6 +44,31 @@ pub struct GovernanceParameters {
     pub proposal_fee: u64,
     /// Fee for voting on a proposal
     pub voting_fee: u64,
+    /// DAG-Fair emission parameters
+    pub emission_params: DAGEmissionParams,
+}
+
+/// DAG-Fair emission parameters (imported from consensus crate)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DAGEmissionParams {
+    /// Initial reward per round (in µIPN — micro-IPN)
+    pub r0: u128,
+    /// Number of rounds between halvings
+    pub halving_rounds: u64,
+    /// Total supply cap
+    pub supply_cap: u128,
+    /// Round duration in milliseconds
+    pub round_duration_ms: u64,
+    /// Fee cap as percentage of round reward (basis points)
+    pub fee_cap_bps: u16,
+    /// AI micro-service commission percentage (basis points)
+    pub ai_commission_bps: u16,
+    /// Network reward pool dividend percentage (basis points)
+    pub network_pool_bps: u16,
+    /// Base emission percentage (basis points)
+    pub base_emission_bps: u16,
+    /// Transaction fee percentage (basis points)
+    pub tx_fee_bps: u16,
 }
 
 impl Default for GovernanceParameters {
@@ -56,6 +81,32 @@ impl Default for GovernanceParameters {
             min_proposal_interval: 24 * 3600, // 24 hours
             proposal_fee: 10_000, // 10K tokens
             voting_fee: 1_000, // 1K tokens
+            emission_params: DAGEmissionParams::default(),
+        }
+    }
+}
+
+impl Default for DAGEmissionParams {
+    fn default() -> Self {
+        Self {
+            // 0.0001 IPN per round = 10,000 µIPN
+            r0: 10_000,
+            // Halving every ~2 years at 100ms rounds (315,000,000 rounds)
+            halving_rounds: 315_000_000,
+            // 21 million IPN = 21,000,000,000,000 µIPN
+            supply_cap: 21_000_000_00000000,
+            // 100ms round duration
+            round_duration_ms: 100,
+            // Fee cap at 10% of round reward
+            fee_cap_bps: 1000,
+            // AI commission at 10%
+            ai_commission_bps: 1000,
+            // Network pool at 5%
+            network_pool_bps: 500,
+            // Base emission at 60%
+            base_emission_bps: 6000,
+            // Transaction fees at 25%
+            tx_fee_bps: 2500,
         }
     }
 }
@@ -161,11 +212,24 @@ impl ParameterManager {
             "min_proposal_interval",
             "proposal_fee",
             "voting_fee",
+<<<<<<< HEAD
             // Economics
             "economics.r0",
             "economics.halving_rounds",
             "economics.supply_cap",
             "economics.proposer_bps",
+=======
+            // Emission parameters
+            "emission_r0",
+            "emission_halving_rounds",
+            "emission_supply_cap",
+            "emission_round_duration_ms",
+            "emission_fee_cap_bps",
+            "emission_ai_commission_bps",
+            "emission_network_pool_bps",
+            "emission_base_emission_bps",
+            "emission_tx_fee_bps",
+>>>>>>> origin/main
         ];
         
         if !valid_parameters.contains(&name) {
@@ -193,6 +257,7 @@ impl ParameterManager {
                     return Err(anyhow::anyhow!("Voting threshold must be a number"));
                 }
             }
+<<<<<<< HEAD
             "economics.r0" | "economics.supply_cap" => {
                 if !value.is_number() && value.as_str().and_then(|s| s.parse::<u128>().ok()).is_none() {
                     return Err(anyhow::anyhow!("{} must be a u128 (or string u128)", name));
@@ -206,6 +271,30 @@ impl ParameterManager {
             "economics.proposer_bps" => {
                 let Some(v) = value.as_u64() else { return Err(anyhow::anyhow!("proposer_bps must be u16")); };
                 if v > 10_000 { return Err(anyhow::anyhow!("proposer_bps cannot exceed 10000")); }
+=======
+            // Emission parameter validations
+            "emission_r0" | "emission_halving_rounds" | "emission_supply_cap" 
+            | "emission_round_duration_ms" => {
+                if !value.is_number() || value.as_u64().is_none() {
+                    return Err(anyhow::anyhow!("Parameter {} must be a positive integer", name));
+                }
+                if let Some(val) = value.as_u64() {
+                    if val == 0 {
+                        return Err(anyhow::anyhow!("Parameter {} must be positive", name));
+                    }
+                }
+            }
+            "emission_fee_cap_bps" | "emission_ai_commission_bps" | "emission_network_pool_bps"
+            | "emission_base_emission_bps" | "emission_tx_fee_bps" => {
+                if !value.is_number() || value.as_u64().is_none() {
+                    return Err(anyhow::anyhow!("Parameter {} must be a positive integer", name));
+                }
+                if let Some(val) = value.as_u64() {
+                    if val > 10000 {
+                        return Err(anyhow::anyhow!("Parameter {} cannot exceed 10,000 basis points", name));
+                    }
+                }
+>>>>>>> origin/main
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", name)),
         }
@@ -237,6 +326,7 @@ impl ParameterManager {
             "voting_fee" => {
                 self.parameters.voting_fee = proposal.new_value.as_u64().unwrap();
             }
+<<<<<<< HEAD
             // Economics parameters
             "economics.r0" => {
                 let r0 = proposal.new_value.as_u64().map(|v| v as u128)
@@ -259,8 +349,80 @@ impl ParameterManager {
             "economics.proposer_bps" => {
                 let bps = proposal.new_value.as_u64().unwrap() as u16;
                 tracing::info!("Governance: updated economics.proposer_bps to {}", bps);
+=======
+            // Emission parameter changes
+            "emission_r0" => {
+                self.parameters.emission_params.r0 = proposal.new_value.as_u64().unwrap() as u128;
+            }
+            "emission_halving_rounds" => {
+                self.parameters.emission_params.halving_rounds = proposal.new_value.as_u64().unwrap();
+            }
+            "emission_supply_cap" => {
+                self.parameters.emission_params.supply_cap = proposal.new_value.as_u64().unwrap() as u128;
+            }
+            "emission_round_duration_ms" => {
+                self.parameters.emission_params.round_duration_ms = proposal.new_value.as_u64().unwrap();
+            }
+            "emission_fee_cap_bps" => {
+                self.parameters.emission_params.fee_cap_bps = proposal.new_value.as_u64().unwrap() as u16;
+            }
+            "emission_ai_commission_bps" => {
+                self.parameters.emission_params.ai_commission_bps = proposal.new_value.as_u64().unwrap() as u16;
+            }
+            "emission_network_pool_bps" => {
+                self.parameters.emission_params.network_pool_bps = proposal.new_value.as_u64().unwrap() as u16;
+            }
+            "emission_base_emission_bps" => {
+                self.parameters.emission_params.base_emission_bps = proposal.new_value.as_u64().unwrap() as u16;
+            }
+            "emission_tx_fee_bps" => {
+                self.parameters.emission_params.tx_fee_bps = proposal.new_value.as_u64().unwrap() as u16;
+>>>>>>> origin/main
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
+        }
+        
+        // Validate emission parameters after any emission-related change
+        if proposal.parameter_name.starts_with("emission_") {
+            self.validate_emission_parameters()?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate emission parameters
+    fn validate_emission_parameters(&self) -> Result<()> {
+        let params = &self.parameters.emission_params;
+        
+        if params.r0 == 0 {
+            return Err(anyhow::anyhow!("Initial reward must be positive"));
+        }
+        if params.halving_rounds == 0 {
+            return Err(anyhow::anyhow!("Halving rounds must be positive"));
+        }
+        if params.supply_cap == 0 {
+            return Err(anyhow::anyhow!("Supply cap must be positive"));
+        }
+        if params.round_duration_ms == 0 {
+            return Err(anyhow::anyhow!("Round duration must be positive"));
+        }
+        
+        // Check that percentages add up to 100%
+        let total_bps = params.base_emission_bps + params.tx_fee_bps + 
+                       params.ai_commission_bps + params.network_pool_bps;
+        if total_bps != 10_000 {
+            return Err(anyhow::anyhow!(
+                "Emission percentages must sum to 100% (10,000 basis points), got {}", 
+                total_bps
+            ));
+        }
+        
+        // Validate individual percentages
+        if params.fee_cap_bps > 10_000 {
+            return Err(anyhow::anyhow!("Fee cap cannot exceed 100%"));
+        }
+        if params.ai_commission_bps > 10_000 {
+            return Err(anyhow::anyhow!("AI commission cannot exceed 100%"));
         }
         
         Ok(())
