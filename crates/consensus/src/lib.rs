@@ -1,8 +1,8 @@
 //! IPPAN Consensus Engine — Parallel PoA + DAG-Fair Emission
 //!
-//! This module implements the Proof-of-Authority + AI Reputation-weighted
-//! consensus used in IPPAN L1. It integrates deterministic BlockDAG ordering,
-//! fee capping, emission schedules, and round finalization.
+//! Implements Proof-of-Authority + AI Reputation-weighted consensus
+//! for the IPPAN L1. Integrates deterministic BlockDAG ordering,
+//! fee capping, emission schedules, and round-level finalization.
 
 use anyhow::Result;
 use blake3::Hasher as Blake3;
@@ -43,9 +43,10 @@ pub mod round;
 // ---------------------------------------------------------------------
 
 pub use emission::{
-    calculate_fee_recycling, distribute_round_reward, projected_supply, round_reward,
-    rounds_until_cap, EmissionAuditRecord, EmissionParams, FeeRecyclingParams,
-    RoundRewardDistribution, ValidatorContribution, ValidatorRole,
+    DAGEmissionParams, ValidatorRole, ValidatorParticipation,
+    RoundEmission, ValidatorReward,
+    calculate_round_reward, calculate_round_emission, distribute_dag_fair_rewards,
+    calculate_fee_recycling, FeeRecyclingParams, projected_supply,
 };
 pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
@@ -178,9 +179,9 @@ impl PoAConsensus {
             current_round_blocks: Vec::new(),
         };
 
-        let emission_params = EmissionParams::default();
-        let audit_interval = 6_048_000; // Weekly audits (≈1 week of rounds at 100ms)
-        let emission_tracker = EmissionTracker::new(emission_params, audit_interval);
+        let emission_params = DAGEmissionParams::default();
+        let audit_interval = 6_048_000; // ~1 week at 100ms
+        let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
 
         Self {
             config: config.clone(),
@@ -528,3 +529,6 @@ impl ConsensusEngine for PoAConsensus {
         PoAConsensus::get_state(self)
     }
 }
+
+#[cfg(test)]
+mod tests;
