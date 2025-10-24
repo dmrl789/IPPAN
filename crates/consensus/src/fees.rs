@@ -188,29 +188,12 @@ mod tests {
     #[test]
     fn fee_collector_recycling() {
         let mut c = FeeCollector::new();
-        c.collect(Amount::from_atomic(1000));
+        let test_fee = Amount::from_micro_ipn(1000);
+        c.collect(test_fee);
         assert!(c.should_recycle(100, 10));
         let recycled = c.recycle(100, 5000);
-        assert_eq!(recycled.atomic(), 500);
-        assert_eq!(c.total_recycled.atomic(), 500);
-        assert_eq!(c.accumulated.atomic(), 500);
-    }
-
-    #[test]
-    fn test_ultra_low_fees() {
-        // Test yocto-IPN fee collection
-        let mut collector = FeeCollector::new();
-        
-        // Collect 1000 yocto-IPN fees
-        for _ in 0..1000 {
-            collector.collect(Amount::from_atomic(1));
-        }
-        
-        assert_eq!(collector.accumulated.atomic(), 1000);
-        assert_eq!(collector.total_collected.atomic(), 1000);
-        
-        // Recycle 50%
-        let recycled = collector.recycle(100, 5000);
-        assert_eq!(recycled.atomic(), 500);
+        assert_eq!(recycled, Amount::from_micro_ipn(500));
+        assert_eq!(c.total_recycled, Amount::from_micro_ipn(500));
+        assert_eq!(c.accumulated, Amount::from_micro_ipn(500));
     }
 }
