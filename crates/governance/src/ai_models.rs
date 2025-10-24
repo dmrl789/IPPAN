@@ -1,6 +1,10 @@
 //! AI Model Governance Module — voting and approval of AI models
 use anyhow::Result;
+<<<<<<< HEAD
+use ippan_ai_registry::AiModelProposal;
+=======
 use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
+>>>>>>> origin/main
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -33,6 +37,37 @@ impl ActivationManager {
 }
 
 /// AI model governance manager
+<<<<<<< HEAD
+pub struct AiModelGovernance;
+
+impl AiModelGovernance {
+    /// Create a new AI model governance manager
+    pub fn new(_voting_threshold: f64, _min_proposal_stake: u64) -> Self { Self }
+
+    /// Submit a new AI model proposal
+    pub fn submit_model_proposal(&mut self, _proposal: AiModelProposal, _proposer_stake: u64) -> Result<()> { Ok(()) }
+
+    /// Start voting on a proposal
+    pub fn start_voting(&mut self, _proposal_id: &str) -> Result<()> { Ok(()) }
+
+    /// Vote on a proposal
+    pub fn vote(&mut self, _proposal_id: &str, _voter: [u8; 32], _stake: u64, _approve: bool) -> Result<()> { Ok(()) }
+
+    /// Execute an approved proposal
+    pub fn execute_proposal(&mut self, _proposal_id: &str) -> Result<()> { Ok(()) }
+
+    /// Process model activations for the current round
+    pub fn process_round(&mut self, _round: u64) -> Result<Vec<String>> { Ok(vec![]) }
+
+    /// Get the model registry
+    pub fn get_model_registry(&self) { }
+
+    /// Get the proposal manager
+    pub fn get_proposal_manager(&self) { }
+
+    /// Get the activation manager
+    pub fn get_activation_manager(&self) { }
+=======
 pub struct AiModelGovernance {
     /// Model registry entries
     model_registry: HashMap<String, ModelRegistryEntry>,
@@ -95,6 +130,7 @@ impl AiModelGovernance {
     pub fn get_model(&self, model_id: &str) -> Option<&ModelRegistryEntry> {
         self.model_registry.get(model_id)
     }
+>>>>>>> origin/main
 }
 
 /// JSON template for AI model proposals
@@ -144,11 +180,14 @@ pub fn validate_proposal_format(proposal: &AiModelProposal) -> Result<()> {
     if proposal.model_url.is_empty() {
         return Err(anyhow::anyhow!("Model URL cannot be empty"));
     }
+<<<<<<< HEAD
+=======
     
     if proposal.rationale.is_empty() {
         return Err(anyhow::anyhow!("Rationale cannot be empty"));
     }
     
+>>>>>>> origin/main
     if proposal.activation_round == 0 {
         return Err(anyhow::anyhow!("Activation round must be greater than 0"));
     }
