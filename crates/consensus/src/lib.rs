@@ -1,14 +1,14 @@
 //! IPPAN Consensus Engine — Parallel PoA + DAG-Fair Emission
 //!
-//! This module implements the Proof-of-Authority + AI Reputation-weighted
-//! consensus used in IPPAN L1. It integrates deterministic BlockDAG ordering,
-//! fee capping, emission schedules, and round finalization.
+//! Implements Proof-of-Authority + AI Reputation-weighted consensus
+//! for the IPPAN L1. Integrates deterministic BlockDAG ordering,
+//! fee capping, emission schedules, and round-level finalization.
 
 use anyhow::Result;
 use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
 use ippan_mempool::Mempool;
-use ippan_storage::{Account, Storage};
+use ippan_storage::Storage;
 use ippan_types::{
     IppanTimeMicros, Block, BlockId, RoundCertificate, RoundFinalizationRecord,
     RoundId, RoundWindow, Transaction,
@@ -34,6 +34,7 @@ pub mod ordering;
 pub mod parallel_dag;
 pub mod reputation;
 pub mod emission;
+pub mod emission_tracker;
 pub mod fees;
 pub mod round;
 pub mod round_executor;
@@ -43,14 +44,12 @@ pub mod round_executor;
 // ---------------------------------------------------------------------
 
 pub use emission::{
-    calculate_fee_recycling, distribute_round_reward, projected_supply, round_reward,
-    EmissionParams, FeeRecyclingParams, RoundRewardDistribution,
-    // Advanced DAG-Fair emission types and functions
-    MicroIPN, ValidatorId, Role, Participation, ParticipationSet,
-    EconomicsParams, emission_for_round, emission_for_round_capped,
-    distribute_round, Payouts, sum_emission_over_rounds, epoch_auto_burn,
-    MICRO_PER_IPN,
+    DAGEmissionParams, ValidatorRole, ValidatorParticipation,
+    RoundEmission, ValidatorReward,
+    calculate_round_reward, calculate_round_emission, distribute_dag_fair_rewards,
+    calculate_fee_recycling, FeeRecyclingParams, projected_supply,
 };
+pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
 pub use parallel_dag::{
@@ -155,6 +154,7 @@ pub struct PoAConsensus {
     pub finalization_interval: Duration,
     pub round_consensus: Arc<RwLock<RoundConsensus>>,
     pub fee_collector: Arc<RwLock<FeeCollector>>,
+    pub emission_tracker: Arc<RwLock<EmissionTracker>>,
 }
 
 impl PoAConsensus {
@@ -183,6 +183,10 @@ impl PoAConsensus {
             current_round_blocks: Vec::new(),
         };
 
+        let emission_params = DAGEmissionParams::default();
+        let audit_interval = 6_048_000; // ~1 week at 100ms
+        let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
+
         Self {
             config: config.clone(),
             storage: storage.clone(),
@@ -195,6 +199,7 @@ impl PoAConsensus {
             finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
+            emission_tracker: Arc::new(RwLock::new(emission_tracker)),
         }
     }
 
@@ -313,7 +318,7 @@ impl PoAConsensus {
         mempool: &Arc<Mempool>,
         config: &PoAConfig,
         tracker: &Arc<RwLock<RoundTracker>>,
-        slot: u64,
+        _slot: u64,
         proposer: [u8; 32],
     ) -> Result<()> {
         let txs = mempool.get_transactions_for_block(config.max_transactions_per_block);

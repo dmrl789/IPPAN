@@ -191,6 +191,29 @@ impl ParameterManager {
                     return Err(anyhow::anyhow!("Voting threshold must be a number"));
                 }
             }
+            // Emission parameter validations
+            "emission_r0" | "emission_halving_rounds" | "emission_supply_cap" 
+            | "emission_round_duration_ms" => {
+                if !value.is_number() || value.as_u64().is_none() {
+                    return Err(anyhow::anyhow!("Parameter {} must be a positive integer", name));
+                }
+                if let Some(val) = value.as_u64() {
+                    if val == 0 {
+                        return Err(anyhow::anyhow!("Parameter {} must be positive", name));
+                    }
+                }
+            }
+            "emission_fee_cap_bps" | "emission_ai_commission_bps" | "emission_network_pool_bps"
+            | "emission_base_emission_bps" | "emission_tx_fee_bps" => {
+                if !value.is_number() || value.as_u64().is_none() {
+                    return Err(anyhow::anyhow!("Parameter {} must be a positive integer", name));
+                }
+                if let Some(val) = value.as_u64() {
+                    if val > 10000 {
+                        return Err(anyhow::anyhow!("Parameter {} cannot exceed 10,000 basis points", name));
+                    }
+                }
+            }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", name)),
         }
         
@@ -247,6 +270,49 @@ impl ParameterManager {
                 self.parameters.economics.fee_recycling_bps = proposal.new_value.as_u64().unwrap() as u16;
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
+        }
+        
+        // Validate emission parameters after any emission-related change
+        if proposal.parameter_name.starts_with("emission_") {
+            self.validate_emission_parameters()?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate emission parameters
+    fn validate_emission_parameters(&self) -> Result<()> {
+        let params = &self.parameters.emission_params;
+        
+        if params.r0 == 0 {
+            return Err(anyhow::anyhow!("Initial reward must be positive"));
+        }
+        if params.halving_rounds == 0 {
+            return Err(anyhow::anyhow!("Halving rounds must be positive"));
+        }
+        if params.supply_cap == 0 {
+            return Err(anyhow::anyhow!("Supply cap must be positive"));
+        }
+        if params.round_duration_ms == 0 {
+            return Err(anyhow::anyhow!("Round duration must be positive"));
+        }
+        
+        // Check that percentages add up to 100%
+        let total_bps = params.base_emission_bps + params.tx_fee_bps + 
+                       params.ai_commission_bps + params.network_pool_bps;
+        if total_bps != 10_000 {
+            return Err(anyhow::anyhow!(
+                "Emission percentages must sum to 100% (10,000 basis points), got {}", 
+                total_bps
+            ));
+        }
+        
+        // Validate individual percentages
+        if params.fee_cap_bps > 10_000 {
+            return Err(anyhow::anyhow!("Fee cap cannot exceed 100%"));
+        }
+        if params.ai_commission_bps > 10_000 {
+            return Err(anyhow::anyhow!("AI commission cannot exceed 100%"));
         }
         
         Ok(())

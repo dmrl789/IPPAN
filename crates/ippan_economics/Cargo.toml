@@ -1,14 +1,26 @@
 [package]
-name = "ippan_economics"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
-description = "Deterministic round-based emission and fair distribution for IPPAN BlockDAG"
+name = "ippan-economics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Deterministic round-based emission and fair distribution for IPPAN BlockDAG (DAG-Fair Emission, halving, and validator reward scheduling)"
 repository = "https://github.com/dmrl789/IPPAN"
 
+[features]
+default = []
+integration-tests = []
+
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0"
+# Core workspace crates
+ippan-types = { path = "../types" }
+
+# Common dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 [dev-dependencies]
-serde_json = "1.0"
+rand = { version = "0.8", features = ["std", "std_rng"] }
+tempfile = { workspace = true }
