@@ -1,9 +1,16 @@
 //! IPPAN Economics — DAG-Fair Emission & Distribution
 //!
-//! Deterministic per-round emission with halving, hard-cap enforcement,
-//! role-weighted fair distribution across validators for a BlockDAG.
+//! Core economic logic for the IPPAN blockchain.
 //!
-//! Monetary unit: micro-IPN (μIPN). 1 IPN = 1_000_000 μIPN.
+//! Provides deterministic, auditable mechanisms for:
+//! - DAG-Fair emission and halving schedule
+//! - Supply cap enforcement and automatic burn
+//! - Role-weighted validator reward distribution
+//! - Fee caps and recycling
+//! - Parameter verification and consistency checks
+//!
+//! Monetary unit: **micro-IPN (μIPN)**  
+//! `1 IPN = 1_000_000 μIPN`
 
 pub mod types;
 pub mod errors;

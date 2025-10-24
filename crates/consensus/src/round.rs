@@ -297,6 +297,7 @@ pub fn calculate_reputation_score(
 mod tests {
     use super::*;
 
+    #[cfg(feature = "ai_l1")]
     fn create_test_model() -> Model {
         Model::new(
             1,
@@ -313,6 +314,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "ai_l1")]
     fn create_test_telemetry() -> ValidatorTelemetry {
         ValidatorTelemetry {
             validator_id: [1u8; 32],
@@ -321,13 +323,14 @@ mod tests {
             uptime: 0.98,
             network_latency: 80.0,
             validation_accuracy: 0.99,
-            stake: 1500000,
+            stake: 1_500_000,
             slashing_events: 0,
             last_activity: 300,
             custom_metrics: HashMap::new(),
         }
     }
 
+    #[cfg(feature = "ai_l1")]
     #[test]
     fn test_reputation_score_calculation() {
         let model = create_test_model();
@@ -339,25 +342,29 @@ mod tests {
     #[test]
     fn test_validator_selection() {
         let mut consensus = RoundConsensus::new();
-        let model = create_test_model();
-        consensus.set_active_model(model).unwrap();
 
-        let validators = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
-        let mut stake_weights = HashMap::new();
-        stake_weights.insert([1u8; 32], 1000);
-        stake_weights.insert([2u8; 32], 2000);
-        stake_weights.insert([3u8; 32], 1500);
+        #[cfg(feature = "ai_l1")]
+        {
+            let model = create_test_model();
+            consensus.set_active_model(model).unwrap();
 
-        for v in &validators {
-            let mut t = create_test_telemetry();
-            t.validator_id = *v;
-            consensus.update_telemetry(*v, t);
+            let validators = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
+            let mut stake_weights = HashMap::new();
+            stake_weights.insert([1u8; 32], 1000);
+            stake_weights.insert([2u8; 32], 2000);
+            stake_weights.insert([3u8; 32], 1500);
+
+            for validator in &validators {
+                let mut telemetry = create_test_telemetry();
+                telemetry.validator_id = *validator;
+                consensus.update_telemetry(*validator, telemetry);
+            }
+
+            let selection = consensus.select_validators(&validators, &stake_weights).unwrap();
+            assert!(validators.contains(&selection.proposer));
+            assert_eq!(selection.verifiers.len(), 3);
+            assert!(!selection.verifiers.contains(&selection.proposer));
         }
-
-        let selection = consensus.select_validators(&validators, &stake_weights).unwrap();
-        assert!(validators.contains(&selection.proposer));
-        assert_eq!(selection.verifiers.len(), 3);
-        assert!(!selection.verifiers.contains(&selection.proposer));
     }
 
     #[test]
