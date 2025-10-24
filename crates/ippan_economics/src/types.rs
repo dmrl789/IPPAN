@@ -41,57 +41,5 @@ pub type ParticipationSet = HashMap<ValidatorId, Participation>;
 /// Per-validator payout result (μIPN)
 pub type Payouts = HashMap<ValidatorId, MicroIPN>;
 
-/// Economics parameters controlling emission, halving, and reward weights
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EconomicsParams {
-    /// Initial reward per round (μIPN)
-    pub initial_round_reward_micro: MicroIPN,
-    /// Halving interval in rounds
-    pub halving_interval_rounds: u64,
-    /// Hard supply cap (μIPN)
-    pub hard_cap_micro: MicroIPN,
-    /// Proposer weight in thousandths (1000 = 1.0×)
-    pub weight_proposer_milli: u32,
-    /// Verifier weight in thousandths (1000 = 1.0×)
-    pub weight_verifier_milli: u32,
-    /// Fee cap numerator (e.g., 1 for 10%)
-    pub fee_cap_numer: u32,
-    /// Fee cap denominator (e.g., 10 for 10%)
-    pub fee_cap_denom: u32,
-}
-
-impl Default for EconomicsParams {
-    fn default() -> Self {
-        Self {
-            // 0.0001 IPN = 100 μIPN per round
-            initial_round_reward_micro: 100,
-            // ≈ 2 years at 10 rounds/s
-            halving_interval_rounds: 630_720_000,
-            // 21 million IPN total = 21 000 000 × 1 000 000 μIPN
-            hard_cap_micro: 21_000_000 * MICRO_PER_IPN,
-            weight_proposer_milli: 1200, // +20 %
-            weight_verifier_milli: 1000, // baseline 1.0×
-            fee_cap_numer: 1,
-            fee_cap_denom: 10, // 10 %
-        }
-    }
-}
-
-impl EconomicsParams {
-    /// Return fee-cap fraction (numerator, denominator)
-    pub fn fee_cap_fraction(&self) -> (u32, u32) {
-        (self.fee_cap_numer, self.fee_cap_denom)
-    }
-
-    /// Role-specific weight lookup
-    pub fn role_weight_milli(&self, proposer: bool) -> u32 {
-        if proposer {
-            self.weight_proposer_milli
-        } else {
-            self.weight_verifier_milli
-        }
-    }
-}
-
 /// Helper constant — 1 IPN = 1 000 000 μIPN
 pub const MICRO_PER_IPN: MicroIPN = 1_000_000;

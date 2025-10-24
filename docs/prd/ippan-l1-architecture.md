@@ -35,7 +35,7 @@ IPPAN is a **global, neutral, permissionless Layer-1 (L1) ledger** anchoring tim
 - L2 namespaces can extend L1 registry.
 
 ### 1.6 Scalability & Performance
-- **BlockDAG + Rounds** → 10–50 ms block frequency, 100–250 ms round finality, 1–10 M TPS.
+- **BlockDAG + Rounds** → 10–50 ms block frequency, 200–250 ms round finality, 1–10 M TPS.
 - Ultra-light headers (4–32 KB blocks, 128 KB max).  
 - Interoperability anchors: Ethereum/Bitcoin/other chains can commit to IPPAN.
 
@@ -66,7 +66,7 @@ Allow all validators to propose blocks in parallel and finalize them determinist
 | `signature` | Ed25519 signature |
 
 **Round**
-- Fixed time window (100–250 ms) via median IPPAN-Time.
+- Fixed time window (200–250 ms) via median IPPAN-Time.
 - Fields: `RoundId`, `RoundWindow`, `RoundCertificate` (≥2f+1 sigs), `RoundFinalizationRecord` (deterministic tx/state result).
 
 ### Protocol Flow

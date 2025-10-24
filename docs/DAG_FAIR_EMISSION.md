@@ -6,7 +6,7 @@
 
 ## Overview
 
-IPPAN implements a **DAG-Fair Emission** system designed specifically for high-throughput BlockDAG architectures. Unlike traditional blockchains that emit rewards per block, IPPAN anchors emission to **rounds** — deterministic time windows (≈100–250 ms) that aggregate thousands of parallel micro-blocks.
+IPPAN implements a **DAG-Fair Emission** system designed specifically for high-throughput BlockDAG architectures. Unlike traditional blockchains that emit rewards per block, IPPAN anchors emission to **rounds** — deterministic time windows (≈200–250 ms) that aggregate thousands of parallel micro-blocks.
 
 This design ensures:
 - **Predictable monetary policy** with a 21M IPN cap
@@ -22,7 +22,7 @@ This design ensures:
 
 **Problem:** In IPPAN's BlockDAG, thousands of blocks are produced per second. Per-block rewards would cause hyperinflation.
 
-**Solution:** Emission is tied to **rounds**, not blocks. Each round (≈100ms) has a **fixed total reward** distributed among all validators who contributed during that round.
+**Solution:** Emission is tied to **rounds**, not blocks. Each round (≈200ms) has a **fixed total reward** distributed among all validators who contributed during that round.
 
 ```
 Round Reward = R₀ / 2^⌊round / halving_interval⌋
@@ -30,7 +30,7 @@ Round Reward = R₀ / 2^⌊round / halving_interval⌋
 
 Where:
 - `R₀ = 0.0001 IPN` (10,000 µIPN) — initial reward per round
-- `halving_interval = 630,720,000 rounds` (≈2 years at 100ms/round)
+- `halving_interval = 315,360,000 rounds` (≈2 years at 200ms/round)
 
 ### 2. Proportional Fairness
 
@@ -69,7 +69,7 @@ Each round's total reward comes from four sources:
 |-----------|-------|-------------|
 | **Total Supply Cap** | 21,000,000 IPN | Hard cap (never exceeded) |
 | **Initial Reward** | 0.0001 IPN/round | 10,000 µIPN per round |
-| **Round Duration** | ~100 ms | 10 rounds/second average |
+| **Round Duration** | ~200 ms | 5 rounds/second average |
 | **Annual Rounds** | ~315,360,000 | Deterministic |
 | **Halving Interval** | 630,720,000 rounds | ~2 years |
 
