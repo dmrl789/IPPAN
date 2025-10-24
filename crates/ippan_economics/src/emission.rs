@@ -66,7 +66,8 @@ pub fn emission_for_round_capped(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::EconomicsParams;
+    use crate::params::EconomicsParams;
+    use crate::verify::{epoch_auto_burn, sum_emission_over_rounds};
 
     #[test]
     fn test_emission_halving() {
@@ -115,9 +116,10 @@ mod tests {
 
     #[test]
     fn test_epoch_auto_burn() {
-        assert_eq!(epoch_auto_burn(1000, 1000), 0);
-        assert_eq!(epoch_auto_burn(1000, 1200), 0);
-        assert_eq!(epoch_auto_burn(1200, 1000), 200);
+        // epoch_auto_burn burns excess: actual - expected
+        assert_eq!(epoch_auto_burn(1000, 1000), 0);  // expected 1000, got 1000 -> burn 0
+        assert_eq!(epoch_auto_burn(1000, 1200), 200); // expected 1000, got 1200 -> burn 200
+        assert_eq!(epoch_auto_burn(1200, 1000), 0);  // expected 1200, got 1000 -> burn 0 (under-minted)
     }
 
     #[test]
