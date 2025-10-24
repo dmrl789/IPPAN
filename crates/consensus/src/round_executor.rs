@@ -54,7 +54,7 @@ impl RoundExecutor {
         fees_micro: MicroIPN,
     ) -> Result<RoundExecutionResult> {
         // Validate participation set
-        ippan_economics::validate_participation_set(&participants)?;
+        ippan_economics_core::validate_participation_set(&participants)?;
 
         // Collect fees for this round
         self.fee_collector.collect_round_fees(round, fees_micro)?;

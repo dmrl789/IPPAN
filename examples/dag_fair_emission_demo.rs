@@ -155,7 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     let mut test_state = ChainState::with_initial(4_000_000, 0, 0);
-    let emission = ippan_economics::emission_for_round_capped(1, test_state.total_issued_micro(), &test_params)?;
+    let emission = ippan_economics_core::emission_for_round_capped(1, test_state.total_issued_micro(), &test_params)?;
     
     println!("  • Current supply: {} micro-IPN", test_state.total_issued_micro());
     println!("  • Max supply: {} micro-IPN", test_params.max_supply_micro);
@@ -175,7 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Create demo participants for a round
-fn create_demo_participants(round: RoundId) -> Vec<ippan_economics::Participation> {
+fn create_demo_participants(round: RoundId) -> Vec<ippan_economics_core::Participation> {
     let mut participants = Vec::new();
     
     // Create 3-5 validators per round
@@ -188,12 +188,12 @@ fn create_demo_participants(round: RoundId) -> Vec<ippan_economics::Participatio
         let blocks_verified = (i + 1) as u32;
         let reputation = 0.8 + (i as f64 * 0.1);
         
-        participants.push(ippan_economics::Participation {
+        participants.push(ippan_economics_core::Participation {
             validator_id,
             role: if i == 0 {
-                ippan_economics::Role::Proposer
+                ippan_economics_core::Role::Proposer
             } else {
-                ippan_economics::Role::Verifier
+                ippan_economics_core::Role::Verifier
             },
             blocks_proposed,
             blocks_verified,

@@ -181,25 +181,25 @@ fn test_reward_distribution_fairness() {
     
     // Create participants with different stakes and contributions
     let participants = vec![
-        ippan_economics::Participation {
+        ippan_economics_core::Participation {
             validator_id: [1u8; 32],
-            role: ippan_economics::Role::Proposer,
+            role: ippan_economics_core::Role::Proposer,
             blocks_proposed: 1,
             blocks_verified: 0,
             reputation_score: 1.0,
             stake_weight: 1000,
         },
-        ippan_economics::Participation {
+        ippan_economics_core::Participation {
             validator_id: [2u8; 32],
-            role: ippan_economics::Role::Verifier,
+            role: ippan_economics_core::Role::Verifier,
             blocks_proposed: 0,
             blocks_verified: 2,
             reputation_score: 1.2,
             stake_weight: 2000,
         },
-        ippan_economics::Participation {
+        ippan_economics_core::Participation {
             validator_id: [3u8; 32],
-            role: ippan_economics::Role::Both,
+            role: ippan_economics_core::Role::Both,
             blocks_proposed: 1,
             blocks_verified: 1,
             reputation_score: 1.5,
@@ -284,7 +284,7 @@ fn test_fee_collection() {
 }
 
 /// Helper function to create test participants
-fn create_test_participants(round: RoundId) -> Vec<ippan_economics::Participation> {
+fn create_test_participants(round: RoundId) -> Vec<ippan_economics_core::Participation> {
     let mut participants = Vec::new();
     
     // Create 3-5 random validators per round
@@ -297,12 +297,12 @@ fn create_test_participants(round: RoundId) -> Vec<ippan_economics::Participatio
         let blocks_verified = (i + 1) as u32;
         let reputation = 0.8 + (i as f64 * 0.1);
         
-        participants.push(ippan_economics::Participation {
+        participants.push(ippan_economics_core::Participation {
             validator_id,
             role: if i == 0 {
-                ippan_economics::Role::Proposer
+                ippan_economics_core::Role::Proposer
             } else {
-                ippan_economics::Role::Verifier
+                ippan_economics_core::Role::Verifier
             },
             blocks_proposed,
             blocks_verified,

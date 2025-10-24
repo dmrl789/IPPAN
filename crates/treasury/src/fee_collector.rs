@@ -1,6 +1,6 @@
 //! Fee collection and management for the treasury
 
-use ippan_economics::MicroIPN;
+use ippan_economics_core::MicroIPN;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
