@@ -1,61 +1,97 @@
-//! Core types for IPPAN Economics
+//! Core types for the IPPAN Economics Engine
+//!
+//! Defines monetary units, validator identifiers, participation records,
+//! and system-wide economic parameters for DAG-Fair emission and distribution.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Micro-IPN unit (1 IPN = 10^8 micro-IPN)
-pub const MICRO_PER_IPN: u128 = 100_000_000;
+/// Round index (HashTimer-anchored, monotonically increasing)
+pub type RoundIndex = u64;
 
-/// Validator identifier
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Monetary amount in micro-IPN (μIPN)
+/// 1 IPN = 1 000 000 μIPN
+pub type MicroIPN = u128;
+
+/// Validator identifier (Ed25519 public key, .ipn handle, or registry alias)
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ValidatorId(pub String);
 
-/// Validator role in a round
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Participation role within a round
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
-    Proposer,
+    /// Default role — validator verifying others’ work
+    #[default]
     Verifier,
+    /// Validator proposing a block or DAG event
+    Proposer,
 }
 
-/// Validator participation in a round
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Per-validator participation record for a round.
+/// `blocks` = number of micro-blocks, votes, or attestations credited.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Participation {
     pub role: Role,
     pub blocks: u32,
 }
 
-/// Set of validators participating in a round
+/// Mapping validator → participation
 pub type ParticipationSet = HashMap<ValidatorId, Participation>;
 
-/// Economics parameters for the system
+/// Per-validator payout result (μIPN)
+pub type Payouts = HashMap<ValidatorId, MicroIPN>;
+
+/// Economics parameters controlling emission, halving, and reward weights
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EconomicsParams {
-    /// Initial reward per round (in micro-IPN)
-    pub initial_reward_micro: u128,
+    /// Initial reward per round (μIPN)
+    pub initial_round_reward_micro: MicroIPN,
     /// Halving interval in rounds
     pub halving_interval_rounds: u64,
-    /// Hard supply cap (in micro-IPN)
-    pub hard_cap_micro: u128,
-    /// Proposer reward percentage (basis points)
-    pub proposer_bps: u16,
-    /// Verifier reward percentage (basis points)
-    pub verifier_bps: u16,
+    /// Hard supply cap (μIPN)
+    pub hard_cap_micro: MicroIPN,
+    /// Proposer weight in thousandths (1000 = 1.0×)
+    pub weight_proposer_milli: u32,
+    /// Verifier weight in thousandths (1000 = 1.0×)
+    pub weight_verifier_milli: u32,
+    /// Fee cap numerator (e.g., 1 for 10%)
+    pub fee_cap_numer: u32,
+    /// Fee cap denominator (e.g., 10 for 10%)
+    pub fee_cap_denom: u32,
 }
 
 impl Default for EconomicsParams {
     fn default() -> Self {
         Self {
-            // ~50 IPN/day at 100ms rounds
-            initial_reward_micro: 10_000 * MICRO_PER_IPN / 1_000_000, // 0.1 micro-IPN
-            // Halving every ~2 years at 200ms rounds
-            halving_interval_rounds: 315_000_000,
-            // 21 million IPN
+            // 0.0001 IPN = 100 μIPN per round
+            initial_round_reward_micro: 100,
+            // ≈ 2 years at 10 rounds/s
+            halving_interval_rounds: 630_720_000,
+            // 21 million IPN total = 21 000 000 × 1 000 000 μIPN
             hard_cap_micro: 21_000_000 * MICRO_PER_IPN,
-            proposer_bps: 2000, // 20%
-            verifier_bps: 8000, // 80%
+            weight_proposer_milli: 1200, // +20 %
+            weight_verifier_milli: 1000, // baseline 1.0×
+            fee_cap_numer: 1,
+            fee_cap_denom: 10, // 10 %
         }
     }
 }
 
-/// Type alias for micro-IPN amounts
-pub type MicroIPN = u128;
+impl EconomicsParams {
+    /// Return fee-cap fraction (numerator, denominator)
+    pub fn fee_cap_fraction(&self) -> (u32, u32) {
+        (self.fee_cap_numer, self.fee_cap_denom)
+    }
+
+    /// Role-specific weight lookup
+    pub fn role_weight_milli(&self, proposer: bool) -> u32 {
+        if proposer {
+            self.weight_proposer_milli
+        } else {
+            self.weight_verifier_milli
+        }
+    }
+}
+
+/// Helper constant — 1 IPN = 1 000 000 μIPN
+pub const MICRO_PER_IPN: MicroIPN = 1_000_000;

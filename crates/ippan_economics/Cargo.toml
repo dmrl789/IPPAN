@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "IPPAN Economics Engine with DAG-Fair Emission, halving schedules, and validator reward distribution."
+description = "Deterministic round-based emission and fair distribution for IPPAN BlockDAG (DAG-Fair Emission, halving, and validator reward scheduling)"
+repository = "https://github.com/dmrl789/IPPAN"
 
 [features]
 default = []

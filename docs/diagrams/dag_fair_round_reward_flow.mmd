@@ -1,0 +1,23 @@
+%% DAG-Fair Round Reward Flow (Mermaid)
+%% High-level flow showing per-round emission R(t), distribution, fee cap, and burn
+
+graph TD
+  A[On-chain parameters\nR0, Th, f(v), fee caps] --> B[Round reward function\nR(t) = R0 / 2^floor(t/Th)]
+  B --> C[Per-round emission pool\nTotal R(t)]
+
+  C --> D[Round DAG blocks\nB_r blocks]
+  C --> E[Active validators\nV_r set]
+  C --> F[Per-round fees F_r]
+
+  F -->|Cap: F_r ≤ 0.1 × R(t)| F
+
+  G[Within-round distribution\nPer-block R(t)/B_r; per-validator Σ_b (R(t)/B_r × f(v))]
+  D --> G
+  E --> G
+  F --> G
+
+  G --> H[Emission share\n60%]
+  G --> I[Transaction fees\n≤ cap]
+  G --> J[AI commissions 10%\nPool dividend 5%]
+
+  G -.-> K[Auto-burn rounding excess\nat epoch close]
