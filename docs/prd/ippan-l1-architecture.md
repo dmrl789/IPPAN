@@ -152,6 +152,78 @@ Allow all validators to propose blocks in parallel and finalize them determinist
 - Shard serving rewards and archival contracts  
 - Handle/domain fees fund validator pool
 
+### 7.1 Fractional IPN Unit Architecture (Atomic Accounting)
+
+IPPAN accounts value in atomic units with yocto-level precision to match the HashTimer cadence and DAG-Fair emission granularity.
+
+#### Denominations
+
+| Name | Symbol | Value in IPN | Typical use |
+|------|--------|--------------|-------------|
+| IPN  | 1 IPN  | 1            | governance, staking |
+| mIPN | milli  | 10⁻³         | validator micro-rewards |
+| µIPN | micro  | 10⁻⁸         | transaction fees (UI default unit) |
+| aIPN | atto   | 10⁻¹⁸        | IoT/AI micro-service calls |
+| zIPN | zepto  | 10⁻²¹        | sub-millisecond machine triggers |
+| yIPN | yocto  | 10⁻²⁴        | HashTimer precision-level payments |
+
+- Smallest accepted fraction: \(1\,\text{yIPN} = 10^{-24}\,\text{IPN}\).
+- Total atomic supply: \(\text{Supply}_{\text{atomic}} = 21{,}000{,}000 \times 10^{24}\).
+
+#### Rationale
+
+- Deterministic micro-settlement aligned to HashTimer events (10–50 ms rounds)
+- Fair parallel reward splits without rounding drift
+- Machine-to-machine economies (AI, IoT, DePIN) with negligible unit exhaustion risk
+- Integer math only — no floating point in consensus-critical paths
+
+#### Ledger representation (Rust)
+
+```rust
+/// IPN is stored as fixed-point integer with 24 decimal places.
+/// 1 IPN = 10^24 atomic units.
+pub type AtomicIPN = u128;
+
+pub const IPN_DECIMALS: u32 = 24;
+pub const ATOMIC_PER_IPN: AtomicIPN = 10u128.pow(IPN_DECIMALS);
+
+/// Example: convert 0.000000000000000000000001 IPN to atomic units
+let one_yocto: AtomicIPN = 1u128; // 1 atomic unit
+```
+
+Human interfaces default to 8–12 fractional digits (e.g., µIPN) while preserving full 24-decimal accuracy in storage, wallet math, and transaction validation.
+
+#### Economic consistency
+
+| Property | Effect |
+|----------|--------|
+| No inflation | Fixed atomic supply: 21 M × 10²⁴ |
+| Rounding-safe | DAG-Fair splits in integers; deterministic remainder handling |
+| Deterministic | Pure integer arithmetic; no float drift across nodes |
+| Audit-ready | Round records include reward and sub-unit checksum proofs |
+
+#### Example — validator reward split
+
+Given round reward \(R(t) = 10^{-4}\,\text{IPN}\):
+
+\[
+R_{\text{atomic}} = R(t) \times 10^{24} = 10^{20}\,\text{units}
+\]
+
+For \(B_r = 1000\) blocks in the round, an equal split yields:
+
+\[
+\left\lfloor \frac{10^{20}}{1000} \right\rfloor = 10^{17}\,\text{units} = 10^{-7}\,\text{IPN}\;\text{per block}
+\]
+
+Any remainder \(r < B_r\) is handled deterministically (e.g., assigned by HashTimer order or carried-forward/burned per protocol), preserving conservation of supply with no ambiguous rounding.
+
+### 7.2 Interactions: DAG-Fair Emission and HashTimer Micropayments
+
+- DAG-Fair emission computes validator and contributor shares in atomic units, ensuring exactness across thousands of micro-blocks per round.
+- HashTimer-anchored micropayments settle at sub-IPN scales with yocto precision, matching the temporal resolution of the ordering layer.
+- Wallets and RPC present user-friendly denominations (e.g., µIPN) while nodes exchange and verify integer atomic values.
+
 ---
 
 ## 8. Implementation Notes

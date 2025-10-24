@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub type RoundIndex = u64;
 
 /// Monetary amount in micro-IPN (μIPN)
-/// 1 IPN = 1_000_000 μIPN
+/// 1 IPN = 1 000 000 μIPN
 pub type MicroIPN = u128;
 
 /// Validator identifier (Ed25519 public key, .ipn handle, or registry alias)
@@ -67,12 +67,12 @@ impl Default for EconomicsParams {
             initial_round_reward_micro: 100,
             // ≈ 2 years at 10 rounds/s
             halving_interval_rounds: 630_720_000,
-            // 21 million IPN total = 21_000_000 × 1_000_000 μIPN
+            // 21 million IPN total = 21 000 000 × 1 000 000 μIPN
             hard_cap_micro: 21_000_000 * MICRO_PER_IPN,
-            weight_proposer_milli: 1200, // +20%
+            weight_proposer_milli: 1200, // +20 %
             weight_verifier_milli: 1000, // baseline 1.0×
             fee_cap_numer: 1,
-            fee_cap_denom: 10, // 10%
+            fee_cap_denom: 10, // 10 %
         }
     }
 }
@@ -93,5 +93,5 @@ impl EconomicsParams {
     }
 }
 
-/// Helper constant — 1 IPN = 1_000_000 μIPN
+/// Helper constant — 1 IPN = 1 000 000 μIPN
 pub const MICRO_PER_IPN: MicroIPN = 1_000_000;
