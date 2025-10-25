@@ -1,7 +1,7 @@
 //! Model validation and verification
 
 use crate::{
-    errors::{AiCoreError, Result},
+    errors::AiCoreError,
     types::*,
 };
 use std::collections::HashMap;
@@ -121,12 +121,12 @@ impl ModelValidator {
         &mut self,
         model_data: &[u8],
         metadata: &ModelMetadata,
-    ) -> Result<ValidationResult> {
+    ) -> std::result::Result<ValidationResult, AiCoreError> {
         info!("Validating model: {:?}", metadata.id);
         
         let start_time = std::time::Instant::now();
-        let mut errors = Vec::new();
-        let mut warnings = Vec::new();
+        let mut errors: Vec<ValidationError> = Vec::new();
+        let mut warnings: Vec<ValidationWarning> = Vec::new();
         
         // Run validation rules
         for rule in &self.rules {
@@ -189,9 +189,9 @@ impl ModelValidator {
         &self,
         model_data: &[u8],
         metadata: &ModelMetadata,
-    ) -> Result<(), ValidationError> {
+    ) -> std::result::Result<(), ValidationError> {
         let computed_hash = blake3::hash(model_data).to_hex();
-        if computed_hash != metadata.id.hash {
+        if computed_hash.as_str() != metadata.id.hash.as_str() {
             return Err(ValidationError {
                 error_type: "HashIntegrity".to_string(),
                 message: format!(
@@ -205,7 +205,7 @@ impl ModelValidator {
     }
 
     /// Validate input/output shapes
-    fn validate_shapes(&self, metadata: &ModelMetadata) -> Result<(), ValidationError> {
+    fn validate_shapes(&self, metadata: &ModelMetadata) -> std::result::Result<(), ValidationError> {
         // Check input shape
         if metadata.input_shape.is_empty() {
             return Err(ValidationError {
@@ -249,7 +249,7 @@ impl ModelValidator {
     }
 
     /// Validate parameter bounds
-    fn validate_parameter_bounds(&self, metadata: &ModelMetadata) -> Result<(), ValidationError> {
+    fn validate_parameter_bounds(&self, metadata: &ModelMetadata) -> std::result::Result<(), ValidationError> {
         // Check parameter count is reasonable
         if metadata.parameter_count == 0 {
             return Err(ValidationError {
@@ -294,7 +294,7 @@ impl ModelValidator {
         &self,
         model_data: &[u8],
         metadata: &ModelMetadata,
-    ) -> Result<(), ValidationError> {
+    ) -> std::result::Result<(), ValidationError> {
         // Placeholder implementation
         // In a real implementation, this would:
         // 1. Execute the model multiple times with the same input
@@ -310,7 +310,7 @@ impl ModelValidator {
         &self,
         model_data: &[u8],
         metadata: &ModelMetadata,
-    ) -> Result<(), ValidationError> {
+    ) -> std::result::Result<(), ValidationError> {
         // Check minimum data size
         if model_data.len() < 1024 { // 1KB minimum
             return Err(ValidationError {
