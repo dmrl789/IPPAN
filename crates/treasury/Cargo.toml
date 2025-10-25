@@ -14,7 +14,7 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 hex = { workspace = true }
-ippan-economics = { path = "../economics" }
+ippan-economics = { path = "../ippan_economics" }
 ippan-types = { path = "../types" }
 
 [dev-dependencies]
