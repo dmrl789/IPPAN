@@ -4,32 +4,189 @@ use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Stub for proposal manager (TODO: implement full functionality)
-pub struct ProposalManager;
+/// Proposal manager for AI model governance
+pub struct ProposalManager {
+    threshold: f64,
+    min_stake: u64,
+    proposals: HashMap<String, AiModelProposal>,
+    votes: HashMap<String, HashMap<[u8; 32], (u64, bool)>>, // proposal_id -> (voter_id -> (stake, approve))
+    total_stake: u64,
+}
+
 impl ProposalManager {
-    pub fn new(_threshold: f64, _stake: u64) -> Self { Self }
-    pub fn submit_proposal(&mut self, _proposal: AiModelProposal, _stake: u64) -> Result<()> { Ok(()) }
-    pub fn start_voting(&mut self, _id: &str) -> Result<()> { Ok(()) }
-    pub fn vote(&mut self, _id: &str, _voter: [u8; 32], _stake: u64, _approve: bool) -> Result<()> { Ok(()) }
-    pub fn execute_proposal(&mut self, _id: &str) -> Result<ModelRegistryEntry> {
-        Ok(ModelRegistryEntry::new("stub".into(), [0u8; 32], 1, 0, [0u8; 64], 0, "stub".into()))
+    pub fn new(threshold: f64, min_stake: u64) -> Self {
+        Self {
+            threshold,
+            min_stake,
+            proposals: HashMap::new(),
+            votes: HashMap::new(),
+            total_stake: 0,
+        }
+    }
+    
+    pub fn submit_proposal(&mut self, proposal: AiModelProposal, stake: u64) -> Result<()> {
+        if stake < self.min_stake {
+            return Err(anyhow::anyhow!("Insufficient stake to submit proposal"));
+        }
+        
+        self.proposals.insert(proposal.model_id.clone(), proposal);
+        self.total_stake += stake;
+        Ok(())
+    }
+    
+    pub fn start_voting(&mut self, id: &str) -> Result<()> {
+        if !self.proposals.contains_key(id) {
+            return Err(anyhow::anyhow!("Proposal not found"));
+        }
+        
+        self.votes.insert(id.to_string(), HashMap::new());
+        Ok(())
+    }
+    
+    pub fn vote(&mut self, id: &str, voter: [u8; 32], stake: u64, approve: bool) -> Result<()> {
+        if let Some(votes) = self.votes.get_mut(id) {
+            votes.insert(voter, (stake, approve));
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Voting not started for this proposal"))
+        }
+    }
+    
+    pub fn execute_proposal(&mut self, id: &str) -> Result<ModelRegistryEntry> {
+        if let Some(proposal) = self.proposals.get(id) {
+            if let Some(votes) = self.votes.get(id) {
+                let (total_approve_stake, total_stake) = votes.values()
+                    .fold((0u64, 0u64), |(approve, total), (stake, is_approve)| {
+                        if *is_approve {
+                            (approve + stake, total + stake)
+                        } else {
+                            (approve, total + stake)
+                        }
+                    });
+                
+                let approval_ratio = if total_stake > 0 {
+                    total_approve_stake as f64 / total_stake as f64
+                } else {
+                    0.0
+                };
+                
+                if approval_ratio >= self.threshold {
+                    Ok(ModelRegistryEntry::new(
+                        proposal.model_id.clone(),
+                        proposal.model_hash,
+                        proposal.version,
+                        proposal.activation_round,
+                        proposal.signature_foundation,
+                        0, // approved_round
+                        proposal.model_url.clone(),
+                    ))
+                } else {
+                    Err(anyhow::anyhow!("Proposal did not meet approval threshold"))
+                }
+            } else {
+                Err(anyhow::anyhow!("No votes recorded for this proposal"))
+            }
+        } else {
+            Err(anyhow::anyhow!("Proposal not found"))
+        }
     }
 }
 
-/// Stub for model registry (TODO: implement full functionality)
-pub struct ModelRegistry;
-impl ModelRegistry {
-    pub fn new() -> Self { Self }
-    pub fn register_model(&mut self, _entry: ModelRegistryEntry) -> Result<()> { Ok(()) }
-    pub fn activate_model(&mut self, _id: &str, _round: u64) -> Result<()> { Ok(()) }
-    pub fn get_model(&self, _id: &str) -> Option<ModelRegistryEntry> { None }
+/// Model registry for managing approved AI models
+pub struct ModelRegistry {
+    models: HashMap<String, ModelRegistryEntry>,
+    active_models: HashMap<String, u64>, // model_id -> activation_round
 }
 
-/// Stub for activation manager (TODO: implement full functionality)
-pub struct ActivationManager;
+impl ModelRegistry {
+    pub fn new() -> Self {
+        Self {
+            models: HashMap::new(),
+            active_models: HashMap::new(),
+        }
+    }
+    
+    pub fn register_model(&mut self, entry: ModelRegistryEntry) -> Result<()> {
+        self.models.insert(entry.model_id.clone(), entry);
+        Ok(())
+    }
+    
+    pub fn activate_model(&mut self, id: &str, round: u64) -> Result<()> {
+        if self.models.contains_key(id) {
+            self.active_models.insert(id.to_string(), round);
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Model not found in registry"))
+        }
+    }
+    
+    pub fn get_model(&self, id: &str) -> Option<ModelRegistryEntry> {
+        self.models.get(id).cloned()
+    }
+    
+    pub fn is_active(&self, id: &str, current_round: u64) -> bool {
+        if let Some(activation_round) = self.active_models.get(id) {
+            current_round >= *activation_round
+        } else {
+            false
+        }
+    }
+    
+    pub fn get_active_models(&self, current_round: u64) -> Vec<ModelRegistryEntry> {
+        self.models.values()
+            .filter(|model| self.is_active(&model.model_id, current_round))
+            .cloned()
+            .collect()
+    }
+}
+
+/// Activation manager for processing model activations
+pub struct ActivationManager {
+    registry: ModelRegistry,
+    pending_activations: HashMap<String, u64>, // model_id -> activation_round
+}
+
 impl ActivationManager {
-    pub fn new() -> Self { Self }
-    pub fn process_round(&mut self, _round: u64) -> Result<Vec<String>> { Ok(vec![]) }
+    pub fn new() -> Self {
+        Self {
+            registry: ModelRegistry::new(),
+            pending_activations: HashMap::new(),
+        }
+    }
+    
+    pub fn process_round(&mut self, round: u64) -> Result<Vec<String>> {
+        let mut activated = Vec::new();
+        
+        // Check for models that should be activated this round
+        for (model_id, activation_round) in self.pending_activations.iter() {
+            if *activation_round <= round {
+                if let Err(e) = self.registry.activate_model(model_id, round) {
+                    tracing::warn!("Failed to activate model {}: {}", model_id, e);
+                } else {
+                    activated.push(model_id.clone());
+                }
+            }
+        }
+        
+        // Remove activated models from pending
+        for model_id in &activated {
+            self.pending_activations.remove(model_id);
+        }
+        
+        Ok(activated)
+    }
+    
+    pub fn schedule_activation(&mut self, model_id: String, activation_round: u64) {
+        self.pending_activations.insert(model_id, activation_round);
+    }
+    
+    pub fn get_registry(&self) -> &ModelRegistry {
+        &self.registry
+    }
+    
+    pub fn get_registry_mut(&mut self) -> &mut ModelRegistry {
+        &mut self.registry
+    }
 }
 
 /// AI model governance manager

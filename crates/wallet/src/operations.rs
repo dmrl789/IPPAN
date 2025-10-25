@@ -242,7 +242,7 @@ impl WalletManager {
             from_address: Some(from_address.to_string()),
             to_address: Some(to_address.to_string()),
             amount,
-            fee: 0, // TODO: Calculate actual fee
+            fee: self.calculate_transaction_fee(&tx),
             timestamp: chrono::Utc::now(),
             status: TransactionStatus::Pending,
             label: None,
@@ -253,6 +253,54 @@ impl WalletManager {
         Ok(tx_hash)
     }
     
+    /// Calculate transaction fee based on transaction size and complexity
+    fn calculate_transaction_fee(&self, tx: &Transaction) -> u64 {
+        // Base fee for all transactions
+        let base_fee = 1000; // 1000 atomic units
+        
+        // Size-based fee calculation
+        let mut estimated_size = 0usize;
+        
+        // Fixed-size fields
+        estimated_size += 32; // id
+        estimated_size += 32; // from
+        estimated_size += 32; // to
+        estimated_size += 8;  // amount
+        estimated_size += 8;  // nonce
+        estimated_size += 64; // signature
+        estimated_size += tx.hashtimer.time_prefix.len();
+        estimated_size += tx.hashtimer.hash_suffix.len();
+        estimated_size += std::mem::size_of_val(&tx.timestamp.0);
+        
+        // Dynamic fields
+        estimated_size += tx.topics.iter().map(|topic| topic.len()).sum::<usize>();
+        
+        if let Some(envelope) = &tx.confidential {
+            estimated_size += envelope.enc_algo.len();
+            estimated_size += envelope.iv.len();
+            estimated_size += envelope.ciphertext.len();
+            estimated_size += envelope
+                .access_keys
+                .iter()
+                .map(|key| key.recipient_pub.len() + key.enc_key.len())
+                .sum::<usize>();
+        }
+        
+        if let Some(proof) = &tx.zk_proof {
+            estimated_size += proof.proof.len();
+            estimated_size += proof
+                .public_inputs
+                .iter()
+                .map(|(key, value)| key.len() + value.len())
+                .sum::<usize>();
+        }
+        
+        // Size-based fee (10 atomic units per byte)
+        let size_fee = estimated_size as u64 * 10;
+        
+        base_fee + size_fee
+    }
+
     /// Get transaction history for an address
     pub fn get_address_transactions(&self, address: &str) -> Result<Vec<WalletTransaction>> {
         if let Some(ref rpc) = self.rpc_client {
@@ -266,7 +314,7 @@ impl WalletManager {
                     from_address: Some(encode_address(&tx.from)),
                     to_address: Some(encode_address(&tx.to)),
                     amount: tx.amount.atomic(),
-                    fee: 0, // TODO: Calculate actual fee
+                    fee: self.calculate_transaction_fee(&tx),
                     timestamp: chrono::DateTime::from_timestamp(
                         tx.timestamp.0 as i64 / 1_000_000,
                         0,
