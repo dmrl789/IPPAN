@@ -7,6 +7,7 @@ use crate::types::*;
 use crate::crypto::*;
 use crate::storage::WalletStorage;
 use ippan_types::{Transaction, Amount, Address};
+use ippan_types::transaction::TransactionVisibility;
 
 /// Main wallet operations manager
 pub struct WalletManager {
@@ -216,6 +217,10 @@ impl WalletManager {
             Amount::from_atomic(amount),
             nonce,
         );
+
+        // Estimate fee deterministically using similar logic as mempool
+        // Base + size components; bounded by consensus fee caps
+        let estimated_fee = self.estimate_fee(&transaction);
         
         // Sign transaction
         transaction.sign(&private_key_bytes)?;
@@ -242,7 +247,7 @@ impl WalletManager {
             from_address: Some(from_address.to_string()),
             to_address: Some(to_address.to_string()),
             amount,
-            fee: 0, // TODO: Calculate actual fee
+            fee: estimated_fee,
             timestamp: chrono::Utc::now(),
             status: TransactionStatus::Pending,
             label: None,
@@ -251,6 +256,56 @@ impl WalletManager {
         self.transaction_cache.write().insert(tx_hash.clone(), wallet_tx);
         
         Ok(tx_hash)
+    }
+
+    /// Estimate a transaction fee consistent with mempool admission rules
+    fn estimate_fee(&self, tx: &Transaction) -> u64 {
+        // Mirror mempool's base and size-based fee with safe bounds
+        let base_fee = 1000u64;
+
+        // Approximate serialized size using public fields
+        let mut estimated_size = 0usize;
+        estimated_size += 32; // id
+        estimated_size += 32; // from
+        estimated_size += 32; // to
+        estimated_size += 8;  // amount (u128 truncated in storage; fee sizing heuristic)
+        estimated_size += 8;  // nonce
+        estimated_size += 64; // signature
+        estimated_size += tx.hashtimer.time_prefix.len();
+        estimated_size += tx.hashtimer.hash_suffix.len();
+        estimated_size += std::mem::size_of_val(&tx.timestamp.0);
+
+        // Topics
+        estimated_size += tx.topics.iter().map(|t| t.len()).sum::<usize>();
+
+        // Confidential payloads add overhead
+        if let Some(envelope) = &tx.confidential {
+            estimated_size += envelope.enc_algo.len();
+            estimated_size += envelope.iv.len();
+            estimated_size += envelope.ciphertext.len();
+            estimated_size += envelope
+                .access_keys
+                .iter()
+                .map(|k| k.recipient_pub.len() + k.enc_key.len())
+                .sum::<usize>();
+        }
+
+        if let Some(proof) = &tx.zk_proof {
+            estimated_size += proof.proof.len();
+            estimated_size += proof
+                .public_inputs
+                .iter()
+                .map(|(k, v)| k.len() + v.len())
+                .sum::<usize>();
+        }
+
+        let size_fee = (estimated_size as u64).saturating_mul(10);
+        let mut fee = base_fee.saturating_add(size_fee);
+
+        // Apply a conservative upper bound mirroring mempool
+        const MAX_FEE_PER_TX: u64 = 10_000_000; // keep in sync with mempool
+        if fee > MAX_FEE_PER_TX { fee = MAX_FEE_PER_TX; }
+        fee
     }
     
     /// Get transaction history for an address

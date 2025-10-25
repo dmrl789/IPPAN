@@ -12,7 +12,7 @@ path = "src/lib.rs"
 [features]
 default = ["llm", "analytics", "smart_contracts"]
 # LLM integration features
-llm = ["reqwest", "serde_json", "tokio"]
+llm = ["reqwest"]
 # Analytics and insights
 analytics = ["chrono", "statistical"]
 # Smart contract AI features
@@ -37,8 +37,8 @@ async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# HTTP client for LLM APIs
-reqwest = { version = "0.11", features = ["json"], optional = true }
+# HTTP client for LLM APIs (avoid OpenSSL by using rustls)
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"], optional = true }
@@ -62,7 +62,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 # Utilities
-uuid = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
 base64 = { workspace = true }
 hex = { workspace = true }
 blake3 = { workspace = true }

@@ -206,7 +206,7 @@ pub struct SmartContractAnalysisResponse {
 }
 
 /// Contract analysis types
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContractAnalysisType {
     /// Security analysis
     Security,
@@ -367,7 +367,7 @@ pub struct MonitoringAlert {
 }
 
 /// Alert status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AlertStatus {
     /// Active
     Active,

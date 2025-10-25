@@ -6,6 +6,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use tracing::{info, warn, error};
+use reqwest::Client;
 
 /// Model manager for loading and managing AI models
 pub struct ModelManager {
@@ -182,26 +183,57 @@ impl ModelManager {
 
     /// Load model data from URL
     async fn load_from_url(&self, url: &str) -> Result<Vec<u8>> {
-        // Placeholder implementation
-        // In a real implementation, this would use HTTP client to fetch the model
-        error!("Remote model loading not implemented yet");
-        Err(AiCoreError::ExecutionFailed("Remote loading not implemented".to_string()))
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| AiCoreError::ExecutionFailed(format!("failed to build http client: {e}")))?;
+
+        let resp = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| AiCoreError::ExecutionFailed(format!("http request failed: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(AiCoreError::ExecutionFailed(format!(
+                "remote fetch failed with status {}", resp.status()
+            )));
+        }
+
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| AiCoreError::ExecutionFailed(format!("failed to read response body: {e}")))?;
+        Ok(bytes.to_vec())
     }
 
     /// Load model data from IPFS
     async fn load_from_ipfs(&self, hash: &str) -> Result<Vec<u8>> {
-        // Placeholder implementation
-        // In a real implementation, this would use IPFS client to fetch the model
-        error!("IPFS model loading not implemented yet");
-        Err(AiCoreError::ExecutionFailed("IPFS loading not implemented".to_string()))
+        // Best-effort: attempt public IPFS gateway. Hash may include CID prefix.
+        let url = format!("https://ipfs.io/ipfs/{hash}");
+        match self.load_from_url(&url).await {
+            Ok(bytes) => Ok(bytes),
+            Err(err) => {
+                // Try cloudflare gateway as fallback
+                let alt_url = format!("https://cloudflare-ipfs.com/ipfs/{hash}");
+                self.load_from_url(&alt_url).await.map_err(|_| err)
+            }
+        }
     }
 
     /// Load model data from blockchain storage
     async fn load_from_blockchain(&self, storage_key: &str) -> Result<Vec<u8>> {
-        // Placeholder implementation
-        // In a real implementation, this would query the blockchain for the model data
-        error!("Blockchain model loading not implemented yet");
-        Err(AiCoreError::ExecutionFailed("Blockchain loading not implemented".to_string()))
+        // Minimal production implementation: attempt gateway endpoint if configured via env
+        // IPPAN_GATEWAY_URL like http://host:8081/api
+        if let Ok(base) = std::env::var("IPPAN_GATEWAY_URL") {
+            let url = format!("{}/models/{}", base.trim_end_matches('/'), storage_key);
+            if let Ok(bytes) = self.load_from_url(&url).await {
+                return Ok(bytes);
+            }
+        }
+        Err(AiCoreError::ExecutionFailed(
+            "Blockchain storage loading not available (set IPPAN_GATEWAY_URL)".to_string(),
+        ))
     }
 
     /// Validate model metadata

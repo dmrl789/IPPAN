@@ -259,7 +259,7 @@ impl SmartContractService {
             return 1.0;
         }
 
-        let mut score = 1.0;
+        let mut score: f32 = 1.0;
         for issue in issues {
             let penalty = match issue.severity {
                 SeverityLevel::Critical => 0.3,
@@ -270,12 +270,12 @@ impl SmartContractService {
             score -= penalty;
         }
 
-        score.max(0.0)
+        (score.max(0.0)) as f64
     }
 
     /// Calculate gas efficiency score
     fn calculate_gas_efficiency_score(&self, code: &str, language: &str) -> f64 {
-        let mut score = 1.0;
+        let mut score: f32 = 1.0;
 
         // Simple heuristics for gas efficiency
         let lines = code.lines().count();
@@ -296,7 +296,7 @@ impl SmartContractService {
             score += 0.05; // Efficient hashing
         }
 
-        score.max(0.0).min(1.0)
+        (score.max(0.0).min(1.0)) as f64
     }
 
     /// Calculate complexity score

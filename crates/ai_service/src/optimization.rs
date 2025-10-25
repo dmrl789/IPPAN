@@ -27,7 +27,7 @@ impl OptimizationService {
         let mut optimized_transaction = request.transaction.clone();
         let mut suggestions = Vec::new();
         let mut expected_improvements = HashMap::new();
-        let mut confidence = 0.8;
+        let mut confidence: f32 = 0.8;
 
         // Apply optimizations based on goals
         for goal in &request.goals {
@@ -83,7 +83,7 @@ impl OptimizationService {
             optimized_transaction,
             suggestions,
             expected_improvements,
-            confidence,
+            confidence: confidence as f64,
         })
     }
 
@@ -151,7 +151,7 @@ impl OptimizationService {
             improvement += 0.25;
         }
 
-        Ok((optimized, suggestions, improvement.min(1.0)))
+        Ok((optimized, suggestions, (improvement as f32).min(1.0) as f64))
     }
 
     /// Optimize throughput
@@ -161,7 +161,7 @@ impl OptimizationService {
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
         let mut optimized = transaction.clone();
         let mut suggestions = Vec::new();
-        let mut improvement = 0.0;
+        let mut improvement: f32 = 0.0;
 
         // Optimize for parallel processing
         if transaction.tx_type == "contract_call" {
@@ -194,7 +194,7 @@ impl OptimizationService {
         });
         improvement += 0.20;
 
-        Ok((optimized, suggestions, improvement.min(1.0)))
+        Ok((optimized, suggestions, (improvement as f32).min(1.0) as f64))
     }
 
     /// Optimize latency
@@ -204,7 +204,7 @@ impl OptimizationService {
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
         let mut optimized = transaction.clone();
         let mut suggestions = Vec::new();
-        let mut improvement = 0.0;
+        let mut improvement: f32 = 0.0;
 
         // Optimize gas price for faster inclusion
         if optimized.gas_price < 20_000_000_000 { // 20 Gwei
@@ -240,7 +240,7 @@ impl OptimizationService {
             improvement += 0.10;
         }
 
-        Ok((optimized, suggestions, improvement.min(1.0)))
+        Ok((optimized, suggestions, (improvement as f32).min(1.0) as f64))
     }
 
     /// Optimize security
@@ -250,7 +250,7 @@ impl OptimizationService {
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
         let mut optimized = transaction.clone();
         let mut suggestions = Vec::new();
-        let mut improvement = 0.0;
+        let mut improvement: f32 = 0.0;
 
         // Add security validations
         suggestions.push(OptimizationSuggestion {
@@ -292,7 +292,7 @@ impl OptimizationService {
             improvement += 0.15;
         }
 
-        Ok((optimized, suggestions, improvement.min(1.0)))
+        Ok((optimized, suggestions, (improvement as f32).min(1.0) as f64))
     }
 
     /// Optimize cost
@@ -302,7 +302,7 @@ impl OptimizationService {
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
         let mut optimized = transaction.clone();
         let mut suggestions = Vec::new();
-        let mut improvement = 0.0;
+        let mut improvement: f32 = 0.0;
 
         // Optimize gas price
         if optimized.gas_price > 10_000_000_000 { // 10 Gwei
@@ -347,7 +347,7 @@ impl OptimizationService {
         });
         improvement += 0.40;
 
-        Ok((optimized, suggestions, improvement.min(1.0)))
+        Ok((optimized, suggestions, (improvement as f32).min(1.0) as f64))
     }
 
     /// Get optimization recommendations for a transaction type
