@@ -1,0 +1,140 @@
+name: "🧠 MetaAgent Governance Protocol"
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, closed]
+  issues:
+    types: [opened, reopened, labeled]
+  schedule:
+    - cron: '0 * * * *' # hourly consistency check
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  META_LOG_DIR: ".meta/logs"
+  META_LOCK_LABEL: "locked"
+  META_APPROVAL_LABEL: "metaagent:approved"
+  # Ensure gh CLI is authenticated in Actions
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  metaagent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "🧭 Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "🧰 Ensure log directory"
+        run: mkdir -p ${{ env.META_LOG_DIR }}
+
+      - name: "🧠 Install jq and gh CLI"
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          sudo apt-key add /usr/share/keyrings/githubcli-archive-keyring.gpg
+          sudo apt-get install -y gh
+
+      # ============================================================
+      # 1. ASSIGNMENT LOGIC
+      # ============================================================
+      - name: "📋 Assign Agent Automatically"
+        if: github.event_name == 'issues' && github.event.action == 'opened'
+        run: |
+          issue_number=${{ github.event.issue.number }}
+          title="${{ github.event.issue.title }}"
+          echo "Assigning agent for issue #$issue_number"
+          agent=$(shuf -n 1 -e agent-alpha agent-beta agent-gamma agent-delta agent-epsilon agent-zeta agent-theta agent-lambda)
+          echo "Selected $agent for issue #$issue_number"
+          gh issue comment $issue_number --body "🤖 MetaAgent assigned **@$agent** to this issue automatically."
+          gh issue edit $issue_number --add-assignee "$agent"
+          echo "$(date -u) | Issue #$issue_number | Assigned to $agent" >> $META_LOG_DIR/assignments.log
+
+      # ============================================================
+      # 2. CONFLICT DETECTION
+      # ============================================================
+      - name: "⚠️ Detect Overlapping PR Scopes"
+        if: github.event_name == 'pull_request' && github.event.action == 'opened'
+        run: |
+          pr_number=${{ github.event.pull_request.number }}
+          changed_files=$(gh pr view $pr_number --json files --jq '.files[].path')
+          for file in $changed_files; do
+            top_dir=$(echo "$file" | cut -d'/' -f1)
+            if [[ "$top_dir" == "crates" ]]; then
+              crate=$(echo "$file" | cut -d'/' -f2)
+              if gh label list --search "locked:$crate" | grep -q "locked:$crate"; then
+                gh pr comment $pr_number --body "🚫 Conflict detected: crate **$crate** is locked. Please wait until unlock."
+                gh pr edit $pr_number --add-label "conflict:pending"
+                echo "$(date -u) | PR #$pr_number | Conflict detected in $crate" >> $META_LOG_DIR/conflicts.log
+                exit 0
+              fi
+            fi
+          done
+          echo "No lock conflicts detected."
+
+      # ============================================================
+      # 3. MERGE VALIDATION
+      # ============================================================
+      - name: "✅ Approve Merge if Checks Pass"
+        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+        run: |
+          pr_number=${{ github.event.pull_request.number }}
+          status=$(gh pr checks $pr_number --json conclusion --jq '.[].conclusion' | grep -v null || true)
+          if echo "$status" | grep -q "SUCCESS"; then
+            gh pr edit $pr_number --add-label "${{ env.META_APPROVAL_LABEL }}"
+            gh pr comment $pr_number --body "✅ CI checks passed — MetaAgent approves this PR for merge."
+            echo "$(date -u) | PR #$pr_number | Approved by MetaAgent" >> $META_LOG_DIR/approvals.log
+          else
+            echo "PR #$pr_number not yet green."
+          fi
+
+      # ============================================================
+      # 4. LOCK MANAGEMENT
+      # ============================================================
+      - name: "🔒 Lock crate when PR opened"
+        if: github.event_name == 'pull_request' && github.event.action == 'opened'
+        run: |
+          pr_number=${{ github.event.pull_request.number }}
+          changed_files=$(gh pr view $pr_number --json files --jq '.files[].path')
+          for file in $changed_files; do
+            top_dir=$(echo "$file" | cut -d'/' -f1)
+            if [[ "$top_dir" == "crates" ]]; then
+              crate=$(echo "$file" | cut -d'/' -f2)
+              label="locked:$crate"
+              gh label create "$label" --color FF0000 --description "Lock for crate $crate" || true
+              gh pr edit $pr_number --add-label "$label"
+              echo "$(date -u) | PR #$pr_number | Lock applied to $crate" >> $META_LOG_DIR/locks.log
+            fi
+          done
+
+      - name: "🔓 Unlock crate after merge"
+        if: github.event_name == 'pull_request' && github.event.action == 'closed'
+        run: |
+          pr_number=${{ github.event.pull_request.number }}
+          changed_files=$(gh pr view $pr_number --json files --jq '.files[].path')
+          for file in $changed_files; do
+            top_dir=$(echo "$file" | cut -d'/' -f1)
+            if [[ "$top_dir" == "crates" ]]; then
+              crate=$(echo "$file" | cut -d'/' -f2)
+              gh label delete "locked:$crate" --yes || true
+              echo "$(date -u) | PR #$pr_number | Lock removed for $crate" >> $META_LOG_DIR/locks.log
+            fi
+          done
+
+      # ============================================================
+      # 5. LOG SYNCHRONIZATION
+      # ============================================================
+      - name: "🪣 Commit Logs to Repo"
+        if: always()
+        run: |
+          git config user.name "MetaAgent Bot"
+          git config user.email "metaagent@users.noreply.github.com"
+          git add $META_LOG_DIR || true
+          git commit -m "metaagent: sync logs at $(date -u '+%Y-%m-%d %H:%M:%S')" || echo "No new logs"
+          git push origin HEAD:metaagent-logs || true
