@@ -1,44 +1,80 @@
-# AGENTS.md
+# 🤖 IPPAN Active Agents & Scopes
 
-> Operating handbook for the IPPAN project’s automation and helper agents (human + AI + CI).
-> This file explains **who does what**, **how to invoke them**, **which labels/commands they react to**, and the **guardrails**.
-
----
-
-## 0) Scope & Principles
-
-* **Repositories:** `dmrl789/IPPAN` (monorepo: Rust crates, deploy, docs), Unified UI, gateway, infra manifests.
-* **Main goals:** ship a high-throughput L1 (IPPAN) + production-grade UI/gateway with deterministic HashTimer ordering.
-* **Rules of engagement**
-
-  1. **Determinism > speed.** Reproducible builds, locked toolchains, pinned Docker images.
-  2. **Automate the boring.** PR hygiene, checks, formatting, security scans, and deploys are agent tasks by default.
-  3. **Fail safe.** If in doubt, agents abort with actionable logs and a rollback plan.
-  4. **No secrets in code.** Agents read from CI secrets or server `.env` files only.
+> Registry of all autonomous and human contributors.  
+> Each agent or maintainer **owns specific crates or domains** to prevent overlap.
 
 ---
 
-## 1) Agent Roster
+## 🧠 Meta & System Agents
 
-| Agent               | Handle           | Purpose                                                 | Triggers                             | Outputs                                  |
-| ------------------- | ---------------- | ------------------------------------------------------- | ------------------------------------ | ---------------------------------------- |
-| **PRD Architect**   | `@prd-architect` | Turn ideas/issues into specs & acceptance criteria      | `label:needs-prd` or `/draft-prd`    | `docs/prd/<topic>.md` + issue tasks      |
-| **Codex (Dev)**     | `@codex`         | Generate/modify code, resolve conflicts, scaffold files | `label:codex`, `/codex`              | commits/PRs, patches, fix branches       |
-| **TestSprite**      | `@testsprite`    | Author tests, raise coverage, smoke suites              | `label:tests`, `/add-tests`          | test files, coverage report              |
-| **SecurityBot**     | `@sec-bot`       | SAST/deps scan, threat notes, quick patches             | `label:security`, `/security-scan`   | alerts, PRs, advisories                  |
-| **InfraBot**        | `@infra-bot`     | CI/CD, runners, Docker, ports, systemd, Nginx           | `label:infra`, `/deploy`, `/restart` | workflow runs, deploy logs               |
-| **ReleaseBot**      | `@release-bot`   | Versioning, changelogs, tags, GitHub Releases           | `label:release`, `/cut-release`      | tags, release notes, SBOMs               |
-| **DocsBot**         | `@docs-bot`      | Sync README/architecture/CLI help                       | `label:docs`, `/sync-docs`           | updated docs, TOC, link checks           |
-| **UI/UX Coach**     | `@ui-coach`      | Improve Unified UI layout, mobile flows                 | `label:ui-ux`, `/ux-review`          | diffs, Figma notes, Tailwind suggestions |
-| **Gateway SRE**     | `@gw-sre`        | Validate gateway/WS health, CORS, envs                  | `label:gateway`, `/gateway-check`    | health reports, `.env` upserts           |
-| **Licensing/Legal** | `@legal`         | License headers, notices, patent refs                   | `label:legal`, `/audit-licenses`     | headers, NOTICE, SPDX fixes              |
-| **MetaAgent**       | `@metaagent`     | Self-governing workflow automation & agent coordination  | `label:metaagent`, `/metaagent`      | automated assignments, locks, approvals   |
+| Agent | Role | Scope | Maintainer |
+|--------|------|--------|-------------|
+| **MetaAgent** | Task orchestration, dependency graph, conflict arbitration | Global | Maintainers |
+| **CursorAgent** | Local code edits, PR generation, conflict resolution | Per-task | Maintainers |
+| **DocsAgent** | PRD, Whitepaper, and API documentation updates | `/docs` | Desiree Verga |
+| **AuditAgent** | Security, reproducibility, cargo-deny, Trivy scans | Global | Ugo Giuliani |
+| **CI-Agent** | Manages GitHub Actions & pipeline sync | `.github/`, workflows | Maintainers |
+
+---
+
+## 🧰 Core Development Agents
+
+| Agent | Scope | Description | Maintainer |
+|--------|--------|-------------|-------------|
+| **Agent-Alpha** | `/crates/consensus`, `/crates/economics` | Round & reward logic | Ugo Giuliani |
+| **Agent-Beta** | `/crates/core`, `/crates/crypto` | HashTimer, keys, serialization | Desiree Verga |
+| **Agent-Gamma** | `/crates/network`, `/crates/p2p` | libp2p, NAT, relay, DHT | Kambei Sapote |
+| **Agent-Delta** | `/crates/wallet`, `/crates/addressing` | Ed25519 wallet & domain registry | Desiree Verga |
+| **Agent-Epsilon** | `/crates/governance`, `/crates/metrics` | Voting & validator scoring | Marco F. |
+| **Agent-Zeta** | `/crates/ai_core`, `/crates/ai_registry` | GBDT, AI inference | MetaAgent |
+| **Agent-Theta** | `/crates/explorer`, `/crates/api_gateway` | Warp API & GraphQL endpoints | Ugo Giuliani |
+| **Agent-Lambda** | `/apps/ui`, `/apps/mobile` | Unified UI & Tauri frontend | Desiree Verga |
+| **Agent-Sigma** | `/infra/docker`, `/infra/deploy` | Dockerfiles, GitHub Actions, CI | MetaAgent |
+| **Agent-Omega** | `/tests`, `/benchmark` | Integration tests, TPS validation | Kambei Sapote |
+
+---
+
+## 🧑‍💻 Human Maintainers
+
+| Name | Role | Permissions |
+|------|------|-------------|
+| **Ugo Giuliani** | Lead Architect | Merge to `main`, release management |
+| **Desirée Verga** | Strategic Product Lead | Docs, roadmap, governance |
+| **Kambei Sapote** | Network Engineer | P2P topology, infra |
+| **Cursor Agent (autonomous)** | Automated PRs & merges | CI + Dev branches |
+
+---
+
+## 🧱 Rules of Engagement
+
+1. **One crate per agent** — unless explicitly coordinated by MetaAgent.  
+2. **Agent handoffs** — use `@agent-name` in PR comments to transfer ownership.  
+3. **Conflict resolution** — MetaAgent arbitrates when multiple agents claim the same scope.  
+4. **Scope changes** — require a PR with `@metaagent` approval.  
+5. **Maintainer overrides** — can reassign agents or scopes at any time.
+
+---
+
+## 🔄 Workflow Automation Agents
+
+| Agent | Handle | Purpose | Triggers | Outputs |
+|--------|--------|---------|----------|---------|
+| **PRD Architect** | `@prd-architect` | Turn ideas/issues into specs & acceptance criteria | `label:needs-prd` or `/draft-prd` | `docs/prd/<topic>.md` + issue tasks |
+| **Codex (Dev)** | `@codex` | Generate/modify code, resolve conflicts, scaffold files | `label:codex`, `/codex` | commits/PRs, patches, fix branches |
+| **TestSprite** | `@testsprite` | Author tests, raise coverage, smoke suites | `label:tests`, `/add-tests` | test files, coverage report |
+| **SecurityBot** | `@sec-bot` | SAST/deps scan, threat notes, quick patches | `label:security`, `/security-scan` | alerts, PRs, advisories |
+| **InfraBot** | `@infra-bot` | CI/CD, runners, Docker, ports, systemd, Nginx | `label:infra`, `/deploy`, `/restart` | workflow runs, deploy logs |
+| **ReleaseBot** | `@release-bot` | Versioning, changelogs, tags, GitHub Releases | `label:release`, `/cut-release` | tags, release notes, SBOMs |
+| **DocsBot** | `@docs-bot` | Sync README/architecture/CLI help | `label:docs`, `/sync-docs` | updated docs, TOC, link checks |
+| **UI/UX Coach** | `@ui-coach` | Improve Unified UI layout, mobile flows | `label:ui-ux`, `/ux-review` | diffs, Figma notes, Tailwind suggestions |
+| **Gateway SRE** | `@gw-sre` | Validate gateway/WS health, CORS, envs | `label:gateway`, `/gateway-check` | health reports, `.env` upserts |
+| **Licensing/Legal** | `@legal` | License headers, notices, patent refs | `label:legal`, `/audit-licenses` | headers, NOTICE, SPDX fixes |
 
 > Agents are invoked via labels **or** slash commands in PR/Issue comments. Humans remain DRIs (directly responsible individuals).
 
 ---
 
-## 2) Labels & Slash Commands
+## 🏷️ Labels & Slash Commands
 
 ### Canonical Labels
 
@@ -67,7 +103,7 @@
 
 ---
 
-## 3) Branching & Merge Policy
+## 🌿 Branching & Merge Policy
 
 * **Default branch:** `main`
 * **Working branches:** `feature/<topic>`, `fix/<topic>`, `codex/<topic>`, `hotfix/<topic>`
@@ -78,44 +114,39 @@
 
 1. CI green (build, tests, lint, format, security scan)
 2. ≥ 1 human reviewer approval
-3. If `infra`/`deploy` changed → InfraBot “preflight ok”
-4. If `security` label → SecurityBot “ok” or DRI waiver
+3. If `infra`/`deploy` changed → InfraBot "preflight ok"
+4. If `security` label → SecurityBot "ok" or DRI waiver
 
 **Hotfix:** allowed with `p0` + `hotfix/*`, requires InfraBot auto-deploy + rollback ready.
 
 ---
 
-## 4) CI/CD Hand-off (what each agent checks)
+## 🔧 CI/CD Hand-off (what each agent checks)
 
 * **Codex**
-
   * `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test -q`
   * UI: `npm ci && npm run build` (no *critical/high* audit blockers)
   * Provides patch if failing.
 
 * **TestSprite**
-
   * Adds tests; targets ≥ **80%** coverage for touched crates/dirs.
 
 * **SecurityBot**
-
   * `cargo deny`, dependency audit; NPM `npm audit` (no **critical**)
   * Updates `SECURITY.md` if needed.
 
 * **InfraBot**
-
   * Lints workflow YAML; strips non-ASCII whitespace.
   * Verifies ports not in use; `.env` keys present.
   * Deploys with health checks & idempotent restarts.
 
 * **ReleaseBot**
-
   * Enforces Conventional Commits → semantic version bump.
   * Generates release notes + SBOM (CycloneDX) if configured.
 
 ---
 
-## 5) Environments & Secrets
+## 🌍 Environments & Secrets
 
 * **Dev:** single host; permissive CORS; can use defaults.
 * **Staging:** mirrors prod topology; smoke tests must pass.
@@ -130,26 +161,26 @@
 
 ---
 
-## 6) File & Ownership Map
+## 📁 File & Ownership Map
 
-| Path                   | Owner agent(s)                 | Notes                                      |
+| Path | Owner agent(s) | Notes |
 | ---------------------- | ------------------------------ | ------------------------------------------ |
-| `crates/**`            | Codex, TestSprite, SecurityBot | Rust code, HashTimer, consensus, types     |
-| `deploy/**`            | InfraBot                       | Compose/K8s, scripts, Nginx, service files |
-| `docs/**`              | PRD Architect, DocsBot         | PRDs, ADRs, READMEs                        |
-| `unified-ui/**`        | Codex, UI/UX Coach, DocsBot    | Next.js/Tailwind, mobile flows             |
-| `gateway/**`           | Gateway SRE, InfraBot          | WS/API health, CORS, `.env`                |
-| `.github/workflows/**` | InfraBot, SecurityBot          | CI/CD, policy gates                        |
+| `crates/**` | Codex, TestSprite, SecurityBot | Rust code, HashTimer, consensus, types |
+| `deploy/**` | InfraBot | Compose/K8s, scripts, Nginx, service files |
+| `docs/**` | PRD Architect, DocsBot | PRDs, ADRs, READMEs |
+| `unified-ui/**` | Codex, UI/UX Coach, DocsBot | Next.js/Tailwind, mobile flows |
+| `gateway/**` | Gateway SRE, InfraBot | WS/API health, CORS, `.env` |
+| `.github/workflows/**` | InfraBot, SecurityBot | CI/CD, policy gates |
 
 > Any change to `deploy/**` or workflows pings **InfraBot** and requires preflight.
 
 ---
 
-## 7) **Server Health & Diagnostics** ✅
+## 🏥 Server Health & Diagnostics ✅
 
 This section defines **manual commands** and the **`/gateway-check`** automation. Use it to verify the UI/gateway stack quickly after deploys or incidents.
 
-### 7.1 Minimal `.env` (server)
+### Minimal `.env` (server)
 
 ```
 NEXT_PUBLIC_ENABLE_FULL_UI=1
@@ -161,7 +192,7 @@ GATEWAY_ALLOWED_ORIGINS=http://188.245.97.41:3001
 
 > The deploy workflow upserts these keys automatically if you run with defaults.
 
-### 7.2 Local service checks (on the host via SSH)
+### Local service checks (on the host via SSH)
 
 ```bash
 # Where the stack lives (or use $DEPLOY_APP_DIR)
@@ -196,7 +227,7 @@ free -m
 uptime
 ```
 
-### 7.3 Public checks (from anywhere)
+### Public checks (from anywhere)
 
 ```bash
 # UI front door
@@ -211,7 +242,7 @@ echo | openssl s_client -servername api.ippan.org -connect api.ippan.org:443 2>/
   | openssl x509 -noout -dates
 ```
 
-### 7.4 WebSocket checks
+### WebSocket checks
 
 > Best with `websocat` or `wscat`. If not available, you can at least verify the **HTTP 101** handshake with `curl`.
 
@@ -235,7 +266,7 @@ curl -i -N \
 websocat -t wss://api.ippan.org/ws
 ```
 
-### 7.5 Fast restart & recovery
+### Fast restart & recovery
 
 ```bash
 # Restart everything idempotently
@@ -249,7 +280,7 @@ sudo lsof -ti:8081 | xargs --no-run-if-empty sudo kill -9
 docker compose up -d --force-recreate
 ```
 
-### 7.6 What `/gateway-check` automation does
+### What `/gateway-check` automation does
 
 When you comment **`/gateway-check`** on a PR/Issue:
 
@@ -272,7 +303,7 @@ When you comment **`/gateway-check`** on a PR/Issue:
 **Pass criteria** (all true):
 
 * `.env` contains the four `NEXT_PUBLIC_*` keys and `GATEWAY_ALLOWED_ORIGINS`.
-* Local `GET /health` returns success (HTTP 200, body contains “ok” or status).
+* Local `GET /health` returns success (HTTP 200, body contains "ok" or status).
 * Public `HEAD /` and `HEAD /api/` return HTTP 2xx/3xx.
 * (If WS required) WS handshake returns **101**.
 
@@ -282,28 +313,28 @@ When you comment **`/gateway-check`** on a PR/Issue:
 * Public `/` or `/api/` returns 4xx/5xx.
 * WS handshake not 101 (CORS/Origin or proxy misconfig likely).
 
-### 7.7 Typical failure → fix map
+### Typical failure → fix map
 
-| Symptom                    | Likely Cause                                                            | Quick Fix                                                           |                                  |
-| -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------- |
-| **UI shows short menu**    | Missing `NEXT_PUBLIC_ENABLE_FULL_UI=1` or bad `NEXT_PUBLIC_*` endpoints | Update `.env` then `docker compose up -d --force-recreate`          |                                  |
-| **API 502/504**            | Nginx upstream mismatch, gateway not listening                          | Check compose ports; `ss -ltnp` for 8081; restart gateway           |                                  |
-| **CORS errors in browser** | `GATEWAY_ALLOWED_ORIGINS` not set to `http://188.245.97.41:3001`             | Update `.env`, restart gateway                                      |                                  |
-| **Port already allocated** | Stale process on 8081/3001                                              | `sudo lsof -ti:PORT                                                 | xargs sudo kill -9` then restart |
-| **WS fails (no 101)**      | Proxy missing `Upgrade`/`Connection` headers                            | Fix Nginx/Envoy config to forward WS upgrade; verify with handshake |                                  |
-| **TLS expired**            | Certbot/renewal failed                                                  | Renew certs; re-load Nginx; re-run public checks                    |                                  |
+| Symptom | Likely Cause | Quick Fix |
+| -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **UI shows short menu** | Missing `NEXT_PUBLIC_ENABLE_FULL_UI=1` or bad `NEXT_PUBLIC_*` endpoints | Update `.env` then `docker compose up -d --force-recreate` |
+| **API 502/504** | Nginx upstream mismatch, gateway not listening | Check compose ports; `ss -ltnp` for 8081; restart gateway |
+| **CORS errors in browser** | `GATEWAY_ALLOWED_ORIGINS` not set to `http://188.245.97.41:3001` | Update `.env`, restart gateway |
+| **Port already allocated** | Stale process on 8081/3001 | `sudo lsof -ti:PORT \| xargs sudo kill -9` then restart |
+| **WS fails (no 101)** | Proxy missing `Upgrade`/`Connection` headers | Fix Nginx/Envoy config to forward WS upgrade; verify with handshake |
+| **TLS expired** | Certbot/renewal failed | Renew certs; re-load Nginx; re-run public checks |
 
 ---
 
-## 8) Playbooks
+## 🎭 Playbooks
 
-### 8.1 Merge Conflict (HTML/lockfiles)
+### Merge Conflict (HTML/lockfiles)
 
 1. Comment `/codex plan` → Codex proposes resolution.
 2. Codex rebases `codex/<topic>` onto `main`, resolves, force-pushes.
 3. TestSprite re-runs tests; DocsBot syncs READMEs if templates changed.
 
-### 8.2 “Short menu” in Unified UI
+### "Short menu" in Unified UI
 
 1. `/gateway-check` → SRE posts `.env` keys detected.
 2. If missing, InfraBot updates server `.env` with:
@@ -316,17 +347,17 @@ When you comment **`/gateway-check`** on a PR/Issue:
    ```
 3. `/restart ui` then verify `/api` and `/ws` in browser network tab.
 
-### 8.3 Port conflict on deploy
+### Port conflict on deploy
 
 1. InfraBot frees the port or remaps.
 2. If still failing, marks PR `blocked` with PID + suggested compose patch.
 
-### 8.4 YAML invalid in workflows
+### YAML invalid in workflows
 
 1. InfraBot lints YAML; replaces non-breaking spaces; re-indents.
 2. Posts fixed diff; blocks merge until fixed.
 
-### 8.5 Hotfix & rollback
+### Hotfix & rollback
 
 1. Label `p0` and comment `/deploy prod`.
 2. InfraBot snapshots previous images and `.env`.
@@ -334,7 +365,7 @@ When you comment **`/gateway-check`** on a PR/Issue:
 
 ---
 
-## 9) PR Ready Checklist (agents enforce)
+## ✅ PR Ready Checklist (agents enforce)
 
 * [ ] Conventional Commit(s) in PR title/squash
 * [ ] Code formatted & lint-clean (`cargo fmt`, `clippy`, ESLint if UI)
@@ -346,7 +377,7 @@ When you comment **`/gateway-check`** on a PR/Issue:
 
 ---
 
-## 10) Documentation Conventions
+## 📚 Documentation Conventions
 
 * **PRDs:** `docs/prd/<slug>.md` → problem, scope, non-goals, acceptance criteria, telemetry.
 * **ADRs:** `docs/adr/NNNN-<title>.md` → decision, context, alternatives.
@@ -355,7 +386,7 @@ When you comment **`/gateway-check`** on a PR/Issue:
 
 ---
 
-## 11) Guardrails & Escalation
+## 🛡️ Guardrails & Escalation
 
 * Agents never merge failing CI or bypass reviews.
 * If agents disagree (e.g., SecurityBot vs Codex), the **DRI** decides and records the rationale in the PR.
@@ -363,11 +394,11 @@ When you comment **`/gateway-check`** on a PR/Issue:
 
 ---
 
-## 12) MetaAgent Governance System 🧠
+## 🧠 MetaAgent Governance System
 
 The MetaAgent system provides **automated self-governance** for the IPPAN repository, managing agent assignments, resource locking, conflict detection, and merge approvals.
 
-### 12.1 MetaAgent Workflow
+### MetaAgent Workflow
 
 **File:** `.github/workflows/metaagent-governance.yml`
 
@@ -377,7 +408,7 @@ The MetaAgent system provides **automated self-governance** for the IPPAN reposi
 - Schedule: Hourly consistency check (`0 * * * *`)
 - Manual: `workflow_dispatch`
 
-### 12.2 Core Functions
+### Core Functions
 
 | Function | Description | Behavior |
 |----------|-------------|----------|
@@ -387,7 +418,7 @@ The MetaAgent system provides **automated self-governance** for the IPPAN reposi
 | **Resource Locking** | Locks crates during active development | Creates `locked:crate` labels when PRs open, removes after merge |
 | **Activity Logging** | Tracks all MetaAgent actions | Writes to `.meta/logs/` and commits to `metaagent-logs` branch |
 
-### 12.3 Agent Pool
+### Agent Pool
 
 The MetaAgent system manages 8 virtual agents:
 
@@ -400,7 +431,7 @@ The MetaAgent system manages 8 virtual agents:
 - **Agent Theta** (`agent-theta`) - Color: `#FFD6A1`
 - **Agent Lambda** (`agent-lambda`) - Color: `#D6A1FF`
 
-### 12.4 MetaAgent Dashboard
+### MetaAgent Dashboard
 
 **Location:** `apps/unified-ui/src/components/metaagent/MetaAgentDashboard.tsx`
 
@@ -413,7 +444,7 @@ The MetaAgent system manages 8 virtual agents:
 
 **Access:** Available in the main UI under the "MetaAgent" tab.
 
-### 12.5 Setup Instructions
+### Setup Instructions
 
 1. **Create log directory:**
    ```bash
@@ -434,7 +465,7 @@ The MetaAgent system manages 8 virtual agents:
    - Go to repository Actions tab
    - Enable "MetaAgent Governance Protocol" workflow
 
-### 12.6 Log Files
+### Log Files
 
 All MetaAgent activity is logged to `.meta/logs/`:
 
