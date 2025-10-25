@@ -9,30 +9,32 @@
 use ippan_types::{Amount, Transaction};
 use serde::{Deserialize, Serialize};
 
-/// Transaction category for fee classification
+/// L1 Transaction category for fee classification
+/// 
+/// L1 has NO smart contracts - only pure consensus operations.
+/// All smart contracts are handled in L2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TxKind {
     /// Standard peer-to-peer transfer
     Transfer,
-    /// AI model call or inference
-    AiCall,
-    /// Smart contract deployment
-    ContractDeploy,
-    /// Smart contract execution
-    ContractCall,
+    /// L2 state commitment (anchor)
+    L2Anchor,
+    /// L2 exit request
+    L2Exit,
     /// Governance or proposal transaction
     Governance,
     /// Validator registration / staking operation
     Validator,
 }
 
-/// Fee cap configuration (values in atomic IPN units)
+/// L1 Fee cap configuration (values in atomic IPN units)
+/// 
+/// Only L1 operations - no smart contracts or AI calls
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeCapConfig {
     pub cap_transfer: Amount,
-    pub cap_ai_call: Amount,
-    pub cap_contract_deploy: Amount,
-    pub cap_contract_call: Amount,
+    pub cap_l2_anchor: Amount,
+    pub cap_l2_exit: Amount,
     pub cap_governance: Amount,
     pub cap_validator: Amount,
 }
@@ -40,10 +42,9 @@ pub struct FeeCapConfig {
 impl Default for FeeCapConfig {
     fn default() -> Self {
         Self {
-            cap_transfer: Amount::from_micro_ipn(1_000),          // 0.001 IPN
-            cap_ai_call: Amount::from_micro_ipn(100),             // 0.0001 IPN
-            cap_contract_deploy: Amount::from_micro_ipn(100_000), // 0.1 IPN
-            cap_contract_call: Amount::from_micro_ipn(10_000),    // 0.01 IPN
+            cap_transfer: Amount::from_micro_ipn(100),            // 0.0001 IPN (minimal)
+            cap_l2_anchor: Amount::from_micro_ipn(1_000),         // 0.001 IPN (L2 state commitment)
+            cap_l2_exit: Amount::from_micro_ipn(2_000),           // 0.002 IPN (L2 exit request)
             cap_governance: Amount::from_micro_ipn(10_000),       // 0.01 IPN
             cap_validator: Amount::from_micro_ipn(10_000),        // 0.01 IPN
         }
@@ -55,9 +56,8 @@ impl FeeCapConfig {
     pub fn get_cap(&self, kind: TxKind) -> Amount {
         match kind {
             TxKind::Transfer => self.cap_transfer,
-            TxKind::AiCall => self.cap_ai_call,
-            TxKind::ContractDeploy => self.cap_contract_deploy,
-            TxKind::ContractCall => self.cap_contract_call,
+            TxKind::L2Anchor => self.cap_l2_anchor,
+            TxKind::L2Exit => self.cap_l2_exit,
             TxKind::Governance => self.cap_governance,
             TxKind::Validator => self.cap_validator,
         }
@@ -73,13 +73,14 @@ pub enum FeeError {
     ZeroFee,
 }
 
-/// Determine transaction kind heuristically
+/// Determine L1 transaction kind heuristically
+/// 
+/// L1 only handles basic operations - no smart contracts or AI calls
 pub fn classify_transaction(tx: &Transaction) -> TxKind {
     if let Some(topic) = tx.topics.first() {
         match topic.as_str() {
-            "ai_call" | "ai_inference" => TxKind::AiCall,
-            "contract_deploy" => TxKind::ContractDeploy,
-            "contract_call" => TxKind::ContractCall,
+            "l2_anchor" | "l2_commit" => TxKind::L2Anchor,
+            "l2_exit" | "l2_withdrawal" => TxKind::L2Exit,
             "governance" | "proposal" => TxKind::Governance,
             "validator_stake" | "validator_unstake" => TxKind::Validator,
             _ => TxKind::Transfer,
@@ -167,8 +168,8 @@ mod tests {
 
     #[test]
     fn classify_basic() {
-        assert_eq!(classify_transaction(&tx_with_topic("ai_call")), TxKind::AiCall);
-        assert_eq!(classify_transaction(&tx_with_topic("contract_deploy")), TxKind::ContractDeploy);
+        assert_eq!(classify_transaction(&tx_with_topic("l2_anchor")), TxKind::L2Anchor);
+        assert_eq!(classify_transaction(&tx_with_topic("l2_exit")), TxKind::L2Exit);
         assert_eq!(classify_transaction(&tx_with_topic("governance")), TxKind::Governance);
         assert_eq!(classify_transaction(&tx_with_topic("validator_stake")), TxKind::Validator);
         assert_eq!(classify_transaction(&tx_with_topic("random_topic")), TxKind::Transfer);
@@ -177,12 +178,12 @@ mod tests {
     #[test]
     fn fee_validation_caps() {
         let cfg = FeeCapConfig::default();
-        let tx = tx_with_topic("ai_call");
-        assert!(validate_fee(&tx, Amount::from_micro_ipn(50), &cfg).is_ok());
-        assert!(validate_fee(&tx, Amount::from_micro_ipn(101), &cfg).is_err());
-        let tx2 = tx_with_topic("contract_deploy");
-        assert!(validate_fee(&tx2, Amount::from_micro_ipn(99_999), &cfg).is_ok());
-        assert!(validate_fee(&tx2, Amount::from_micro_ipn(100_001), &cfg).is_err());
+        let tx = tx_with_topic("l2_anchor");
+        assert!(validate_fee(&tx, Amount::from_micro_ipn(500), &cfg).is_ok());
+        assert!(validate_fee(&tx, Amount::from_micro_ipn(1001), &cfg).is_err());
+        let tx2 = tx_with_topic("l2_exit");
+        assert!(validate_fee(&tx2, Amount::from_micro_ipn(1_999), &cfg).is_ok());
+        assert!(validate_fee(&tx2, Amount::from_micro_ipn(2_001), &cfg).is_err());
     }
 
     #[test]
