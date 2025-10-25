@@ -161,7 +161,7 @@ impl DeterminismManager {
         // Hash data type
         hasher.update(&(input.dtype as u8).to_le_bytes());
         
-        Ok(hasher.finalize().to_hex())
+        Ok(hasher.finalize().to_hex().to_string())
     }
 
     /// Compute execution hash
@@ -175,7 +175,7 @@ impl DeterminismManager {
         // Hash execution context
         hasher.update(context.execution_id.as_bytes());
         hasher.update(context.input_hash.as_bytes());
-        hasher.update(context.seed.to_le_bytes());
+        hasher.update(&context.seed.to_le_bytes());
         
         // Hash model ID
         hasher.update(context.model_id.name.as_bytes());
@@ -196,7 +196,7 @@ impl DeterminismManager {
         hasher.update(context.execution_id.as_bytes());
         hasher.update(output.metadata.model_version.as_bytes());
         
-        Ok(hasher.finalize().to_hex())
+        Ok(hasher.finalize().to_hex().to_string())
     }
 
     /// Update deterministic state
@@ -206,10 +206,10 @@ impl DeterminismManager {
         
         // Update state hash
         let mut hasher = blake3::Hasher::new();
-        hasher.update(self.state.seed.to_le_bytes());
-        hasher.update(self.state.counter.to_le_bytes());
+        hasher.update(&self.state.seed.to_le_bytes());
+        hasher.update(&self.state.counter.to_le_bytes());
         hasher.update(context.execution_id.as_bytes());
-        self.state.state_hash = hasher.finalize().to_hex();
+        self.state.state_hash = hasher.finalize().to_hex().to_string();
     }
 
     /// Get current state

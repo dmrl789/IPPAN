@@ -160,3 +160,34 @@ impl ModelRegistry {
     }
 
     /// List all models by status
+    pub fn list_models_by_status(&self, status: ModelStatus) -> Vec<&ModelRegistryEntry> {
+        self.models
+            .values()
+            .filter(|entry| entry.status == status)
+            .collect()
+    }
+
+    /// Verify the signature of a registry entry
+    fn validate_entry(&self, entry: &ModelRegistryEntry) -> Result<()> {
+        let mut message = Vec::new();
+        message.extend_from_slice(entry.model_id.as_bytes());
+        message.extend_from_slice(&entry.hash_sha256);
+        message.extend_from_slice(&entry.version.to_be_bytes());
+        message.extend_from_slice(&entry.activation_round.to_be_bytes());
+
+        let verifying_key = VerifyingKey::from_bytes(&entry.signer_pubkey)
+            .map_err(|_| anyhow::anyhow!("Invalid signer public key"))?;
+
+        let signature = Signature::from_bytes(&entry.signature);
+
+        verifying_key
+            .verify(&message, &signature)
+            .map_err(|_| anyhow::anyhow!("Invalid signature"))
+    }
+}
+
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}

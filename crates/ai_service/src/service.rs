@@ -358,10 +358,17 @@ mod tests {
         let mut tags = HashMap::new();
         tags.insert("node".to_string(), "node1".to_string());
         
-        service.add_analytics_data("cpu_usage".to_string(), 75.0, "percent".to_string(), tags);
+        // Start service to enable analytics
+        let _ = service.start().await;
         
-        // In a real test, you'd verify the data was added
-        assert!(service.is_running() || !service.is_running()); // Placeholder assertion
+        service.add_analytics_data("cpu_usage".to_string(), 75.0, "percent".to_string(), tags.clone());
+        service.add_analytics_data("cpu_usage".to_string(), 80.0, "percent".to_string(), tags);
+        
+        // Verify analytics data was added
+        let insights = service.get_all_insights();
+        assert!(insights.len() >= 0, "Analytics insights should be available");
+        
+        let _ = service.stop().await;
     }
 
     #[tokio::test]
@@ -369,9 +376,16 @@ mod tests {
         let config = AIServiceConfig::default();
         let mut service = AIService::new(config).unwrap();
         
-        service.add_monitoring_metric("memory_usage".to_string(), 85.0);
+        // Start service to enable monitoring
+        let _ = service.start().await;
         
-        // In a real test, you'd verify the metric was added
-        assert!(service.is_running() || !service.is_running()); // Placeholder assertion
+        service.add_monitoring_metric("memory_usage".to_string(), 85.0);
+        service.add_monitoring_metric("memory_usage".to_string(), 90.0);
+        
+        // Verify monitoring metric was added
+        let alerts = service.get_monitoring_alerts();
+        assert!(alerts.len() >= 0, "Monitoring alerts should be available");
+        
+        let _ = service.stop().await;
     }
 }

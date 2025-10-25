@@ -24,7 +24,8 @@ advanced_models = ["candle-core", "candle-nn"]
 ippan-ai-core = { path = "../ai_core" }
 ippan-ai-registry = { path = "../ai_registry" }
 ippan-consensus = { path = "../consensus" }
-ippan-governance = { path = "../governance" }
+# Note: governance dependency removed to avoid circular dependencies
+# ippan-governance = { path = "../governance" }
 ippan-types = { path = "../types" }
 ippan-crypto = { path = "../crypto" }
 
@@ -37,8 +38,8 @@ async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
 
-# HTTP client for LLM APIs
-reqwest = { version = "0.11", features = ["json"], optional = true }
+# HTTP client for LLM APIs (using rustls to avoid OpenSSL)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false, optional = true }
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"], optional = true }

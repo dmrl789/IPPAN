@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::gbdt::GBDTModel as Model;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -42,7 +42,10 @@ impl AiLogger {
 
     /// Set the active model for evaluation
     pub fn set_active_model(&mut self, model: Model) -> Result<()> {
-        model.validate()?;
+        // Validate model structure
+        if model.trees.is_empty() {
+            return Err(anyhow::anyhow!("Model must have at least one tree"));
+        }
         self.active_model = Some(model);
         Ok(())
     }
@@ -55,10 +58,9 @@ impl AiLogger {
         score: i32,
         hashtimer_proof: String,
     ) -> Result<()> {
-        let model_version = self.active_model
-            .as_ref()
-            .map(|m| m.version)
-            .unwrap_or(0);
+        // Note: GBDTModel doesn't have a version field
+        // We'll use 0 as a placeholder
+        let model_version = 0;
 
         let proof = AiEvaluationProof {
             model_id,
@@ -131,7 +133,7 @@ pub fn create_hashtimer_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Model, Tree, Node};
+    use crate::gbdt::{GBDTModel as Model, Tree, Node};
 
     fn create_test_model() -> Model {
         Model::new(

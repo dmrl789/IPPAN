@@ -11,6 +11,16 @@
 pub mod features;
 pub mod gbdt;
 pub mod model;
+pub mod models;
+pub mod execution;
+pub mod validation;
+pub mod determinism;
+pub mod types;
+pub mod errors;
+pub mod log;
+
+/// AI Core version
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub use features::{
     extract_features,
