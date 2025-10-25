@@ -1,180 +1,41 @@
-name: Auto PR Cleanup
+name: 🧹 Auto PR & Branch Cleanup
 
 on:
   schedule:
-    # Run daily at 02:00 UTC
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * *' # Every day at 02:00 UTC
   workflow_dispatch:
-    # Allow manual trigger
 
 permissions:
   contents: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
-  cleanup-merged-branches:
-    name: Delete merged feature branches
+  cleanup:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout repository
+      - name: 🧭 Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-      
-      - name: Delete merged branches
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🔍 Finding merged branches..."
-          
-          # Get the default branch (main)
-          DEFAULT_BRANCH="main"
-          
-          # Fetch all branches
-          git fetch --all --prune
-          
-          # Get list of merged branches (excluding protected branches)
-          MERGED_BRANCHES=$(git branch -r --merged origin/$DEFAULT_BRANCH | \
-            grep -v "HEAD" | \
-            grep -v "$DEFAULT_BRANCH" | \
-            grep -v "dev" | \
-            grep -v "release/" | \
-            grep -v "maintenance/" | \
-            sed 's/origin\///' | \
-            tr -d ' ')
-          
-          if [ -z "$MERGED_BRANCHES" ]; then
-            echo "✅ No merged branches to clean up"
-            exit 0
-          fi
-          
-          echo "📋 Found merged branches:"
-          echo "$MERGED_BRANCHES"
-          
-          # Delete merged branches (except protected patterns)
-          for branch in $MERGED_BRANCHES; do
-            # Skip if branch is protected
-            if [[ "$branch" == "main" ]] || \
-               [[ "$branch" == "dev" ]] || \
-               [[ "$branch" =~ ^release/ ]] || \
-               [[ "$branch" =~ ^maintenance/ ]]; then
-              echo "⏭️  Skipping protected branch: $branch"
-              continue
-            fi
-            
-            echo "🗑️  Deleting merged branch: $branch"
-            git push origin --delete "$branch" || echo "⚠️  Failed to delete $branch"
-          done
-          
-          echo "✅ Cleanup complete"
 
-  cleanup-stale-branches:
-    name: Notify on stale unmerged branches
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: 🧹 Delete merged branches
+        uses: devops-infra/action-delete-branch@v0.6.0
         with:
-          fetch-depth: 0
-      
-      - name: Find stale branches
-        id: stale
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          delete_protected: false
+          exclude: |
+            main
+            dev
+          only_merged: true
+          dry_run: false
+
+      - name: 🕓 Prune stale branches (>10 days inactive)
+        uses: vdemedes/prune-branches@v2
+        with:
+          days_old: 10
+          exclude: main,dev
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🧠 Comment summary
         run: |
-          echo "🔍 Finding stale branches (90+ days old)..."
-          
-          # Get branches older than 90 days
-          STALE_BRANCHES=$(git for-each-ref --sort=-committerdate refs/remotes/ \
-            --format='%(refname:short)|%(committerdate:iso8601)' | \
-            grep -v "HEAD" | \
-            grep -v "origin/main" | \
-            grep -v "origin/dev" | \
-            while IFS='|' read -r branch date; do
-              branch_name=$(echo "$branch" | sed 's/origin\///')
-              days_old=$(( ( $(date +%s) - $(date -d "$date" +%s) ) / 86400 ))
-              if [ $days_old -gt 90 ]; then
-                echo "$branch_name (${days_old} days old)"
-              fi
-            done)
-          
-          if [ -z "$STALE_BRANCHES" ]; then
-            echo "✅ No stale branches found"
-            exit 0
-          fi
-          
-          echo "📋 Stale branches found:"
-          echo "$STALE_BRANCHES"
-          
-          # Save to output
-          echo "stale_branches<<EOF" >> $GITHUB_OUTPUT
-          echo "$STALE_BRANCHES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      
-      - name: Create issue for stale branches
-        if: steps.stale.outputs.stale_branches != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const staleBranches = process.env.STALE_BRANCHES;
-            
-            const issueTitle = '🧹 Stale Branch Cleanup Needed';
-            const issueBody = `## Stale Branches Report
-            
-            The following branches are over 90 days old and may need attention:
-            
-            \`\`\`
-            ${staleBranches}
-            \`\`\`
-            
-            ### Recommended Actions
-            
-            For each branch, please:
-            1. Check if there's an open PR
-            2. If merged, delete the branch
-            3. If abandoned, close the PR and delete the branch
-            4. If active, rebase and update the PR
-            
-            This issue was automatically created by the [auto-pr-cleanup workflow](.github/workflows/auto-pr-cleanup.yml).
-            `;
-            
-            // Check if issue already exists
-            const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'housekeeping'
-            });
-            
-            const existingIssue = issues.data.find(issue => 
-              issue.title === issueTitle
-            );
-            
-            if (existingIssue) {
-              // Update existing issue
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssue.number,
-                body: `Updated stale branches report:\n\n${issueBody}`
-              });
-              console.log(`Updated existing issue #${existingIssue.number}`);
-            } else {
-              // Create new issue
-              const newIssue = await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: issueTitle,
-                body: issueBody,
-                labels: ['housekeeping', 'infra']
-              });
-              console.log(`Created new issue #${newIssue.data.number}`);
-            }
-        env:
-          STALE_BRANCHES: ${{ steps.stale.outputs.stale_branches }}
+          echo "✅ Branch cleanup completed on $(date -u)"
