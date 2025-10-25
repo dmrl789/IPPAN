@@ -1,6 +1,8 @@
 # 🧠 META-AGENT PROTOCOL
 
-### Version 1.0 · Last Updated 2025-10-25
+### Version 2.0 · Last Updated 2025-10-25
+
+> Comprehensive governance layer for AI agent orchestration, task distribution, conflict arbitration, and deterministic development in the IPPAN project.
 
 ---
 
@@ -28,6 +30,13 @@ This protocol defines how the MetaAgent interacts with human maintainers, autono
 | **Merge Governance**      | Controls final merges into `dev` and `main`.                              |
 | **Release Readiness**     | Checks all artifacts (Docker, docs, CI) before tagging.                   |
 
+### 🎯 Core Principles
+
+1. **Deterministic Task Assignment** — Each task maps to exactly one primary agent based on scope ownership
+2. **Conflict Prevention** — Proactive coordination prevents overlapping edits
+3. **Graceful Degradation** — System continues operating even when individual agents fail
+4. **Audit Trail** — All decisions and overrides are logged and traceable
+
 ---
 
 ## 3. Interaction Model
@@ -53,7 +62,19 @@ MetaAgent intervenes only if:
 
 ---
 
-## 4. Task Assignment Rules
+## 4. Task Distribution Algorithm
+
+### Phase 1: Task Analysis
+```yaml
+Input: Pull Request or Issue
+Process:
+  1. Parse changed files and affected crates
+  2. Identify scope owners from AGENTS.md
+  3. Determine task complexity and dependencies
+  4. Check for cross-crate impacts
+```
+
+### Phase 2: Agent Assignment
 
 1. Each agent may hold **max 3 active tasks**.
 2. MetaAgent uses a **fair round-robin queue** for issue distribution.
@@ -65,6 +86,20 @@ MetaAgent intervenes only if:
    * Expected output file(s)
    * Reviewer (human or agent)
 
+**Assignment Strategy:**
+```yaml
+Primary Assignment:
+  - Single scope owner → Direct assignment
+  - Multiple scopes → MetaAgent coordinates
+  - Cross-crate changes → Lead maintainer review required
+
+Fallback Chain:
+  1. Primary agent (from AGENTS.md)
+  2. Backup agent (same maintainer)
+  3. MetaAgent (escalation)
+  4. Human maintainer (manual override)
+```
+
 Example assignment comment:
 
 ```text
@@ -75,6 +110,20 @@ Reviewer: @ugo-giuliani
 ETA: 6h
 ```
 
+### Phase 3: Lock Management
+
+```yaml
+Lock Types:
+  - READ_LOCK: Agent can read but not modify
+  - WRITE_LOCK: Exclusive write access
+  - REVIEW_LOCK: Pending human review
+
+Lock Resolution:
+  - Timeout: 24h for WRITE_LOCK, 72h for REVIEW_LOCK
+  - Priority: P0 > P1 > P2 (from issue labels)
+  - Escalation: MetaAgent can force-release after timeout
+```
+
 ---
 
 ## 5. Locking & Conflict Prevention
@@ -83,7 +132,7 @@ ETA: 6h
 
   * It issues a **temporary lock** (label: `locked:<crate>`).
   * Agents attempting edits in a locked scope must queue.
-* Locks expire automatically after 6 hours or on merge.
+* Locks expire automatically after 6 hours on merge, 24h for write lock, 72h for review lock.
 * Emergency override: `@metaagent unlock crates/<name>` in PR comment.
 
 ---
@@ -124,16 +173,28 @@ When changes propagate through dependencies, MetaAgent:
 
 ---
 
-## 8. Conflict Arbitration
+## 8. Conflict Resolution
+
+### Conflict Types
+
+| Type | Description | Resolution Strategy |
+|------|-------------|-------------------|
+| **File Overlap** | Multiple agents modify same files | Lock-based serialization |
+| **API Breaking** | Changes break other crates | Cross-agent coordination required |
+| **Dependency Cycle** | Circular dependencies introduced | MetaAgent breaks cycle |
+| **Resource Contention** | Ports, database locks, etc. | Queue-based allocation |
+
+### Resolution Process
 
 When two PRs overlap:
 
-1. MetaAgent labels both PRs as:
-
+1. **Detection** — MetaAgent labels both PRs as:
    * `conflict:pending`
    * `agent-a` vs `agent-b`
-2. It runs a **semantic diff**:
 
+2. **Notification** — Affected agents receive conflict alerts
+
+3. **Negotiation** — Agents attempt automatic resolution (5min timeout):
    * if compatible → auto-merge using 3-way merge + rebase
    * if incompatible → open mediation issue:
 
@@ -142,11 +203,35 @@ When two PRs overlap:
      Shared scope: crates/economics/src/reward.rs
      Decision pending: @ugo-giuliani
      ```
-3. Upon resolution, MetaAgent rebases and unfreezes both agents.
+
+4. **Arbitration** — MetaAgent applies resolution rules
+
+5. **Escalation** — Upon resolution, MetaAgent rebases and unfreezes both agents
 
 ---
 
-## 9. Performance & Quota Management
+## 9. Workflow States
+
+### Agent States
+- **IDLE** — Available for new tasks
+- **ASSIGNED** — Task received, preparing to work
+- **ACTIVE** — Currently executing task
+- **BLOCKED** — Waiting for dependencies or locks
+- **REVIEW** — Changes submitted, awaiting review
+- **COMPLETE** — Task finished successfully
+- **FAILED** — Task failed, needs retry or escalation
+
+### Task States
+- **PENDING** — Queued for assignment
+- **IN_PROGRESS** — Assigned to agent
+- **REVIEW** — Human review required
+- **MERGED** — Successfully integrated
+- **REJECTED** — Failed review or conflicts
+- **CANCELLED** — Task no longer needed
+
+---
+
+## 10. Performance & Quota Management
 
 * Each agent's commit rate and CI success rate are tracked.
 * MetaAgent downgrades agents exceeding:
@@ -155,9 +240,61 @@ When two PRs overlap:
   * > 3 stale PRs.
 * Quota cooldown resets nightly (UTC 00:00).
 
+### Key Performance Indicators
+- **Task Completion Rate** — % of tasks completed without escalation
+- **Conflict Rate** — % of tasks requiring conflict resolution
+- **Agent Utilization** — % of time agents spend in ACTIVE state
+- **Review Cycle Time** — Average time from submission to merge
+- **Escalation Rate** — % of tasks requiring human intervention
+
 ---
 
-## 10. MetaAgent Self-Update Protocol
+## 11. Monitoring & Health Checks
+
+```yaml
+Every 5 minutes:
+  - Agent heartbeat validation
+  - Lock timeout detection
+  - Resource availability check
+  - CI pipeline status
+
+Every hour:
+  - Performance metrics calculation
+  - Conflict pattern analysis
+  - Agent load balancing
+  - Queue depth monitoring
+```
+
+---
+
+## 12. Escalation Procedures
+
+### Level 1: Agent Self-Resolution
+- Retry failed operations (max 3 attempts)
+- Request additional locks if needed
+- Coordinate with other agents via comments
+
+### Level 2: MetaAgent Intervention
+- Force-release stale locks
+- Reassign tasks to backup agents
+- Apply conflict resolution rules
+- Queue rebalancing
+
+### Level 3: Human Maintainer
+- Complex architectural decisions
+- Security-related conflicts
+- Performance degradation
+- Agent malfunction
+
+### Level 4: Emergency Override
+- System-wide agent shutdown
+- Manual task reassignment
+- Emergency hotfix deployment
+- Complete system reset
+
+---
+
+## 13. MetaAgent Self-Update Protocol
 
 To evolve safely:
 
@@ -167,7 +304,7 @@ To evolve safely:
 
 ---
 
-## 11. Human Oversight Rules
+## 14. Human Oversight Rules
 
 | Maintainer        | Scope                             | Authority |
 | ----------------- | --------------------------------- | --------- |
@@ -179,7 +316,39 @@ To evolve safely:
 
 ---
 
-## 12. Logging and Transparency
+## 15. Configuration
+
+### Agent Capabilities
+```yaml
+Agent-Alpha:
+  max_concurrent_tasks: 2
+  timeout_minutes: 60
+  retry_attempts: 3
+  escalation_threshold: 2
+
+MetaAgent:
+  max_concurrent_tasks: 10
+  timeout_minutes: 120
+  retry_attempts: 5
+  escalation_threshold: 1
+```
+
+### Lock Policies
+```yaml
+WRITE_LOCK:
+  default_timeout: 24h
+  extension_allowed: true
+  max_extensions: 2
+
+REVIEW_LOCK:
+  default_timeout: 72h
+  extension_allowed: false
+  auto_escalate: true
+```
+
+---
+
+## 16. Logging and Transparency
 
 MetaAgent logs all:
 
@@ -191,7 +360,7 @@ These logs are pushed automatically to the repo under `/meta_logs` via a nightly
 
 ---
 
-## 13. Failure Recovery
+## 17. Failure Recovery
 
 If MetaAgent becomes unresponsive:
 
@@ -209,7 +378,7 @@ If MetaAgent becomes unresponsive:
 
 ---
 
-## 14. Deterministic Governance Philosophy
+## 18. Deterministic Governance Philosophy
 
 IPPAN's development governance mirrors its **HashTimer deterministic model**:
 every contribution must be *time-ordered, verifiable, and reproducible*.
@@ -217,14 +386,49 @@ No merge is random; every event in development is timestamped and cryptographica
 
 ---
 
-## 15. Future Extensions
+## 19. Decision Log
+
+### Recent Decisions
+- **2025-10-25**: Merged operational and governance protocol versions
+- **2024-12-19**: Implemented lock-based conflict resolution
+- **2024-12-19**: Added automatic branch cleanup workflow
+- **2024-12-19**: Established agent scope ownership matrix
+
+### Pending Decisions
+- Agent performance scoring algorithm
+- Cross-repository coordination protocol
+- Emergency override procedures
+
+---
+
+## 20. Continuous Improvement
+
+### Weekly Reviews
+- Analyze conflict patterns and resolution effectiveness
+- Review agent performance metrics
+- Update assignment algorithms based on success rates
+- Refine escalation thresholds
+
+### Monthly Updates
+- Update agent capabilities and timeouts
+- Revise conflict resolution strategies
+- Optimize task distribution algorithms
+- Update documentation and protocols
+
+---
+
+## 21. Future Extensions
 
 * **AI Arbitration Layer:** GBDT-based conflict prediction and auto-assignment.
 * **Cross-Repo MetaGraph:** Synchronize FinDAG and IPPAN parallel updates.
 * **On-Chain Audit:** Hash of merged commits stored on IPPAN testnet for proof-of-development.
+* **Automated Performance Scoring:** Machine learning-based agent capability assessment.
+* **Predictive Conflict Detection:** Proactive identification of potential merge conflicts.
 
 ---
 
 ### End of Protocol
 
----
+_Protocol Version: 2.0_  
+_Last Updated: 2025-10-25_  
+_Next Review: 2025-11-01_
