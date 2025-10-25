@@ -30,8 +30,8 @@ impl Default for EconomicsParams {
         // R0: 0.0001 IPN -> 100 μIPN
         let initial_round_reward_micro = 100u128;
 
-        // Halving every ~2y. With 10 rounds/s: 10 * 31_536_000 * 2 = 630_720_000 rounds.
-        let halving_interval_rounds = 630_720_000u64;
+        // Halving every ~2y. With 5 rounds/s (200ms): 5 * 31_536_000 * 2 = 315_360_000 rounds.
+        let halving_interval_rounds = 315_360_000u64;
 
         Self {
             hard_cap_micro,

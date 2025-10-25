@@ -65,7 +65,7 @@ That's **one septillionth** of an IPN — still representable with a 128-bit fix
 
 ### 2.2 Why Such Extreme Precision?
 
-1. **HashTimer micro-events**: Rounds occur every ~100 ms, so actions (AI inference, sensor reports, cross-device syncs) can trigger sub-microsecond payments.
+1. **HashTimer micro-events**: Rounds occur every ~200 ms, so actions (AI inference, sensor reports, cross-device syncs) can trigger sub-microsecond payments.
 
 2. **Parallel block reward fairness**: A single validator round may distribute rewards among **thousands** of micro-blocks. Fine granularity avoids rounding errors and unnecessary burns.
 

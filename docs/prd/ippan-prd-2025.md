@@ -28,7 +28,7 @@ The protocol is designed to serve as a foundation for finance, AI computation, I
 ## 3. Architecture Summary
 
 ### 3.1 Deterministic Core (Layer 1)
-- Parallel BlockDAG (Roundchain) consensus with 100–250 ms rounds.
+- Parallel BlockDAG (Roundchain) consensus with 200–250 ms rounds.
 - HashTimer™ assigns deterministic timestamps to every transaction, guaranteeing global chronological order.
 - Validator reputation is computed via lightweight AI (GBDT) models identical across all nodes.
 - Consensus built on Federated Byzantine Agreement (FBA) principles with DAG-Fair emission scheduling.
@@ -121,14 +121,14 @@ The protocol is designed to serve as a foundation for finance, AI computation, I
 
 In IPPAN, blocks are micro-events, not emission units. Unlike linear blockchains (e.g., Bitcoin), where block intervals define issuance (1 block = 1 reward), IPPAN’s BlockDAG creates thousands of micro-blocks per second within overlapping rounds.
 
-To maintain scarcity, determinism, and fairness, emission must therefore be round-based, not block-based. Each round (≈100–250 ms) aggregates many blocks from multiple validators. Rewards are computed per round and distributed proportionally to the nodes that participated in that round’s validation and verification.
+To maintain scarcity, determinism, and fairness, emission must therefore be round-based, not block-based. Each round (≈200–250 ms) aggregates many blocks from multiple validators. Rewards are computed per round and distributed proportionally to the nodes that participated in that round’s validation and verification.
 
 #### 7.4.2 Core Parameters
 
 | Parameter                   | Description                      | Example                              |
 | --------------------------- | -------------------------------- | ------------------------------------ |
 | Total Supply                | Hard-capped monetary base        | 21 000 000 IPN                       |
-| Round Duration              | Average consensus interval       | 100 ms                               |
+| Round Duration              | Average consensus interval       | 200 ms                               |
 | Rounds per Second           | Network heartbeat frequency      | ≈ 10                                 |
 | Annual Rounds               | 31.5 × 10⁶ s × 10 = 315 M rounds | deterministic                        |
 | Halving Interval            | Reward halving schedule          | every ≈ 6.3 × 10⁸ rounds (≈ 2 years) |
@@ -248,7 +248,7 @@ In IPPAN, **blocks are micro-events**, not emission units.
 Unlike linear blockchains (e.g., Bitcoin), where block intervals define issuance (1 block = 1 reward), IPPAN's **BlockDAG** creates thousands of micro-blocks per second within overlapping rounds.
 
 To maintain **scarcity, determinism, and fairness**, emission must therefore be **round-based**, not block-based.
-Each round (≈100–250 ms) aggregates many blocks from multiple validators.
+Each round (≈200–250 ms) aggregates many blocks from multiple validators.
 Rewards are computed **per round** and distributed proportionally to the nodes that participated in that round's validation and verification.
 
 ---
@@ -258,7 +258,7 @@ Rewards are computed **per round** and distributed proportionally to the nodes t
 | Parameter                   | Description                      | Example                              |
 | --------------------------- | -------------------------------- | ------------------------------------ |
 | **Total Supply**            | Hard-capped monetary base        | 21 000 000 IPN                       |
-| **Round Duration**          | Average consensus interval       | 100 ms                               |
+| **Round Duration**          | Average consensus interval       | 200 ms                               |
 | **Rounds per Second**       | Network heartbeat frequency      | ≈ 10                                 |
 | **Annual Rounds**           | 31.5 × 10⁶ s × 10 = 315 M rounds | deterministic                        |
 | **Halving Interval**        | Reward halving schedule          | every ≈ 6.3 × 10⁸ rounds (≈ 2 years) |
@@ -457,7 +457,7 @@ IPPAN can act as a coordination overlay for the global Internet:
 | Ethereum | PoS | ~15 k | 12 s | External | Inflationary |
 | Solana | PoH + BFT | ~60 k | ~400 ms | None | Inflationary |
 | Gensyn / Bittensor | PoS / Work Market | — | variable | AI-training focus | Dynamic |
-| IPPAN | Deterministic DAG (FBA) | >10 M | 100–250 ms | L1 + L2 AI integrated | 21 M IPN (fixed) |
+| IPPAN | Deterministic DAG (FBA) | >10 M | 200–250 ms | L1 + L2 AI integrated | 21 M IPN (fixed) |
 
 ---
 

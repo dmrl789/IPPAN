@@ -10,12 +10,12 @@ R(t) = R₀ / 2^(⌊t/Th⌋)
 Where:
 - `R(t)` = Reward per round at time t
 - `R₀` = 10,000 µIPN (0.0001 IPN) per round
-- `Th` = 315,000,000 rounds (≈ 2 years at 100ms rounds)
+- `Th` = 157,680,000 rounds (≈ 2 years at 200ms rounds)
 - `t` = Current round number
 
 ### Annual Emission Calculation
 ```
-Annual Rounds = (365.25 × 24 × 3600 × 1000) / 100 = 315,360,000
+Annual Rounds = (365.25 × 24 × 3600 × 1000) / 200 = 157,680,000
 Annual Emission = R(t) × Annual Rounds
 ```
 
@@ -131,7 +131,7 @@ Total Supply = min(R₀ × Th × 2, 21,000,000 IPN)
 
 ### 1. Round Initialization
 ```
-Round Duration: 100ms
+Round Duration: 200ms
 Blocks per Round: 1000+ (parallel)
 Validators: 4-100+ (scalable)
 ```
@@ -235,7 +235,7 @@ Total: 6,540 µIPN (Base Emission)
 
 ### 3. For Users
 - **Low fees**: Capped transaction fees
-- **Fast finality**: 100ms round duration
+- **Fast finality**: 200ms round duration
 - **Fair access**: No MEV or front-running
 - **Predictable costs**: Transparent fee structure
 

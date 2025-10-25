@@ -55,7 +55,7 @@ This document summarizes the core protocol upgrades implemented for the IPPAN bl
 ```rust
 EmissionParams {
     r0: 10_000,                    // µIPN per round
-    halving_rounds: 315_000_000,   // ~2 years at 200ms/round
+    halving_rounds: 315_360_000,   // ~2 years at 200ms/round
     supply_cap: 21_000_000_00000000,
     proposer_bps: 2000,            // 20%
     verifier_bps: 8000,            // 80%
@@ -273,7 +273,7 @@ fee_caps = []  # Enabled by default
 // Emission parameters
 let emission = EmissionParams {
     r0: 10_000,
-    halving_rounds: 315_000_000,
+    halving_rounds: 315_360_000,
     supply_cap: 21_000_000_00000000,
     proposer_bps: 2000,
     verifier_bps: 8000,
