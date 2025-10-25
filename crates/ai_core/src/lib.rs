@@ -8,10 +8,23 @@
 //! - `gbdt`: Integer-only Gradient Boosted Decision Tree evaluator
 //! - `model`: Model packaging and verification utilities
 
+pub mod config;
 pub mod features;
 pub mod gbdt;
+pub mod health;
 pub mod model;
 
+pub use config::{
+    AiCoreConfig,
+    ConfigManager,
+    HealthConfig as ConfigHealthConfig,
+    ExecutionConfig,
+    LoggingConfig,
+    SecurityConfig,
+    PerformanceConfig,
+    FeatureConfig as ConfigFeatureConfig,
+    ValidationConfig,
+};
 pub use features::{
     extract_features,
     normalize_features,
@@ -20,6 +33,16 @@ pub use features::{
     ValidatorTelemetry,
 };
 pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree};
+pub use health::{
+    HealthMonitor,
+    HealthConfig,
+    HealthStatus,
+    SystemHealth,
+    PerformanceMetrics,
+    HealthChecker,
+    MemoryUsageChecker,
+    ModelExecutionChecker,
+};
 pub use model::{load_model, verify_model_hash, ModelMetadata, ModelPackage, MODEL_HASH_SIZE};
 
 /// Deterministically sorts a vector for reproducible consensus behavior.
