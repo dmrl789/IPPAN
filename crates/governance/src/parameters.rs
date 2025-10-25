@@ -2,43 +2,10 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use ippan_economics_core::EconomicsParameterManager;
+use ippan_economics_core::{EconomicsParameterManager, EconomicsParams};
 
 /// Economics / Emission parameters governed on-chain
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EconomicsParams {
-    /// Initial reward per round (in µIPN)
-    pub initial_round_reward_micro: u128,
-    /// Number of rounds between halvings
-    pub halving_interval_rounds: u64,
-    /// Supply cap (µIPN)
-    pub supply_cap_micro: u128,
-    /// Fee cap numerator (1 for 1/10 = 10% max)
-    pub fee_cap_numer: u32,
-    /// Fee cap denominator
-    pub fee_cap_denom: u32,
-    /// Proposer weight (basis points out of 10,000)
-    pub proposer_weight_bps: u16,
-    /// Verifier weight (basis points out of 10,000)
-    pub verifier_weight_bps: u16,
-    /// Fee recycling ratio (basis points)
-    pub fee_recycling_bps: u16,
-}
-
-impl Default for EconomicsParams {
-    fn default() -> Self {
-        Self {
-            initial_round_reward_micro: 10_000, // ≈50 IPN/day @100 ms rounds
-            halving_interval_rounds: 315_000_000, // ≈2 years @200 ms rounds
-            supply_cap_micro: 21_000_000 * 100_000_000, // 21 M IPN
-            fee_cap_numer: 1,
-            fee_cap_denom: 10,
-            proposer_weight_bps: 2000, // 20%
-            verifier_weight_bps: 8000, // 80%
-            fee_recycling_bps: 10_000, // 100% recycling
-        }
-    }
-}
+// Note: We reuse EconomicsParams from ippan_economics_core to avoid type drift
 
 /// Governance parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +120,7 @@ impl ParameterManager {
             // Economics
             "economics.initial_round_reward_micro",
             "economics.halving_interval_rounds",
-            "economics.supply_cap_micro",
+            "economics.max_supply_micro",
             "economics.fee_cap_numer",
             "economics.fee_cap_denom",
             "economics.proposer_weight_bps",
@@ -214,15 +181,15 @@ impl ParameterManager {
                 self.parameters.economics.halving_interval_rounds =
                     proposal.new_value.as_u64().unwrap();
             }
-            "economics.supply_cap_micro" => {
-                self.parameters.economics.supply_cap_micro =
+            "economics.max_supply_micro" => {
+                self.parameters.economics.max_supply_micro =
                     proposal.new_value.as_u64().unwrap() as u128;
             }
             "economics.fee_cap_numer" => {
-                self.parameters.economics.fee_cap_numer = proposal.new_value.as_u64().unwrap() as u32;
+                self.parameters.economics.fee_cap_numer = proposal.new_value.as_u64().unwrap();
             }
             "economics.fee_cap_denom" => {
-                self.parameters.economics.fee_cap_denom = proposal.new_value.as_u64().unwrap() as u32;
+                self.parameters.economics.fee_cap_denom = proposal.new_value.as_u64().unwrap();
             }
             "economics.proposer_weight_bps" => {
                 self.parameters.economics.proposer_weight_bps =

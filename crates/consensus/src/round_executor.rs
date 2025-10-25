@@ -6,7 +6,7 @@
 use crate::fees::FeeCollector;
 use ippan_economics::{
     distribute_round, emission_for_round_capped, EconomicsParams, Participation, ParticipationSet,
-    Role, MICRO_PER_IPN,
+    Role, MICRO_PER_IPN, Payouts, ValidatorId,
 };
 use ippan_treasury::{RewardSink, AccountLedger};
 use ippan_types::{ChainState, MicroIPN, RoundId};
@@ -54,7 +54,8 @@ impl RoundExecutor {
         fees_micro: MicroIPN,
     ) -> Result<RoundExecutionResult> {
         // Collect transaction fees for this round
-        self.fee_collector.collect_round_fees(round, fees_micro)?;
+        // Collect fees into economics-aware collector: convert Amount from types
+        self.fee_collector.collect(ippan_types::Amount::from_micro_ipn(fees_micro as u64));
 
         // Calculate emission for this round (enforcing supply cap)
         let issued = chain_state.total_issued_micro();
@@ -115,14 +116,14 @@ impl RoundExecutor {
     }
 
     /// Internal: calculate deterministic round state root (includes payouts).
-    fn calculate_state_root(&self, round: RoundId, payouts: &HashMap<[u8; 32], MicroIPN>) -> [u8; 32] {
+    fn calculate_state_root(&self, round: RoundId, payouts: &Payouts) -> [u8; 32] {
         use blake3::Hasher as Blake3;
         let mut hasher = Blake3::new();
         hasher.update(&round.to_be_bytes());
         let mut entries: Vec<_> = payouts.iter().collect();
-        entries.sort_by_key(|(vid, _)| *vid);
+        entries.sort_by(|(a, _), (b, _)| a.0.cmp(&b.0));
         for (vid, amt) in entries {
-            hasher.update(vid);
+            hasher.update(vid.0.as_bytes());
             hasher.update(&amt.to_be_bytes());
         }
         let digest = hasher.finalize();
@@ -146,21 +147,17 @@ pub fn create_participation_set(
     validators: &[(u64, [u8; 32], u64, f64)],
     proposer_id: [u8; 32],
 ) -> ParticipationSet {
-    let mut parts = Vec::new();
-    for (stake, id, blocks_proposed, reputation) in validators {
-        let role = if *id == proposer_id {
-            Role::Proposer
-        } else {
-            Role::Verifier
-        };
-        parts.push(Participation {
-            validator_id: *id,
-            role,
-            blocks_proposed: *blocks_proposed as u32,
-            blocks_verified: 0,
-            reputation_score: *reputation,
-            stake_weight: *stake,
-        });
+    let mut parts: ParticipationSet = HashMap::new();
+    for (_stake, id, blocks_proposed, _reputation) in validators {
+        let role = if *id == proposer_id { Role::Proposer } else { Role::Verifier };
+        let vid = ValidatorId(hex::encode(id));
+        parts.insert(
+            vid,
+            Participation {
+                role,
+                blocks: *blocks_proposed as u32,
+            },
+        );
     }
     parts
 }
@@ -170,25 +167,19 @@ pub fn create_full_participation_set(
     validators: &[(u64, [u8; 32], u32, u32, f64)],
     proposer_id: [u8; 32],
 ) -> ParticipationSet {
-    let mut parts = Vec::new();
-    for (stake, id, blocks_proposed, blocks_verified, reputation) in validators {
-        let role = if *id == proposer_id {
-            if *blocks_verified > 0 {
-                Role::Both
-            } else {
-                Role::Proposer
-            }
-        } else {
-            Role::Verifier
-        };
-        parts.push(Participation {
-            validator_id: *id,
-            role,
-            blocks_proposed: *blocks_proposed,
-            blocks_verified: *blocks_verified,
-            reputation_score: *reputation,
-            stake_weight: *stake,
-        });
+    let mut parts: ParticipationSet = HashMap::new();
+    for (_stake, id, blocks_proposed, blocks_verified, _reputation) in validators {
+        // Economics Role enum does not support Both; choose Proposer if proposer else Verifier
+        let role = if *id == proposer_id { Role::Proposer } else { Role::Verifier };
+        let total_blocks = (*blocks_proposed as u64 + *blocks_verified as u64) as u32;
+        let vid = ValidatorId(hex::encode(id));
+        parts.insert(
+            vid,
+            Participation {
+                role,
+                blocks: total_blocks,
+            },
+        );
     }
     parts
 }

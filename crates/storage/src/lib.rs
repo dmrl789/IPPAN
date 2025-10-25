@@ -265,7 +265,7 @@ impl Storage for SledStorage {
     }
 
     fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
-        let mut nets = Vec::new();
+        let mut nets: Vec<L2Network> = Vec::new();
         for e in self.l2_networks.iter() {
             let (_, v) = e?;
             nets.push(serde_json::from_slice(&v)?);

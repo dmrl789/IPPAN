@@ -1,6 +1,6 @@
 //! Fee collection and management for the treasury
 
-use ippan_economics_core::MicroIPN;
+use ippan_economics::MicroIPN;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -100,8 +100,8 @@ impl FeeCollector {
             .copied()
             .collect();
         
-        for round in rounds_to_remove {
-            self.round_fees.remove(&round);
+        for round in &rounds_to_remove {
+            self.round_fees.remove(round);
         }
         
         debug!(
