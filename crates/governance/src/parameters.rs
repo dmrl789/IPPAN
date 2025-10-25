@@ -2,7 +2,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use ippan_economics_core::EconomicsParameterManager;
 
 /// Economics / Emission parameters governed on-chain
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +84,6 @@ pub struct ParameterManager {
     parameters: GovernanceParameters,
     change_history: Vec<ParameterChangeProposal>,
     pending_changes: HashMap<String, ParameterChangeProposal>,
-    economics_manager: EconomicsParameterManager,
 }
 
 impl ParameterManager {
@@ -94,7 +92,6 @@ impl ParameterManager {
             parameters: GovernanceParameters::default(),
             change_history: Vec::new(),
             pending_changes: HashMap::new(),
-            economics_manager: EconomicsParameterManager::new(),
         }
     }
 
@@ -103,12 +100,11 @@ impl ParameterManager {
     }
 
     pub fn get_economics_params(&self) -> &EconomicsParams {
-        self.economics_manager.get_current_params()
+        &self.parameters.economics
     }
 
     pub fn update_economics_params(&mut self, params: EconomicsParams) {
-        self.parameters.economics = params.clone();
-        self.economics_manager = EconomicsParameterManager::with_params(params);
+        self.parameters.economics = params;
     }
 
     pub fn submit_parameter_change(&mut self, proposal: ParameterChangeProposal) -> Result<()> {

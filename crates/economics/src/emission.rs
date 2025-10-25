@@ -113,7 +113,7 @@ pub fn get_emission_details(
     let emission_micro = emission_for_round_capped(round, current_issued_micro, params)?;
     let total_issued_micro = current_issued_micro.saturating_add(emission_micro);
     let remaining_cap_micro = calculate_remaining_cap(total_issued_micro, params);
-    let halving_epoch = if round == 0 { 0 } else { (round - 1) / params.halving_interval_rounds };
+    let halving_epoch = if round == 0 { 0u32 } else { ((round - 1) / params.halving_interval_rounds) as u32 };
     
     Ok(EmissionResult {
         round,

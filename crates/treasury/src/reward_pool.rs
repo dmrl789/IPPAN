@@ -86,9 +86,9 @@ impl RewardSink {
 
                 debug!(
                     target: "treasury",
-                    "Settled {} μIPN to validator {:?} for round {}",
+                    "Settled {} μIPN to validator {} for round {}",
                     amount,
-                    hex::encode(vid),
+                    hex::encode(&vid[..]),
                     round
                 );
             }
