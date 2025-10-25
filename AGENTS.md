@@ -32,6 +32,7 @@
 | **UI/UX Coach**     | `@ui-coach`      | Improve Unified UI layout, mobile flows                 | `label:ui-ux`, `/ux-review`          | diffs, Figma notes, Tailwind suggestions |
 | **Gateway SRE**     | `@gw-sre`        | Validate gateway/WS health, CORS, envs                  | `label:gateway`, `/gateway-check`    | health reports, `.env` upserts           |
 | **Licensing/Legal** | `@legal`         | License headers, notices, patent refs                   | `label:legal`, `/audit-licenses`     | headers, NOTICE, SPDX fixes              |
+| **MetaAgent**       | `@metaagent`     | Self-governing workflow automation & agent coordination  | `label:metaagent`, `/metaagent`      | automated assignments, locks, approvals   |
 
 > Agents are invoked via labels **or** slash commands in PR/Issue comments. Humans remain DRIs (directly responsible individuals).
 
@@ -41,10 +42,12 @@
 
 ### Canonical Labels
 
-* **Work type:** `codex`, `tests`, `infra`, `docs`, `security`, `ui-ux`, `gateway`, `legal`
+* **Work type:** `codex`, `tests`, `infra`, `docs`, `security`, `ui-ux`, `gateway`, `legal`, `metaagent`
 * **State:** `needs-prd`, `needs-review`, `ready-to-merge`, `blocked`, `backport`
 * **Risk:** `safe`, `medium-risk`, `high-risk`
 * **Priority:** `p0`, `p1`, `p2`
+* **Agent assignments:** `agent-alpha`, `agent-beta`, `agent-gamma`, `agent-delta`, `agent-epsilon`, `agent-zeta`, `agent-theta`, `agent-lambda`
+* **MetaAgent system:** `metaagent:approved`, `locked`, `conflict:pending`
 
 ### Slash Commands (comment in PR/Issue)
 
@@ -58,6 +61,7 @@
 * `/sync-docs` → DocsBot syncs CLI help and architecture diagrams.
 * `/ux-review` → UI/UX Coach posts a punch list for mobile & accessibility.
 * `/gateway-check` → Gateway SRE verifies `/health`, WS, CORS, and `.env`.
+* `/metaagent` → MetaAgent runs governance workflow, assigns agents, manages locks
 
 > Commands require write/admin permissions. Agents fail gracefully if permissions/secrets are missing.
 
@@ -356,6 +360,90 @@ When you comment **`/gateway-check`** on a PR/Issue:
 * Agents never merge failing CI or bypass reviews.
 * If agents disagree (e.g., SecurityBot vs Codex), the **DRI** decides and records the rationale in the PR.
 * **Escalation path:** DRI → repo maintainer(s) → org admin.
+
+---
+
+## 12) MetaAgent Governance System 🧠
+
+The MetaAgent system provides **automated self-governance** for the IPPAN repository, managing agent assignments, resource locking, conflict detection, and merge approvals.
+
+### 12.1 MetaAgent Workflow
+
+**File:** `.github/workflows/metaagent-governance.yml`
+
+**Triggers:**
+- Pull requests: `opened`, `reopened`, `synchronize`, `labeled`, `unlabeled`, `closed`
+- Issues: `opened`, `reopened`, `labeled`
+- Schedule: Hourly consistency check (`0 * * * *`)
+- Manual: `workflow_dispatch`
+
+### 12.2 Core Functions
+
+| Function | Description | Behavior |
+|----------|-------------|----------|
+| **Agent Assignment** | Automatically assigns new issues to available agents | Random selection from 8 agents (Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Theta, Lambda) |
+| **Conflict Detection** | Prevents overlapping work on same crates | Checks for `locked:crate` labels before allowing new PRs |
+| **Merge Validation** | Auto-approves PRs when CI passes | Adds `metaagent:approved` label after successful checks |
+| **Resource Locking** | Locks crates during active development | Creates `locked:crate` labels when PRs open, removes after merge |
+| **Activity Logging** | Tracks all MetaAgent actions | Writes to `.meta/logs/` and commits to `metaagent-logs` branch |
+
+### 12.3 Agent Pool
+
+The MetaAgent system manages 8 virtual agents:
+
+- **Agent Alpha** (`agent-alpha`) - Color: `#A1D6FF`
+- **Agent Beta** (`agent-beta`) - Color: `#A1FFA1`
+- **Agent Gamma** (`agent-gamma`) - Color: `#FFA1A1`
+- **Agent Delta** (`agent-delta`) - Color: `#FFFFA1`
+- **Agent Epsilon** (`agent-epsilon`) - Color: `#FFA1FF`
+- **Agent Zeta** (`agent-zeta`) - Color: `#A1FFFF`
+- **Agent Theta** (`agent-theta`) - Color: `#FFD6A1`
+- **Agent Lambda** (`agent-lambda`) - Color: `#D6A1FF`
+
+### 12.4 MetaAgent Dashboard
+
+**Location:** `apps/unified-ui/src/components/metaagent/MetaAgentDashboard.tsx`
+
+**Features:**
+- Real-time agent status and assignments
+- Active crate locks visualization
+- Recent approvals and conflicts
+- Activity timeline
+- Manual refresh capability
+
+**Access:** Available in the main UI under the "MetaAgent" tab.
+
+### 12.5 Setup Instructions
+
+1. **Create log directory:**
+   ```bash
+   mkdir -p .meta/logs
+   git add .meta
+   git commit -m "chore: add metaagent log directory"
+   ```
+
+2. **Setup agent labels:**
+   ```bash
+   ./scripts/setup-metaagent-labels.sh
+   ```
+
+3. **Required GitHub secrets:**
+   - `GH_TOKEN` - GitHub token with `repo` and `workflow` permissions
+
+4. **Enable workflow:**
+   - Go to repository Actions tab
+   - Enable "MetaAgent Governance Protocol" workflow
+
+### 12.6 Log Files
+
+All MetaAgent activity is logged to `.meta/logs/`:
+
+- `assignments.log` - Agent assignments to issues
+- `conflicts.log` - Detected conflicts and resolutions
+- `approvals.log` - PR approvals by MetaAgent
+- `locks.log` - Crate lock/unlock events
+
+Logs are automatically committed to the `metaagent-logs` branch for audit trails.
 
 ---
 
