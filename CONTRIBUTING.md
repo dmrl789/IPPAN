@@ -1,6 +1,6 @@
 # 🧭 IPPAN Multi-Agent Contribution Protocol
 
-### Version 1.0 · Last Updated 2025-10-25
+### Version 1.0 · Last Updated 2025-01-25
 
 ---
 
@@ -188,7 +188,40 @@ Agents must preserve author metadata (`Co-authored-by` lines) to maintain IP tra
 
 ---
 
-## 15. Related Documentation
+## 15. Quick Start for New Contributors
+
+### For Human Contributors:
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature-name`
+3. Make your changes following the commit conventions
+4. Run tests locally: `cargo test --workspace`
+5. Push and create a PR with proper labels
+
+### For AI Agents:
+1. Use the `/codex plan` command to outline your approach
+2. Create a branch following the `agent/<name>-<task>` pattern
+3. Implement changes within your assigned scope
+4. Ensure all automated checks pass
+5. Request review from the appropriate maintainer
+
+---
+
+## 16. Troubleshooting
+
+### Common Issues:
+- **Build failures**: Check `rust-toolchain.toml` for version requirements
+- **Test failures**: Run `cargo test --verbose` for detailed output
+- **Merge conflicts**: Follow the conflict resolution workflow in section 7
+- **Permission issues**: Contact maintainers for repository access
+
+### Getting Help:
+- Check existing issues and PRs for similar problems
+- Use GitHub Discussions for general questions
+- Tag relevant maintainers in PR comments for specific guidance
+
+---
+
+## 17. Related Documentation
 
 * **[AGENTS.md](./AGENTS.md)** – Complete agent roster, slash commands, and operational playbooks
 * **[README.md](./README.md)** – Project overview and quick start
