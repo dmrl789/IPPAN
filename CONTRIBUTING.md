@@ -1,6 +1,6 @@
 # 🧭 IPPAN Multi-Agent Contribution Protocol
 
-### Version 1.0 · Last Updated 2025-01-25
+### Version 1.0 · Last Updated 2025-10-25
 
 ---
 
