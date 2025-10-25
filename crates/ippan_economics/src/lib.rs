@@ -20,21 +20,19 @@
 pub mod emission;
 pub mod distribution;
 pub mod supply;
-pub mod governance;
 pub mod types;
 pub mod errors;
 
 pub use emission::EmissionEngine;
 pub use distribution::RoundRewards;
 pub use supply::SupplyTracker;
-pub use governance::GovernanceParams;
 pub use types::*;
 pub use errors::*;
 
 /// Re-export commonly used types for convenience
 pub mod prelude {
     pub use crate::{
-        EmissionEngine, RoundRewards, SupplyTracker, GovernanceParams,
+        EmissionEngine, RoundRewards, SupplyTracker,
         EmissionParams, RoundIndex, RewardAmount, ValidatorReward,
         EmissionError, DistributionError,
     };

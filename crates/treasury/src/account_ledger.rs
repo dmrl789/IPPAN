@@ -1,6 +1,7 @@
 //! Account ledger interface for reward distribution
 
-use ippan_economics_core::{MicroIPN, ValidatorId};
+use ippan_types::MicroIPN;
+use ippan_economics::ValidatorId;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -52,7 +53,7 @@ impl AccountLedger for InMemoryAccountLedger {
     fn credit_validator(&mut self, validator_id: &ValidatorId, amount: MicroIPN) -> Result<()> {
         let current_balance = self.balances.get(validator_id).copied().unwrap_or(0);
         let new_balance = current_balance.saturating_add(amount);
-        self.balances.insert(*validator_id, new_balance);
+        self.balances.insert(validator_id.clone(), new_balance);
         self.total_supply = self.total_supply.saturating_add(amount);
         Ok(())
     }
@@ -67,7 +68,7 @@ impl AccountLedger for InMemoryAccountLedger {
             return Err(anyhow::anyhow!("Insufficient balance"));
         }
         let new_balance = current_balance - amount;
-        self.balances.insert(*validator_id, new_balance);
+        self.balances.insert(validator_id.clone(), new_balance);
         self.total_supply = self.total_supply.saturating_sub(amount);
         Ok(())
     }
@@ -120,10 +121,10 @@ impl MockAccountLedger {
 
 impl AccountLedger for MockAccountLedger {
     fn credit_validator(&mut self, validator_id: &ValidatorId, amount: MicroIPN) -> Result<()> {
-        self.credit_calls.push((*validator_id, amount));
+        self.credit_calls.push((validator_id.clone(), amount));
         let current_balance = self.balances.get(validator_id).copied().unwrap_or(0);
         let new_balance = current_balance.saturating_add(amount);
-        self.balances.insert(*validator_id, new_balance);
+        self.balances.insert(validator_id.clone(), new_balance);
         self.total_supply = self.total_supply.saturating_add(amount);
         Ok(())
     }
@@ -133,13 +134,13 @@ impl AccountLedger for MockAccountLedger {
     }
     
     fn debit_validator(&mut self, validator_id: &ValidatorId, amount: MicroIPN) -> Result<()> {
-        self.debit_calls.push((*validator_id, amount));
+        self.debit_calls.push((validator_id.clone(), amount));
         let current_balance = self.balances.get(validator_id).copied().unwrap_or(0);
         if current_balance < amount {
             return Err(anyhow::anyhow!("Insufficient balance"));
         }
         let new_balance = current_balance - amount;
-        self.balances.insert(*validator_id, new_balance);
+        self.balances.insert(validator_id.clone(), new_balance);
         self.total_supply = self.total_supply.saturating_sub(amount);
         Ok(())
     }

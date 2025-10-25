@@ -13,6 +13,9 @@ pub type RewardAmount = u64;
 /// Validator address
 pub type ValidatorId = String;
 
+/// Payouts for a round (validator -> micro-IPN)
+pub type Payouts = HashMap<ValidatorId, u128>;
+
 /// Emission parameters that can be configured via governance
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmissionParams {

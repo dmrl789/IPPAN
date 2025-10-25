@@ -318,21 +318,10 @@ impl Default for RoundConsensus {
     }
 }
 
-<<<<<<< HEAD
 /// Convenience function to calculate reputation score
 #[cfg(feature = "ai_l1")]
 pub fn calculate_reputation_score(model: &Model, telemetry: &ValidatorTelemetry) -> Result<i32> {
     let features = ippan_ai_core::features::from_telemetry(telemetry)?;
-=======
-// -----------------------------------------------------------------------------
-// ✅ Standalone helper
-// -----------------------------------------------------------------------------
-pub fn calculate_reputation_score(
-    model: &Model,
-    telemetry: &ValidatorTelemetry,
-) -> Result<i32> {
-    let features = features::from_telemetry(telemetry)?;
->>>>>>> origin/main
     let evaluator = GbdtEvaluator::new(model.clone())?;
     evaluator.evaluate(&features)
 }

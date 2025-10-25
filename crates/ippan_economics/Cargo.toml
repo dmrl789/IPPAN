@@ -37,7 +37,6 @@ parking_lot = { workspace = true }
 # IPPAN internal crates
 ippan-types = { path = "../types" }
 ippan-time = { path = "../time" }
-ippan-governance = { path = "../governance" }
 
 [dev-dependencies]
 proptest = "1.4"
