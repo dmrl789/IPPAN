@@ -1,7 +1,7 @@
 //! DAG-Fair Emission calculation with hard supply cap enforcement
 
 use crate::types::{EconomicsParams, EmissionResult, MicroIPN, RoundId, MICRO_PER_IPN};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use tracing::{debug, info, warn};
 
 /// Calculate emission for a round with hard supply cap enforcement

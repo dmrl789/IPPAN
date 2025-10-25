@@ -1,7 +1,6 @@
 //! AI Model Governance Module — voting and approval of AI models
 use anyhow::Result;
 use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Stub for proposal manager (TODO: implement full functionality)
