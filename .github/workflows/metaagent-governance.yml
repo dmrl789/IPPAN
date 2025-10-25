@@ -1,4 +1,4 @@
-name: "🧠 MetaAgent Governance Protocol"
+name: 🧠 MetaAgent Governance Protocol
 
 on:
   pull_request:
@@ -18,22 +18,21 @@ env:
   META_LOG_DIR: ".meta/logs"
   META_LOCK_LABEL: "locked"
   META_APPROVAL_LABEL: "metaagent:approved"
-  # Ensure gh CLI is authenticated in Actions
   GH_TOKEN: ${{ github.token }}
 
 jobs:
   metaagent:
     runs-on: ubuntu-latest
     steps:
-      - name: "🧭 Checkout repository"
+      - name: 🧭 Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: "🧰 Ensure log directory"
+      - name: 🧰 Ensure log directory
         run: mkdir -p ${{ env.META_LOG_DIR }}
 
-      - name: "🧠 Install jq and gh CLI"
+      - name: 🧠 Install jq and gh CLI
         run: |
           sudo apt-get update -y
           sudo apt-get install -y jq
@@ -44,7 +43,7 @@ jobs:
       # ============================================================
       # 1. ASSIGNMENT LOGIC
       # ============================================================
-      - name: "📋 Assign Agent Automatically"
+      - name: 📋 Assign Agent Automatically
         if: github.event_name == 'issues' && github.event.action == 'opened'
         run: |
           issue_number=${{ github.event.issue.number }}
@@ -59,7 +58,7 @@ jobs:
       # ============================================================
       # 2. CONFLICT DETECTION
       # ============================================================
-      - name: "⚠️ Detect Overlapping PR Scopes"
+      - name: ⚠️ Detect Overlapping PR Scopes
         if: github.event_name == 'pull_request' && github.event.action == 'opened'
         run: |
           pr_number=${{ github.event.pull_request.number }}
@@ -81,7 +80,7 @@ jobs:
       # ============================================================
       # 3. MERGE VALIDATION
       # ============================================================
-      - name: "✅ Approve Merge if Checks Pass"
+      - name: ✅ Approve Merge if Checks Pass
         if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
         run: |
           pr_number=${{ github.event.pull_request.number }}
@@ -97,7 +96,7 @@ jobs:
       # ============================================================
       # 4. LOCK MANAGEMENT
       # ============================================================
-      - name: "🔒 Lock crate when PR opened"
+      - name: 🔒 Lock crate when PR opened
         if: github.event_name == 'pull_request' && github.event.action == 'opened'
         run: |
           pr_number=${{ github.event.pull_request.number }}
@@ -113,7 +112,7 @@ jobs:
             fi
           done
 
-      - name: "🔓 Unlock crate after merge"
+      - name: 🔓 Unlock crate after merge
         if: github.event_name == 'pull_request' && github.event.action == 'closed'
         run: |
           pr_number=${{ github.event.pull_request.number }}
@@ -130,7 +129,7 @@ jobs:
       # ============================================================
       # 5. LOG SYNCHRONIZATION
       # ============================================================
-      - name: "🪣 Commit Logs to Repo"
+      - name: 🪣 Commit Logs to Repo
         if: always()
         run: |
           git config user.name "MetaAgent Bot"
