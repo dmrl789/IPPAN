@@ -1,0 +1,206 @@
+name: MetaAgent Governance
+
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled, reopened]
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited, ready_for_review]
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+  checks: read
+  statuses: read
+  repository-projects: read
+
+jobs:
+  issue-assignment:
+    name: Assign issues fairly
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select assignee via round-robin
+        id: pick
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const core = require('@actions/core');
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request) return core.notice('Not an issue, skipping');
+
+            // Pick eligible agents from AGENTS.md and labels
+            const { data: file } = await github.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: 'AGENTS.md'
+            });
+            const content = Buffer.from(file.content, file.encoding).toString('utf8');
+
+            // Simple roster parse: lines like "| **Codex (Dev)** | @codex |"
+            const agents = Array.from(content.matchAll(/\|\s*\*\*(.+?)\*\*\s*\|\s*`?@([a-z0-9-]+)`?\s*\|/gi)).map(m => ({ name: m[1], handle: m[2] }));
+            const eligible = agents.filter(a => !/PRD Architect|ReleaseBot|DocsBot/i.test(a.name));
+            if (eligible.length === 0) return core.notice('No eligible agents found');
+
+            // Round-robin via label index; fallback to hash of issue id
+            const index = issue.number % eligible.length;
+            const pick = eligible[index];
+
+            await github.issues.addAssignees({ ...context.repo, issue_number: issue.number, assignees: [pick.handle] });
+
+            // Comment with assignment template per protocol
+            const scope = (issue.title.match(/\[(.+?)\]/) || [,'unspecified'])[1];
+            await github.issues.createComment({
+              ...context.repo,
+              issue_number: issue.number,
+              body: [
+                `@${pick.handle} assigned to issue #${issue.number}`,
+                `Scope: ${scope || 'repo-wide'}`,
+                `Complexity: medium`,
+                `Reviewer: @ugo-giuliani`,
+                `ETA: 6h`
+              ].join('\n')
+            });
+
+  pr-governance:
+    name: PR governance and locking
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Compute touched scopes (crates/folders)
+        id: scopes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { data: files } = await github.pulls.listFiles({ ...context.repo, pull_number: pr.number, per_page: 300 });
+            const paths = files.map(f => f.filename);
+
+            // Extract top-level scopes (crates/<name>, apps/<name>, deploy/**, docs/**)
+            const scopes = new Set();
+            for (const p of paths) {
+              const m = p.match(/^(crates\/[a-zA-Z0-9_-]+)\//) || p.match(/^(apps\/[a-zA-Z0-9_-]+)\//) || p.match(/^(deploy)\//) || p.match(/^(docs)\//) || p.match(/^\.github\//);
+              if (m) scopes.add(m[1]);
+            }
+            core.setOutput('scopes', JSON.stringify(Array.from(scopes)));
+      - name: Enforce locks and detect conflicts
+        id: lock
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const scopes = JSON.parse(core.getInput('scopes', { required: true }));
+
+            // Create labels if missing
+            async function ensureLabel(name, color, description) {
+              try { await github.issues.getLabel({ ...context.repo, name }); }
+              catch { await github.issues.createLabel({ ...context.repo, name, color, description }); }
+            }
+            await ensureLabel('status:needs-human-review', 'b60205', 'Frozen after repeated failures');
+            await ensureLabel('metaagent:approved', '0e8a16', 'All governance checks passed');
+
+            // Apply locked:<scope> labels
+            for (const s of scopes) {
+              const lockLabel = `locked:${s}`;
+              await ensureLabel(lockLabel, '5319e7', `Temporary lock for scope ${s}`);
+              await github.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: [lockLabel] });
+            }
+
+            // Detect overlapping open PRs touching same scope
+            const { data: openPRs } = await github.pulls.list({ ...context.repo, state: 'open', per_page: 100 });
+            const conflictLabel = 'conflict:pending';
+            await ensureLabel(conflictLabel, 'e99695', 'Potential overlap detected');
+
+            for (const other of openPRs) {
+              if (other.number === pr.number) continue;
+              const { data: otherFiles } = await github.pulls.listFiles({ ...context.repo, pull_number: other.number, per_page: 300 });
+              const otherPaths = otherFiles.map(f => f.filename);
+              const otherScopes = new Set();
+              for (const p of otherPaths) {
+                const m = p.match(/^(crates\/[a-zA-Z0-9_-]+)\//) || p.match(/^(apps\/[a-zA-Z0-9_-]+)\//) || p.match(/^(deploy)\//) || p.match(/^(docs)\//) || p.match(/^\.github\//);
+                if (m) otherScopes.add(m[1]);
+              }
+              const overlap = Array.from(otherScopes).some(s => scopes.includes(s));
+              if (overlap) {
+                await github.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: [conflictLabel] });
+                await github.issues.addLabels({ ...context.repo, issue_number: other.number, labels: [conflictLabel] });
+              }
+            }
+      - name: Metadata and CI gating
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            // 1) Ensure PR linked to an issue (looks for "#123" in body or title)
+            const linked = /#\d+/.test(pr.title) || /#\d+/.test(pr.body || '');
+
+            // 2) Check CODEOWNERS match (best-effort by requiring at least 1 reviewer assigned)
+            const reviewersSet = (pr.requested_reviewers || []).length + (pr.requested_teams || []).length > 0;
+
+            // 3) Check CI green: look at combined status for the head SHA
+            const sha = pr.head.sha;
+            const { data: suites } = await github.checks.listSuitesForRef({ ...context.repo, ref: sha });
+            const conclusionOk = suites.check_suites?.length > 0 && suites.check_suites.every(s => ['success','neutral','skipped'].includes(s.conclusion));
+
+            // 4) Docs updated if touching crates or code (heuristic: if code files changed but no docs/**, warn)
+            const { data: files } = await github.pulls.listFiles({ ...context.repo, pull_number: pr.number, per_page: 300 });
+            const changedDocs = files.some(f => f.filename.startsWith('docs/'));
+            const codeTouched = files.some(f => /\.(rs|ts|tsx|kt|sh|yml|toml|md)$/.test(f.filename));
+
+            const pass = linked && reviewersSet && conclusionOk && (changedDocs || !codeTouched);
+
+            if (pass) {
+              await github.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: ['metaagent:approved'] });
+            } else {
+              const reasons = [];
+              if (!linked) reasons.push('No linked issue');
+              if (!reviewersSet) reasons.push('No reviewers requested');
+              if (!conclusionOk) reasons.push('CI not green');
+              if (!changedDocs && codeTouched) reasons.push('Docs not updated');
+              await github.issues.createComment({ ...context.repo, issue_number: pr.number, body: `MetaAgent gating failed: ${reasons.join('; ')}` });
+            }
+
+  nightly-logs:
+    name: Nightly meta logs and lock sweep
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare meta_logs directory
+        run: |
+          mkdir -p meta_logs
+          echo "Run: $(date -u +%FT%TZ)" >> meta_logs/nightly.log
+      - name: Sweep expired locks (6h TTL)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const now = new Date();
+            const { data: prs } = await github.pulls.list({ ...context.repo, state: 'open', per_page: 100 });
+            for (const pr of prs) {
+              const { data: labels } = await github.issues.listLabelsOnIssue({ ...context.repo, issue_number: pr.number });
+              for (const lab of labels) {
+                const m = lab.name.match(/^locked:(.+)$/);
+                if (!m) continue;
+                const updated = new Date(pr.updated_at);
+                const ageHours = (now - updated) / 36e5;
+                if (ageHours >= 6) {
+                  await github.issues.removeLabel({ ...context.repo, issue_number: pr.number, name: lab.name }).catch(() => {});
+                }
+              }
+            }
+      - name: Commit logs
+        run: |
+          git config user.name "metaagent-bot"
+          git config user.email "metaagent-bot@users.noreply.github.com"
+          git add meta_logs
+          git commit -m "chore(meta): nightly meta logs" || echo "No changes"
+          git push || true
