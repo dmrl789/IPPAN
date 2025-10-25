@@ -1,0 +1,41 @@
+name: "\U0001F9F9 Auto PR & Branch Cleanup"
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Every day at 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "\U0001F9ED Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "\U0001F9F9 Delete merged branches"
+        uses: devops-infra/action-delete-branch@v0.6.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          delete_protected: false
+          exclude: |
+            main
+            dev
+          only_merged: true
+          dry_run: false
+
+      - name: "\U0001F553 Prune stale branches (>10 days inactive)"
+        uses: vdemedes/prune-branches@v2
+        with:
+          days_old: 10
+          exclude: main,dev
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "\U0001F9E0 Comment summary"
+        run: |
+          echo "✅ Branch cleanup completed on $(date -u)"
