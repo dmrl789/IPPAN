@@ -8,6 +8,15 @@ use crate::crypto::*;
 use crate::storage::WalletStorage;
 use ippan_types::{Transaction, Amount, Address};
 
+/// Calculate transaction fee based on amount and data size
+/// Base fee: 0.01% of amount (1 basis point)
+/// Data fee: 1 atomic unit per byte
+fn calculate_transaction_fee(amount: u64, data_size: usize) -> u64 {
+    let base_fee = amount / 10000; // 0.01% of amount
+    let data_fee = data_size as u64; // 1 atomic unit per byte
+    base_fee.saturating_add(data_fee).max(1) // Minimum fee of 1
+}
+
 /// Main wallet operations manager
 pub struct WalletManager {
     storage: Arc<WalletStorage>,
@@ -235,6 +244,9 @@ impl WalletManager {
             Ok(())
         })?;
         
+        // Calculate transaction fee
+        let fee = calculate_transaction_fee(amount, transaction.data.len());
+        
         // Cache transaction
         let wallet_tx = WalletTransaction {
             id: uuid::Uuid::new_v4(),
@@ -242,7 +254,7 @@ impl WalletManager {
             from_address: Some(from_address.to_string()),
             to_address: Some(to_address.to_string()),
             amount,
-            fee: 0, // TODO: Calculate actual fee
+            fee,
             timestamp: chrono::Utc::now(),
             status: TransactionStatus::Pending,
             label: None,
@@ -260,13 +272,14 @@ impl WalletManager {
             let mut wallet_transactions = Vec::new();
             
             for tx in transactions {
+                let fee = calculate_transaction_fee(tx.amount.atomic(), tx.data.len());
                 let wallet_tx = WalletTransaction {
                     id: uuid::Uuid::new_v4(),
                     tx_hash: hex::encode(tx.hash()),
                     from_address: Some(encode_address(&tx.from)),
                     to_address: Some(encode_address(&tx.to)),
                     amount: tx.amount.atomic(),
-                    fee: 0, // TODO: Calculate actual fee
+                    fee,
                     timestamp: chrono::DateTime::from_timestamp(
                         tx.timestamp.0 as i64 / 1_000_000,
                         0,

@@ -890,10 +890,11 @@ mod tests {
         let serialized = serde_json::to_vec(&message).unwrap();
         let deserialized: NetworkMessage = serde_json::from_slice(&serialized).unwrap();
 
-        match deserialized {
-            NetworkMessage::Block(_) => {}
-            _ => panic!("Expected Block message"),
-        }
+        assert!(
+            matches!(deserialized, NetworkMessage::Block(_)),
+            "Expected Block message, got: {:?}",
+            deserialized
+        );
     }
 
     #[tokio::test]

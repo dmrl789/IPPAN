@@ -31,6 +31,9 @@ pub struct EmissionTracker {
 
     /// Network reward pool balance
     pub network_pool_balance: u128,
+    
+    /// Total network dividends distributed (lifetime)
+    pub total_network_dividends: u128,
 
     /// Validator lifetime earnings
     pub validator_earnings: HashMap<[u8; 32], u128>,
@@ -58,6 +61,7 @@ impl EmissionTracker {
             total_fees_collected: 0,
             total_ai_commissions: 0,
             network_pool_balance: 0,
+            total_network_dividends: 0,
             validator_earnings: HashMap::new(),
             empty_rounds: 0,
             audit_interval,
@@ -128,6 +132,11 @@ impl EmissionTracker {
             .network_pool_balance
             .saturating_add(transaction_fees / 20) // 5% of fees go to pool
             .saturating_sub(distribution.network_dividend);
+        
+        // Track total network dividends distributed
+        self.total_network_dividends = self
+            .total_network_dividends
+            .saturating_add(distribution.network_dividend);
 
         // Update validator earnings
         for (validator_id, reward) in &distribution.validator_rewards {
@@ -182,7 +191,7 @@ impl EmissionTracker {
             total_base_emission,
             total_fees_collected: self.total_fees_collected,
             total_ai_commissions: self.total_ai_commissions,
-            total_network_dividends: 0, // TODO: Track this separately
+            total_network_dividends: self.total_network_dividends,
             total_distributed,
             cumulative_supply: self.cumulative_supply,
             empty_rounds: self.empty_rounds,
@@ -258,6 +267,7 @@ impl EmissionTracker {
         self.total_fees_collected = 0;
         self.total_ai_commissions = 0;
         self.network_pool_balance = 0;
+        self.total_network_dividends = 0;
         self.validator_earnings.clear();
         self.empty_rounds = 0;
         self.last_audit_round = 0;
