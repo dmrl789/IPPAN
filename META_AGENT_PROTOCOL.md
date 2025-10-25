@@ -18,7 +18,16 @@ This protocol defines how the MetaAgent interacts with human maintainers, autono
 
 ---
 
-## 2. Core Responsibilities
+## 2. Core Principles
+
+1. **Deterministic Task Assignment** — Each task maps to exactly one primary agent based on scope ownership
+2. **Conflict Prevention** — Proactive coordination prevents overlapping edits
+3. **Graceful Degradation** — System continues operating even when individual agents fail
+4. **Audit Trail** — All decisions and overrides are logged and traceable
+
+---
+
+## 3. Core Responsibilities
 
 | Area                      | Description                                                               |
 | ------------------------- | ------------------------------------------------------------------------- |
@@ -30,15 +39,56 @@ This protocol defines how the MetaAgent interacts with human maintainers, autono
 
 ---
 
-## 3. Interaction Model
+## 4. Task Distribution Algorithm
 
-### 3.1 Communication Channels
+### Phase 1: Task Analysis
+```yaml
+Input: Pull Request or Issue
+Process:
+  1. Parse changed files and affected crates
+  2. Identify scope owners from AGENTS.md
+  3. Determine task complexity and dependencies
+  4. Check for cross-crate impacts
+```
+
+### Phase 2: Agent Assignment
+```yaml
+Primary Assignment:
+  - Single scope owner → Direct assignment
+  - Multiple scopes → MetaAgent coordinates
+  - Cross-crate changes → Lead maintainer review required
+
+Fallback Chain:
+  1. Primary agent (from AGENTS.md)
+  2. Backup agent (same maintainer)
+  3. MetaAgent (escalation)
+  4. Human maintainer (manual override)
+```
+
+### Phase 3: Lock Management
+```yaml
+Lock Types:
+  - READ_LOCK: Agent can read but not modify
+  - WRITE_LOCK: Exclusive write access
+  - REVIEW_LOCK: Pending human review
+
+Lock Resolution:
+  - Timeout: 24h for WRITE_LOCK, 72h for REVIEW_LOCK
+  - Priority: P0 > P1 > P2 (from issue labels)
+  - Escalation: MetaAgent can force-release after timeout
+```
+
+---
+
+## 5. Interaction Model
+
+### 5.1 Communication Channels
 
 * Primary: GitHub Issues, PR titles, and labels.
 * Secondary: `/AGENTS.md` registry for ownership.
 * Optional: internal LLM message bus (`meta-agent://task/<id>`).
 
-### 3.2 Control Flow
+### 5.2 Control Flow
 
 ```
 Issue → MetaAgent → Assigns agent → Agent opens PR → CI → MetaAgent validates → Maintainer merges
@@ -53,7 +103,7 @@ MetaAgent intervenes only if:
 
 ---
 
-## 4. Task Assignment Rules
+## 6. Task Assignment Rules
 
 1. Each agent may hold **max 3 active tasks**.
 2. MetaAgent uses a **fair round-robin queue** for issue distribution.
@@ -77,7 +127,7 @@ ETA: 6h
 
 ---
 
-## 5. Locking & Conflict Prevention
+## 7. Locking & Conflict Prevention
 
 * When MetaAgent detects two PRs touching the same crate:
 
@@ -88,7 +138,28 @@ ETA: 6h
 
 ---
 
-## 6. Merge and Validation Flow
+## 8. Conflict Resolution
+
+### Conflict Types
+
+| Type | Description | Resolution Strategy |
+|------|-------------|-------------------|
+| **File Overlap** | Multiple agents modify same files | Lock-based serialization |
+| **API Breaking** | Changes break other crates | Cross-agent coordination required |
+| **Dependency Cycle** | Circular dependencies introduced | MetaAgent breaks cycle |
+| **Resource Contention** | Ports, database locks, etc. | Queue-based allocation |
+
+### Resolution Process
+
+1. **Detection** — CI detects conflicts during build/test
+2. **Notification** — Affected agents receive conflict alerts
+3. **Negotiation** — Agents attempt automatic resolution (5min timeout)
+4. **Arbitration** — MetaAgent applies resolution rules
+5. **Escalation** — Human maintainer for complex conflicts
+
+---
+
+## 9. Merge and Validation Flow
 
 1. **Agent submits PR** → triggers CI (format, lint, tests).
 2. **MetaAgent checks metadata**:
@@ -106,7 +177,7 @@ If CI or doc validation fails twice:
 
 ---
 
-## 7. Dependency Awareness
+## 10. Dependency Awareness
 
 MetaAgent maintains a dependency graph (auto-parsed from `Cargo.toml`):
 
@@ -124,29 +195,28 @@ When changes propagate through dependencies, MetaAgent:
 
 ---
 
-## 8. Conflict Arbitration
+## 11. Workflow States
 
-When two PRs overlap:
+### Agent States
+- **IDLE** — Available for new tasks
+- **ASSIGNED** — Task received, preparing to work
+- **ACTIVE** — Currently executing task
+- **BLOCKED** — Waiting for dependencies or locks
+- **REVIEW** — Changes submitted, awaiting review
+- **COMPLETE** — Task finished successfully
+- **FAILED** — Task failed, needs retry or escalation
 
-1. MetaAgent labels both PRs as:
-
-   * `conflict:pending`
-   * `agent-a` vs `agent-b`
-2. It runs a **semantic diff**:
-
-   * if compatible → auto-merge using 3-way merge + rebase
-   * if incompatible → open mediation issue:
-
-     ```
-     Conflict detected between #412 and #417
-     Shared scope: crates/economics/src/reward.rs
-     Decision pending: @ugo-giuliani
-     ```
-3. Upon resolution, MetaAgent rebases and unfreezes both agents.
+### Task States
+- **PENDING** — Queued for assignment
+- **IN_PROGRESS** — Assigned to agent
+- **REVIEW** — Human review required
+- **MERGED** — Successfully integrated
+- **REJECTED** — Failed review or conflicts
+- **CANCELLED** — Task no longer needed
 
 ---
 
-## 9. Performance & Quota Management
+## 12. Performance & Quota Management
 
 * Each agent's commit rate and CI success rate are tracked.
 * MetaAgent downgrades agents exceeding:
@@ -157,17 +227,60 @@ When two PRs overlap:
 
 ---
 
-## 10. MetaAgent Self-Update Protocol
+## 13. Monitoring & Metrics
 
-To evolve safely:
+### Key Performance Indicators
+- **Task Completion Rate** — % of tasks completed without escalation
+- **Conflict Rate** — % of tasks requiring conflict resolution
+- **Agent Utilization** — % of time agents spend in ACTIVE state
+- **Review Cycle Time** — Average time from submission to merge
+- **Escalation Rate** — % of tasks requiring human intervention
 
-* MetaAgent PRs are tagged `meta:update`.
-* Require 2 human approvals.
-* Must not modify protected folders (`/crypto`, `/core`) without explicit review.
+### Health Checks
+```yaml
+Every 5 minutes:
+  - Agent heartbeat validation
+  - Lock timeout detection
+  - Resource availability check
+  - CI pipeline status
+
+Every hour:
+  - Performance metrics calculation
+  - Conflict pattern analysis
+  - Agent load balancing
+  - Queue depth monitoring
+```
 
 ---
 
-## 11. Human Oversight Rules
+## 14. Escalation Procedures
+
+### Level 1: Agent Self-Resolution
+- Retry failed operations (max 3 attempts)
+- Request additional locks if needed
+- Coordinate with other agents via comments
+
+### Level 2: MetaAgent Intervention
+- Force-release stale locks
+- Reassign tasks to backup agents
+- Apply conflict resolution rules
+- Queue rebalancing
+
+### Level 3: Human Maintainer
+- Complex architectural decisions
+- Security-related conflicts
+- Performance degradation
+- Agent malfunction
+
+### Level 4: Emergency Override
+- System-wide agent shutdown
+- Manual task reassignment
+- Emergency hotfix deployment
+- Complete system reset
+
+---
+
+## 15. Human Oversight Rules
 
 | Maintainer        | Scope                             | Authority |
 | ----------------- | --------------------------------- | --------- |
@@ -179,7 +292,7 @@ To evolve safely:
 
 ---
 
-## 12. Logging and Transparency
+## 16. Logging and Transparency
 
 MetaAgent logs all:
 
@@ -191,7 +304,7 @@ These logs are pushed automatically to the repo under `/meta_logs` via a nightly
 
 ---
 
-## 13. Failure Recovery
+## 17. Failure Recovery
 
 If MetaAgent becomes unresponsive:
 
@@ -209,7 +322,7 @@ If MetaAgent becomes unresponsive:
 
 ---
 
-## 14. Deterministic Governance Philosophy
+## 18. Deterministic Governance Philosophy
 
 IPPAN's development governance mirrors its **HashTimer deterministic model**:
 every contribution must be *time-ordered, verifiable, and reproducible*.
@@ -217,7 +330,7 @@ No merge is random; every event in development is timestamped and cryptographica
 
 ---
 
-## 15. Future Extensions
+## 19. Future Extensions
 
 * **AI Arbitration Layer:** GBDT-based conflict prediction and auto-assignment.
 * **Cross-Repo MetaGraph:** Synchronize FinDAG and IPPAN parallel updates.
