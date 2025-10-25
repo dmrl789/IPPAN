@@ -12,6 +12,7 @@ members = [
   "crates/time",
   "crates/ai_core",
   "crates/ai_registry",
+  "crates/ai_service",
   "crates/governance",
   "crates/economics",
   "crates/ippan_economics",
