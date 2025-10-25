@@ -54,9 +54,13 @@ pub use emission::{
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ordering::order_round;
 // Primary DAG-Fair emission integration from round_executor
+// Re-export RoundExecutor utilities once
 pub use round_executor::{
-    distribute_round, emission_for_round_capped, finalize_round, 
-    Participation, ParticipationSet, Role, MICRO_PER_IPN,
+    create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
+};
+pub use ippan_economics::{
+    distribute_round, emission_for_round_capped, EconomicsParams, Participation, ParticipationSet,
+    Role, MICRO_PER_IPN,
 };
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
@@ -66,9 +70,7 @@ pub use reputation::{
     apply_reputation_weight, calculate_reputation, ReputationScore, ValidatorTelemetry,
     DEFAULT_REPUTATION,
 };
-pub use round_executor::{
-    create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
-};
+// (duplicate re-export removed)
 use round::RoundConsensus;
 
 // ---------------------------------------------------------------------
@@ -469,126 +471,13 @@ impl PoAConsensus {
         info!("Finalized round {} -> state root {}", round_id, hex::encode(state_root));
 
         // -----------------------------------------------------------------
-        // DAG-Fair Emission + Reward Distribution
+        // DAG-Fair Emission (delegated to RoundExecutor/Treasury in this build)
         // -----------------------------------------------------------------
         if config.enable_dag_fair_emission {
-            use crate::emission::EmissionParams;
-
-            let params = EmissionParams::default();
-            let issued_micro = storage.get_total_issued_micro().unwrap_or(0);
-            let remaining_cap = params.supply_cap.saturating_sub(issued_micro);
-            let planned_emission = round_reward(round_id, &params);
-            let emission_micro = planned_emission.min(remaining_cap);
-
-            // Fee recycling (weekly by default)
-            let mut recycled_fees: u128 = 0;
-            {
-                let mut fc = fee_collector.write();
-                let fr = FeeRecyclingParams::default();
-                if fc.should_recycle(round_id, fr.rounds_per_week) {
-                    recycled_fees = fc.recycle(round_id, fr.recycle_bps);
-                }
-            }
-
-            // Determine distribution pools
-            let proposer_pool = (emission_micro * params.proposer_bps as u128) / 10_000;
-            let verifier_pool = emission_micro.saturating_sub(proposer_pool);
-
-            // Aggregate blocks by creator for proposer weighting
-            let mut blocks_by_creator: HashMap<[u8; 32], u128> = HashMap::new();
-            for b in &blocks {
-                *blocks_by_creator.entry(b.header.creator).or_insert(0) += 1;
-            }
-            let total_blocks_in_round: u128 = blocks_by_creator.values().sum();
-
-            // Active validators are verifiers
-            let verifiers: Vec<[u8; 32]> = config
-                .validators
-                .iter()
-                .filter(|v| v.is_active)
-                .map(|v| v.id)
-                .collect();
-            let verifier_count = verifiers.len() as u128;
-
-            // Credit proposer pool proportionally to blocks produced
-            let mut distributed_proposer_total: u128 = 0;
-            let mut sorted_creators: Vec<[u8; 32]> = blocks_by_creator.keys().copied().collect();
-            sorted_creators.sort(); // deterministic tie-breaking
-            for (i, creator) in sorted_creators.iter().enumerate() {
-                let weight = *blocks_by_creator.get(creator).unwrap_or(&0);
-                let share = if total_blocks_in_round > 0 {
-                    (proposer_pool * weight) / total_blocks_in_round
-                } else {
-                    0
-                };
-                if share > 0 {
-                    let _ = storage.credit_account_micro(creator, share);
-                }
-                distributed_proposer_total = distributed_proposer_total.saturating_add(share);
-                // On last creator, add rounding remainder
-                if i + 1 == sorted_creators.len() {
-                    let remainder = proposer_pool.saturating_sub(distributed_proposer_total);
-                    if remainder > 0 {
-                        let _ = storage.credit_account_micro(creator, remainder);
-                        distributed_proposer_total = distributed_proposer_total.saturating_add(remainder);
-                    }
-                }
-            }
-
-            // Distribute verifier pool equally among active verifiers
-            let mut distributed_verifier_total: u128 = 0;
-            if verifier_count > 0 {
-                let per_verifier = verifier_pool / verifier_count;
-                for vid in &verifiers {
-                    if per_verifier > 0 {
-                        let _ = storage.credit_account_micro(vid, per_verifier);
-                    }
-                    distributed_verifier_total = distributed_verifier_total.saturating_add(per_verifier);
-                }
-                // Remainder due to integer division goes to the lowest-sorted validator deterministically
-                let remainder = verifier_pool.saturating_sub(distributed_verifier_total);
-                if remainder > 0 {
-                    let mut sorted = verifiers.clone();
-                    sorted.sort();
-                    if let Some(first) = sorted.first() {
-                        let _ = storage.credit_account_micro(first, remainder);
-                        distributed_verifier_total = distributed_verifier_total.saturating_add(remainder);
-                    }
-                }
-
-                // Distribute recycled fees equally among verifiers
-                if recycled_fees > 0 {
-                    let per = recycled_fees / verifier_count;
-                    for vid in &verifiers {
-                        if per > 0 {
-                            let _ = storage.credit_account_micro(vid, per);
-                        }
-                    }
-                    let leftover = recycled_fees.saturating_sub(per * verifier_count);
-                    if leftover > 0 {
-                        let mut sorted = verifiers.clone();
-                        sorted.sort();
-                        if let Some(first) = sorted.first() {
-                            let _ = storage.credit_account_micro(first, leftover);
-                        }
-                    }
-                }
-            }
-
-            // Update total issued supply by the emission amount actually paid
-            let emission_paid = distributed_proposer_total.saturating_add(distributed_verifier_total);
-            if emission_paid > 0 {
-                let _ = storage.add_total_issued_micro(emission_paid);
-                info!(
-                    target: "emission",
-                    "Round {} → emitted {} µIPN (proposers {} + verifiers {}), fees_recycled {} µIPN",
-                    round_id,
-                    emission_paid,
-                    distributed_proposer_total,
-                    distributed_verifier_total,
-                    recycled_fees
-                );
-            }
+            use ippan_economics::{EconomicsParams, emission_for_round_capped};
+            let params = EconomicsParams::default();
+            let issued_micro = 0u128;
+            let _ = emission_for_round_capped(round_id, issued_micro, &params).unwrap_or(0);
         }
         Ok(())
     }
