@@ -110,7 +110,7 @@ impl ProposalManager {
 
         state.voters.insert(voter, Vote { stake, approve });
 
-        // Check if threshold is met
+        // Check threshold
         let total_stake = state.total_stake_for + state.total_stake_against;
         if total_stake > 0 {
             let approval_ratio = state.total_stake_for as f64 / total_stake as f64;
@@ -256,7 +256,6 @@ impl ActivationManager {
 
     pub fn process_round(&mut self, round: u64) -> Result<Vec<String>> {
         let mut activated = Vec::new();
-
         let rounds_to_process: Vec<u64> = self
             .pending_activations
             .keys()
@@ -305,11 +304,9 @@ impl AiModelGovernance {
         if proposal.model_id.is_empty() {
             return Err(anyhow::anyhow!("Model ID cannot be empty"));
         }
-
         if proposal.rationale.is_empty() {
             return Err(anyhow::anyhow!("Rationale cannot be empty"));
         }
-
         if proposal.activation_round == 0 {
             return Err(anyhow::anyhow!("Activation round must be > 0"));
         }
@@ -376,7 +373,7 @@ impl Default for AiModelGovernance {
 }
 
 // -----------------------------------------------------------------------------
-// 📜 JSON Template for proposals
+// 📜 Templates & Parsers
 // -----------------------------------------------------------------------------
 pub const AI_MODEL_PROPOSAL_TEMPLATE: &str = r#"{
   "model_id": "model_identifier",
@@ -389,6 +386,44 @@ pub const AI_MODEL_PROPOSAL_TEMPLATE: &str = r#"{
   "rationale": "Description of the model and its purpose",
   "threshold_bps": 8000
 }"#;
+
+pub const AI_MODEL_PROPOSAL_YAML_TEMPLATE: &str = r#"---
+model_id: "model_identifier"
+version: 1
+model_url: "https://example.com/model.json"
+model_hash: "sha256_hash_here"
+signature_foundation: "ed25519_signature_here"
+proposer_pubkey: "ed25519_public_key_here"
+activation_round: 1000
+rationale: "Description of the model and its purpose"
+threshold_bps: 8000
+"#;
+
+pub fn parse_json_proposal(json: &str) -> Result<AiModelProposal> {
+    let proposal: AiModelProposal = serde_json::from_str(json)?;
+    Ok(proposal)
+}
+
+pub fn parse_yaml_proposal(yaml: &str) -> Result<AiModelProposal> {
+    let proposal: AiModelProposal = serde_yaml::from_str(yaml)?;
+    Ok(proposal)
+}
+
+pub fn validate_proposal_format(proposal: &AiModelProposal) -> Result<()> {
+    if proposal.model_id.is_empty() {
+        return Err(anyhow::anyhow!("Model ID cannot be empty"));
+    }
+    if proposal.model_url.is_empty() {
+        return Err(anyhow::anyhow!("Model URL cannot be empty"));
+    }
+    if proposal.rationale.is_empty() {
+        return Err(anyhow::anyhow!("Rationale cannot be empty"));
+    }
+    if proposal.activation_round == 0 {
+        return Err(anyhow::anyhow!("Activation round must be greater than 0"));
+    }
+    Ok(())
+}
 
 // -----------------------------------------------------------------------------
 // ✅ Tests

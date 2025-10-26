@@ -1,8 +1,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::HashMap;
 use ippan_economics_core::{EconomicsParameterManager, EconomicsParams};
+use serde_json::json;
 
 /// Governance and Economics parameter management
 ///
@@ -86,8 +86,8 @@ impl ParameterManager {
                 proposal.proposal_id
             ));
         }
-        self.pending_changes
-            .insert(proposal.proposal_id.clone(), proposal);
+
+        self.pending_changes.insert(proposal.proposal_id.clone(), proposal);
         Ok(())
     }
 
@@ -142,7 +142,9 @@ impl ParameterManager {
                     .as_f64()
                     .ok_or_else(|| anyhow::anyhow!("must be f64"))?;
                 if !(0.0..=1.0).contains(&v) {
-                    return Err(anyhow::anyhow!("Voting threshold must be between 0.0 and 1.0"));
+                    return Err(anyhow::anyhow!(
+                        "Voting threshold must be between 0.0 and 1.0"
+                    ));
                 }
             }
             _ => {
@@ -226,6 +228,7 @@ impl Default for ParameterManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_default_governance_params() {

@@ -14,7 +14,7 @@ use tracing::{debug, info};
 /// In-memory staging of payouts; in production this maps to persistent state storage.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RewardSink {
-    /// round_id -> (validator -> micro-IPN)
+    /// round_id → (validator → micro-IPN)
     pub rounds: HashMap<u64, Payouts>,
     /// Total rewards distributed across all rounds
     pub total_distributed_micro: MicroIPN,
@@ -89,7 +89,7 @@ impl RewardSink {
                     target: "treasury",
                     "Settled {} μIPN to validator {} for round {}",
                     amount,
-                    &vid.0,
+                    vid, // unified reference to ValidatorId displayable via Debug/Display
                     round
                 );
             }

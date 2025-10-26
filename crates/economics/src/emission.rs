@@ -1,7 +1,7 @@
 //! DAG-Fair Emission calculation with hard supply cap enforcement
 
 use crate::types::{EconomicsParams, EmissionResult, MicroIPN, RoundId, MICRO_PER_IPN};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use tracing::{debug, info, warn};
 
 /// Calculate emission for a round with hard supply cap enforcement
@@ -111,7 +111,7 @@ pub fn get_emission_details(
     let total_issued_micro = current_issued_micro.saturating_add(emission_micro);
     let remaining_cap_micro = calculate_remaining_cap(total_issued_micro, params);
 
-    // Convert to u32 for the result struct while avoiding overflow
+    // Convert to u32 safely
     let halving_epoch: u32 = if round == 0 {
         0
     } else {

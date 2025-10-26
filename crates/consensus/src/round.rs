@@ -6,6 +6,7 @@ use rand::Rng;
 use ippan_ai_core::{compute_validator_score, gbdt::GBDTModel};
 #[cfg(feature = "ai_l1")]
 pub use ippan_ai_core::features::ValidatorTelemetry;
+
 #[cfg(not(feature = "ai_l1"))]
 use serde::{Deserialize, Serialize};
 
@@ -54,9 +55,6 @@ pub mod features {
 /// Round-based consensus with AI reputation scoring
 pub struct RoundConsensus {
     current_round: u64,
-    #[cfg(feature = "ai_l1")]
-    active_model: Option<GBDTModel>,
-    #[cfg(not(feature = "ai_l1"))]
     active_model: Option<GBDTModel>,
     validator_telemetry: HashMap<[u8; 32], ValidatorTelemetry>,
     reputation_scores: HashMap<[u8; 32], i32>,
@@ -236,7 +234,9 @@ impl Default for RoundConsensus {
     }
 }
 
-/// Convenience function to calculate reputation score
+// -----------------------------------------------------------------------------
+// ✅ Helper (standalone function)
+// -----------------------------------------------------------------------------
 #[cfg(feature = "ai_l1")]
 pub fn calculate_reputation_score(model: &GBDTModel, telemetry: &ValidatorTelemetry) -> Result<i32> {
     Ok(compute_validator_score(telemetry, model))
@@ -247,6 +247,9 @@ pub fn calculate_reputation_score(_model: &GBDTModel, _telemetry: &ValidatorTele
     Ok(5000)
 }
 
+// -----------------------------------------------------------------------------
+// ✅ Tests
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;

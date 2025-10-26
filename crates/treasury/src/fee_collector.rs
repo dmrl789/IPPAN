@@ -4,7 +4,7 @@ use ippan_economics::MicroIPN;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Fee collection statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,14 +101,16 @@ impl FeeCollector {
             .copied()
             .collect();
 
-        for round in &rounds_to_remove {
-            self.round_fees.remove(round);
+        let count = rounds_to_remove.len();
+
+        for round in rounds_to_remove {
+            self.round_fees.remove(&round);
         }
 
         debug!(
             target: "treasury",
             "Cleared fee data for {} old rounds",
-            rounds_to_remove.len()
+            count
         );
     }
 
