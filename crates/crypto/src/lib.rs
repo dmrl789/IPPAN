@@ -1,15 +1,31 @@
 use anyhow::Result;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::{OsRng, RngCore};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub mod confidential;
 pub mod zk_stark;
+pub mod encryption;
+pub mod key_management;
+pub mod signature_schemes;
+pub mod hash_functions;
+pub mod merkle_trees;
+pub mod commitment_schemes;
 
 pub use confidential::{
     validate_block as validate_confidential_block,
     validate_transaction as validate_confidential_transaction, ConfidentialTransactionError,
 };
 pub use zk_stark::{generate_fibonacci_proof, verify_fibonacci_proof, StarkProof, StarkProofError};
+pub use encryption::{AES256GCM, ChaCha20Poly1305, EncryptionError};
+pub use key_management::{KeyManager, KeyStore, KeyDerivation};
+pub use signature_schemes::{MultiSig, ThresholdSignature, SchnorrSignature};
+pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256};
+pub use merkle_trees::{MerkleTree, MerkleProof, MerkleError};
+pub use commitment_schemes::{PedersenCommitment, Commitment, CommitmentError};
 
 /// Cryptographic key pair for IPPAN
 #[derive(Debug, Clone)]
