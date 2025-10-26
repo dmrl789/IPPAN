@@ -11,14 +11,14 @@ IPPAN is a **global, neutral, permissionless Layer-1 (L1) ledger** anchoring tim
 
 ### 1.2 Design Principles
 - **Deterministic Time & Ordering** — IPPAN Time (median network time with 100 ms precision) and HashTimer anchors yield a single, provable timeline.
-- **Minimal Canonical State** — Only block/round headers, anchors, handle ownership, and L2 chain roots go on L1.
+- **Minimal Canonical State** — Only block/round headers, anchors, handle ownership proofs, and L2 chain roots go on L1.
 - **Decentralization & Survivability** — Network can restart from as few as two IPNWorker nodes; libp2p + DHT peer discovery; NAT hole punching and offline recovery.
 
 ### 1.3 L1 vs L2 Data Allocation
 
 | Layer | Content | Typical Use |
 |-------|---------|-------------|
-| **L1** | Headers, HashTimers, handle registry, anchor roots for L2 chains/DHTs, ZK/STARK proofs | Timestamping, DNS/identity, compliance anchors, cross-chain interoperability |
+| **L1** | Headers, HashTimers, handle ownership anchors, anchor roots for L2 chains/DHTs, ZK/STARK proofs | Timestamping, identity ownership proofs, compliance anchors, cross-chain interoperability |
 | **L2** | Transaction bodies, app states, large content, confidential or regulated data | Payments, DeFi, healthcare, IoT, file storage |
 
 - **Anchors:** ≤512 B per L2 commit  
@@ -30,9 +30,11 @@ IPPAN is a **global, neutral, permissionless Layer-1 (L1) ledger** anchoring tim
 - Regulatory selective disclosure: keys can be revealed or STARK proofs supplied.
 
 ### 1.5 DNS & Human-Readable Identity
-- **Global naming**: `@user.ipn` plus premium TLDs (`.cyborg`, `.iot`, `.m`).  
+- **Global naming**: `@user.ipn` plus premium TLDs (`.cyborg`, `.iot`, `.m`) stored on L2.  
+- L1 only stores ownership anchors (minimal proofs of handle ownership).
+- Handle mappings and metadata live on L2 for scalability.
 - Handle updates pay small IPN fees; fees redistributed to validators.  
-- L2 namespaces can extend L1 registry.
+- L2 namespaces can extend the handle registry.
 
 ### 1.6 Scalability & Performance
 - **BlockDAG + Rounds** → 10–50 ms block frequency, 200–250 ms round finality, 1–10 M TPS.
@@ -40,7 +42,7 @@ IPPAN is a **global, neutral, permissionless Layer-1 (L1) ledger** anchoring tim
 - Interoperability anchors: Ethereum/Bitcoin/other chains can commit to IPPAN.
 
 ### 1.7 Cost & Energy Model
-- Lightweight participation; micro-fees (e.g. 10⁻⁸ IPN) for announcements and handle updates to deter spam but keep user cost negligible.
+- Lightweight participation; micro-fees (e.g. 10⁻⁸ IPN) for announcements and handle ownership anchor updates to deter spam but keep user cost negligible.
 
 ---
 

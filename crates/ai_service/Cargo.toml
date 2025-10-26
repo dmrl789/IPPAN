@@ -11,19 +11,23 @@ path = "src/lib.rs"
 
 [features]
 default = ["llm", "analytics", "smart_contracts"]
+
 # LLM integration features
 llm = ["reqwest"]
+
 # Analytics and insights
 analytics = ["chrono", "statistical"]
+
 # Smart contract AI features
-smart_contracts = ["wasmtime", "wasmtime-wasi"]
+smart_contracts = ["wasmtime", "wasmtime-wasi", "ippan-consensus"]
+
 # Advanced AI models
 advanced_models = ["candle-core", "candle-nn"]
 
 [dependencies]
 ippan-ai-core = { path = "../ai_core" }
 ippan-ai-registry = { path = "../ai_registry" }
-ippan-consensus = { path = "../consensus" }
+ippan-consensus = { path = "../consensus", optional = true }
 ippan-governance = { path = "../governance" }
 ippan-types = { path = "../types" }
 ippan-crypto = { path = "../crypto" }
@@ -37,10 +41,10 @@ async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# HTTP client for LLM APIs (avoid OpenSSL by using rustls)
+# HTTP client for LLM APIs (use rustls to avoid system OpenSSL)
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
-# Time handling
+# Time handling (optional, behind analytics feature)
 chrono = { version = "0.4", features = ["serde"], optional = true }
 
 # Statistical analysis
