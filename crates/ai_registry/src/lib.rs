@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use serde_bytes;
 
+pub mod errors;
 pub mod security;
 
 pub use security::{

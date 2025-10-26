@@ -2,7 +2,6 @@
 
 use crate::{
     errors::{AiCoreError, Result},
-    types::*,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -59,7 +58,7 @@ pub struct SystemHealth {
 }
 
 /// Performance metrics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct PerformanceMetrics {
     /// Total model executions
     pub total_executions: AtomicU64,
@@ -148,7 +147,7 @@ impl HealthMonitor {
         for (name, checker) in &self.health_checks {
             let check_start = Instant::now();
             
-            let check_result = match self.run_single_check(checker).await {
+            let check_result = match self.run_single_check(checker.as_ref()).await {
                 Ok(check) => check,
                 Err(e) => HealthCheck {
                     name: name.clone(),

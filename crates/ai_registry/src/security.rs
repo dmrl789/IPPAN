@@ -1,12 +1,11 @@
 //! Security and authentication for AI Registry
 
 use crate::errors::RegistryError;
-use crate::types::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tracing::{info, warn, error, debug};
+use tracing::{info, warn};
 
 /// Authentication token
 #[derive(Debug, Clone, Serialize, Deserialize)]

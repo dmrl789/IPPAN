@@ -9,10 +9,12 @@
 //! - `model`: Model packaging and verification utilities
 
 pub mod config;
+pub mod errors;
 pub mod features;
 pub mod gbdt;
 pub mod health;
 pub mod model;
+pub mod types;
 
 pub use config::{
     AiCoreConfig,

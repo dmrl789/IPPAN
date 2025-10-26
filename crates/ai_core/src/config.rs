@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::RwLock;
 use std::time::Duration;
-use tracing::{info, warn, error, debug};
+use tracing::{info, warn};
 
 /// AI Core configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

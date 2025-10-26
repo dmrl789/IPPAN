@@ -60,7 +60,6 @@ thiserror = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
-tokio = { workspace = true }
 
 # Utilities
 uuid = "1.0"
