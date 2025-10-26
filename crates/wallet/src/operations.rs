@@ -14,7 +14,7 @@ use ippan_types::transaction::TransactionVisibility;
 /// Base fee: 0.01% of amount (1 basis point)  
 /// Data fee: 1 atomic unit per byte
 fn calculate_transaction_fee(amount: u64, data_size: usize) -> u64 {
-    let base_fee = amount / 10000; // 0.01% of amount
+    let base_fee = amount / 10_000; // 0.01% of amount
     let data_fee = data_size as u64; // 1 atomic unit per byte
     base_fee.saturating_add(data_fee).max(1) // Minimum fee of 1
 }
@@ -192,7 +192,6 @@ impl WalletManager {
 
         // Deterministic, mempool-aligned fee
         let estimated_fee = self.estimate_fee(&transaction);
-        
         transaction.sign(&private_key_bytes)?;
         
         let tx_hash = if let Some(ref rpc) = self.rpc_client {
