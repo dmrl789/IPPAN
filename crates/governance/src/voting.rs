@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use ed25519_dalek::{VerifyingKey, Signature, Verifier, Signer};
+use ed25519_dalek::Verifier;
 use std::collections::HashMap;
 
 /// Vote on a governance proposal

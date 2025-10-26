@@ -46,10 +46,11 @@ impl LLMService {
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             return Err(AIServiceError::LLMError(format!(
                 "API request failed: {} - {}",
-                response.status(),
+                status,
                 error_text
             )));
         }
@@ -98,7 +99,7 @@ impl LLMService {
                 analysis_prompt,
                 serde_json::to_string_pretty(data)?
             ),
-            context: Some(context.as_object().unwrap().clone()),
+            context: Some(context.as_object().unwrap().clone().into_iter().collect()),
             max_tokens: Some(2000),
             temperature: Some(0.3),
             stream: false,

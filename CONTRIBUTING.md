@@ -1,6 +1,6 @@
 # 🧭 IPPAN Multi-Agent Contribution Protocol
 
-### Version 1.0 · Last Updated 2025-01-25
+### Version 1.0 · Last Updated 2025-10-25
 
 ---
 
@@ -221,4 +221,14 @@ Agents must preserve author metadata (`Co-authored-by` lines) to maintain IP tra
 
 ---
 
-*This document is maintained by the IPPAN maintainer team. Last updated: 2025-01-25*
+## 17. Related Documentation
+
+* **[AGENTS.md](./AGENTS.md)** – Complete agent roster, slash commands, and operational playbooks
+* **[README.md](./README.md)** – Project overview and quick start
+* **[docs/](./docs/)** – Architecture decisions, PRDs, and technical specs
+
+For questions about agent coordination, deployment, or CI/CD, see [AGENTS.md](./AGENTS.md) sections 1-9.
+
+---
+
+**Maintainers:** This protocol evolves with the project. Update accordingly and notify all agents via `/sync-docs`.

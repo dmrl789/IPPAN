@@ -1,7 +1,7 @@
 //! DAG-Fair reward distribution with fee capping and recycling
 
 use crate::types::{
-    EconomicsParams, MicroIPN, Participation, ParticipationSet, Payouts, Role, RoundId,
+    EconomicsParams, MicroIPN, Participation, ParticipationSet, Payouts, Role,
 };
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
