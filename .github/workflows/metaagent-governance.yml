@@ -93,10 +93,12 @@ jobs:
       - name: Enforce locks and detect conflicts
         id: lock
         uses: actions/github-script@v7
+        env:
+          SCOPES: ${{ steps.scopes.outputs.scopes }}
         with:
           script: |
             const pr = context.payload.pull_request;
-            const scopes = JSON.parse(core.getInput('scopes', { required: true }));
+            const scopes = JSON.parse(process.env.SCOPES || '[]');
 
             // Create labels if missing
             async function ensureLabel(name, color, description) {
