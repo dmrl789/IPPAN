@@ -79,10 +79,15 @@ impl ExecutionEngine {
 
         // Create execution result
         let result = ExecutionResult {
-            output,
-            context,
+            data: output.data.clone(),
+            data_type: output.data_type.clone(),
+            execution_time_us: execution_time.as_micros() as u64,
+            memory_usage: 0, // Will be calculated properly
             success: true,
             error: None,
+            metadata: HashMap::new(),
+            output,
+            context,
         };
 
         info!("Model execution completed successfully");
@@ -208,23 +213,20 @@ impl ExecutionEngine {
         
         info!("Model execution completed in {:?}", execution_time);
         
+        let dtype = input.dtype;
         Ok(ModelOutput {
             data: output_data,
+            data_type: input.data_type.clone(),
+            metadata: HashMap::new(),
+            confidence: 1.0,
             shape: metadata.output_shape.clone(),
-            dtype: input.dtype,
-            metadata: ExecutionMetadata {
-                execution_time_us: execution_time.as_micros() as u64,
-                memory_usage_bytes: metadata.size_bytes + input.data.len() as u64,
-                cpu_cycles: self.estimate_cpu_cycles(execution_time),
-                execution_hash,
-                model_version: metadata.id.version.clone(),
-            },
+            dtype,
         })
     }
     
     /// Convert input data to feature vector for GBDT models
     fn convert_input_to_features(&self, input: &ModelInput) -> Result<Vec<i64>> {
-        let feature_count = input.shape.iter().product::<usize>();
+        let feature_count = input.data.len() / 8; // Assuming 8 bytes per i64
         let mut features = Vec::with_capacity(feature_count);
         
         match input.dtype {
@@ -344,6 +346,13 @@ impl DataType {
             DataType::UInt16 => 2,
             DataType::UInt32 => 4,
             DataType::UInt64 => 8,
+            DataType::Text => 1,
+            DataType::Binary => 1,
+            DataType::Json => 1,
+            DataType::Numeric => 8,
+            DataType::Image => 1,
+            DataType::Audio => 1,
+            DataType::Video => 1,
         }
     }
 }

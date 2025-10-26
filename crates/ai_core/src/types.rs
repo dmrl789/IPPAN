@@ -4,11 +4,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Model identifier
-pub type ModelId = String;
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ModelId {
+    /// Model name
+    pub name: String,
+    /// Model version
+    pub version: String,
+    /// Model hash
+    pub hash: String,
+}
 
 /// Model metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelMetadata {
+    /// Model ID
+    pub id: ModelId,
     /// Model name
     pub name: String,
     /// Model version
@@ -25,6 +35,16 @@ pub struct ModelMetadata {
     pub created_at: u64,
     /// Model last updated time
     pub updated_at: u64,
+    /// Model architecture
+    pub architecture: String,
+    /// Input shape
+    pub input_shape: Vec<usize>,
+    /// Output shape
+    pub output_shape: Vec<usize>,
+    /// Model size in bytes
+    pub size_bytes: u64,
+    /// Parameter count
+    pub parameter_count: u64,
 }
 
 /// Model input
@@ -36,6 +56,10 @@ pub struct ModelInput {
     pub data_type: DataType,
     /// Input metadata
     pub metadata: HashMap<String, String>,
+    /// Data type for compatibility
+    pub dtype: DataType,
+    /// Input shape
+    pub shape: Vec<usize>,
 }
 
 /// Model output
@@ -49,10 +73,14 @@ pub struct ModelOutput {
     pub metadata: HashMap<String, String>,
     /// Confidence score
     pub confidence: f64,
+    /// Output shape
+    pub shape: Vec<usize>,
+    /// Data type for compatibility
+    pub dtype: DataType,
 }
 
 /// Data type
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]
 pub enum DataType {
     /// Text data
     Text,
@@ -68,6 +96,26 @@ pub enum DataType {
     Audio,
     /// Video data
     Video,
+    /// Float32 data
+    Float32,
+    /// Float64 data
+    Float64,
+    /// Int8 data
+    Int8,
+    /// Int16 data
+    Int16,
+    /// Int32 data
+    Int32,
+    /// Int64 data
+    Int64,
+    /// UInt8 data
+    UInt8,
+    /// UInt16 data
+    UInt16,
+    /// UInt32 data
+    UInt32,
+    /// UInt64 data
+    UInt64,
 }
 
 /// Execution context
@@ -75,12 +123,16 @@ pub enum DataType {
 pub struct ExecutionContext {
     /// Context ID
     pub id: String,
+    /// Model ID
+    pub model_id: ModelId,
     /// Context metadata
     pub metadata: HashMap<String, String>,
     /// Execution parameters
     pub parameters: HashMap<String, String>,
     /// Execution timeout
     pub timeout_ms: u64,
+    /// Random seed for deterministic execution
+    pub seed: Option<u64>,
 }
 
 /// Execution result
@@ -100,4 +152,21 @@ pub struct ExecutionResult {
     pub error: Option<String>,
     /// Result metadata
     pub metadata: HashMap<String, String>,
+    /// Model output
+    pub output: ModelOutput,
+    /// Execution context
+    pub context: ExecutionContext,
+}
+
+/// Execution metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionMetadata {
+    /// Execution ID
+    pub execution_id: String,
+    /// Model version
+    pub model_version: String,
+    /// Memory usage in bytes
+    pub memory_usage_bytes: u64,
+    /// Execution timestamp
+    pub timestamp: u64,
 }

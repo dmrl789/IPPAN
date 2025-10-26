@@ -5,10 +5,14 @@
 
 use crate::account_ledger::AccountLedger;
 use ippan_types::MicroIPN;
-use ippan_economics::{Payouts, ValidatorId};
+use std::collections::HashMap;
+use ippan_types::ValidatorId;
+
+/// Payouts map from validator ID to amount
+pub type Payouts = HashMap<ValidatorId, u128>;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use tracing::{debug, info};
 
 /// In-memory staging of payouts; in production this maps to persistent state storage.
@@ -87,7 +91,7 @@ impl RewardSink {
 
                 debug!(
                     target: "treasury",
-                    "Settled {} μIPN to validator {} for round {}",
+                    "Settled {} μIPN to validator {:?} for round {}",
                     amount,
                     vid, // unified reference to ValidatorId displayable via Debug/Display
                     round
