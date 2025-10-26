@@ -1,6 +1,6 @@
 # IPPAN — Global Layer-1 Blockchain, Data Availability & Parallel Consensus
 
-*(Updated October 2025 — unified specification and developer reference)*
+*(Updated December 2025 — Deterministic Learning Consensus integration)*
 
 ---
 
@@ -46,49 +46,127 @@ IPPAN is a **global, neutral, permissionless Layer-1 (L1) ledger** anchoring tim
 
 ---
 
-## 2. Parallel Block Creation with Global Round Finalization
+## 2. Deterministic Learning Consensus (DLC) Model
 
-### Goal
-Allow all validators to propose blocks in parallel and finalize them deterministically with a single **global round**.
+### 2.1 Revolutionary Paradigm Shift
 
-### Architecture
+IPPAN departs from traditional Byzantine Fault Tolerant (BFT) consensus mechanisms, introducing a new class of consensus: **Deterministic Learning Consensus (DLC)**. This model replaces voting-based agreement with temporal determinism and adaptive learning.
 
-**Block**
+### 2.2 Core Architecture
 
+**Deterministic Learning Consensus Stack:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                Application Layer                            │
+│  • Transaction Processing  • Smart Contracts  • DApps      │
+├─────────────────────────────────────────────────────────────┤
+│              Learning & Adaptation Layer                    │
+│  • D-GBDT Models  • Reputation Scoring  • AI Optimization  │
+├─────────────────────────────────────────────────────────────┤
+│              Temporal Consensus Layer                       │
+│  • HashTimer™  • BlockDAG  • Deterministic Ordering        │
+├─────────────────────────────────────────────────────────────┤
+│              Cryptographic Foundation                       │
+│  • Ed25519 Signatures  • zk-STARKs  • Merkle Trees         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2.3 Temporal Determinism via HashTimer™
+
+**HashTimer Structure:**
+```rust
+pub struct HashTimer {
+    timestamp_us: i64,           // Microsecond precision timestamp
+    entropy: [u8; 32],          // Cryptographic entropy
+    signature: Option<Signature>, // Ed25519 signature
+    public_key: Option<PublicKey>, // Validator public key
+}
+```
+
+**Key Properties:**
+- **Median network time** with microsecond precision
+- **Bounded time adjustments** (±5ms maximum per update)
+- **Monotonic guarantees** preventing time regression
+- **Cryptographic verification** ensuring tamper-proof timestamps
+
+### 2.4 BlockDAG Structure
+
+**Block Header:**
 | Field | Description |
 |-------|-------------|
 | `id` | 32-byte block hash |
 | `creator` | Validator public key hash |
 | `round` | Round identifier |
-| `hashtimer` | Deterministic timestamp + entropy |
-| `parent_ids` | List of previous round block IDs |
-| `payload_ids` | Transaction batch refs |
+| `hashtimer` | HashTimer temporal anchor |
+| `parent_ids` | Multiple parent block IDs (DAG) |
+| `payload_ids` | Transaction batch references |
 | `merkle_payload` | Root of included transactions |
-| `vrf_proof` | (optional) Validator eligibility proof |
+| `merkle_parents` | Root of parent block hashes |
 | `signature` | Ed25519 signature |
 
-**Round**
-- Fixed time window (200–250 ms) via median IPPAN-Time.
-- Fields: `RoundId`, `RoundWindow`, `RoundCertificate` (≥2f+1 sigs), `RoundFinalizationRecord` (deterministic tx/state result).
+**Round Structure:**
+- Fixed time window (200–250 ms) via HashTimer synchronization
+- Fields: `RoundId`, `RoundWindow`, `RoundCertificate`, `RoundFinalizationRecord`
+- **No voting required** — temporal determinism ensures agreement
 
-### Protocol Flow
+### 2.5 AI-Driven Optimization
 
-1. **Parallel Proposal (Phase A)**  
-   Each validator builds one block referencing all known parents from previous round and broadcasts header.
+**L1 AI Consensus Engine:**
+```rust
+pub struct L1AIConsensus {
+    validator_selection_model: Option<GBDTModel>,
+    fee_optimization_model: Option<GBDTModel>,
+    network_health_model: Option<GBDTModel>,
+    block_ordering_model: Option<GBDTModel>,
+}
+```
 
-2. **Global Finalization (Phase B)**  
-   Nodes collect ≥2f+1 blocks, aggregate signatures into `RoundCertificate`.  
-   Deterministic ordering: topological sort by `(hashtimer → creator → block_id)`, then tx by `(hashtimer, tx_id)`.  
-   Execute, compute `state_root`, publish `RoundFinalizationRecord`.
+**AI Evaluation Factors:**
+- **Reputation score** (40% weight)
+- **Block production rate** (30% weight)  
+- **Uptime percentage** (20% weight)
+- **Network contribution** (10% weight)
 
-### Safety & Performance
-- One block per validator per round; equivocation punished.
-- Finality ≤250 ms per round.
-- Compatible with HashTimer ordering and confidentiality.
+### 2.6 Protocol Flow
 
-### Networking
-- Gossip topics: `block-headers:r`, `block-payloads`, `round-certificates:r`, `round-finalizations:r`.
-- Anti-DoS: micro-fee for announcements, VRF sampling.
+1. **HashTimer Synchronization**  
+   All nodes synchronize to median network time with microsecond precision.
+
+2. **Parallel Block Creation**  
+   Validators create blocks referencing multiple parents from previous round.
+
+3. **AI Evaluation & Selection**  
+   D-GBDT models evaluate validators and optimize resource allocation.
+
+4. **Deterministic Ordering**  
+   Blocks ordered by HashTimer timestamp, then by hash for tie-breaking.
+
+5. **Round Finalization**  
+   Deterministic execution and state computation without voting rounds.
+
+### 2.7 Performance Characteristics
+
+| Metric | Traditional BFT | IPPAN DLC | Improvement |
+|--------|-----------------|-----------|-------------|
+| **Max Validators** | ~100 | 1000+ | 10x |
+| **TPS** | ~1000 | 10M+ | 10,000x |
+| **Finality** | 1-10s | 100-250ms | 40x |
+| **Communication** | O(n²) | O(n) | n× |
+| **Energy** | High | Low | 100x |
+
+### 2.8 Safety & Security
+
+- **Temporal determinism** prevents ordering attacks
+- **Statistical consensus** provides fault tolerance  
+- **AI reputation system** detects and penalizes malicious behavior
+- **Economic incentives** align validator interests with network health
+- **Cryptographic security** with Ed25519 and zk-STARKs
+
+### 2.9 Networking
+
+- **Gossip topics**: `block-headers:r`, `block-payloads`, `ai-telemetry:r`, `round-finalizations:r`
+- **Anti-DoS**: micro-fee for announcements, AI-based spam detection
+- **Peer discovery**: mDNS + Kademlia DHT for global connectivity
 
 ---
 
@@ -362,8 +440,17 @@ pub struct SnapshotCheckpoint {
 
 ## Outcome
 
-- Scales to 1–10 M TPS while keeping L1 light and auditable
-- Supports privacy and compliance with encrypted data and future ZK proofs
-- Delivers deterministic global ordering and near-instant finality
+- Scales to 10M+ TPS through Deterministic Learning Consensus while keeping L1 light and auditable
+- Supports privacy and compliance with encrypted data and future ZK proofs  
+- Delivers deterministic global ordering and 100-250ms finality
 - Enables L2 ecosystems anchored in a robust global trust layer
+- **Revolutionary consensus**: Replaces traditional BFT with temporal determinism and AI learning
+
+---
+
+## References
+
+- [Beyond BFT: Deterministic Learning Consensus Model](../BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md) — Complete theoretical foundation and mathematical proofs
+- [IPPAN Vision 2025](./ippan-vision-2025.md) — Product strategy and business objectives
+- [DAG-Fair Emission System](../DAG_FAIR_EMISSION_SYSTEM.md) — Economic model specification
 

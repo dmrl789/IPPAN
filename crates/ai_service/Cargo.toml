@@ -11,12 +11,16 @@ path = "src/lib.rs"
 
 [features]
 default = ["llm", "analytics", "smart_contracts"]
+
 # LLM integration features
 llm = ["reqwest"]
+
 # Analytics and insights
 analytics = ["chrono", "statistical"]
+
 # Smart contract AI features
 smart_contracts = ["wasmtime", "wasmtime-wasi", "ippan-consensus"]
+
 # Advanced AI models
 advanced_models = ["candle-core", "candle-nn"]
 

@@ -31,13 +31,13 @@ This directory contains the complete set of Product Requirements Documents for t
 **Scope:** Technical design of the Layer-1 blockchain, parallel consensus, and L1/L2 separation
 
 **Key Topics:**
-- Global Layer-1 design principles
-- BlockDAG + parallel block creation
-- Round-based finalization (200–250 ms)
-- L1 vs L2 data allocation strategy
-- Confidentiality and compliance model
-- DNS and human-readable identity (`@user.ipn`)
-- Scalability targets (1–10M TPS)
+- Global Layer-1 design principles  
+- BlockDAG + parallel block creation  
+- Round-based finalization (200–250 ms)  
+- L1 vs L2 data allocation strategy  
+- Confidentiality and compliance model  
+- DNS and human-readable identity (`@user.ipn`)  
+- Scalability targets (1–10 M TPS)  
 - Developer reference types (Rust)
 
 **Audience:** Core developers, protocol engineers, validator operators
@@ -57,98 +57,30 @@ This directory contains the complete set of Product Requirements Documents for t
 - Confidential transactions and mixed visibility
 - ZK-STARK integration roadmap (Phases 0–3)
 - Economic incentives (announcement fees, serving rewards, archival contracts)
-- Networking/RPC interfaces
+- Networking / RPC interfaces
 
 **Audience:** Storage engineers, infrastructure teams, privacy specialists
 
 ---
 
+### 4. [Beyond BFT: Deterministic Learning Consensus](../BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md) — **Consensus Theory**
+*Revolutionary departure from traditional BFT consensus mechanisms*
+
+**Scope:** Theoretical foundation and mathematical proofs for IPPAN’s consensus model
+
+**Key Topics:**
+- Deterministic Learning Consensus (DLC) model  
+- HashTimer™ temporal determinism  
+- BlockDAG structure and parallel processing  
+- AI-driven optimization (D-GBDT)  
+- Mathematical foundations and security proofs  
+- Performance analysis and scalability metrics  
+- Comparison with traditional BFT and Nakamoto consensus  
+- Implementation architecture and economic integration
+
+**Audience:** Cryptographers, consensus researchers, protocol engineers, academics
+
+---
+
 ## Document Relationships
 
-```
-┌─────────────────────────────────────────────────┐
-│   ippan-vision-2025.md                          │
-│   (Master PRD — Product Strategy & Vision)      │
-└────────────────┬────────────────────────────────┘
-                 │
-       ┌─────────┴──────────┐
-       │                    │
-       ▼                    ▼
-┌─────────────────┐  ┌──────────────────────┐
-│ ippan-l1-       │  │ ippan-storage-da.md  │
-│ architecture.md │  │ (Storage & DA Spec)  │
-│ (L1 Tech Spec)  │  └──────────────────────┘
-└─────────────────┘
-```
-
-- **Vision PRD** defines the "what" and "why" — business goals, competitive positioning, and success criteria
-- **L1 Architecture PRD** defines the "how" — consensus, parallel blocks, rounds, and deterministic ordering
-- **Storage & DA PRD** defines the "where" and "when" — data retention, availability proofs, and confidentiality
-
----
-
-## Usage Guidelines
-
-### For New Contributors
-Start with the **Vision PRD** to understand IPPAN's mission and unique value proposition, then dive into the technical PRDs for implementation details.
-
-### For Implementing New Features
-1. Check if the feature aligns with the **Vision PRD** objectives
-2. Reference the **L1 Architecture PRD** for consensus and block structure
-3. Consult the **Storage & DA PRD** for data handling and retention policies
-4. If the feature requires a new PRD, follow the template in `AGENTS.md` section 10
-
-### For Governance Proposals
-- Protocol parameter changes → reference **L1 Architecture PRD**
-- AI model updates → reference **Vision PRD** section 6.3
-- Storage/retention policy changes → reference **Storage & DA PRD**
-
----
-
-## Navigation
-
-### Core Documents
-- **Vision Document** defines "why" — the mission and strategic direction
-- **L1 Architecture PRD** defines the "how" — consensus, parallel blocks, rounds, and deterministic ordering
-- **Storage & DA PRD** defines persistence, availability, and archival rules
-- **Beyond BFT Whitepaper** defines the formal theoretical foundations of Deterministic Temporal Consensus
-
-### Cross-references
-- [IPPAN Vision 2025](ippan-vision-2025.md)
-- [IPPAN PRD 2025](ippan-prd-2025.md)
-- [L1 Architecture](ippan-l1-architecture.md)
-- [Storage & Data Availability](ippan-storage-da.md)
-- [Beyond BFT: Deterministic Learning Consensus](../BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md) ⭐ **Academic Whitepaper**
-
-### Related Technical Documentation
-- [DAG-Fair Emission System](../DAG_FAIR_EMISSION_SYSTEM.md)
-- [Consensus, Network & Mempool Architecture](../IPPAN_Consensus_Network_Mempool_v2.md)
-- [Block Creation, Validation & Consensus](../consensus/ippan_block_creation_validation_consensus.md)
-- [Atomic IPN Precision](../ATOMIC_IPN_PRECISION.md)
-- [AI Security](../AI_SECURITY.md)
-
----
-
-## Version History
-
-| Document | Version | Date | Maintainer |
-|----------|---------|------|------------|
-| ippan-vision-2025.md | 2025 | 2025-10-22 | IPPAN Foundation / dmrl789 |
-| ippan-l1-architecture.md | October 2025 | 2025-10 | IPPAN Core Team |
-| ippan-storage-da.md | October 2025 | 2025-10 | IPPAN Storage Team |
-| BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md | 1.0 | 2025-10-26 | IPPAN Research Team |
-
----
-
-## Contributing
-
-When updating PRDs:
-1. Maintain backward compatibility with existing implementations where possible
-2. Update the version history table above
-3. Cross-reference related PRDs to maintain consistency
-4. If introducing breaking changes, create an ADR (Architecture Decision Record) in `docs/adr/`
-
----
-
-**License:** CC-BY-SA-4.0  
-**Last Updated:** 2025-10-22
