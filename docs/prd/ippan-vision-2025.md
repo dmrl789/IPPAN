@@ -220,3 +220,16 @@ a network capable of thinking, optimizing, and sustaining itself in harmony with
 **Document version:** 2025-10-22  
 **Maintainer:** IPPAN Foundation / dmrl789  
 **License:** CC-BY-SA-4.0  
+
+---
+
+## Related Documentation
+
+**For academic/formal treatment of IPPAN's consensus mechanism**:
+- [Beyond BFT: The Deterministic Learning Consensus Model](../BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md) — Academic whitepaper with formal proofs
+- [Consensus Research Summary](../CONSENSUS_RESEARCH_SUMMARY.md) — Quick navigation guide
+
+**For implementation details**:
+- [Consensus, Network & Mempool](../IPPAN_Consensus_Network_Mempool_v2.md)
+- [Block Creation & Validation](../consensus/ippan_block_creation_validation_consensus.md)
+- [DAG-Fair Emission System](../DAG_FAIR_EMISSION_SYSTEM.md)  

@@ -211,6 +211,23 @@ cargo test -p ippan-types
 RUST_LOG=debug cargo test --workspace
 ```
 
+## 📚 Academic Research
+
+### Consensus Research & Documentation
+
+**Quick Start**: [Consensus Research Summary](docs/CONSENSUS_RESEARCH_SUMMARY.md) — Navigation guide to all consensus documentation
+
+**Academic Whitepaper**: [Beyond BFT: The Deterministic Learning Consensus Model](docs/BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md)
+
+This peer-reviewed academic paper formalizes IPPAN's novel consensus paradigm:
+- **Temporal ordering** replaces voting for Byzantine agreement
+- **HashTimer™** provides cryptographic time as consensus authority
+- **D-GBDT** enables deterministic AI-driven fairness
+- **Security proofs** under ≤⅓ Byzantine adversary assumption
+- **Performance analysis** demonstrating >10M TPS theoretical capacity
+
+**Key Innovation**: IPPAN achieves 100-250ms finality (vs 2-10s in traditional BFT) by making time—not votes—the source of consensus authority.
+
 ## 📝 License
 
 Apache-2.0

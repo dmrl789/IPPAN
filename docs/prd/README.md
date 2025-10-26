@@ -105,6 +105,30 @@ Start with the **Vision PRD** to understand IPPAN's mission and unique value pro
 
 ---
 
+## Navigation
+
+### Core Documents
+- **Vision Document** defines "why" — the mission and strategic direction
+- **L1 Architecture PRD** defines the "how" — consensus, parallel blocks, rounds, and deterministic ordering
+- **Storage & DA PRD** defines persistence, availability, and archival rules
+- **Beyond BFT Whitepaper** defines the formal theoretical foundations of Deterministic Temporal Consensus
+
+### Cross-references
+- [IPPAN Vision 2025](ippan-vision-2025.md)
+- [IPPAN PRD 2025](ippan-prd-2025.md)
+- [L1 Architecture](ippan-l1-architecture.md)
+- [Storage & Data Availability](ippan-storage-da.md)
+- [Beyond BFT: Deterministic Learning Consensus](../BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md) ⭐ **Academic Whitepaper**
+
+### Related Technical Documentation
+- [DAG-Fair Emission System](../DAG_FAIR_EMISSION_SYSTEM.md)
+- [Consensus, Network & Mempool Architecture](../IPPAN_Consensus_Network_Mempool_v2.md)
+- [Block Creation, Validation & Consensus](../consensus/ippan_block_creation_validation_consensus.md)
+- [Atomic IPN Precision](../ATOMIC_IPN_PRECISION.md)
+- [AI Security](../AI_SECURITY.md)
+
+---
+
 ## Version History
 
 | Document | Version | Date | Maintainer |
@@ -112,6 +136,7 @@ Start with the **Vision PRD** to understand IPPAN's mission and unique value pro
 | ippan-vision-2025.md | 2025 | 2025-10-22 | IPPAN Foundation / dmrl789 |
 | ippan-l1-architecture.md | October 2025 | 2025-10 | IPPAN Core Team |
 | ippan-storage-da.md | October 2025 | 2025-10 | IPPAN Storage Team |
+| BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md | 1.0 | 2025-10-26 | IPPAN Research Team |
 
 ---
 
