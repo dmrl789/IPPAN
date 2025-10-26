@@ -13,7 +13,8 @@ parking_lot = "0.12"
 
 # IPPAN crates
 ippan-types = { path = "../types" }
-ippan-ippan-economics = { path = "../ippan_economics" }
+# Fix incorrect crate name to match workspace member `ippan-economics`
+ippan-economics = { path = "../ippan_economics" }
 ippan-l2-handle-registry = { path = "../l2_handle_registry" }
 ippan-l1-handle-anchors = { path = "../l1_handle_anchors" }
 

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(feature = "analytics")]
 use chrono::{DateTime, Utc};
 
 /// AI Service configuration
@@ -106,7 +107,8 @@ pub struct LLMUsage {
 }
 
 /// Analytics insight
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "analytics" , derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct AnalyticsInsight {
     /// Insight ID
     pub id: String,
@@ -125,11 +127,12 @@ pub struct AnalyticsInsight {
     /// Recommendations
     pub recommendations: Vec<String>,
     /// Timestamp
+    #[cfg(feature = "analytics")]
     pub timestamp: DateTime<Utc>,
 }
 
 /// Insight types
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum InsightType {
     /// Performance insight
     Performance,
@@ -159,7 +162,8 @@ pub enum SeverityLevel {
 }
 
 /// Data point for analytics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "analytics" , derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct DataPoint {
     /// Metric name
     pub metric: String,
@@ -168,6 +172,7 @@ pub struct DataPoint {
     /// Unit
     pub unit: String,
     /// Timestamp
+    #[cfg(feature = "analytics")]
     pub timestamp: DateTime<Utc>,
     /// Tags
     pub tags: HashMap<String, String>,
@@ -206,7 +211,7 @@ pub struct SmartContractAnalysisResponse {
 }
 
 /// Contract analysis types
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContractAnalysisType {
     /// Security analysis
     Security,
@@ -344,7 +349,8 @@ pub enum DifficultyLevel {
 }
 
 /// Monitoring alert
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "analytics" , derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct MonitoringAlert {
     /// Alert ID
     pub alert_id: String,
@@ -359,6 +365,7 @@ pub struct MonitoringAlert {
     /// Metrics
     pub metrics: HashMap<String, f64>,
     /// Timestamp
+    #[cfg(feature = "analytics")]
     pub timestamp: DateTime<Utc>,
     /// Status
     pub status: AlertStatus,
@@ -367,7 +374,7 @@ pub struct MonitoringAlert {
 }
 
 /// Alert status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AlertStatus {
     /// Active
     Active,

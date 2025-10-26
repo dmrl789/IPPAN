@@ -161,7 +161,7 @@ impl OptimizationService {
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
         let mut optimized = transaction.clone();
         let mut suggestions = Vec::new();
-        let mut improvement = 0.0;
+        let mut improvement: f64 = 0.0;
 
         // Optimize for parallel processing
         if transaction.tx_type == "contract_call" {
@@ -204,7 +204,7 @@ impl OptimizationService {
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
         let mut optimized = transaction.clone();
         let mut suggestions = Vec::new();
-        let mut improvement = 0.0;
+        let mut improvement: f64 = 0.0;
 
         // Optimize gas price for faster inclusion
         if optimized.gas_price < 20_000_000_000 { // 20 Gwei
@@ -250,7 +250,7 @@ impl OptimizationService {
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
         let mut optimized = transaction.clone();
         let mut suggestions = Vec::new();
-        let mut improvement = 0.0;
+        let mut improvement: f64 = 0.0;
 
         // Add security validations
         suggestions.push(OptimizationSuggestion {
@@ -302,7 +302,7 @@ impl OptimizationService {
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
         let mut optimized = transaction.clone();
         let mut suggestions = Vec::new();
-        let mut improvement = 0.0;
+        let mut improvement: f64 = 0.0;
 
         // Optimize gas price
         if optimized.gas_price > 10_000_000_000 { // 10 Gwei

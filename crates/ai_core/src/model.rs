@@ -8,6 +8,56 @@ use std::path::Path;
 
 pub const MODEL_HASH_SIZE: usize = 32;
 
+/// High-level in-memory model representation used by logging and
+/// deterministic evaluation helpers. Wraps a GBDT structure with
+/// additional metadata required by L1.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Model {
+    /// Semantic model version
+    pub version: u32,
+    /// Number of expected features
+    pub feature_count: usize,
+    /// Base bias/intercept value
+    pub bias: i32,
+    /// Output scale (for fixed-point representation)
+    pub scale: i32,
+    /// Trees composing the model
+    pub trees: Vec<crate::gbdt::Tree>,
+}
+
+impl Model {
+    /// Construct a new model instance
+    pub fn new(
+        version: u32,
+        feature_count: usize,
+        bias: i32,
+        scale: i32,
+        trees: Vec<crate::gbdt::Tree>,
+    ) -> Self {
+        Self { version, feature_count, bias, scale, trees }
+    }
+
+    /// Validate structural invariants of this model
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.feature_count == 0 {
+            anyhow::bail!("Feature count cannot be zero");
+        }
+        if self.scale <= 0 {
+            anyhow::bail!("Scale must be positive");
+        }
+        if self.trees.is_empty() {
+            anyhow::bail!("Model must contain at least one tree");
+        }
+        // Basic node presence checks
+        for (idx, tree) in self.trees.iter().enumerate() {
+            if tree.nodes.is_empty() {
+                anyhow::bail!("Tree {idx} is empty");
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Metadata for an AI model
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelMetadata {
