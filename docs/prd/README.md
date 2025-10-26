@@ -63,6 +63,25 @@ This directory contains the complete set of Product Requirements Documents for t
 
 ---
 
+### 4. [Beyond BFT: Deterministic Learning Consensus](../BEYOND_BFT_DETERMINISTIC_LEARNING_CONSENSUS.md) — **Consensus Theory**
+*Revolutionary departure from traditional BFT consensus mechanisms*
+
+**Scope:** Theoretical foundation and mathematical proofs for IPPAN's consensus model
+
+**Key Topics:**
+- Deterministic Learning Consensus (DLC) model
+- HashTimer™ temporal determinism
+- BlockDAG structure and parallel processing
+- AI-driven optimization (D-GBDT)
+- Mathematical foundations and security proofs
+- Performance analysis and scalability metrics
+- Comparison with traditional BFT and Nakamoto consensus
+- Implementation architecture and economic integration
+
+**Audience:** Cryptographers, consensus researchers, protocol engineers, academics
+
+---
+
 ## Document Relationships
 
 ```
@@ -79,11 +98,18 @@ This directory contains the complete set of Product Requirements Documents for t
 │ architecture.md │  │ (Storage & DA Spec)  │
 │ (L1 Tech Spec)  │  └──────────────────────┘
 └─────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────┐
+│ Beyond BFT: Deterministic Learning Consensus │
+│ (Consensus Theory & Mathematical Foundation) │
+└─────────────────────────────────────────────┘
 ```
 
 - **Vision PRD** defines the "what" and "why" — business goals, competitive positioning, and success criteria
 - **L1 Architecture PRD** defines the "how" — consensus, parallel blocks, rounds, and deterministic ordering
 - **Storage & DA PRD** defines the "where" and "when" — data retention, availability proofs, and confidentiality
+- **Consensus Theory PRD** defines the "why it works" — mathematical foundations, security proofs, and theoretical guarantees
 
 ---
 
@@ -112,6 +138,7 @@ Start with the **Vision PRD** to understand IPPAN's mission and unique value pro
 | ippan-vision-2025.md | 2025 | 2025-10-22 | IPPAN Foundation / dmrl789 |
 | ippan-l1-architecture.md | October 2025 | 2025-10 | IPPAN Core Team |
 | ippan-storage-da.md | October 2025 | 2025-10 | IPPAN Storage Team |
+| Beyond BFT: Deterministic Learning Consensus | 1.0 | 2024-12 | IPPAN Core Development Team |
 
 ---
 
