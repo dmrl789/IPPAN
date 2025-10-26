@@ -46,7 +46,7 @@ impl AnomalyDetector {
         let threshold = self.threshold_multiplier * std_dev;
         let mut anomalies = Vec::new();
 
-        for (i, &value) in recent_values.iter().enumerate() {
+        for (_i, &value) in recent_values.iter().enumerate() {
             if (value - mean).abs() > threshold {
                 anomalies.push(Anomaly {
                     metric: metric_name.to_string(),
