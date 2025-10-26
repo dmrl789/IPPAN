@@ -35,25 +35,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🔍 Finding merged branches..."
-          
-          # Get all merged branches (excluding main, dev, and release branches)
           git fetch --all --prune
-          
+
           MERGED_BRANCHES=$(git branch -r --merged origin/main | \
             grep -v 'origin/main' | \
             grep -v 'origin/dev' | \
             grep -v 'origin/HEAD' | \
             grep -v 'release/' | \
             sed 's/origin\///')
-          
+
           if [ -z "$MERGED_BRANCHES" ]; then
             echo "✅ No merged branches to delete"
             exit 0
           fi
-          
+
           echo "🗑️ Deleting merged branches:"
           echo "$MERGED_BRANCHES"
-          
+
           for branch in $MERGED_BRANCHES; do
             echo "Deleting branch: $branch"
             git push origin --delete "$branch" || echo "⚠️ Could not delete $branch"
@@ -64,15 +62,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🔍 Finding stale branches..."
-          
           CUTOFF_DATE=$(date -u -d '30 days ago' +%s)
-          
           git fetch --all --prune
-          
-          # Get all remote branches
+
           for branch in $(git branch -r | grep -v 'origin/main' | grep -v 'origin/dev' | grep -v 'origin/HEAD' | grep -v 'release/' | sed 's/origin\///'); do
             LAST_COMMIT_DATE=$(git log -1 --format=%ct "origin/$branch" 2>/dev/null || echo "0")
-            
             if [ "$LAST_COMMIT_DATE" -lt "$CUTOFF_DATE" ] && [ "$LAST_COMMIT_DATE" != "0" ]; then
               DAYS_OLD=$(( ($(date +%s) - LAST_COMMIT_DATE) / 86400 ))
               echo "🗑️ Deleting stale branch: $branch (inactive for $DAYS_OLD days)"

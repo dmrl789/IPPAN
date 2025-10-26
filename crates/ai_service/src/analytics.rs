@@ -4,7 +4,7 @@ use crate::types::{
     AnalyticsInsight, InsightType, SeverityLevel, DataPoint, AnalyticsConfig
 };
 use crate::errors::AIServiceError;
-use chrono::{DateTime, Utc, Duration};
+use chrono::{Utc, Duration};
 use std::collections::HashMap;
 use uuid::Uuid;
 

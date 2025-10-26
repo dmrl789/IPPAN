@@ -2,7 +2,7 @@
 
 use crate::types::{
     SmartContractAnalysisRequest, SmartContractAnalysisResponse, ContractAnalysisType,
-    ContractIssue, ContractAnalysisMetadata, SeverityLevel
+    ContractIssue, ContractAnalysisMetadata, SeverityLevel,
 };
 use crate::errors::AIServiceError;
 use uuid::Uuid;
@@ -44,16 +44,18 @@ impl SmartContractService {
                 self.analyze_javascript(&request.code, &mut issues, &mut recommendations)?;
             }
             _ => {
-                return Err(AIServiceError::SmartContractError(
-                    format!("Unsupported language: {}", request.language)
-                ));
+                return Err(AIServiceError::SmartContractError(format!(
+                    "Unsupported language: {}",
+                    request.language
+                )));
             }
         }
 
         // Calculate scores
         let security_score = self.calculate_security_score(&issues);
-        let gas_efficiency_score = self.calculate_gas_efficiency_score(&request.code, &request.language);
-        
+        let gas_efficiency_score =
+            self.calculate_gas_efficiency_score(&request.code, &request.language);
+
         // Generate optimized code if needed
         let optimized_code = if request.analysis_type == ContractAnalysisType::GasOptimization {
             Some(self.generate_optimized_code(&request.code, &request.language)?)
@@ -100,7 +102,9 @@ impl SmartContractService {
                 issues.push(ContractIssue {
                     issue_type: "tx.origin_usage".to_string(),
                     severity: SeverityLevel::High,
-                    description: "Use of tx.origin for authorization is vulnerable to phishing attacks".to_string(),
+                    description:
+                        "Use of tx.origin for authorization is vulnerable to phishing attacks"
+                            .to_string(),
                     line_number: Some(line_num),
                     suggested_fix: Some("Use msg.sender instead of tx.origin".to_string()),
                 });
@@ -112,7 +116,10 @@ impl SmartContractService {
                     severity: SeverityLevel::Medium,
                     description: "Block timestamp can be manipulated by miners".to_string(),
                     line_number: Some(line_num),
-                    suggested_fix: Some("Consider using block numbers or external oracles for time-sensitive operations".to_string()),
+                    suggested_fix: Some(
+                        "Consider using block numbers or external oracles for time-sensitive operations"
+                            .to_string(),
+                    ),
                 });
             }
 
@@ -132,7 +139,9 @@ impl SmartContractService {
                     severity: SeverityLevel::High,
                     description: "delegatecall can be dangerous if not used carefully".to_string(),
                     line_number: Some(line_num),
-                    suggested_fix: Some("Ensure the target contract is trusted and properly validated".to_string()),
+                    suggested_fix: Some(
+                        "Ensure the target contract is trusted and properly validated".to_string(),
+                    ),
                 });
             }
 
@@ -183,7 +192,9 @@ impl SmartContractService {
                     severity: SeverityLevel::High,
                     description: "Unsafe code blocks can lead to undefined behavior".to_string(),
                     line_number: Some(line_num),
-                    suggested_fix: Some("Review unsafe code and ensure it's necessary and correct".to_string()),
+                    suggested_fix: Some(
+                        "Review unsafe code and ensure it's necessary and correct".to_string(),
+                    ),
                 });
             }
 
@@ -194,7 +205,9 @@ impl SmartContractService {
                     severity: SeverityLevel::Medium,
                     description: "unwrap() can cause panics".to_string(),
                     line_number: Some(line_num),
-                    suggested_fix: Some("Consider using expect() or proper error handling".to_string()),
+                    suggested_fix: Some(
+                        "Consider using expect() or proper error handling".to_string(),
+                    ),
                 });
             }
 
@@ -227,7 +240,8 @@ impl SmartContractService {
                 issues.push(ContractIssue {
                     issue_type: "eval_usage".to_string(),
                     severity: SeverityLevel::High,
-                    description: "eval() can execute arbitrary code and is a security risk".to_string(),
+                    description:
+                        "eval() can execute arbitrary code and is a security risk".to_string(),
                     line_number: Some(line_num),
                     suggested_fix: Some("Avoid eval() and use safer alternatives".to_string()),
                 });
@@ -259,7 +273,7 @@ impl SmartContractService {
             return 1.0;
         }
 
-        let mut score = 1.0;
+        let mut score: f64 = 1.0;
         for issue in issues {
             let penalty = match issue.severity {
                 SeverityLevel::Critical => 0.3,
@@ -275,7 +289,7 @@ impl SmartContractService {
 
     /// Calculate gas efficiency score
     fn calculate_gas_efficiency_score(&self, code: &str, language: &str) -> f64 {
-        let mut score = 1.0;
+        let mut score: f64 = 1.0;
 
         // Simple heuristics for gas efficiency
         let lines = code.lines().count();
@@ -333,7 +347,7 @@ impl SmartContractService {
             // Replace inefficient loop patterns
             optimized = optimized.replace(
                 "for (uint i = 0; i < array.length; i++)",
-                "uint length = array.length; for (uint i = 0; i < length; i++)"
+                "uint length = array.length; for (uint i = 0; i < length; i++)",
             );
 
             // Add gas optimization comments
@@ -379,7 +393,7 @@ contract TestContract {
         };
 
         let response = service.analyze_contract(request).await.unwrap();
-        
+
         assert!(!response.issues.is_empty());
         assert_eq!(response.issues[0].issue_type, "tx.origin_usage");
         assert!(response.security_score < 1.0);
@@ -405,7 +419,7 @@ fn dangerous_function() {
         };
 
         let response = service.analyze_contract(request).await.unwrap();
-        
+
         assert!(!response.issues.is_empty());
         assert_eq!(response.issues[0].issue_type, "unsafe_code");
     }
@@ -413,15 +427,13 @@ fn dangerous_function() {
     #[test]
     fn test_calculate_security_score() {
         let service = SmartContractService::new();
-        let issues = vec![
-            ContractIssue {
-                issue_type: "test".to_string(),
-                severity: SeverityLevel::High,
-                description: "test".to_string(),
-                line_number: None,
-                suggested_fix: None,
-            }
-        ];
+        let issues = vec![ContractIssue {
+            issue_type: "test".to_string(),
+            severity: SeverityLevel::High,
+            description: "test".to_string(),
+            line_number: None,
+            suggested_fix: None,
+        }];
 
         let score = service.calculate_security_score(&issues);
         assert_eq!(score, 0.8); // 1.0 - 0.2 for High severity
@@ -432,7 +444,7 @@ fn dangerous_function() {
         let service = SmartContractService::new();
         let code = "contract Test { function test() public {} }";
         let score = service.calculate_gas_efficiency_score(code, "solidity");
-        
+
         assert!(score > 0.0);
         assert!(score <= 1.0);
     }

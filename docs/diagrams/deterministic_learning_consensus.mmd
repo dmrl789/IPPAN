@@ -1,0 +1,55 @@
+graph TB
+    subgraph "Traditional BFT Consensus"
+        A1[Proposer] --> A2[Pre-prepare]
+        A2 --> A3[Prepare Phase]
+        A3 --> A4[Commit Phase]
+        A4 --> A5[Finality]
+        A6[O(n²) Messages] --> A1
+        A7[Voting Rounds] --> A3
+        A8[Static Validators] --> A1
+    end
+    
+    subgraph "IPPAN Deterministic Learning Consensus"
+        B1[HashTimer™ Sync] --> B2[Deterministic Time]
+        B2 --> B3[BlockDAG Creation]
+        B3 --> B4[Parallel Processing]
+        B4 --> B5[AI Evaluation]
+        B5 --> B6[Deterministic Ordering]
+        B6 --> B7[Finality]
+        B8[O(n) Messages] --> B1
+        B9[Temporal Determinism] --> B2
+        B10[AI Learning] --> B5
+        B11[1000+ Validators] --> B3
+    end
+    
+    subgraph "Performance Comparison"
+        C1["BFT: ~100 TPS<br/>1-10s Finality<br/>~100 Validators"]
+        C2["IPPAN: 10M+ TPS<br/>100-250ms Finality<br/>1000+ Validators"]
+    end
+    
+    A5 --> C1
+    B7 --> C2
+    
+    style A1 fill:#ffcccc
+    style A2 fill:#ffcccc
+    style A3 fill:#ffcccc
+    style A4 fill:#ffcccc
+    style A5 fill:#ffcccc
+    style A6 fill:#ffcccc
+    style A7 fill:#ffcccc
+    style A8 fill:#ffcccc
+    
+    style B1 fill:#ccffcc
+    style B2 fill:#ccffcc
+    style B3 fill:#ccffcc
+    style B4 fill:#ccffcc
+    style B5 fill:#ccffcc
+    style B6 fill:#ccffcc
+    style B7 fill:#ccffcc
+    style B8 fill:#ccffcc
+    style B9 fill:#ccffcc
+    style B10 fill:#ccffcc
+    style B11 fill:#ccffcc
+    
+    style C1 fill:#ffeecc
+    style C2 fill:#ccffcc
