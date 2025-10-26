@@ -7,19 +7,31 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ID=ippan_production_node_001
-      - NODE_ROLE=validator
       - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000001
       - RPC_HOST=0.0.0.0
       - RPC_PORT=8080
       - P2P_HOST=0.0.0.0
       - P2P_PORT=9000
-      - P2P_BOOTNODES=/ip4/188.245.97.41/tcp/9001
-      - STORAGE_PATH=/var/lib/ippan/db
-      - CONSENSUS_SLOT_DURATION_MS=100
-      - CONSENSUS_MAX_TX_PER_BLOCK=1000
-      - CONSENSUS_BLOCK_REWARD=10000
+      - BOOTSTRAP_NODES=http://135.181.145.174:9001
+      - DATA_DIR=/var/lib/ippan
+      - DB_PATH=/var/lib/ippan/db
+      - SLOT_DURATION_MS=1000
+      - MAX_TRANSACTIONS_PER_BLOCK=1000
+      - BLOCK_REWARD=1000
+      - FINALIZATION_INTERVAL_MS=200
+      - MAX_PEERS=50
+      - PEER_DISCOVERY_INTERVAL_SECS=30
+      - PEER_ANNOUNCE_INTERVAL_SECS=60
+      - P2P_ENABLE_UPNP=true
+      - P2P_EXTERNAL_IP_SERVICES=https://api.ipify.org,https://ifconfig.me/ip
+      - L2_MAX_COMMIT_SIZE=16384
+      - L2_MIN_EPOCH_GAP_MS=250
+      - L2_CHALLENGE_WINDOW_MS=60000
+      - L2_DA_MODE=external
+      - L2_MAX_L2_COUNT=100
       - LOG_LEVEL=info
       - LOG_FORMAT=json
+      - DEV_MODE=false
     ports:
       - "8080:8080"    # RPC API
       - "9000:9000"    # P2P port
@@ -27,6 +39,12 @@ services:
       - node1_data:/var/lib/ippan/db
     networks:
       - ippan-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     logging:
       driver: "json-file"
       options:
@@ -39,26 +57,44 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ID=ippan_production_node_002
-      - NODE_ROLE=validator
       - VALIDATOR_ID=0000000000000000000000000000000000000000000000000000000000000002
       - RPC_HOST=0.0.0.0
-      - RPC_PORT=8081
+      - RPC_PORT=8080
       - P2P_HOST=0.0.0.0
       - P2P_PORT=9001
-      - P2P_BOOTNODES=/ip4/188.245.97.41/tcp/9000
-      - STORAGE_PATH=/var/lib/ippan/db
-      - CONSENSUS_SLOT_DURATION_MS=100
-      - CONSENSUS_MAX_TX_PER_BLOCK=1000
-      - CONSENSUS_BLOCK_REWARD=10000
+      - BOOTSTRAP_NODES=http://188.245.97.41:9000
+      - DATA_DIR=/var/lib/ippan
+      - DB_PATH=/var/lib/ippan/db
+      - SLOT_DURATION_MS=1000
+      - MAX_TRANSACTIONS_PER_BLOCK=1000
+      - BLOCK_REWARD=1000
+      - FINALIZATION_INTERVAL_MS=200
+      - MAX_PEERS=50
+      - PEER_DISCOVERY_INTERVAL_SECS=30
+      - PEER_ANNOUNCE_INTERVAL_SECS=60
+      - P2P_ENABLE_UPNP=true
+      - P2P_EXTERNAL_IP_SERVICES=https://api.ipify.org,https://ifconfig.me/ip
+      - L2_MAX_COMMIT_SIZE=16384
+      - L2_MIN_EPOCH_GAP_MS=250
+      - L2_CHALLENGE_WINDOW_MS=60000
+      - L2_DA_MODE=external
+      - L2_MAX_L2_COUNT=100
       - LOG_LEVEL=info
       - LOG_FORMAT=json
+      - DEV_MODE=false
     ports:
-      - "8081:8081"    # RPC API
+      - "8080:8080"    # RPC API
       - "9001:9001"    # P2P port
     volumes:
       - node2_data:/var/lib/ippan/db
     networks:
       - ippan-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     logging:
       driver: "json-file"
       options:

@@ -9,7 +9,7 @@ description = "IPPAN on-chain governance module — voting, AI model approval, a
 [dependencies]
 ippan-types = { path = "../types" }
 ippan-ai-registry = { path = "../ai_registry" }
-ippan_economics_core = { path = "../economics" }
+ippan_economics = { path = "../ippan_economics" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

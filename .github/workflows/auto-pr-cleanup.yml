@@ -1,4 +1,4 @@
-name: "\U0001F9F9 Auto PR & Branch Cleanup"
+name: 🧹 Auto PR & Branch Cleanup
 
 on:
   schedule:
@@ -13,29 +13,79 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: "\U0001F9ED Checkout repository"
+      - name: 🧭 Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: "\U0001F9F9 Delete merged branches"
-        uses: devops-infra/action-delete-branch@v0.6.0
+      - name: 🗑️ Close stale PRs
+        uses: actions/stale@v9
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          delete_protected: false
-          exclude: |
-            main
-            dev
-          only_merged: true
-          dry_run: false
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          stale-pr-message: 'This PR has been inactive for 30 days and will be closed in 7 days unless activity resumes.'
+          close-pr-message: 'Closing this PR due to inactivity. Please reopen if work resumes.'
+          days-before-stale: 30
+          days-before-close: 7
+          stale-pr-label: 'stale'
+          exempt-pr-labels: 'keep-open,in-progress,blocked'
+          operations-per-run: 30
 
-      - name: "\U0001F553 Prune stale branches (>10 days inactive)"
-        uses: vdemedes/prune-branches@v2
-        with:
-          days_old: 10
-          exclude: main,dev
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: "\U0001F9E0 Comment summary"
+      - name: 🧹 Delete merged branches
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "✅ Branch cleanup completed on $(date -u)"
+          echo "🔍 Finding merged branches..."
+          git fetch --all --prune
+
+          MERGED_BRANCHES=$(git branch -r --merged origin/main | \
+            grep -v 'origin/main' | \
+            grep -v 'origin/dev' | \
+            grep -v 'origin/HEAD' | \
+            grep -v 'release/' | \
+            sed 's/origin\///')
+
+          if [ -z "$MERGED_BRANCHES" ]; then
+            echo "✅ No merged branches to delete"
+            exit 0
+          fi
+
+          echo "🗑️ Deleting merged branches:"
+          echo "$MERGED_BRANCHES"
+
+          for branch in $MERGED_BRANCHES; do
+            echo "Deleting branch: $branch"
+            git push origin --delete "$branch" || echo "⚠️ Could not delete $branch"
+          done
+
+      - name: 🕓 Delete stale branches (>30 days inactive)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔍 Finding stale branches..."
+          CUTOFF_DATE=$(date -u -d '30 days ago' +%s)
+          git fetch --all --prune
+
+          for branch in $(git branch -r | grep -v 'origin/main' | grep -v 'origin/dev' | grep -v 'origin/HEAD' | grep -v 'release/' | sed 's/origin\///'); do
+            LAST_COMMIT_DATE=$(git log -1 --format=%ct "origin/$branch" 2>/dev/null || echo "0")
+            if [ "$LAST_COMMIT_DATE" -lt "$CUTOFF_DATE" ] && [ "$LAST_COMMIT_DATE" != "0" ]; then
+              DAYS_OLD=$(( ($(date +%s) - LAST_COMMIT_DATE) / 86400 ))
+              echo "🗑️ Deleting stale branch: $branch (inactive for $DAYS_OLD days)"
+              git push origin --delete "$branch" || echo "⚠️ Could not delete $branch"
+            fi
+          done
+
+      - name: 📊 Generate cleanup summary
+        run: |
+          echo "## 🧹 Branch Cleanup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Branch cleanup completed on $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Protected Branches" >> $GITHUB_STEP_SUMMARY
+          echo "- \`main\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`dev\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`release/*\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cleanup Policy" >> $GITHUB_STEP_SUMMARY
+          echo "- Merged branches: Deleted automatically" >> $GITHUB_STEP_SUMMARY
+          echo "- Stale branches: Deleted after 30 days of inactivity" >> $GITHUB_STEP_SUMMARY
+          echo "- Stale PRs: Marked stale after 30 days, closed after 37 days" >> $GITHUB_STEP_SUMMARY
