@@ -100,7 +100,7 @@ impl ExecutionEngine {
 
         // Verify model hash
         let computed_hash = blake3::hash(data).to_hex();
-        if computed_hash != metadata.id.hash {
+        if computed_hash.as_str() != metadata.id.hash.as_str() {
             return Err(AiCoreError::ValidationFailed(
                 "Model hash verification failed".to_string()
             ));
@@ -188,7 +188,7 @@ impl ExecutionEngine {
         hasher.update(&input.shape.iter().map(|x| x.to_le_bytes()).flatten().collect::<Vec<_>>());
         
         // Hash execution context
-        hasher.update(context.seed.unwrap_or(0).to_le_bytes());
+        hasher.update(&context.seed.unwrap_or(0).to_le_bytes());
         
         // Hash parameters
         for (key, value) in &context.parameters {
@@ -196,7 +196,7 @@ impl ExecutionEngine {
             hasher.update(value.as_bytes());
         }
         
-        Ok(hasher.finalize().to_hex())
+        Ok(hasher.finalize().to_hex().to_string())
     }
 
     /// Update execution statistics

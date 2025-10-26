@@ -8,9 +8,12 @@
 //! - Intelligent monitoring and alerting
 
 pub mod llm;
+#[cfg(feature = "analytics")]
 pub mod analytics;
 pub mod smart_contracts;
+#[cfg(feature = "analytics")]
 pub mod monitoring;
+#[cfg(feature = "analytics")]
 pub mod optimization;
 pub mod errors;
 pub mod types;

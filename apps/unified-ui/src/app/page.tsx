@@ -18,6 +18,7 @@ import { BlockchainExplorer } from '@/components/blockchain/BlockchainExplorer';
 import { SmartContractStudio } from '@/components/smart-contracts/SmartContractStudio';
 import { AnalyticsPanel } from '@/components/analytics/AnalyticsPanel';
 import { MonitoringCenter } from '@/components/monitoring/MonitoringCenter';
+import { MetaAgentDashboard } from '@/components/metaagent/MetaAgentDashboard';
 import { Navigation } from '@/components/layout/Navigation';
 import { Header } from '@/components/layout/Header';
 import { useAI } from '@/contexts/AIContext';
@@ -68,6 +69,7 @@ export default function HomePage() {
 
   const tabs = [
     { id: 'dashboard', label: 'AI Dashboard', icon: Brain },
+    { id: 'metaagent', label: 'MetaAgent', icon: Users },
     { id: 'explorer', label: 'Blockchain Explorer', icon: BarChart3 },
     { id: 'contracts', label: 'Smart Contracts', icon: Code },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
@@ -78,6 +80,8 @@ export default function HomePage() {
     switch (activeTab) {
       case 'dashboard':
         return <AIDashboard />;
+      case 'metaagent':
+        return <MetaAgentDashboard />;
       case 'explorer':
         return <BlockchainExplorer />;
       case 'contracts':
