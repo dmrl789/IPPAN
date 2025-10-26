@@ -57,9 +57,9 @@ impl AES256GCM {
         use aes_gcm::{Aes256Gcm, Key, Nonce};
         use aes_gcm::aead::{Aead, KeyInit};
 
-        let key = Key::from_slice(&self.key);
+        let key = Key::<Aes256Gcm>::from_slice(&self.key);
         let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(nonce);
+        let nonce = Nonce::<Aes256Gcm>::from_slice(nonce);
 
         cipher.encrypt(nonce, plaintext)
             .map_err(|_| anyhow!("Encryption failed"))
@@ -70,9 +70,9 @@ impl AES256GCM {
         use aes_gcm::{Aes256Gcm, Key, Nonce};
         use aes_gcm::aead::{Aead, KeyInit};
 
-        let key = Key::from_slice(&self.key);
+        let key = Key::<Aes256Gcm>::from_slice(&self.key);
         let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(nonce);
+        let nonce = Nonce::<Aes256Gcm>::from_slice(nonce);
 
         cipher.decrypt(nonce, ciphertext)
             .map_err(|_| anyhow!("Decryption failed"))
