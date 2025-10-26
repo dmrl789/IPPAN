@@ -13,16 +13,29 @@
 //! - `validation`: Model validation utilities
 //! - `log`: Evaluation logging helpers
 
+pub mod config;
+pub mod errors;
 pub mod features;
 pub mod gbdt;
+pub mod health;
 pub mod model;
 pub mod types;
-pub mod errors;
 pub mod execution;
 pub mod models;
 pub mod validation;
 pub mod log;
 
+pub use config::{
+    AiCoreConfig,
+    ConfigManager,
+    HealthConfig as ConfigHealthConfig,
+    ExecutionConfig,
+    LoggingConfig,
+    SecurityConfig,
+    PerformanceConfig,
+    FeatureConfig as ConfigFeatureConfig,
+    ValidationConfig,
+};
 pub use features::{
     extract_features,
     normalize_features,
@@ -31,8 +44,32 @@ pub use features::{
     ValidatorTelemetry,
 };
 pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree};
-pub use model::{load_model, verify_model_hash, ModelMetadata as PackageMetadata, ModelPackage, MODEL_HASH_SIZE};
-pub use types::{ModelId, ModelMetadata, ModelInput, ModelOutput, ExecutionContext, ExecutionResult, DataType, ExecutionMetadata};
+pub use health::{
+    HealthMonitor,
+    HealthConfig,
+    HealthStatus,
+    SystemHealth,
+    PerformanceMetrics,
+    HealthChecker,
+    MemoryUsageChecker,
+    ModelExecutionChecker,
+};
+pub use model::{
+    load_model,
+    verify_model_hash,
+    ModelMetadata,
+    ModelPackage,
+    MODEL_HASH_SIZE,
+};
+pub use types::{
+    ModelId,
+    ModelInput,
+    ModelOutput,
+    ExecutionContext,
+    ExecutionResult,
+    DataType,
+    ExecutionMetadata,
+};
 pub use errors::AiCoreError;
 
 /// Crate version string for metadata and validation reports
@@ -43,7 +80,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Used in various AI and reputation subsystems to ensure sorting
 /// consistency across nodes.
 pub fn deterministically_sorted<T: Ord>(mut items: Vec<T>) -> Vec<T> {
-    // Rust’s sort is deterministic for a given input and ordering.
     items.sort();
     items
 }
