@@ -5,6 +5,7 @@ use crate::{
     types::*,
 };
 use std::collections::HashMap;
+use std::fs;
 use tracing::{info, warn, error};
 
 /// Model manager for loading and managing AI models
@@ -76,7 +77,7 @@ impl ModelManager {
         self.validate_metadata(&metadata)?;
         
         // Add to registry
-        self.registry.available.insert(metadata.id.clone(), metadata);
+        self.registry.available.insert(metadata.id.clone(), metadata.clone());
         self.registry.sources.insert(metadata.id.clone(), source);
         
         info!("Model registered successfully");
@@ -106,7 +107,7 @@ impl ModelManager {
             .clone();
         
         // Load model data
-        let model_data = self.load_model_data(&source).await?;
+        let model_data: Vec<u8> = self.load_model_data(&source).await?;
         
         // Validate model data
         self.validate_model_data(&model_data, &metadata)?;
@@ -161,9 +162,8 @@ impl ModelManager {
         match source.source_type {
             SourceType::Local => {
                 // Load from local file system
-                tokio::fs::read(&source.location)
-                    .await
-                    .map_err(|e| AiCoreError::Io(e))
+                fs::read(&source.location)
+                    .map_err(AiCoreError::Io)
             },
             SourceType::Remote => {
                 // Load from remote URL
@@ -182,26 +182,47 @@ impl ModelManager {
 
     /// Load model data from URL
     async fn load_from_url(&self, url: &str) -> Result<Vec<u8>> {
-        // Placeholder implementation
-        // In a real implementation, this would use HTTP client to fetch the model
-        error!("Remote model loading not implemented yet");
-        Err(AiCoreError::ExecutionFailed("Remote loading not implemented".to_string()))
+        // Support data: URLs for offline tests
+        if let Some(data) = url.strip_prefix("data:application/octet-stream;base64,") {
+            let bytes = base64::decode(data)
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 data URL: {e}")))?;
+            return Ok(bytes);
+        }
+
+        // Support hex-encoded payloads using hex:// prefix
+        if let Some(hex_data) = url.strip_prefix("hex://") {
+            let bytes = hex::decode(hex_data)
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid hex payload: {e}")))?;
+            return Ok(bytes);
+        }
+
+        // Minimal HTTP(S) client behind feature gates can be added later; return error for now
+        error!("Remote HTTP model loading not enabled in ai_core");
+        Err(AiCoreError::ExecutionFailed("Remote HTTP loading not enabled".to_string()))
     }
 
     /// Load model data from IPFS
     async fn load_from_ipfs(&self, hash: &str) -> Result<Vec<u8>> {
-        // Placeholder implementation
-        // In a real implementation, this would use IPFS client to fetch the model
-        error!("IPFS model loading not implemented yet");
-        Err(AiCoreError::ExecutionFailed("IPFS loading not implemented".to_string()))
+        // Allow embedding as ipfs://base64:<payload>
+        if let Some(b64) = hash.strip_prefix("base64:") {
+            let bytes = base64::decode(b64)
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 for IPFS: {e}")))?;
+            return Ok(bytes);
+        }
+        error!("IPFS client not available in ai_core");
+        Err(AiCoreError::ExecutionFailed("IPFS client not available".to_string()))
     }
 
     /// Load model data from blockchain storage
     async fn load_from_blockchain(&self, storage_key: &str) -> Result<Vec<u8>> {
-        // Placeholder implementation
-        // In a real implementation, this would query the blockchain for the model data
-        error!("Blockchain model loading not implemented yet");
-        Err(AiCoreError::ExecutionFailed("Blockchain loading not implemented".to_string()))
+        // Support embedded format chain://base64:<payload>
+        if let Some(b64) = storage_key.strip_prefix("base64:") {
+            let bytes = base64::decode(b64)
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 for chain: {e}")))?;
+            return Ok(bytes);
+        }
+        error!("Blockchain storage client not available in ai_core");
+        Err(AiCoreError::ExecutionFailed("Blockchain storage client not available".to_string()))
     }
 
     /// Validate model metadata
@@ -252,7 +273,7 @@ impl ModelManager {
 
         // Verify model hash
         let computed_hash = blake3::hash(data).to_hex();
-        if computed_hash != metadata.id.hash {
+        if computed_hash.as_str() != metadata.id.hash.as_str() {
             return Err(AiCoreError::ValidationFailed(
                 "Model hash verification failed".to_string()
             ));

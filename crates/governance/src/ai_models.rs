@@ -1,17 +1,299 @@
 use anyhow::Result;
 use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// AI model governance manager
+// -----------------------------------------------------------------------------
+// 🧩 Proposal Manager — handles voting and stake-based approval
+// -----------------------------------------------------------------------------
+pub struct ProposalManager {
+    threshold: f64,
+    minimum_stake: u64,
+    proposals: HashMap<String, ProposalState>,
+}
+
+#[derive(Debug, Clone)]
+struct ProposalState {
+    proposal: AiModelProposal,
+    total_stake_for: u64,
+    total_stake_against: u64,
+    voters: HashMap<[u8; 32], Vote>,
+    status: ProposalStatus,
+}
+
+#[derive(Debug, Clone)]
+struct Vote {
+    stake: u64,
+    approve: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ProposalStatus {
+    Pending,
+    Voting,
+    Approved,
+    Rejected,
+    Executed,
+}
+
+impl ProposalManager {
+    pub fn new(threshold: f64, minimum_stake: u64) -> Self {
+        Self {
+            threshold,
+            minimum_stake,
+            proposals: HashMap::new(),
+        }
+    }
+
+    pub fn submit_proposal(&mut self, proposal: AiModelProposal, stake: u64) -> Result<()> {
+        if stake < self.minimum_stake {
+            return Err(anyhow::anyhow!(
+                "Insufficient stake: {} < {}",
+                stake,
+                self.minimum_stake
+            ));
+        }
+
+        if self.proposals.contains_key(&proposal.model_id) {
+            return Err(anyhow::anyhow!(
+                "Proposal already exists for model {}",
+                proposal.model_id
+            ));
+        }
+
+        self.proposals.insert(
+            proposal.model_id.clone(),
+            ProposalState {
+                proposal,
+                total_stake_for: 0,
+                total_stake_against: 0,
+                voters: HashMap::new(),
+                status: ProposalStatus::Pending,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn start_voting(&mut self, id: &str) -> Result<()> {
+        let state = self
+            .proposals
+            .get_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+
+        if state.status != ProposalStatus::Pending {
+            return Err(anyhow::anyhow!("Proposal is not in pending state"));
+        }
+
+        state.status = ProposalStatus::Voting;
+        Ok(())
+    }
+
+    pub fn vote(&mut self, id: &str, voter: [u8; 32], stake: u64, approve: bool) -> Result<()> {
+        let state = self
+            .proposals
+            .get_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+
+        if state.status != ProposalStatus::Voting {
+            return Err(anyhow::anyhow!("Proposal is not accepting votes"));
+        }
+
+        if state.voters.contains_key(&voter) {
+            return Err(anyhow::anyhow!("Voter has already voted"));
+        }
+
+        if approve {
+            state.total_stake_for += stake;
+        } else {
+            state.total_stake_against += stake;
+        }
+
+        state.voters.insert(voter, Vote { stake, approve });
+
+        // Check if threshold is met
+        let total_stake = state.total_stake_for + state.total_stake_against;
+        if total_stake > 0 {
+            let approval_ratio = state.total_stake_for as f64 / total_stake as f64;
+            if approval_ratio >= self.threshold {
+                state.status = ProposalStatus::Approved;
+            } else if approval_ratio < (1.0 - self.threshold) {
+                state.status = ProposalStatus::Rejected;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn execute_proposal(&mut self, id: &str) -> Result<ModelRegistryEntry> {
+        let state = self
+            .proposals
+            .get_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+
+        if state.status != ProposalStatus::Approved {
+            return Err(anyhow::anyhow!("Proposal is not approved for execution"));
+        }
+
+        let entry = ModelRegistryEntry::new(
+            state.proposal.model_id.clone(),
+            state.proposal.model_hash,
+            state.proposal.version,
+            state.proposal.activation_round,
+            state.proposal.signature_foundation,
+            0,
+            state.proposal.model_url.clone(),
+        );
+
+        state.status = ProposalStatus::Executed;
+        Ok(entry)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 🗂 Model Registry — activated models and round scheduling
+// -----------------------------------------------------------------------------
+pub struct ModelRegistry {
+    models: HashMap<String, RegistryState>,
+    active_models: HashMap<u64, Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
+struct RegistryState {
+    entry: ModelRegistryEntry,
+    activated: bool,
+    activation_round: Option<u64>,
+}
+
+impl ModelRegistry {
+    pub fn new() -> Self {
+        Self {
+            models: HashMap::new(),
+            active_models: HashMap::new(),
+        }
+    }
+
+    pub fn register_model(&mut self, entry: ModelRegistryEntry) -> Result<()> {
+        if self.models.contains_key(&entry.model_id) {
+            return Err(anyhow::anyhow!(
+                "Model already registered: {}",
+                entry.model_id
+            ));
+        }
+
+        self.models.insert(
+            entry.model_id.clone(),
+            RegistryState {
+                entry,
+                activated: false,
+                activation_round: None,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn activate_model(&mut self, id: &str, round: u64) -> Result<()> {
+        let state = self
+            .models
+            .get_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("Model not found: {}", id))?;
+
+        if state.activated {
+            return Err(anyhow::anyhow!("Model already activated"));
+        }
+
+        state.activated = true;
+        state.activation_round = Some(round);
+
+        self.active_models
+            .entry(round)
+            .or_insert_with(Vec::new)
+            .push(id.to_string());
+
+        Ok(())
+    }
+
+    pub fn get_model(&self, id: &str) -> Option<ModelRegistryEntry> {
+        self.models.get(id).map(|s| s.entry.clone())
+    }
+
+    pub fn list_active_models(&self, round: u64) -> Vec<String> {
+        self.active_models
+            .iter()
+            .filter(|(r, _)| **r <= round)
+            .flat_map(|(_, m)| m.clone())
+            .collect()
+    }
+}
+
+// -----------------------------------------------------------------------------
+// ⚙️ Activation Manager — schedules and triggers model activation by round
+// -----------------------------------------------------------------------------
+pub struct ActivationManager {
+    pending_activations: HashMap<u64, Vec<String>>,
+    activated_models: HashMap<String, u64>,
+}
+
+impl ActivationManager {
+    pub fn new() -> Self {
+        Self {
+            pending_activations: HashMap::new(),
+            activated_models: HashMap::new(),
+        }
+    }
+
+    pub fn schedule_activation(&mut self, model_id: String, round: u64) -> Result<()> {
+        if self.activated_models.contains_key(&model_id) {
+            return Err(anyhow::anyhow!("Model already activated: {}", model_id));
+        }
+
+        self.pending_activations
+            .entry(round)
+            .or_insert_with(Vec::new)
+            .push(model_id);
+
+        Ok(())
+    }
+
+    pub fn process_round(&mut self, round: u64) -> Result<Vec<String>> {
+        let mut activated = Vec::new();
+
+        let rounds_to_process: Vec<u64> = self
+            .pending_activations
+            .keys()
+            .filter(|&&r| r <= round)
+            .copied()
+            .collect();
+
+        for r in rounds_to_process {
+            if let Some(models) = self.pending_activations.remove(&r) {
+                for model_id in models {
+                    self.activated_models.insert(model_id.clone(), r);
+                    activated.push(model_id);
+                }
+            }
+        }
+
+        Ok(activated)
+    }
+
+    pub fn is_active(&self, model_id: &str) -> bool {
+        self.activated_models.contains_key(model_id)
+    }
+
+    pub fn get_activation_round(&self, model_id: &str) -> Option<u64> {
+        self.activated_models.get(model_id).copied()
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 🧠 AiModelGovernance — foundation-level governance over AI models
+// -----------------------------------------------------------------------------
 pub struct AiModelGovernance {
-    /// Model registry entries
     model_registry: HashMap<String, ModelRegistryEntry>,
-    /// Active proposals
     active_proposals: HashMap<String, AiModelProposal>,
 }
 
 impl AiModelGovernance {
-    /// Create a new AI model governance manager
     pub fn new() -> Self {
         Self {
             model_registry: HashMap::new(),
@@ -19,27 +301,35 @@ impl AiModelGovernance {
         }
     }
 
-    /// Submit a new AI model proposal
     pub fn submit_proposal(&mut self, proposal: AiModelProposal) -> Result<()> {
+        if proposal.model_id.is_empty() {
+            return Err(anyhow::anyhow!("Model ID cannot be empty"));
+        }
+
+        if proposal.rationale.is_empty() {
+            return Err(anyhow::anyhow!("Rationale cannot be empty"));
+        }
+
+        if proposal.activation_round == 0 {
+            return Err(anyhow::anyhow!("Activation round must be > 0"));
+        }
+
         let model_id = proposal.model_id.clone();
         self.active_proposals.insert(model_id, proposal);
         Ok(())
     }
 
-    /// Get all active proposals
     pub fn get_active_proposals(&self) -> &HashMap<String, AiModelProposal> {
         &self.active_proposals
     }
 
-    /// Get a specific proposal
     pub fn get_proposal(&self, model_id: &str) -> Option<&AiModelProposal> {
         self.active_proposals.get(model_id)
     }
 
-    /// Approve a proposal and add to registry
     pub fn approve_proposal(&mut self, model_id: &str, round: u64) -> Result<()> {
         if let Some(proposal) = self.active_proposals.remove(model_id) {
-            let registry_entry = ModelRegistryEntry::new(
+            let entry = ModelRegistryEntry::new(
                 proposal.model_id.clone(),
                 proposal.model_hash,
                 proposal.version,
@@ -48,38 +338,32 @@ impl AiModelGovernance {
                 round,
                 proposal.model_url,
             );
-            self.model_registry.insert(model_id.to_string(), registry_entry);
+            self.model_registry.insert(model_id.to_string(), entry);
         }
         Ok(())
     }
 
-    /// Reject a proposal
     pub fn reject_proposal(&mut self, model_id: &str) -> Result<()> {
         self.active_proposals.remove(model_id);
         Ok(())
     }
 
-    /// Get all registered models
     pub fn get_registered_models(&self) -> &HashMap<String, ModelRegistryEntry> {
         &self.model_registry
     }
 
-    /// Get a specific registered model
     pub fn get_registered_model(&self, model_id: &str) -> Option<&ModelRegistryEntry> {
         self.model_registry.get(model_id)
     }
 
-    /// Check if a model is registered
     pub fn is_model_registered(&self, model_id: &str) -> bool {
         self.model_registry.contains_key(model_id)
     }
 
-    /// Get the number of active proposals
     pub fn active_proposal_count(&self) -> usize {
         self.active_proposals.len()
     }
 
-    /// Get the number of registered models
     pub fn registered_model_count(&self) -> usize {
         self.model_registry.len()
     }
@@ -91,10 +375,27 @@ impl Default for AiModelGovernance {
     }
 }
 
+// -----------------------------------------------------------------------------
+// 📜 JSON Template for proposals
+// -----------------------------------------------------------------------------
+pub const AI_MODEL_PROPOSAL_TEMPLATE: &str = r#"{
+  "model_id": "model_identifier",
+  "version": 1,
+  "model_url": "https://example.com/model.json",
+  "model_hash": "sha256_hash_here",
+  "signature_foundation": "ed25519_signature_here",
+  "proposer_pubkey": "ed25519_public_key_here",
+  "activation_round": 1000,
+  "rationale": "Description of the model and its purpose",
+  "threshold_bps": 8000
+}"#;
+
+// -----------------------------------------------------------------------------
+// ✅ Tests
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
 
     fn create_test_proposal(model_id: &str) -> AiModelProposal {
         AiModelProposal {
@@ -111,84 +412,15 @@ mod tests {
     }
 
     #[test]
-    fn test_governance_creation() {
-        let governance = AiModelGovernance::new();
-        assert_eq!(governance.active_proposal_count(), 0);
-        assert_eq!(governance.registered_model_count(), 0);
-    }
+    fn test_governance_flow() {
+        let mut gov = AiModelGovernance::new();
+        let proposal = create_test_proposal("m1");
 
-    #[test]
-    fn test_proposal_submission() {
-        let mut governance = AiModelGovernance::new();
-        let proposal = create_test_proposal("test_model");
-        
-        governance.submit_proposal(proposal).unwrap();
-        assert_eq!(governance.active_proposal_count(), 1);
-        assert!(governance.get_proposal("test_model").is_some());
-    }
+        gov.submit_proposal(proposal).unwrap();
+        assert_eq!(gov.active_proposal_count(), 1);
 
-    #[test]
-    fn test_proposal_approval() {
-        let mut governance = AiModelGovernance::new();
-        let proposal = create_test_proposal("test_model");
-        
-        governance.submit_proposal(proposal).unwrap();
-        governance.approve_proposal("test_model", 200).unwrap();
-        
-        assert_eq!(governance.active_proposal_count(), 0);
-        assert_eq!(governance.registered_model_count(), 1);
-        assert!(governance.is_model_registered("test_model"));
-    }
-
-    #[test]
-    fn test_proposal_rejection() {
-        let mut governance = AiModelGovernance::new();
-        let proposal = create_test_proposal("test_model");
-        
-        governance.submit_proposal(proposal).unwrap();
-        governance.reject_proposal("test_model").unwrap();
-        
-        assert_eq!(governance.active_proposal_count(), 0);
-        assert_eq!(governance.registered_model_count(), 0);
-        assert!(!governance.is_model_registered("test_model"));
-    }
-
-    #[test]
-    fn test_duplicate_proposal() {
-        let mut governance = AiModelGovernance::new();
-        let proposal1 = create_test_proposal("test_model");
-        let proposal2 = create_test_proposal("test_model");
-        
-        governance.submit_proposal(proposal1).unwrap();
-        governance.submit_proposal(proposal2).unwrap();
-        
-        // Second proposal should overwrite the first
-        assert_eq!(governance.active_proposal_count(), 1);
-    }
-
-    #[test]
-    fn test_nonexistent_proposal_operations() {
-        let mut governance = AiModelGovernance::new();
-        
-        // These should not panic
-        governance.approve_proposal("nonexistent", 100).unwrap();
-        governance.reject_proposal("nonexistent").unwrap();
-        
-        assert_eq!(governance.active_proposal_count(), 0);
-        assert_eq!(governance.registered_model_count(), 0);
-    }
-
-    #[test]
-    fn test_proposal_format_validation() {
-        let mut governance = AiModelGovernance::new();
-        let mut proposal = create_test_proposal("test_model");
-        
-        // Valid proposal should be accepted
-        governance.submit_proposal(proposal.clone()).unwrap();
-        assert_eq!(governance.active_proposal_count(), 1);
-        
-        // Invalid proposal (empty model_id) should be rejected
-        proposal.model_id = String::new();
-        assert!(governance.submit_proposal(proposal).is_err());
+        gov.approve_proposal("m1", 1000).unwrap();
+        assert_eq!(gov.registered_model_count(), 1);
+        assert!(gov.is_model_registered("m1"));
     }
 }

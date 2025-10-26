@@ -1,28 +1,14 @@
 use anyhow::Result;
-<<<<<<< HEAD
-#[cfg(feature = "ai_l1")]
-use ippan_ai_core::{features, gbdt::GbdtEvaluator, model::Model};
-#[cfg(feature = "ai_l1")]
-pub use ippan_ai_core::features::ValidatorTelemetry;
-#[cfg(not(feature = "ai_l1"))]
-use serde::{Deserialize, Serialize};
-#[cfg(not(feature = "ai_l1"))]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Model;
-=======
 use std::collections::HashMap;
 use rand::Rng;
 
 #[cfg(feature = "ai_l1")]
-use ippan_ai_core::{features, gbdt::GbdtEvaluator, model::Model};
-
-// -----------------------------------------------------------------------------
-// ✅ Fallback definitions when AI feature is disabled
-// -----------------------------------------------------------------------------
+use ippan_ai_core::{compute_validator_score, gbdt::GBDTModel};
+#[cfg(feature = "ai_l1")]
+pub use ippan_ai_core::features::ValidatorTelemetry;
 #[cfg(not(feature = "ai_l1"))]
 use serde::{Deserialize, Serialize};
 
->>>>>>> origin/main
 #[cfg(not(feature = "ai_l1"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorTelemetry {
@@ -37,63 +23,10 @@ pub struct ValidatorTelemetry {
     pub last_activity: u64,
     pub custom_metrics: HashMap<String, f64>,
 }
-use std::collections::HashMap;
-use rand::Rng;
-
-// (Mock types handled above when ai_l1 is disabled)
 
 #[cfg(not(feature = "ai_l1"))]
 #[derive(Debug, Clone)]
-pub struct Node {
-    pub feature_index: usize,
-    pub threshold: f64,
-    pub left: usize,
-    pub right: usize,
-    pub value: Option<f64>,
-}
-
-#[cfg(not(feature = "ai_l1"))]
-#[derive(Debug, Clone)]
-pub struct Tree {
-    pub nodes: Vec<Node>,
-}
-
-#[cfg(not(feature = "ai_l1"))]
-#[derive(Debug, Clone)]
-pub struct Model {
-    pub version: u32,
-    pub feature_count: usize,
-    pub tree_count: usize,
-    pub max_depth: usize,
-    pub trees: Vec<Tree>,
-}
-
-#[cfg(not(feature = "ai_l1"))]
-impl Model {
-    pub fn new(version: u32, feature_count: usize, tree_count: usize, max_depth: usize, trees: Vec<Tree>) -> Self {
-        Self { version, feature_count, tree_count, max_depth, trees }
-    }
-
-    pub fn validate(&self) -> Result<()> {
-        Ok(())
-    }
-}
-
-#[cfg(not(feature = "ai_l1"))]
-pub struct GbdtEvaluator {
-    model: Model,
-}
-
-#[cfg(not(feature = "ai_l1"))]
-impl GbdtEvaluator {
-    pub fn new(model: Model) -> Result<Self> {
-        Ok(Self { model })
-    }
-
-    pub fn evaluate(&self, _features: &[f64]) -> Result<i32> {
-        Ok(5000) // Default score
-    }
-}
+pub struct GBDTModel {}
 
 #[cfg(not(feature = "ai_l1"))]
 pub mod features {
@@ -121,7 +54,10 @@ pub mod features {
 /// Round-based consensus with AI reputation scoring
 pub struct RoundConsensus {
     current_round: u64,
-    active_model: Option<Model>,
+    #[cfg(feature = "ai_l1")]
+    active_model: Option<GBDTModel>,
+    #[cfg(not(feature = "ai_l1"))]
+    active_model: Option<GBDTModel>,
     validator_telemetry: HashMap<[u8; 32], ValidatorTelemetry>,
     reputation_scores: HashMap<[u8; 32], i32>,
 }
@@ -145,19 +81,9 @@ impl RoundConsensus {
         }
     }
 
-    pub fn set_active_model(&mut self, model: Model) -> Result<()> {
-<<<<<<< HEAD
-        #[cfg(feature = "ai_l1")]
-        {
-            model.validate()?;
-            self.active_model = Some(model);
-            self.reputation_scores.clear(); // Clear cache when model changes
-        }
-=======
-        model.validate()?;
+    pub fn set_active_model(&mut self, model: GBDTModel) -> Result<()> {
         self.active_model = Some(model);
         self.reputation_scores.clear();
->>>>>>> origin/main
         Ok(())
     }
 
@@ -176,29 +102,20 @@ impl RoundConsensus {
             None => return Ok(5000),
         };
 
-<<<<<<< HEAD
-        let score = {
-            // Get active model
-            let model = self.active_model.as_ref()
-                .ok_or_else(|| anyhow::anyhow!("No active AI model"))?;
-            // Extract features
-            let features = features::from_telemetry(telemetry)?;
-            // Evaluate with GBDT
-            let evaluator = GbdtEvaluator::new(model.clone())?;
-            evaluator.evaluate(&features)?
-        };
+        #[cfg(feature = "ai_l1")]
+        {
+            let model = match self.active_model.as_ref() {
+                Some(m) => m,
+                None => return Ok(5000),
+            };
+            let score = compute_validator_score(telemetry, model) as i32;
+            return Ok(score);
+        }
 
-        Ok(score)
-=======
-        let model = match self.active_model.as_ref() {
-            Some(m) => m,
-            None => return Ok(5000),
-        };
-
-        let features = features::from_telemetry(telemetry)?;
-        let evaluator = GbdtEvaluator::new(model.clone())?;
-        evaluator.evaluate(&features)
->>>>>>> origin/main
+        #[cfg(not(feature = "ai_l1"))]
+        {
+            Ok(5000)
+        }
     }
 
     pub fn select_validators(
@@ -286,7 +203,8 @@ impl RoundConsensus {
                 break;
             }
 
-            let selected_item = self.weighted_random_selection(&remaining_candidates, &remaining_weights)?;
+            let selected_item =
+                self.weighted_random_selection(&remaining_candidates, &remaining_weights)?;
             selected.push(selected_item);
             remaining_candidates.retain(|&x| x != selected_item);
             remaining_weights.remove(&selected_item);
@@ -320,58 +238,39 @@ impl Default for RoundConsensus {
 
 /// Convenience function to calculate reputation score
 #[cfg(feature = "ai_l1")]
-pub fn calculate_reputation_score(model: &Model, telemetry: &ValidatorTelemetry) -> Result<i32> {
-    let features = ippan_ai_core::features::from_telemetry(telemetry)?;
-    let evaluator = GbdtEvaluator::new(model.clone())?;
-    evaluator.evaluate(&features)
+pub fn calculate_reputation_score(model: &GBDTModel, telemetry: &ValidatorTelemetry) -> Result<i32> {
+    Ok(compute_validator_score(telemetry, model))
 }
 
-<<<<<<< HEAD
 #[cfg(not(feature = "ai_l1"))]
-pub fn calculate_reputation_score(_model: &Model, _telemetry: &ValidatorTelemetry) -> Result<i32> {
+pub fn calculate_reputation_score(_model: &GBDTModel, _telemetry: &ValidatorTelemetry) -> Result<i32> {
     Ok(5000)
 }
 
-#[cfg(all(test, feature = "ai_l1"))]
-=======
-// -----------------------------------------------------------------------------
-// ✅ Tests
-// -----------------------------------------------------------------------------
 #[cfg(test)]
->>>>>>> origin/main
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[cfg(feature = "ai_l1")]
-    fn create_test_model() -> Model {
-        Model::new(
-            1,
-            8,
-            1,
-            3,
-            vec![Tree {
-                nodes: vec![
-                    Node { feature_index: 0, threshold: 50.0, left: 1, right: 2, value: None },
-                    Node { feature_index: 0, threshold: 0.0, left: 0, right: 0, value: Some(1000.0) },
-                    Node { feature_index: 0, threshold: 0.0, left: 0, right: 0, value: Some(500.0) },
-                ],
-            }],
-        )
+    fn create_test_model() -> GBDTModel {
+        GBDTModel {
+            trees: vec![],
+            bias: 0,
+            scale: 10000,
+        }
     }
 
     #[cfg(feature = "ai_l1")]
     fn create_test_telemetry() -> ValidatorTelemetry {
-        ValidatorTelemetry {
-            validator_id: [1u8; 32],
-            block_production_rate: 12.5,
-            avg_block_size: 1200.0,
-            uptime: 0.98,
-            network_latency: 80.0,
-            validation_accuracy: 0.99,
-            stake: 1_500_000,
-            slashing_events: 0,
-            last_activity: 300,
-            custom_metrics: HashMap::new(),
+        ippan_ai_core::features::ValidatorTelemetry {
+            blocks_proposed: 1,
+            blocks_verified: 1,
+            rounds_active: 1,
+            avg_latency_us: 1,
+            slash_count: 0,
+            stake: 1,
+            age_rounds: 1,
         }
     }
 
@@ -392,24 +291,34 @@ mod tests {
         {
             let model = create_test_model();
             consensus.set_active_model(model).unwrap();
-
-            let validators = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
-            let mut stake_weights = HashMap::new();
-            stake_weights.insert([1u8; 32], 1000);
-            stake_weights.insert([2u8; 32], 2000);
-            stake_weights.insert([3u8; 32], 1500);
-
-            for validator in &validators {
-                let mut telemetry = create_test_telemetry();
-                telemetry.validator_id = *validator;
-                consensus.update_telemetry(*validator, telemetry);
-            }
-
-            let selection = consensus.select_validators(&validators, &stake_weights).unwrap();
-            assert!(validators.contains(&selection.proposer));
-            assert_eq!(selection.verifiers.len(), 3);
-            assert!(!selection.verifiers.contains(&selection.proposer));
         }
+
+        let validators = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
+        let mut stake_weights = HashMap::new();
+        stake_weights.insert([1u8; 32], 1000);
+        stake_weights.insert([2u8; 32], 2000);
+        stake_weights.insert([3u8; 32], 1500);
+
+        for validator in &validators {
+            let telemetry = ValidatorTelemetry {
+                validator_id: *validator,
+                block_production_rate: 1.0,
+                avg_block_size: 2.0,
+                uptime: 99.9,
+                network_latency: 0.2,
+                validation_accuracy: 0.98,
+                stake: 1000,
+                slashing_events: 0,
+                last_activity: 123456,
+                custom_metrics: HashMap::new(),
+            };
+            consensus.update_telemetry(*validator, telemetry);
+        }
+
+        let selection = consensus.select_validators(&validators, &stake_weights).unwrap();
+        assert!(validators.contains(&selection.proposer));
+        assert_eq!(selection.verifiers.len(), 3);
+        assert!(!selection.verifiers.contains(&selection.proposer));
     }
 
     #[test]

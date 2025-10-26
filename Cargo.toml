@@ -12,10 +12,15 @@ members = [
   "crates/time",
   "crates/ai_core",
   "crates/ai_registry",
+  "crates/ai_service",
   "crates/governance",
   "crates/economics",
   "crates/ippan_economics",
   "crates/treasury",
+  "crates/l2_fees",
+  "crates/l2_handle_registry",
+  "crates/l1_handle_anchors",
+  "crates/validator_resolution",
   "node",
 ]
 
