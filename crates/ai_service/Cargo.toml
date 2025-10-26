@@ -16,14 +16,14 @@ llm = ["reqwest"]
 # Analytics and insights
 analytics = ["chrono", "statistical"]
 # Smart contract AI features
-smart_contracts = ["wasmtime", "wasmtime-wasi"]
+smart_contracts = ["wasmtime", "wasmtime-wasi", "ippan-consensus"]
 # Advanced AI models
 advanced_models = ["candle-core", "candle-nn"]
 
 [dependencies]
 ippan-ai-core = { path = "../ai_core" }
 ippan-ai-registry = { path = "../ai_registry" }
-ippan-consensus = { path = "../consensus" }
+ippan-consensus = { path = "../consensus", optional = true }
 # Note: governance dependency removed to avoid circular dependencies
 # ippan-governance = { path = "../governance" }
 ippan-types = { path = "../types" }
@@ -36,12 +36,12 @@ async-trait = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true }
 
-# HTTP client for LLM APIs (using rustls to avoid OpenSSL)
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false, optional = true }
+# HTTP client for LLM APIs (using rustls to avoid system OpenSSL)
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
-# Time handling
+# Time handling (optional, behind analytics feature)
 chrono = { version = "0.4", features = ["serde"], optional = true }
 
 # Statistical analysis
@@ -63,7 +63,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 # Utilities
-uuid = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
 base64 = { workspace = true }
 hex = { workspace = true }
 blake3 = { workspace = true }

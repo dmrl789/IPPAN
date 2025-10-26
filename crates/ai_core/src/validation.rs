@@ -1,7 +1,7 @@
 //! Model validation and verification
 
 use crate::{
-    errors::{AiCoreError, Result},
+    errors::AiCoreError,
     types::*,
 };
 use std::collections::HashMap;
@@ -121,12 +121,12 @@ impl ModelValidator {
         &mut self,
         model_data: &[u8],
         metadata: &ModelMetadata,
-    ) -> Result<ValidationResult> {
+    ) -> std::result::Result<ValidationResult, AiCoreError> {
         info!("Validating model: {:?}", metadata.id);
         
         let start_time = std::time::Instant::now();
-        let mut errors = Vec::new();
-        let mut warnings = Vec::new();
+        let mut errors: Vec<ValidationError> = Vec::new();
+        let mut warnings: Vec<ValidationWarning> = Vec::new();
         
         // Run validation rules
         for rule in &self.rules {
@@ -299,7 +299,7 @@ impl ModelValidator {
         
         // Create test input data for determinism checking
         let test_input_size = metadata.input_shape.iter().product::<usize>() * 4; // Assume float32
-        let test_input = vec![42u8; test_input_size]; // Deterministic test input
+        let _test_input = vec![42u8; test_input_size]; // Deterministic test input
         
         // Check that model structure is deterministic
         // For GBDT models, ensure no random components
