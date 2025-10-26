@@ -172,14 +172,14 @@ impl RoundRewards {
         for participation in participations {
             if participation.uptime_score < Decimal::ZERO || participation.uptime_score > Decimal::ONE {
                 return Err(DistributionError::InvalidParticipation(format!(
-                    "Invalid uptime score for validator {}: {}",
+                    "Invalid uptime score for validator {:?}: {}",
                     participation.validator_id, participation.uptime_score
                 )));
             }
 
             if participation.blocks_contributed == 0 && participation.role != ValidatorRole::Observer {
                 return Err(DistributionError::InvalidParticipation(format!(
-                    "Non-observer validator {} contributed 0 blocks",
+                    "Non-observer validator {:?} contributed 0 blocks",
                     participation.validator_id
                 )));
             }
