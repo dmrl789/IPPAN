@@ -49,6 +49,14 @@ pub enum RegistryError {
     #[error("Database error: {0}")]
     Database(String),
     
+    /// Invalid token
+    #[error("Invalid token: {0}")]
+    InvalidToken(String),
+    
+    /// Invalid input
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+    
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),

@@ -22,6 +22,20 @@ pub mod service;
 pub use service::AIService;
 pub use errors::AIServiceError;
 pub use types::*;
+pub use monitoring::{
+    ServiceMonitor,
+    ServiceStatus,
+    ServiceMetrics,
+    ServiceMetricsSnapshot,
+    ServiceHealthReport,
+    MonitoringConfig,
+    AlertHandler,
+    ServiceAlert,
+    AlertType,
+    AlertSeverity,
+    ConsoleAlertHandler,
+    FileAlertHandler,
+};
 
 /// Re-export core AI functionality
 pub use ippan_ai_core::{

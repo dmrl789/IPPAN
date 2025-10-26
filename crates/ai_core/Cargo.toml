@@ -9,6 +9,13 @@ description = "Core AI utilities and deterministic evaluation helpers for IPPAN 
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = ["remote_loading"]
+# Enables AI reasoning embedded at L1 consensus level
+ai_l1 = []
+# Enable remote model loading
+remote_loading = ["reqwest"]
+
 [dependencies]
 ippan-types = { path = "../types" }
 anyhow = { workspace = true }
@@ -23,15 +30,11 @@ sha3 = { workspace = true }
 ed25519-dalek = { workspace = true }
 base64 = { workspace = true }
 tracing = { workspace = true }
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false, optional = true }
 tokio = { workspace = true }
-
-[features]
-default = ["remote_loading"]
-# Enables AI reasoning embedded at L1 consensus level
-ai_l1 = []
-# Enable remote model loading
-remote_loading = ["reqwest"]
+num_cpus = "1.0"
+toml = "0.8"
+tempfile = "3.0"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

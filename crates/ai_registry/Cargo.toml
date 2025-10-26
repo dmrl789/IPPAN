@@ -9,6 +9,11 @@ description = "AI model registry and governance interfaces for IPPAN L1."
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+# Exposes Axum-based API for registry management
+api = ["axum"]
+
 [dependencies]
 ippan-types = { path = "../types" }
 ippan-ai-core = { path = "../ai_core" }
@@ -29,10 +34,6 @@ bincode = "1.3"
 sled = { workspace = true }
 axum = { workspace = true, optional = true }
 tokio = { workspace = true }
-
-[features]
-default = []
-api = ["axum"]
 
 [dev-dependencies]
 rand = "0.8"

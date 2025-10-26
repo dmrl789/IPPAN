@@ -9,6 +9,18 @@
 use serde::{Deserialize, Serialize};
 use serde_bytes;
 
+pub mod errors;
+pub mod security;
+
+pub use security::{
+    SecurityManager,
+    SecurityConfig,
+    AuthToken,
+    UserPermissions,
+    RateLimiter,
+    SecurityStats,
+};
+
 /// Status of a model in the registry
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

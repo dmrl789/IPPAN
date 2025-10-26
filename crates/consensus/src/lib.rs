@@ -34,7 +34,7 @@ pub mod ordering;
 pub mod parallel_dag;
 pub mod reputation;
 pub mod emission;
-// pub mod emission_tracker;  // TODO: Re-enable after adapting to new emission API
+pub mod emission_tracker;
 pub mod fees;
 pub mod round;
 pub mod round_executor;
@@ -50,8 +50,7 @@ pub use emission::{
     calculate_round_reward, calculate_round_emission, distribute_dag_fair_rewards,
     calculate_fee_recycling, FeeRecyclingParams,
 };
-// TODO: Re-enable after adapting emission_tracker to new API
-// pub use emission_tracker::{EmissionStatistics, EmissionTracker};
+pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use l1_ai_consensus::{
     L1AIConsensus, L1AIConfig, NetworkState, ValidatorCandidate, 
@@ -168,8 +167,7 @@ pub struct PoAConsensus {
     pub round_consensus: Arc<RwLock<RoundConsensus>>,
     pub fee_collector: Arc<RwLock<FeeCollector>>,
     pub l1_ai_consensus: Arc<RwLock<L1AIConsensus>>,
-    // TODO: Re-enable after adapting emission_tracker to new API
-    // pub emission_tracker: Arc<RwLock<EmissionTracker>>,
+    pub emission_tracker: Arc<RwLock<EmissionTracker>>,
 }
 
 impl PoAConsensus {
@@ -198,10 +196,9 @@ impl PoAConsensus {
             current_round_blocks: Vec::new(),
         };
 
-        // TODO: Re-enable after adapting emission_tracker to new API
-        // let emission_params = DAGEmissionParams::default();
-        // let audit_interval = 6_048_000; // ~1 week at 100ms
-        // let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
+        let emission_params = DAGEmissionParams::default();
+        let audit_interval = 6_048_000; // ~1 week at 100ms
+        let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
 
         // Initialize L1 AI consensus with default config
         let ai_config = L1AIConfig::default();
@@ -220,8 +217,7 @@ impl PoAConsensus {
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
             l1_ai_consensus: Arc::new(RwLock::new(l1_ai_consensus)),
-            // TODO: Re-enable after adapting emission_tracker to new API
-            // emission_tracker: Arc::new(RwLock::new(emission_tracker)),
+            emission_tracker: Arc::new(RwLock::new(emission_tracker)),
         }
     }
 

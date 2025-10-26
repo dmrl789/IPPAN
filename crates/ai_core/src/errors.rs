@@ -1,46 +1,70 @@
-//! Error types for the AI Core module
+//! Error types for AI Core
 
 use thiserror::Error;
 
-/// Errors that can occur in the AI Core module
+/// Result type for AI Core operations
+pub type Result<T> = std::result::Result<T, AiCoreError>;
+
+/// AI Core error types
 #[derive(Error, Debug)]
 pub enum AiCoreError {
-    /// Model execution failed
-    #[error("Model execution failed: {0}")]
-    ExecutionFailed(String),
+    /// Execution error
+    #[error("Execution error: {0}")]
+    Execution(String),
     
-    /// Model validation failed
-    #[error("Model validation failed: {0}")]
-    ValidationFailed(String),
+    /// Validation error
+    #[error("Validation error: {0}")]
+    Validation(String),
     
-    /// Deterministic execution violation
-    #[error("Deterministic execution violation: {0}")]
-    DeterminismViolation(String),
+    /// Determinism error
+    #[error("Determinism error: {0}")]
+    Determinism(String),
     
-    /// Model format not supported
-    #[error("Unsupported model format: {0}")]
+    /// Unsupported format
+    #[error("Unsupported format: {0}")]
     UnsupportedFormat(String),
     
-    /// Invalid model parameters
-    #[error("Invalid model parameters: {0}")]
+    /// Invalid parameters
+    #[error("Invalid parameters: {0}")]
     InvalidParameters(String),
     
     /// I/O error
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(String),
     
     /// Serialization error
     #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
+    Serialization(String),
     
     /// Cryptographic error
     #[error("Cryptographic error: {0}")]
-    Crypto(String),
+    Cryptographic(String),
     
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),
 }
 
-/// Result type for AI Core operations
-pub type Result<T> = std::result::Result<T, AiCoreError>;
+impl From<std::io::Error> for AiCoreError {
+    fn from(err: std::io::Error) -> Self {
+        AiCoreError::Io(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AiCoreError {
+    fn from(err: serde_json::Error) -> Self {
+        AiCoreError::Serialization(err.to_string())
+    }
+}
+
+impl From<toml::de::Error> for AiCoreError {
+    fn from(err: toml::de::Error) -> Self {
+        AiCoreError::Serialization(err.to_string())
+    }
+}
+
+impl From<toml::ser::Error> for AiCoreError {
+    fn from(err: toml::ser::Error) -> Self {
+        AiCoreError::Serialization(err.to_string())
+    }
+}
