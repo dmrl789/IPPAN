@@ -4,10 +4,11 @@ use serde_json::json;
 use std::collections::HashMap;
 use ippan_economics_core::{EconomicsParameterManager, EconomicsParams};
 
-/// Economics / Emission parameters governed on-chain
-// Note: We reuse EconomicsParams from ippan_economics_core to avoid type drift
-
-/// Governance parameters
+/// Governance and Economics parameter management
+///
+/// This module defines on-chain governance parameters that can be modified
+/// through parameter proposals, subject to validator approval.
+/// It reuses `EconomicsParams` from `ippan_economics_core` to avoid type drift.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceParameters {
     pub min_proposal_stake: u64,
@@ -35,7 +36,7 @@ impl Default for GovernanceParameters {
     }
 }
 
-/// Parameter change proposal
+/// Represents a proposal to change a governance or economic parameter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParameterChangeProposal {
     pub proposal_id: String,
@@ -47,12 +48,11 @@ pub struct ParameterChangeProposal {
     pub created_at: u64,
 }
 
-/// Parameter manager for governance-controlled configs
+/// Parameter manager handling validation, proposal submission, and execution.
 pub struct ParameterManager {
     parameters: GovernanceParameters,
     change_history: Vec<ParameterChangeProposal>,
     pending_changes: HashMap<String, ParameterChangeProposal>,
-    economics_manager: EconomicsParameterManager,
 }
 
 impl ParameterManager {
@@ -61,7 +61,6 @@ impl ParameterManager {
             parameters: GovernanceParameters::default(),
             change_history: Vec::new(),
             pending_changes: HashMap::new(),
-            economics_manager: EconomicsParameterManager::new(),
         }
     }
 
@@ -70,12 +69,11 @@ impl ParameterManager {
     }
 
     pub fn get_economics_params(&self) -> &EconomicsParams {
-        self.economics_manager.get_current_params()
+        &self.parameters.economics
     }
 
     pub fn update_economics_params(&mut self, params: EconomicsParams) {
         self.parameters.economics = params.clone();
-        self.economics_manager = EconomicsParameterManager::with_params(params);
     }
 
     pub fn submit_parameter_change(&mut self, proposal: ParameterChangeProposal) -> Result<()> {
@@ -83,9 +81,13 @@ impl ParameterManager {
         self.validate_parameter_value(&proposal.parameter_name, &proposal.new_value)?;
 
         if self.pending_changes.contains_key(&proposal.proposal_id) {
-            return Err(anyhow::anyhow!("Proposal ID {} already exists", proposal.proposal_id));
+            return Err(anyhow::anyhow!(
+                "Proposal ID {} already exists",
+                proposal.proposal_id
+            ));
         }
-        self.pending_changes.insert(proposal.proposal_id.clone(), proposal);
+        self.pending_changes
+            .insert(proposal.proposal_id.clone(), proposal);
         Ok(())
     }
 
@@ -136,9 +138,11 @@ impl ParameterManager {
     fn validate_parameter_value(&self, name: &str, value: &serde_json::Value) -> Result<()> {
         match name {
             "voting_threshold" => {
-                let v = value.as_f64().ok_or_else(|| anyhow::anyhow!("must be f64"))?;
+                let v = value
+                    .as_f64()
+                    .ok_or_else(|| anyhow::anyhow!("must be f64"))?;
                 if !(0.0..=1.0).contains(&v) {
-                    return Err(anyhow::anyhow!("Voting threshold must be 0.0–1.0"));
+                    return Err(anyhow::anyhow!("Voting threshold must be between 0.0 and 1.0"));
                 }
             }
             _ => {
@@ -162,7 +166,8 @@ impl ParameterManager {
                 self.parameters.voting_duration = proposal.new_value.as_u64().unwrap();
             }
             "max_active_proposals" => {
-                self.parameters.max_active_proposals = proposal.new_value.as_u64().unwrap() as usize;
+                self.parameters.max_active_proposals =
+                    proposal.new_value.as_u64().unwrap() as usize;
             }
             "min_proposal_interval" => {
                 self.parameters.min_proposal_interval = proposal.new_value.as_u64().unwrap();
@@ -215,6 +220,9 @@ impl Default for ParameterManager {
     }
 }
 
+// -----------------------------------------------------------------------------
+// ✅ Tests
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;

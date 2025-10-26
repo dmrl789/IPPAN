@@ -4,7 +4,8 @@
 //! integrated with the DAG-Fair emission system.
 
 use crate::account_ledger::AccountLedger;
-use ippan_economics::{MicroIPN, Payouts, ValidatorId};
+use ippan_types::MicroIPN;
+use ippan_economics::{Payouts, ValidatorId};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -35,7 +36,7 @@ impl RewardSink {
             return Ok(());
         }
 
-        let round_total: MicroIPN = payouts.values().sum();
+        let round_total: MicroIPN = payouts.values().sum::<u128>();
         self.total_distributed_micro = self.total_distributed_micro.saturating_add(round_total);
         self.rounds.insert(round, payouts.clone());
 
@@ -56,7 +57,7 @@ impl RewardSink {
             .values()
             .flat_map(|p| p.get(vid))
             .copied()
-            .sum::<MicroIPN>()
+            .sum::<u128>()
     }
 
     /// Get payouts for a specific round
@@ -81,8 +82,8 @@ impl RewardSink {
 
         for (round, payouts) in &self.rounds {
             for (vid, amount) in payouts {
-                accounts.credit_validator(vid, *amount)?;
-                total_settled = total_settled.saturating_add(*amount);
+                accounts.credit_validator(vid, *amount as u128)?;
+                total_settled = total_settled.saturating_add(*amount as u128);
 
                 debug!(
                     target: "treasury",

@@ -8,6 +8,7 @@ use ippan_ai_core::{compute_validator_score, gbdt::GBDTModel};
 pub use ippan_ai_core::features::ValidatorTelemetry;
 #[cfg(not(feature = "ai_l1"))]
 use serde::{Deserialize, Serialize};
+
 #[cfg(not(feature = "ai_l1"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorTelemetry {
@@ -22,9 +23,6 @@ pub struct ValidatorTelemetry {
     pub last_activity: u64,
     pub custom_metrics: HashMap<String, f64>,
 }
-// (rand and HashMap already imported above)
-
-// (Mock types handled above when ai_l1 is disabled)
 
 #[cfg(not(feature = "ai_l1"))]
 #[derive(Debug, Clone)]
@@ -103,7 +101,7 @@ impl RoundConsensus {
             Some(t) => t,
             None => return Ok(5000),
         };
-        
+
         #[cfg(feature = "ai_l1")]
         {
             let model = match self.active_model.as_ref() {
@@ -113,9 +111,10 @@ impl RoundConsensus {
             let score = compute_validator_score(telemetry, model) as i32;
             return Ok(score);
         }
+
         #[cfg(not(feature = "ai_l1"))]
         {
-            return Ok(5000);
+            Ok(5000)
         }
     }
 
@@ -204,7 +203,8 @@ impl RoundConsensus {
                 break;
             }
 
-            let selected_item = self.weighted_random_selection(&remaining_candidates, &remaining_weights)?;
+            let selected_item =
+                self.weighted_random_selection(&remaining_candidates, &remaining_weights)?;
             selected.push(selected_item);
             remaining_candidates.retain(|&x| x != selected_item);
             remaining_weights.remove(&selected_item);
@@ -236,6 +236,7 @@ impl Default for RoundConsensus {
     }
 }
 
+/// Convenience function to calculate reputation score
 #[cfg(feature = "ai_l1")]
 pub fn calculate_reputation_score(model: &GBDTModel, telemetry: &ValidatorTelemetry) -> Result<i32> {
     Ok(compute_validator_score(telemetry, model))
@@ -249,9 +250,16 @@ pub fn calculate_reputation_score(_model: &GBDTModel, _telemetry: &ValidatorTele
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[cfg(feature = "ai_l1")]
-    fn create_test_model() -> GBDTModel { GBDTModel { trees: vec![], bias: 0, scale: 10000 } }
+    fn create_test_model() -> GBDTModel {
+        GBDTModel {
+            trees: vec![],
+            bias: 0,
+            scale: 10000,
+        }
+    }
 
     #[cfg(feature = "ai_l1")]
     fn create_test_telemetry() -> ValidatorTelemetry {
@@ -283,24 +291,34 @@ mod tests {
         {
             let model = create_test_model();
             consensus.set_active_model(model).unwrap();
-
-            let validators = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
-            let mut stake_weights = HashMap::new();
-            stake_weights.insert([1u8; 32], 1000);
-            stake_weights.insert([2u8; 32], 2000);
-            stake_weights.insert([3u8; 32], 1500);
-
-            for validator in &validators {
-                let mut telemetry = create_test_telemetry();
-                telemetry.validator_id = *validator;
-                consensus.update_telemetry(*validator, telemetry);
-            }
-
-            let selection = consensus.select_validators(&validators, &stake_weights).unwrap();
-            assert!(validators.contains(&selection.proposer));
-            assert_eq!(selection.verifiers.len(), 3);
-            assert!(!selection.verifiers.contains(&selection.proposer));
         }
+
+        let validators = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
+        let mut stake_weights = HashMap::new();
+        stake_weights.insert([1u8; 32], 1000);
+        stake_weights.insert([2u8; 32], 2000);
+        stake_weights.insert([3u8; 32], 1500);
+
+        for validator in &validators {
+            let telemetry = ValidatorTelemetry {
+                validator_id: *validator,
+                block_production_rate: 1.0,
+                avg_block_size: 2.0,
+                uptime: 99.9,
+                network_latency: 0.2,
+                validation_accuracy: 0.98,
+                stake: 1000,
+                slashing_events: 0,
+                last_activity: 123456,
+                custom_metrics: HashMap::new(),
+            };
+            consensus.update_telemetry(*validator, telemetry);
+        }
+
+        let selection = consensus.select_validators(&validators, &stake_weights).unwrap();
+        assert!(validators.contains(&selection.proposer));
+        assert_eq!(selection.verifiers.len(), 3);
+        assert!(!selection.verifiers.contains(&selection.proposer));
     }
 
     #[test]
