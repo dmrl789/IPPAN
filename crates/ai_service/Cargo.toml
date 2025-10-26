@@ -1,0 +1,72 @@
+[package]
+name = "ippan-ai-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "High-level AI service layer with LLM integration for IPPAN blockchain"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["llm", "analytics", "smart_contracts"]
+# LLM integration features
+llm = ["reqwest"]
+# Analytics and insights
+analytics = ["chrono", "statistical"]
+# Smart contract AI features
+smart_contracts = ["wasmtime", "wasmtime-wasi", "ippan-consensus"]
+# Advanced AI models
+advanced_models = ["candle-core", "candle-nn"]
+
+[dependencies]
+ippan-ai-core = { path = "../ai_core" }
+ippan-ai-registry = { path = "../ai_registry" }
+ippan-consensus = { path = "../consensus", optional = true }
+ippan-governance = { path = "../governance" }
+ippan-types = { path = "../types" }
+ippan-crypto = { path = "../crypto" }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP client for LLM APIs (use rustls to avoid system OpenSSL)
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"], optional = true }
+
+# Time handling (optional, behind analytics feature)
+chrono = { version = "0.4", features = ["serde"], optional = true }
+
+# Statistical analysis
+statistical = { version = "0.1", optional = true }
+
+# WebAssembly runtime for smart contracts
+wasmtime = { version = "15.0", optional = true }
+wasmtime-wasi = { version = "15.0", optional = true }
+
+# Advanced ML models
+candle-core = { version = "0.3", optional = true }
+candle-nn = { version = "0.3", optional = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+base64 = { workspace = true }
+hex = { workspace = true }
+blake3 = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3.0"

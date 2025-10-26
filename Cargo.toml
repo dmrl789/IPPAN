@@ -12,10 +12,15 @@ members = [
   "crates/time",
   "crates/ai_core",
   "crates/ai_registry",
+  "crates/ai_service",
   "crates/governance",
   "crates/economics",
   "crates/ippan_economics",
   "crates/treasury",
+  "crates/l2_fees",
+  "crates/l2_handle_registry",
+  "crates/l1_handle_anchors",
+  "crates/validator_resolution",
   "node",
 ]
 
@@ -84,3 +89,6 @@ async-trait = "0.1"
 log = "0.4"
 sha2 = "0.10"
 sha3 = "0.10"
+num-bigint = "0.4"
+num-traits = "0.2"
+rust_decimal = "1.32"

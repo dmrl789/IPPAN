@@ -325,14 +325,35 @@ fn handle_gossip_event(
                 GossipMsg::Block { block, stark_proof } => {
                     let hash = block.hash();
 
-                    // TODO: integrate zk-STARK verification
-                    if let Some(proof) = stark_proof {
+                    // Verify zk-STARK proof if present
+                    if let Some(proof_bytes) = stark_proof {
                         debug!(
                             "received zk-STARK proof of length {} for block {}",
-                            proof.len(),
+                            proof_bytes.len(),
                             hex::encode(hash)
                         );
-                        // verify_stark_proof(block, proof)?;  <-- integrate verifier here
+                        
+                        match crate::zk_stark::deserialize_proof(&proof_bytes) {
+                            Ok(proof) => {
+                                match crate::zk_stark::verify_stark_proof(&block, &proof) {
+                                    Ok(true) => {
+                                        debug!("zk-STARK proof verified successfully for block {}", hex::encode(hash));
+                                    }
+                                    Ok(false) => {
+                                        warn!("zk-STARK proof verification failed for block {}", hex::encode(hash));
+                                        return Ok(()); // Skip this block
+                                    }
+                                    Err(e) => {
+                                        warn!("Error verifying zk-STARK proof for block {}: {:?}", hex::encode(hash), e);
+                                        return Ok(()); // Skip this block
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to deserialize zk-STARK proof for block {}: {:?}", hex::encode(hash), e);
+                                return Ok(()); // Skip this block
+                            }
+                        }
                     }
 
                     match dag.insert_block(&block) {
@@ -376,8 +397,26 @@ fn broadcast_tips(
         match dag.get_block(&hash)? {
             Some(block) => {
                 if seen.insert(hash) {
-                    // TODO: generate zk-STARK proof before broadcasting
-                    let stark_proof: Option<Vec<u8>> = None;
+                    // Generate zk-STARK proof before broadcasting
+                    let stark_proof: Option<Vec<u8>> = match crate::zk_stark::generate_stark_proof(&block) {
+                        Ok(proof) => {
+                            match crate::zk_stark::serialize_proof(&proof) {
+                                Ok(bytes) => {
+                                    debug!("Generated zk-STARK proof ({} bytes) for block {}", bytes.len(), hex::encode(hash));
+                                    Some(bytes)
+                                }
+                                Err(e) => {
+                                    warn!("Failed to serialize zk-STARK proof for block {}: {:?}", hex::encode(hash), e);
+                                    None
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to generate zk-STARK proof for block {}: {:?}", hex::encode(hash), e);
+                            None
+                        }
+                    };
+                    
                     let payload = serde_json::to_vec(&GossipMsg::Block {
                         block: Box::new(block),
                         stark_proof,
