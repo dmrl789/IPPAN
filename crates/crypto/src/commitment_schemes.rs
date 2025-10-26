@@ -243,7 +243,7 @@ impl Commitment {
 
     /// Get the commitment value as base64
     pub fn to_base64(&self) -> String {
-        base64::encode(&self.value)
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &self.value)
     }
 }
 

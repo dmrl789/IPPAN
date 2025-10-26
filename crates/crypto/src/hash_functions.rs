@@ -306,7 +306,7 @@ impl HashResult {
     
     /// Get the hash as a base64 string
     pub fn to_base64(&self) -> String {
-        base64::encode(&self.hash)
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &self.hash)
     }
 }
 

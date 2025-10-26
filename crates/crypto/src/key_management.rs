@@ -30,7 +30,7 @@ impl KeyDerivation {
     pub fn scrypt_derive(password: &[u8], salt: &[u8], log_n: u8, r: u32, p: u32) -> Result<[u8; 32]> {
         use scrypt::{scrypt, Params};
 
-        let params = Params::new(log_n, r, p)
+        let params = Params::new(log_n, r, p, 32)
             .map_err(|_| anyhow!("Invalid scrypt parameters"))?;
         
         let mut key = [0u8; 32];
@@ -54,7 +54,7 @@ pub struct KeyStore {
 }
 
 /// Stored key information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct StoredKey {
     pub key_id: String,
     pub key_type: KeyType,
@@ -198,7 +198,7 @@ impl KeyStore {
     /// Encrypt key for storage
     fn encrypt_key(&self, key_data: &[u8], master_key: &[u8; 32]) -> Result<Vec<u8>> {
         use aes_gcm::{Aes256Gcm, Key, Nonce};
-        use aes_gcm::aead::{Aead, NewAead};
+        use aes_gcm::aead::{Aead, KeyInit};
 
         let key = Key::from_slice(master_key);
         let cipher = Aes256Gcm::new(key);
@@ -211,7 +211,7 @@ impl KeyStore {
     /// Decrypt key from storage
     fn decrypt_key(&self, encrypted_key: &[u8], master_key: &[u8; 32]) -> Result<Vec<u8>> {
         use aes_gcm::{Aes256Gcm, Key, Nonce};
-        use aes_gcm::aead::{Aead, NewAead};
+        use aes_gcm::aead::{Aead, KeyInit};
 
         let key = Key::from_slice(master_key);
         let cipher = Aes256Gcm::new(key);
@@ -330,7 +330,7 @@ impl KeyManager {
 }
 
 /// Key statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct KeyStats {
     pub total_keys: usize,
     pub cached_keys: usize,

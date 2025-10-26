@@ -55,7 +55,7 @@ impl AES256GCM {
     /// Encrypt data
     pub fn encrypt(&self, plaintext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u8>> {
         use aes_gcm::{Aes256Gcm, Key, Nonce};
-        use aes_gcm::aead::{Aead, NewAead};
+        use aes_gcm::aead::{Aead, KeyInit};
 
         let key = Key::from_slice(&self.key);
         let cipher = Aes256Gcm::new(key);
@@ -68,7 +68,7 @@ impl AES256GCM {
     /// Decrypt data
     pub fn decrypt(&self, ciphertext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u8>> {
         use aes_gcm::{Aes256Gcm, Key, Nonce};
-        use aes_gcm::aead::{Aead, NewAead};
+        use aes_gcm::aead::{Aead, KeyInit};
 
         let key = Key::from_slice(&self.key);
         let cipher = Aes256Gcm::new(key);
@@ -107,7 +107,7 @@ impl ChaCha20Poly1305 {
     /// Encrypt data
     pub fn encrypt(&self, plaintext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u8>> {
         use chacha20poly1305::{ChaCha20Poly1305 as Cipher, Key, Nonce};
-        use chacha20poly1305::aead::{Aead, NewAead};
+        use chacha20poly1305::aead::{Aead, KeyInit};
 
         let key = Key::from_slice(&self.key);
         let cipher = Cipher::new(key);
@@ -120,7 +120,7 @@ impl ChaCha20Poly1305 {
     /// Decrypt data
     pub fn decrypt(&self, ciphertext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u8>> {
         use chacha20poly1305::{ChaCha20Poly1305 as Cipher, Key, Nonce};
-        use chacha20poly1305::aead::{Aead, NewAead};
+        use chacha20poly1305::aead::{Aead, KeyInit};
 
         let key = Key::from_slice(&self.key);
         let cipher = Cipher::new(key);
@@ -225,11 +225,11 @@ pub struct PBKDF2;
 impl PBKDF2 {
     /// Derive key from password using PBKDF2
     pub fn derive_key(password: &[u8], salt: &[u8], iterations: u32) -> Result<[u8; 32]> {
-        use pbkdf2::{pbkdf2, Algorithm};
+        use pbkdf2::pbkdf2;
         use sha2::Sha256;
 
         let mut key = [0u8; 32];
-        pbkdf2(Algorithm::Sha256, password, salt, iterations, &mut key)
+        pbkdf2::<sha2::Sha256>(password, salt, iterations, &mut key)
             .map_err(|_| anyhow!("Key derivation failed"))?;
         Ok(key)
     }
@@ -248,7 +248,7 @@ pub struct Argon2;
 impl Argon2 {
     /// Hash password using Argon2
     pub fn hash_password(password: &[u8]) -> Result<String> {
-        use argon2::{Argon2, PasswordHasher};
+        use argon2::Argon2;
         use argon2::password_hash::{PasswordHash, PasswordHasher, SaltString};
 
         let salt = SaltString::generate(&mut OsRng);
@@ -263,7 +263,7 @@ impl Argon2 {
 
     /// Verify password against hash
     pub fn verify_password(password: &[u8], hash: &str) -> Result<bool> {
-        use argon2::{Argon2, PasswordHasher, PasswordVerifier};
+        use argon2::Argon2;
         use argon2::password_hash::{PasswordHash, PasswordVerifier};
 
         let parsed_hash = PasswordHash::new(hash)
