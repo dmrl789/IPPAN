@@ -4,98 +4,148 @@ use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Proposal manager for AI model governance
+/// Production proposal manager with voting and stake-based approval
 pub struct ProposalManager {
     threshold: f64,
-    min_stake: u64,
-    proposals: HashMap<String, AiModelProposal>,
-    votes: HashMap<String, HashMap<[u8; 32], (u64, bool)>>, // proposal_id -> (voter_id -> (stake, approve))
-    total_stake: u64,
+    minimum_stake: u64,
+    proposals: HashMap<String, ProposalState>,
+}
+
+#[derive(Debug, Clone)]
+struct ProposalState {
+    proposal: AiModelProposal,
+    total_stake_for: u64,
+    total_stake_against: u64,
+    voters: HashMap<[u8; 32], Vote>,
+    status: ProposalStatus,
+}
+
+#[derive(Debug, Clone)]
+struct Vote {
+    stake: u64,
+    approve: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ProposalStatus {
+    Pending,
+    Voting,
+    Approved,
+    Rejected,
+    Executed,
 }
 
 impl ProposalManager {
-    pub fn new(threshold: f64, min_stake: u64) -> Self {
+    pub fn new(threshold: f64, minimum_stake: u64) -> Self {
         Self {
             threshold,
-            min_stake,
+            minimum_stake,
             proposals: HashMap::new(),
-            votes: HashMap::new(),
-            total_stake: 0,
         }
     }
     
     pub fn submit_proposal(&mut self, proposal: AiModelProposal, stake: u64) -> Result<()> {
-        if stake < self.min_stake {
-            return Err(anyhow::anyhow!("Insufficient stake to submit proposal"));
+        if stake < self.minimum_stake {
+            return Err(anyhow::anyhow!("Insufficient stake: {} < {}", stake, self.minimum_stake));
         }
         
-        self.proposals.insert(proposal.model_id.clone(), proposal);
-        self.total_stake += stake;
+        if self.proposals.contains_key(&proposal.model_id) {
+            return Err(anyhow::anyhow!("Proposal already exists for model {}", proposal.model_id));
+        }
+        
+        self.proposals.insert(
+            proposal.model_id.clone(),
+            ProposalState {
+                proposal,
+                total_stake_for: 0,
+                total_stake_against: 0,
+                voters: HashMap::new(),
+                status: ProposalStatus::Pending,
+            },
+        );
         Ok(())
     }
     
     pub fn start_voting(&mut self, id: &str) -> Result<()> {
-        if !self.proposals.contains_key(id) {
-            return Err(anyhow::anyhow!("Proposal not found"));
+        let state = self.proposals.get_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+        
+        if state.status != ProposalStatus::Pending {
+            return Err(anyhow::anyhow!("Proposal is not in pending state"));
         }
         
-        self.votes.insert(id.to_string(), HashMap::new());
+        state.status = ProposalStatus::Voting;
         Ok(())
     }
     
     pub fn vote(&mut self, id: &str, voter: [u8; 32], stake: u64, approve: bool) -> Result<()> {
-        if let Some(votes) = self.votes.get_mut(id) {
-            votes.insert(voter, (stake, approve));
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Voting not started for this proposal"))
+        let state = self.proposals.get_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+        
+        if state.status != ProposalStatus::Voting {
+            return Err(anyhow::anyhow!("Proposal is not accepting votes"));
         }
+        
+        if state.voters.contains_key(&voter) {
+            return Err(anyhow::anyhow!("Voter has already voted"));
+        }
+        
+        if approve {
+            state.total_stake_for += stake;
+        } else {
+            state.total_stake_against += stake;
+        }
+        
+        state.voters.insert(voter, Vote { stake, approve });
+        
+        // Check if threshold is met
+        let total_stake = state.total_stake_for + state.total_stake_against;
+        if total_stake > 0 {
+            let approval_ratio = state.total_stake_for as f64 / total_stake as f64;
+            if approval_ratio >= self.threshold {
+                state.status = ProposalStatus::Approved;
+            } else if approval_ratio < (1.0 - self.threshold) {
+                state.status = ProposalStatus::Rejected;
+            }
+        }
+        
+        Ok(())
     }
     
     pub fn execute_proposal(&mut self, id: &str) -> Result<ModelRegistryEntry> {
-        if let Some(proposal) = self.proposals.get(id) {
-            if let Some(votes) = self.votes.get(id) {
-                let (total_approve_stake, total_stake) = votes.values()
-                    .fold((0u64, 0u64), |(approve, total), (stake, is_approve)| {
-                        if *is_approve {
-                            (approve + stake, total + stake)
-                        } else {
-                            (approve, total + stake)
-                        }
-                    });
-                
-                let approval_ratio = if total_stake > 0 {
-                    total_approve_stake as f64 / total_stake as f64
-                } else {
-                    0.0
-                };
-                
-                if approval_ratio >= self.threshold {
-                    Ok(ModelRegistryEntry::new(
-                        proposal.model_id.clone(),
-                        proposal.model_hash,
-                        proposal.version,
-                        proposal.activation_round,
-                        proposal.signature_foundation,
-                        0, // approved_round
-                        proposal.model_url.clone(),
-                    ))
-                } else {
-                    Err(anyhow::anyhow!("Proposal did not meet approval threshold"))
-                }
-            } else {
-                Err(anyhow::anyhow!("No votes recorded for this proposal"))
-            }
-        } else {
-            Err(anyhow::anyhow!("Proposal not found"))
+        let state = self.proposals.get_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+        
+        if state.status != ProposalStatus::Approved {
+            return Err(anyhow::anyhow!("Proposal is not approved for execution"));
         }
+        
+        let entry = ModelRegistryEntry::new(
+            state.proposal.model_id.clone(),
+            state.proposal.model_hash,
+            state.proposal.version,
+            state.proposal.activation_round,
+            state.proposal.signature_foundation,
+            0,
+            state.proposal.model_url.clone(),
+        );
+        
+        state.status = ProposalStatus::Executed;
+        Ok(entry)
     }
 }
 
-/// Model registry for managing approved AI models
+/// Production model registry with activation tracking
 pub struct ModelRegistry {
-    models: HashMap<String, ModelRegistryEntry>,
-    active_models: HashMap<String, u64>, // model_id -> activation_round
+    models: HashMap<String, RegistryState>,
+    active_models: HashMap<u64, Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
+struct RegistryState {
+    entry: ModelRegistryEntry,
+    activated: bool,
+    activation_round: Option<u64>,
 }
 
 impl ModelRegistry {
@@ -107,85 +157,108 @@ impl ModelRegistry {
     }
     
     pub fn register_model(&mut self, entry: ModelRegistryEntry) -> Result<()> {
-        self.models.insert(entry.model_id.clone(), entry);
+        if self.models.contains_key(&entry.model_id) {
+            return Err(anyhow::anyhow!("Model already registered: {}", entry.model_id));
+        }
+        
+        self.models.insert(
+            entry.model_id.clone(),
+            RegistryState {
+                entry,
+                activated: false,
+                activation_round: None,
+            },
+        );
         Ok(())
     }
     
     pub fn activate_model(&mut self, id: &str, round: u64) -> Result<()> {
-        if self.models.contains_key(id) {
-            self.active_models.insert(id.to_string(), round);
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Model not found in registry"))
+        let state = self.models.get_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("Model not found: {}", id))?;
+        
+        if state.activated {
+            return Err(anyhow::anyhow!("Model already activated"));
         }
+        
+        state.activated = true;
+        state.activation_round = Some(round);
+        
+        self.active_models
+            .entry(round)
+            .or_insert_with(Vec::new)
+            .push(id.to_string());
+        
+        Ok(())
     }
     
     pub fn get_model(&self, id: &str) -> Option<ModelRegistryEntry> {
-        self.models.get(id).cloned()
+        self.models.get(id).map(|state| state.entry.clone())
     }
     
-    pub fn is_active(&self, id: &str, current_round: u64) -> bool {
-        if let Some(activation_round) = self.active_models.get(id) {
-            current_round >= *activation_round
-        } else {
-            false
-        }
-    }
-    
-    pub fn get_active_models(&self, current_round: u64) -> Vec<ModelRegistryEntry> {
-        self.models.values()
-            .filter(|model| self.is_active(&model.model_id, current_round))
-            .cloned()
+    pub fn list_active_models(&self, round: u64) -> Vec<String> {
+        self.active_models
+            .iter()
+            .filter(|(r, _)| **r <= round)
+            .flat_map(|(_, models)| models.clone())
             .collect()
     }
 }
 
-/// Activation manager for processing model activations
+/// Production activation manager for scheduled model activations
 pub struct ActivationManager {
-    registry: ModelRegistry,
-    pending_activations: HashMap<String, u64>, // model_id -> activation_round
+    pending_activations: HashMap<u64, Vec<String>>,
+    activated_models: HashMap<String, u64>,
 }
 
 impl ActivationManager {
     pub fn new() -> Self {
         Self {
-            registry: ModelRegistry::new(),
             pending_activations: HashMap::new(),
+            activated_models: HashMap::new(),
         }
+    }
+    
+    pub fn schedule_activation(&mut self, model_id: String, round: u64) -> Result<()> {
+        if self.activated_models.contains_key(&model_id) {
+            return Err(anyhow::anyhow!("Model already activated: {}", model_id));
+        }
+        
+        self.pending_activations
+            .entry(round)
+            .or_insert_with(Vec::new)
+            .push(model_id);
+        
+        Ok(())
     }
     
     pub fn process_round(&mut self, round: u64) -> Result<Vec<String>> {
         let mut activated = Vec::new();
         
-        // Check for models that should be activated this round
-        for (model_id, activation_round) in self.pending_activations.iter() {
-            if *activation_round <= round {
-                if let Err(e) = self.registry.activate_model(model_id, round) {
-                    tracing::warn!("Failed to activate model {}: {}", model_id, e);
-                } else {
-                    activated.push(model_id.clone());
+        // Process all pending activations up to and including this round
+        let rounds_to_process: Vec<u64> = self.pending_activations
+            .keys()
+            .filter(|&&r| r <= round)
+            .copied()
+            .collect();
+        
+        for r in rounds_to_process {
+            if let Some(models) = self.pending_activations.remove(&r) {
+                for model_id in models {
+                    self.activated_models.insert(model_id.clone(), r);
+                    activated.push(model_id);
                 }
             }
-        }
-        
-        // Remove activated models from pending
-        for model_id in &activated {
-            self.pending_activations.remove(model_id);
         }
         
         Ok(activated)
     }
     
-    pub fn schedule_activation(&mut self, model_id: String, activation_round: u64) {
-        self.pending_activations.insert(model_id, activation_round);
+    pub fn is_active(&self, model_id: &str) -> bool {
+        self.activated_models.contains_key(model_id)
     }
     
-    pub fn get_registry(&self) -> &ModelRegistry {
-        &self.registry
-    }
-    
-    pub fn get_registry_mut(&mut self) -> &mut ModelRegistry {
-        &mut self.registry
+    pub fn get_activation_round(&self, model_id: &str) -> Option<u64> {
+        self.activated_models.get(model_id).copied()
     }
 }
 

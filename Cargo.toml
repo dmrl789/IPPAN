@@ -17,6 +17,10 @@ members = [
   "crates/economics",
   "crates/ippan_economics",
   "crates/treasury",
+  "crates/l2_fees",
+  "crates/l2_handle_registry",
+  "crates/l1_handle_anchors",
+  "crates/validator_resolution",
   "node",
 ]
 

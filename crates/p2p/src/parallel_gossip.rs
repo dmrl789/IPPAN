@@ -289,12 +289,12 @@ mod tests {
 
         match received_a.payload {
             GossipPayload::Block(inner) => assert_eq!(inner.hash(), block.hash()),
-            _ => panic!("unexpected payload"),
+            other => panic!("Expected Block payload, got: {:?}", other),
         }
 
         match received_b.payload {
             GossipPayload::Block(inner) => assert_eq!(inner.hash(), block.hash()),
-            _ => panic!("unexpected payload"),
+            other => panic!("Expected Block payload, got: {:?}", other),
         }
 
         let metrics = network.metrics();
@@ -319,7 +319,7 @@ mod tests {
         let received = subscriber.recv().await.unwrap();
         match received.payload {
             GossipPayload::DagMetadata(meta) => assert_eq!(meta, announcement),
-            other => panic!("unexpected payload: {other:?}"),
+            other => panic!("Expected DagMetadata payload, got: {other:?}"),
         }
     }
 

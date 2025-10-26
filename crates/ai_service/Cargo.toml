@@ -12,7 +12,7 @@ path = "src/lib.rs"
 [features]
 default = ["llm", "analytics", "smart_contracts"]
 # LLM integration features
-llm = ["reqwest", "serde_json", "tokio"]
+llm = ["reqwest"]
 # Analytics and insights
 analytics = ["chrono", "statistical"]
 # Smart contract AI features
@@ -35,7 +35,7 @@ async-trait = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, optional = true }
 
 # HTTP client for LLM APIs
 reqwest = { version = "0.11", features = ["json"], optional = true }

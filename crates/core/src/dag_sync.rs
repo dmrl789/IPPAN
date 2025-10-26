@@ -395,15 +395,15 @@ fn handle_gossip_event(
                     let hash = block.hash();
 
                     // Verify zk-STARK proof if present
-                    if let Some(proof) = stark_proof {
+                    if let Some(proof_bytes) = stark_proof {
                         debug!(
                             "received zk-STARK proof of length {} for block {}",
-                            proof.len(),
+                            proof_bytes.len(),
                             hex::encode(hash)
                         );
                         
-                        // Verify the zk-STARK proof
-                        if let Err(e) = self.verify_stark_proof(&block, &proof) {
+                        // Verify the zk-STARK proof using our implementation
+                        if let Err(e) = self.verify_stark_proof(&block, &proof_bytes) {
                             warn!("zk-STARK proof verification failed for block {}: {}", hex::encode(hash), e);
                             continue;
                         }

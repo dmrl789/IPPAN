@@ -38,6 +38,7 @@ pub mod emission_tracker;
 pub mod fees;
 pub mod round;
 pub mod round_executor;
+pub mod l1_ai_consensus;
 
 // ---------------------------------------------------------------------
 // Public re-exports
@@ -51,6 +52,10 @@ pub use emission::{
 };
 pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
+pub use l1_ai_consensus::{
+    L1AIConsensus, L1AIConfig, NetworkState, ValidatorCandidate, 
+    ValidatorSelectionResult, FeeOptimizationResult, NetworkHealthReport
+};
 pub use ordering::order_round;
 // Primary DAG-Fair emission integration from round_executor
 // Re-export RoundExecutor utilities once
@@ -161,11 +166,12 @@ pub struct PoAConsensus {
     pub finalization_interval: Duration,
     pub round_consensus: Arc<RwLock<RoundConsensus>>,
     pub fee_collector: Arc<RwLock<FeeCollector>>,
+    pub l1_ai_consensus: Arc<RwLock<L1AIConsensus>>,
     pub emission_tracker: Arc<RwLock<EmissionTracker>>,
 }
 
 impl PoAConsensus {
-    /// Create a new PoA consensus engine
+    /// Create a new PoA consensus engine with L1 AI integration
     pub fn new(
         config: PoAConfig,
         storage: Arc<dyn Storage + Send + Sync>,
@@ -194,6 +200,10 @@ impl PoAConsensus {
         let audit_interval = 6_048_000; // ~1 week at 100ms
         let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
 
+        // Initialize L1 AI consensus with default config
+        let ai_config = L1AIConfig::default();
+        let l1_ai_consensus = L1AIConsensus::new(ai_config);
+
         Self {
             config: config.clone(),
             storage: storage.clone(),
@@ -206,6 +216,7 @@ impl PoAConsensus {
             finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
+            l1_ai_consensus: Arc::new(RwLock::new(l1_ai_consensus)),
             emission_tracker: Arc::new(RwLock::new(emission_tracker)),
         }
     }
@@ -229,7 +240,7 @@ impl PoAConsensus {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
         *self.current_slot.write() = now / self.config.slot_duration_ms;
 
-        let (is_running, current_slot, config, storage, mempool, round_tracker, round_consensus, finalization_interval, validator_id, fee_collector) =
+        let (is_running, current_slot, config, storage, mempool, round_tracker, round_consensus, finalization_interval, validator_id, fee_collector, l1_ai_consensus) =
             (
                 self.is_running.clone(),
                 self.current_slot.clone(),
@@ -241,6 +252,7 @@ impl PoAConsensus {
                 self.finalization_interval,
                 self.validator_id,
                 self.fee_collector.clone(),
+                self.l1_ai_consensus.clone(),
             );
 
         let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
@@ -257,7 +269,7 @@ impl PoAConsensus {
                 }
 
                 let slot = *current_slot.read();
-                if let Some(proposer) = Self::select_proposer(&config, &round_consensus, slot) {
+                if let Some(proposer) = Self::select_proposer(&config, &round_consensus, slot, &l1_ai_consensus) {
                     if proposer == validator_id {
                         if let Err(e) =
                             Self::propose_block(&storage, &mempool, &config, &round_tracker, slot, validator_id)
@@ -292,6 +304,7 @@ impl PoAConsensus {
         config: &PoAConfig,
         round_consensus: &Arc<RwLock<RoundConsensus>>,
         slot: u64,
+        l1_ai: &Arc<RwLock<L1AIConsensus>>,
     ) -> Option<[u8; 32]> {
         let active: Vec<_> = config.validators.iter().filter(|v| v.is_active).map(|v| v.id).collect();
         if active.is_empty() {
@@ -299,12 +312,37 @@ impl PoAConsensus {
         }
 
         if config.enable_ai_reputation {
-            let weights: HashMap<[u8; 32], u64> =
-                config.validators.iter().map(|v| (v.id, v.stake)).collect();
-            match round_consensus.write().select_validators(&active, &weights) {
-                Ok(sel) => Some(sel.proposer),
+            // Use L1 AI consensus for validator selection
+            let candidates: Vec<ValidatorCandidate> = config.validators
+                .iter()
+                .filter(|v| v.is_active)
+                .map(|v| ValidatorCandidate {
+                    id: v.id,
+                    stake: v.stake,
+                    reputation_score: 8000, // Default reputation
+                    uptime_percentage: 99.0, // Default uptime
+                    recent_performance: 0.9, // Default performance
+                    network_contribution: 0.8, // Default contribution
+                })
+                .collect();
+
+            let network_state = NetworkState {
+                congestion_level: 0.3, // Default congestion
+                avg_block_time_ms: 200.0, // Default block time
+                active_validators: active.len(),
+                total_stake: config.validators.iter().map(|v| v.stake).sum(),
+                current_round: slot,
+                recent_tx_volume: 1000, // Default volume
+            };
+
+            match l1_ai.read().select_validator(&candidates, &network_state) {
+                Ok(result) => {
+                    info!("L1 AI selected validator: {} (confidence: {:.2})", 
+                          hex::encode(result.selected_validator), result.confidence_score);
+                    Some(result.selected_validator)
+                }
                 Err(e) => {
-                    warn!("AI selection failed: {e}");
+                    warn!("L1 AI selection failed: {e}, falling back to simple selection");
                     Self::fallback_proposer(&active, slot)
                 }
             }
@@ -489,7 +527,7 @@ impl PoAConsensus {
 
     pub fn get_state(&self) -> ConsensusState {
         let slot = *self.current_slot.read();
-        let proposer = Self::select_proposer(&self.config, &self.round_consensus, slot);
+        let proposer = Self::select_proposer(&self.config, &self.round_consensus, slot, &self.l1_ai_consensus);
         ConsensusState {
             current_slot: slot,
             current_proposer: proposer,
@@ -508,6 +546,33 @@ impl PoAConsensus {
     pub fn remove_validator(&mut self, id: &[u8; 32]) {
         self.config.validators.retain(|v| v.id != *id);
         info!("Removed validator {}", hex::encode(id));
+    }
+
+    /// Load GBDT models for L1 AI consensus
+    pub fn load_ai_models(
+        &self,
+        validator_model: Option<ippan_ai_core::gbdt::GBDTModel>,
+        fee_model: Option<ippan_ai_core::gbdt::GBDTModel>,
+        health_model: Option<ippan_ai_core::gbdt::GBDTModel>,
+        ordering_model: Option<ippan_ai_core::gbdt::GBDTModel>,
+    ) -> Result<(), String> {
+        self.l1_ai_consensus.write().load_models(
+            validator_model,
+            fee_model,
+            health_model,
+            ordering_model,
+        )
+    }
+
+    /// Get L1 AI consensus configuration
+    pub fn get_ai_config(&self) -> L1AIConfig {
+        self.l1_ai_consensus.read().config.clone()
+    }
+
+    /// Update L1 AI consensus configuration
+    pub fn update_ai_config(&self, config: L1AIConfig) {
+        self.l1_ai_consensus.write().config = config;
+        info!("L1 AI consensus configuration updated");
     }
 }
 
