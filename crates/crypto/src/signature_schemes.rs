@@ -81,15 +81,14 @@ impl MultiSig {
         
         let verifying_key = VerifyingKey::from_bytes(public_key)
             .map_err(|_| anyhow!("Invalid public key"))?;
-        let sig = Signature::from_bytes(signature)
-            .map_err(|_| anyhow!("Invalid signature"))?;
+        let sig = Signature::from_bytes(signature);
         
         Ok(verifying_key.verify(message, &sig).is_ok())
     }
 }
 
 /// Multi-signature structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct MultiSignature {
     pub signatures: Vec<[u8; 64]>,
     pub participants: Vec<[u8; 32]>,

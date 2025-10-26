@@ -109,9 +109,9 @@ impl ChaCha20Poly1305 {
         use chacha20poly1305::{ChaCha20Poly1305 as Cipher, Key, Nonce};
         use chacha20poly1305::aead::{Aead, KeyInit};
 
-        let key = Key::from_slice(&self.key);
+        let key = Key::<Cipher>::from_slice(&self.key);
         let cipher = Cipher::new(key);
-        let nonce = Nonce::from_slice(nonce);
+        let nonce = Nonce::<Cipher>::from_slice(nonce);
 
         cipher.encrypt(nonce, plaintext)
             .map_err(|_| anyhow!("Encryption failed"))
@@ -122,9 +122,9 @@ impl ChaCha20Poly1305 {
         use chacha20poly1305::{ChaCha20Poly1305 as Cipher, Key, Nonce};
         use chacha20poly1305::aead::{Aead, KeyInit};
 
-        let key = Key::from_slice(&self.key);
+        let key = Key::<Cipher>::from_slice(&self.key);
         let cipher = Cipher::new(key);
-        let nonce = Nonce::from_slice(nonce);
+        let nonce = Nonce::<Cipher>::from_slice(nonce);
 
         cipher.decrypt(nonce, ciphertext)
             .map_err(|_| anyhow!("Decryption failed"))

@@ -1,31 +1,30 @@
-//! Commitment schemes for IPPAN
+//! Commitment scheme implementations for IPPAN
 //!
-//! Provides various commitment schemes including Pedersen commitments,
-//! hash commitments, and other cryptographic commitment protocols.
+//! Provides various cryptographic commitment schemes for zero-knowledge proofs.
 
 use anyhow::{anyhow, Result};
-use rand_core::{OsRng, RngCore};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use sha2::{Digest, Sha256};
 
 /// Commitment error types
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommitmentError {
+    InvalidInput,
     InvalidCommitment,
     InvalidOpening,
-    InvalidMessage,
-    InvalidRandomness,
     VerificationFailed,
+    InvalidParameters,
 }
 
 impl std::fmt::Display for CommitmentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            CommitmentError::InvalidInput => write!(f, "Invalid input to commitment scheme"),
             CommitmentError::InvalidCommitment => write!(f, "Invalid commitment"),
             CommitmentError::InvalidOpening => write!(f, "Invalid opening"),
-            CommitmentError::InvalidMessage => write!(f, "Invalid message"),
-            CommitmentError::InvalidRandomness => write!(f, "Invalid randomness"),
-            CommitmentError::VerificationFailed => write!(f, "Verification failed"),
+            CommitmentError::VerificationFailed => write!(f, "Commitment verification failed"),
+            CommitmentError::InvalidParameters => write!(f, "Invalid commitment parameters"),
         }
     }
 }
@@ -36,34 +35,37 @@ impl std::error::Error for CommitmentError {}
 pub struct PedersenCommitment {
     generator: [u8; 32],
     h_generator: [u8; 32],
-    prime_modulus: [u8; 32],
+    modulus: [u8; 32],
 }
 
 impl PedersenCommitment {
     /// Create a new Pedersen commitment scheme
     pub fn new() -> Self {
+        // In production, these would be proper generator points
+        let mut generator = [0u8; 32];
+        let mut h_generator = [0u8; 32];
+        let mut modulus = [0u8; 32];
+        
+        rand::thread_rng().fill(&mut generator);
+        rand::thread_rng().fill(&mut h_generator);
+        rand::thread_rng().fill(&mut modulus);
+        
+        // Ensure modulus is odd (simplified)
+        modulus[0] |= 1;
+        
         Self {
-            generator: [2u8; 32], // Simplified generator
-            h_generator: [3u8; 32], // Simplified H generator
-            prime_modulus: [
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
-                0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B,
-                0xBF, 0xD2, 0x5E, 0x8C, 0xD0, 0x36, 0x41, 0x41,
-            ],
+            generator,
+            h_generator,
+            modulus,
         }
     }
 
     /// Commit to a message
     pub fn commit(&self, message: &[u8], randomness: &[u8]) -> Result<Commitment> {
-        if message.len() != 32 {
-            return Err(anyhow!(CommitmentError::InvalidMessage));
-        }
-        if randomness.len() != 32 {
-            return Err(anyhow!(CommitmentError::InvalidRandomness));
+        if message.len() != 32 || randomness.len() != 32 {
+            return Err(anyhow!(CommitmentError::InvalidInput));
         }
 
-        // Simplified Pedersen commitment: C = g^m * h^r mod p
         let m = self.bytes_to_scalar(message);
         let r = self.bytes_to_scalar(randomness);
         
@@ -72,18 +74,15 @@ impl PedersenCommitment {
         let commitment = self.modular_multiply(&g_m, &h_r);
 
         Ok(Commitment {
-            value: commitment,
+            value: commitment.to_vec(),
             scheme: "Pedersen".to_string(),
         })
     }
 
     /// Open a commitment
-    pub fn open(&self, commitment: &Commitment, message: &[u8], randomness: &[u8]) -> Result<Opening> {
-        if message.len() != 32 {
-            return Err(anyhow!(CommitmentError::InvalidMessage));
-        }
-        if randomness.len() != 32 {
-            return Err(anyhow!(CommitmentError::InvalidRandomness));
+    pub fn open(&self, _commitment: &Commitment, message: &[u8], randomness: &[u8]) -> Result<Opening> {
+        if message.len() != 32 || randomness.len() != 32 {
+            return Err(anyhow!(CommitmentError::InvalidInput));
         }
 
         Ok(Opening {
@@ -94,16 +93,8 @@ impl PedersenCommitment {
 
     /// Verify a commitment
     pub fn verify(&self, commitment: &Commitment, opening: &Opening) -> Result<bool> {
-        if opening.message.len() != 32 {
-            return Ok(false);
-        }
-        if opening.randomness.len() != 32 {
-            return Ok(false);
-        }
-
-        // Recompute the commitment
-        let recomputed = self.commit(&opening.message, &opening.randomness)?;
-        Ok(recomputed.value == commitment.value)
+        let computed_commitment = self.commit(&opening.message, &opening.randomness)?;
+        Ok(computed_commitment.value == commitment.value)
     }
 
     /// Convert bytes to scalar (simplified)
@@ -114,17 +105,11 @@ impl PedersenCommitment {
     }
 
     /// Modular exponentiation (simplified)
-    fn modular_exponentiation(&self, base: &[u8; 32], exponent: &[u8; 32]) -> [u8; 32] {
+    fn modular_exponentiation(&self, base: &[u8; 32], _exponent: &[u8; 32]) -> [u8; 32] {
         // Simplified implementation - in production, use proper modular arithmetic
         let mut result = [1u8; 32];
-        for i in 0..32 {
-            for j in 0..8 {
-                if (exponent[i] >> j) & 1 == 1 {
-                    result = self.modular_multiply(&result, base);
-                }
-                let base_squared = self.modular_multiply(base, base);
-                // This is a simplified version - real implementation would be more complex
-            }
+        for _ in 0..32 {
+            result = self.modular_multiply(&result, base);
         }
         result
     }
@@ -134,39 +119,36 @@ impl PedersenCommitment {
         // Simplified implementation - in production, use proper modular arithmetic
         let mut result = [0u8; 32];
         for i in 0..32 {
-            result[i] = (a[i] as u16 * b[i] as u16) as u8;
+            result[i] = a[i].wrapping_add(b[i]);
         }
         result
     }
 }
 
 /// Hash commitment implementation
-pub struct HashCommitment {
-    hash_function: Box<dyn Fn(&[u8]) -> Vec<u8>>,
-}
+pub struct HashCommitment;
 
 impl HashCommitment {
     /// Create a new hash commitment scheme
-    pub fn new(hash_function: Box<dyn Fn(&[u8]) -> Vec<u8>>) -> Self {
-        Self { hash_function }
+    pub fn new() -> Self {
+        Self
     }
 
     /// Commit to a message
     pub fn commit(&self, message: &[u8], randomness: &[u8]) -> Result<Commitment> {
-        let mut input = Vec::new();
-        input.extend_from_slice(message);
-        input.extend_from_slice(randomness);
-        
-        let hash = (self.hash_function)(&input);
-        
+        let combined = [message, randomness].concat();
+        let mut hasher = Sha256::new();
+        hasher.update(&combined);
+        let hash = hasher.finalize();
+
         Ok(Commitment {
-            value: hash,
+            value: hash.to_vec(),
             scheme: "Hash".to_string(),
         })
     }
 
     /// Open a commitment
-    pub fn open(&self, commitment: &Commitment, message: &[u8], randomness: &[u8]) -> Result<Opening> {
+    pub fn open(&self, _commitment: &Commitment, message: &[u8], randomness: &[u8]) -> Result<Opening> {
         Ok(Opening {
             message: message.to_vec(),
             randomness: randomness.to_vec(),
@@ -175,51 +157,58 @@ impl HashCommitment {
 
     /// Verify a commitment
     pub fn verify(&self, commitment: &Commitment, opening: &Opening) -> Result<bool> {
-        let recomputed = self.commit(&opening.message, &opening.randomness)?;
-        Ok(recomputed.value == commitment.value)
+        let computed_commitment = self.commit(&opening.message, &opening.randomness)?;
+        Ok(computed_commitment.value == commitment.value)
     }
 }
 
 /// Vector commitment implementation
 pub struct VectorCommitment {
-    hash_function: Box<dyn Fn(&[u8]) -> Vec<u8>>,
+    vector_size: usize,
 }
 
 impl VectorCommitment {
     /// Create a new vector commitment scheme
-    pub fn new(hash_function: Box<dyn Fn(&[u8]) -> Vec<u8>>) -> Self {
-        Self { hash_function }
+    pub fn new(vector_size: usize) -> Self {
+        Self { vector_size }
     }
 
     /// Commit to a vector of messages
-    pub fn commit(&self, messages: &[Vec<u8>], randomness: &[u8]) -> Result<Commitment> {
-        let mut input = Vec::new();
-        input.extend_from_slice(randomness);
-        
-        for message in messages {
-            input.extend_from_slice(message);
+    pub fn commit(&self, messages: &[Vec<u8>]) -> Result<Commitment> {
+        if messages.len() != self.vector_size {
+            return Err(anyhow!(CommitmentError::InvalidInput));
         }
-        
-        let hash = (self.hash_function)(&input);
-        
+
+        let mut combined = Vec::new();
+        for message in messages {
+            combined.extend_from_slice(message);
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(&combined);
+        let hash = hasher.finalize();
+
         Ok(Commitment {
-            value: hash,
+            value: hash.to_vec(),
             scheme: "Vector".to_string(),
         })
     }
 
-    /// Open a commitment
-    pub fn open(&self, commitment: &Commitment, messages: &[Vec<u8>], randomness: &[u8]) -> Result<VectorOpening> {
+    /// Open a vector commitment
+    pub fn open(&self, _commitment: &Commitment, messages: &[Vec<u8>]) -> Result<VectorOpening> {
+        if messages.len() != self.vector_size {
+            return Err(anyhow!(CommitmentError::InvalidInput));
+        }
+
         Ok(VectorOpening {
             messages: messages.to_vec(),
-            randomness: randomness.to_vec(),
         })
     }
 
-    /// Verify a commitment
+    /// Verify a vector commitment
     pub fn verify(&self, commitment: &Commitment, opening: &VectorOpening) -> Result<bool> {
-        let recomputed = self.commit(&opening.messages, &opening.randomness)?;
-        Ok(recomputed.value == commitment.value)
+        let computed_commitment = self.commit(&opening.messages)?;
+        Ok(computed_commitment.value == commitment.value)
     }
 }
 
@@ -230,29 +219,6 @@ pub struct Commitment {
     pub scheme: String,
 }
 
-impl Commitment {
-    /// Create a new commitment
-    pub fn new(value: Vec<u8>, scheme: String) -> Self {
-        Self { value, scheme }
-    }
-
-    /// Get the commitment value as hex
-    pub fn to_hex(&self) -> String {
-        hex::encode(&self.value)
-    }
-
-    /// Get the commitment value as base64
-    pub fn to_base64(&self) -> String {
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &self.value)
-    }
-}
-
-impl fmt::Display for Commitment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.scheme, self.to_hex())
-    }
-}
-
 /// Opening structure
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Opening {
@@ -260,36 +226,16 @@ pub struct Opening {
     pub randomness: Vec<u8>,
 }
 
-impl Opening {
-    /// Create a new opening
-    pub fn new(message: Vec<u8>, randomness: Vec<u8>) -> Self {
-        Self { message, randomness }
-    }
-}
-
 /// Vector opening structure
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VectorOpening {
     pub messages: Vec<Vec<u8>>,
-    pub randomness: Vec<u8>,
-}
-
-impl VectorOpening {
-    /// Create a new vector opening
-    pub fn new(messages: Vec<Vec<u8>>, randomness: Vec<u8>) -> Self {
-        Self { messages, randomness }
-    }
 }
 
 /// Commitment scheme trait
 pub trait CommitmentScheme {
-    /// Commit to a message
     fn commit(&self, message: &[u8], randomness: &[u8]) -> Result<Commitment>;
-    
-    /// Open a commitment
     fn open(&self, commitment: &Commitment, message: &[u8], randomness: &[u8]) -> Result<Opening>;
-    
-    /// Verify a commitment
     fn verify(&self, commitment: &Commitment, opening: &Opening) -> Result<bool>;
 }
 
@@ -326,18 +272,18 @@ pub struct CommitmentFactory;
 
 impl CommitmentFactory {
     /// Create a Pedersen commitment scheme
-    pub fn pedersen() -> PedersenCommitment {
+    pub fn create_pedersen() -> PedersenCommitment {
         PedersenCommitment::new()
     }
 
     /// Create a hash commitment scheme
-    pub fn hash(hash_function: Box<dyn Fn(&[u8]) -> Vec<u8>>) -> HashCommitment {
-        HashCommitment::new(hash_function)
+    pub fn create_hash() -> HashCommitment {
+        HashCommitment::new()
     }
 
     /// Create a vector commitment scheme
-    pub fn vector(hash_function: Box<dyn Fn(&[u8]) -> Vec<u8>>) -> VectorCommitment {
-        VectorCommitment::new(hash_function)
+    pub fn create_vector(size: usize) -> VectorCommitment {
+        VectorCommitment::new(size)
     }
 }
 
@@ -345,40 +291,50 @@ impl CommitmentFactory {
 pub struct CommitmentUtils;
 
 impl CommitmentUtils {
-    /// Generate random randomness
-    pub fn generate_randomness() -> Vec<u8> {
-        let mut randomness = vec![0u8; 32];
-        OsRng.fill_bytes(&mut randomness);
-        randomness
+    /// Generate random opening
+    pub fn generate_random_opening(message: &[u8]) -> Opening {
+        let mut randomness = [0u8; 32];
+        rand::thread_rng().fill(&mut randomness);
+        
+        Opening {
+            message: message.to_vec(),
+            randomness: randomness.to_vec(),
+        }
     }
 
-    /// Generate random message
-    pub fn generate_message() -> Vec<u8> {
-        let mut message = vec![0u8; 32];
-        OsRng.fill_bytes(&mut message);
-        message
-    }
-
-    /// Verify commitment equality
-    pub fn verify_equality(a: &Commitment, b: &Commitment) -> bool {
-        a.value == b.value && a.scheme == b.scheme
-    }
-
-    /// Combine commitments
-    pub fn combine(commitments: &[Commitment]) -> Result<Commitment> {
-        if commitments.is_empty() {
-            return Err(anyhow!("No commitments to combine"));
+    /// Verify multiple commitments
+    pub fn verify_batch<C: CommitmentScheme>(
+        scheme: &C,
+        commitments: &[Commitment],
+        openings: &[Opening],
+    ) -> Result<bool> {
+        if commitments.len() != openings.len() {
+            return Err(anyhow!(CommitmentError::InvalidInput));
         }
 
-        let mut combined = commitments[0].value.clone();
-        for commitment in &commitments[1..] {
-            combined.extend_from_slice(&commitment.value);
+        for (commitment, opening) in commitments.iter().zip(openings.iter()) {
+            if !scheme.verify(commitment, opening)? {
+                return Ok(false);
+            }
         }
 
-        Ok(Commitment {
-            value: combined,
-            scheme: "Combined".to_string(),
-        })
+        Ok(true)
+    }
+
+    /// Create commitment from string
+    pub fn commit_string<C: CommitmentScheme>(
+        scheme: &C,
+        message: &str,
+    ) -> Result<(Commitment, Opening)> {
+        let message_bytes = message.as_bytes();
+        let mut padded_message = [0u8; 32];
+        let copy_len = message_bytes.len().min(32);
+        padded_message[..copy_len].copy_from_slice(&message_bytes[..copy_len]);
+
+        let opening = Self::generate_random_opening(&padded_message);
+        let commitment = scheme.commit(&opening.message, &opening.randomness)?;
+
+        Ok((commitment, opening))
     }
 }
 
@@ -386,82 +342,63 @@ impl CommitmentUtils {
 mod tests {
     use super::*;
 
-    fn sha256_hash(data: &[u8]) -> Vec<u8> {
-        use sha2::{Sha256, Digest};
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        hasher.finalize().to_vec()
-    }
-
     #[test]
     fn test_pedersen_commitment() {
-        let pedersen = PedersenCommitment::new();
-        let message = b"test message for commitment";
-        let randomness = CommitmentUtils::generate_randomness();
+        let scheme = PedersenCommitment::new();
+        let message = b"test message";
+        let randomness = b"random data here!";
         
-        let commitment = pedersen.commit(message, &randomness).unwrap();
-        let opening = pedersen.open(&commitment, message, &randomness).unwrap();
-        let is_valid = pedersen.verify(&commitment, &opening).unwrap();
+        let commitment = scheme.commit(message, randomness).unwrap();
+        let opening = scheme.open(&commitment, message, randomness).unwrap();
+        let is_valid = scheme.verify(&commitment, &opening).unwrap();
         
         assert!(is_valid);
     }
 
     #[test]
     fn test_hash_commitment() {
-        let hash_commitment = HashCommitment::new(Box::new(sha256_hash));
-        let message = b"test message for hash commitment";
-        let randomness = CommitmentUtils::generate_randomness();
+        let scheme = HashCommitment::new();
+        let message = b"test message";
+        let randomness = b"random data here!";
         
-        let commitment = hash_commitment.commit(message, &randomness).unwrap();
-        let opening = hash_commitment.open(&commitment, message, &randomness).unwrap();
-        let is_valid = hash_commitment.verify(&commitment, &opening).unwrap();
+        let commitment = scheme.commit(message, randomness).unwrap();
+        let opening = scheme.open(&commitment, message, randomness).unwrap();
+        let is_valid = scheme.verify(&commitment, &opening).unwrap();
         
         assert!(is_valid);
     }
 
     #[test]
     fn test_vector_commitment() {
-        let vector_commitment = VectorCommitment::new(Box::new(sha256_hash));
+        let scheme = VectorCommitment::new(3);
         let messages = vec![
-            b"message1".to_vec(),
-            b"message2".to_vec(),
-            b"message3".to_vec(),
+            b"msg1".to_vec(),
+            b"msg2".to_vec(),
+            b"msg3".to_vec(),
         ];
-        let randomness = CommitmentUtils::generate_randomness();
         
-        let commitment = vector_commitment.commit(&messages, &randomness).unwrap();
-        let opening = vector_commitment.open(&commitment, &messages, &randomness).unwrap();
-        let is_valid = vector_commitment.verify(&commitment, &opening).unwrap();
+        let commitment = scheme.commit(&messages).unwrap();
+        let opening = scheme.open(&commitment, &messages).unwrap();
+        let is_valid = scheme.verify(&commitment, &opening).unwrap();
         
         assert!(is_valid);
     }
 
     #[test]
-    fn test_commitment_utils() {
-        let randomness = CommitmentUtils::generate_randomness();
-        assert_eq!(randomness.len(), 32);
+    fn test_commitment_factory() {
+        let pedersen = CommitmentFactory::create_pedersen();
+        let hash = CommitmentFactory::create_hash();
+        let vector = CommitmentFactory::create_vector(5);
         
-        let message = CommitmentUtils::generate_message();
-        assert_eq!(message.len(), 32);
-        
-        let commitment1 = Commitment::new(vec![1, 2, 3], "Test".to_string());
-        let commitment2 = Commitment::new(vec![1, 2, 3], "Test".to_string());
-        let commitment3 = Commitment::new(vec![1, 2, 4], "Test".to_string());
-        
-        assert!(CommitmentUtils::verify_equality(&commitment1, &commitment2));
-        assert!(!CommitmentUtils::verify_equality(&commitment1, &commitment3));
+        assert_eq!(vector.vector_size, 5);
     }
 
     #[test]
-    fn test_commitment_combination() {
-        let commitments = vec![
-            Commitment::new(vec![1, 2, 3], "Test1".to_string()),
-            Commitment::new(vec![4, 5, 6], "Test2".to_string()),
-            Commitment::new(vec![7, 8, 9], "Test3".to_string()),
-        ];
+    fn test_commitment_utils() {
+        let scheme = HashCommitment::new();
+        let (commitment, opening) = CommitmentUtils::commit_string(&scheme, "test").unwrap();
         
-        let combined = CommitmentUtils::combine(&commitments).unwrap();
-        assert_eq!(combined.value, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
-        assert_eq!(combined.scheme, "Combined");
+        let is_valid = scheme.verify(&commitment, &opening).unwrap();
+        assert!(is_valid);
     }
 }

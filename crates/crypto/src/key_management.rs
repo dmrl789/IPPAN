@@ -200,9 +200,9 @@ impl KeyStore {
         use aes_gcm::{Aes256Gcm, Key, Nonce};
         use aes_gcm::aead::{Aead, KeyInit};
 
-        let key = Key::from_slice(master_key);
+        let key = Key::<Aes256Gcm>::from_slice(master_key);
         let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(&[0u8; 12]); // In production, use random nonce
+        let nonce = Nonce::<Aes256Gcm>::from_slice(&[0u8; 12]); // In production, use random nonce
 
         cipher.encrypt(nonce, key_data)
             .map_err(|_| anyhow!("Key encryption failed"))
@@ -213,9 +213,9 @@ impl KeyStore {
         use aes_gcm::{Aes256Gcm, Key, Nonce};
         use aes_gcm::aead::{Aead, KeyInit};
 
-        let key = Key::from_slice(master_key);
+        let key = Key::<Aes256Gcm>::from_slice(master_key);
         let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(&[0u8; 12]); // In production, use stored nonce
+        let nonce = Nonce::<Aes256Gcm>::from_slice(&[0u8; 12]); // In production, use stored nonce
 
         cipher.decrypt(nonce, encrypted_key)
             .map_err(|_| anyhow!("Key decryption failed"))

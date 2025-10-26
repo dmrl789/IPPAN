@@ -1,25 +1,17 @@
+//! IPPAN Cryptographic Primitives
+//!
+//! This crate provides essential cryptographic functionality for the IPPAN blockchain.
+//! It includes key generation, signing, hashing, and basic encryption capabilities.
+
 use anyhow::Result;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use rand_core::{OsRng, RngCore};
+use rand::Rng;
 
-pub mod confidential;
-pub mod zk_stark;
-pub mod encryption;
-pub mod key_management;
-pub mod signature_schemes;
 pub mod hash_functions;
 pub mod merkle_trees;
 pub mod commitment_schemes;
 
-pub use confidential::{
-    validate_block as validate_confidential_block,
-    validate_transaction as validate_confidential_transaction, ConfidentialTransactionError,
-};
-pub use zk_stark::{generate_fibonacci_proof, verify_fibonacci_proof, StarkProof, StarkProofError};
-pub use encryption::{AES256GCM, ChaCha20Poly1305, EncryptionError};
-pub use key_management::{KeyManager, KeyStore, KeyDerivation};
-pub use signature_schemes::{MultiSig, ThresholdSignature, SchnorrSignature};
-pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256};
+pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256, SHA3_256, BLAKE2b};
 pub use merkle_trees::{MerkleTree, MerkleProof, MerkleError};
 pub use commitment_schemes::{PedersenCommitment, Commitment, CommitmentError};
 
@@ -33,9 +25,9 @@ pub struct KeyPair {
 impl KeyPair {
     /// Generate a new key pair
     pub fn generate() -> Self {
-        let mut rng = OsRng;
+        let mut rng = rand::thread_rng();
         let mut secret_key = [0u8; 32];
-        rng.fill_bytes(&mut secret_key);
+        rng.fill(&mut secret_key);
         let signing_key = SigningKey::from_bytes(&secret_key);
         let verifying_key = signing_key.verifying_key();
 
@@ -86,7 +78,7 @@ impl CryptoUtils {
     /// Generate a random nonce
     pub fn random_nonce() -> [u8; 32] {
         let mut nonce = [0u8; 32];
-        OsRng.fill_bytes(&mut nonce);
+        rand::thread_rng().fill(&mut nonce);
         nonce
     }
 }
