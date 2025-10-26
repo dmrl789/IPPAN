@@ -11,6 +11,7 @@
 //! - `execution`: Deterministic execution engine for packaged models
 //! - `models`: Model manager and loaders (local/remote)
 //! - `validation`: Model validation utilities
+//! - `determinism`: Deterministic execution utilities
 //! - `log`: Evaluation logging helpers
 
 pub mod config;
@@ -23,6 +24,7 @@ pub mod types;
 pub mod execution;
 pub mod models;
 pub mod validation;
+pub mod determinism;
 pub mod log;
 
 pub use config::{
@@ -72,7 +74,7 @@ pub use types::{
 };
 pub use errors::AiCoreError;
 
-/// Crate version string for metadata and validation reports
+/// AI Core version - crate version string for metadata and validation reports
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Deterministically sorts a vector for reproducible consensus behavior.
@@ -80,11 +82,12 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Used in various AI and reputation subsystems to ensure sorting
 /// consistency across nodes.
 pub fn deterministically_sorted<T: Ord>(mut items: Vec<T>) -> Vec<T> {
+    // Rust's sort is deterministic for a given input and ordering.
     items.sort();
     items
 }
 
-/// High-level deterministic validator reputation computation
+/// High-level deterministic validator reputation computation.
 ///
 /// Combines feature extraction and GBDT evaluation.
 /// Used by consensus to score validators in each round.

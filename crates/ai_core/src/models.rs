@@ -11,6 +11,9 @@ use crate::{
 use std::collections::HashMap;
 use std::fs;
 use tracing::{info, warn, error};
+
+/// Optional dependency for remote loading (activated via `remote_loading` feature)
+#[cfg(feature = "remote_loading")]
 use reqwest::Client;
 
 /// Model manager for loading and managing AI models
@@ -43,7 +46,7 @@ pub struct ModelSource {
     pub last_updated: u64,
 }
 
-/// Enumerates the supported source types
+/// Enumerates supported model source types
 #[derive(Debug, Clone)]
 pub enum SourceType {
     Local,
@@ -66,12 +69,9 @@ impl ModelManager {
         info!("Registering model: {:?}", metadata.id);
         self.validate_metadata(&metadata)?;
 
-        self.registry
-            .available
-            .insert(metadata.id.clone(), metadata.clone());
-        self.registry
-            .sources
-            .insert(metadata.id.clone(), source);
+        let model_id = metadata.id.clone();
+        self.registry.available.insert(model_id.clone(), metadata);
+        self.registry.sources.insert(model_id, source);
 
         info!("Model registered successfully");
         Ok(())
@@ -145,9 +145,7 @@ impl ModelManager {
     /// Core loader: read model data from any supported source type
     async fn load_model_data(&self, source: &ModelSource) -> Result<Vec<u8>> {
         match source.source_type {
-            SourceType::Local => {
-                fs::read(&source.location).map_err(AiCoreError::Io)
-            }
+            SourceType::Local => fs::read(&source.location).map_err(AiCoreError::Io),
             SourceType::Remote => self.load_from_url(&source.location).await,
             SourceType::Ipfs => self.load_from_ipfs(&source.location).await,
             SourceType::Blockchain => self.load_from_blockchain(&source.location).await,
@@ -156,69 +154,140 @@ impl ModelManager {
 
     /// Load model data from HTTP(S) URL
     async fn load_from_url(&self, url: &str) -> Result<Vec<u8>> {
-        // Support embedded test payloads
+        info!("Loading model from URL: {}", url);
+
+        // Support data: or hex:// inline encodings for offline or test use
         if let Some(data) = url.strip_prefix("data:application/octet-stream;base64,") {
             let bytes = base64::decode(data)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 data URL: {e}")))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 data URL: {}", e)))?;
             return Ok(bytes);
         }
 
         if let Some(hex_data) = url.strip_prefix("hex://") {
             let bytes = hex::decode(hex_data)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid hex payload: {e}")))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid hex payload: {}", e)))?;
             return Ok(bytes);
         }
 
-        // Production HTTP fetch
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to build HTTP client: {e}")))?;
-
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| AiCoreError::ExecutionFailed(format!("HTTP request failed: {e}")))?;
-
-        if !resp.status().is_success() {
-            return Err(AiCoreError::ExecutionFailed(format!(
-                "Remote fetch failed with status {}", resp.status()
-            )));
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            return Err(AiCoreError::InvalidParameters(
+                "Invalid URL: must start with http://, https://, data:, or hex://".to_string(),
+            ));
         }
 
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to read response body: {e}")))?;
-        Ok(bytes.to_vec())
+        // HTTP client enabled only when `remote_loading` feature is active
+        #[cfg(feature = "remote_loading")]
+        {
+            let client = Client::builder()
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to create HTTP client: {}", e)))?;
+
+            let response = client
+                .get(url)
+                .send()
+                .await
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to fetch model: {}", e)))?;
+
+            if !response.status().is_success() {
+                return Err(AiCoreError::ExecutionFailed(format!(
+                    "HTTP error: {}", response.status()
+                )));
+            }
+
+            let data = response
+                .bytes()
+                .await
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to read model data: {}", e)))?
+                .to_vec();
+
+            info!("Model loaded from URL successfully, size: {} bytes", data.len());
+            Ok(data)
+        }
+
+        #[cfg(not(feature = "remote_loading"))]
+        {
+            error!("Remote HTTP model loading not enabled (requires remote_loading feature)");
+            Err(AiCoreError::ExecutionFailed(
+                "Remote HTTP loading not enabled".to_string(),
+            ))
+        }
     }
 
-    /// Load model data from IPFS (using public gateways or embedded base64)
+    /// Load model data from IPFS (via gateways or embedded base64)
     async fn load_from_ipfs(&self, hash: &str) -> Result<Vec<u8>> {
+        info!("Loading model from IPFS: {}", hash);
+
         if let Some(b64) = hash.strip_prefix("base64:") {
             let bytes = base64::decode(b64)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 for IPFS: {e}")))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 for IPFS: {}", e)))?;
             return Ok(bytes);
         }
 
-        // Attempt fetch from public gateways
-        let url = format!("https://ipfs.io/ipfs/{hash}");
-        match self.load_from_url(&url).await {
-            Ok(bytes) => Ok(bytes),
-            Err(err) => {
-                let alt_url = format!("https://cloudflare-ipfs.com/ipfs/{hash}");
-                self.load_from_url(&alt_url).await.map_err(|_| err)
+        if !hash.starts_with("Qm") && !hash.starts_with("bafy") {
+            return Err(AiCoreError::InvalidParameters(
+                "Invalid IPFS hash format (must start with Qm or bafy, or use base64: prefix)"
+                    .to_string(),
+            ));
+        }
+
+        #[cfg(feature = "remote_loading")]
+        {
+            let gateways = vec![
+                format!("https://ipfs.io/ipfs/{}", hash),
+                format!("https://gateway.pinata.cloud/ipfs/{}", hash),
+                format!("https://cloudflare-ipfs.com/ipfs/{}", hash),
+                format!("https://dweb.link/ipfs/{}", hash),
+            ];
+
+            let client = Client::builder()
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to create HTTP client: {}", e)))?;
+
+            for gateway_url in &gateways {
+                info!("Trying IPFS gateway: {}", gateway_url);
+                match client.get(gateway_url).send().await {
+                    Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                        Ok(data) => {
+                            info!(
+                                "Model loaded from IPFS via {}, size: {} bytes",
+                                gateway_url,
+                                data.len()
+                            );
+                            return Ok(data.to_vec());
+                        }
+                        Err(e) => warn!("Failed to read data from {}: {}", gateway_url, e),
+                    },
+                    Ok(resp) => warn!("Gateway {} returned {}", gateway_url, resp.status()),
+                    Err(e) => warn!("Failed to connect to {}: {}", gateway_url, e),
+                }
             }
+
+            Err(AiCoreError::ExecutionFailed(
+                "Failed to load model from all IPFS gateways".to_string(),
+            ))
+        }
+
+        #[cfg(not(feature = "remote_loading"))]
+        {
+            error!("IPFS client not available (requires remote_loading feature)");
+            Err(AiCoreError::ExecutionFailed("IPFS client not available".to_string()))
         }
     }
 
     /// Load model data from blockchain storage (via gateway or embedded payload)
     async fn load_from_blockchain(&self, storage_key: &str) -> Result<Vec<u8>> {
+        info!("Loading model from blockchain storage: {}", storage_key);
+
         if let Some(b64) = storage_key.strip_prefix("base64:") {
             let bytes = base64::decode(b64)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 for chain: {e}")))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 for chain: {}", e)))?;
             return Ok(bytes);
+        }
+
+        if storage_key.is_empty() {
+            return Err(AiCoreError::InvalidParameters("Empty storage key".to_string()));
         }
 
         if let Ok(base) = std::env::var("IPPAN_GATEWAY_URL") {
@@ -228,9 +297,10 @@ impl ModelManager {
             }
         }
 
-        Err(AiCoreError::ExecutionFailed(
-            "Blockchain storage loading not available (set IPPAN_GATEWAY_URL)".to_string(),
-        ))
+        Err(AiCoreError::ExecutionFailed(format!(
+            "Blockchain model loading requires RPC or IPPAN_GATEWAY_URL (key: {})",
+            storage_key
+        )))
     }
 
     /// Validate model metadata structure
@@ -262,16 +332,12 @@ impl ModelManager {
     /// Validate integrity of loaded model data (size and hash)
     fn validate_model_data(&self, data: &[u8], metadata: &ModelMetadata) -> Result<()> {
         if data.len() as u64 != metadata.size_bytes {
-            return Err(AiCoreError::ValidationFailed(
-                "Model data size mismatch".to_string()
-            ));
+            return Err(AiCoreError::ValidationFailed("Model data size mismatch".to_string()));
         }
 
-        let computed_hash = blake3::hash(data).to_hex();
-        if computed_hash.as_str() != metadata.id.hash.as_str() {
-            return Err(AiCoreError::ValidationFailed(
-                "Model hash verification failed".to_string()
-            ));
+        let computed_hash = blake3::hash(data).to_hex().to_string();
+        if computed_hash != metadata.id.hash {
+            return Err(AiCoreError::ValidationFailed("Model hash verification failed".to_string()));
         }
 
         Ok(())
@@ -279,7 +345,6 @@ impl ModelManager {
 }
 
 impl ModelRegistry {
-    /// Create a new model registry
     pub fn new() -> Self {
         Self {
             available: HashMap::new(),
@@ -287,17 +352,14 @@ impl ModelRegistry {
         }
     }
 
-    /// List all registered model IDs
     pub fn list_models(&self) -> Vec<&ModelId> {
         self.available.keys().collect()
     }
 
-    /// Get metadata for a registered model
     pub fn get_model_metadata(&self, model_id: &ModelId) -> Option<&ModelMetadata> {
         self.available.get(model_id)
     }
 
-    /// Get source info for a registered model
     pub fn get_model_source(&self, model_id: &ModelId) -> Option<&ModelSource> {
         self.sources.get(model_id)
     }

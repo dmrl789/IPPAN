@@ -55,7 +55,8 @@ pub use ippan_ai_registry::{
 };
 
 /// Re-export governance functionality
-pub use ippan_governance::*;
+// Note: Removed to avoid circular dependencies
+// pub use ippan_governance::*;
 
 /// AI Service version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

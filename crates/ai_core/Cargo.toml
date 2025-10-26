@@ -10,9 +10,11 @@ description = "Core AI utilities and deterministic evaluation helpers for IPPAN 
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["remote_loading"]
 # Enables AI reasoning embedded at L1 consensus level
 ai_l1 = []
+# Enable remote model loading
+remote_loading = ["reqwest"]
 
 [dependencies]
 ippan-types = { path = "../types" }
@@ -32,7 +34,7 @@ tokio = { workspace = true }
 num_cpus = "1.0"
 toml = "0.8"
 tempfile = "3.0"
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
