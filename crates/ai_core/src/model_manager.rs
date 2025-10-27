@@ -10,6 +10,7 @@
 use crate::gbdt::{GBDTModel, GBDTError, ModelMetadata, SecurityConstraints, GBDTMetrics};
 use crate::model::ModelPackage;
 use anyhow::{Context, Result};
+use hex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -221,12 +222,22 @@ impl ModelManager {
 
         // Save model to disk
         let model_path = self.get_model_path(model_id);
+        // Calculate actual model hash
+        let model_hash_string = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);
+        let mut hash_sha256 = [0u8; 32];
+        // Convert hex string to bytes (truncate or pad as needed)
+        let hash_bytes = hex::decode(&model_hash_string).unwrap_or_else(|_| {
+            // If hex decode fails, use the string hash as bytes (truncated to 32 bytes)
+            model_hash_string.as_bytes().iter().take(32).cloned().collect()
+        });
+        hash_sha256[..hash_bytes.len().min(32)].copy_from_slice(&hash_bytes[..hash_bytes.len().min(32)]);
+        
         // Convert GBDT metadata to model metadata
         let model_metadata = crate::model::ModelMetadata {
             model_id: model_id.to_string(),
             version: 1, // Default version
             model_type: "gbdt".to_string(),
-            hash_sha256: [0u8; 32], // Will be calculated
+            hash_sha256,
             feature_count: model.metadata.feature_count,
             output_scale: model.scale,
             output_min: -10000,

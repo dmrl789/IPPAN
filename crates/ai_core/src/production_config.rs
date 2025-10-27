@@ -253,7 +253,7 @@ impl ProductionConfig {
         }
 
         // Validate monitoring configuration
-        if self.monitoring.metrics_interval_seconds == 0 {
+        if self.monitoring.interval_seconds == 0 {
             errors.push("Metrics interval must be greater than 0".to_string());
         }
 
@@ -620,8 +620,6 @@ pub mod templates {
         config.resources.max_cpu_percent = 25.0;
         
         config.monitoring.enable_performance_monitoring = false;
-        config.monitoring.enable_health_monitoring = false;
-        config.monitoring.enable_security_monitoring = false;
         
         config.security.enable_input_validation = false;
         config.security.enable_integrity_checking = false;
