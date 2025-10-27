@@ -13,6 +13,7 @@ use crate::model_manager::ModelManagerConfig;
 use crate::feature_engineering::FeatureEngineeringConfig;
 use crate::monitoring::MonitoringConfig;
 use crate::security::SecurityConfig;
+use crate::GBDTError;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -167,12 +168,20 @@ pub struct LoggingConfig {
 }
 
 /// Configuration manager for production deployments
-#[derive(Debug)]
 pub struct ProductionConfigManager {
     config: Arc<RwLock<ProductionConfig>>,
     config_path: PathBuf,
     last_loaded: Arc<RwLock<SystemTime>>,
     watchers: Arc<RwLock<Vec<Box<dyn ConfigWatcher + Send + Sync>>>>,
+}
+
+impl std::fmt::Debug for ProductionConfigManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProductionConfigManager")
+            .field("config_path", &self.config_path)
+            .field("watchers_count", &self.watchers.read().unwrap().len())
+            .finish()
+    }
 }
 
 /// Trait for configuration change watchers

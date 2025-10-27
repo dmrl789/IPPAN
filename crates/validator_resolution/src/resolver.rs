@@ -2,7 +2,7 @@
 
 use crate::types::*;
 use crate::errors::*;
-use ippan_ippan_economics::ValidatorId;
+use ippan_economics::ValidatorId;
 use ippan_l2_handle_registry::{L2HandleRegistry, Handle, PublicKey as L2PublicKey};
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use std::sync::Arc;
