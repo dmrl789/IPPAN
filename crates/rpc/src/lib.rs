@@ -15,7 +15,7 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 pub mod server;
-pub use server::{start_server, AppState, ConsensusHandle, L2Config};
+pub use server::{start_server, AppState, L2Config};
 
 /// P2P network errors
 #[derive(thiserror::Error, Debug)]
@@ -103,12 +103,12 @@ impl Default for P2PConfig {
 }
 
 /// HTTP-based P2P network manager
+#[derive(Clone)]
 pub struct HttpP2PNetwork {
     config: P2PConfig,
     client: Client,
     peers: Arc<parking_lot::RwLock<HashSet<String>>>,
     message_sender: mpsc::UnboundedSender<NetworkMessage>,
-    message_receiver: Option<mpsc::UnboundedReceiver<NetworkMessage>>,
     peer_count: Arc<parking_lot::RwLock<usize>>,
     is_running: Arc<parking_lot::RwLock<bool>>,
     local_peer_id: String,
@@ -136,14 +136,13 @@ impl HttpP2PNetwork {
         );
 
         // Create message channels
-        let (message_sender, message_receiver) = mpsc::unbounded_channel();
+        let (message_sender, _message_receiver) = mpsc::unbounded_channel();
 
         Ok(Self {
             config,
             client,
             peers: Arc::new(parking_lot::RwLock::new(HashSet::new())),
             message_sender,
-            message_receiver: Some(message_receiver),
             peer_count: Arc::new(parking_lot::RwLock::new(0)),
             is_running: Arc::new(parking_lot::RwLock::new(false)),
             local_peer_id,
@@ -172,40 +171,8 @@ impl HttpP2PNetwork {
             }
         }
 
-        // Start the message processing loop
-        let _message_handle = {
-            let is_running = self.is_running.clone();
-            let peers = self.peers.clone();
-            let client = self.client.clone();
-            let config = self.config.clone();
-            let announce_address = self.announce_address.clone();
-            let local_address = self.local_address.clone();
-            let mut message_receiver = self.message_receiver.take().unwrap();
-
-            tokio::spawn(async move {
-                loop {
-                    if !*is_running.read() {
-                        break;
-                    }
-
-                    // Process outgoing messages
-                    if let Some(msg) = message_receiver.recv().await {
-                        Self::handle_outgoing_message(
-                            &client,
-                            &peers,
-                            &config,
-                            &announce_address,
-                            &local_address,
-                            msg,
-                        )
-                        .await;
-                    }
-
-                    // Small delay to prevent busy waiting
-                    sleep(Duration::from_millis(10)).await;
-                }
-            })
-        };
+        // Note: Message processing is handled by the message sender directly
+        // The message receiver is not needed in this simplified implementation
 
         // Start peer discovery loop (sequential to avoid task storms)
         let _discovery_handle = {

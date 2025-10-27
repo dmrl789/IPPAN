@@ -1,0 +1,37 @@
+use ippan_rpc::{start_server, L2Config, P2PConfig};
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
+    // Configure P2P network
+    let p2p_config = P2PConfig {
+        listen_address: "http://0.0.0.0:9000".to_string(),
+        bootstrap_peers: vec![],
+        max_peers: 50,
+        peer_discovery_interval: Duration::from_secs(30),
+        message_timeout: Duration::from_secs(10),
+        retry_attempts: 3,
+        public_host: None,
+        enable_upnp: false,
+        external_ip_services: vec![
+            "https://api.ipify.org".to_string(),
+            "https://ifconfig.me/ip".to_string(),
+        ],
+        peer_announce_interval: Duration::from_secs(60),
+    };
+
+    // Configure L2 blockchain
+    let l2_config = L2Config::default();
+
+    // Start the RPC server
+    println!("Starting IPPAN RPC server on http://0.0.0.0:8080");
+    println!("P2P network listening on http://0.0.0.0:9000");
+    println!("Web UI available at http://localhost:8080");
+    
+    start_server("http://0.0.0.0:8080", p2p_config, l2_config).await?;
+
+    Ok(())
+}
