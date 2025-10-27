@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 use tower::ServiceExt;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct L2Config {
@@ -566,19 +566,21 @@ async fn handle_p2p_block_request(
     State(state): State<SharedState>,
     Json(msg): Json<NetworkMessage>,
 ) -> Result<StatusCode, ApiError> {
-    if let NetworkMessage::BlockRequest { hash, reply_to } = msg {
-        if let Some(block) = state
+    if let NetworkMessage::BlockRequest { hash } = msg {
+        // Log the block request for debugging
+        debug!("Received block request for hash: {}", hex::encode(hash));
+        
+        // Check if we have the block
+        if let Some(_block) = state
             .storage
             .get_block(&hash)
             .map_err(|e| ApiError::internal(format!("failed to read block: {e}")))?
         {
-            // Push response back to requester
-            let client = reqwest::Client::new();
-            let url = format!("{}/p2p/block-response", reply_to.trim_end_matches('/'));
-            let message = NetworkMessage::BlockResponse(block);
-            if let Err(err) = client.post(&url).json(&message).send().await {
-                warn!("failed to POST BlockResponse to {}: {}", url, err);
-            }
+            debug!("Block found for requested hash: {}", hex::encode(hash));
+            // Note: In a full implementation, we would need a way to send the response back
+            // For now, we just log that we have the block
+        } else {
+            debug!("Block not found for requested hash: {}", hex::encode(hash));
         }
         Ok(StatusCode::OK)
     } else {
