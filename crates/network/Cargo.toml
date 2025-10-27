@@ -12,3 +12,13 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Production networking dependencies
+blake3 = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+rand = { version = "0.8", features = ["std", "std_rng"] }

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::{future::join_all, stream, StreamExt};
 use ippan_types::{Block, IppanTimeMicros};
@@ -9,9 +9,14 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
-use tracing::warn;
+use tracing::{debug, warn};
+use sha2::{Sha256, Digest};
 
 use crate::peers::PeerDirectory;
+use crate::deduplication::MessageDeduplicator;
+use crate::reputation::ReputationManager;
+use crate::metrics::NetworkMetrics;
+use crate::health::HealthMonitor;
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
 
@@ -25,10 +30,20 @@ pub enum GossipMessage {
 
 /// Parallel gossip relay for block and transaction propagation.
 /// Each broadcast batch is sent concurrently to all connected peers.
+/// 
+/// Production features:
+/// - Message deduplication to prevent rebroadcasting
+/// - Peer reputation tracking
+/// - Network metrics collection
+/// - Connection health monitoring
 #[derive(Clone)]
 pub struct ParallelGossip {
     peers: Arc<RwLock<PeerDirectory>>,
     connect_timeout: Duration,
+    deduplicator: Arc<MessageDeduplicator>,
+    reputation: Arc<ReputationManager>,
+    metrics: Arc<NetworkMetrics>,
+    health: Arc<HealthMonitor>,
 }
 
 impl ParallelGossip {
@@ -36,6 +51,10 @@ impl ParallelGossip {
         Self {
             peers,
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
+            deduplicator: Arc::new(MessageDeduplicator::default()),
+            reputation: Arc::new(ReputationManager::default()),
+            metrics: Arc::new(NetworkMetrics::default()),
+            health: Arc::new(HealthMonitor::default()),
         }
     }
 
@@ -43,7 +62,36 @@ impl ParallelGossip {
         Self {
             peers,
             connect_timeout,
+            deduplicator: Arc::new(MessageDeduplicator::default()),
+            reputation: Arc::new(ReputationManager::default()),
+            metrics: Arc::new(NetworkMetrics::default()),
+            health: Arc::new(HealthMonitor::default()),
         }
+    }
+
+    /// Get network metrics snapshot
+    pub fn metrics(&self) -> crate::metrics::NetworkMetricsSnapshot {
+        self.metrics.snapshot()
+    }
+
+    /// Get reputation score for a peer
+    pub fn peer_reputation(&self, peer_address: &str) -> crate::reputation::ReputationScore {
+        self.reputation.get_score(peer_address)
+    }
+
+    /// Get health status for a peer
+    pub fn peer_health(&self, peer_address: &str) -> crate::health::PeerHealth {
+        self.health.get_health(peer_address)
+    }
+
+    /// Compute message hash for deduplication
+    fn compute_message_hash(payload: &[u8]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(payload);
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result[..]);
+        hash
     }
 
     pub async fn broadcast_blocks_parallel(&self, blocks: Vec<Block>) {
@@ -67,7 +115,7 @@ impl ParallelGossip {
             .for_each_concurrent(None, |block| {
                 let peers_snapshot = peers_snapshot.clone();
                 async move {
-                    let payload = match serde_json::to_vec(&GossipMessage::Block(Box::new(block))) {
+                    let payload = match serde_json::to_vec(&GossipMessage::Block(Box::new(block.clone()))) {
                         Ok(bytes) => Arc::<[u8]>::from(bytes),
                         Err(err) => {
                             warn!(
@@ -79,19 +127,52 @@ impl ParallelGossip {
                         }
                     };
 
+                    // Check for duplicate message
+                    let message_hash = Self::compute_message_hash(&payload);
+                    if !self.deduplicator.check_and_mark(message_hash) {
+                        debug!(
+                            target = "parallel_gossip",
+                            "skipping duplicate block broadcast",
+                        );
+                        return;
+                    }
+
                     let send_tasks = peers_snapshot.iter().map(|peer| {
                         let addr = peer.address.clone();
                         let payload = payload.clone();
+                        let reputation = self.reputation.clone();
+                        let metrics = self.metrics.clone();
+                        let health = self.health.clone();
                         async move {
-                            if let Err(error) =
-                                Self::send_to_peer(addr.clone(), payload.clone(), timeout).await
-                            {
-                                warn!(
+                            // Skip banned peers
+                            if reputation.should_ban(&addr) {
+                                debug!(
                                     target = "parallel_gossip",
                                     address = %addr,
-                                    error = %error,
-                                    "failed to send block gossip",
+                                    "skipping banned peer",
                                 );
+                                return;
+                            }
+
+                            let start = Instant::now();
+                            match Self::send_to_peer(addr.clone(), payload.clone(), timeout).await {
+                                Ok(()) => {
+                                    metrics.record_message_sent(payload.len());
+                                    metrics.record_latency(start.elapsed());
+                                    reputation.record_success(&addr);
+                                    health.record_success(&addr);
+                                }
+                                Err(error) => {
+                                    warn!(
+                                        target = "parallel_gossip",
+                                        address = %addr,
+                                        error = %error,
+                                        "failed to send block gossip",
+                                    );
+                                    metrics.record_message_failed();
+                                    reputation.record_failure(&addr);
+                                    health.record_failure(&addr);
+                                }
                             }
                         }
                     });
@@ -148,7 +229,7 @@ impl ParallelGossip {
                     }
 
                     let payload = match serde_json::to_vec(&GossipMessage::Transactions {
-                        id: gossip_id,
+                        id: gossip_id.clone(),
                         txs,
                     }) {
                         Ok(bytes) => Arc::<[u8]>::from(bytes),
@@ -162,19 +243,52 @@ impl ParallelGossip {
                         }
                     };
 
+                    // Check for duplicate message
+                    let message_hash = Self::compute_message_hash(&payload);
+                    if !self.deduplicator.check_and_mark(message_hash) {
+                        debug!(
+                            target = "parallel_gossip",
+                            "skipping duplicate transaction batch broadcast",
+                        );
+                        return;
+                    }
+
                     let send_tasks = peers_snapshot.iter().map(|peer| {
                         let addr = peer.address.clone();
                         let payload = payload.clone();
+                        let reputation = self.reputation.clone();
+                        let metrics = self.metrics.clone();
+                        let health = self.health.clone();
                         async move {
-                            if let Err(error) =
-                                Self::send_to_peer(addr.clone(), payload.clone(), timeout).await
-                            {
-                                warn!(
+                            // Skip banned peers
+                            if reputation.should_ban(&addr) {
+                                debug!(
                                     target = "parallel_gossip",
                                     address = %addr,
-                                    error = %error,
-                                    "failed to send transaction gossip",
+                                    "skipping banned peer",
                                 );
+                                return;
+                            }
+
+                            let start = Instant::now();
+                            match Self::send_to_peer(addr.clone(), payload.clone(), timeout).await {
+                                Ok(()) => {
+                                    metrics.record_message_sent(payload.len());
+                                    metrics.record_latency(start.elapsed());
+                                    reputation.record_success(&addr);
+                                    health.record_success(&addr);
+                                }
+                                Err(error) => {
+                                    warn!(
+                                        target = "parallel_gossip",
+                                        address = %addr,
+                                        error = %error,
+                                        "failed to send transaction gossip",
+                                    );
+                                    metrics.record_message_failed();
+                                    reputation.record_failure(&addr);
+                                    health.record_failure(&addr);
+                                }
                             }
                         }
                     });

@@ -6,23 +6,58 @@ pub struct Peer {
     pub id: Option<String>,
     pub address: String,
     pub connected: bool,
+    pub last_seen: Option<u64>,
+    pub first_connected: Option<u64>,
 }
 
 impl Peer {
     pub fn new<S: Into<String>>(address: S) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
         Self {
             id: None,
             address: address.into(),
             connected: true,
+            last_seen: Some(now),
+            first_connected: Some(now),
         }
     }
 
     pub fn with_id<I: Into<String>, A: Into<String>>(id: I, address: A) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
         Self {
             id: Some(id.into()),
             address: address.into(),
             connected: true,
+            last_seen: Some(now),
+            first_connected: Some(now),
         }
+    }
+
+    /// Update the last seen timestamp
+    pub fn update_last_seen(&mut self) {
+        self.last_seen = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        );
+    }
+    
+    /// Get uptime in seconds
+    pub fn uptime_seconds(&self) -> Option<u64> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        self.first_connected.map(|first| now.saturating_sub(first))
     }
 }
 
@@ -53,7 +88,20 @@ impl PeerDirectory {
     pub fn mark_connected<S: AsRef<str>>(&mut self, address: S, connected: bool) {
         if let Some(peer) = self.peers.get_mut(address.as_ref()) {
             peer.connected = connected;
+            if connected {
+                peer.update_last_seen();
+            }
         }
+    }
+
+    pub fn update_last_seen<S: AsRef<str>>(&mut self, address: S) {
+        if let Some(peer) = self.peers.get_mut(address.as_ref()) {
+            peer.update_last_seen();
+        }
+    }
+
+    pub fn get_peer<S: AsRef<str>>(&self, address: S) -> Option<&Peer> {
+        self.peers.get(address.as_ref())
     }
 
     pub fn list_connected(&self) -> Vec<Peer> {
