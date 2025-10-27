@@ -31,6 +31,7 @@ pub mod log;
 pub mod production_config;
 pub mod deployment;
 pub mod tests;
+pub mod deterministic_gbdt;
 
 pub use config::{
     AiCoreConfig,
