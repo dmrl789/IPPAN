@@ -455,12 +455,24 @@ impl TestSuite {
 
 /// Create a test GBDT model
 fn create_test_model() -> GBDTModel {
+    create_test_model_inner()
+}
+
+fn create_test_model_inner() -> GBDTModel {
+    use crate::gbdt::{Tree, Node};
     GBDTModel::new(
-        vec![],
+        vec![Tree {
+            nodes: vec![Node {
+                feature_index: 0,
+                threshold: 0,
+                left: 0,
+                right: 0,
+                value: Some(100),
+            }],
+        }],
         0,
         10000,
-        SecurityConstraints::default(),
-        FeatureNormalization::default(),
+        1, // feature_count
     ).unwrap()
 }
 
@@ -631,15 +643,19 @@ pub mod test_utils {
 
     /// Create test data
     pub fn create_test_data(size: usize) -> RawFeatureData {
+        use std::collections::HashMap;
         RawFeatureData {
             features: vec![vec![1.0; 10]; size],
-            labels: vec![0; size],
+            feature_names: (0..10).map(|i| format!("feature_{}", i)).collect(),
+            sample_count: size,
+            feature_count: 10,
+            metadata: HashMap::new(),
         }
     }
 
-    /// Create test model
+    /// Create test model  
     pub fn create_test_model() -> GBDTModel {
-        create_test_model()
+        create_test_model_inner()
     }
 
     /// Wait for condition with timeout

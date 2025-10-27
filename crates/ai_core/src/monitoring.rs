@@ -268,7 +268,7 @@ impl MonitoringSystem {
         let system_metrics = self.collect_system_metrics()?;
         let model_metrics = self.collect_model_metrics()?;
         let security_metrics = self.collect_security_metrics()?;
-        let health_status = *self.health_status.read().unwrap();
+        let health_status = self.health_status.read().unwrap().clone();
 
         Ok(SystemMetrics {
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),

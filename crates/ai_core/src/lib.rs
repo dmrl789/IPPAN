@@ -31,14 +31,16 @@ pub mod log;
 pub mod production_config;
 pub mod deployment;
 pub mod tests;
+pub mod monitoring;
+pub mod security;
 
 pub use config::{
     AiCoreConfig,
     ConfigManager,
     HealthConfig as ConfigHealthConfig,
     ExecutionConfig,
-    LoggingConfig,
-    SecurityConfig,
+    LoggingConfig as ConfigLoggingConfig,
+    SecurityConfig as ConfigSecurityConfig,
     PerformanceConfig,
     FeatureConfig as ConfigFeatureConfig,
     ValidationConfig,
@@ -50,11 +52,11 @@ pub use features::{
     FeatureConfig,
     ValidatorTelemetry,
 };
-pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree, GBDTError, GBDTResult, GBDTMetrics, ModelMetadata, SecurityConstraints, FeatureNormalization};
+pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree, GBDTError, GBDTResult, GBDTMetrics, ModelMetadata as GBDTModelMetadata, SecurityConstraints, FeatureNormalization};
 pub use model_manager::{ModelManager, ModelManagerConfig, ModelManagerMetrics, ModelLoadResult, ModelSaveResult};
 pub use feature_engineering::{FeatureEngineeringPipeline, FeatureEngineeringConfig, RawFeatureData, ProcessedFeatureData, FeatureStatistics, FeatureImportance};
 pub use production_config::{ProductionConfig, ProductionConfigManager, Environment, GBDTConfig, ResourceLimits, FeatureFlags, DeploymentConfig, LoggingConfig, ConfigFormat, ConfigValidationResult};
-pub use deployment::{ProductionDeployment, DeploymentStatus, HealthCheckResult, HealthStatus, DeploymentMetrics, utils};
+pub use deployment::{ProductionDeployment, DeploymentStatus, HealthCheckResult, HealthStatus as DeploymentHealthStatus, DeploymentMetrics, utils};
 pub use tests::{TestSuite, TestConfig, TestResult, BenchmarkSuite, test_utils};
 pub use health::{
     HealthMonitor,
