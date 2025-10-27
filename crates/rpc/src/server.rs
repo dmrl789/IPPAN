@@ -13,7 +13,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_mempool::Mempool;
-use ippan_p2p::HttpP2PNetwork;
+use ippan_p2p::{HttpP2PNetwork, NetworkMessage};
 use ippan_storage::{Account, Storage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, IppanTimeMicros, L2Commit, L2ExitRecord, L2Network, Transaction};
@@ -261,6 +261,14 @@ fn build_router(state: SharedState) -> Router {
         .route("/block/:id", get(handle_get_block))
         .route("/account/:address", get(handle_get_account))
         .route("/peers", get(handle_get_peers))
+        // Inbound HTTP P2P endpoints
+        .route("/p2p/blocks", post(handle_p2p_blocks))
+        .route("/p2p/transactions", post(handle_p2p_transactions))
+        .route("/p2p/block-request", post(handle_p2p_block_request))
+        .route("/p2p/block-response", post(handle_p2p_block_response))
+        .route("/p2p/peer-info", post(handle_p2p_peer_info))
+        .route("/p2p/peer-discovery", post(handle_p2p_peer_discovery))
+        .route("/p2p/peers", get(handle_p2p_list_peers))
         .route("/l2/config", get(handle_get_l2_config))
         .route("/l2/networks", get(handle_list_l2_networks))
         .route("/l2/commits", get(handle_list_l2_commits))
@@ -504,6 +512,153 @@ async fn handle_get_peers(State(state): State<SharedState>) -> Json<PeersRespons
         peers: state.peers(),
         req_total,
     })
+}
+
+// -------------------------
+// Inbound HTTP P2P handlers
+// -------------------------
+
+async fn handle_p2p_blocks(
+    State(state): State<SharedState>,
+    Json(msg): Json<NetworkMessage>,
+) -> Result<StatusCode, ApiError> {
+    match msg {
+        NetworkMessage::Block(block) => {
+            state
+                .storage
+                .store_block(block)
+                .map_err(|e| ApiError::internal(format!("failed to store block: {e}")))?;
+            Ok(StatusCode::OK)
+        }
+        other => {
+            warn!("/p2p/blocks received unexpected payload: {:?}", other);
+            Ok(StatusCode::OK)
+        }
+    }
+}
+
+async fn handle_p2p_transactions(
+    State(state): State<SharedState>,
+    Json(msg): Json<NetworkMessage>,
+) -> Result<StatusCode, ApiError> {
+    match msg {
+        NetworkMessage::Transaction(tx) => {
+            // Reuse existing submission path (consensus or raw sender)
+            if let Some(consensus) = state.consensus.clone() {
+                consensus.submit_transaction(tx).map_err(|err| {
+                    ApiError::internal(format!("failed to queue transaction: {err}"))
+                })?;
+            } else if let Some(sender) = state.tx_sender.clone() {
+                sender
+                    .send(tx)
+                    .map_err(|err| ApiError::internal(format!("failed to enqueue transaction: {err}")))?;
+            }
+            Ok(StatusCode::OK)
+        }
+        other => {
+            warn!("/p2p/transactions received unexpected payload: {:?}", other);
+            Ok(StatusCode::OK)
+        }
+    }
+}
+
+async fn handle_p2p_block_request(
+    State(state): State<SharedState>,
+    Json(msg): Json<NetworkMessage>,
+) -> Result<StatusCode, ApiError> {
+    if let NetworkMessage::BlockRequest { hash, reply_to } = msg {
+        if let Some(block) = state
+            .storage
+            .get_block(&hash)
+            .map_err(|e| ApiError::internal(format!("failed to read block: {e}")))?
+        {
+            // Push response back to requester
+            let client = reqwest::Client::new();
+            let url = format!("{}/p2p/block-response", reply_to.trim_end_matches('/'));
+            let message = NetworkMessage::BlockResponse(block);
+            if let Err(err) = client.post(&url).json(&message).send().await {
+                warn!("failed to POST BlockResponse to {}: {}", url, err);
+            }
+        }
+        Ok(StatusCode::OK)
+    } else {
+        Ok(StatusCode::OK)
+    }
+}
+
+async fn handle_p2p_block_response(
+    State(state): State<SharedState>,
+    Json(msg): Json<NetworkMessage>,
+) -> Result<StatusCode, ApiError> {
+    match msg {
+        NetworkMessage::BlockResponse(block) => {
+            state
+                .storage
+                .store_block(block)
+                .map_err(|e| ApiError::internal(format!("failed to store block response: {e}")))?;
+            Ok(StatusCode::OK)
+        }
+        other => {
+            warn!("/p2p/block-response received unexpected payload: {:?}", other);
+            Ok(StatusCode::OK)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct PeerInfoRequest {
+    peer_id: String,
+    addresses: Vec<String>,
+    #[serde(default)]
+    time_us: Option<u64>,
+}
+
+async fn handle_p2p_peer_info(
+    State(state): State<SharedState>,
+    Json(msg): Json<NetworkMessage>,
+) -> Result<StatusCode, ApiError> {
+    match msg {
+        NetworkMessage::PeerInfo { peer_id, addresses, .. } => {
+            if let Some(network) = &state.p2p_network {
+                for addr in addresses {
+                    if let Err(e) = network.add_peer(addr.clone()).await {
+                        warn!("failed to add announced peer {addr} from {peer_id}: {e}");
+                    }
+                }
+            }
+            Ok(StatusCode::OK)
+        }
+        other => {
+            warn!("/p2p/peer-info received unexpected payload: {:?}", other);
+            Ok(StatusCode::OK)
+        }
+    }
+}
+
+async fn handle_p2p_peer_discovery(
+    State(state): State<SharedState>,
+    Json(msg): Json<NetworkMessage>,
+) -> Result<StatusCode, ApiError> {
+    match msg {
+        NetworkMessage::PeerDiscovery { peers } => {
+            if let Some(network) = &state.p2p_network {
+                for addr in peers {
+                    if let Err(e) = network.add_peer(addr.clone()).await {
+                        warn!("failed to add discovered peer {addr}: {e}");
+                    }
+                }
+            }
+            Ok(StatusCode::OK)
+        }
+        other => {
+            warn!("/p2p/peer-discovery received unexpected payload: {:?}", other);
+            Ok(StatusCode::OK)
+        }
+    }
+}
+
+async fn handle_p2p_list_peers(State(state): State<SharedState>) -> Json<Vec<String>> {
+    Json(state.peers())
 }
 
 async fn handle_get_l2_config(State(state): State<SharedState>) -> Json<L2ConfigResponse> {

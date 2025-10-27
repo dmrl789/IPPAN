@@ -20,8 +20,8 @@ pub type RewardAmount = u64;
 /// Validator identifier
 ///
 /// Can represent:
-/// - Ed25519 public key (hex-encoded 64-char string)
-/// - Human-readable handle (e.g. `@alice.ipn`)
+/// - Ed25519 public key (hex-encoded 64-character string)
+/// - Human-readable handle (e.g., `@alice.ipn`)
 /// - Registry alias (short internal identifier)
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ValidatorId(pub String);
@@ -190,7 +190,7 @@ impl RewardComposition {
         }
     }
 
-    /// Compute the total reward
+    /// Compute total reward
     pub fn total(&self) -> RewardAmount {
         self.round_emission
             + self.transaction_fees
@@ -199,7 +199,7 @@ impl RewardComposition {
     }
 }
 
-/// Emission curve analytics (for dashboards)
+/// Emission curve analytics (for dashboards and simulations)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmissionCurvePoint {
     pub round: RoundIndex,
