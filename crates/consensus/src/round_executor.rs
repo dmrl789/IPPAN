@@ -76,7 +76,7 @@ impl RoundExecutor {
         let emission_micro = self.emission_engine.calculate_round_reward(round)?;
 
         // Convert participants to ValidatorParticipation format
-        let participations = self.convert_participants_to_validator_participations(participants)?;
+        let participations = self.convert_participants_to_validator_participations(participants.clone())?;
 
         // Distribute rewards proportionally to participants
         let distribution = self.round_rewards.distribute_round_rewards(

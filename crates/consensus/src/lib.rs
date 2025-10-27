@@ -196,9 +196,10 @@ impl PoAConsensus {
             current_round_blocks: Vec::new(),
         };
 
-        let emission_params = DAGEmissionParams::default();
+        let dag_emission_params = DAGEmissionParams::default();
+        let emission_params = ippan_economics::EmissionParams::default(); // Convert to correct type
         let audit_interval = 6_048_000; // ~1 week at 100ms
-        let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
+        let emission_tracker = EmissionTracker::new(emission_params, audit_interval);
 
         // Initialize L1 AI consensus with default config
         let ai_config = L1AIConfig::default();

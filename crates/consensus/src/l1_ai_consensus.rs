@@ -359,7 +359,11 @@ impl L1AIConsensus {
             return 0.0;
         }
         
-        let total_score: i32 = telemetry.iter().map(|t| t.reputation_score).sum();
+        // Calculate reputation score based on available telemetry fields
+        let total_score: i32 = telemetry.iter().map(|t| {
+            // Use a combination of blocks proposed, verified, and age as reputation score
+            (t.blocks_proposed + t.blocks_verified + t.age_rounds) as i32
+        }).sum();
         (total_score as f64) / (telemetry.len() as f64 * 10000.0)
     }
     

@@ -203,9 +203,8 @@ impl EmissionTracker {
 
         // Sum up emissions for the period
         for r in start_round..=round {
-            total_base_emission =
-                // Note: round_reward function needs to be implemented or replaced
-                // total_base_emission.saturating_add(super::emission::round_reward(r, &self.params));
+            // Note: round_reward function needs to be implemented or replaced
+            // total_base_emission = total_base_emission.saturating_add(super::emission::round_reward(r, &self.params));
         }
 
         // Create distribution hash
@@ -223,16 +222,23 @@ impl EmissionTracker {
         distribution_hash.copy_from_slice(digest.as_bytes());
 
         let audit_record = EmissionAuditRecord {
+            round,
             start_round,
             end_round: round,
+            cumulative_supply: self.cumulative_supply,
+            round_emission: 0, // Placeholder
             total_base_emission,
+            fees_collected: 0, // Placeholder
             total_fees_collected: self.total_fees_collected,
             total_ai_commissions: self.total_ai_commissions,
             total_network_dividends: self.total_network_dividends,
             total_distributed,
-            cumulative_supply: self.cumulative_supply,
             empty_rounds: self.empty_rounds,
-            distribution_hash,
+            distribution_hash: hex::encode(distribution_hash),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
         };
 
         self.audit_history.push(audit_record);
