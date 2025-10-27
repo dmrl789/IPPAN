@@ -12,9 +12,17 @@ pub enum AiCoreError {
     #[error("Execution error: {0}")]
     Execution(String),
     
+    /// Execution failed error
+    #[error("Execution failed: {0}")]
+    ExecutionFailed(String),
+    
     /// Validation error
     #[error("Validation error: {0}")]
     Validation(String),
+    
+    /// Validation failed error
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
     
     /// Determinism error
     #[error("Determinism error: {0}")]
@@ -43,6 +51,14 @@ pub enum AiCoreError {
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),
+    
+    /// Execution failed
+    #[error("Execution failed: {0}")]
+    ExecutionFailed(String),
+    
+    /// Validation failed
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
 }
 
 impl From<std::io::Error> for AiCoreError {

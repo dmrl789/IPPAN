@@ -1,7 +1,7 @@
 //! Types for validator resolution
 
 use serde::{Deserialize, Serialize};
-use ippan_ippan_economics::ValidatorId;
+use ippan_economics::ValidatorId;
 
 /// Resolved validator information
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
