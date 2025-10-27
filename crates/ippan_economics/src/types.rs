@@ -1,11 +1,17 @@
 //! Core types for IPPAN economics
+//!
+//! Provides deterministic definitions for validator roles, emissions,
+//! round-based rewards, and supply tracking across the network.
+//!
+//! All values are integer-based (micro-IPN precision) for deterministic
+//! reproducibility across validator nodes.
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-/// Round index (HashTimer-based)
+/// Round index (HashTimer-based deterministic timestamp)
 pub type RoundIndex = u64;
 
 /// Reward amount in micro-IPN (1 IPN = 10^8 micro-IPN)
@@ -13,35 +19,35 @@ pub type RewardAmount = u64;
 
 /// Validator identifier
 ///
-/// Can be one of:
+/// Can represent:
 /// - Ed25519 public key (hex-encoded 64-char string)
-/// - Human-readable handle (e.g., `@alice.ipn`)
-/// - Registry alias (custom short ID)
+/// - Human-readable handle (e.g. `@alice.ipn`)
+/// - Registry alias (short internal identifier)
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ValidatorId(pub String);
 
 impl ValidatorId {
-    /// Create a new ValidatorId from string
+    /// Create a new `ValidatorId`
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
     }
 
-    /// Get the ID as &str
+    /// Returns the ID as a `&str`
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// Check if this is a human-readable handle (starts with '@')
+    /// True if this is a human-readable handle (starts with '@')
     pub fn is_handle(&self) -> bool {
         self.0.starts_with('@')
     }
 
-    /// Check if this is a valid hex-encoded public key
+    /// True if this looks like a valid Ed25519 public key (hex-encoded)
     pub fn is_public_key(&self) -> bool {
         self.0.len() == 64 && self.0.chars().all(|c| c.is_ascii_hexdigit())
     }
 
-    /// Check if this is a registry alias (not handle or pubkey)
+    /// True if this is a registry alias (neither handle nor pubkey)
     pub fn is_alias(&self) -> bool {
         !self.is_handle() && !self.is_public_key()
     }
@@ -53,17 +59,17 @@ impl fmt::Display for ValidatorId {
     }
 }
 
-/// Validator rewards mapping (validator → micro-IPN)
+/// Validator → reward (in micro-IPN)
 pub type Payouts = HashMap<ValidatorId, u128>;
 
 /// Emission parameters configurable via governance
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmissionParams {
-    /// Initial reward per round (in micro-IPN)
+    /// Initial reward per round (micro-IPN)
     pub initial_round_reward: RewardAmount,
-    /// Halving interval in rounds (≈2 years at 10 rounds/second)
+    /// Halving interval in rounds (~2 years @ 10 rounds/sec)
     pub halving_interval: RoundIndex,
-    /// Total supply cap (in micro-IPN)
+    /// Total supply cap (micro-IPN)
     pub total_supply_cap: RewardAmount,
     /// Fee cap as fraction of round reward (0.1 = 10%)
     pub fee_cap_fraction: Decimal,
@@ -72,38 +78,38 @@ pub struct EmissionParams {
 impl Default for EmissionParams {
     fn default() -> Self {
         Self {
-            initial_round_reward: 10_000, // 0.0001 IPN = 10,000 micro-IPN
-            halving_interval: 630_000_000, // ≈2 years at 10 rps
-            total_supply_cap: 2_100_000_000_000, // 21 M IPN = 2.1 T micro-IPN
+            initial_round_reward: 10_000,        // 0.0001 IPN = 10,000 micro-IPN
+            halving_interval: 630_000_000,       // ≈ 2 years at 10 rounds/sec
+            total_supply_cap: 2_100_000_000_000, // 21 million IPN = 2.1e12 micro-IPN
             fee_cap_fraction: Decimal::new(1, 1), // 0.1 = 10%
         }
     }
 }
 
-/// Participation role within a round
+/// Role of a validator during a round
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValidatorRole {
-    /// Validator proposing a block or DAG event (1.2×)
+    /// Proposer (selected to emit DAG event / block)
     Proposer,
-    /// Validator verifying others’ blocks (1.0×)
+    /// Verifier (confirms others’ blocks)
     #[default]
     Verifier,
-    /// Observer (non-participating)
+    /// Passive observer
     Observer,
 }
 
 impl ValidatorRole {
-    /// Get weight multiplier for this role
+    /// Returns the weight multiplier for reward allocation
     pub fn weight_multiplier(self) -> Decimal {
         match self {
-            ValidatorRole::Proposer => Decimal::new(12, 1), // 1.2
-            ValidatorRole::Verifier => Decimal::new(10, 1), // 1.0
-            ValidatorRole::Observer => Decimal::ZERO,       // 0.0
+            ValidatorRole::Proposer => Decimal::new(12, 1), // 1.2×
+            ValidatorRole::Verifier => Decimal::new(10, 1), // 1.0×
+            ValidatorRole::Observer => Decimal::ZERO,       // 0.0×
         }
     }
 }
 
-/// Validator participation data for a round
+/// Participation metrics for a validator in a given round
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorParticipation {
     pub validator_id: ValidatorId,
@@ -112,7 +118,7 @@ pub struct ValidatorParticipation {
     pub uptime_score: Decimal, // 0.0–1.0
 }
 
-/// Round reward distribution result
+/// Per-round reward distribution result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoundRewardDistribution {
     pub round_index: RoundIndex,
@@ -123,7 +129,7 @@ pub struct RoundRewardDistribution {
     pub excess_burned: RewardAmount,
 }
 
-/// Individual validator reward breakdown
+/// Detailed breakdown of a validator's reward
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorReward {
     pub round_emission: RewardAmount,
@@ -134,7 +140,7 @@ pub struct ValidatorReward {
     pub weight_factor: Decimal,
 }
 
-/// Supply tracking information
+/// Total token supply tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SupplyInfo {
     pub total_supply: RewardAmount,
@@ -145,7 +151,7 @@ pub struct SupplyInfo {
     pub next_halving_round: RoundIndex,
 }
 
-/// Reward composition percentages
+/// Breakdown of per-round reward composition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RewardComposition {
     pub round_emission: RewardAmount,   // 60%
@@ -155,7 +161,7 @@ pub struct RewardComposition {
 }
 
 impl RewardComposition {
-    /// Create new reward composition (using fixed 60/25/10/5 distribution)
+    /// Deterministic 60/25/10/5 distribution
     pub fn new(total_reward: RewardAmount) -> Self {
         let round_emission = (total_reward * 60) / 100;
         let transaction_fees = (total_reward * 25) / 100;
@@ -169,13 +175,13 @@ impl RewardComposition {
         }
     }
 
-    /// Create composition using actual collected fees (dynamic adjustment)
+    /// Create distribution adjusted by actual collected fees
     pub fn new_with_fees(round_reward: RewardAmount, actual_fees: RewardAmount) -> Self {
         let transaction_fees = actual_fees;
-        let remaining_reward = round_reward.saturating_sub(transaction_fees);
-        let round_emission = (remaining_reward * 60) / 100;
-        let ai_commissions = (remaining_reward * 10) / 100;
-        let network_dividend = (remaining_reward * 5) / 100;
+        let remaining = round_reward.saturating_sub(transaction_fees);
+        let round_emission = (remaining * 60) / 100;
+        let ai_commissions = (remaining * 10) / 100;
+        let network_dividend = (remaining * 5) / 100;
         Self {
             round_emission,
             transaction_fees,
@@ -184,7 +190,7 @@ impl RewardComposition {
         }
     }
 
-    /// Compute total reward
+    /// Compute the total reward
     pub fn total(&self) -> RewardAmount {
         self.round_emission
             + self.transaction_fees
@@ -193,7 +199,7 @@ impl RewardComposition {
     }
 }
 
-/// Emission curve data point for analytics
+/// Emission curve analytics (for dashboards)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmissionCurvePoint {
     pub round: RoundIndex,

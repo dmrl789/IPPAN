@@ -488,7 +488,7 @@ impl GBDTModel {
     }
 
     /// Validate model structure and constraints
-    fn validate(&self) -> Result<(), GBDTError> {
+    pub fn validate(&self) -> Result<(), GBDTError> {
         if self.trees.len() > self.security_constraints.max_trees {
             return Err(GBDTError::ModelValidationFailed {
                 reason: format!("Too many trees: {} > {}", self.trees.len(), self.security_constraints.max_trees),
@@ -545,7 +545,7 @@ impl GBDTModel {
     }
 
     /// Calculate model hash for integrity checking
-    fn calculate_model_hash(trees: &[Tree], bias: i32, scale: i32) -> String {
+    pub fn calculate_model_hash(trees: &[Tree], bias: i32, scale: i32) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 

@@ -160,6 +160,7 @@ pub use types::{
     ExecutionContext,
     ExecutionResult,
     DataType,
+    ExecutionMetadata,
 };
 pub use errors::AiCoreError;
 
@@ -175,7 +176,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Used in AI and reputation subsystems to ensure sorting
 /// consistency across validator nodes.
 pub fn deterministically_sorted<T: Ord>(mut items: Vec<T>) -> Vec<T> {
-    // Rust’s sort is deterministic for the same input and ordering.
+    // Rust’s sort is deterministic for identical inputs and ordering.
     items.sort();
     items
 }

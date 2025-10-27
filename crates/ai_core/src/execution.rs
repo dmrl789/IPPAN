@@ -49,7 +49,7 @@ impl ExecutionEngine {
         // Store model metadata
         self.models.insert(metadata.id.clone(), metadata);
 
-        info!("Model loaded successfully: {:?}", self.models.keys().count());
+        info!("Model loaded successfully. Total loaded: {}", self.models.len());
         Ok(())
     }
 
@@ -61,7 +61,7 @@ impl ExecutionEngine {
     ) -> Result<ExecutionResult> {
         info!("Executing model: {:?}", context.model_id);
 
-        // Get model metadata
+        // Retrieve model
         let model_metadata = self
             .models
             .get(&context.model_id)
@@ -70,7 +70,7 @@ impl ExecutionEngine {
         // Validate input
         self.validate_input(&input, model_metadata)?;
 
-        // Execute model (placeholder implementation)
+        // Execute model
         let start_time = std::time::Instant::now();
         let output = self
             .execute_model_deterministic(model_metadata, &input, &context)
@@ -80,17 +80,13 @@ impl ExecutionEngine {
         // Update statistics
         self.update_stats(execution_time.as_micros() as u64, true);
 
-        // Create execution result
+        // Assemble execution result
         let result = ExecutionResult {
-            data: output.data.clone(),
-            data_type: output.dtype,
-            execution_time_us: execution_time.as_micros() as u64,
-            memory_usage: 0, // placeholder
+            output,
+            context,
             success: true,
             error: None,
             metadata: HashMap::new(),
-            output,
-            context,
         };
 
         info!("Model execution completed successfully");
@@ -99,14 +95,12 @@ impl ExecutionEngine {
 
     /// Validate model data integrity
     fn validate_model_data(&self, data: &[u8], metadata: &ModelMetadata) -> Result<()> {
-        // Check data size matches metadata
         if data.len() as u64 != metadata.size_bytes {
             return Err(AiCoreError::ValidationFailed(
                 "Model data size mismatch".to_string(),
             ));
         }
 
-        // Verify model hash
         let computed_hash = blake3::hash(data).to_hex().to_string();
         if computed_hash != metadata.id.hash {
             return Err(AiCoreError::ValidationFailed(
@@ -119,7 +113,6 @@ impl ExecutionEngine {
 
     /// Validate input data
     fn validate_input(&self, input: &ModelInput, metadata: &ModelMetadata) -> Result<()> {
-        // Check input shape
         if input.shape != metadata.input_shape {
             return Err(AiCoreError::InvalidParameters(format!(
                 "Input shape mismatch: expected {:?}, got {:?}",
@@ -127,7 +120,6 @@ impl ExecutionEngine {
             )));
         }
 
-        // Check data size matches shape
         let expected_size = input.shape.iter().product::<usize>() * input.dtype.size_bytes();
         if input.data.len() != expected_size {
             return Err(AiCoreError::InvalidParameters(
@@ -147,7 +139,7 @@ impl ExecutionEngine {
     ) -> Result<ModelOutput> {
         let start_time = std::time::Instant::now();
 
-        // Set deterministic seed if provided
+        // Apply deterministic seed if present
         if let Some(seed) = context.seed {
             info!("Using deterministic seed: {}", seed);
             std::env::set_var("AI_DETERMINISTIC_SEED", seed.to_string());
@@ -161,10 +153,9 @@ impl ExecutionEngine {
 
         let output_size =
             metadata.output_shape.iter().product::<usize>() * input.dtype.size_bytes();
-
         let mut output_data = vec![0u8; output_size];
 
-        // Placeholder inference logic
+        // Placeholder deterministic inference logic
         if metadata.architecture == "gbdt" {
             info!("Executing GBDT model");
             let features = self.convert_input_to_features(input)?;
@@ -255,7 +246,7 @@ impl ExecutionEngine {
 
     /// Estimate CPU cycles from execution time
     fn estimate_cpu_cycles(&self, duration: std::time::Duration) -> u64 {
-        const CPU_FREQ_HZ: u64 = 3_000_000_000;
+        const CPU_FREQ_HZ: u64 = 3_000_000_000; // 3 GHz
         let seconds = duration.as_secs_f64();
         (seconds * CPU_FREQ_HZ as f64) as u64
     }
@@ -298,10 +289,13 @@ impl ExecutionEngine {
             self.stats.failed_executions += 1;
         }
 
-        self.stats.avg_execution_time_us =
+        self.stats.avg_execution_time_us = if self.stats.total_executions == 0 {
+            execution_time_us
+        } else {
             (self.stats.avg_execution_time_us * (self.stats.total_executions - 1)
                 + execution_time_us)
-                / self.stats.total_executions;
+                / self.stats.total_executions
+        };
     }
 
     /// Get execution statistics
@@ -322,7 +316,7 @@ impl DataType {
             DataType::Int32 => 4,
             DataType::Int64 => 8,
             DataType::Float32 => 4,
-            // Variable-length or media types - runtime size
+            // Variable-length or complex data types
             DataType::Text
             | DataType::Binary
             | DataType::Json

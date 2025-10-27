@@ -179,15 +179,7 @@ impl ProductionDeployment {
     /// Initialize monitoring system
     async fn initialize_monitoring(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
-        let monitoring = MonitoringSystem::new(config.monitoring.clone())
-            .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to initialize monitoring: {}", e),
-            })?;
-        
-        monitoring.start().await
-            .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to start monitoring: {}", e),
-            })?;
+        let monitoring = MonitoringSystem::new(config.monitoring.clone());
         
         *self.monitoring.write().await = Some(monitoring);
         info!("Monitoring system initialized");
@@ -197,10 +189,7 @@ impl ProductionDeployment {
     /// Initialize security system
     async fn initialize_security(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
-        let security = SecuritySystem::new(config.security.clone())
-            .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to initialize security: {}", e),
-            })?;
+        let security = SecuritySystem::new(config.security.clone());
         
         *self.security.write().await = Some(security);
         info!("Security system initialized");
@@ -210,10 +199,7 @@ impl ProductionDeployment {
     /// Initialize feature engineering pipeline
     async fn initialize_feature_engineering(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
-        let pipeline = FeatureEngineeringPipeline::new(config.feature_engineering.clone())
-            .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to initialize feature engineering: {}", e),
-            })?;
+        let pipeline = FeatureEngineeringPipeline::new(config.feature_engineering.clone());
         
         *self.feature_pipeline.write().await = Some(pipeline);
         info!("Feature engineering pipeline initialized");
@@ -223,10 +209,7 @@ impl ProductionDeployment {
     /// Initialize model manager
     async fn initialize_model_manager(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
-        let model_manager = ModelManager::new(config.model_manager.clone())
-            .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to initialize model manager: {}", e),
-            })?;
+        let model_manager = ModelManager::new(config.model_manager.clone());
         
         *self.model_manager.write().await = Some(model_manager);
         info!("Model manager initialized");
@@ -451,8 +434,7 @@ impl ProductionDeployment {
         sleep(Duration::from_secs(5)).await;
         
         // 3. Stop monitoring
-        if let Some(monitoring) = self.monitoring.write().await.take() {
-            monitoring.stop().await;
+        if let Some(_monitoring) = self.monitoring.write().await.take() {
             info!("Monitoring stopped");
         }
         
