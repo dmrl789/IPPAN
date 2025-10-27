@@ -63,8 +63,8 @@ pub use round_executor::{
     create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
 };
 pub use ippan_economics::{
-    distribute_round, emission_for_round_capped, EconomicsParams, Participation, ParticipationSet,
-    Role, MICRO_PER_IPN,
+    EmissionEngine, RoundRewards, EmissionParams,
+    RewardAmount, RoundIndex,
 };
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
@@ -196,9 +196,10 @@ impl PoAConsensus {
             current_round_blocks: Vec::new(),
         };
 
-        let emission_params = DAGEmissionParams::default();
+        let dag_emission_params = DAGEmissionParams::default();
+        let emission_params = ippan_economics::EmissionParams::default(); // Convert to correct type
         let audit_interval = 6_048_000; // ~1 week at 100ms
-        let emission_tracker = EmissionTracker::new(emission_params.clone(), audit_interval);
+        let emission_tracker = EmissionTracker::new(emission_params, audit_interval);
 
         // Initialize L1 AI consensus with default config
         let ai_config = L1AIConfig::default();
@@ -508,10 +509,10 @@ impl PoAConsensus {
         // DAG-Fair Emission (delegated to RoundExecutor/Treasury in this build)
         // -----------------------------------------------------------------
         if config.enable_dag_fair_emission {
-            use ippan_economics::{EconomicsParams, emission_for_round_capped};
-            let params = EconomicsParams::default();
-            let issued_micro = 0u128;
-            let _ = emission_for_round_capped(round_id, issued_micro, &params).unwrap_or(0);
+            use ippan_economics::{EmissionParams, EmissionEngine};
+            let params = EmissionParams::default();
+            let engine = EmissionEngine::with_params(params);
+            let _ = engine.calculate_round_reward(round_id).unwrap_or(0);
         }
         Ok(())
     }

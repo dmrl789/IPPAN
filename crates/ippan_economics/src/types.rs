@@ -3,6 +3,7 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 /// Round index (HashTimer-based)
 pub type RoundIndex = u64;
@@ -46,10 +47,16 @@ impl ValidatorId {
     }
 }
 
+impl fmt::Display for ValidatorId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Validator rewards mapping (validator → micro-IPN)
 pub type Payouts = HashMap<ValidatorId, u128>;
 
-/// Emission parameters that can be configured via governance
+/// Emission parameters configurable via governance
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmissionParams {
     /// Initial reward per round (in micro-IPN)
