@@ -5,8 +5,8 @@
 
 use crate::fees::FeeCollector;
 use ippan_economics::{
-    distribute_round, emission_for_round_capped, EconomicsParams, Participation, ParticipationSet,
-    Role, MICRO_PER_IPN, Payouts, ValidatorId,
+    EmissionEngine, RoundRewards, EmissionParams, ValidatorParticipation, ValidatorRole,
+    Payouts, ValidatorId, RewardAmount, RoundIndex,
 };
 use ippan_treasury::{RewardSink, AccountLedger};
 use ippan_types::{ChainState, MicroIPN, RoundId};
@@ -14,6 +14,16 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info};
+
+/// Participation data for a validator in a round
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Participation {
+    pub role: ValidatorRole,
+    pub blocks: u32,
+}
+
+/// Participation set mapping validator ID to participation data
+pub type ParticipationSet = HashMap<ValidatorId, Participation>;
 
 /// Result of a finalized consensus round.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +38,8 @@ pub struct RoundExecutionResult {
 
 /// RoundExecutor coordinates consensus, emission, and reward distribution.
 pub struct RoundExecutor {
-    economics_params: EconomicsParams,
+    emission_engine: EmissionEngine,
+    round_rewards: RoundRewards,
     reward_sink: RewardSink,
     fee_collector: FeeCollector,
     account_ledger: Box<dyn AccountLedger>,
@@ -36,9 +47,12 @@ pub struct RoundExecutor {
 
 impl RoundExecutor {
     /// Create a new round executor.
-    pub fn new(economics_params: EconomicsParams, account_ledger: Box<dyn AccountLedger>) -> Self {
+    pub fn new(economics_params: EmissionParams, account_ledger: Box<dyn AccountLedger>) -> Self {
+        let emission_engine = EmissionEngine::with_params(economics_params.clone());
+        let round_rewards = RoundRewards::new(economics_params);
         Self {
-            economics_params,
+            emission_engine,
+            round_rewards,
             reward_sink: RewardSink::new(),
             fee_collector: FeeCollector::new(),
             account_ledger,
@@ -59,11 +73,21 @@ impl RoundExecutor {
 
         // Calculate emission for this round (enforcing supply cap)
         let issued = chain_state.total_issued_micro();
-        let emission_micro = emission_for_round_capped(round, issued, &self.economics_params)?;
+        let emission_micro = self.emission_engine.calculate_round_reward(round)?;
+
+        // Convert participants to ValidatorParticipation format
+        let participations = self.convert_participants_to_validator_participations(participants)?;
 
         // Distribute rewards proportionally to participants
-        let (payouts, emission_paid, fees_capped) =
-            distribute_round(emission_micro, fees_micro, &participants, &self.economics_params)?;
+        let distribution = self.round_rewards.distribute_round_rewards(
+            round,
+            emission_micro,
+            participations,
+            fees_micro as u64,
+        )?;
+
+        // Convert distribution to payouts format
+        let payouts = self.convert_distribution_to_payouts(&distribution)?;
 
         // Credit rewards to the treasury sink
         self.reward_sink.credit_round_payouts(round, &payouts)?;
@@ -71,7 +95,7 @@ impl RoundExecutor {
         // Update chain state
         chain_state.update_after_round(
             round,
-            emission_paid,
+            distribution.total_reward as u128,
             self.calculate_state_root(round, &payouts),
             self.get_current_timestamp(),
         );
@@ -105,13 +129,14 @@ impl RoundExecutor {
     }
 
     /// Get current economics parameters.
-    pub fn get_economics_params(&self) -> &EconomicsParams {
-        &self.economics_params
+    pub fn get_economics_params(&self) -> &EmissionParams {
+        &self.emission_engine.params
     }
 
     /// Update parameters via governance.
-    pub fn update_economics_params(&mut self, params: EconomicsParams) {
-        self.economics_params = params;
+    pub fn update_economics_params(&mut self, params: EmissionParams) {
+        self.emission_engine = EmissionEngine::with_params(params.clone());
+        self.round_rewards = RoundRewards::new(params);
         info!(target: "round_executor", "Economics parameters updated via governance");
     }
 
@@ -149,7 +174,7 @@ pub fn create_participation_set(
 ) -> ParticipationSet {
     let mut parts: ParticipationSet = HashMap::new();
     for (_stake, id, blocks_proposed, _reputation) in validators {
-        let role = if *id == proposer_id { Role::Proposer } else { Role::Verifier };
+        let role = if *id == proposer_id { ValidatorRole::Proposer } else { ValidatorRole::Verifier };
         let vid = ValidatorId(hex::encode(id));
         parts.insert(
             vid,
@@ -170,7 +195,7 @@ pub fn create_full_participation_set(
     let mut parts: ParticipationSet = HashMap::new();
     for (_stake, id, blocks_proposed, blocks_verified, _reputation) in validators {
         // Economics Role enum does not support Both; choose Proposer if proposer else Verifier
-        let role = if *id == proposer_id { Role::Proposer } else { Role::Verifier };
+        let role = if *id == proposer_id { ValidatorRole::Proposer } else { ValidatorRole::Verifier };
         let total_blocks = (*blocks_proposed as u64 + *blocks_verified as u64) as u32;
         let vid = ValidatorId(hex::encode(id));
         parts.insert(
@@ -184,6 +209,38 @@ pub fn create_full_participation_set(
     parts
 }
 
+impl RoundExecutor {
+    /// Convert ParticipationSet to Vec<ValidatorParticipation>
+    fn convert_participants_to_validator_participations(
+        &self,
+        participants: ParticipationSet,
+    ) -> Result<Vec<ValidatorParticipation>> {
+        let mut participations = Vec::new();
+        for (validator_id, participation) in participants {
+            let participation = ValidatorParticipation {
+                validator_id,
+                role: participation.role,
+                blocks_contributed: participation.blocks,
+                uptime_score: rust_decimal::Decimal::new(100, 2), // Default to 1.0
+            };
+            participations.push(participation);
+        }
+        Ok(participations)
+    }
+
+    /// Convert RoundRewardDistribution to Payouts
+    fn convert_distribution_to_payouts(
+        &self,
+        distribution: &ippan_economics::RoundRewardDistribution,
+    ) -> Result<Payouts> {
+        let mut payouts = HashMap::new();
+        for (validator_id, reward) in &distribution.validator_rewards {
+            payouts.insert(validator_id.clone(), reward.total_reward as u128);
+        }
+        Ok(payouts)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,10 +248,10 @@ mod tests {
 
     #[test]
     fn test_round_executor_creation() {
-        let params = EconomicsParams::default();
+        let params = EmissionParams::default();
         let ledger = Box::new(MockAccountLedger::new());
         let executor = RoundExecutor::new(params, ledger);
-        assert!(executor.get_economics_params().initial_round_reward_micro > 0);
+        assert!(executor.emission_engine.params.initial_round_reward > 0);
     }
 
     #[test]
@@ -206,8 +263,8 @@ mod tests {
         let proposer_id = [1u8; 32];
         let parts = create_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0].role, Role::Proposer);
-        assert_eq!(parts[1].role, Role::Verifier);
+        assert_eq!(parts[0].role, ValidatorRole::Proposer);
+        assert_eq!(parts[1].role, ValidatorRole::Verifier);
     }
 
     #[test]
