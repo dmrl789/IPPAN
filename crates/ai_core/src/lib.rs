@@ -27,6 +27,7 @@ pub mod execution;
 pub mod models;
 pub mod validation;
 pub mod determinism;
+pub mod deterministic_gbdt;
 pub mod log;
 pub mod production_config;
 pub mod deployment;
