@@ -5,7 +5,7 @@ use crate::{
     types::*,
 };
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// Model validator for ensuring model integrity and correctness
 pub struct ModelValidator {
@@ -126,7 +126,7 @@ impl ModelValidator {
         
         let start_time = std::time::Instant::now();
         let mut errors: Vec<ValidationError> = Vec::new();
-        let mut warnings: Vec<ValidationWarning> = Vec::new();
+        let warnings: Vec<ValidationWarning> = Vec::new();
         
         // Run validation rules
         for rule in &self.rules {
@@ -323,7 +323,7 @@ impl ModelValidator {
         }
         
         // Verify that model metadata includes deterministic hash
-        if metadata.hash.is_empty() {
+        if metadata.id.hash.is_empty() {
             return Err(ValidationError {
                 error_type: "DeterminismCheck".to_string(),
                 message: "Model hash is required for determinism verification".to_string(),

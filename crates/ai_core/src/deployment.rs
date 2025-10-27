@@ -14,14 +14,14 @@ use crate::feature_engineering::FeatureEngineeringPipeline;
 use crate::monitoring::MonitoringSystem;
 use crate::security::SecuritySystem;
 use crate::production_config::{ProductionConfig, ProductionConfigManager, Environment};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{RwLock as AsyncRwLock, Semaphore};
 use tokio::time::{sleep, timeout};
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{error, info, warn, instrument};
 
 /// Deployment status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -237,9 +237,9 @@ impl ProductionDeployment {
         if let Some(manager) = model_manager.as_ref() {
             let result = manager.load_model(model_path).await;
             match result {
-                Ok(model) => {
+                Ok(load_result) => {
                     let mut models = self.gbdt_models.write().await;
-                    models.insert(model_path.to_string(), model);
+                    models.insert(model_path.to_string(), load_result.model);
                     info!("Model loaded: {}", model_path);
                     Ok(())
                 }

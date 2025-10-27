@@ -46,7 +46,7 @@ impl Default for FeatureConfig {
             scale: 10000,
             max_blocks_proposed: 100000,
             max_latency_us: 1_000_000,       // 1 second
-            max_stake: 1_000_000_00000000,   // 1M IPN
+            max_stake: 100_000_000_000_000,  // 1M IPN (with 8 decimals)
             max_age_rounds: 10_000_000,      // ~231 days at 200ms/round
         }
     }

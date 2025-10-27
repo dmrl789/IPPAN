@@ -5,7 +5,7 @@ use crate::{
     types::*,
 };
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::info;
 
 /// Model execution engine
 pub struct ExecutionEngine {
@@ -65,15 +65,16 @@ impl ExecutionEngine {
         let model_metadata = self
             .models
             .get(&context.model_id)
-            .ok_or_else(|| AiCoreError::ExecutionFailed("Model not found".to_string()))?;
+            .ok_or_else(|| AiCoreError::ExecutionFailed("Model not found".to_string()))?
+            .clone();
 
         // Validate input
-        self.validate_input(&input, model_metadata)?;
+        self.validate_input(&input, &model_metadata)?;
 
         // Execute model
         let start_time = std::time::Instant::now();
         let output = self
-            .execute_model_deterministic(model_metadata, &input, &context)
+            .execute_model_deterministic(&model_metadata, &input, &context)
             .await?;
         let execution_time = start_time.elapsed();
 
@@ -82,11 +83,14 @@ impl ExecutionEngine {
 
         // Assemble execution result
         let result = ExecutionResult {
-            output,
+            output: output.clone(),
             context,
             success: true,
             error: None,
             metadata: HashMap::new(),
+            execution_time_us: execution_time.as_micros() as u64,
+            memory_usage: model_metadata.size_bytes,
+            data_type: output.dtype,
         };
 
         info!("Model execution completed successfully");
@@ -184,19 +188,31 @@ impl ExecutionEngine {
 
         info!("Model execution completed in {:?}", execution_time);
 
+        let execution_metadata = ExecutionMetadata {
+            execution_id: context.id.clone(),
+            model_id: metadata.id.to_string(),
+            start_time: start_time.elapsed().as_micros() as u64,
+            end_time: start_time.elapsed().as_micros() as u64,
+            duration_us: execution_time.as_micros() as u64,
+            memory_usage: metadata.size_bytes + input.data.len() as u64,
+            cpu_usage: 0.0, // Placeholder
+            success: true,
+            error: None,
+            metadata: {
+                let mut meta = HashMap::new();
+                meta.insert("execution_hash".to_string(), execution_hash);
+                meta.insert("model_version".to_string(), metadata.id.version.clone());
+                meta.insert("cpu_cycles".to_string(), self.estimate_cpu_cycles(execution_time).to_string());
+                meta
+            },
+        };
+        
         Ok(ModelOutput {
             data: output_data,
-            data_type: input.dtype,
-            shape: metadata.output_shape.clone(),
             dtype: input.dtype,
+            shape: metadata.output_shape.clone(),
             confidence: 1.0,
-            metadata: ExecutionMetadata {
-                execution_time_us: execution_time.as_micros() as u64,
-                memory_usage_bytes: metadata.size_bytes + input.data.len() as u64,
-                cpu_cycles: self.estimate_cpu_cycles(execution_time),
-                execution_hash,
-                model_version: metadata.id.version.clone(),
-            },
+            metadata: execution_metadata,
         })
     }
 
@@ -311,11 +327,12 @@ impl ExecutionEngine {
 
 impl DataType {
     /// Get the size in bytes for this data type
-    pub fn size_bytes(self) -> usize {
+    pub fn size_bytes_alt(self) -> usize {
         match self {
-            DataType::Int32 => 4,
-            DataType::Int64 => 8,
-            DataType::Float32 => 4,
+            DataType::Int32 | DataType::UInt32 | DataType::Float32 => 4,
+            DataType::Int64 | DataType::UInt64 | DataType::Float64 => 8,
+            DataType::Int8 | DataType::UInt8 => 1,
+            DataType::Int16 | DataType::UInt16 => 2,
             // Variable-length or complex data types
             DataType::Text
             | DataType::Binary

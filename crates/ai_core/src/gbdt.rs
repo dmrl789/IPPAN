@@ -13,9 +13,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt;
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, error, warn, instrument};
 use thiserror::Error;
 
 /// GBDT evaluation errors
@@ -61,7 +60,7 @@ pub struct GBDTResult {
 }
 
 /// Performance metrics for GBDT evaluation
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct GBDTMetrics {
     pub total_evaluations: u64,
     pub total_time_us: u64,
@@ -87,7 +86,7 @@ pub struct ModelMetadata {
 }
 
 /// A decision tree node (internal or leaf)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Node {
     /// Feature index to compare (for internal nodes)
     pub feature_index: u16,
@@ -102,14 +101,14 @@ pub struct Node {
 }
 
 /// A single decision tree
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Tree {
     /// Nodes in breadth-first or depth-first order
     pub nodes: Vec<Node>,
 }
 
 /// Production-grade GBDT model with comprehensive metadata and validation
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GBDTModel {
     /// Collection of trees
     pub trees: Vec<Tree>,
@@ -129,6 +128,18 @@ pub struct GBDTModel {
     /// Evaluation cache for performance optimization
     #[serde(skip)]
     pub evaluation_cache: HashMap<Vec<i64>, GBDTResult>,
+}
+
+impl PartialEq for GBDTModel {
+    fn eq(&self, other: &Self) -> bool {
+        self.trees == other.trees
+            && self.bias == other.bias
+            && self.scale == other.scale
+            && self.metadata == other.metadata
+            && self.feature_normalization == other.feature_normalization
+            && self.security_constraints == other.security_constraints
+            // Skip metrics and evaluation_cache in comparison
+    }
 }
 
 /// Feature normalization parameters for consistent evaluation

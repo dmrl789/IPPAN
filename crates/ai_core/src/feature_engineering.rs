@@ -8,12 +8,12 @@
 //! - Feature importance analysis
 //! - Real-time feature pipeline processing
 
-use crate::gbdt::{GBDTModel, GBDTError, FeatureNormalization};
-use anyhow::{Context, Result};
+use crate::gbdt::{GBDTError, FeatureNormalization};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, warn, instrument};
+// use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::{info, warn, instrument};
 
 /// Feature engineering configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

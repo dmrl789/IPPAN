@@ -10,7 +10,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::fs;
-use tracing::{info, warn, error};
+use tracing::{info, error};
 
 /// Optional dependency for remote loading (activated via `remote_loading` feature)
 #[cfg(feature = "remote_loading")]

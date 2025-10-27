@@ -1,8 +1,7 @@
 //! Security system for AI Core
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Security configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +64,7 @@ impl Default for SecurityConfig {
 }
 
 /// Security system
+#[derive(Debug)]
 pub struct SecuritySystem {
     config: SecurityConfig,
     audit_log: Vec<AuditEntry>,
@@ -169,8 +169,8 @@ pub enum SecurityError {
     ExecutionTimeExceeded { actual: u64, max: u64 },
     #[error("Memory usage exceeded: {actual} bytes > {max} bytes")]
     MemoryUsageExceeded { actual: u64, max: u64 },
-    #[error("Source not allowed: {source}")]
-    SourceNotAllowed { source: String },
+    #[error("Source not allowed: {source_name}")]
+    SourceNotAllowed { source_name: String },
     #[error("Model not signed")]
     ModelNotSigned,
     #[error("Security policy violation: {policy}")]

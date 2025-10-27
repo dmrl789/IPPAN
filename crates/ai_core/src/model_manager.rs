@@ -5,16 +5,15 @@
 //! - Integrity verification and performance metrics
 //! - Secure storage with hash checking and rollback capability
 
-use crate::gbdt::{GBDTModel, GBDTError, ModelMetadata, SecurityConstraints, GBDTMetrics};
+use crate::gbdt::{GBDTModel, GBDTError};
 use crate::model::ModelPackage;
-use anyhow::{Context, Result};
-use hex;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, info, instrument};
 use tokio::fs;
 
 /// Model manager configuration
@@ -315,7 +314,8 @@ impl ModelManager {
         // Deterministic quick inference test
         let features = vec![0i64; model.metadata.feature_count];
         let start = std::time::Instant::now();
-        let _ = model.evaluate(&features)?;
+        let mut model_clone = model.clone();
+        let _ = model_clone.evaluate(&features)?;
         if start.elapsed().as_millis() > self.config.validation_timeout_ms as u128 {
             return Err(GBDTError::EvaluationTimeout {
                 timeout_ms: self.config.validation_timeout_ms,
