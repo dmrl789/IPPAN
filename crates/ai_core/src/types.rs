@@ -32,8 +32,10 @@ pub struct ModelMetadata {
 pub struct ModelInput {
     /// Input data
     pub data: Vec<u8>,
-    /// Input type
-    pub data_type: DataType,
+    /// Input shape
+    pub shape: Vec<usize>,
+    /// Input data type
+    pub dtype: DataType,
     /// Input metadata
     pub metadata: HashMap<String, String>,
 }
@@ -43,8 +45,10 @@ pub struct ModelInput {
 pub struct ModelOutput {
     /// Output data
     pub data: Vec<u8>,
-    /// Output type
-    pub data_type: DataType,
+    /// Output shape
+    pub shape: Vec<usize>,
+    /// Output data type
+    pub dtype: DataType,
     /// Output metadata
     pub metadata: HashMap<String, String>,
     /// Confidence score
@@ -52,7 +56,7 @@ pub struct ModelOutput {
 }
 
 /// Data type
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataType {
     /// Text data
     Text,
@@ -68,6 +72,39 @@ pub enum DataType {
     Audio,
     /// Video data
     Video,
+    /// 64-bit integer
+    Int64,
+    /// 32-bit integer
+    Int32,
+    /// 16-bit integer
+    Int16,
+    /// 8-bit integer
+    Int8,
+    /// 32-bit float
+    Float32,
+    /// 64-bit float
+    Float64,
+}
+
+impl DataType {
+    /// Get the size in bytes for this data type
+    pub fn size_bytes(&self) -> usize {
+        match self {
+            DataType::Text => 1, // Variable length, assume 1 byte per character
+            DataType::Binary => 1,
+            DataType::Json => 1,
+            DataType::Numeric => 8, // Default to 64-bit
+            DataType::Image => 1,
+            DataType::Audio => 1,
+            DataType::Video => 1,
+            DataType::Int64 => 8,
+            DataType::Int32 => 4,
+            DataType::Int16 => 2,
+            DataType::Int8 => 1,
+            DataType::Float32 => 4,
+            DataType::Float64 => 8,
+        }
+    }
 }
 
 /// Execution context
@@ -99,5 +136,30 @@ pub struct ExecutionResult {
     /// Error message (if failed)
     pub error: Option<String>,
     /// Result metadata
+    pub metadata: HashMap<String, String>,
+}
+
+/// Execution metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionMetadata {
+    /// Execution ID
+    pub id: String,
+    /// Model ID
+    pub model_id: String,
+    /// Execution start time
+    pub start_time: u64,
+    /// Execution end time
+    pub end_time: u64,
+    /// Execution duration (microseconds)
+    pub duration_us: u64,
+    /// Memory usage (bytes)
+    pub memory_usage: u64,
+    /// CPU usage percentage
+    pub cpu_usage: f64,
+    /// Success flag
+    pub success: bool,
+    /// Error message (if failed)
+    pub error: Option<String>,
+    /// Additional metadata
     pub metadata: HashMap<String, String>,
 }

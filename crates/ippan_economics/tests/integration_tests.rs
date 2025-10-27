@@ -1,7 +1,7 @@
 //! Integration tests for IPPAN DAG-Fair Emission Framework
 
 use ippan_economics::prelude::*;
-use ippan_economics::{ValidatorParticipation, ValidatorRole};
+use ippan_economics::{ValidatorParticipation, ValidatorRole, ValidatorId};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 
@@ -50,25 +50,25 @@ fn test_reward_distribution_fairness() {
     // Create validators with different participation levels
     let participations = vec![
         ValidatorParticipation {
-            validator_id: "high_participant".to_string(),
+            validator_id: ValidatorId::new("high_participant"),
             role: ValidatorRole::Proposer,
             blocks_contributed: 20,
             uptime_score: Decimal::new(100, 2), // 1.0
         },
         ValidatorParticipation {
-            validator_id: "medium_participant".to_string(),
+            validator_id: ValidatorId::new("medium_participant"),
             role: ValidatorRole::Verifier,
             blocks_contributed: 10,
             uptime_score: Decimal::new(90, 2), // 0.9
         },
         ValidatorParticipation {
-            validator_id: "low_participant".to_string(),
+            validator_id: ValidatorId::new("low_participant"),
             role: ValidatorRole::Verifier,
             blocks_contributed: 5,
             uptime_score: Decimal::new(80, 2), // 0.8
         },
         ValidatorParticipation {
-            validator_id: "observer".to_string(),
+            validator_id: ValidatorId::new("observer"),
             role: ValidatorRole::Observer,
             blocks_contributed: 0,
             uptime_score: Decimal::new(100, 2), // 1.0
@@ -83,10 +83,10 @@ fn test_reward_distribution_fairness() {
     ).unwrap();
     
     // High participant should get most rewards
-    let high_reward = distribution.validator_rewards.get("high_participant").unwrap();
-    let medium_reward = distribution.validator_rewards.get("medium_participant").unwrap();
-    let low_reward = distribution.validator_rewards.get("low_participant").unwrap();
-    let observer_reward = distribution.validator_rewards.get("observer").unwrap();
+    let high_reward = distribution.validator_rewards.get(&ValidatorId::new("high_participant")).unwrap();
+    let medium_reward = distribution.validator_rewards.get(&ValidatorId::new("medium_participant")).unwrap();
+    let low_reward = distribution.validator_rewards.get(&ValidatorId::new("low_participant")).unwrap();
+    let observer_reward = distribution.validator_rewards.get(&ValidatorId::new("observer")).unwrap();
     
     assert!(high_reward.total_reward > medium_reward.total_reward);
     assert!(medium_reward.total_reward > low_reward.total_reward);
@@ -192,7 +192,7 @@ fn test_round_reward_distribution_components() {
     
     let participations = vec![
         ValidatorParticipation {
-            validator_id: "validator1".to_string(),
+            validator_id: ValidatorId::new("validator1"),
             role: ValidatorRole::Proposer,
             blocks_contributed: 10,
             uptime_score: Decimal::ONE,
@@ -206,7 +206,7 @@ fn test_round_reward_distribution_components() {
         1_000,
     ).unwrap();
     
-    let validator_reward = distribution.validator_rewards.get("validator1").unwrap();
+    let validator_reward = distribution.validator_rewards.get(&ValidatorId::new("validator1")).unwrap();
     
     // Check that all components are present
     assert!(validator_reward.round_emission > 0);

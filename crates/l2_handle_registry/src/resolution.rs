@@ -2,8 +2,10 @@
 
 use crate::types::*;
 use crate::errors::*;
+use crate::registry::L2HandleRegistry;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::time::{timeout, Duration};
 
 /// Handle resolution service
@@ -39,7 +41,7 @@ impl HandleResolver {
         // Resolve from registry with timeout
         let resolution_result = timeout(
             Duration::from_secs(5),
-            self.registry.resolve(handle)
+            async { self.registry.resolve(handle) }
         ).await;
         
         match resolution_result {
@@ -60,9 +62,9 @@ impl HandleResolver {
         
         for handle in handles {
             let resolver = self.clone();
-            let handle = handle.clone();
+            let handle_clone = handle.clone();
             futures.push(async move {
-                (handle, resolver.resolve(&handle).await)
+                (handle_clone, resolver.resolve(&handle).await)
             });
         }
         
@@ -78,7 +80,7 @@ impl HandleResolver {
     pub async fn get_metadata(&self, handle: &Handle) -> Result<HandleMetadata> {
         timeout(
             Duration::from_secs(5),
-            self.registry.get_metadata(handle)
+            async { self.registry.get_metadata(handle) }
         ).await
         .map_err(|_| HandleRegistryError::ResolutionTimeout)?
     }

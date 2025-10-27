@@ -10,6 +10,9 @@ pub type RoundIndex = u64;
 /// Reward amount in micro-IPN (1 IPN = 10^8 micro-IPN)
 pub type RewardAmount = u64;
 
+/// Micro-IPN type alias for consistency with types crate
+pub type MicroIPN = u128;
+
 /// Validator identifier
 ///
 /// Can be one of:
@@ -43,6 +46,12 @@ impl ValidatorId {
     /// Check if this is a registry alias (not handle or pubkey)
     pub fn is_alias(&self) -> bool {
         !self.is_handle() && !self.is_public_key()
+    }
+}
+
+impl std::fmt::Display for ValidatorId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

@@ -2,7 +2,7 @@
 
 use crate::types::*;
 use crate::errors::*;
-use ippan_ippan_economics::ValidatorId;
+use ippan_economics::ValidatorId;
 use ippan_l2_handle_registry::{L2HandleRegistry, Handle, PublicKey as L2PublicKey};
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use std::sync::Arc;
@@ -66,9 +66,9 @@ impl ValidatorResolver {
         
         for id in ids {
             let resolver = self.clone();
-            let id = id.clone();
+            let id_clone = id.clone();
             futures.push(async move {
-                (id, resolver.resolve(&id).await)
+                (id_clone, resolver.resolve(&id).await)
             });
         }
         
@@ -107,7 +107,7 @@ impl ValidatorResolver {
         
         let resolution_result = timeout(
             Duration::from_secs(5),
-            self.l2_registry.resolve(&handle)
+            async { self.l2_registry.resolve(&handle) }
         ).await;
         
         match resolution_result {
@@ -155,7 +155,7 @@ impl ValidatorResolver {
     async fn get_handle_metadata(&self, handle: &Handle) -> Result<ValidatorMetadata> {
         let metadata = timeout(
             Duration::from_secs(5),
-            self.l2_registry.get_metadata(handle)
+            async { self.l2_registry.get_metadata(handle) }
         ).await
         .map_err(|_| ValidatorResolutionError::ResolutionTimeout)?
         .map_err(ValidatorResolutionError::L2RegistryError)?;

@@ -5,7 +5,7 @@ use crate::errors::*;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Round reward distribution engine
 #[derive(Debug, Clone)]
@@ -237,7 +237,7 @@ mod tests {
 
     fn create_test_participation(validator_id: &str, role: ValidatorRole, blocks: u32) -> ValidatorParticipation {
         ValidatorParticipation {
-            validator_id: validator_id.to_string(),
+            validator_id: ValidatorId::new(validator_id),
             role,
             blocks_contributed: blocks,
             uptime_score: Decimal::ONE,
@@ -260,8 +260,8 @@ mod tests {
         assert_eq!(distribution.validator_rewards.len(), 2);
         
         // Proposer should get more reward than verifier
-        let proposer_reward = distribution.validator_rewards.get("validator1").unwrap();
-        let verifier_reward = distribution.validator_rewards.get("validator2").unwrap();
+        let proposer_reward = distribution.validator_rewards.get(&ValidatorId::new("validator1")).unwrap();
+        let verifier_reward = distribution.validator_rewards.get(&ValidatorId::new("validator2")).unwrap();
         
         assert!(proposer_reward.total_reward > verifier_reward.total_reward);
     }

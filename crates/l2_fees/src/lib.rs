@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// L2 transaction types (smart contracts and AI operations)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum L2TxKind {
     /// Smart contract deployment
     ContractDeploy,
@@ -149,7 +149,7 @@ impl L2FeeManager {
             .copied()
             .unwrap_or(0);
         
-        let units = units.unwrap_or_else(|| self.calculate_units(tx_kind, additional_data));
+        let units = units.unwrap_or_else(|| self.calculate_units(tx_kind, &additional_data));
         let unit_cost = unit_fee * units;
         let total_fee = base_fee + unit_cost;
         
@@ -194,34 +194,40 @@ impl L2FeeManager {
     }
     
     /// Calculate units for variable-cost operations
-    fn calculate_units(&self, tx_kind: L2TxKind, additional_data: Option<HashMap<String, u64>>) -> u64 {
+    fn calculate_units(&self, tx_kind: L2TxKind, additional_data: &Option<HashMap<String, u64>>) -> u64 {
         match tx_kind {
             L2TxKind::ContractDeploy | L2TxKind::AIModelRegister | L2TxKind::AIModelUpdate => {
                 additional_data
+                    .as_ref()
                     .and_then(|data| data.get("size_bytes").copied())
                     .unwrap_or(1000) // Default 1KB
             }
             L2TxKind::ContractCall | L2TxKind::AIModelInference => {
                 additional_data
+                    .as_ref()
                     .and_then(|data| data.get("gas_units").or_else(|| data.get("compute_units")).copied())
                     .unwrap_or(1000) // Default 1000 gas/compute units
             }
             L2TxKind::AIModelStorage => {
                 let size_mb = additional_data
+                    .as_ref()
                     .and_then(|data| data.get("size_mb").copied())
                     .unwrap_or(1);
                 let days = additional_data
+                    .as_ref()
                     .and_then(|data| data.get("days").copied())
                     .unwrap_or(1);
                 size_mb * days
             }
             L2TxKind::FederatedLearning => {
                 additional_data
+                    .as_ref()
                     .and_then(|data| data.get("rounds").copied())
                     .unwrap_or(1)
             }
             L2TxKind::ProofOfInference => {
                 additional_data
+                    .as_ref()
                     .and_then(|data| data.get("complexity").copied())
                     .unwrap_or(100)
             }

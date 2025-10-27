@@ -8,7 +8,7 @@
 //! - Security testing
 //! - End-to-end testing
 
-use crate::gbdt::{GBDTModel, GBDTError, GBDTResult, SecurityConstraints, FeatureNormalization};
+use crate::gbdt::{GBDTModel, GBDTError, GBDTResult, SecurityConstraints, FeatureNormalization, Tree, Node};
 use crate::model_manager::{ModelManager, ModelManagerConfig};
 use crate::feature_engineering::{FeatureEngineeringPipeline, FeatureEngineeringConfig, RawFeatureData};
 use crate::monitoring::{MonitoringSystem, MonitoringConfig};
@@ -639,7 +639,17 @@ pub mod test_utils {
 
     /// Create test model
     pub fn create_test_model() -> GBDTModel {
-        create_test_model()
+        GBDTModel {
+            bias: 10,
+            scale: 10000,
+            trees: vec![Tree {
+                nodes: vec![
+                    Node { feature_index: 0, threshold: 5000, left: 1, right: 2, value: None },
+                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(100) },
+                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(200) },
+                ],
+            }],
+        }
     }
 
     /// Wait for condition with timeout

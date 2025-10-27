@@ -18,5 +18,8 @@ hex = "0.4"
 ippan-types = { path = "../types" }
 ippan-crypto = { path = "../crypto" }
 
+# Async utilities
+futures = "0.3"
+
 [dev-dependencies]
 tokio-test = "0.4"

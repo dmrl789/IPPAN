@@ -8,7 +8,7 @@
 //! - Configuration hot-reloading
 //! - Secrets management
 
-use crate::gbdt::{GBDTModel, SecurityConstraints};
+use crate::gbdt::{GBDTModel, SecurityConstraints, GBDTError};
 use crate::model_manager::ModelManagerConfig;
 use crate::feature_engineering::FeatureEngineeringConfig;
 use crate::monitoring::MonitoringConfig;

@@ -160,14 +160,14 @@ impl ModelManager {
             "Model {} loaded in {}ms, size: {} bytes, validation: {}",
             model_id,
             load_time.as_millis(),
-            model_path.metadata().await?.len(),
+            model_path.metadata()?.len(),
             validation_passed
         );
 
         Ok(ModelLoadResult {
             model,
             load_time_ms: load_time.as_millis() as u64,
-            file_size: model_path.metadata().await?.len(),
+            file_size: model_path.metadata()?.len(),
             from_cache: false,
             validation_passed,
         })
@@ -204,7 +204,6 @@ impl ModelManager {
 
         // Ensure model directory exists
         fs::create_dir_all(&self.config.model_directory)
-            .await
             .context("Failed to create model directory")?;
 
         // Save model to disk

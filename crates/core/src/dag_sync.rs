@@ -34,6 +34,7 @@ use tokio::time::interval;
 
 use crate::block::Block;
 use crate::dag::BlockDAG;
+use crate::zk_stark::{verify_stark_proof, generate_stark_proof, deserialize_proof, serialize_proof};
 
 /// Gossip topic name shared by every IPPAN node.
 const DAG_TOPIC: &str = "ippan-dag";
@@ -403,9 +404,17 @@ fn handle_gossip_event(
                         );
                         
                         // Verify the zk-STARK proof using our implementation
-                        if let Err(e) = self.verify_stark_proof(&block, &proof_bytes) {
-                            warn!("zk-STARK proof verification failed for block {}: {}", hex::encode(hash), e);
-                            continue;
+                        match deserialize_proof(&proof_bytes) {
+                            Ok(proof) => {
+                                if let Err(e) = verify_stark_proof(&block, &proof) {
+                                    warn!("zk-STARK proof verification failed for block {}: {}", hex::encode(hash), e);
+                                    return Ok(());
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to deserialize zk-STARK proof for block {}: {}", hex::encode(hash), e);
+                                return Ok(());
+                            }
                         }
                         
                         debug!("zk-STARK proof verified for block {}", hex::encode(hash));
@@ -453,10 +462,11 @@ fn broadcast_tips(
             Some(block) => {
                 if seen.insert(hash) {
                     // Generate zk-STARK proof for the block
-                    let stark_proof = Self::generate_stark_proof(&block)?;
+                    let stark_proof = generate_stark_proof(&block)?;
+                    let stark_proof_bytes = serialize_proof(&stark_proof)?;
                     let payload = serde_json::to_vec(&GossipMsg::Block {
                         block: Box::new(block),
-                        stark_proof,
+                        stark_proof: Some(stark_proof_bytes),
                     })
                     .context("failed to serialize block gossip message")?;
                     if let Err(err) = gossip.publish(topic.clone(), payload) {
