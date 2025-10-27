@@ -10,6 +10,7 @@ use rand::Rng;
 pub mod hash_functions;
 pub mod merkle_trees;
 pub mod commitment_schemes;
+pub mod confidential;
 
 pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256, SHA3_256, BLAKE2b};
 pub use merkle_trees::{MerkleTree, MerkleProof, MerkleError};
