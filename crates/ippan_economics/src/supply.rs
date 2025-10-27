@@ -5,7 +5,7 @@ use crate::errors::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, warn};
 
 /// Supply tracking and verification system
 #[derive(Debug, Clone, Serialize, Deserialize)]
