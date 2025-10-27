@@ -12,9 +12,17 @@ pub enum AiCoreError {
     #[error("Execution error: {0}")]
     Execution(String),
     
+    /// Execution failed error
+    #[error("Execution failed: {0}")]
+    ExecutionFailed(String),
+    
     /// Validation error
     #[error("Validation error: {0}")]
     Validation(String),
+    
+    /// Validation failed error
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
     
     /// Determinism error
     #[error("Determinism error: {0}")]
