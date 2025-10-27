@@ -101,3 +101,28 @@ pub struct ExecutionResult {
     /// Result metadata
     pub metadata: HashMap<String, String>,
 }
+
+/// Execution metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionMetadata {
+    /// Execution ID
+    pub execution_id: String,
+    /// Model ID used
+    pub model_id: String,
+    /// Execution start time
+    pub start_time: u64,
+    /// Execution end time
+    pub end_time: u64,
+    /// Execution duration (microseconds)
+    pub duration_us: u64,
+    /// Memory usage (bytes)
+    pub memory_usage: u64,
+    /// CPU usage percentage
+    pub cpu_usage: f64,
+    /// Success flag
+    pub success: bool,
+    /// Error message (if failed)
+    pub error: Option<String>,
+    /// Additional metadata
+    pub metadata: HashMap<String, String>,
+}

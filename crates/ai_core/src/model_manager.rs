@@ -160,7 +160,7 @@ impl ModelManager {
             "Model {} loaded in {}ms, size: {} bytes, validation: {}",
             model_id,
             load_time.as_millis(),
-            model_path.metadata().await?.len(),
+            model_path.metadata()?.len(),
             validation_passed
         );
 

@@ -1,0 +1,13 @@
+[package]
+name = "test_deterministic_gbdt"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[[bin]]
+name = "test_deterministic_gbdt"
+path = "src/main.rs"
+
+[dependencies]
+sha3 = "0.10"
