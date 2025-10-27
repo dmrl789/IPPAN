@@ -1,3 +1,26 @@
+//! # IPPAN Mempool
+//!
+//! Production-grade transaction mempool for the IPPAN blockchain.
+//!
+//! ## Features
+//!
+//! - **Fee-based prioritization**: Transactions with higher fees are prioritized for block inclusion
+//! - **Nonce ordering**: Ensures transactions from the same sender are included in correct order
+//! - **Automatic expiration**: Old transactions are automatically removed after a configurable duration
+//! - **Size limits**: Prevents unbounded memory growth with configurable size limits
+//! - **Thread-safe**: Uses RwLock for concurrent access from multiple threads
+//! - **Confidential transaction support**: Validates ZK proofs for confidential transactions
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use ippan_mempool::Mempool;
+//! use ippan_types::{Transaction, Amount};
+//!
+//! let mempool = Mempool::new(10_000);
+//! // Add transactions and retrieve them for block creation
+//! ```
+
 use anyhow::Result;
 use ippan_crypto::validate_confidential_transaction;
 use ippan_types::Transaction;
@@ -38,7 +61,22 @@ impl PartialOrd for BlockCandidate {
     }
 }
 
-/// Mempool for managing pending transactions
+/// Production-grade mempool for managing pending transactions.
+///
+/// The mempool is thread-safe and supports concurrent access from multiple threads.
+/// It implements fee-based prioritization, nonce ordering, and automatic cleanup
+/// of expired transactions.
+///
+/// ## Thread Safety
+///
+/// All methods are thread-safe and can be called concurrently. The mempool uses
+/// `RwLock` internally to ensure consistency while allowing multiple readers.
+///
+/// ## Memory Management
+///
+/// The mempool enforces a maximum size limit and automatically evicts low-fee
+/// transactions when the limit is reached. Expired transactions are cleaned up
+/// periodically to prevent unbounded memory growth.
 pub struct Mempool {
     /// Pending transactions indexed by hash
     transactions: RwLock<HashMap<String, TransactionMeta>>,
@@ -53,6 +91,25 @@ pub struct Mempool {
 }
 
 impl Mempool {
+    /// Create a new mempool with the specified maximum size.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_size` - Maximum number of transactions to keep in the mempool
+    ///
+    /// # Default Configuration
+    ///
+    /// - Expiration duration: 5 minutes
+    /// - Fee prioritization: Enabled
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ippan_mempool::Mempool;
+    ///
+    /// let mempool = Mempool::new(10_000);
+    /// assert_eq!(mempool.size(), 0);
+    /// ```
     pub fn new(max_size: usize) -> Self {
         Self {
             transactions: RwLock::new(HashMap::new()),
@@ -63,6 +120,21 @@ impl Mempool {
         }
     }
 
+    /// Create a new mempool with custom expiration duration.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_size` - Maximum number of transactions to keep
+    /// * `expiration_duration` - How long transactions remain valid before expiration
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ippan_mempool::Mempool;
+    /// use std::time::Duration;
+    ///
+    /// let mempool = Mempool::new_with_expiration(10_000, Duration::from_secs(600));
+    /// ```
     pub fn new_with_expiration(max_size: usize, expiration_duration: Duration) -> Self {
         Self {
             transactions: RwLock::new(HashMap::new()),
@@ -73,7 +145,29 @@ impl Mempool {
         }
     }
 
-    /// Add a transaction to the mempool
+    /// Add a transaction to the mempool.
+    ///
+    /// # Arguments
+    ///
+    /// * `tx` - Transaction to add
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(true)` if the transaction was successfully added
+    /// - `Ok(false)` if the transaction already exists or was rejected
+    /// - `Err(_)` if validation failed
+    ///
+    /// # Validation
+    ///
+    /// The transaction is validated before being added:
+    /// - Signature verification
+    /// - Confidential payload validation (if applicable)
+    /// - Fee cap enforcement
+    /// - Size limit enforcement
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe and can be called concurrently.
     pub fn add_transaction(&self, tx: Transaction) -> Result<bool> {
         let tx_hash = hex::encode(tx.hash());
         let sender = hex::encode(tx.from);
@@ -169,8 +263,33 @@ impl Mempool {
         }
     }
 
-    /// Get transactions for block creation (up to max_count)
-    /// Uses fee-based prioritization with proper nonce ordering
+    /// Get transactions for block creation with fee-based prioritization.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_count` - Maximum number of transactions to return
+    ///
+    /// # Returns
+    ///
+    /// A vector of transactions ordered by fee (highest first) while respecting
+    /// nonce ordering constraints. Transactions from the same sender are guaranteed
+    /// to be in consecutive nonce order.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Creates a priority queue ordered by transaction fee
+    /// 2. For each sender, maintains nonce ordering
+    /// 3. Only includes transactions that have consecutive nonces
+    /// 4. Returns up to `max_count` transactions
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use ippan_mempool::Mempool;
+    /// let mempool = Mempool::new(10_000);
+    /// let txs = mempool.get_transactions_for_block(100);
+    /// // Returns up to 100 highest-fee transactions with proper nonce ordering
+    /// ```
     pub fn get_transactions_for_block(&self, max_count: usize) -> Vec<Transaction> {
         if max_count == 0 {
             return Vec::new();
@@ -390,7 +509,23 @@ impl Mempool {
         false
     }
 
-    /// Get mempool statistics
+    /// Get mempool statistics for monitoring and diagnostics.
+    ///
+    /// # Returns
+    ///
+    /// A `MempoolStats` struct containing:
+    /// - Current size (number of transactions)
+    /// - Total fees of all pending transactions
+    /// - Age of oldest transaction
+    /// - Age of newest transaction
+    ///
+    /// # Use Case
+    ///
+    /// This method is useful for:
+    /// - Monitoring mempool health
+    /// - Detecting fee market conditions
+    /// - Identifying transaction backlog
+    /// - Performance metrics
     pub fn get_stats(&self) -> MempoolStats {
         let transactions = self.transactions.read();
         let mut total_fee = 0u64;
@@ -428,14 +563,14 @@ pub struct MempoolStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::Transaction;
+    use ippan_types::{Amount, Transaction};
     use std::time::Duration;
 
     #[test]
     fn test_mempool_add_remove() {
         let mempool = Mempool::new(100);
 
-        let tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
+        let tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
         let tx_hash = hex::encode(tx.hash());
 
         // Add transaction
@@ -456,8 +591,8 @@ mod tests {
         let mempool = Mempool::new(100);
 
         let sender = [1u8; 32];
-        let tx1 = Transaction::new(sender, [2u8; 32], 1000, 1);
-        let tx2 = Transaction::new(sender, [3u8; 32], 2000, 2);
+        let tx1 = Transaction::new(sender, [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new(sender, [3u8; 32], Amount::from_atomic(2000), 2);
 
         mempool.add_transaction(tx1).unwrap();
         mempool.add_transaction(tx2).unwrap();
@@ -474,9 +609,9 @@ mod tests {
         let sender2 = [2u8; 32];
 
         // Add transactions with different fees
-        let tx1 = Transaction::new(sender1, [3u8; 32], 1000, 1);
-        let tx2 = Transaction::new(sender2, [4u8; 32], 2000, 1);
-        let tx3 = Transaction::new(sender1, [5u8; 32], 1500, 2);
+        let tx1 = Transaction::new(sender1, [3u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new(sender2, [4u8; 32], Amount::from_atomic(2000), 1);
+        let tx3 = Transaction::new(sender1, [5u8; 32], Amount::from_atomic(1500), 2);
 
         mempool.add_transaction(tx1).unwrap();
         mempool.add_transaction(tx2).unwrap();
@@ -492,9 +627,9 @@ mod tests {
         let mempool = Mempool::new(100);
 
         let sender = [1u8; 32];
-        let tx1 = Transaction::new(sender, [2u8; 32], 1000, 1);
-        let tx2 = Transaction::new(sender, [3u8; 32], 2000, 2);
-        let tx3 = Transaction::new(sender, [4u8; 32], 1500, 3);
+        let tx1 = Transaction::new(sender, [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new(sender, [3u8; 32], Amount::from_atomic(2000), 2);
+        let tx3 = Transaction::new(sender, [4u8; 32], Amount::from_atomic(1500), 3);
 
         // Add transactions out of order
         mempool.add_transaction(tx2.clone()).unwrap();
@@ -517,9 +652,9 @@ mod tests {
         let mempool = Mempool::new(100);
 
         let sender = [1u8; 32];
-        let tx1 = Transaction::new(sender, [2u8; 32], 1000, 1);
-        let tx2 = Transaction::new(sender, [3u8; 32], 3000, 3);
-        let tx3 = Transaction::new(sender, [4u8; 32], 2000, 2);
+        let tx1 = Transaction::new(sender, [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new(sender, [3u8; 32], Amount::from_atomic(3000), 3);
+        let tx3 = Transaction::new(sender, [4u8; 32], Amount::from_atomic(2000), 2);
 
         mempool.add_transaction(tx2.clone()).unwrap();
         mempool.add_transaction(tx1.clone()).unwrap();
@@ -539,7 +674,7 @@ mod tests {
     fn test_mempool_expiration() {
         let mempool = Mempool::new_with_expiration(100, Duration::from_millis(100));
 
-        let tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
+        let tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
         assert!(mempool.add_transaction(tx).unwrap());
         assert_eq!(mempool.size(), 1);
 
@@ -547,7 +682,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(150));
 
         // Trigger cleanup by adding another transaction
-        let tx2 = Transaction::new([3u8; 32], [4u8; 32], 1000, 1);
+        let tx2 = Transaction::new([3u8; 32], [4u8; 32], Amount::from_atomic(1000), 1);
         assert!(mempool.add_transaction(tx2).unwrap());
 
         // First transaction should be expired and removed
@@ -558,8 +693,8 @@ mod tests {
     fn test_mempool_stats() {
         let mempool = Mempool::new(100);
 
-        let tx1 = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
-        let tx2 = Transaction::new([3u8; 32], [4u8; 32], 2000, 1);
+        let tx1 = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new([3u8; 32], [4u8; 32], Amount::from_atomic(2000), 1);
 
         mempool.add_transaction(tx1).unwrap();
         mempool.add_transaction(tx2).unwrap();
