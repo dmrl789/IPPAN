@@ -20,12 +20,17 @@ pub mod features;
 pub mod gbdt;
 pub mod health;
 pub mod model;
+pub mod model_manager;
+pub mod feature_engineering;
 pub mod types;
 pub mod execution;
 pub mod models;
 pub mod validation;
 pub mod determinism;
 pub mod log;
+pub mod production_config;
+pub mod deployment;
+pub mod tests;
 
 pub use config::{
     AiCoreConfig,
@@ -45,7 +50,12 @@ pub use features::{
     FeatureConfig,
     ValidatorTelemetry,
 };
-pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree};
+pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree, GBDTError, GBDTResult, GBDTMetrics, ModelMetadata, SecurityConstraints, FeatureNormalization};
+pub use model_manager::{ModelManager, ModelManagerConfig, ModelManagerMetrics, ModelLoadResult, ModelSaveResult};
+pub use feature_engineering::{FeatureEngineeringPipeline, FeatureEngineeringConfig, RawFeatureData, ProcessedFeatureData, FeatureStatistics, FeatureImportance};
+pub use production_config::{ProductionConfig, ProductionConfigManager, Environment, GBDTConfig, ResourceLimits, FeatureFlags, DeploymentConfig, LoggingConfig, ConfigFormat, ConfigValidationResult};
+pub use deployment::{ProductionDeployment, DeploymentStatus, HealthCheckResult, HealthStatus, DeploymentMetrics, utils};
+pub use tests::{TestSuite, TestConfig, TestResult, BenchmarkSuite, test_utils};
 pub use health::{
     HealthMonitor,
     HealthConfig,
