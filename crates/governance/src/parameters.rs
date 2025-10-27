@@ -1,7 +1,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use ippan_economics_core::{EconomicsParameterManager, EconomicsParams};
+// Use the core economics params definition for governance coupling
+use ippan_economics_core::types::EconomicsParams;
 use serde_json::json;
 
 /// Governance and Economics parameter management
@@ -127,7 +128,7 @@ impl ParameterManager {
             "economics.fee_cap_denom",
             "economics.proposer_weight_bps",
             "economics.verifier_weight_bps",
-            "economics.fee_recycling_bps",
+            // fee_recycling_bps removed; handled by distribution policy elsewhere
         ];
         if !valid.contains(&name) {
             return Err(anyhow::anyhow!("Invalid parameter: {}", name));
@@ -204,10 +205,6 @@ impl ParameterManager {
             }
             "economics.verifier_weight_bps" => {
                 self.parameters.economics.verifier_weight_bps =
-                    proposal.new_value.as_u64().unwrap() as u16;
-            }
-            "economics.fee_recycling_bps" => {
-                self.parameters.economics.fee_recycling_bps =
                     proposal.new_value.as_u64().unwrap() as u16;
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),

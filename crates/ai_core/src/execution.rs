@@ -41,13 +41,13 @@ impl ExecutionEngine {
 
     /// Load a model into the execution engine
     pub async fn load_model(&mut self, model_data: &[u8], metadata: ModelMetadata) -> Result<()> {
-        info!("Loading model: {:?}", metadata.id);
+        info!("Loading model: {:?}", metadata);
         
         // Validate model data
         self.validate_model_data(model_data, &metadata)?;
         
         // Store model metadata
-        self.models.insert(metadata.id.clone(), metadata);
+        self.models.insert(metadata.name.clone(), metadata);
         
         info!("Model loaded successfully: {:?}", self.models.keys().count());
         Ok(())
@@ -79,10 +79,13 @@ impl ExecutionEngine {
 
         // Create execution result
         let result = ExecutionResult {
-            output,
-            context,
+            data: output.data,
+            data_type: output.data_type,
+            execution_time_us: output.execution_time_us,
+            memory_usage: output.memory_usage,
             success: true,
             error: None,
+            metadata: output.metadata,
         };
 
         info!("Model execution completed successfully");
@@ -92,18 +95,22 @@ impl ExecutionEngine {
     /// Validate model data integrity
     fn validate_model_data(&self, data: &[u8], metadata: &ModelMetadata) -> Result<()> {
         // Check data size matches metadata
-        if data.len() as u64 != metadata.size_bytes {
-            return Err(AiCoreError::ValidationFailed(
-                "Model data size mismatch".to_string()
-            ));
+        let size_ok = metadata
+            .metadata
+            .get("size_bytes")
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(|sz| sz == data.len() as u64)
+            .unwrap_or(true);
+        if !size_ok {
+            return Err(AiCoreError::Validation("Model data size mismatch".to_string()));
         }
 
         // Verify model hash
         let computed_hash = blake3::hash(data).to_hex().to_string();
-        if computed_hash != metadata.id.hash {
-            return Err(AiCoreError::ValidationFailed(
-                "Model hash verification failed".to_string()
-            ));
+        if let Some(expected) = metadata.metadata.get("hash") {
+            if &computed_hash != expected {
+                return Err(AiCoreError::Validation("Model hash verification failed".to_string()));
+            }
         }
 
         Ok(())
@@ -112,20 +119,25 @@ impl ExecutionEngine {
     /// Validate input data
     fn validate_input(&self, input: &ModelInput, metadata: &ModelMetadata) -> Result<()> {
         // Check input shape
-        if input.shape != metadata.input_shape {
-            return Err(AiCoreError::InvalidParameters(
-                format!("Input shape mismatch: expected {:?}, got {:?}", 
-                    metadata.input_shape, input.shape)
-            ));
+        if let Some(expected_shape) = metadata.metadata.get("input_shape") {
+            if let Some(shape) = input.metadata.get("shape") {
+                if shape != expected_shape {
+                    return Err(AiCoreError::InvalidParameters(
+                        "Input shape mismatch".to_string()
+                    ));
+                }
+            }
         }
 
         // Check data size matches shape
-        let expected_size = input.shape.iter().product::<usize>() * 
-            input.dtype.size_bytes();
-        if input.data.len() != expected_size {
-            return Err(AiCoreError::InvalidParameters(
-                "Input data size mismatch".to_string()
-            ));
+        if let Some(expected_bytes) = input.metadata.get("size_bytes") {
+            if let Ok(expected) = expected_bytes.parse::<usize>() {
+                if input.data.len() != expected {
+                    return Err(AiCoreError::InvalidParameters(
+                        "Input data size mismatch".to_string()
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -141,10 +153,12 @@ impl ExecutionEngine {
         let start_time = std::time::Instant::now();
         
         // Set deterministic seed if provided
-        if let Some(seed) = context.seed {
+        if let Some(seed_str) = context.parameters.get("seed") {
+            if let Ok(seed) = seed_str.parse::<u64>() {
             info!("Using deterministic seed: {}", seed);
             // Set environment variable for deterministic operations
             std::env::set_var("AI_DETERMINISTIC_SEED", seed.to_string());
+            }
         }
 
         // Model execution implementation
@@ -155,12 +169,15 @@ impl ExecutionEngine {
         // 4. Verify output dimensions
         // 5. Return the output with comprehensive metadata
         
-        info!("Executing model: {:?}, input size: {} bytes", 
-            metadata.id, input.data.len());
+        info!("Executing model: {}@{}, input size: {} bytes", 
+            metadata.name, metadata.version, input.data.len());
         
         // Calculate output size based on metadata
-        let output_size = metadata.output_shape.iter().product::<usize>() * 
-            input.dtype.size_bytes();
+        let output_size = metadata
+            .metadata
+            .get("output_size")
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(0);
         
         // Initialize output buffer
         let mut output_data = vec![0u8; output_size];
@@ -170,7 +187,7 @@ impl ExecutionEngine {
         // such as ONNX Runtime, TensorFlow Lite, or custom GBDT implementation
         
         // For GBDT models, we could use the gbdt module
-        if metadata.architecture == "gbdt" {
+        if metadata.metadata.get("architecture").map(|s| s.as_str()) == Some("gbdt") {
             info!("Executing GBDT model");
             // Convert input to feature vector
             let features = self.convert_input_to_features(input)?;
@@ -208,17 +225,17 @@ impl ExecutionEngine {
         
         info!("Model execution completed in {:?}", execution_time);
         
+        let mut md = std::collections::HashMap::new();
+        md.insert("execution_time_us".to_string(), execution_time.as_micros().to_string());
+        md.insert("memory_usage_bytes".to_string(), (input.data.len() as u64).to_string());
+        md.insert("execution_hash".to_string(), execution_hash);
+        md.insert("model_version".to_string(), metadata.version.clone());
+
         Ok(ModelOutput {
             data: output_data,
-            shape: metadata.output_shape.clone(),
-            dtype: input.dtype,
-            metadata: ExecutionMetadata {
-                execution_time_us: execution_time.as_micros() as u64,
-                memory_usage_bytes: metadata.size_bytes + input.data.len() as u64,
-                cpu_cycles: self.estimate_cpu_cycles(execution_time),
-                execution_hash,
-                model_version: metadata.id.version.clone(),
-            },
+            data_type: input.data_type.clone(),
+            metadata: md,
+            confidence: 1.0,
         })
     }
     

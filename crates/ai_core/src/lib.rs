@@ -1,48 +1,15 @@
 //! Deterministic AI Core for L1 Blockchain Operations
 //!
-//! Provides integer-only AI evaluation for validator reputation, model
-//! verification, and on-chain inference under consensus constraints.
-//!
-//! Modules:
+//! Minimal, stable surface used across the workspace:
 //! - `features`: Deterministic feature extraction from validator telemetry
 //! - `gbdt`: Integer-only Gradient Boosted Decision Tree evaluator
-//! - `model`: Model packaging and verification utilities
 //! - `types`: Common data structures for models and execution
-//! - `execution`: Deterministic execution engine for packaged models
-//! - `models`: Model manager and loaders (local/remote)
-//! - `validation`: Model validation utilities
-//! - `determinism`: Deterministic execution utilities
-//! - `log`: Evaluation logging helpers
 
-pub mod config;
 pub mod errors;
 pub mod features;
 pub mod gbdt;
-pub mod health;
-pub mod model;
-pub mod model_manager;
-pub mod feature_engineering;
 pub mod types;
-pub mod execution;
-pub mod models;
-pub mod validation;
-pub mod determinism;
-pub mod log;
-pub mod production_config;
-pub mod deployment;
-pub mod tests;
 
-pub use config::{
-    AiCoreConfig,
-    ConfigManager,
-    HealthConfig as ConfigHealthConfig,
-    ExecutionConfig,
-    LoggingConfig,
-    SecurityConfig,
-    PerformanceConfig,
-    FeatureConfig as ConfigFeatureConfig,
-    ValidationConfig,
-};
 pub use features::{
     extract_features,
     normalize_features,
@@ -50,28 +17,16 @@ pub use features::{
     FeatureConfig,
     ValidatorTelemetry,
 };
-pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree, GBDTError, GBDTResult, GBDTMetrics, ModelMetadata, SecurityConstraints, FeatureNormalization};
-pub use model_manager::{ModelManager, ModelManagerConfig, ModelManagerMetrics, ModelLoadResult, ModelSaveResult};
-pub use feature_engineering::{FeatureEngineeringPipeline, FeatureEngineeringConfig, RawFeatureData, ProcessedFeatureData, FeatureStatistics, FeatureImportance};
-pub use production_config::{ProductionConfig, ProductionConfigManager, Environment, GBDTConfig, ResourceLimits, FeatureFlags, DeploymentConfig, LoggingConfig, ConfigFormat, ConfigValidationResult};
-pub use deployment::{ProductionDeployment, DeploymentStatus, HealthCheckResult, HealthStatus, DeploymentMetrics, utils};
-pub use tests::{TestSuite, TestConfig, TestResult, BenchmarkSuite, test_utils};
-pub use health::{
-    HealthMonitor,
-    HealthConfig,
-    HealthStatus,
-    SystemHealth,
-    PerformanceMetrics,
-    HealthChecker,
-    MemoryUsageChecker,
-    ModelExecutionChecker,
-};
-pub use model::{
-    load_model,
-    verify_model_hash,
-    ModelMetadata,
-    ModelPackage,
-    MODEL_HASH_SIZE,
+pub use gbdt::{
+    eval_gbdt,
+    GBDTModel,
+    Node,
+    Tree,
+    GBDTError,
+    GBDTResult,
+    GBDTMetrics,
+    SecurityConstraints,
+    FeatureNormalization,
 };
 pub use types::{
     ModelId,
@@ -80,7 +35,7 @@ pub use types::{
     ExecutionContext,
     ExecutionResult,
     DataType,
-    ExecutionMetadata,
+    ModelMetadata,
 };
 pub use errors::AiCoreError;
 

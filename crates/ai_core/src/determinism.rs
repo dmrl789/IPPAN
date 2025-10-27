@@ -109,7 +109,12 @@ impl DeterminismManager {
         let expected_hash = self.compute_execution_hash(context, output)?;
         
         // Compare with actual execution hash
-        let is_deterministic = expected_hash == output.metadata.execution_hash;
+        let is_deterministic = expected_hash
+            == output
+                .metadata
+                .get("execution_hash")
+                .cloned()
+                .unwrap_or_default();
         
         if !is_deterministic {
             warn!("Non-deterministic execution detected for: {}", context.execution_id);
@@ -131,13 +136,13 @@ impl DeterminismManager {
         hasher.update(execution_id.as_bytes());
         
         // Hash model ID
-        hasher.update(model_id.name.as_bytes());
-        hasher.update(model_id.version.as_bytes());
-        hasher.update(model_id.hash.as_bytes());
+        hasher.update(model_id.as_bytes());
         
         // Hash input data
         hasher.update(&input.data);
-        hasher.update(&input.shape.iter().map(|x| x.to_le_bytes()).flatten().collect::<Vec<_>>());
+        if let Some(shape) = input.metadata.get("shape") {
+            hasher.update(shape.as_bytes());
+        }
         
         // Convert hash to u64 seed
         let hash = hasher.finalize();
@@ -159,7 +164,9 @@ impl DeterminismManager {
         hasher.update(&input.shape.iter().map(|x| x.to_le_bytes()).flatten().collect::<Vec<_>>());
         
         // Hash data type
-        hasher.update(&(input.dtype as u8).to_le_bytes());
+        if let Some(dtype) = input.metadata.get("dtype") {
+            hasher.update(dtype.as_bytes());
+        }
         
         Ok(hasher.finalize().to_hex().to_string())
     }
@@ -178,9 +185,7 @@ impl DeterminismManager {
         hasher.update(&context.seed.to_le_bytes());
         
         // Hash model ID
-        hasher.update(context.model_id.name.as_bytes());
-        hasher.update(context.model_id.version.as_bytes());
-        hasher.update(context.model_id.hash.as_bytes());
+        hasher.update(context.model_id.as_bytes());
         
         // Hash parameters
         for (key, value) in &context.parameters {
@@ -190,11 +195,15 @@ impl DeterminismManager {
         
         // Hash output data
         hasher.update(&output.data);
-        hasher.update(&output.shape.iter().map(|x| x.to_le_bytes()).flatten().collect::<Vec<_>>());
+        if let Some(shape) = output.metadata.get("shape") {
+            hasher.update(shape.as_bytes());
+        }
         
         // Hash execution metadata
         hasher.update(context.execution_id.as_bytes());
-        hasher.update(output.metadata.model_version.as_bytes());
+        if let Some(model_version) = output.metadata.get("model_version") {
+            hasher.update(model_version.as_bytes());
+        }
         
         Ok(hasher.finalize().to_hex().to_string())
     }
