@@ -59,6 +59,16 @@ pub fn validate_block(block: &Block) -> Result<(), ConfidentialTransactionError>
     Ok(())
 }
 
+/// Alias for validate_block to match the expected API
+pub fn validate_confidential_block(block: &Block) -> Result<(), ConfidentialTransactionError> {
+    validate_block(block)
+}
+
+/// Alias for validate_transaction to match the expected API
+pub fn validate_confidential_transaction(tx: &Transaction) -> Result<(), ConfidentialTransactionError> {
+    validate_transaction(tx)
+}
+
 /// Validate the zero-knowledge proof for a transaction if one is present.
 pub fn validate_transaction(tx: &Transaction) -> Result<(), ConfidentialTransactionError> {
     if tx.visibility != TransactionVisibility::Confidential {
