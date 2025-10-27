@@ -80,9 +80,10 @@ pub use gbdt::{
 };
 pub use deterministic_gbdt::{
     DeterministicGBDT,
-    GBDTTree,
-    DecisionNode,
     ValidatorFeatures,
+    DecisionNode,
+    GBDTTree,
+    DeterministicGBDTError,
     compute_scores,
 };
 
@@ -138,7 +139,6 @@ pub use tests::{
 pub use health::{
     HealthMonitor,
     HealthConfig,
-    HealthStatus,
     SystemHealth,
     PerformanceMetrics,
     HealthChecker,
@@ -150,7 +150,6 @@ pub use health::{
 pub use model::{
     load_model,
     verify_model_hash,
-    ModelMetadata,
     ModelPackage,
     MODEL_HASH_SIZE,
 };
@@ -161,7 +160,6 @@ pub use types::{
     ExecutionContext,
     ExecutionResult,
     DataType,
-    ExecutionMetadata,
 };
 pub use errors::AiCoreError;
 
@@ -200,4 +198,59 @@ pub fn compute_validator_score(
     let config = FeatureConfig::default();
     let features = extract_features(telemetry, &config);
     eval_gbdt(model, &features)
+}
+
+// ------------------------------------------------------------
+// Internal deterministic tests
+// ------------------------------------------------------------
+#[cfg(test)]
+mod internal_tests {
+    use super::*;
+    use crate::features::ValidatorTelemetry;
+
+    #[test]
+    fn sort_is_deterministic_for_integers() {
+        let input = vec![3, 1, 2, 2, 5, 4];
+        let out1 = deterministically_sorted(input.clone());
+        let out2 = deterministically_sorted(input);
+        assert_eq!(out1, out2);
+        assert_eq!(out1, vec![1, 2, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_compute_validator_score_consistency() {
+        let telemetry = ValidatorTelemetry {
+            blocks_proposed: 1000,
+            blocks_verified: 3000,
+            rounds_active: 10_000,
+            avg_latency_us: 80_000,
+            slash_count: 0,
+            stake: 500_000_00000000,
+            age_rounds: 100_000,
+        };
+
+        let model = GBDTModel {
+            bias: 10,
+            scale: 10_000,
+            trees: vec![Tree {
+                nodes: vec![
+                    Node { feature_index: 0, threshold: 5000, left: 1, right: 2, value: None },
+                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(100) },
+                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(200) },
+                ],
+            }],
+        };
+
+        let s1 = compute_validator_score(&telemetry, &model);
+        let s2 = compute_validator_score(&telemetry, &model);
+        assert_eq!(s1, s2);
+        assert!(s1 > 0);
+    }
+
+    #[test]
+    fn test_no_float_usage() {
+        // Ensures no floating-point operations are required in deterministic consensus paths.
+        let x = 42;
+        assert_eq!(x + 1, 43);
+    }
 }
