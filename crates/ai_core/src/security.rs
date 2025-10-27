@@ -65,6 +65,7 @@ impl Default for SecurityConfig {
 }
 
 /// Security system
+#[derive(Debug)]
 pub struct SecuritySystem {
     config: SecurityConfig,
     audit_log: Vec<AuditEntry>,
@@ -169,8 +170,8 @@ pub enum SecurityError {
     ExecutionTimeExceeded { actual: u64, max: u64 },
     #[error("Memory usage exceeded: {actual} bytes > {max} bytes")]
     MemoryUsageExceeded { actual: u64, max: u64 },
-    #[error("Source not allowed: {source}")]
-    SourceNotAllowed { source: String },
+    #[error("Source not allowed: {src}")]
+    SourceNotAllowed { src: String },
     #[error("Model not signed")]
     ModelNotSigned,
     #[error("Security policy violation: {policy}")]

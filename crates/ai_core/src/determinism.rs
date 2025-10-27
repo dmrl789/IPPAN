@@ -109,7 +109,12 @@ impl DeterminismManager {
         let expected_hash = self.compute_execution_hash(context, output)?;
         
         // Compare with actual execution hash
-        let is_deterministic = expected_hash == *output.metadata.get("execution_hash").unwrap_or(&String::new());
+        let is_deterministic = expected_hash
+            == *output
+                .metadata
+                .metadata
+                .get("execution_hash")
+                .unwrap_or(&String::new());
         
         if !is_deterministic {
             warn!("Non-deterministic execution detected for: {}", context.execution_id);
@@ -194,7 +199,14 @@ impl DeterminismManager {
         
         // Hash execution metadata
         hasher.update(context.execution_id.as_bytes());
-        hasher.update(output.metadata.get("model_version").unwrap_or(&String::new()).as_bytes());
+        hasher.update(
+            output
+                .metadata
+                .metadata
+                .get("model_version")
+                .unwrap_or(&String::new())
+                .as_bytes(),
+        );
         
         Ok(hasher.finalize().to_hex().to_string())
     }

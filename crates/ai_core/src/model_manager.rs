@@ -315,7 +315,9 @@ impl ModelManager {
         // Deterministic quick inference test
         let features = vec![0i64; model.metadata.feature_count];
         let start = std::time::Instant::now();
-        let _ = model.evaluate(&features)?;
+        // Evaluate on a temporary clone to avoid mutating the original
+        let mut model_clone = model.clone();
+        let _ = model_clone.evaluate(&features)?;
         if start.elapsed().as_millis() > self.config.validation_timeout_ms as u128 {
             return Err(GBDTError::EvaluationTimeout {
                 timeout_ms: self.config.validation_timeout_ms,

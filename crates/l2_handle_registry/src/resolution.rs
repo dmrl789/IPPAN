@@ -2,9 +2,11 @@
 
 use crate::types::*;
 use crate::errors::*;
+use crate::L2HandleRegistry;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
+use std::time::SystemTime;
 
 /// Handle resolution service
 /// 
@@ -66,7 +68,7 @@ impl HandleResolver {
             });
         }
         
-        let batch_results = futures::future::join_all(futures).await;
+        let batch_results = futures_util::future::join_all(futures).await;
         for (handle, result) in batch_results {
             results.insert(handle, result);
         }
