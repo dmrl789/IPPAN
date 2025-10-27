@@ -144,6 +144,17 @@ pub struct FeatureNormalization {
     pub maxs: Vec<i64>,
 }
 
+impl Default for FeatureNormalization {
+    fn default() -> Self {
+        Self {
+            means: Vec::new(),
+            std_devs: Vec::new(),
+            mins: Vec::new(),
+            maxs: Vec::new(),
+        }
+    }
+}
+
 /// Security constraints for model evaluation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SecurityConstraints {
