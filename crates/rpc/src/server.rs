@@ -565,15 +565,24 @@ async fn handle_p2p_transactions(
 async fn handle_p2p_block_request(
     State(state): State<SharedState>,
     Json(msg): Json<NetworkMessage>,
-) -> Result<Json<Option<Block>>, ApiError> {
-    if let NetworkMessage::BlockRequest { hash } = msg {
-        let result = state
+) -> Result<StatusCode, ApiError> {
+    if let NetworkMessage::BlockRequest { hash, reply_to } = msg {
+        if let Some(block) = state
             .storage
             .get_block(&hash)
-            .map_err(|e| ApiError::internal(format!("failed to read block: {e}")))?;
-        Ok(Json(result))
+            .map_err(|e| ApiError::internal(format!("failed to read block: {e}")))?
+        {
+            // Push response back to requester
+            let client = reqwest::Client::new();
+            let url = format!("{}/p2p/block-response", reply_to.trim_end_matches('/'));
+            let message = NetworkMessage::BlockResponse(block);
+            if let Err(err) = client.post(&url).json(&message).send().await {
+                warn!("failed to POST BlockResponse to {}: {}", url, err);
+            }
+        }
+        Ok(StatusCode::OK)
     } else {
-        Ok(Json(None))
+        Ok(StatusCode::OK)
     }
 }
 

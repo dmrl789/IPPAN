@@ -48,6 +48,8 @@ pub enum NetworkMessage {
     Transaction(Transaction),
     BlockRequest {
         hash: [u8; 32],
+        /// Base URL of requester (e.g., http://host:port)
+        reply_to: String,
     },
     BlockResponse(Block),
     PeerInfo {
@@ -435,7 +437,10 @@ impl HttpP2PNetwork {
 
     /// Request a block from peers
     pub async fn request_block(&self, hash: [u8; 32]) -> Result<()> {
-        let message = NetworkMessage::BlockRequest { hash };
+        let message = NetworkMessage::BlockRequest {
+            hash,
+            reply_to: self.get_announce_address(),
+        };
         self.message_sender.send(message)?;
         Ok(())
     }
