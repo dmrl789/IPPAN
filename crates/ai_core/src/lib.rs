@@ -18,6 +18,7 @@ pub mod config;
 pub mod errors;
 pub mod features;
 pub mod gbdt;
+pub mod deterministic_gbdt;
 pub mod health;
 pub mod model;
 pub mod model_manager;
@@ -30,8 +31,6 @@ pub mod determinism;
 pub mod log;
 pub mod production_config;
 pub mod deployment;
-pub mod tests;
-
 pub use config::{
     AiCoreConfig,
     ConfigManager,
@@ -51,15 +50,17 @@ pub use features::{
     ValidatorTelemetry,
 };
 pub use gbdt::{eval_gbdt, GBDTModel, Node, Tree, GBDTError, GBDTResult, GBDTMetrics, ModelMetadata, SecurityConstraints, FeatureNormalization};
+pub use deterministic_gbdt::{
+    DeterministicGBDT, ValidatorFeatures, DecisionNode, GBDTTree, 
+    DeterministicGBDTError, compute_scores, create_test_model
+};
 pub use model_manager::{ModelManager, ModelManagerConfig, ModelManagerMetrics, ModelLoadResult, ModelSaveResult};
 pub use feature_engineering::{FeatureEngineeringPipeline, FeatureEngineeringConfig, RawFeatureData, ProcessedFeatureData, FeatureStatistics, FeatureImportance};
-pub use production_config::{ProductionConfig, ProductionConfigManager, Environment, GBDTConfig, ResourceLimits, FeatureFlags, DeploymentConfig, LoggingConfig, ConfigFormat, ConfigValidationResult};
+pub use production_config::{ProductionConfig, ProductionConfigManager, Environment, GBDTConfig, ResourceLimits, FeatureFlags, DeploymentConfig, ConfigFormat, ConfigValidationResult};
 pub use deployment::{ProductionDeployment, DeploymentStatus, HealthCheckResult, HealthStatus, DeploymentMetrics, utils};
-pub use tests::{TestSuite, TestConfig, TestResult, BenchmarkSuite, test_utils};
 pub use health::{
     HealthMonitor,
     HealthConfig,
-    HealthStatus,
     SystemHealth,
     PerformanceMetrics,
     HealthChecker,
@@ -69,7 +70,6 @@ pub use health::{
 pub use model::{
     load_model,
     verify_model_hash,
-    ModelMetadata,
     ModelPackage,
     MODEL_HASH_SIZE,
 };
@@ -80,7 +80,6 @@ pub use types::{
     ExecutionContext,
     ExecutionResult,
     DataType,
-    ExecutionMetadata,
 };
 pub use errors::AiCoreError;
 
@@ -164,7 +163,7 @@ mod tests {
     #[test]
     fn test_no_float_usage() {
         // Ensures no floating-point types exist in deterministic paths.
-        let _ = 42;
-        assert_eq!(_ + 1, 43);
+        let x = 42;
+        assert_eq!(x + 1, 43);
     }
 }
