@@ -37,6 +37,7 @@ pub mod determinism;
 pub mod log;
 pub mod production_config;
 pub mod deployment;
+#[cfg(test)]
 pub mod tests;
 pub mod monitoring;
 pub mod security;
@@ -127,6 +128,7 @@ pub use deployment::{
 };
 
 // Test suites and benchmarks
+#[cfg(test)]
 pub use tests::{
     TestSuite,
     TestConfig,

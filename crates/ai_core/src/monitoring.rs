@@ -90,6 +90,7 @@ pub enum AlertSeverity {
 }
 
 /// Monitoring system
+#[derive(Debug)]
 pub struct MonitoringSystem {
     config: MonitoringConfig,
     metrics: HashMap<String, MetricValue>,

@@ -13,7 +13,7 @@ use crate::model_manager::ModelManagerConfig;
 use crate::feature_engineering::FeatureEngineeringConfig;
 use crate::monitoring::MonitoringConfig;
 use crate::security::SecurityConfig;
-use crate::GBDTError;
+// GBDTError already imported from crate::gbdt
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -575,12 +575,9 @@ pub mod templates {
         config.resources.max_threads = 32;
         
         config.monitoring.enable_performance_monitoring = true;
-        config.monitoring.enable_health_monitoring = true;
-        config.monitoring.enable_security_monitoring = true;
         
         config.security.enable_input_validation = true;
-        config.security.enable_integrity_checking = true;
-        config.security.enable_rate_limiting = true;
+        // Security toggles not present in SecurityConfig; keep core flags
         config.security.max_requests_per_minute = 10000;
         
         config.feature_flags.enable_debug_mode = false;
@@ -603,12 +600,9 @@ pub mod templates {
         config.resources.max_cpu_percent = 50.0;
         
         config.monitoring.enable_performance_monitoring = false;
-        config.monitoring.enable_health_monitoring = true;
-        config.monitoring.enable_security_monitoring = false;
         
         config.security.enable_input_validation = true;
-        config.security.enable_integrity_checking = false;
-        config.security.enable_rate_limiting = false;
+        // Security toggles not present in SecurityConfig; keep core flags
         
         config.feature_flags.enable_debug_mode = true;
         config.feature_flags.enable_experimental_features = true;
@@ -631,8 +625,7 @@ pub mod templates {
         config.monitoring.enable_performance_monitoring = false;
         
         config.security.enable_input_validation = false;
-        config.security.enable_integrity_checking = false;
-        config.security.enable_rate_limiting = false;
+        // Security toggles not present in SecurityConfig; keep core flags
         
         config.feature_flags.enable_debug_mode = true;
         config.feature_flags.enable_experimental_features = true;

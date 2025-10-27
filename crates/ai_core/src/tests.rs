@@ -281,7 +281,11 @@ impl TestSuite {
                 let features = features.clone();
                 
                 let task = tokio::spawn(async move {
-                    model.evaluate(&features)
+                    // Convert features to i64 and call sync evaluate
+                    {
+                        let features_i64: Vec<i64> = features.iter().map(|f| (*f as f64 * 1000.0) as i64).collect();
+                        model.evaluate(&features_i64)
+                    }
                 });
                 
                 tasks.push(task);
@@ -518,7 +522,8 @@ impl BenchmarkSuite {
         let start = Instant::now();
         
         for _ in 0..iterations {
-            let _ = model.evaluate(&features).await?;
+            let features_i64: Vec<i64> = features.iter().map(|f| (*f as f64 * 1000.0) as i64).collect();
+            let _ = model.evaluate(&features_i64)?;
         }
         
         let duration = start.elapsed();
@@ -535,7 +540,7 @@ impl BenchmarkSuite {
     /// Benchmark model loading
     async fn benchmark_model_loading(&self) -> Result<()> {
         let config = ModelManagerConfig::default();
-        let manager = ModelManager::new(config)?;
+        let manager = ModelManager::new(config);
         
         let iterations = 1000;
         let start = Instant::now();
@@ -558,11 +563,11 @@ impl BenchmarkSuite {
     /// Benchmark feature engineering
     async fn benchmark_feature_engineering(&self) -> Result<()> {
         let config = FeatureEngineeringConfig::default();
-        let pipeline = FeatureEngineeringPipeline::new(config)?;
+        let pipeline = FeatureEngineeringPipeline::new(config);
         
         let raw_data = RawFeatureData {
             features: vec![vec![1.0; 10]; 1000],
-            labels: vec![0; 1000],
+            // labels field removed; use metadata only
         };
         
         let start = Instant::now();

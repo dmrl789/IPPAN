@@ -148,7 +148,9 @@ impl ModelManager {
 
         // Validate
         let validation_passed = if self.config.enable_integrity_checking {
-            self.validate_model(&model).await?
+            // Use a temporary mutable copy for evaluation-based validation
+            let mut model_clone = model.clone();
+            self.validate_model(&mut model_clone).await?
         } else {
             true
         };
@@ -192,7 +194,8 @@ impl ModelManager {
         let start = std::time::Instant::now();
 
         if self.config.enable_integrity_checking {
-            self.validate_model(model).await?;
+            let mut model_clone = model.clone();
+            self.validate_model(&mut model_clone).await?;
         }
 
         // Enforce file size limit
@@ -293,7 +296,7 @@ impl ModelManager {
         Ok(package.model)
     }
 
-    async fn validate_model(&self, model: &GBDTModel) -> Result<bool, GBDTError> {
+    async fn validate_model(&self, model: &mut GBDTModel) -> Result<bool, GBDTError> {
         model.validate()?;
         if model.trees.len() > model.security_constraints.max_trees {
             return Err(GBDTError::SecurityValidationFailed {

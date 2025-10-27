@@ -2693,6 +2693,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "rayon",
+ "rust_decimal",
  "serde",
  "serde_json",
  "tempfile",
@@ -2716,6 +2717,7 @@ dependencies = [
  "ippan-types",
  "libp2p",
  "log",
+ "parking_lot 0.12.5",
  "rand_core 0.6.4",
  "serde",
  "serde_json",
@@ -2723,6 +2725,7 @@ dependencies = [
  "sled",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2731,11 +2734,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
+ "blake2",
  "blake3",
+ "criterion",
  "ed25519-dalek",
  "hex",
  "ippan-types",
- "rand_core 0.6.4",
+ "rand 0.8.5",
+ "serde",
+ "sha2",
+ "sha3",
  "thiserror 1.0.69",
  "winterfell",
 ]
@@ -2820,8 +2828,13 @@ dependencies = [
 name = "ippan-network"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
+ "bincode",
+ "chrono",
  "futures",
  "ippan-types",
+ "parking_lot 0.12.5",
  "serde",
  "serde_json",
  "tokio",

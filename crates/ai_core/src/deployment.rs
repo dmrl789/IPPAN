@@ -74,8 +74,8 @@ pub struct ProductionDeployment {
     gbdt_models: Arc<AsyncRwLock<HashMap<String, GBDTModel>>>,
     model_manager: Arc<AsyncRwLock<Option<ModelManager>>>,
     feature_pipeline: Arc<AsyncRwLock<Option<FeatureEngineeringPipeline>>>,
-    monitoring: Arc<AsyncRwLock<Option<MonitoringSystem>>>,
-    security: Arc<AsyncRwLock<Option<SecuritySystem>>>,
+    monitoring: Arc<AsyncRwLock<Option<crate::monitoring::MonitoringSystem>>>,
+    security: Arc<AsyncRwLock<Option<crate::security::SecuritySystem>>>,
     status: Arc<RwLock<DeploymentStatus>>,
     metrics: Arc<RwLock<DeploymentMetrics>>,
     startup_time: Instant,
@@ -237,9 +237,9 @@ impl ProductionDeployment {
         if let Some(manager) = model_manager.as_ref() {
             let result = manager.load_model(model_path).await;
             match result {
-                Ok(model) => {
+                Ok(load_result) => {
                     let mut models = self.gbdt_models.write().await;
-                    models.insert(model_path.to_string(), model);
+                    models.insert(model_path.to_string(), load_result.model);
                     info!("Model loaded: {}", model_path);
                     Ok(())
                 }
