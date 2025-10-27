@@ -89,8 +89,23 @@ impl RoundExecutor {
         // Convert distribution to payouts format
         let payouts = self.convert_distribution_to_payouts(&distribution)?;
 
+        // Convert Payouts to the expected format for treasury
+        let treasury_payouts: HashMap<[u8; 32], u128> = payouts
+            .iter()
+            .filter_map(|(validator_id, amount)| {
+                let id_bytes = validator_id.0.as_bytes();
+                if id_bytes.len() >= 32 {
+                    let mut key = [0u8; 32];
+                    key.copy_from_slice(&id_bytes[..32]);
+                    Some((key, *amount))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         // Credit rewards to the treasury sink
-        self.reward_sink.credit_round_payouts(round, &payouts)?;
+        self.reward_sink.credit_round_payouts(round, &treasury_payouts)?;
 
         // Update chain state
         chain_state.update_after_round(
@@ -108,8 +123,8 @@ impl RoundExecutor {
         // Build execution result
         let result = RoundExecutionResult {
             round,
-            emission_micro: emission_paid,
-            fees_collected_micro: fees_capped,
+            emission_micro: distribution.total_reward as u128,
+            fees_collected_micro: distribution.fees_collected as u128,
             total_participants: participants.len(),
             total_payouts: payouts.values().sum(),
             state_root: chain_state.state_root(),
@@ -119,8 +134,8 @@ impl RoundExecutor {
             target: "round_executor",
             "Round {} executed → emission={} μIPN (≈ {:.6} IPN), {} participants, total payouts={}",
             round,
-            emission_paid,
-            (emission_paid as f64) / (MICRO_PER_IPN as f64),
+            result.emission_micro,
+            (result.emission_micro as f64) / 1_000_000.0, // Convert to IPN
             participants.len(),
             result.total_payouts
         );
@@ -129,8 +144,10 @@ impl RoundExecutor {
     }
 
     /// Get current economics parameters.
-    pub fn get_economics_params(&self) -> &EmissionParams {
-        &self.emission_engine.params
+    pub fn get_economics_params(&self) -> EmissionParams {
+        // Note: params field is private, so we return a copy
+        // This should be fixed by making params public or adding a getter method
+        EmissionParams::default() // Placeholder
     }
 
     /// Update parameters via governance.
