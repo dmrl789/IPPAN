@@ -8,12 +8,12 @@
 //! - Feature importance analysis
 //! - Real-time feature pipeline processing
 
-use crate::gbdt::{GBDTModel, GBDTError, FeatureNormalization};
+use crate::gbdt::{FeatureNormalization, GBDTError, GBDTModel};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Feature engineering configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,11 +124,10 @@ impl FeatureEngineeringPipeline {
     #[instrument(skip(self, data))]
     pub async fn fit(&mut self, data: &RawFeatureData) -> Result<(), GBDTError> {
         let start_time = std::time::Instant::now();
-        
+
         info!(
             "Fitting feature engineering pipeline on {} samples with {} features",
-            data.sample_count,
-            data.feature_count
+            data.sample_count, data.feature_count
         );
 
         // Calculate feature statistics
@@ -160,9 +159,12 @@ impl FeatureEngineeringPipeline {
 
     /// Transform raw data using the fitted pipeline
     #[instrument(skip(self, data))]
-    pub async fn transform(&self, data: &RawFeatureData) -> Result<ProcessedFeatureData, GBDTError> {
+    pub async fn transform(
+        &self,
+        data: &RawFeatureData,
+    ) -> Result<ProcessedFeatureData, GBDTError> {
         let start_time = std::time::Instant::now();
-        
+
         if self.statistics.is_none() {
             return Err(GBDTError::ModelValidationFailed {
                 reason: "Pipeline not fitted. Call fit() first.".to_string(),
@@ -206,11 +208,12 @@ impl FeatureEngineeringPipeline {
         }
 
         // Apply feature selection if enabled
-        let (final_features, final_feature_names) = if let Some(ref importance) = self.feature_importance {
-            self.apply_feature_selection(&processed_features, &data.feature_names, importance)?
-        } else {
-            (processed_features, data.feature_names.clone())
-        };
+        let (final_features, final_feature_names) =
+            if let Some(ref importance) = self.feature_importance {
+                self.apply_feature_selection(&processed_features, &data.feature_names, importance)?
+            } else {
+                (processed_features, data.feature_names.clone())
+            };
 
         let processing_time = start_time.elapsed();
 
@@ -279,7 +282,8 @@ impl FeatureEngineeringPipeline {
 
         // Calculate medians and quartiles
         for i in 0..feature_count {
-            let mut values: Vec<f64> = data.features
+            let mut values: Vec<f64> = data
+                .features
                 .iter()
                 .filter_map(|sample| {
                     if i < sample.len() {
@@ -307,10 +311,10 @@ impl FeatureEngineeringPipeline {
 
                 // Calculate quartiles
                 quartiles[i] = [
-                    values[len / 4],                    // Q1
-                    medians[i],                         // Q2
-                    values[3 * len / 4],                // Q3
-                    values[len - 1],                    // Q4 (max)
+                    values[len / 4],     // Q1
+                    medians[i],          // Q2
+                    values[3 * len / 4], // Q3
+                    values[len - 1],     // Q4 (max)
                 ];
             }
         }
@@ -328,7 +332,10 @@ impl FeatureEngineeringPipeline {
     }
 
     /// Calculate feature importance using variance analysis
-    fn calculate_feature_importance(&self, data: &RawFeatureData) -> Result<FeatureImportance, GBDTError> {
+    fn calculate_feature_importance(
+        &self,
+        data: &RawFeatureData,
+    ) -> Result<FeatureImportance, GBDTError> {
         let statistics = self.statistics.as_ref().unwrap();
         let mut importance_scores = Vec::with_capacity(data.feature_count);
         let mut total_variance = 0.0;
@@ -381,7 +388,10 @@ impl FeatureEngineeringPipeline {
     }
 
     /// Calculate normalization parameters
-    fn calculate_normalization(&self, data: &RawFeatureData) -> Result<FeatureNormalization, GBDTError> {
+    fn calculate_normalization(
+        &self,
+        data: &RawFeatureData,
+    ) -> Result<FeatureNormalization, GBDTError> {
         let statistics = self.statistics.as_ref().unwrap();
         let mut means = Vec::with_capacity(data.feature_count);
         let mut std_devs = Vec::with_capacity(data.feature_count);
@@ -405,7 +415,12 @@ impl FeatureEngineeringPipeline {
     }
 
     /// Normalize a single value
-    fn normalize_value(&self, value: f64, feature_idx: usize, norm: &FeatureNormalization) -> Result<f64, GBDTError> {
+    fn normalize_value(
+        &self,
+        value: f64,
+        feature_idx: usize,
+        norm: &FeatureNormalization,
+    ) -> Result<f64, GBDTError> {
         if feature_idx >= norm.means.len() {
             return Err(GBDTError::FeatureSizeMismatch {
                 expected: norm.means.len(),
@@ -427,7 +442,7 @@ impl FeatureEngineeringPipeline {
     fn scale_to_integer(&self, value: f64) -> Result<i64, GBDTError> {
         // Scale to 6 decimal places and convert to integer
         let scaled = (value * 1_000_000.0).round() as i64;
-        
+
         // Clamp to reasonable bounds
         Ok(scaled.clamp(-1_000_000_000, 1_000_000_000))
     }
@@ -469,7 +484,7 @@ impl FeatureEngineeringPipeline {
     /// Handle outliers using IQR method
     fn handle_outliers(&self, data: &RawFeatureData) -> Result<(), GBDTError> {
         let statistics = self.statistics.as_ref().unwrap();
-        
+
         for i in 0..data.feature_count {
             let q1 = statistics.quartiles[i][0];
             let q3 = statistics.quartiles[i][2];
@@ -521,12 +536,13 @@ pub mod utils {
     use super::*;
 
     /// Create raw feature data from a simple matrix
-    pub fn create_raw_data(
-        features: Vec<Vec<f64>>,
-        feature_names: Vec<String>,
-    ) -> RawFeatureData {
+    pub fn create_raw_data(features: Vec<Vec<f64>>, feature_names: Vec<String>) -> RawFeatureData {
         let sample_count = features.len();
-        let feature_count = if sample_count > 0 { features[0].len() } else { 0 };
+        let feature_count = if sample_count > 0 {
+            features[0].len()
+        } else {
+            0
+        };
 
         RawFeatureData {
             features,
@@ -544,7 +560,11 @@ pub mod utils {
         metadata: HashMap<String, String>,
     ) -> RawFeatureData {
         let sample_count = features.len();
-        let feature_count = if sample_count > 0 { features[0].len() } else { 0 };
+        let feature_count = if sample_count > 0 {
+            features[0].len()
+        } else {
+            0
+        };
 
         RawFeatureData {
             features,
@@ -597,7 +617,7 @@ mod tests {
 
         // Create test data
         let raw_data = utils::generate_synthetic_data(100, 5, 0.1);
-        
+
         // Fit pipeline
         pipeline.fit(&raw_data).await.unwrap();
 
@@ -647,10 +667,7 @@ mod tests {
 
     #[test]
     fn test_utils_create_raw_data() {
-        let features = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-        ];
+        let features = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
         let feature_names = vec!["a".to_string(), "b".to_string(), "c".to_string()];
 
         let raw_data = utils::create_raw_data(features, feature_names);

@@ -7,52 +7,34 @@
 //! - AI-powered transaction optimization
 //! - Intelligent monitoring and alerting
 
-pub mod llm;
 #[cfg(feature = "analytics")]
 pub mod analytics;
-pub mod smart_contracts;
+pub mod errors;
+pub mod llm;
 #[cfg(feature = "analytics")]
 pub mod monitoring;
 #[cfg(feature = "analytics")]
 pub mod optimization;
-pub mod errors;
-pub mod types;
 pub mod service;
+pub mod smart_contracts;
+pub mod types;
 
-pub use service::AIService;
 pub use errors::AIServiceError;
-pub use types::*;
 pub use monitoring::{
-    ServiceMonitor,
-    ServiceStatus,
-    ServiceMetrics,
-    ServiceMetricsSnapshot,
-    ServiceHealthReport,
-    MonitoringConfig,
-    AlertHandler,
-    ServiceAlert,
-    AlertType,
-    AlertSeverity,
-    ConsoleAlertHandler,
-    FileAlertHandler,
+    AlertHandler, AlertSeverity, AlertType, ConsoleAlertHandler, FileAlertHandler,
+    MonitoringConfig, ServiceAlert, ServiceHealthReport, ServiceMetrics, ServiceMetricsSnapshot,
+    ServiceMonitor, ServiceStatus,
 };
+pub use service::AIService;
+pub use types::*;
 
 /// Re-export core AI functionality
 pub use ippan_ai_core::{
-    compute_validator_score,
-    extract_features,
-    ValidatorTelemetry,
-    FeatureConfig,
-    GBDTModel,
+    compute_validator_score, extract_features, FeatureConfig, GBDTModel, ValidatorTelemetry,
 };
 
 /// Re-export registry functionality
-pub use ippan_ai_registry::{
-    ModelRegistryEntry,
-    ModelStatus,
-    AiModelProposal,
-    validate_proposal,
-};
+pub use ippan_ai_registry::{validate_proposal, AiModelProposal, ModelRegistryEntry, ModelStatus};
 
 /// Re-export governance functionality
 // Note: Removed to avoid circular dependencies

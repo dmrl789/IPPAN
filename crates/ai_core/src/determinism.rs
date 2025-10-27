@@ -5,7 +5,7 @@ use crate::{
     types::*,
 };
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Deterministic execution manager
 pub struct DeterminismManager {
@@ -56,7 +56,10 @@ impl DeterminismManager {
 
     /// Set deterministic seed for execution
     pub fn set_seed(&mut self, execution_id: &str, seed: u64) {
-        info!("Setting deterministic seed for execution {}: {}", execution_id, seed);
+        info!(
+            "Setting deterministic seed for execution {}: {}",
+            execution_id, seed
+        );
         self.seeds.insert(execution_id.to_string(), seed);
     }
 
@@ -73,15 +76,19 @@ impl DeterminismManager {
         input: &ModelInput,
         parameters: HashMap<String, String>,
     ) -> Result<DeterministicContext> {
-        info!("Creating deterministic context for execution: {}", execution_id);
-        
+        info!(
+            "Creating deterministic context for execution: {}",
+            execution_id
+        );
+
         // Get or generate seed
-        let seed = self.get_seed(execution_id)
+        let seed = self
+            .get_seed(execution_id)
             .unwrap_or_else(|| self.generate_deterministic_seed(execution_id, model_id, input));
-        
+
         // Compute input hash
         let input_hash = self.compute_input_hash(input)?;
-        
+
         // Create context
         let context = DeterministicContext {
             execution_id: execution_id.to_string(),
@@ -90,10 +97,10 @@ impl DeterminismManager {
             seed,
             parameters,
         };
-        
+
         // Update state
         self.update_state(&context);
-        
+
         Ok(context)
     }
 
@@ -103,18 +110,28 @@ impl DeterminismManager {
         context: &DeterministicContext,
         output: &ModelOutput,
     ) -> Result<bool> {
-        info!("Verifying deterministic execution: {}", context.execution_id);
-        
+        info!(
+            "Verifying deterministic execution: {}",
+            context.execution_id
+        );
+
         // Compute expected execution hash
         let expected_hash = self.compute_execution_hash(context, output)?;
-        
+
         // Compare with actual execution hash
-        let is_deterministic = expected_hash == *output.metadata.get("execution_hash").unwrap_or(&String::new());
-        
+        let is_deterministic = expected_hash
+            == *output
+                .metadata
+                .get("execution_hash")
+                .unwrap_or(&String::new());
+
         if !is_deterministic {
-            warn!("Non-deterministic execution detected for: {}", context.execution_id);
+            warn!(
+                "Non-deterministic execution detected for: {}",
+                context.execution_id
+            );
         }
-        
+
         Ok(is_deterministic)
     }
 
@@ -126,41 +143,54 @@ impl DeterminismManager {
         input: &ModelInput,
     ) -> u64 {
         let mut hasher = blake3::Hasher::new();
-        
+
         // Hash execution ID
         hasher.update(execution_id.as_bytes());
-        
+
         // Hash model ID
         hasher.update(model_id.name.as_bytes());
         hasher.update(model_id.version.as_bytes());
         hasher.update(model_id.hash.as_bytes());
-        
+
         // Hash input data
         hasher.update(&input.data);
-        hasher.update(&input.shape.iter().map(|x| x.to_le_bytes()).flatten().collect::<Vec<_>>());
-        
+        hasher.update(
+            &input
+                .shape
+                .iter()
+                .map(|x| x.to_le_bytes())
+                .flatten()
+                .collect::<Vec<_>>(),
+        );
+
         // Convert hash to u64 seed
         let hash = hasher.finalize();
         let bytes = hash.as_bytes();
         u64::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3],
-            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ])
     }
 
     /// Compute input hash
     fn compute_input_hash(&self, input: &ModelInput) -> Result<String> {
         let mut hasher = blake3::Hasher::new();
-        
+
         // Hash input data
         hasher.update(&input.data);
-        
+
         // Hash input shape
-        hasher.update(&input.shape.iter().map(|x| x.to_le_bytes()).flatten().collect::<Vec<_>>());
-        
+        hasher.update(
+            &input
+                .shape
+                .iter()
+                .map(|x| x.to_le_bytes())
+                .flatten()
+                .collect::<Vec<_>>(),
+        );
+
         // Hash data type
         hasher.update(&(input.dtype as u8).to_le_bytes());
-        
+
         Ok(hasher.finalize().to_hex().to_string())
     }
 
@@ -171,31 +201,44 @@ impl DeterminismManager {
         output: &ModelOutput,
     ) -> Result<String> {
         let mut hasher = blake3::Hasher::new();
-        
+
         // Hash execution context
         hasher.update(context.execution_id.as_bytes());
         hasher.update(context.input_hash.as_bytes());
         hasher.update(&context.seed.to_le_bytes());
-        
+
         // Hash model ID
         hasher.update(context.model_id.name.as_bytes());
         hasher.update(context.model_id.version.as_bytes());
         hasher.update(context.model_id.hash.as_bytes());
-        
+
         // Hash parameters
         for (key, value) in &context.parameters {
             hasher.update(key.as_bytes());
             hasher.update(value.as_bytes());
         }
-        
+
         // Hash output data
         hasher.update(&output.data);
-        hasher.update(&output.shape.iter().map(|x| x.to_le_bytes()).flatten().collect::<Vec<_>>());
-        
+        hasher.update(
+            &output
+                .shape
+                .iter()
+                .map(|x| x.to_le_bytes())
+                .flatten()
+                .collect::<Vec<_>>(),
+        );
+
         // Hash execution metadata
         hasher.update(context.execution_id.as_bytes());
-        hasher.update(output.metadata.get("model_version").unwrap_or(&String::new()).as_bytes());
-        
+        hasher.update(
+            output
+                .metadata
+                .get("model_version")
+                .unwrap_or(&String::new())
+                .as_bytes(),
+        );
+
         Ok(hasher.finalize().to_hex().to_string())
     }
 
@@ -203,7 +246,7 @@ impl DeterminismManager {
     fn update_state(&mut self, context: &DeterministicContext) {
         self.state.counter += 1;
         self.state.seed = context.seed;
-        
+
         // Update state hash
         let mut hasher = blake3::Hasher::new();
         hasher.update(&self.state.seed.to_le_bytes());
@@ -239,10 +282,7 @@ pub struct DeterministicRng {
 impl DeterministicRng {
     /// Create a new deterministic RNG
     pub fn new(seed: u64) -> Self {
-        Self {
-            state: seed,
-            seed,
-        }
+        Self { state: seed, seed }
     }
 
     /// Generate next random number
@@ -279,7 +319,7 @@ impl DeterministicRng {
 /// Deterministic execution utilities
 pub mod utils {
     use super::*;
-    
+
     /// Ensure deterministic execution environment
     pub fn setup_deterministic_environment() -> Result<()> {
         // Set deterministic random seed
@@ -288,21 +328,21 @@ pub mod utils {
                 std::env::set_var("RUST_RAND_SEED", seed_val.to_string());
             }
         }
-        
+
         // Disable parallel execution for deterministic behavior
         std::env::set_var("RAYON_NUM_THREADS", "1");
-        
+
         // Set deterministic floating point behavior
         std::env::set_var("RUST_FLOAT_DETERMINISTIC", "1");
-        
+
         Ok(())
     }
-    
+
     /// Check if execution is deterministic
     pub fn is_deterministic_execution() -> bool {
         std::env::var("DETERMINISTIC_EXECUTION").unwrap_or_default() == "1"
     }
-    
+
     /// Get deterministic seed from environment
     pub fn get_deterministic_seed() -> Option<u64> {
         std::env::var("DETERMINISTIC_SEED")

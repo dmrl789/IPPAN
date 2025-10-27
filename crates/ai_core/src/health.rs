@@ -1,14 +1,12 @@
 //! Health checks and monitoring for AI Core
 
-use crate::{
-    errors::{AiCoreError, Result},
-};
+use crate::errors::{AiCoreError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 
 /// Health status of the AI Core system
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,10 +112,10 @@ pub struct HealthConfig {
 impl Default for HealthConfig {
     fn default() -> Self {
         Self {
-            max_check_time_ms: 5000, // 5 seconds
-            check_interval_seconds: 30, // 30 seconds
+            max_check_time_ms: 5000,               // 5 seconds
+            check_interval_seconds: 30,            // 30 seconds
             memory_threshold_bytes: 1_000_000_000, // 1GB
-            cpu_threshold_percent: 80, // 80%
+            cpu_threshold_percent: 80,             // 80%
             enable_detailed_logging: true,
         }
     }
@@ -146,7 +144,7 @@ impl HealthMonitor {
 
         for (name, checker) in &self.health_checks {
             let check_start = Instant::now();
-            
+
             let check_result = match self.run_single_check(checker.as_ref()).await {
                 Ok(check) => check,
                 Err(e) => HealthCheck {
@@ -154,7 +152,10 @@ impl HealthMonitor {
                     status: HealthStatus::Unhealthy,
                     message: format!("Health check failed: {}", e),
                     duration_us: check_start.elapsed().as_micros() as u64,
-                    timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                    timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
                     metadata: HashMap::new(),
                 },
             };
@@ -164,8 +165,8 @@ impl HealthMonitor {
                 HealthStatus::Unhealthy => overall_status = HealthStatus::Unhealthy,
                 HealthStatus::Degraded if overall_status == HealthStatus::Healthy => {
                     overall_status = HealthStatus::Degraded;
-                },
-                _ => {},
+                }
+                _ => {}
             }
 
             checks.push(check_result);
@@ -183,20 +184,22 @@ impl HealthMonitor {
     /// Run a single health check with timeout
     async fn run_single_check(&self, checker: &dyn HealthChecker) -> Result<HealthCheck> {
         let check_start = Instant::now();
-        
+
         // Run check with timeout
         let timeout_duration = Duration::from_millis(self.config.max_check_time_ms);
-        let check_future = async {
-            checker.check()
-        };
+        let check_future = async { checker.check() };
 
-        let result = tokio::time::timeout(timeout_duration, check_future).await
+        let result = tokio::time::timeout(timeout_duration, check_future)
+            .await
             .map_err(|_| AiCoreError::Internal("Health check timeout".to_string()))?;
 
         let duration = check_start.elapsed();
         let mut check = result?;
         check.duration_us = duration.as_micros() as u64;
-        check.timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        check.timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         Ok(check)
     }
@@ -204,7 +207,7 @@ impl HealthMonitor {
     /// Get system metadata
     fn get_system_metadata(&self) -> HashMap<String, String> {
         let mut metadata = HashMap::new();
-        
+
         // Memory usage
         if let Ok(memory_info) = get_memory_usage() {
             metadata.insert("memory_usage_bytes".to_string(), memory_info.to_string());
@@ -212,19 +215,34 @@ impl HealthMonitor {
 
         // CPU usage (simplified)
         metadata.insert("cpu_cores".to_string(), num_cpus::get().to_string());
-        
+
         // System load
         if let Ok(load_avg) = get_load_average() {
             metadata.insert("load_average".to_string(), load_avg.to_string());
         }
 
         // Performance metrics
-        metadata.insert("total_executions".to_string(), 
-            self.metrics.total_executions.load(Ordering::Relaxed).to_string());
-        metadata.insert("successful_executions".to_string(), 
-            self.metrics.successful_executions.load(Ordering::Relaxed).to_string());
-        metadata.insert("failed_executions".to_string(), 
-            self.metrics.failed_executions.load(Ordering::Relaxed).to_string());
+        metadata.insert(
+            "total_executions".to_string(),
+            self.metrics
+                .total_executions
+                .load(Ordering::Relaxed)
+                .to_string(),
+        );
+        metadata.insert(
+            "successful_executions".to_string(),
+            self.metrics
+                .successful_executions
+                .load(Ordering::Relaxed)
+                .to_string(),
+        );
+        metadata.insert(
+            "failed_executions".to_string(),
+            self.metrics
+                .failed_executions
+                .load(Ordering::Relaxed)
+                .to_string(),
+        );
 
         metadata
     }
@@ -236,25 +254,37 @@ impl HealthMonitor {
 
     /// Record execution metrics
     pub fn record_execution(&self, success: bool, duration_us: u64, memory_usage: u64) {
-        self.metrics.total_executions.fetch_add(1, Ordering::Relaxed);
-        
+        self.metrics
+            .total_executions
+            .fetch_add(1, Ordering::Relaxed);
+
         if success {
-            self.metrics.successful_executions.fetch_add(1, Ordering::Relaxed);
+            self.metrics
+                .successful_executions
+                .fetch_add(1, Ordering::Relaxed);
         } else {
-            self.metrics.failed_executions.fetch_add(1, Ordering::Relaxed);
+            self.metrics
+                .failed_executions
+                .fetch_add(1, Ordering::Relaxed);
         }
 
         // Update average execution time
         let total = self.metrics.total_executions.load(Ordering::Relaxed);
         let current_avg = self.metrics.avg_execution_time_us.load(Ordering::Relaxed);
         let new_avg = ((current_avg * (total - 1)) + duration_us) / total;
-        self.metrics.avg_execution_time_us.store(new_avg, Ordering::Relaxed);
+        self.metrics
+            .avg_execution_time_us
+            .store(new_avg, Ordering::Relaxed);
 
         // Update memory usage
-        self.metrics.total_memory_usage.store(memory_usage, Ordering::Relaxed);
+        self.metrics
+            .total_memory_usage
+            .store(memory_usage, Ordering::Relaxed);
         let current_peak = self.metrics.peak_memory_usage.load(Ordering::Relaxed);
         if memory_usage > current_peak {
-            self.metrics.peak_memory_usage.store(memory_usage, Ordering::Relaxed);
+            self.metrics
+                .peak_memory_usage
+                .store(memory_usage, Ordering::Relaxed);
         }
     }
 
@@ -300,7 +330,10 @@ impl HealthChecker for MemoryUsageChecker {
         };
 
         let message = if memory_usage > self.threshold {
-            format!("Memory usage {} exceeds threshold {}", memory_usage, self.threshold)
+            format!(
+                "Memory usage {} exceeds threshold {}",
+                memory_usage, self.threshold
+            )
         } else {
             format!("Memory usage {} is within limits", memory_usage)
         };
@@ -344,13 +377,16 @@ impl HealthChecker for ModelExecutionChecker {
     fn check(&self) -> Result<HealthCheck> {
         // This would need access to the metrics, simplified for now
         let total_executions = 100; // Would get from metrics
-        let failed_executions = 5;  // Would get from metrics
+        let failed_executions = 5; // Would get from metrics
 
         if total_executions < self.min_executions {
             return Ok(HealthCheck {
                 name: self.name().to_string(),
                 status: HealthStatus::Degraded,
-                message: format!("Insufficient executions: {} < {}", total_executions, self.min_executions),
+                message: format!(
+                    "Insufficient executions: {} < {}",
+                    total_executions, self.min_executions
+                ),
                 duration_us: 0,
                 timestamp: 0,
                 metadata: HashMap::new(),
@@ -366,8 +402,11 @@ impl HealthChecker for ModelExecutionChecker {
             HealthStatus::Healthy
         };
 
-        let message = format!("Failure rate: {:.2}% (threshold: {:.2}%)", 
-            failure_rate * 100.0, self.max_failure_rate * 100.0);
+        let message = format!(
+            "Failure rate: {:.2}% (threshold: {:.2}%)",
+            failure_rate * 100.0,
+            self.max_failure_rate * 100.0
+        );
 
         Ok(HealthCheck {
             name: self.name().to_string(),
@@ -378,7 +417,10 @@ impl HealthChecker for ModelExecutionChecker {
             metadata: {
                 let mut meta = HashMap::new();
                 meta.insert("total_executions".to_string(), total_executions.to_string());
-                meta.insert("failed_executions".to_string(), failed_executions.to_string());
+                meta.insert(
+                    "failed_executions".to_string(),
+                    failed_executions.to_string(),
+                );
                 meta.insert("failure_rate".to_string(), failure_rate.to_string());
                 meta
             },
@@ -414,7 +456,10 @@ mod tests {
         let checker = MemoryUsageChecker::new(1_000_000_000); // 1GB threshold
         let result = checker.check().unwrap();
         assert_eq!(result.name, "memory_usage");
-        assert!(matches!(result.status, HealthStatus::Healthy | HealthStatus::Degraded | HealthStatus::Unhealthy));
+        assert!(matches!(
+            result.status,
+            HealthStatus::Healthy | HealthStatus::Degraded | HealthStatus::Unhealthy
+        ));
     }
 
     #[tokio::test]
@@ -422,19 +467,26 @@ mod tests {
         let checker = ModelExecutionChecker::new(0.1, 10); // 10% max failure rate, 10 min executions
         let result = checker.check().unwrap();
         assert_eq!(result.name, "model_execution");
-        assert!(matches!(result.status, HealthStatus::Healthy | HealthStatus::Degraded | HealthStatus::Unhealthy));
+        assert!(matches!(
+            result.status,
+            HealthStatus::Healthy | HealthStatus::Degraded | HealthStatus::Unhealthy
+        ));
     }
 
     #[tokio::test]
     async fn test_health_checks_integration() {
         let config = HealthConfig::default();
         let mut monitor = HealthMonitor::new(config);
-        
+
         // Register health checks
-        monitor.register_check("memory".to_string(), 
-            Box::new(MemoryUsageChecker::new(1_000_000_000)));
-        monitor.register_check("execution".to_string(), 
-            Box::new(ModelExecutionChecker::new(0.1, 10)));
+        monitor.register_check(
+            "memory".to_string(),
+            Box::new(MemoryUsageChecker::new(1_000_000_000)),
+        );
+        monitor.register_check(
+            "execution".to_string(),
+            Box::new(ModelExecutionChecker::new(0.1, 10)),
+        );
 
         let health = monitor.run_health_checks().await;
         assert_eq!(health.checks.len(), 2);

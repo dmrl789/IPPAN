@@ -2,10 +2,10 @@
 //!
 //! Provides various cryptographic hash functions with a unified interface.
 
+use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sha3::{Digest as Sha3Digest, Keccak256 as Sha3Keccak256, Sha3_256};
-use blake3::Hasher;
 
 /// Trait for hash functions
 pub trait HashFunction {
@@ -258,7 +258,7 @@ mod tests {
         let data = b"test data";
         let hash1 = hasher.hash(data);
         let hash2 = hasher.hash(data);
-        
+
         assert_eq!(hash1, hash2);
         assert_eq!(hash1.len(), 32);
         assert_eq!(hasher.name(), "Blake3");
@@ -270,7 +270,7 @@ mod tests {
         let data = b"test data";
         let hash1 = hasher.hash(data);
         let hash2 = hasher.hash(data);
-        
+
         assert_eq!(hash1, hash2);
         assert_eq!(hash1.len(), 32);
         assert_eq!(hasher.name(), "SHA256");
@@ -281,7 +281,7 @@ mod tests {
         let hasher = HashFactory::create(HashType::Blake3);
         let data = b"test data";
         let hash = hasher.hash(data);
-        
+
         assert_eq!(hash.len(), 32);
         assert_eq!(hasher.name(), "Blake3");
     }

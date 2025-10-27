@@ -549,9 +549,9 @@ async fn handle_p2p_transactions(
                     ApiError::internal(format!("failed to queue transaction: {err}"))
                 })?;
             } else if let Some(sender) = state.tx_sender.clone() {
-                sender
-                    .send(tx)
-                    .map_err(|err| ApiError::internal(format!("failed to enqueue transaction: {err}")))?;
+                sender.send(tx).map_err(|err| {
+                    ApiError::internal(format!("failed to enqueue transaction: {err}"))
+                })?;
             }
             Ok(StatusCode::OK)
         }
@@ -599,7 +599,10 @@ async fn handle_p2p_block_response(
             Ok(StatusCode::OK)
         }
         other => {
-            warn!("/p2p/block-response received unexpected payload: {:?}", other);
+            warn!(
+                "/p2p/block-response received unexpected payload: {:?}",
+                other
+            );
             Ok(StatusCode::OK)
         }
     }
@@ -618,7 +621,9 @@ async fn handle_p2p_peer_info(
     Json(msg): Json<NetworkMessage>,
 ) -> Result<StatusCode, ApiError> {
     match msg {
-        NetworkMessage::PeerInfo { peer_id, addresses, .. } => {
+        NetworkMessage::PeerInfo {
+            peer_id, addresses, ..
+        } => {
             if let Some(network) = &state.p2p_network {
                 for addr in addresses {
                     if let Err(e) = network.add_peer(addr.clone()).await {
@@ -651,7 +656,10 @@ async fn handle_p2p_peer_discovery(
             Ok(StatusCode::OK)
         }
         other => {
-            warn!("/p2p/peer-discovery received unexpected payload: {:?}", other);
+            warn!(
+                "/p2p/peer-discovery received unexpected payload: {:?}",
+                other
+            );
             Ok(StatusCode::OK)
         }
     }

@@ -1,10 +1,8 @@
 //! Analytics and insights module
 
-use crate::types::{
-    AnalyticsInsight, InsightType, SeverityLevel, DataPoint, AnalyticsConfig
-};
 use crate::errors::AIServiceError;
-use chrono::{Utc, Duration};
+use crate::types::{AnalyticsConfig, AnalyticsInsight, DataPoint, InsightType, SeverityLevel};
+use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -26,7 +24,13 @@ impl AnalyticsService {
     }
 
     /// Add data point
-    pub fn add_data_point(&mut self, metric: String, value: f64, unit: String, tags: HashMap<String, String>) {
+    pub fn add_data_point(
+        &mut self,
+        metric: String,
+        value: f64,
+        unit: String,
+        tags: HashMap<String, String>,
+    ) {
         let data_point = DataPoint {
             metric: metric.clone(),
             value,
@@ -35,7 +39,10 @@ impl AnalyticsService {
             tags,
         };
 
-        self.data_store.entry(metric).or_insert_with(Vec::new).push(data_point);
+        self.data_store
+            .entry(metric)
+            .or_insert_with(Vec::new)
+            .push(data_point);
     }
 
     /// Analyze data and generate insights
@@ -91,21 +98,36 @@ impl AnalyticsService {
         let n = values.len() as f64;
         let sum_x: f64 = (0..values.len()).map(|i| i as f64).sum();
         let sum_y: f64 = values.iter().sum();
-        let sum_xy: f64 = values.iter().enumerate().map(|(i, &y)| (i as f64) * y).sum();
+        let sum_xy: f64 = values
+            .iter()
+            .enumerate()
+            .map(|(i, &y)| (i as f64) * y)
+            .sum();
         let sum_x2: f64 = (0..values.len()).map(|i| (i as f64).powi(2)).sum();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x.powi(2));
         let trend_strength = slope.abs();
 
         if trend_strength > 0.1 {
-            let trend_direction = if slope > 0.0 { "increasing" } else { "decreasing" };
-            let severity = if trend_strength > 0.5 { SeverityLevel::High } else { SeverityLevel::Medium };
+            let trend_direction = if slope > 0.0 {
+                "increasing"
+            } else {
+                "decreasing"
+            };
+            let severity = if trend_strength > 0.5 {
+                SeverityLevel::High
+            } else {
+                SeverityLevel::Medium
+            };
 
             Some(AnalyticsInsight {
                 id: Uuid::new_v4().to_string(),
                 insight_type: InsightType::Performance,
                 title: format!("{} trend detected", metric),
-                description: format!("{} is {} with strength {:.2}", metric, trend_direction, trend_strength),
+                description: format!(
+                    "{} is {} with strength {:.2}",
+                    metric, trend_direction, trend_strength
+                ),
                 confidence: trend_strength.min(1.0),
                 severity,
                 data_points: recent_points.to_vec(),
@@ -121,14 +143,19 @@ impl AnalyticsService {
     }
 
     /// Analyze anomalies in data
-    fn analyze_anomalies(&self, metric: &str, data_points: &[DataPoint]) -> Option<AnalyticsInsight> {
+    fn analyze_anomalies(
+        &self,
+        metric: &str,
+        data_points: &[DataPoint],
+    ) -> Option<AnalyticsInsight> {
         if data_points.len() < 5 {
             return None;
         }
 
         let values: Vec<f64> = data_points.iter().map(|p| p.value).collect();
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let variance = values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
+        let variance =
+            values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
         let std_dev = variance.sqrt();
 
         // Find outliers (values more than 2 standard deviations from mean)
@@ -170,8 +197,15 @@ impl AnalyticsService {
     }
 
     /// Analyze performance metrics
-    fn analyze_performance(&self, metric: &str, data_points: &[DataPoint]) -> Option<AnalyticsInsight> {
-        if !metric.contains("latency") && !metric.contains("throughput") && !metric.contains("error") {
+    fn analyze_performance(
+        &self,
+        metric: &str,
+        data_points: &[DataPoint],
+    ) -> Option<AnalyticsInsight> {
+        if !metric.contains("latency")
+            && !metric.contains("throughput")
+            && !metric.contains("error")
+        {
             return None;
         }
 
@@ -204,7 +238,11 @@ impl AnalyticsService {
                     "{} average value {:.2} is {} threshold {:.2}",
                     metric,
                     avg_value,
-                    if metric.contains("throughput") { "below" } else { "above" },
+                    if metric.contains("throughput") {
+                        "below"
+                    } else {
+                        "above"
+                    },
                     threshold
                 ),
                 confidence: 0.9,
@@ -225,7 +263,7 @@ impl AnalyticsService {
     fn analyze_cross_metrics(&self) -> Option<AnalyticsInsight> {
         // Look for correlations between different metrics
         let metrics: Vec<(&String, &Vec<DataPoint>)> = self.data_store.iter().collect();
-        
+
         if metrics.len() < 2 {
             return None;
         }
@@ -244,18 +282,19 @@ impl AnalyticsService {
         let correlation = self.calculate_correlation(&values1, &values2);
 
         if correlation.abs() > 0.7 {
-            let relationship = if correlation > 0.0 { "positive" } else { "negative" };
-            
+            let relationship = if correlation > 0.0 {
+                "positive"
+            } else {
+                "negative"
+            };
+
             Some(AnalyticsInsight {
                 id: Uuid::new_v4().to_string(),
                 insight_type: InsightType::Performance,
                 title: format!("Strong correlation between {} and {}", metric1, metric2),
                 description: format!(
                     "Found {} correlation ({:.2}) between {} and {}",
-                    relationship,
-                    correlation,
-                    metric1,
-                    metric2
+                    relationship, correlation, metric1, metric2
                 ),
                 confidence: correlation.abs(),
                 severity: SeverityLevel::Medium,
@@ -293,7 +332,7 @@ impl AnalyticsService {
     /// Clean up old data based on retention policy
     fn cleanup_old_data(&mut self) {
         let cutoff_time = Utc::now() - Duration::days(self.config.retention_days as i64);
-        
+
         for data_points in self.data_store.values_mut() {
             data_points.retain(|p| p.timestamp > cutoff_time);
         }
@@ -311,7 +350,9 @@ impl AnalyticsService {
     pub fn get_insights_by_type(&self, insight_type: InsightType) -> Vec<&AnalyticsInsight> {
         self.insights
             .iter()
-            .filter(|i| std::mem::discriminant(&i.insight_type) == std::mem::discriminant(&insight_type))
+            .filter(|i| {
+                std::mem::discriminant(&i.insight_type) == std::mem::discriminant(&insight_type)
+            })
             .collect()
     }
 
@@ -351,7 +392,7 @@ mod tests {
         tags.insert("node".to_string(), "node1".to_string());
 
         service.add_data_point("latency".to_string(), 100.0, "ms".to_string(), tags);
-        
+
         assert_eq!(service.data_store.len(), 1);
         assert_eq!(service.data_store["latency"].len(), 1);
         assert_eq!(service.data_store["latency"][0].value, 100.0);
@@ -362,7 +403,7 @@ mod tests {
         let service = AnalyticsService::new(Default::default());
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
-        
+
         let correlation = service.calculate_correlation(&x, &y);
         assert!((correlation - 1.0).abs() < 0.001); // Should be perfect positive correlation
     }

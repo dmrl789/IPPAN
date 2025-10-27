@@ -97,7 +97,10 @@ pub fn project_total_supply(rounds: RoundId, params: &EconomicsParams) -> MicroI
 }
 
 /// Calculate remaining supply cap
-pub fn calculate_remaining_cap(current_issued_micro: MicroIPN, params: &EconomicsParams) -> MicroIPN {
+pub fn calculate_remaining_cap(
+    current_issued_micro: MicroIPN,
+    params: &EconomicsParams,
+) -> MicroIPN {
     params.max_supply_micro.saturating_sub(current_issued_micro)
 }
 
@@ -141,13 +144,28 @@ mod tests {
         };
 
         // First halving epoch
-        assert_eq!(emission_for_round_capped(999, 0, &params).unwrap(), 1_000_000);
-        assert_eq!(emission_for_round_capped(1000, 0, &params).unwrap(), 500_000);
-        assert_eq!(emission_for_round_capped(1999, 0, &params).unwrap(), 500_000);
+        assert_eq!(
+            emission_for_round_capped(999, 0, &params).unwrap(),
+            1_000_000
+        );
+        assert_eq!(
+            emission_for_round_capped(1000, 0, &params).unwrap(),
+            500_000
+        );
+        assert_eq!(
+            emission_for_round_capped(1999, 0, &params).unwrap(),
+            500_000
+        );
 
         // Second halving epoch
-        assert_eq!(emission_for_round_capped(2000, 0, &params).unwrap(), 250_000);
-        assert_eq!(emission_for_round_capped(2999, 0, &params).unwrap(), 250_000);
+        assert_eq!(
+            emission_for_round_capped(2000, 0, &params).unwrap(),
+            250_000
+        );
+        assert_eq!(
+            emission_for_round_capped(2999, 0, &params).unwrap(),
+            250_000
+        );
     }
 
     #[test]

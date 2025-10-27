@@ -1,11 +1,11 @@
 //! Supply tracking and integrity verification
 
-use crate::types::*;
 use crate::errors::*;
+use crate::types::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 /// Supply tracking and verification system
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,7 +38,11 @@ impl SupplyTracker {
     }
 
     /// Record emission for a round
-    pub fn record_emission(&mut self, round: RoundIndex, amount: RewardAmount) -> Result<(), SupplyError> {
+    pub fn record_emission(
+        &mut self,
+        round: RoundIndex,
+        amount: RewardAmount,
+    ) -> Result<(), SupplyError> {
         if round <= self.current_round {
             return Err(SupplyError::InvalidSupplyData(format!(
                 "Cannot record emission for past round: {} <= {}",
@@ -52,27 +56,40 @@ impl SupplyTracker {
                 "Emission would exceed supply cap: current={}, emission={}, cap={}",
                 self.total_supply, amount, self.supply_cap
             );
-            
+
             // Cap the emission to the remaining supply
             let capped_amount = self.supply_cap.saturating_sub(self.total_supply);
             self.total_supply = self.supply_cap;
             self.emission_history.insert(round, capped_amount);
-            
-            info!("Capped emission for round {} to {} micro-IPN", round, capped_amount);
+
+            info!(
+                "Capped emission for round {} to {} micro-IPN",
+                round, capped_amount
+            );
         } else {
-            self.total_supply = self.total_supply
-                .checked_add(amount)
-                .ok_or(SupplyError::SupplyCapViolation("Supply addition overflow".to_string()))?;
+            self.total_supply =
+                self.total_supply
+                    .checked_add(amount)
+                    .ok_or(SupplyError::SupplyCapViolation(
+                        "Supply addition overflow".to_string(),
+                    ))?;
             self.emission_history.insert(round, amount);
         }
 
         self.current_round = round;
-        debug!("Recorded emission for round {}: {} micro-IPN", round, amount);
+        debug!(
+            "Recorded emission for round {}: {} micro-IPN",
+            round, amount
+        );
         Ok(())
     }
 
     /// Record burn for a round (excess fees, rounding errors, etc.)
-    pub fn record_burn(&mut self, round: RoundIndex, amount: RewardAmount) -> Result<(), SupplyError> {
+    pub fn record_burn(
+        &mut self,
+        round: RoundIndex,
+        amount: RewardAmount,
+    ) -> Result<(), SupplyError> {
         if amount > self.total_supply {
             return Err(SupplyError::InvalidSupplyData(format!(
                 "Cannot burn more than total supply: {} > {}",
@@ -80,12 +97,15 @@ impl SupplyTracker {
             )));
         }
 
-        self.total_supply = self.total_supply
-            .checked_sub(amount)
-            .ok_or(SupplyError::SupplyCapViolation("Supply subtraction underflow".to_string()))?;
-        
+        self.total_supply =
+            self.total_supply
+                .checked_sub(amount)
+                .ok_or(SupplyError::SupplyCapViolation(
+                    "Supply subtraction underflow".to_string(),
+                ))?;
+
         self.burn_history.insert(round, amount);
-        
+
         debug!("Recorded burn for round {}: {} micro-IPN", round, amount);
         Ok(())
     }
@@ -182,9 +202,7 @@ impl SupplyTracker {
         start_round: RoundIndex,
         end_round: RoundIndex,
     ) -> RewardAmount {
-        self.get_burn_history(start_round, end_round)
-            .values()
-            .sum()
+        self.get_burn_history(start_round, end_round).values().sum()
     }
 
     /// Perform comprehensive supply audit
@@ -206,7 +224,9 @@ impl SupplyTracker {
         }
 
         // Check for missing emission history
-        let expected_rounds = self.current_round.saturating_sub(self.last_verification_round);
+        let expected_rounds = self
+            .current_round
+            .saturating_sub(self.last_verification_round);
         if expected_rounds > 0 && self.emission_history.len() < expected_rounds as usize {
             warnings.push(format!(
                 "Missing emission history: expected {} rounds, found {}",
@@ -288,13 +308,13 @@ mod tests {
     #[test]
     fn test_supply_tracking() {
         let mut tracker = SupplyTracker::new(1_000_000);
-        
+
         tracker.record_emission(1, 100_000).unwrap();
         assert_eq!(tracker.total_supply(), 100_000);
-        
+
         tracker.record_emission(2, 200_000).unwrap();
         assert_eq!(tracker.total_supply(), 300_000);
-        
+
         tracker.record_burn(2, 50_000).unwrap();
         assert_eq!(tracker.total_supply(), 250_000);
     }
@@ -302,7 +322,7 @@ mod tests {
     #[test]
     fn test_supply_cap_enforcement() {
         let mut tracker = SupplyTracker::new(100_000);
-        
+
         // Try to emit more than the cap
         tracker.record_emission(1, 150_000).unwrap();
         assert_eq!(tracker.total_supply(), 100_000); // Should be capped
@@ -311,10 +331,10 @@ mod tests {
     #[test]
     fn test_supply_verification() {
         let tracker = SupplyTracker::new(1_000_000);
-        
+
         // Should pass with tolerance
         tracker.verify_supply_integrity(0, 1000).unwrap();
-        
+
         // Should fail without tolerance
         assert!(tracker.verify_supply_integrity(100_000, 0).is_err());
     }

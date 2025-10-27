@@ -5,7 +5,7 @@ use crate::{
     types::*,
 };
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Model execution engine
 pub struct ExecutionEngine {
@@ -49,7 +49,10 @@ impl ExecutionEngine {
         // Store model metadata
         self.models.insert(metadata.id.clone(), metadata);
 
-        info!("Model loaded successfully. Total loaded: {}", self.models.len());
+        info!(
+            "Model loaded successfully. Total loaded: {}",
+            self.models.len()
+        );
         Ok(())
     }
 

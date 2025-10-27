@@ -8,12 +8,12 @@
 //! - Rolling updates and rollbacks
 //! - Deployment validation
 
-use crate::gbdt::{GBDTModel, GBDTError};
-use crate::model_manager::ModelManager;
 use crate::feature_engineering::FeatureEngineeringPipeline;
+use crate::gbdt::{GBDTError, GBDTModel};
+use crate::model_manager::ModelManager;
 use crate::monitoring::MonitoringSystem;
+use crate::production_config::{Environment, ProductionConfig, ProductionConfigManager};
 use crate::security::SecuritySystem;
-use crate::production_config::{ProductionConfig, ProductionConfigManager, Environment};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -21,7 +21,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{RwLock as AsyncRwLock, Semaphore};
 use tokio::time::{sleep, timeout};
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Deployment status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -90,7 +90,7 @@ impl ProductionDeployment {
     pub fn new(config_manager: Arc<ProductionConfigManager>) -> Self {
         let config = config_manager.get_config();
         let max_parallel_evaluations = config.gbdt.max_parallel_evaluations;
-        
+
         Self {
             config_manager,
             gbdt_models: Arc::new(AsyncRwLock::new(HashMap::new())),
@@ -112,13 +112,13 @@ impl ProductionDeployment {
     #[instrument(skip(self))]
     pub async fn start(&self) -> Result<(), GBDTError> {
         info!("Starting production deployment...");
-        
+
         // Set status to starting
         *self.status.write().unwrap() = DeploymentStatus::Starting;
-        
+
         // Start with timeout
         let startup_result = timeout(self.max_startup_time, self.startup_sequence()).await;
-        
+
         match startup_result {
             Ok(Ok(())) => {
                 *self.status.write().unwrap() = DeploymentStatus::Ready;
@@ -132,7 +132,10 @@ impl ProductionDeployment {
             }
             Err(_) => {
                 *self.status.write().unwrap() = DeploymentStatus::Failed;
-                error!("Deployment startup timed out after {:?}", self.max_startup_time);
+                error!(
+                    "Deployment startup timed out after {:?}",
+                    self.max_startup_time
+                );
                 Err(GBDTError::EvaluationTimeout {
                     timeout_ms: self.max_startup_time.as_millis() as u64,
                 })
@@ -143,36 +146,36 @@ impl ProductionDeployment {
     /// Startup sequence
     async fn startup_sequence(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
-        
+
         // 1. Initialize monitoring
         if config.monitoring.enable_performance_monitoring {
             self.initialize_monitoring().await?;
         }
-        
+
         // 2. Initialize security
         if config.security.enable_input_validation {
             self.initialize_security().await?;
         }
-        
+
         // 3. Initialize feature engineering
         if config.feature_engineering.enable_feature_engineering {
             self.initialize_feature_engineering().await?;
         }
-        
+
         // 4. Initialize model manager
         if config.model_manager.enable_model_management {
             self.initialize_model_manager().await?;
         }
-        
+
         // 5. Load initial models
         self.load_initial_models().await?;
-        
+
         // 6. Start health monitoring
         self.start_health_monitoring().await;
-        
+
         // 7. Update metrics
         self.update_startup_metrics().await;
-        
+
         Ok(())
     }
 
@@ -180,7 +183,7 @@ impl ProductionDeployment {
     async fn initialize_monitoring(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
         let monitoring = MonitoringSystem::new(config.monitoring.clone());
-        
+
         *self.monitoring.write().await = Some(monitoring);
         info!("Monitoring system initialized");
         Ok(())
@@ -190,7 +193,7 @@ impl ProductionDeployment {
     async fn initialize_security(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
         let security = SecuritySystem::new(config.security.clone());
-        
+
         *self.security.write().await = Some(security);
         info!("Security system initialized");
         Ok(())
@@ -200,7 +203,7 @@ impl ProductionDeployment {
     async fn initialize_feature_engineering(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
         let pipeline = FeatureEngineeringPipeline::new(config.feature_engineering.clone());
-        
+
         *self.feature_pipeline.write().await = Some(pipeline);
         info!("Feature engineering pipeline initialized");
         Ok(())
@@ -210,7 +213,7 @@ impl ProductionDeployment {
     async fn initialize_model_manager(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
         let model_manager = ModelManager::new(config.model_manager.clone());
-        
+
         *self.model_manager.write().await = Some(model_manager);
         info!("Model manager initialized");
         Ok(())
@@ -219,14 +222,14 @@ impl ProductionDeployment {
     /// Load initial models
     async fn load_initial_models(&self) -> Result<(), GBDTError> {
         let config = self.config_manager.get_config();
-        
+
         // Load default models if specified
         if let Some(default_models) = &config.model_manager.default_models {
             for model_path in default_models {
                 self.load_model(model_path).await?;
             }
         }
-        
+
         info!("Initial models loaded");
         Ok(())
     }
@@ -261,11 +264,11 @@ impl ProductionDeployment {
     async fn start_health_monitoring(&self) {
         let health_check_interval = self.health_check_interval;
         let deployment = self.clone();
-        
+
         tokio::spawn(async move {
             loop {
                 sleep(health_check_interval).await;
-                
+
                 match deployment.perform_health_check().await {
                     Ok(result) => {
                         if result.status != HealthStatus::Healthy {
@@ -289,42 +292,53 @@ impl ProductionDeployment {
     pub async fn perform_health_check(&self) -> Result<HealthCheckResult, GBDTError> {
         let start_time = Instant::now();
         let mut details = HashMap::new();
-        
+
         // Check system resources
         let resource_check = self.check_system_resources().await;
-        details.insert("resource_check".to_string(), format!("{:?}", resource_check));
-        
+        details.insert(
+            "resource_check".to_string(),
+            format!("{:?}", resource_check),
+        );
+
         // Check model availability
         let model_check = self.check_models().await;
         details.insert("model_check".to_string(), format!("{:?}", model_check));
-        
+
         // Check monitoring system
         let monitoring_check = self.check_monitoring().await;
-        details.insert("monitoring_check".to_string(), format!("{:?}", monitoring_check));
-        
+        details.insert(
+            "monitoring_check".to_string(),
+            format!("{:?}", monitoring_check),
+        );
+
         // Check security system
         let security_check = self.check_security().await;
-        details.insert("security_check".to_string(), format!("{:?}", security_check));
-        
+        details.insert(
+            "security_check".to_string(),
+            format!("{:?}", security_check),
+        );
+
         // Determine overall health
-        let overall_health = if resource_check && model_check && monitoring_check && security_check {
+        let overall_health = if resource_check && model_check && monitoring_check && security_check
+        {
             HealthStatus::Healthy
         } else if resource_check && model_check {
             HealthStatus::Degraded
         } else {
             HealthStatus::Unhealthy
         };
-        
+
         let duration = start_time.elapsed();
         let message = match overall_health {
             HealthStatus::Healthy => "All systems operational".to_string(),
             HealthStatus::Degraded => "Some systems degraded".to_string(),
             HealthStatus::Unhealthy => "Critical systems failed".to_string(),
         };
-        
+
         // Update metrics
-        self.update_health_metrics(overall_health == HealthStatus::Healthy).await;
-        
+        self.update_health_metrics(overall_health == HealthStatus::Healthy)
+            .await;
+
         Ok(HealthCheckResult {
             status: overall_health,
             message,
@@ -363,7 +377,7 @@ impl ProductionDeployment {
     async fn update_health_metrics(&self, is_healthy: bool) {
         let mut metrics = self.metrics.write().unwrap();
         metrics.last_health_check = SystemTime::now();
-        
+
         if is_healthy {
             metrics.consecutive_failures = 0;
         } else {
@@ -397,12 +411,12 @@ impl ProductionDeployment {
     #[instrument(skip(self))]
     pub async fn shutdown(&self) -> Result<(), GBDTError> {
         info!("Initiating graceful shutdown...");
-        
+
         *self.status.write().unwrap() = DeploymentStatus::ShuttingDown;
-        
+
         // Shutdown with timeout
         let shutdown_result = timeout(self.max_shutdown_time, self.shutdown_sequence()).await;
-        
+
         match shutdown_result {
             Ok(Ok(())) => {
                 *self.status.write().unwrap() = DeploymentStatus::Stopped;
@@ -428,36 +442,36 @@ impl ProductionDeployment {
     async fn shutdown_sequence(&self) -> Result<(), GBDTError> {
         // 1. Stop accepting new requests
         info!("Stopping new request acceptance...");
-        
+
         // 2. Wait for ongoing requests to complete
         info!("Waiting for ongoing requests to complete...");
         sleep(Duration::from_secs(5)).await;
-        
+
         // 3. Stop monitoring
         if let Some(_monitoring) = self.monitoring.write().await.take() {
             info!("Monitoring stopped");
         }
-        
+
         // 4. Stop security
         if let Some(security) = self.security.write().await.take() {
             info!("Security system stopped");
         }
-        
+
         // 5. Stop feature engineering
         if let Some(_pipeline) = self.feature_pipeline.write().await.take() {
             info!("Feature engineering pipeline stopped");
         }
-        
+
         // 6. Stop model manager
         if let Some(model_manager) = self.model_manager.write().await.take() {
             model_manager.cleanup().await;
             info!("Model manager stopped");
         }
-        
+
         // 7. Clear models
         self.gbdt_models.write().await.clear();
         info!("Models cleared");
-        
+
         Ok(())
     }
 
@@ -482,13 +496,13 @@ impl ProductionDeployment {
     /// Get resource usage
     pub async fn get_resource_usage(&self) -> HashMap<String, f64> {
         let mut usage = HashMap::new();
-        
+
         // This would typically get actual resource usage
         // For now, we'll return simulated values
         usage.insert("memory_percent".to_string(), 45.0);
         usage.insert("cpu_percent".to_string(), 23.0);
         usage.insert("disk_percent".to_string(), 12.0);
-        
+
         usage
     }
 }
@@ -579,7 +593,7 @@ pub mod utils {
     pub async fn check_dependencies() -> Result<(), GBDTError> {
         // Check if required binaries are available
         let required_binaries = vec!["cargo", "rustc"];
-        
+
         for binary in required_binaries {
             if Command::new(binary).arg("--version").output().is_err() {
                 return Err(GBDTError::ModelValidationFailed {
@@ -597,7 +611,7 @@ pub mod utils {
         let metrics = deployment.get_metrics();
         let uptime = deployment.get_uptime();
         let resource_usage = deployment.get_resource_usage().await;
-        
+
         format!(
             "Deployment Report\n\
              ================\n\
@@ -633,7 +647,7 @@ mod tests {
     async fn test_deployment_creation() {
         let config_manager = Arc::new(ProductionConfigManager::new(PathBuf::from("test.toml")));
         let deployment = ProductionDeployment::new(config_manager);
-        
+
         assert_eq!(deployment.get_status(), DeploymentStatus::Starting);
         assert!(!deployment.is_ready());
     }
@@ -642,7 +656,7 @@ mod tests {
     async fn test_health_check() {
         let config_manager = Arc::new(ProductionConfigManager::new(PathBuf::from("test.toml")));
         let deployment = ProductionDeployment::new(config_manager);
-        
+
         let health_result = deployment.perform_health_check().await.unwrap();
         assert_eq!(health_result.status, HealthStatus::Unhealthy); // No models loaded
     }
@@ -651,7 +665,7 @@ mod tests {
     async fn test_deployment_metrics() {
         let config_manager = Arc::new(ProductionConfigManager::new(PathBuf::from("test.toml")));
         let deployment = ProductionDeployment::new(config_manager);
-        
+
         let metrics = deployment.get_metrics();
         assert_eq!(metrics.total_requests, 0);
         assert_eq!(metrics.successful_requests, 0);

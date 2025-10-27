@@ -7,13 +7,13 @@ use anyhow::Result;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::Rng;
 
+pub mod commitment_schemes;
 pub mod hash_functions;
 pub mod merkle_trees;
-pub mod commitment_schemes;
 
-pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256, SHA3_256, BLAKE2b};
-pub use merkle_trees::{MerkleTree, MerkleProof, MerkleError};
-pub use commitment_schemes::{PedersenCommitment, Commitment, CommitmentError};
+pub use commitment_schemes::{Commitment, CommitmentError, PedersenCommitment};
+pub use hash_functions::{BLAKE2b, Blake3, HashFunction, Keccak256, SHA256, SHA3_256};
+pub use merkle_trees::{MerkleError, MerkleProof, MerkleTree};
 
 /// Cryptographic key pair for IPPAN
 #[derive(Debug, Clone)]

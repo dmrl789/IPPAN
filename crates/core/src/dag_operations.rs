@@ -89,7 +89,7 @@ impl DAGOperations {
     /// Analyze the current DAG structure
     pub async fn analyze_dag(&mut self) -> Result<DAGAnalysis> {
         let start = Instant::now();
-        
+
         let tips = {
             let dag = self.dag.read().await;
             dag.get_tips()?
@@ -109,17 +109,17 @@ impl DAGOperations {
             total_blocks += 1;
             max_depth = max_depth.max(metadata.depth);
             total_depth += metadata.depth;
-            
+
             if metadata.parents.is_empty() && !tips.contains(hash) {
                 orphan_blocks += 1;
             }
-            
+
             if metadata.children.len() > 1 {
                 convergence_blocks += 1;
             }
-            
+
             total_children += metadata.children.len();
-            
+
             // Find longest chain from this block
             let chain_length = self.find_longest_chain_from(*hash)?;
             longest_chain_length = longest_chain_length.max(chain_length);
@@ -155,8 +155,12 @@ impl DAGOperations {
         };
 
         self.last_analysis = Some(analysis.clone());
-        info!("DAG analysis completed: {} blocks, max depth: {}, convergence: {:.2}%", 
-              analysis.total_blocks, analysis.max_depth, analysis.convergence_ratio * 100.0);
+        info!(
+            "DAG analysis completed: {} blocks, max depth: {}, convergence: {:.2}%",
+            analysis.total_blocks,
+            analysis.max_depth,
+            analysis.convergence_ratio * 100.0
+        );
 
         Ok(analysis)
     }
@@ -239,24 +243,24 @@ impl DAGOperations {
 
         let mut pruned_count = 0;
         let cutoff_time = Instant::now() - self.config.max_orphan_age;
-        
+
         let tips = {
             let dag = self.dag.read().await;
             dag.get_tips()?
         };
         let mut reachable = HashSet::new();
-        
+
         // Mark all reachable blocks from tips
         for tip in tips {
             self.mark_reachable(tip, &mut reachable)?;
         }
 
         // Find orphaned blocks
-        let orphaned_blocks: Vec<[u8; 32]> = self.block_metadata
+        let orphaned_blocks: Vec<[u8; 32]> = self
+            .block_metadata
             .iter()
             .filter(|(hash, metadata)| {
-                !reachable.contains(*hash) && 
-                metadata.last_accessed < cutoff_time
+                !reachable.contains(*hash) && metadata.last_accessed < cutoff_time
             })
             .map(|(hash, _)| *hash)
             .collect();
@@ -288,7 +292,7 @@ impl DAGOperations {
         }
 
         let mut compacted_count = 0;
-        
+
         // Find blocks that can be compacted
         let mut candidates = Vec::new();
         for (hash, metadata) in &self.block_metadata {
@@ -323,7 +327,7 @@ impl DAGOperations {
     pub fn get_statistics(&self) -> Result<DAGStatistics> {
         let tips = self.dag.get_tips()?;
         let total_blocks = self.block_metadata.len();
-        
+
         let mut total_children = 0;
         let mut total_parents = 0;
         let mut max_depth = 0;
@@ -362,7 +366,7 @@ impl DAGOperations {
     /// Build metadata for all blocks
     async fn build_metadata(&mut self) -> Result<()> {
         self.block_metadata.clear();
-        
+
         // Get all blocks from the DAG
         let tips = {
             let dag = self.dag.read().await;
@@ -442,13 +446,21 @@ impl DAGOperations {
     }
 
     /// Reconstruct path from parent map
-    fn reconstruct_path(&self, parent_map: &HashMap<[u8; 32], [u8; 32]>, from: [u8; 32], to: [u8; 32]) -> Result<Vec<[u8; 32]>> {
+    fn reconstruct_path(
+        &self,
+        parent_map: &HashMap<[u8; 32], [u8; 32]>,
+        from: [u8; 32],
+        to: [u8; 32],
+    ) -> Result<Vec<[u8; 32]>> {
         let mut path = Vec::new();
         let mut current = to;
 
         while current != from {
             path.push(current);
-            current = parent_map.get(&current).copied().ok_or_else(|| anyhow!("Path reconstruction failed"))?;
+            current = parent_map
+                .get(&current)
+                .copied()
+                .ok_or_else(|| anyhow!("Path reconstruction failed"))?;
         }
 
         path.push(from);
@@ -471,25 +483,28 @@ impl DAGOperations {
             }
 
             // Choose the parent with the highest weight
-            current = metadata.parents
+            current = metadata
+                .parents
                 .iter()
                 .max_by(|a, b| {
                     let a_weight = self.block_metadata.get(*a).map(|m| m.weight).unwrap_or(0.0);
                     let b_weight = self.block_metadata.get(*b).map(|m| m.weight).unwrap_or(0.0);
-                    a_weight.partial_cmp(&b_weight).unwrap_or(std::cmp::Ordering::Equal)
+                    a_weight
+                        .partial_cmp(&b_weight)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .copied()
                 .unwrap_or(current);
         }
 
         path.reverse();
-                let path_len = path.len();
-                Ok(DAGPath {
-                    path: path.clone(),
-                    length: path_len,
-                    total_weight,
-                    is_optimal: true,
-                })
+        let path_len = path.len();
+        Ok(DAGPath {
+            path: path.clone(),
+            length: path_len,
+            total_weight,
+            is_optimal: true,
+        })
     }
 
     /// Mark all reachable blocks from a starting point
@@ -571,7 +586,7 @@ mod tests {
     fn create_test_dag() -> (BlockDAG, Vec<[u8; 32]>) {
         let dir = tempdir().unwrap();
         let dag = BlockDAG::open(dir.path()).unwrap();
-        
+
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let mut block_hashes = Vec::new();
@@ -600,7 +615,7 @@ mod tests {
         let (dag, _) = create_test_dag();
         let config = DAGOptimizationConfig::default();
         let mut ops = DAGOperations::new(dag, config);
-        
+
         let analysis = ops.analyze_dag().unwrap();
         assert!(analysis.total_blocks > 0);
         assert!(analysis.max_depth > 0);
@@ -611,7 +626,7 @@ mod tests {
         let (dag, hashes) = create_test_dag();
         let config = DAGOptimizationConfig::default();
         let ops = DAGOperations::new(dag, config);
-        
+
         if hashes.len() >= 2 {
             let path = ops.find_shortest_path(hashes[0], hashes[1]).unwrap();
             assert!(path.is_some());
@@ -623,7 +638,7 @@ mod tests {
         let (dag, _) = create_test_dag();
         let config = DAGOptimizationConfig::default();
         let ops = DAGOperations::new(dag, config);
-        
+
         let stats = ops.get_statistics().unwrap();
         assert!(stats.total_blocks > 0);
         assert!(stats.tip_count > 0);

@@ -34,13 +34,13 @@ pub enum L2TxKind {
 pub struct L2FeeStructure {
     /// Base fees for each operation type (in micro-IPN)
     pub base_fees: HashMap<L2TxKind, u64>,
-    
+
     /// Unit fees for variable-cost operations (in micro-IPN per unit)
     pub unit_fees: HashMap<L2TxKind, u64>,
-    
+
     /// Maximum fees to prevent excessive charges
     pub max_fees: HashMap<L2TxKind, u64>,
-    
+
     /// Minimum fees to prevent spam
     pub min_fees: HashMap<L2TxKind, u64>,
 }
@@ -51,49 +51,49 @@ impl Default for L2FeeStructure {
         let mut unit_fees = HashMap::new();
         let mut max_fees = HashMap::new();
         let mut min_fees = HashMap::new();
-        
+
         // Smart contract fees
         base_fees.insert(L2TxKind::ContractDeploy, 50_000); // 0.05 IPN
-        base_fees.insert(L2TxKind::ContractCall, 5_000);    // 0.005 IPN
-        
-        unit_fees.insert(L2TxKind::ContractDeploy, 1);      // 1 µIPN per byte
-        unit_fees.insert(L2TxKind::ContractCall, 10);       // 10 µIPN per gas unit
-        
+        base_fees.insert(L2TxKind::ContractCall, 5_000); // 0.005 IPN
+
+        unit_fees.insert(L2TxKind::ContractDeploy, 1); // 1 µIPN per byte
+        unit_fees.insert(L2TxKind::ContractCall, 10); // 10 µIPN per gas unit
+
         max_fees.insert(L2TxKind::ContractDeploy, 1_000_000); // 1 IPN max
-        max_fees.insert(L2TxKind::ContractCall, 100_000);     // 0.1 IPN max
-        
-        min_fees.insert(L2TxKind::ContractDeploy, 10_000);   // 0.01 IPN min
-        min_fees.insert(L2TxKind::ContractCall, 1_000);      // 0.001 IPN min
-        
+        max_fees.insert(L2TxKind::ContractCall, 100_000); // 0.1 IPN max
+
+        min_fees.insert(L2TxKind::ContractDeploy, 10_000); // 0.01 IPN min
+        min_fees.insert(L2TxKind::ContractCall, 1_000); // 0.001 IPN min
+
         // AI model fees
-        base_fees.insert(L2TxKind::AIModelRegister, 1_000);     // 0.001 IPN
-        base_fees.insert(L2TxKind::AIModelInference, 100);      // 0.0001 IPN
-        base_fees.insert(L2TxKind::AIModelStorage, 0);          // No base fee
-        base_fees.insert(L2TxKind::AIModelUpdate, 500);         // 0.0005 IPN
-        base_fees.insert(L2TxKind::FederatedLearning, 2_000);   // 0.002 IPN
-        base_fees.insert(L2TxKind::ProofOfInference, 1_500);    // 0.0015 IPN
-        
-        unit_fees.insert(L2TxKind::AIModelRegister, 1);         // 1 µIPN per byte
-        unit_fees.insert(L2TxKind::AIModelInference, 10);       // 10 µIPN per compute unit
-        unit_fees.insert(L2TxKind::AIModelStorage, 1);          // 1 µIPN per MB per day
-        unit_fees.insert(L2TxKind::AIModelUpdate, 1);           // 1 µIPN per byte changed
-        unit_fees.insert(L2TxKind::FederatedLearning, 100);     // 100 µIPN per round
-        unit_fees.insert(L2TxKind::ProofOfInference, 50);       // 50 µIPN per complexity unit
-        
-        max_fees.insert(L2TxKind::AIModelRegister, 100_000);    // 0.1 IPN max
-        max_fees.insert(L2TxKind::AIModelInference, 10_000);    // 0.01 IPN max
-        max_fees.insert(L2TxKind::AIModelStorage, 50_000);      // 0.05 IPN max per day
-        max_fees.insert(L2TxKind::AIModelUpdate, 50_000);       // 0.05 IPN max
-        max_fees.insert(L2TxKind::FederatedLearning, 20_000);   // 0.02 IPN max
-        max_fees.insert(L2TxKind::ProofOfInference, 15_000);    // 0.015 IPN max
-        
-        min_fees.insert(L2TxKind::AIModelRegister, 1_000);      // 0.001 IPN min
-        min_fees.insert(L2TxKind::AIModelInference, 100);       // 0.0001 IPN min
-        min_fees.insert(L2TxKind::AIModelStorage, 0);           // No minimum
-        min_fees.insert(L2TxKind::AIModelUpdate, 500);          // 0.0005 IPN min
-        min_fees.insert(L2TxKind::FederatedLearning, 2_000);    // 0.002 IPN min
-        min_fees.insert(L2TxKind::ProofOfInference, 1_500);     // 0.0015 IPN min
-        
+        base_fees.insert(L2TxKind::AIModelRegister, 1_000); // 0.001 IPN
+        base_fees.insert(L2TxKind::AIModelInference, 100); // 0.0001 IPN
+        base_fees.insert(L2TxKind::AIModelStorage, 0); // No base fee
+        base_fees.insert(L2TxKind::AIModelUpdate, 500); // 0.0005 IPN
+        base_fees.insert(L2TxKind::FederatedLearning, 2_000); // 0.002 IPN
+        base_fees.insert(L2TxKind::ProofOfInference, 1_500); // 0.0015 IPN
+
+        unit_fees.insert(L2TxKind::AIModelRegister, 1); // 1 µIPN per byte
+        unit_fees.insert(L2TxKind::AIModelInference, 10); // 10 µIPN per compute unit
+        unit_fees.insert(L2TxKind::AIModelStorage, 1); // 1 µIPN per MB per day
+        unit_fees.insert(L2TxKind::AIModelUpdate, 1); // 1 µIPN per byte changed
+        unit_fees.insert(L2TxKind::FederatedLearning, 100); // 100 µIPN per round
+        unit_fees.insert(L2TxKind::ProofOfInference, 50); // 50 µIPN per complexity unit
+
+        max_fees.insert(L2TxKind::AIModelRegister, 100_000); // 0.1 IPN max
+        max_fees.insert(L2TxKind::AIModelInference, 10_000); // 0.01 IPN max
+        max_fees.insert(L2TxKind::AIModelStorage, 50_000); // 0.05 IPN max per day
+        max_fees.insert(L2TxKind::AIModelUpdate, 50_000); // 0.05 IPN max
+        max_fees.insert(L2TxKind::FederatedLearning, 20_000); // 0.02 IPN max
+        max_fees.insert(L2TxKind::ProofOfInference, 15_000); // 0.015 IPN max
+
+        min_fees.insert(L2TxKind::AIModelRegister, 1_000); // 0.001 IPN min
+        min_fees.insert(L2TxKind::AIModelInference, 100); // 0.0001 IPN min
+        min_fees.insert(L2TxKind::AIModelStorage, 0); // No minimum
+        min_fees.insert(L2TxKind::AIModelUpdate, 500); // 0.0005 IPN min
+        min_fees.insert(L2TxKind::FederatedLearning, 2_000); // 0.002 IPN min
+        min_fees.insert(L2TxKind::ProofOfInference, 1_500); // 0.0015 IPN min
+
         Self {
             base_fees,
             unit_fees,
@@ -131,7 +131,7 @@ impl L2FeeManager {
             total_collected: 0,
         }
     }
-    
+
     /// Calculate fee for an L2 operation
     pub fn calculate_fee(
         &self,
@@ -139,32 +139,40 @@ impl L2FeeManager {
         units: Option<u64>,
         additional_data: Option<HashMap<String, u64>>,
     ) -> Result<L2FeeCalculation, String> {
-        let base_fee = self.fee_structure.base_fees
+        let base_fee = self
+            .fee_structure
+            .base_fees
             .get(&tx_kind)
             .copied()
             .ok_or_else(|| format!("No base fee configured for {:?}", tx_kind))?;
-        
-        let unit_fee = self.fee_structure.unit_fees
+
+        let unit_fee = self
+            .fee_structure
+            .unit_fees
             .get(&tx_kind)
             .copied()
             .unwrap_or(0);
-        
+
         let units = units.unwrap_or_else(|| self.calculate_units(tx_kind, additional_data));
         let unit_cost = unit_fee * units;
         let total_fee = base_fee + unit_cost;
-        
+
         // Apply min/max bounds
-        let min_fee = self.fee_structure.min_fees
+        let min_fee = self
+            .fee_structure
+            .min_fees
             .get(&tx_kind)
             .copied()
             .unwrap_or(0);
-        let max_fee = self.fee_structure.max_fees
+        let max_fee = self
+            .fee_structure
+            .max_fees
             .get(&tx_kind)
             .copied()
             .unwrap_or(u64::MAX);
-        
+
         let final_fee = total_fee.max(min_fee).min(max_fee);
-        
+
         let calculation_method = match tx_kind {
             L2TxKind::ContractDeploy | L2TxKind::AIModelRegister | L2TxKind::AIModelUpdate => {
                 "base + (size_bytes * unit_fee)".to_string()
@@ -172,17 +180,11 @@ impl L2FeeManager {
             L2TxKind::ContractCall | L2TxKind::AIModelInference => {
                 "base + (gas_units * unit_fee)".to_string()
             }
-            L2TxKind::AIModelStorage => {
-                "size_mb * days * unit_fee".to_string()
-            }
-            L2TxKind::FederatedLearning => {
-                "base + (rounds * unit_fee)".to_string()
-            }
-            L2TxKind::ProofOfInference => {
-                "base + (complexity * unit_fee)".to_string()
-            }
+            L2TxKind::AIModelStorage => "size_mb * days * unit_fee".to_string(),
+            L2TxKind::FederatedLearning => "base + (rounds * unit_fee)".to_string(),
+            L2TxKind::ProofOfInference => "base + (complexity * unit_fee)".to_string(),
         };
-        
+
         Ok(L2FeeCalculation {
             tx_kind,
             base_fee,
@@ -192,9 +194,13 @@ impl L2FeeManager {
             calculation_method,
         })
     }
-    
+
     /// Calculate units for variable-cost operations
-    fn calculate_units(&self, tx_kind: L2TxKind, additional_data: Option<HashMap<String, u64>>) -> u64 {
+    fn calculate_units(
+        &self,
+        tx_kind: L2TxKind,
+        additional_data: Option<HashMap<String, u64>>,
+    ) -> u64 {
         match tx_kind {
             L2TxKind::ContractDeploy | L2TxKind::AIModelRegister | L2TxKind::AIModelUpdate => {
                 additional_data
@@ -203,7 +209,11 @@ impl L2FeeManager {
             }
             L2TxKind::ContractCall | L2TxKind::AIModelInference => {
                 additional_data
-                    .and_then(|data| data.get("gas_units").or_else(|| data.get("compute_units")).copied())
+                    .and_then(|data| {
+                        data.get("gas_units")
+                            .or_else(|| data.get("compute_units"))
+                            .copied()
+                    })
                     .unwrap_or(1000) // Default 1000 gas/compute units
             }
             L2TxKind::AIModelStorage => {
@@ -215,25 +225,21 @@ impl L2FeeManager {
                     .unwrap_or(1);
                 size_mb * days
             }
-            L2TxKind::FederatedLearning => {
-                additional_data
-                    .and_then(|data| data.get("rounds").copied())
-                    .unwrap_or(1)
-            }
-            L2TxKind::ProofOfInference => {
-                additional_data
-                    .and_then(|data| data.get("complexity").copied())
-                    .unwrap_or(100)
-            }
+            L2TxKind::FederatedLearning => additional_data
+                .and_then(|data| data.get("rounds").copied())
+                .unwrap_or(1),
+            L2TxKind::ProofOfInference => additional_data
+                .and_then(|data| data.get("complexity").copied())
+                .unwrap_or(100),
         }
     }
-    
+
     /// Collect fee for an L2 operation
     pub fn collect_fee(&mut self, tx_kind: L2TxKind, amount: u64) {
         *self.collected_fees.entry(tx_kind).or_insert(0) += amount;
         self.total_collected += amount;
     }
-    
+
     /// Get fee statistics
     pub fn get_statistics(&self) -> L2FeeStatistics {
         L2FeeStatistics {
@@ -242,7 +248,7 @@ impl L2FeeManager {
             fee_structure: self.fee_structure.clone(),
         }
     }
-    
+
     /// Update fee structure
     pub fn update_fee_structure(&mut self, new_structure: L2FeeStructure) {
         self.fee_structure = new_structure;
@@ -270,52 +276,66 @@ mod tests {
     #[test]
     fn test_l2_fee_calculation() {
         let manager = L2FeeManager::new();
-        
+
         // Test smart contract deployment
         let mut data = HashMap::new();
         data.insert("size_bytes".to_string(), 5000);
-        
-        let result = manager.calculate_fee(L2TxKind::ContractDeploy, None, Some(data)).unwrap();
+
+        let result = manager
+            .calculate_fee(L2TxKind::ContractDeploy, None, Some(data))
+            .unwrap();
         assert_eq!(result.base_fee, 50_000);
         assert_eq!(result.units, 5000);
         assert_eq!(result.total_fee, 55_000); // 50_000 + (5000 * 1)
-        
+
         // Test AI model inference
         let mut data = HashMap::new();
         data.insert("compute_units".to_string(), 1000);
-        
-        let result = manager.calculate_fee(L2TxKind::AIModelInference, None, Some(data)).unwrap();
+
+        let result = manager
+            .calculate_fee(L2TxKind::AIModelInference, None, Some(data))
+            .unwrap();
         assert_eq!(result.base_fee, 100);
         assert_eq!(result.units, 1000);
         assert_eq!(result.total_fee, 10_100); // 100 + (1000 * 10)
     }
-    
+
     #[test]
     fn test_fee_collection() {
         let mut manager = L2FeeManager::new();
-        
+
         manager.collect_fee(L2TxKind::ContractDeploy, 50_000);
         manager.collect_fee(L2TxKind::AIModelInference, 1_000);
-        
+
         let stats = manager.get_statistics();
         assert_eq!(stats.total_collected, 51_000);
-        assert_eq!(stats.fees_by_type.get(&L2TxKind::ContractDeploy), Some(&50_000));
-        assert_eq!(stats.fees_by_type.get(&L2TxKind::AIModelInference), Some(&1_000));
+        assert_eq!(
+            stats.fees_by_type.get(&L2TxKind::ContractDeploy),
+            Some(&50_000)
+        );
+        assert_eq!(
+            stats.fees_by_type.get(&L2TxKind::AIModelInference),
+            Some(&1_000)
+        );
     }
-    
+
     #[test]
     fn test_fee_bounds() {
         let manager = L2FeeManager::new();
-        
+
         // Test minimum fee enforcement
-        let result = manager.calculate_fee(L2TxKind::ContractDeploy, Some(1), None).unwrap();
+        let result = manager
+            .calculate_fee(L2TxKind::ContractDeploy, Some(1), None)
+            .unwrap();
         assert!(result.total_fee >= 10_000); // Minimum fee
-        
+
         // Test maximum fee enforcement
         let mut data = HashMap::new();
         data.insert("size_bytes".to_string(), 1_000_000); // Very large contract
-        
-        let result = manager.calculate_fee(L2TxKind::ContractDeploy, None, Some(data)).unwrap();
+
+        let result = manager
+            .calculate_fee(L2TxKind::ContractDeploy, None, Some(data))
+            .unwrap();
         assert!(result.total_fee <= 1_000_000); // Maximum fee
     }
 }

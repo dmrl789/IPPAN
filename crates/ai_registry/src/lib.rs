@@ -13,12 +13,7 @@ pub mod errors;
 pub mod security;
 
 pub use security::{
-    SecurityManager,
-    SecurityConfig,
-    AuthToken,
-    UserPermissions,
-    RateLimiter,
-    SecurityStats,
+    AuthToken, RateLimiter, SecurityConfig, SecurityManager, SecurityStats, UserPermissions,
 };
 
 /// Status of a model in the registry

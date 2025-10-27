@@ -2,8 +2,8 @@
 //! This test focuses only on the deterministic GBDT functionality
 
 use ippan_ai_core::deterministic_gbdt::{
-    DeterministicGBDT, ValidatorFeatures, DecisionNode, GBDTTree,
-    DeterministicGBDTError, normalize_features, compute_scores, create_test_model
+    compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
+    DeterministicGBDTError, GBDTTree, ValidatorFeatures,
 };
 use std::collections::HashMap;
 
@@ -29,13 +29,13 @@ fn test_ippan_time_normalization() {
     let mut telemetry = HashMap::new();
     telemetry.insert("node1".to_string(), (100_000, 1.2, 99.9, 0.42));
     telemetry.insert("node2".to_string(), (100_080, 0.9, 99.8, 0.38));
-    
+
     let ippan_time_median = 100_050;
     let features = normalize_features(&telemetry, ippan_time_median);
-    
+
     assert_eq!(features.len(), 2);
-    assert_eq!(features[0].delta_time_us, -50);  // 100_000 - 100_050
-    assert_eq!(features[1].delta_time_us, 30);   // 100_080 - 100_050
+    assert_eq!(features[0].delta_time_us, -50); // 100_000 - 100_050
+    assert_eq!(features[1].delta_time_us, 30); // 100_080 - 100_050
 }
 
 #[test]
@@ -43,13 +43,13 @@ fn test_validator_scoring() {
     let model = create_test_model();
     let mut telemetry = HashMap::new();
     telemetry.insert("test_node".to_string(), (100_000, 1.0, 99.0, 0.5));
-    
+
     let ippan_time_median = 100_000;
     let round_hash = "test_round";
-    
+
     let features = normalize_features(&telemetry, ippan_time_median);
     let scores = compute_scores(&model, &features, round_hash);
-    
+
     assert_eq!(scores.len(), 1);
     assert!(scores.contains_key("test_node"));
     assert!(scores["test_node"].is_finite());
@@ -59,10 +59,10 @@ fn test_validator_scoring() {
 fn test_model_hash_consistency() {
     let model = create_test_model();
     let round_hash = "consistent_round";
-    
+
     let hash1 = model.model_hash(round_hash);
     let hash2 = model.model_hash(round_hash);
-    
+
     assert_eq!(hash1, hash2);
     assert!(!hash1.is_empty());
 }
@@ -71,12 +71,12 @@ fn test_model_hash_consistency() {
 fn test_cross_platform_determinism() {
     let model = create_test_model();
     let features = vec![1.5, 2.5, 3.5, 4.5];
-    
+
     // Simulate multiple nodes computing the same prediction
     let node1_result = model.predict(&features);
     let node2_result = model.predict(&features);
     let node3_result = model.predict(&features);
-    
+
     assert_eq!(node1_result, node2_result);
     assert_eq!(node2_result, node3_result);
 }

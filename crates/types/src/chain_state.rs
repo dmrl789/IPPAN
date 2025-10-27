@@ -148,7 +148,9 @@ impl ChainState {
 
     /// Check if supply cap would be exceeded
     pub fn would_exceed_cap(&self, additional_micro: MicroIPN, cap_micro: MicroIPN) -> bool {
-        self.total_issued_micro.saturating_add(additional_micro) > cap_micro
+        self.total_issued_micro
+            .saturating_add(additional_micro)
+            >= cap_micro
     }
 
     /// Get remaining supply cap
@@ -180,10 +182,10 @@ impl ChainState {
 pub trait ChainStateManager {
     /// Load chain state from storage
     fn load_state(&self) -> Result<ChainState, Box<dyn std::error::Error>>;
-    
+
     /// Save chain state to storage
     fn save_state(&mut self, state: &ChainState) -> Result<(), Box<dyn std::error::Error>>;
-    
+
     /// Update state atomically
     fn update_state<F>(&mut self, updater: F) -> Result<(), Box<dyn std::error::Error>>
     where
@@ -215,7 +217,7 @@ mod tests {
         let mut state = ChainState::new();
         state.add_issued_micro(1000);
         assert_eq!(state.total_issued_micro(), 1000);
-        
+
         state.add_issued_micro(500);
         assert_eq!(state.total_issued_micro(), 1500);
     }
@@ -224,10 +226,10 @@ mod tests {
     fn test_height_operations() {
         let mut state = ChainState::new();
         assert_eq!(state.current_height(), 0);
-        
+
         state.increment_height();
         assert_eq!(state.current_height(), 1);
-        
+
         state.set_height(100);
         assert_eq!(state.current_height(), 100);
     }
@@ -236,7 +238,7 @@ mod tests {
     fn test_round_operations() {
         let mut state = ChainState::new();
         assert_eq!(state.current_round(), 0);
-        
+
         state.set_round(50);
         assert_eq!(state.current_round(), 50);
     }
@@ -244,13 +246,13 @@ mod tests {
     #[test]
     fn test_metadata_operations() {
         let mut state = ChainState::new();
-        
+
         state.set_metadata("key1".to_string(), "value1".to_string());
         assert_eq!(state.get_metadata("key1"), Some(&"value1".to_string()));
-        
+
         state.set_metadata("key2".to_string(), "value2".to_string());
         assert_eq!(state.get_metadata("key2"), Some(&"value2".to_string()));
-        
+
         let removed = state.remove_metadata("key1");
         assert_eq!(removed, Some("value1".to_string()));
         assert_eq!(state.get_metadata("key1"), None);
@@ -260,9 +262,9 @@ mod tests {
     fn test_update_after_round() {
         let mut state = ChainState::new();
         let state_root = [1u8; 32];
-        
+
         state.update_after_round(10, 1000, state_root, 1234567890);
-        
+
         assert_eq!(state.current_round(), 10);
         assert_eq!(state.total_issued_micro(), 1000);
         assert_eq!(state.state_root(), state_root);
@@ -272,7 +274,7 @@ mod tests {
     #[test]
     fn test_supply_cap_checks() {
         let state = ChainState::with_initial(1000, 0, 0);
-        
+
         assert!(!state.would_exceed_cap(500, 2000));
         assert!(state.would_exceed_cap(1000, 2000));
         assert_eq!(state.remaining_cap(2000), 1000);
@@ -282,7 +284,7 @@ mod tests {
     fn test_with_updates() {
         let original = ChainState::with_initial(1000, 5, 10);
         let new_state_root = [2u8; 32];
-        
+
         let updated = original.with_updates(
             Some(2000),
             Some(15),
@@ -290,7 +292,7 @@ mod tests {
             Some(new_state_root),
             Some(1234567890),
         );
-        
+
         assert_eq!(updated.total_issued_micro(), 2000);
         assert_eq!(updated.current_height(), 15);
         assert_eq!(updated.current_round(), 10); // Unchanged
