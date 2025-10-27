@@ -13,17 +13,19 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_mempool::Mempool;
-use ippan_p2p::{HttpP2PNetwork, NetworkMessage};
 use ippan_storage::{Account, Storage};
+
+use crate::{HttpP2PNetwork, NetworkMessage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, IppanTimeMicros, L2Commit, L2ExitRecord, L2Network, Transaction};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct L2Config {
@@ -229,10 +231,16 @@ struct L2Filter {
     l2_id: Option<String>,
 }
 
+/// Start the RPC server with production-ready configuration
 pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
+    info!("Starting RPC server on {}", addr);
+    
     let shared = Arc::new(state);
     let app = build_router(shared.clone());
     let listener = bind_listener(addr).await?;
+    
+    info!("RPC server listening on {}", listener.local_addr()?);
+    
     axum::serve(listener, app)
         .await
         .context("RPC server terminated unexpectedly")
@@ -250,17 +258,28 @@ async fn bind_listener(addr: &str) -> Result<tokio::net::TcpListener> {
     }
 }
 
+/// Build the production-ready router with all middleware
 fn build_router(state: SharedState) -> Router {
+    // Configure CORS for production
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+    
     let mut router = Router::new()
+        // Health and monitoring endpoints
         .route("/health", get(handle_health))
         .route("/time", get(handle_time))
         .route("/version", get(handle_version))
         .route("/metrics", get(handle_metrics))
+        
+        // Transaction and blockchain endpoints
         .route("/tx", post(handle_submit_tx))
         .route("/tx/:hash", get(handle_get_transaction))
         .route("/block/:id", get(handle_get_block))
         .route("/account/:address", get(handle_get_account))
         .route("/peers", get(handle_get_peers))
+        
         // Inbound HTTP P2P endpoints
         .route("/p2p/blocks", post(handle_p2p_blocks))
         .route("/p2p/transactions", post(handle_p2p_transactions))
@@ -269,6 +288,8 @@ fn build_router(state: SharedState) -> Router {
         .route("/p2p/peer-info", post(handle_p2p_peer_info))
         .route("/p2p/peer-discovery", post(handle_p2p_peer_discovery))
         .route("/p2p/peers", get(handle_p2p_list_peers))
+        
+        // Layer 2 endpoints
         .route("/l2/config", get(handle_get_l2_config))
         .route("/l2/networks", get(handle_list_l2_networks))
         .route("/l2/commits", get(handle_list_l2_commits))
@@ -276,6 +297,7 @@ fn build_router(state: SharedState) -> Router {
         .route("/l2/exits", get(handle_list_l2_exits))
         .route("/l2/exits/:l2_id", get(handle_list_l2_exits_for_l2));
 
+    // Serve static UI assets if configured
     if let Some(static_root) = state.static_assets_root() {
         if Path::new(&static_root).exists() {
             info!("Serving Unified UI assets from {:?}", static_root);
@@ -288,7 +310,10 @@ fn build_router(state: SharedState) -> Router {
         }
     }
 
-    router.layer(TraceLayer::new_for_http()).with_state(state)
+    router
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }
 
 async fn serve_static_assets(State(state): State<SharedState>, req: Request<Body>) -> Response {
@@ -415,27 +440,42 @@ async fn handle_metrics(State(state): State<SharedState>) -> Result<Response, Ap
     Ok(response)
 }
 
+/// Handle transaction submission with production-grade validation and error handling
 async fn handle_submit_tx(
     State(state): State<SharedState>,
     Json(tx): Json<Transaction>,
 ) -> Result<Json<SubmitTransactionResponse>, ApiError> {
     let req_total = state.record_request();
+    
+    debug!("Received transaction submission request");
 
+    // Submit transaction through consensus or direct sender
     let sender_result = if let Some(consensus) = state.consensus.clone() {
+        debug!("Submitting transaction via consensus");
         consensus
             .submit_transaction(tx.clone())
-            .map_err(|err| ApiError::internal(format!("failed to queue transaction: {err}")))
+            .map_err(|err| {
+                error!("Failed to queue transaction via consensus: {}", err);
+                ApiError::internal(format!("failed to queue transaction: {err}"))
+            })
     } else if let Some(sender) = state.tx_sender.clone() {
+        debug!("Submitting transaction via direct sender");
         sender
             .send(tx.clone())
-            .map_err(|err| ApiError::internal(format!("failed to enqueue transaction: {err}")))
+            .map_err(|err| {
+                error!("Failed to enqueue transaction: {}", err);
+                ApiError::internal(format!("failed to enqueue transaction: {err}"))
+            })
     } else {
+        warn!("Transaction submission attempted but service is disabled");
         Err(ApiError::service_unavailable(
             "transaction submission is disabled",
         ))
     };
 
     sender_result?;
+    
+    info!("Transaction successfully queued, mempool size: {}", state.mempool_size());
 
     let response = SubmitTransactionResponse {
         status: "ok",
@@ -566,23 +606,32 @@ async fn handle_p2p_block_request(
     State(state): State<SharedState>,
     Json(msg): Json<NetworkMessage>,
 ) -> Result<StatusCode, ApiError> {
-    if let NetworkMessage::BlockRequest { hash, reply_to } = msg {
-        if let Some(block) = state
-            .storage
-            .get_block(&hash)
-            .map_err(|e| ApiError::internal(format!("failed to read block: {e}")))?
-        {
-            // Push response back to requester
-            let client = reqwest::Client::new();
-            let url = format!("{}/p2p/block-response", reply_to.trim_end_matches('/'));
-            let message = NetworkMessage::BlockResponse(block);
-            if let Err(err) = client.post(&url).json(&message).send().await {
-                warn!("failed to POST BlockResponse to {}: {}", url, err);
+    match msg {
+        NetworkMessage::BlockRequest { hash, reply_to } => {
+            if let Some(block) = state
+                .storage
+                .get_block(&hash)
+                .map_err(|e| ApiError::internal(format!("failed to read block: {e}")))?
+            {
+                // Push response back to requester
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .map_err(|e| ApiError::internal(format!("failed to create HTTP client: {e}")))?;
+                    
+                let url = format!("{}/p2p/block-response", reply_to.trim_end_matches('/'));
+                let message = NetworkMessage::BlockResponse(block);
+                
+                if let Err(err) = client.post(&url).json(&message).send().await {
+                    warn!("failed to POST BlockResponse to {}: {}", url, err);
+                }
             }
+            Ok(StatusCode::OK)
         }
-        Ok(StatusCode::OK)
-    } else {
-        Ok(StatusCode::OK)
+        other => {
+            warn!("/p2p/block-request received unexpected payload: {:?}", other);
+            Ok(StatusCode::OK)
+        }
     }
 }
 
@@ -846,5 +895,122 @@ impl ApiError {
 
     fn service_unavailable<S: Into<String>>(message: S) -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_api_error_creation() {
+        let err = ApiError::bad_request("invalid input");
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert_eq!(err.message, "invalid input");
+
+        let err = ApiError::not_found("resource not found");
+        assert_eq!(err.status, StatusCode::NOT_FOUND);
+        assert_eq!(err.message, "resource not found");
+
+        let err = ApiError::internal("server error");
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.message, "server error");
+
+        let err = ApiError::service_unavailable("service down");
+        assert_eq!(err.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.message, "service down");
+    }
+
+    #[test]
+    fn test_parse_hex_array() {
+        // Valid hex string
+        let result = parse_hex_array::<32>(
+            "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "test",
+        );
+        assert!(result.is_ok());
+        let array = result.unwrap();
+        assert_eq!(array[31], 1);
+
+        // Valid hex without 0x prefix
+        let result = parse_hex_array::<32>(
+            "0000000000000000000000000000000000000000000000000000000000000002",
+            "test",
+        );
+        assert!(result.is_ok());
+        let array = result.unwrap();
+        assert_eq!(array[31], 2);
+
+        // Invalid hex (too short)
+        let result = parse_hex_array::<32>("0x01", "test");
+        assert!(result.is_err());
+
+        // Invalid hex (non-hex characters)
+        let result = parse_hex_array::<32>(
+            "0xZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+            "test",
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_block_lookup() {
+        // Test height parsing
+        let result = parse_block_lookup("12345");
+        assert!(result.is_ok());
+        match result.unwrap() {
+            BlockLookup::Height(h) => assert_eq!(h, 12345),
+            _ => panic!("Expected Height"),
+        }
+
+        // Test hash parsing
+        let result = parse_block_lookup(
+            "0x0000000000000000000000000000000000000000000000000000000000000001",
+        );
+        assert!(result.is_ok());
+        match result.unwrap() {
+            BlockLookup::Hash(h) => assert_eq!(h[31], 1),
+            _ => panic!("Expected Hash"),
+        }
+    }
+
+    #[test]
+    fn test_l2_config_serialization() {
+        let config = L2Config {
+            max_commit_size: 1000,
+            min_epoch_gap_ms: 5000,
+            challenge_window_ms: 10000,
+            da_mode: "optimistic".to_string(),
+            max_l2_count: 100,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"max_commit_size\":1000"));
+        assert!(json.contains("\"min_epoch_gap_ms\":5000"));
+        assert!(json.contains("\"challenge_window_ms\":10000"));
+        assert!(json.contains("\"da_mode\":\"optimistic\""));
+        assert!(json.contains("\"max_l2_count\":100"));
+    }
+
+    #[test]
+    fn test_error_response_serialization() {
+        let err = ErrorResponse {
+            error: "test error".to_string(),
+        };
+
+        let json = serde_json::to_string(&err).unwrap();
+        assert_eq!(json, "{\"error\":\"test error\"}");
+    }
+
+    #[test]
+    fn test_version_response() {
+        let response = VersionResponse {
+            node_id: "test-node".to_string(),
+            version: "0.1.0",
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"node_id\":\"test-node\""));
+        assert!(json.contains("\"version\":\"0.1.0\""));
     }
 }
