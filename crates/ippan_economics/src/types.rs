@@ -3,6 +3,7 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 /// Round index (HashTimer-based)
 pub type RoundIndex = u64;
@@ -43,6 +44,12 @@ impl ValidatorId {
     /// Check if this is a registry alias (not handle or pubkey)
     pub fn is_alias(&self) -> bool {
         !self.is_handle() && !self.is_public_key()
+    }
+}
+
+impl fmt::Display for ValidatorId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

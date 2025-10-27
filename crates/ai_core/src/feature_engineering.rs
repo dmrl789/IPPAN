@@ -18,6 +18,8 @@ use tracing::{debug, error, info, warn, instrument};
 /// Feature engineering configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureEngineeringConfig {
+    /// Enable feature engineering
+    pub enable_feature_engineering: bool,
     /// Enable feature normalization
     pub enable_normalization: bool,
     /// Enable feature scaling
@@ -41,6 +43,7 @@ pub struct FeatureEngineeringConfig {
 impl Default for FeatureEngineeringConfig {
     fn default() -> Self {
         Self {
+            enable_feature_engineering: true,
             enable_normalization: true,
             enable_scaling: true,
             enable_feature_selection: true,

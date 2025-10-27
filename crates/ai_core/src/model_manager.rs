@@ -22,6 +22,8 @@ use tokio::sync::RwLock as AsyncRwLock;
 /// Model manager configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelManagerConfig {
+    /// Enable model management
+    pub enable_model_management: bool,
     /// Base directory for model storage
     pub model_directory: PathBuf,
     /// Maximum number of models to keep in memory
@@ -38,11 +40,14 @@ pub struct ModelManagerConfig {
     pub enable_auto_cleanup: bool,
     /// Maximum model file size in bytes
     pub max_model_size_bytes: u64,
+    /// Default models to load on startup
+    pub default_models: Option<Vec<String>>,
 }
 
 impl Default for ModelManagerConfig {
     fn default() -> Self {
         Self {
+            enable_model_management: true,
             model_directory: PathBuf::from("./models"),
             max_cached_models: 10,
             validation_timeout_ms: 5000,
@@ -51,6 +56,7 @@ impl Default for ModelManagerConfig {
             cache_ttl_seconds: 3600, // 1 hour
             enable_auto_cleanup: true,
             max_model_size_bytes: 100 * 1024 * 1024, // 100MB
+            default_models: None,
         }
     }
 }
@@ -160,14 +166,18 @@ impl ModelManager {
             "Model {} loaded in {}ms, size: {} bytes, validation: {}",
             model_id,
             load_time.as_millis(),
-            model_path.metadata().await?.len(),
+            model_path.metadata().map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to get file metadata: {}", e),
+            })?.len(),
             validation_passed
         );
 
         Ok(ModelLoadResult {
             model,
             load_time_ms: load_time.as_millis() as u64,
-            file_size: model_path.metadata().await?.len(),
+            file_size: model_path.metadata().map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to get file metadata: {}", e),
+            })?.len(),
             from_cache: false,
             validation_passed,
         })
@@ -205,12 +215,26 @@ impl ModelManager {
         // Ensure model directory exists
         fs::create_dir_all(&self.config.model_directory)
             .await
-            .context("Failed to create model directory")?;
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to create model directory: {}", e),
+            })?;
 
         // Save model to disk
         let model_path = self.get_model_path(model_id);
+        // Convert GBDT metadata to model metadata
+        let model_metadata = crate::model::ModelMetadata {
+            model_id: model_id.to_string(),
+            version: 1, // Default version
+            model_type: "gbdt".to_string(),
+            hash_sha256: [0u8; 32], // Will be calculated
+            feature_count: model.metadata.feature_count,
+            output_scale: model.scale,
+            output_min: -10000,
+            output_max: 10000,
+        };
+        
         let model_package = ModelPackage {
-            metadata: model.metadata.clone(),
+            metadata: model_metadata,
             model: model.clone(),
         };
 
@@ -221,7 +245,9 @@ impl ModelManager {
 
         fs::write(&model_path, &model_data)
             .await
-            .context("Failed to write model file")?;
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to write model file: {}", e),
+            })?;
 
         // Update cache
         self.cache_model(model_id, model, &model_path).await?;
@@ -341,8 +367,6 @@ impl ModelManager {
         }
 
         let file_size = file_path.metadata()
-            .await
-            .context("Failed to get file metadata")
             .map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Failed to get file metadata: {}", e),
             })?

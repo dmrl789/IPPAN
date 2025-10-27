@@ -145,7 +145,7 @@ impl ModelManager {
     /// Core loader: read model data from any supported source type
     async fn load_model_data(&self, source: &ModelSource) -> Result<Vec<u8>> {
         match source.source_type {
-            SourceType::Local => fs::read(&source.location).map_err(AiCoreError::Io),
+            SourceType::Local => fs::read(&source.location).map_err(|e| AiCoreError::Io(e.to_string())),
             SourceType::Remote => self.load_from_url(&source.location).await,
             SourceType::Ipfs => self.load_from_ipfs(&source.location).await,
             SourceType::Blockchain => self.load_from_blockchain(&source.location).await,

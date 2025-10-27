@@ -79,10 +79,15 @@ impl ExecutionEngine {
 
         // Create execution result
         let result = ExecutionResult {
-            output,
-            context,
+            data: output.data.clone(),
+            data_type: output.data_type.clone(),
+            execution_time_us: execution_time.as_micros() as u64,
+            memory_usage: 0, // Will be calculated
             success: true,
             error: None,
+            metadata: HashMap::new(),
+            output,
+            context,
         };
 
         info!("Model execution completed successfully");
@@ -160,7 +165,7 @@ impl ExecutionEngine {
         
         // Calculate output size based on metadata
         let output_size = metadata.output_shape.iter().product::<usize>() * 
-            input.dtype.size_bytes();
+            input.dtype.clone().size_bytes();
         
         // Initialize output buffer
         let mut output_data = vec![0u8; output_size];
@@ -208,17 +213,18 @@ impl ExecutionEngine {
         
         info!("Model execution completed in {:?}", execution_time);
         
+        let mut output_metadata = HashMap::new();
+        output_metadata.insert("execution_time_us".to_string(), execution_time.as_micros().to_string());
+        output_metadata.insert("memory_usage_bytes".to_string(), (metadata.size_bytes + input.data.len() as u64).to_string());
+        output_metadata.insert("cpu_cycles".to_string(), self.estimate_cpu_cycles(execution_time).to_string());
+        output_metadata.insert("execution_hash".to_string(), execution_hash);
+        output_metadata.insert("model_version".to_string(), metadata.version.clone());
+        
         Ok(ModelOutput {
             data: output_data,
-            shape: metadata.output_shape.clone(),
-            dtype: input.dtype,
-            metadata: ExecutionMetadata {
-                execution_time_us: execution_time.as_micros() as u64,
-                memory_usage_bytes: metadata.size_bytes + input.data.len() as u64,
-                cpu_cycles: self.estimate_cpu_cycles(execution_time),
-                execution_hash,
-                model_version: metadata.id.version.clone(),
-            },
+            data_type: input.data_type.clone(),
+            metadata: output_metadata,
+            confidence: 1.0,
         })
     }
     

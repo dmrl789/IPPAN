@@ -9,6 +9,8 @@ pub type ModelId = String;
 /// Model metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelMetadata {
+    /// Model ID
+    pub id: ModelId,
     /// Model name
     pub name: String,
     /// Model version
@@ -25,6 +27,16 @@ pub struct ModelMetadata {
     pub created_at: u64,
     /// Model last updated time
     pub updated_at: u64,
+    /// Model architecture
+    pub architecture: String,
+    /// Input shape
+    pub input_shape: Vec<usize>,
+    /// Output shape
+    pub output_shape: Vec<usize>,
+    /// Model size in bytes
+    pub size_bytes: u64,
+    /// Model hash
+    pub hash: String,
 }
 
 /// Model input
@@ -36,6 +48,10 @@ pub struct ModelInput {
     pub data_type: DataType,
     /// Input metadata
     pub metadata: HashMap<String, String>,
+    /// Input shape
+    pub shape: Vec<usize>,
+    /// Data type for size calculation
+    pub dtype: DataType,
 }
 
 /// Model output
@@ -70,17 +86,36 @@ pub enum DataType {
     Video,
 }
 
+impl DataType {
+    /// Get the size in bytes for this data type
+    pub fn size_bytes(&self) -> usize {
+        match self {
+            DataType::Text => 1, // UTF-8 character
+            DataType::Binary => 1,
+            DataType::Json => 1,
+            DataType::Numeric => 4, // Assume float32
+            DataType::Image => 1,
+            DataType::Audio => 1,
+            DataType::Video => 1,
+        }
+    }
+}
+
 /// Execution context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionContext {
     /// Context ID
     pub id: String,
+    /// Model ID
+    pub model_id: String,
     /// Context metadata
     pub metadata: HashMap<String, String>,
     /// Execution parameters
     pub parameters: HashMap<String, String>,
     /// Execution timeout
     pub timeout_ms: u64,
+    /// Random seed for deterministic execution
+    pub seed: Option<u64>,
 }
 
 /// Execution result
@@ -99,5 +134,34 @@ pub struct ExecutionResult {
     /// Error message (if failed)
     pub error: Option<String>,
     /// Result metadata
+    pub metadata: HashMap<String, String>,
+    /// Output data
+    pub output: ModelOutput,
+    /// Execution context
+    pub context: ExecutionContext,
+}
+
+/// Execution metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionMetadata {
+    /// Execution ID
+    pub execution_id: String,
+    /// Model ID
+    pub model_id: String,
+    /// Execution start time
+    pub start_time: u64,
+    /// Execution end time
+    pub end_time: u64,
+    /// Execution duration (microseconds)
+    pub duration_us: u64,
+    /// Memory usage (bytes)
+    pub memory_usage: u64,
+    /// CPU usage percentage
+    pub cpu_usage: f64,
+    /// Success flag
+    pub success: bool,
+    /// Error message (if failed)
+    pub error: Option<String>,
+    /// Additional metadata
     pub metadata: HashMap<String, String>,
 }
