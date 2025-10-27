@@ -155,7 +155,7 @@ impl SyncManager {
         
         let dag_arc = Arc::new(RwLock::new(dag));
         let dag_ops = Arc::new(RwLock::new(DAGOperations::new(
-            BlockDAG::open(std::path::Path::new("/tmp"))?, // Temporary path
+            dag_arc.clone(),
             DAGOptimizationConfig::default(),
         )));
 
@@ -421,7 +421,7 @@ impl SyncManager {
     /// Resolve conflicts between blocks
     async fn resolve_conflicts(&self) -> Result<()> {
         let mut dag_ops = self.dag_ops.write().await;
-        let analysis = dag_ops.analyze_dag()?;
+        let analysis = dag_ops.analyze_dag().await?;
         
         if analysis.convergence_ratio > 0.5 {
             warn!("High convergence ratio detected: {:.2}%", analysis.convergence_ratio * 100.0);
@@ -434,7 +434,7 @@ impl SyncManager {
     /// Optimize the DAG
     async fn optimize_dag(&self) -> Result<()> {
         let mut dag_ops = self.dag_ops.write().await;
-        let pruned = dag_ops.optimize_dag()?;
+        let pruned = dag_ops.optimize_dag().await?;
         let compacted = dag_ops.compact_dag()?;
         
         if pruned > 0 || compacted > 0 {

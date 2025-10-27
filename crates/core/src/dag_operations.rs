@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
 use crate::dag::BlockDAG;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// DAG analysis result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +59,7 @@ impl Default for DAGOptimizationConfig {
 
 /// Advanced DAG operations manager
 pub struct DAGOperations {
-    dag: BlockDAG,
+    dag: Arc<RwLock<BlockDAG>>,
     config: DAGOptimizationConfig,
     block_metadata: HashMap<[u8; 32], BlockMetadata>,
     last_analysis: Option<DAGAnalysis>,
@@ -75,7 +77,7 @@ struct BlockMetadata {
 
 impl DAGOperations {
     /// Create a new DAG operations manager
-    pub fn new(dag: BlockDAG, config: DAGOptimizationConfig) -> Self {
+    pub fn new(dag: Arc<RwLock<BlockDAG>>, config: DAGOptimizationConfig) -> Self {
         Self {
             dag,
             config,
@@ -85,10 +87,13 @@ impl DAGOperations {
     }
 
     /// Analyze the current DAG structure
-    pub fn analyze_dag(&mut self) -> Result<DAGAnalysis> {
+    pub async fn analyze_dag(&mut self) -> Result<DAGAnalysis> {
         let start = Instant::now();
         
-        let tips = self.dag.get_tips()?;
+        let tips = {
+            let dag = self.dag.read().await;
+            dag.get_tips()?
+        };
         let mut total_blocks = 0;
         let mut max_depth = 0;
         let mut total_depth = 0;
@@ -98,7 +103,7 @@ impl DAGOperations {
         let mut convergence_blocks = 0;
 
         // Build metadata for all blocks
-        self.build_metadata()?;
+        self.build_metadata().await?;
 
         for (hash, metadata) in &self.block_metadata {
             total_blocks += 1;
@@ -205,8 +210,11 @@ impl DAGOperations {
     }
 
     /// Find the longest chain in the DAG
-    pub fn find_longest_chain(&self) -> Result<Option<DAGPath>> {
-        let tips = self.dag.get_tips()?;
+    pub async fn find_longest_chain(&self) -> Result<Option<DAGPath>> {
+        let tips = {
+            let dag = self.dag.read().await;
+            dag.get_tips()?
+        };
         let mut longest_path = None;
         let mut max_length = 0;
 
@@ -224,7 +232,7 @@ impl DAGOperations {
     }
 
     /// Optimize the DAG by pruning orphaned blocks
-    pub fn optimize_dag(&mut self) -> Result<usize> {
+    pub async fn optimize_dag(&mut self) -> Result<usize> {
         if !self.config.enable_pruning {
             return Ok(0);
         }
@@ -232,7 +240,10 @@ impl DAGOperations {
         let mut pruned_count = 0;
         let cutoff_time = Instant::now() - self.config.max_orphan_age;
         
-        let tips = self.dag.get_tips()?;
+        let tips = {
+            let dag = self.dag.read().await;
+            dag.get_tips()?
+        };
         let mut reachable = HashSet::new();
         
         // Mark all reachable blocks from tips
@@ -252,7 +263,10 @@ impl DAGOperations {
 
         // Remove orphaned blocks
         for hash in orphaned_blocks {
-            if let Some(_block) = self.dag.get_block(&hash)? {
+            if let Some(_block) = {
+                let dag = self.dag.read().await;
+                dag.get_block(&hash)?
+            } {
                 // In a real implementation, we would remove the block from storage
                 // For now, we just mark it as pruned
                 debug!("Pruning orphaned block: {}", hex::encode(hash));
@@ -346,11 +360,14 @@ impl DAGOperations {
     }
 
     /// Build metadata for all blocks
-    fn build_metadata(&mut self) -> Result<()> {
+    async fn build_metadata(&mut self) -> Result<()> {
         self.block_metadata.clear();
         
         // Get all blocks from the DAG
-        let tips = self.dag.get_tips()?;
+        let tips = {
+            let dag = self.dag.read().await;
+            dag.get_tips()?
+        };
         let mut to_process = VecDeque::new();
         let mut processed = HashSet::new();
 
@@ -364,13 +381,19 @@ impl DAGOperations {
                 continue;
             }
 
-            if let Some(block) = self.dag.get_block(&hash)? {
+            if let Some(block) = {
+                let dag = self.dag.read().await;
+                dag.get_block(&hash)?
+            } {
                 let mut children = Vec::new();
                 let parents = block.header.parent_hashes.clone();
 
                 // Find children by looking for blocks that reference this one as parent
                 for (other_hash, _) in &self.block_metadata {
-                    if let Some(other_block) = self.dag.get_block(other_hash)? {
+                    if let Some(other_block) = {
+                        let dag = self.dag.read().await;
+                        dag.get_block(other_hash)?
+                    } {
                         if other_block.header.parent_hashes.contains(&hash) {
                             children.push(*other_hash);
                         }

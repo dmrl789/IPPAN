@@ -376,6 +376,9 @@ impl PeerDiscovery {
     }
 }
 
+/// Type alias for DiscoveryService
+pub type DiscoveryService = PeerDiscovery;
+
 /// Discovery service statistics
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DiscoveryStats {

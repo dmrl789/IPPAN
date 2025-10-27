@@ -345,8 +345,8 @@ mod tests {
     #[test]
     fn test_pedersen_commitment() {
         let scheme = PedersenCommitment::new();
-        let message = b"test message";
-        let randomness = b"random data here!";
+        let message = &[0u8; 32];
+        let randomness = &[1u8; 32];
         
         let commitment = scheme.commit(message, randomness).unwrap();
         let opening = scheme.open(&commitment, message, randomness).unwrap();

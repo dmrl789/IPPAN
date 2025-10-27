@@ -405,16 +405,23 @@ fn handle_gossip_event(
                         
                         // Verify the zk-STARK proof using our implementation
                         if let Ok(proof) = deserialize_proof(&proof_bytes) {
-                            if let Err(e) = verify_stark_proof(&proof, &block) {
-                                warn!("zk-STARK proof verification failed for block {}: {}", hex::encode(hash), e);
-                                return Ok(());
+                            match verify_stark_proof(&proof, &block) {
+                                Ok(true) => {
+                                    debug!("zk-STARK proof verified for block {}", hex::encode(hash));
+                                }
+                                Ok(false) => {
+                                    warn!("zk-STARK proof verification failed for block {}: invalid proof", hex::encode(hash));
+                                    return Ok(());
+                                }
+                                Err(e) => {
+                                    warn!("zk-STARK proof verification failed for block {}: {}", hex::encode(hash), e);
+                                    return Ok(());
+                                }
                             }
                         } else {
                             warn!("Failed to deserialize zk-STARK proof for block {}", hex::encode(hash));
                             return Ok(());
                         }
-                        
-                        debug!("zk-STARK proof verified for block {}", hex::encode(hash));
                     }
 
                     match dag.insert_block(&block) {
