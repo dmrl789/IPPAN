@@ -144,6 +144,8 @@ pub struct ExecutionContext {
     pub parameters: HashMap<String, String>,
     /// Execution timeout
     pub timeout_ms: u64,
+    /// Random seed for deterministic execution
+    pub seed: Option<u64>,
 }
 
 /// Execution result

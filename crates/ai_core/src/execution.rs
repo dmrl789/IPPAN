@@ -210,8 +210,10 @@ impl ExecutionEngine {
         
         Ok(ModelOutput {
             data: output_data,
+            data_type: input.dtype,
             shape: metadata.output_shape.clone(),
             dtype: input.dtype,
+            confidence: 1.0,
             metadata: ExecutionMetadata {
                 execution_time_us: execution_time.as_micros() as u64,
                 memory_usage_bytes: metadata.size_bytes + input.data.len() as u64,
@@ -334,16 +336,17 @@ impl DataType {
     /// Get the size in bytes for this data type
     pub fn size_bytes(self) -> usize {
         match self {
-            DataType::Float32 => 4,
-            DataType::Float64 => 8,
-            DataType::Int8 => 1,
-            DataType::Int16 => 2,
             DataType::Int32 => 4,
             DataType::Int64 => 8,
-            DataType::UInt8 => 1,
-            DataType::UInt16 => 2,
-            DataType::UInt32 => 4,
-            DataType::UInt64 => 8,
+            DataType::Float32 => 4,
+            // Variable-length types - return 0 as they need runtime size determination
+            DataType::Text => 0,
+            DataType::Binary => 0,
+            DataType::Json => 0,
+            DataType::Numeric => 0,
+            DataType::Image => 0,
+            DataType::Audio => 0,
+            DataType::Video => 0,
         }
     }
 }
