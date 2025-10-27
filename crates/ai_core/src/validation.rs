@@ -176,7 +176,7 @@ impl ModelValidator {
                     .as_secs(),
                 duration_us: duration.as_micros() as u64,
                 validator_version: crate::VERSION.to_string(),
-                model_version: metadata.id.version.clone(),
+                model_version: metadata.version.clone(),
             },
         };
         
@@ -323,7 +323,7 @@ impl ModelValidator {
         }
         
         // Verify that model metadata includes deterministic hash
-        if metadata.id.hash.is_empty() {
+        if metadata.hash.is_empty() {
             return Err(ValidationError {
                 error_type: "DeterminismCheck".to_string(),
                 message: "Model hash is required for determinism verification".to_string(),

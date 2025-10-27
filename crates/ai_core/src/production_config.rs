@@ -8,11 +8,12 @@
 //! - Configuration hot-reloading
 //! - Secrets management
 
-use crate::gbdt::{GBDTModel, SecurityConstraints};
+use crate::gbdt::{GBDTModel, SecurityConstraints, GBDTError};
 use crate::model_manager::ModelManagerConfig;
 use crate::feature_engineering::FeatureEngineeringConfig;
 use crate::monitoring::MonitoringConfig;
 use crate::security::SecurityConfig;
+use crate::GBDTError;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -167,12 +168,20 @@ pub struct LoggingConfig {
 }
 
 /// Configuration manager for production deployments
-#[derive(Debug)]
 pub struct ProductionConfigManager {
     config: Arc<RwLock<ProductionConfig>>,
     config_path: PathBuf,
     last_loaded: Arc<RwLock<SystemTime>>,
     watchers: Arc<RwLock<Vec<Box<dyn ConfigWatcher + Send + Sync>>>>,
+}
+
+impl std::fmt::Debug for ProductionConfigManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProductionConfigManager")
+            .field("config_path", &self.config_path)
+            .field("watchers_count", &self.watchers.read().unwrap().len())
+            .finish()
+    }
 }
 
 /// Trait for configuration change watchers
@@ -253,7 +262,7 @@ impl ProductionConfig {
         }
 
         // Validate monitoring configuration
-        if self.monitoring.metrics_interval_seconds == 0 {
+        if self.monitoring.interval_seconds == 0 {
             errors.push("Metrics interval must be greater than 0".to_string());
         }
 
@@ -620,8 +629,6 @@ pub mod templates {
         config.resources.max_cpu_percent = 25.0;
         
         config.monitoring.enable_performance_monitoring = false;
-        config.monitoring.enable_health_monitoring = false;
-        config.monitoring.enable_security_monitoring = false;
         
         config.security.enable_input_validation = false;
         config.security.enable_integrity_checking = false;
