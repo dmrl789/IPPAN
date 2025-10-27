@@ -117,7 +117,7 @@ struct PeerConnection {
 
 /// Peer synchronization capability
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SyncCapability {
+pub struct SyncCapability {
     max_batch_size: usize,
     supported_protocols: Vec<String>,
     compression_enabled: bool,
