@@ -3,170 +3,178 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Model identifier
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Unique identifier for each model
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ModelId {
     /// Model name
     pub name: String,
     /// Model version
     pub version: String,
-    /// Model hash
+    /// Model hash (Blake3 or SHA-256)
     pub hash: String,
 }
 
-/// Model metadata
+impl ModelId {
+    pub fn new(name: String, version: String, hash: String) -> Self {
+        Self { name, version, hash }
+    }
+}
+
+impl std::fmt::Display for ModelId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}:{}", self.name, self.version, self.hash)
+    }
+}
+
+/// Model metadata (structural and descriptive info)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelMetadata {
-    /// Model ID
+    /// Model identifier
     pub id: ModelId,
-    /// Model name
+    /// Human-readable name
     pub name: String,
-    /// Model version
+    /// Model version (semver or hash)
     pub version: String,
     /// Model description
     pub description: String,
-    /// Model author
+    /// Author or maintainer
     pub author: String,
-    /// Model license
+    /// License string (e.g., MIT, Apache-2.0)
     pub license: String,
-    /// Model tags
+    /// Tags for discoverability
     pub tags: Vec<String>,
-    /// Model creation time
+    /// Creation timestamp (UNIX microseconds)
     pub created_at: u64,
-    /// Model last updated time
+    /// Last update timestamp (UNIX microseconds)
     pub updated_at: u64,
-    /// Model architecture
+    /// Model architecture (e.g., "gbdt", "transformer", "cnn")
     pub architecture: String,
-    /// Input shape
+    /// Input tensor shape
     pub input_shape: Vec<usize>,
-    /// Output shape
+    /// Output tensor shape
     pub output_shape: Vec<usize>,
-    /// Model size in bytes
+    /// Model binary size in bytes
     pub size_bytes: u64,
-    /// Parameter count
+    /// Number of parameters
     pub parameter_count: u64,
 }
 
-/// Model input
+/// Model input structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInput {
-    /// Input data
+    /// Raw input data (bytes)
     pub data: Vec<u8>,
-    /// Input type
-    pub data_type: DataType,
-    /// Input metadata
-    pub metadata: HashMap<String, String>,
-    /// Data type for compatibility
+    /// Declared data type
     pub dtype: DataType,
-    /// Input shape
+    /// Shape of the input tensor
     pub shape: Vec<usize>,
+    /// Arbitrary metadata (feature names, scaling, etc.)
+    pub metadata: HashMap<String, String>,
 }
 
-/// Model output
+/// Model output structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelOutput {
-    /// Output data
+    /// Raw output bytes
     pub data: Vec<u8>,
-    /// Output type
-    pub data_type: DataType,
-    /// Output metadata
-    pub metadata: HashMap<String, String>,
-    /// Confidence score
-    pub confidence: f64,
+    /// Output data type
+    pub dtype: DataType,
     /// Output shape
     pub shape: Vec<usize>,
-    /// Data type for compatibility
-    pub dtype: DataType,
+    /// Confidence or quality score (1.0 = deterministic exact)
+    pub confidence: f64,
+    /// Deterministic execution metadata
+    pub metadata: ExecutionMetadata,
 }
 
-/// Data type
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]
+/// Execution metadata (used for deterministic verification)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionMetadata {
+    /// Execution duration in microseconds
+    pub execution_time_us: u64,
+    /// Total memory used (bytes)
+    pub memory_usage_bytes: u64,
+    /// CPU cycles estimated for execution
+    pub cpu_cycles: u64,
+    /// Deterministic execution hash (Blake3)
+    pub execution_hash: String,
+    /// Model version used for inference
+    pub model_version: String,
+}
+
+/// Supported data types for AI Core tensors
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataType {
-    /// Text data
+    /// UTF-8 text
     Text,
-    /// Binary data
+    /// Arbitrary binary blob
     Binary,
-    /// JSON data
+    /// Structured JSON
     Json,
-    /// Numeric data
+    /// Generic numeric type
     Numeric,
-    /// Image data
-    Image,
-    /// Audio data
-    Audio,
-    /// Video data
-    Video,
-    /// Float32 data
-    Float32,
-    /// Float64 data
-    Float64,
-    /// Int8 data
-    Int8,
-    /// Int16 data
-    Int16,
-    /// Int32 data
+    /// 32-bit integer
     Int32,
-    /// Int64 data
+    /// 64-bit integer
     Int64,
-    /// UInt8 data
+    /// 32-bit float
+    Float32,
+    /// 64-bit float
+    Float64,
+    /// 8-bit signed integer
+    Int8,
+    /// 16-bit signed integer
+    Int16,
+    /// 8-bit unsigned integer
     UInt8,
-    /// UInt16 data
+    /// 16-bit unsigned integer
     UInt16,
-    /// UInt32 data
+    /// 32-bit unsigned integer
     UInt32,
-    /// UInt64 data
+    /// 64-bit unsigned integer
     UInt64,
+    /// Image (encoded)
+    Image,
+    /// Audio (encoded)
+    Audio,
+    /// Video (encoded)
+    Video,
 }
 
-/// Execution context
+/// Execution context (per model call)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionContext {
-    /// Context ID
+    /// Unique execution ID
     pub id: String,
-    /// Model ID
+    /// Model ID to execute
     pub model_id: ModelId,
-    /// Context metadata
+    /// Custom metadata
     pub metadata: HashMap<String, String>,
-    /// Execution parameters
+    /// Parameters (e.g., temperature, quantization)
     pub parameters: HashMap<String, String>,
-    /// Execution timeout
+    /// Timeout in milliseconds
     pub timeout_ms: u64,
-    /// Random seed for deterministic execution
+    /// Optional deterministic random seed
     pub seed: Option<u64>,
 }
 
-/// Execution result
+/// Execution result returned to caller
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionResult {
-    /// Result data
-    pub data: Vec<u8>,
-    /// Result type
-    pub data_type: DataType,
-    /// Execution time (microseconds)
-    pub execution_time_us: u64,
-    /// Memory usage (bytes)
-    pub memory_usage: u64,
-    /// Success flag
-    pub success: bool,
-    /// Error message (if failed)
-    pub error: Option<String>,
-    /// Result metadata
-    pub metadata: HashMap<String, String>,
     /// Model output
     pub output: ModelOutput,
     /// Execution context
     pub context: ExecutionContext,
-}
-
-/// Execution metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecutionMetadata {
-    /// Execution ID
-    pub execution_id: String,
-    /// Model version
-    pub model_version: String,
-    /// Memory usage in bytes
-    pub memory_usage_bytes: u64,
-    /// Execution timestamp
-    pub timestamp: u64,
+    /// Whether execution succeeded
+    pub success: bool,
+    /// Optional error message
+    pub error: Option<String>,
+    /// Optional additional metadata (e.g., host, timestamp)
+    pub metadata: HashMap<String, String>,
+    /// Execution time (duplicate for summary)
+    pub execution_time_us: u64,
+    /// Total memory usage
+    pub memory_usage: u64,
+    /// Data type for compatibility with legacy outputs
+    pub data_type: DataType,
 }
