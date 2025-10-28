@@ -10,10 +10,12 @@ use rand::Rng;
 pub mod hash_functions;
 pub mod merkle_trees;
 pub mod commitment_schemes;
+pub mod validators;
 
 pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256, SHA3_256, BLAKE2b};
 pub use merkle_trees::{MerkleTree, MerkleProof, MerkleError};
 pub use commitment_schemes::{PedersenCommitment, Commitment, CommitmentError};
+pub use validators::{validate_confidential_transaction, validate_confidential_block};
 
 /// Cryptographic key pair for IPPAN
 #[derive(Debug, Clone)]

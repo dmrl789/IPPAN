@@ -2,6 +2,7 @@ use anyhow::Result;
 // This project does not expose a separate confidential transaction validator in crypto.
 // Admission rules rely on structural checks only; deeper validation is done downstream.
 use ippan_types::Transaction;
+use ippan_crypto::validate_confidential_transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap, HashMap};
@@ -97,8 +98,8 @@ impl Mempool {
             return Ok(false);
         }
 
-        // Basic structural validation is handled by types; deeper
-        // confidential validation occurs downstream in execution.
+        // Lightweight confidential validation (filters malformed payloads early)
+        validate_confidential_transaction(&tx)?;
 
         // Calculate fee (simplified - in production, this would be more sophisticated)
         let fee = self.calculate_transaction_fee(&tx);

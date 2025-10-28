@@ -2739,6 +2739,7 @@ dependencies = [
  "criterion",
  "ed25519-dalek",
  "hex",
+ "ippan-types",
  "rand 0.8.5",
  "serde",
  "sha2",

@@ -5,7 +5,7 @@
 //! pure consensus with AI optimization.
 
 use crate::reputation::{ValidatorTelemetry, ReputationScore};
-use ippan_ai_core::{gbdt::GBDTModel, eval_gbdt};
+use ippan_ai_core::{GBDTModel, eval_gbdt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
