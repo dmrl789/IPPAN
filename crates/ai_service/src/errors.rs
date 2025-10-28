@@ -52,6 +52,9 @@ pub enum AIServiceError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("IO error: {0}")]
+    Io(String),
 }
 
 impl From<serde_json::Error> for AIServiceError {

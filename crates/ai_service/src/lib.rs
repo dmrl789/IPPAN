@@ -18,12 +18,16 @@ pub mod optimization;
 pub mod errors;
 pub mod types;
 pub mod service;
+pub mod health;
+pub mod metrics;
+pub mod config;
 
 pub use service::AIService;
 pub use errors::AIServiceError;
 pub use types::*;
 pub use monitoring::{
     ServiceMonitor,
+    MonitoringService,
     ServiceStatus,
     ServiceMetrics,
     ServiceMetricsSnapshot,
@@ -35,6 +39,7 @@ pub use monitoring::{
     AlertSeverity,
     ConsoleAlertHandler,
     FileAlertHandler,
+    MonitoringStatistics,
 };
 
 /// Re-export core AI functionality
