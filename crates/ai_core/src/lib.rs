@@ -3,7 +3,7 @@
 //! Provides integer-only AI evaluation for validator reputation, model
 //! verification, and on-chain inference under consensus constraints.
 //!
-//! Modules:
+//! ## Modules
 //! - `features`: Deterministic feature extraction from validator telemetry
 //! - `gbdt`: Integer-only Gradient Boosted Decision Tree evaluator
 //! - `deterministic_gbdt`: Deterministic, consensus-safe GBDT evaluator

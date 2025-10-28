@@ -18,11 +18,7 @@ pub struct ModelId {
 }
 
 impl ModelId {
-    pub fn new(
-        name: impl Into<String>,
-        version: impl Into<String>,
-        hash: impl Into<String>,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, version: impl Into<String>, hash: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             version: version.into(),
@@ -113,8 +109,6 @@ impl DataType {
     /// Returns the nominal byte size for this type (approximation)
     pub fn size_bytes(&self) -> usize {
         match self {
-            // Variable-length or complex data types: treat as 1 byte per element to
-            // preserve legacy validation behavior and avoid rejecting valid inputs.
             DataType::Text | DataType::Binary | DataType::Json | DataType::Numeric => 1,
             DataType::Int8 | DataType::UInt8 => 1,
             DataType::Int16 | DataType::UInt16 => 2,
@@ -134,7 +128,7 @@ pub struct ModelInput {
     pub dtype: DataType,
     /// Input shape
     pub shape: Vec<usize>,
-    /// Metadata such as feature names or scaling
+    /// Input metadata (feature names, scaling, etc.)
     pub metadata: HashMap<String, String>,
 }
 
@@ -147,7 +141,7 @@ pub struct ModelOutput {
     pub dtype: DataType,
     /// Output shape
     pub shape: Vec<usize>,
-    /// Confidence or quality score (1.0 = exact deterministic)
+    /// Confidence or quality score (1.0 = deterministic exact match)
     pub confidence: f64,
     /// Deterministic execution metadata
     pub metadata: ExecutionMetadata,
@@ -191,7 +185,7 @@ pub struct ExecutionMetadata {
     pub success: bool,
     /// Optional error message
     pub error: Option<String>,
-    /// Additional metadata (deterministic signature, node info, etc.)
+    /// Additional metadata (e.g., deterministic signature, node info)
     pub metadata: HashMap<String, String>,
 }
 

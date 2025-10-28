@@ -40,7 +40,6 @@ impl L2HandleRegistry {
             });
         }
 
-        // Check duplicate
         {
             let handles = self.handles.read();
             if handles.contains_key(&registration.handle) {
@@ -50,14 +49,12 @@ impl L2HandleRegistry {
             }
         }
 
-        // Verify ownership signature (placeholder)
         if !self.verify_signature(&registration.owner, &registration.signature) {
             return Err(HandleRegistryError::Unauthorized {
                 handle: registration.handle.as_str().to_string(),
             });
         }
 
-        // Create metadata
         let mut metadata = HandleMetadata {
             owner: registration.owner.clone(),
             expires_at: registration.expires_at.unwrap_or(0),
@@ -65,16 +62,13 @@ impl L2HandleRegistry {
             ..Default::default()
         };
 
-        // Compute L1 anchor
         metadata.l1_anchor = Some(self.compute_l1_anchor(&registration.handle, &registration.owner));
 
-        // Insert handle
         {
             let mut handles = self.handles.write();
             handles.insert(registration.handle.clone(), metadata);
         }
 
-        // Update reverse lookup
         {
             let mut map = self.owner_to_handles.write();
             map.entry(registration.owner)
@@ -87,7 +81,6 @@ impl L2HandleRegistry {
 
     /// Update handle metadata
     pub fn update(&self, update: HandleUpdate) -> Result<()> {
-        // Ownership check
         {
             let handles = self.handles.read();
             if let Some(meta) = handles.get(&update.handle) {
@@ -109,7 +102,6 @@ impl L2HandleRegistry {
             });
         }
 
-        // Apply updates
         {
             let mut handles = self.handles.write();
             if let Some(meta) = handles.get_mut(&update.handle) {
@@ -126,7 +118,6 @@ impl L2HandleRegistry {
 
     /// Transfer handle ownership
     pub fn transfer(&self, transfer: HandleTransfer) -> Result<()> {
-        // Check ownership
         {
             let handles = self.handles.read();
             if let Some(meta) = handles.get(&transfer.handle) {
@@ -148,7 +139,6 @@ impl L2HandleRegistry {
             });
         }
 
-        // Update ownership
         {
             let mut handles = self.handles.write();
             if let Some(meta) = handles.get_mut(&transfer.handle) {
@@ -160,14 +150,11 @@ impl L2HandleRegistry {
             }
         }
 
-        // Update reverse mappings
         {
             let mut map = self.owner_to_handles.write();
-
             if let Some(list) = map.get_mut(&transfer.from_owner) {
                 list.retain(|h| h != &transfer.handle);
             }
-
             map.entry(transfer.to_owner)
                 .or_insert_with(Vec::new)
                 .push(transfer.handle);
@@ -180,7 +167,6 @@ impl L2HandleRegistry {
     pub fn resolve(&self, handle: &Handle) -> Result<PublicKey> {
         let handles = self.handles.read();
         if let Some(meta) = handles.get(handle) {
-            // Expiry check
             if meta.expires_at > 0
                 && meta.expires_at
                     < SystemTime::now()
@@ -211,7 +197,7 @@ impl L2HandleRegistry {
             })
     }
 
-    /// List all handles of an owner
+    /// List all handles owned by a public key
     pub fn list_owner_handles(&self, owner: &PublicKey) -> Vec<Handle> {
         let map = self.owner_to_handles.read();
         map.get(owner).cloned().unwrap_or_default()
@@ -225,7 +211,7 @@ impl L2HandleRegistry {
         h.finalize().into()
     }
 
-    /// Dummy signature verification (placeholder)
+    /// Dummy signature verification placeholder
     fn verify_signature(&self, _owner: &PublicKey, _sig: &[u8]) -> bool {
         true
     }
@@ -242,7 +228,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_handle_registration() {
+    fn test_handle_registration_and_resolution() {
         let registry = L2HandleRegistry::new();
         let handle = Handle::new("@test.ipn");
         let owner = PublicKey::new([1u8; 32]);
@@ -262,12 +248,12 @@ mod tests {
     #[test]
     fn test_handle_not_found() {
         let registry = L2HandleRegistry::new();
-        let handle = Handle::new("@nonexistent.ipn");
+        let handle = Handle::new("@missing.ipn");
         assert!(registry.resolve(&handle).is_err());
     }
 
     #[test]
-    fn test_handle_validation() {
+    fn test_handle_format_validation() {
         assert!(Handle::new("@valid.ipn").is_valid());
         assert!(Handle::new("@device.iot").is_valid());
         assert!(Handle::new("@premium.cyborg").is_valid());

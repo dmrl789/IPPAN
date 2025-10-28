@@ -19,7 +19,7 @@ use libp2p::core::Endpoint;
 use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::noise;
-use libp2p::swarm::ConnectionHandler; // bring `select` into scope
+use libp2p::swarm::ConnectionHandler;
 use libp2p::swarm::{
     self, ConnectionDenied, ConnectionHandlerSelect, ConnectionId, FromSwarm, NetworkBehaviour,
     SwarmEvent, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
@@ -34,9 +34,7 @@ use tokio::time::interval;
 
 use crate::block::Block;
 use crate::dag::BlockDAG;
-use crate::zk_stark::{
-    deserialize_proof, generate_stark_proof, serialize_proof, verify_stark_proof,
-};
+use crate::zk_stark::{deserialize_proof, generate_stark_proof, serialize_proof, verify_stark_proof};
 
 /// Gossip topic name shared by every IPPAN node.
 const DAG_TOPIC: &str = "ippan-dag";
@@ -210,83 +208,6 @@ impl NetworkBehaviour for DagBehaviour {
 pub struct DagSyncService;
 
 impl DagSyncService {
-    /// Verify a zk-STARK proof for a block
-    fn verify_stark_proof(&self, block: &Block, proof: &[u8]) -> Result<()> {
-        // Basic proof structure validation
-        if proof.is_empty() {
-            return Err(anyhow!("Empty zk-STARK proof"));
-        }
-
-        // Verify proof length is reasonable (should be much larger than this check)
-        if proof.len() < 32 {
-            return Err(anyhow!("zk-STARK proof too short"));
-        }
-
-        // Verify proof length is not excessive (DoS protection)
-        if proof.len() > 1024 * 1024 {
-            // 1MB limit
-            return Err(anyhow!("zk-STARK proof too large"));
-        }
-
-        // In a production implementation, this would:
-        // 1. Parse the proof structure
-        // 2. Extract public inputs from the block
-        // 3. Verify the proof against the verification key
-        // 4. Ensure the proof corresponds to the block's content
-
-        // For now, we'll do a basic validation that the proof
-        // contains some expected structure markers
-        let proof_hash = blake3::hash(proof);
-        let block_hash = block.hash();
-
-        // Verify that the proof is related to this block
-        // (in a real implementation, this would be more sophisticated)
-        if proof_hash.as_bytes()[0] != block_hash[0] {
-            return Err(anyhow!("zk-STARK proof does not correspond to block"));
-        }
-
-        debug!(
-            "zk-STARK proof verified for block {}",
-            hex::encode(block_hash)
-        );
-        Ok(())
-    }
-
-    /// Generate a zk-STARK proof for a block
-    fn generate_stark_proof(block: &Block) -> Result<Option<Vec<u8>>> {
-        // In a production implementation, this would:
-        // 1. Extract the block's computation trace
-        // 2. Generate a zk-STARK proof using the proving key
-        // 3. Return the serialized proof
-
-        // For now, we'll generate a placeholder proof that demonstrates
-        // the structure and can be verified by our verify_stark_proof method
-        let block_hash = block.hash();
-        let mut proof = Vec::new();
-
-        // Add a marker to indicate this is a proof
-        proof.extend_from_slice(b"STARK_PROOF_V1");
-
-        // Add the block hash as a public input
-        proof.extend_from_slice(&block_hash);
-
-        // Add some proof data (in reality this would be the actual zk-STARK proof)
-        let proof_data = blake3::hash(&block_hash);
-        proof.extend_from_slice(proof_data.as_bytes());
-
-        // Add a signature-like structure
-        let mut signature_data = [0u8; 32];
-        signature_data[0] = block_hash[0]; // Link to block
-        proof.extend_from_slice(&signature_data);
-
-        debug!(
-            "Generated zk-STARK proof of length {} for block {}",
-            proof.len(),
-            hex::encode(block_hash)
-        );
-        Ok(Some(proof))
-    }
-
     /// Start the DAG synchronization service and run until the task is cancelled.
     pub async fn start(listen_addr: &str, signing_key: SigningKey, dag: BlockDAG) -> Result<()> {
         let local_key = identity::Keypair::generate_ed25519();
@@ -391,8 +312,8 @@ fn handle_gossip_event(
 ) -> Result<()> {
     match event {
         gossipsub::Event::Message { message, .. } => {
-            let msg: GossipMsg = serde_json::from_slice(&message.data)
-                .context("failed to decode DAG gossip payload")?;
+            let msg: GossipMsg =
+                serde_json::from_slice(&message.data).context("failed to decode DAG gossip payload")?;
             match msg {
                 GossipMsg::Tip(hash) => {
                     if !seen.contains(&hash) {
@@ -405,41 +326,21 @@ fn handle_gossip_event(
                 GossipMsg::Block { block, stark_proof } => {
                     let hash = block.hash();
 
-                    // Verify zk-STARK proof if present
                     if let Some(proof_bytes) = stark_proof {
-                        debug!(
-                            "received zk-STARK proof of length {} for block {}",
-                            proof_bytes.len(),
-                            hex::encode(hash)
-                        );
-
-                        // Verify the zk-STARK proof using our implementation
                         if let Ok(proof) = deserialize_proof(&proof_bytes) {
                             match verify_stark_proof(&proof, &block) {
-                                Ok(true) => {
-                                    debug!(
-                                        "zk-STARK proof verified for block {}",
-                                        hex::encode(hash)
-                                    );
-                                }
+                                Ok(true) => debug!("zk-STARK proof verified for block {}", hex::encode(hash)),
                                 Ok(false) => {
-                                    warn!("zk-STARK proof verification failed for block {}: invalid proof", hex::encode(hash));
+                                    warn!("zk-STARK proof invalid for block {}", hex::encode(hash));
                                     return Ok(());
                                 }
                                 Err(e) => {
-                                    warn!(
-                                        "zk-STARK proof verification failed for block {}: {}",
-                                        hex::encode(hash),
-                                        e
-                                    );
+                                    warn!("zk-STARK proof verification error for block {}: {}", hex::encode(hash), e);
                                     return Ok(());
                                 }
                             }
                         } else {
-                            warn!(
-                                "Failed to deserialize zk-STARK proof for block {}",
-                                hex::encode(hash)
-                            );
+                            warn!("Failed to deserialize zk-STARK proof for block {}", hex::encode(hash));
                             return Ok(());
                         }
                     }
@@ -450,9 +351,7 @@ fn handle_gossip_event(
                             seen.insert(hash);
                             dag.flush().ok();
                         }
-                        Ok(false) => {
-                            debug!("ignored already-known block {}", hex::encode(hash));
-                        }
+                        Ok(false) => debug!("ignored already-known block {}", hex::encode(hash)),
                         Err(err) => warn!("rejected block from gossip: {err:?}"),
                     }
                 }
@@ -474,30 +373,28 @@ fn broadcast_tips(
 ) -> Result<()> {
     let tips = dag.get_tips()?;
     for hash in &tips {
-        let payload = serde_json::to_vec(&GossipMsg::Tip(*hash))
-            .context("failed to serialize tip gossip message")?;
+        let payload =
+            serde_json::to_vec(&GossipMsg::Tip(*hash)).context("failed to serialize tip gossip message")?;
         if let Err(err) = gossip.publish(topic.clone(), payload) {
             warn!("failed to publish tip gossip: {err:?}");
         }
     }
 
     for hash in tips {
-        match dag.get_block(&hash)? {
-            Some(block) => {
-                if seen.insert(hash) {
-                    // Generate zk-STARK proof for the block
-                    let stark_proof = generate_stark_proof(&block)?;
-                    let payload = serde_json::to_vec(&GossipMsg::Block {
-                        block: Box::new(block),
-                        stark_proof: Some(serialize_proof(&stark_proof)?),
-                    })
-                    .context("failed to serialize block gossip message")?;
-                    if let Err(err) = gossip.publish(topic.clone(), payload) {
-                        warn!("failed to publish block gossip: {err:?}");
-                    }
+        if let Some(block) = dag.get_block(&hash)? {
+            if seen.insert(hash) {
+                let stark_proof = generate_stark_proof(&block)?;
+                let payload = serde_json::to_vec(&GossipMsg::Block {
+                    block: Box::new(block),
+                    stark_proof: Some(serialize_proof(&stark_proof)?),
+                })
+                .context("failed to serialize block gossip message")?;
+                if let Err(err) = gossip.publish(topic.clone(), payload) {
+                    warn!("failed to publish block gossip: {err:?}");
                 }
             }
-            None => warn!("tip {hash:?} missing block payload"),
+        } else {
+            warn!("tip {hash:?} missing block payload");
         }
     }
 

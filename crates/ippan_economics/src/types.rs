@@ -17,11 +17,14 @@ pub type RoundIndex = u64;
 /// Reward amount in micro-IPN (1 IPN = 10^8 micro-IPN)
 pub type RewardAmount = u64;
 
+/// Micro-IPN type alias for consistency with other crates
+pub type MicroIPN = u128;
+
 /// Validator identifier
 ///
 /// Can represent:
 /// - Ed25519 public key (hex-encoded 64-character string)
-/// - Human-readable handle (e.g., `@alice.ipn`)
+/// - Human-readable handle (e.g. `@alice.ipn`)
 /// - Registry alias (short internal identifier)
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ValidatorId(pub String);
@@ -32,7 +35,7 @@ impl ValidatorId {
         Self(id.into())
     }
 
-    /// Returns the ID as a `&str`
+    /// Returns the ID as a string slice
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -47,7 +50,7 @@ impl ValidatorId {
         self.0.len() == 64 && self.0.chars().all(|c| c.is_ascii_hexdigit())
     }
 
-    /// True if this is a registry alias (neither handle nor pubkey)
+    /// True if this is a registry alias (neither handle nor public key)
     pub fn is_alias(&self) -> bool {
         !self.is_handle() && !self.is_public_key()
     }
@@ -71,17 +74,17 @@ pub struct EmissionParams {
     pub halving_interval: RoundIndex,
     /// Total supply cap (micro-IPN)
     pub total_supply_cap: RewardAmount,
-    /// Fee cap as fraction of round reward (0.1 = 10%)
+    /// Fee cap as fraction of round reward (e.g., 0.1 = 10%)
     pub fee_cap_fraction: Decimal,
 }
 
 impl Default for EmissionParams {
     fn default() -> Self {
         Self {
-            initial_round_reward: 10_000,         // 0.0001 IPN = 10 000 micro-IPN
+            initial_round_reward: 10_000,         // 0.0001 IPN = 10 000 µIPN
             halving_interval: 630_000_000,        // ≈ 2 years @ 10 rounds/sec
-            total_supply_cap: 2_100_000_000_000,  // 21 million IPN = 2.1 × 10¹² µIPN
-            fee_cap_fraction: Decimal::new(1, 1), // 0.1 = 10 %
+            total_supply_cap: 2_100_000_000_000,  // 21 million IPN = 2.1×10¹² µIPN
+            fee_cap_fraction: Decimal::new(1, 1), // 0.1 = 10%
         }
     }
 }
@@ -91,15 +94,15 @@ impl Default for EmissionParams {
 pub enum ValidatorRole {
     /// Proposer (selected to emit DAG event / block)
     Proposer,
-    /// Verifier (confirms others’ blocks)
+    /// Verifier (confirms other blocks)
     #[default]
     Verifier,
-    /// Passive observer
+    /// Passive observer (no block contribution)
     Observer,
 }
 
 impl ValidatorRole {
-    /// Returns the weight multiplier for reward allocation
+    /// Returns deterministic weight multiplier for reward allocation
     pub fn weight_multiplier(self) -> Decimal {
         match self {
             ValidatorRole::Proposer => Decimal::new(12, 1), // 1.2×
@@ -109,7 +112,7 @@ impl ValidatorRole {
     }
 }
 
-/// Participation metrics for a validator in a given round
+/// Validator participation metrics in a given round
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorParticipation {
     pub validator_id: ValidatorId,
@@ -175,7 +178,7 @@ impl RewardComposition {
         }
     }
 
-    /// Create distribution adjusted by actual collected fees
+    /// Adjusts distribution using actual collected fees
     pub fn new_with_fees(round_reward: RewardAmount, actual_fees: RewardAmount) -> Self {
         let transaction_fees = actual_fees;
         let remaining = round_reward.saturating_sub(transaction_fees);
@@ -190,7 +193,7 @@ impl RewardComposition {
         }
     }
 
-    /// Compute total reward
+    /// Compute total reward sum
     pub fn total(&self) -> RewardAmount {
         self.round_emission
             + self.transaction_fees
@@ -199,7 +202,7 @@ impl RewardComposition {
     }
 }
 
-/// Emission curve analytics (for dashboards and simulations)
+/// Emission curve analytics (for dashboards, charts, and simulations)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmissionCurvePoint {
     pub round: RoundIndex,

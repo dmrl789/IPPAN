@@ -6,15 +6,15 @@
 //! - Stress and security testing
 //! - End-to-end deployment checks
 
-use crate::deployment::{DeploymentStatus, HealthStatus, ProductionDeployment};
+use crate::deployment::{DeploymentStatus, ProductionDeployment};
 use crate::feature_engineering::{
     FeatureEngineeringConfig, FeatureEngineeringPipeline, RawFeatureData,
 };
-use crate::gbdt::GBDTModel;
+use crate::gbdt::{GBDTModel, Node, Tree};
 use crate::model_manager::{ModelManager, ModelManagerConfig};
 use crate::monitoring::{MonitoringConfig, MonitoringSystem};
 use crate::production_config::{Environment, ProductionConfig, ProductionConfigManager};
-use crate::security::{SecurityConfig, SecuritySystem};
+use crate::security::{SecurityConfig, SecuritySeverity, SecuritySystem};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -96,7 +96,6 @@ impl TestSuite {
     async fn run_stress_tests(&mut self) -> Result<()> {
         println!("Running stress tests...");
 
-        // Concurrent evaluation stress test
         let concurrent_requests = self.config.concurrent_requests;
         self.run_test("concurrent_evaluations", move || async move {
             let model = create_test_model();
@@ -122,7 +121,6 @@ impl TestSuite {
         })
         .await;
 
-        // High-load evaluation
         self.run_test("high_load_test", || async {
             let model = create_test_model();
             let start = Instant::now();
@@ -157,7 +155,7 @@ impl TestSuite {
             security.log_audit(
                 "test_event".into(),
                 "Policy check".into(),
-                crate::security::SecuritySeverity::Low,
+                SecuritySeverity::Low,
                 None,
                 None,
             );
@@ -181,7 +179,7 @@ impl TestSuite {
 
             let health = deployment.perform_health_check().await?;
             assert!(
-                matches!(health.status, HealthStatus::Healthy | HealthStatus::Degraded),
+                matches!(health.status, crate::deployment::HealthStatus::Healthy | crate::deployment::HealthStatus::Degraded),
                 "Health status unexpected"
             );
 
@@ -258,9 +256,8 @@ impl TestSuite {
     }
 }
 
-/// Create a test GBDT model
+/// Create a simple deterministic GBDT model
 fn create_test_model() -> GBDTModel {
-    use crate::gbdt::{Node, Tree};
     GBDTModel::new(
         vec![Tree {
             nodes: vec![Node {
@@ -280,7 +277,7 @@ fn create_test_model() -> GBDTModel {
 
 /// Simulated memory usage (MB)
 fn get_memory_usage() -> u64 {
-    100 * 1024 * 1024 // 100MB
+    100 * 1024 * 1024 // 100 MB
 }
 
 /// Benchmark suite
@@ -370,7 +367,7 @@ impl BenchmarkSuite {
         let start = Instant::now();
 
         for _ in 0..iterations {
-            // Placeholder for validation or sandbox call
+            // Simulate validation or sandbox call
         }
 
         let duration = start.elapsed();
@@ -407,6 +404,7 @@ pub mod test_utils {
         }
     }
 
+    /// Wait for condition with timeout
     pub async fn wait_for_condition<F>(mut condition: F, timeout: Duration) -> bool
     where
         F: FnMut() -> bool,

@@ -39,7 +39,7 @@ impl Default for L2FeeStructure {
         let mut max_fees = HashMap::new();
         let mut min_fees = HashMap::new();
 
-        // Smart contract
+        // Smart contract fees
         base_fees.insert(L2TxKind::ContractDeploy, 50_000);
         base_fees.insert(L2TxKind::ContractCall, 5_000);
         unit_fees.insert(L2TxKind::ContractDeploy, 1);
@@ -49,7 +49,7 @@ impl Default for L2FeeStructure {
         min_fees.insert(L2TxKind::ContractDeploy, 10_000);
         min_fees.insert(L2TxKind::ContractCall, 1_000);
 
-        // AI model
+        // AI model operations
         base_fees.insert(L2TxKind::AIModelRegister, 1_000);
         base_fees.insert(L2TxKind::AIModelInference, 100);
         base_fees.insert(L2TxKind::AIModelStorage, 0);
@@ -86,6 +86,7 @@ impl L2FeeStructure {
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }
+
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }
@@ -151,7 +152,7 @@ impl L2FeeManager {
         let unit_cost = unit_fee.saturating_mul(units);
         let total_fee = base_fee.saturating_add(unit_cost);
 
-        // Enforce min/max
+        // Enforce bounds
         let min_fee = *self.fee_structure.min_fees.get(&tx_kind).unwrap_or(&0);
         let max_fee = *self.fee_structure.max_fees.get(&tx_kind).unwrap_or(&u64::MAX);
         let final_fee = total_fee.clamp(min_fee, max_fee);
@@ -185,24 +186,20 @@ impl L2FeeManager {
     fn calculate_units(&self, tx_kind: L2TxKind, data_ref: Option<&HashMap<String, u64>>) -> u64 {
         match tx_kind {
             L2TxKind::ContractDeploy | L2TxKind::AIModelRegister | L2TxKind::AIModelUpdate => {
+                data_ref.and_then(|d| d.get("size_bytes").copied()).unwrap_or(1000)
+            }
+            L2TxKind::ContractCall | L2TxKind::AIModelInference => {
                 data_ref
-                    .and_then(|d| d.get("size_bytes").copied())
+                    .and_then(|d| d.get("gas_units").copied().or_else(|| d.get("compute_units").copied()))
                     .unwrap_or(1000)
             }
-            L2TxKind::ContractCall | L2TxKind::AIModelInference => data_ref
-                .and_then(|d| d.get("gas_units").copied().or_else(|| d.get("compute_units").copied()))
-                .unwrap_or(1000),
             L2TxKind::AIModelStorage => {
                 let size = data_ref.and_then(|d| d.get("size_mb")).copied().unwrap_or(1);
                 let days = data_ref.and_then(|d| d.get("days")).copied().unwrap_or(1);
                 size * days
             }
-            L2TxKind::FederatedLearning => {
-                data_ref.and_then(|d| d.get("rounds")).copied().unwrap_or(1)
-            }
-            L2TxKind::ProofOfInference => {
-                data_ref.and_then(|d| d.get("complexity")).copied().unwrap_or(100)
-            }
+            L2TxKind::FederatedLearning => data_ref.and_then(|d| d.get("rounds")).copied().unwrap_or(1),
+            L2TxKind::ProofOfInference => data_ref.and_then(|d| d.get("complexity")).copied().unwrap_or(100),
         }
     }
 

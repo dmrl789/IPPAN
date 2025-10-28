@@ -1,4 +1,8 @@
 //! Integration tests for IPPAN DAG-Fair Emission Framework
+//!
+//! These tests validate the full deterministic emission lifecycle, halving
+//! logic, validator fairness, and supply tracking used across the economics
+//! module of IPPAN.
 
 use ippan_economics::prelude::*;
 use ippan_economics::{ValidatorId, ValidatorParticipation, ValidatorRole};
@@ -6,7 +10,6 @@ use rust_decimal::Decimal;
 
 #[test]
 fn test_complete_emission_cycle() {
-    // Test a complete emission cycle from genesis to halving
     let emission_engine = EmissionEngine::new();
     let mut supply_tracker = SupplyTracker::new(emission_engine.params().total_supply_cap);
 
@@ -26,7 +29,7 @@ fn test_complete_emission_cycle() {
 #[test]
 fn test_halving_schedule() {
     let mut params = EmissionParams::default();
-    params.halving_interval = 10; // Small interval for testing
+    params.halving_interval = 10; // small interval for test
     let emission_engine = EmissionEngine::with_params(params);
 
     let before_halving = emission_engine.calculate_round_reward(10).unwrap();
@@ -48,19 +51,19 @@ fn test_reward_distribution_fairness() {
             validator_id: ValidatorId::new("high_participant"),
             role: ValidatorRole::Proposer,
             blocks_contributed: 20,
-            uptime_score: Decimal::new(100, 2), // 1.0
+            uptime_score: Decimal::new(100, 2),
         },
         ValidatorParticipation {
             validator_id: ValidatorId::new("medium_participant"),
             role: ValidatorRole::Verifier,
             blocks_contributed: 10,
-            uptime_score: Decimal::new(90, 2), // 0.9
+            uptime_score: Decimal::new(90, 2),
         },
         ValidatorParticipation {
             validator_id: ValidatorId::new("low_participant"),
             role: ValidatorRole::Verifier,
             blocks_contributed: 5,
-            uptime_score: Decimal::new(80, 2), // 0.8
+            uptime_score: Decimal::new(80, 2),
         },
         ValidatorParticipation {
             validator_id: ValidatorId::new("observer"),
@@ -74,14 +77,14 @@ fn test_reward_distribution_fairness() {
         .distribute_round_rewards(1, 10_000, participations, 1_000)
         .unwrap();
 
-    let high_reward = distribution.validator_rewards.get(&ValidatorId::new("high_participant")).unwrap();
-    let medium_reward = distribution.validator_rewards.get(&ValidatorId::new("medium_participant")).unwrap();
-    let low_reward = distribution.validator_rewards.get(&ValidatorId::new("low_participant")).unwrap();
-    let observer_reward = distribution.validator_rewards.get(&ValidatorId::new("observer")).unwrap();
+    let high = distribution.validator_rewards.get(&ValidatorId::new("high_participant")).unwrap();
+    let medium = distribution.validator_rewards.get(&ValidatorId::new("medium_participant")).unwrap();
+    let low = distribution.validator_rewards.get(&ValidatorId::new("low_participant")).unwrap();
+    let observer = distribution.validator_rewards.get(&ValidatorId::new("observer")).unwrap();
 
-    assert!(high_reward.total_reward > medium_reward.total_reward);
-    assert!(medium_reward.total_reward > low_reward.total_reward);
-    assert_eq!(observer_reward.total_reward, 0);
+    assert!(high.total_reward > medium.total_reward);
+    assert!(medium.total_reward > low.total_reward);
+    assert_eq!(observer.total_reward, 0);
 }
 
 #[test]
@@ -90,9 +93,9 @@ fn test_supply_cap_enforcement() {
 
     supply_tracker.record_emission(1, 150_000).unwrap();
 
-    let supply_info = supply_tracker.get_supply_info();
-    assert_eq!(supply_info.total_supply, 100_000);
-    assert_eq!(supply_info.remaining_supply, 0);
+    let info = supply_tracker.get_supply_info();
+    assert_eq!(info.total_supply, 100_000);
+    assert_eq!(info.remaining_supply, 0);
 }
 
 #[test]
@@ -101,12 +104,11 @@ fn test_fee_cap_enforcement() {
     params.fee_cap_fraction = Decimal::new(1, 1); // 10%
 
     let round_rewards = RoundRewards::new(params);
+    let capped_high = round_rewards.apply_fee_cap(5_000, 10_000);
+    assert_eq!(capped_high, 1_000);
 
-    let capped_fees = round_rewards.apply_fee_cap(5_000, 10_000);
-    assert_eq!(capped_fees, 1_000);
-
-    let capped_fees_low = round_rewards.apply_fee_cap(500, 10_000);
-    assert_eq!(capped_fees_low, 500);
+    let capped_low = round_rewards.apply_fee_cap(500, 10_000);
+    assert_eq!(capped_low, 500);
 }
 
 #[test]
@@ -131,11 +133,11 @@ fn test_supply_audit() {
     supply_tracker.record_emission(2, 50_000).unwrap();
     supply_tracker.record_burn(2, 10_000).unwrap();
 
-    let audit_result = supply_tracker.audit_supply();
-    assert!(audit_result.is_healthy);
-    assert_eq!(audit_result.total_emissions, 150_000);
-    assert_eq!(audit_result.total_burns, 10_000);
-    assert_eq!(audit_result.net_supply, 140_000);
+    let audit = supply_tracker.audit_supply();
+    assert!(audit.is_healthy);
+    assert_eq!(audit.total_emissions, 150_000);
+    assert_eq!(audit.total_burns, 10_000);
+    assert_eq!(audit.net_supply, 140_000);
 }
 
 #[test]
@@ -156,8 +158,8 @@ fn test_overflow_protection() {
     let result = emission_engine.calculate_round_reward(large_round);
 
     match result {
-        Ok(_) => {}, // Reward can be 0 or positive due to halving
-        Err(EmissionError::CalculationOverflow(_)) => {}, // Expected for very large rounds
+        Ok(_) => {}
+        Err(EmissionError::CalculationOverflow(_)) => {}
         Err(e) => panic!("Unexpected error: {:?}", e),
     }
 }
@@ -167,33 +169,29 @@ fn test_round_reward_distribution_components() {
     let params = EmissionParams::default();
     let round_rewards = RoundRewards::new(params);
 
-    let participations = vec![
-        ValidatorParticipation {
-            validator_id: ValidatorId::new("validator1"),
-            role: ValidatorRole::Proposer,
-            blocks_contributed: 10,
-            uptime_score: Decimal::ONE,
-        },
-    ];
+    let participations = vec![ValidatorParticipation {
+        validator_id: ValidatorId::new("validator1"),
+        role: ValidatorRole::Proposer,
+        blocks_contributed: 10,
+        uptime_score: Decimal::ONE,
+    }];
 
     let distribution = round_rewards
         .distribute_round_rewards(1, 10_000, participations, 1_000)
         .unwrap();
 
-    let validator_reward = distribution
-        .validator_rewards
-        .get(&ValidatorId::new("validator1"))
-        .unwrap();
+    let reward = distribution.validator_rewards.get(&ValidatorId::new("validator1")).unwrap();
 
-    assert!(validator_reward.round_emission > 0);
-    assert!(validator_reward.transaction_fees > 0);
-    assert!(validator_reward.ai_commissions > 0);
-    assert!(validator_reward.network_dividend > 0);
+    // Check that all components are present
+    assert!(reward.round_emission > 0);
+    assert!(reward.transaction_fees > 0);
+    assert!(reward.ai_commissions > 0);
+    assert!(reward.network_dividend > 0);
 
-    let calculated_total = validator_reward.round_emission
-        + validator_reward.transaction_fees
-        + validator_reward.ai_commissions
-        + validator_reward.network_dividend;
+    let total = reward.round_emission
+        + reward.transaction_fees
+        + reward.ai_commissions
+        + reward.network_dividend;
 
-    assert_eq!(validator_reward.total_reward, calculated_total);
+    assert_eq!(reward.total_reward, total);
 }

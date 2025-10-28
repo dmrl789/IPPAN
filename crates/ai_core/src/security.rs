@@ -57,7 +57,7 @@ impl Default for SecurityConfig {
             enable_rate_limiting: true,
             max_requests_per_minute: 1000,
             max_execution_time: 30,
-            max_memory_usage: 1024 * 1024 * 1024, // 1GB
+            max_memory_usage: 1024 * 1024 * 1024, // 1 GB
             allowed_sources: vec!["local".to_string()],
             blocked_sources: vec![],
             enable_sandboxing: true,
@@ -72,7 +72,7 @@ impl Default for SecurityConfig {
     }
 }
 
-/// Security system
+/// Security system for AI Core
 #[derive(Debug)]
 pub struct SecuritySystem {
     config: SecurityConfig,
@@ -168,12 +168,12 @@ impl SecuritySystem {
         Ok(())
     }
 
-    /// Get all audit log entries
+    /// Retrieve all audit log entries
     pub fn get_audit_log(&self) -> &Vec<AuditEntry> {
         &self.audit_log
     }
 
-    /// Get only critical or high-severity violations
+    /// Retrieve only high or critical severity violations
     pub fn get_violations(&self) -> Vec<&AuditEntry> {
         self.audit_log
             .iter()
@@ -182,7 +182,7 @@ impl SecuritySystem {
     }
 }
 
-/// Security error
+/// Security error definitions
 #[derive(Debug, thiserror::Error)]
 pub enum SecurityError {
     #[error("Execution time exceeded: {actual}s > {max}s")]

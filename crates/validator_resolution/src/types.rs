@@ -83,4 +83,3 @@ impl ResolvedValidator {
         matches!(self.resolution_method, ResolutionMethod::L2HandleRegistry)
     }
 }
-

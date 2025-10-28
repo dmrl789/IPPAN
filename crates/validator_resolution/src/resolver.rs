@@ -176,7 +176,6 @@ impl ValidatorResolver {
     // -------------------------------------------------------------------------
     // Cache Management
     // -------------------------------------------------------------------------
-
     fn get_from_cache(&self, id: &ValidatorId) -> Option<ResolvedValidator> {
         self.cache.read().get(id).cloned()
     }
@@ -186,7 +185,7 @@ impl ValidatorResolver {
     }
 
     fn is_cache_valid(&self, _resolved: &ResolvedValidator) -> bool {
-        true // Placeholder; extend with TTL validation later
+        true // TODO: extend with TTL validation
     }
 
     pub fn clear_cache(&self) {
@@ -205,6 +204,9 @@ impl Clone for ValidatorResolver {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;

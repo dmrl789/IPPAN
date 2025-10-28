@@ -139,6 +139,7 @@ impl ExecutionEngine {
             metadata.output_shape.iter().product::<usize>() * input.dtype.size_bytes();
         let mut output_data = vec![0u8; output_size];
 
+        // Deterministic placeholder logic for GBDT or generic models
         if metadata.architecture == "gbdt" {
             info!("Executing GBDT model deterministically");
             let features = self.convert_input_to_features(input)?;
@@ -296,4 +297,4 @@ impl ExecutionEngine {
     }
 }
 
-// Note: DataType::size_bytes is defined in `types.rs`, no duplicate here.
+// Note: DataType::size_bytes is defined in `types.rs`.

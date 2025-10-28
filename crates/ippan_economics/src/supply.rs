@@ -1,4 +1,8 @@
 //! Supply tracking and integrity verification
+//!
+//! Tracks deterministic token supply over time and ensures that emissions,
+//! burns, and caps remain within protocol-defined limits. Used by the DAG-Fair
+//! emission engine to enforce the 21 million IPN lifetime ceiling.
 
 use crate::errors::*;
 use crate::types::*;
@@ -38,11 +42,7 @@ impl SupplyTracker {
     }
 
     /// Record emission for a round
-    pub fn record_emission(
-        &mut self,
-        round: RoundIndex,
-        amount: RewardAmount,
-    ) -> Result<(), SupplyError> {
+    pub fn record_emission(&mut self, round: RoundIndex, amount: RewardAmount) -> Result<(), SupplyError> {
         if round <= self.current_round {
             return Err(SupplyError::InvalidSupplyData(format!(
                 "Cannot record emission for past round: {} <= {}",
@@ -50,46 +50,33 @@ impl SupplyTracker {
             )));
         }
 
-        // Check if this would exceed the supply cap
+        // Cap enforcement
         if self.total_supply.saturating_add(amount) > self.supply_cap {
             warn!(
-                "Emission would exceed supply cap: current={}, emission={}, cap={}",
+                "Emission would exceed cap: current={}, emission={}, cap={}",
                 self.total_supply, amount, self.supply_cap
             );
 
-            // Cap the emission to the remaining supply
             let capped_amount = self.supply_cap.saturating_sub(self.total_supply);
             self.total_supply = self.supply_cap;
             self.emission_history.insert(round, capped_amount);
 
-            info!(
-                "Capped emission for round {} to {} micro-IPN",
-                round, capped_amount
-            );
+            info!("Capped emission for round {} to {}", round, capped_amount);
         } else {
-            self.total_supply =
-                self.total_supply
-                    .checked_add(amount)
-                    .ok_or(SupplyError::SupplyCapViolation(
-                        "Supply addition overflow".to_string(),
-                    ))?;
+            self.total_supply = self
+                .total_supply
+                .checked_add(amount)
+                .ok_or(SupplyError::SupplyCapViolation("Overflow adding supply".into()))?;
             self.emission_history.insert(round, amount);
         }
 
         self.current_round = round;
-        debug!(
-            "Recorded emission for round {}: {} micro-IPN",
-            round, amount
-        );
+        debug!("Recorded emission for round {}: {}", round, amount);
         Ok(())
     }
 
     /// Record burn for a round (excess fees, rounding errors, etc.)
-    pub fn record_burn(
-        &mut self,
-        round: RoundIndex,
-        amount: RewardAmount,
-    ) -> Result<(), SupplyError> {
+    pub fn record_burn(&mut self, round: RoundIndex, amount: RewardAmount) -> Result<(), SupplyError> {
         if amount > self.total_supply {
             return Err(SupplyError::InvalidSupplyData(format!(
                 "Cannot burn more than total supply: {} > {}",
@@ -97,124 +84,97 @@ impl SupplyTracker {
             )));
         }
 
-        self.total_supply =
-            self.total_supply
-                .checked_sub(amount)
-                .ok_or(SupplyError::SupplyCapViolation(
-                    "Supply subtraction underflow".to_string(),
-                ))?;
+        self.total_supply = self
+            .total_supply
+            .checked_sub(amount)
+            .ok_or(SupplyError::SupplyCapViolation("Underflow subtracting supply".into()))?;
 
         self.burn_history.insert(round, amount);
-
-        debug!("Recorded burn for round {}: {} micro-IPN", round, amount);
+        debug!("Recorded burn for round {}: {}", round, amount);
         Ok(())
     }
 
-    /// Verify supply integrity against emission schedule
-    pub fn verify_supply_integrity(
-        &self,
-        expected_supply: RewardAmount,
-        tolerance: RewardAmount,
-    ) -> Result<(), SupplyError> {
-        let difference = if self.total_supply > expected_supply {
+    /// Verify supply integrity against expected schedule
+    pub fn verify_supply_integrity(&self, expected_supply: RewardAmount, tolerance: RewardAmount) -> Result<(), SupplyError> {
+        let diff = if self.total_supply > expected_supply {
             self.total_supply - expected_supply
         } else {
             expected_supply - self.total_supply
         };
 
-        if difference > tolerance {
+        if diff > tolerance {
             error!(
                 "Supply verification failed: expected {}, actual {}, diff {}",
-                expected_supply, self.total_supply, difference
+                expected_supply, self.total_supply, diff
             );
             return Err(SupplyError::VerificationFailed(format!(
-                "Supply verification failed: expected {}, actual {}",
+                "Supply mismatch: expected {}, actual {}",
                 expected_supply, self.total_supply
             )));
         }
 
         info!(
-            "Supply integrity verified: actual={}, expected={}, difference={}",
-            self.total_supply, expected_supply, difference
+            "Supply integrity verified: actual={}, expected={}, diff={}",
+            self.total_supply, expected_supply, diff
         );
         Ok(())
     }
 
-    /// Get current supply information
+    /// Return current supply snapshot
     pub fn get_supply_info(&self) -> SupplyInfo {
-        let remaining_supply = self.supply_cap.saturating_sub(self.total_supply);
-        let emission_percentage = if self.supply_cap > 0 {
+        let remaining = self.supply_cap.saturating_sub(self.total_supply);
+        let percent = if self.supply_cap > 0 {
             Decimal::from(self.total_supply) / Decimal::from(self.supply_cap) * Decimal::from(100)
         } else {
             Decimal::ZERO
         };
 
-        // Calculate next halving round (simplified - assumes 630M round halving interval)
         let halving_interval = 630_000_000;
         let next_halving_round = ((self.current_round / halving_interval) + 1) * halving_interval;
 
         SupplyInfo {
             total_supply: self.total_supply,
             supply_cap: self.supply_cap,
-            remaining_supply,
-            emission_percentage,
+            remaining_supply: remaining,
+            emission_percentage: percent,
             current_round: self.current_round,
             next_halving_round,
         }
     }
 
-    /// Get emission history for a range of rounds
-    pub fn get_emission_history(
-        &self,
-        start_round: RoundIndex,
-        end_round: RoundIndex,
-    ) -> HashMap<RoundIndex, RewardAmount> {
+    /// Emission history within range
+    pub fn get_emission_history(&self, start: RoundIndex, end: RoundIndex) -> HashMap<RoundIndex, RewardAmount> {
         self.emission_history
             .iter()
-            .filter(|(round, _)| **round >= start_round && **round <= end_round)
-            .map(|(round, amount)| (*round, *amount))
+            .filter(|(r, _)| **r >= start && **r <= end)
+            .map(|(r, a)| (*r, *a))
             .collect()
     }
 
-    /// Get burn history for a range of rounds
-    pub fn get_burn_history(
-        &self,
-        start_round: RoundIndex,
-        end_round: RoundIndex,
-    ) -> HashMap<RoundIndex, RewardAmount> {
+    /// Burn history within range
+    pub fn get_burn_history(&self, start: RoundIndex, end: RoundIndex) -> HashMap<RoundIndex, RewardAmount> {
         self.burn_history
             .iter()
-            .filter(|(round, _)| **round >= start_round && **round <= end_round)
-            .map(|(round, amount)| (*round, *amount))
+            .filter(|(r, _)| **r >= start && **r <= end)
+            .map(|(r, a)| (*r, *a))
             .collect()
     }
 
-    /// Calculate total emissions in a range
-    pub fn calculate_total_emissions(
-        &self,
-        start_round: RoundIndex,
-        end_round: RoundIndex,
-    ) -> RewardAmount {
-        self.get_emission_history(start_round, end_round)
-            .values()
-            .sum()
+    /// Total emissions in range
+    pub fn calculate_total_emissions(&self, start: RoundIndex, end: RoundIndex) -> RewardAmount {
+        self.get_emission_history(start, end).values().sum()
     }
 
-    /// Calculate total burns in a range
-    pub fn calculate_total_burns(
-        &self,
-        start_round: RoundIndex,
-        end_round: RoundIndex,
-    ) -> RewardAmount {
-        self.get_burn_history(start_round, end_round).values().sum()
+    /// Total burns in range
+    pub fn calculate_total_burns(&self, start: RoundIndex, end: RoundIndex) -> RewardAmount {
+        self.get_burn_history(start, end).values().sum()
     }
 
-    /// Perform comprehensive supply audit
+    /// Perform comprehensive audit of supply
     pub fn audit_supply(&self) -> SupplyAuditResult {
         let mut issues = Vec::new();
         let mut warnings = Vec::new();
 
-        // Check if supply exceeds cap
         if self.total_supply > self.supply_cap {
             issues.push(format!(
                 "Supply exceeds cap: {} > {}",
@@ -222,15 +182,11 @@ impl SupplyTracker {
             ));
         }
 
-        // Check for negative supply (should never happen)
         if self.total_supply == 0 && self.current_round > 0 {
-            warnings.push("Zero supply with non-zero rounds".to_string());
+            warnings.push("Zero supply with non-zero rounds".into());
         }
 
-        // Check for missing emission history
-        let expected_rounds = self
-            .current_round
-            .saturating_sub(self.last_verification_round);
+        let expected_rounds = self.current_round.saturating_sub(self.last_verification_round);
         if expected_rounds > 0 && self.emission_history.len() < expected_rounds as usize {
             warnings.push(format!(
                 "Missing emission history: expected {} rounds, found {}",
@@ -239,15 +195,14 @@ impl SupplyTracker {
             ));
         }
 
-        // Calculate net supply change
         let total_emissions: RewardAmount = self.emission_history.values().sum();
         let total_burns: RewardAmount = self.burn_history.values().sum();
-        let calculated_supply = total_emissions.saturating_sub(total_burns);
+        let computed = total_emissions.saturating_sub(total_burns);
 
-        if calculated_supply != self.total_supply {
+        if computed != self.total_supply {
             issues.push(format!(
-                "Supply mismatch: recorded={}, calculated={}",
-                self.total_supply, calculated_supply
+                "Supply mismatch: recorded={}, computed={}",
+                self.total_supply, computed
             ));
         }
 
@@ -261,22 +216,18 @@ impl SupplyTracker {
         }
     }
 
-    /// Update the last verification round
     pub fn update_verification_round(&mut self, round: RoundIndex) {
         self.last_verification_round = round;
     }
 
-    /// Get current total supply
     pub fn total_supply(&self) -> RewardAmount {
         self.total_supply
     }
 
-    /// Get supply cap
     pub fn supply_cap(&self) -> RewardAmount {
         self.supply_cap
     }
 
-    /// Get current round
     pub fn current_round(&self) -> RoundIndex {
         self.current_round
     }
@@ -285,23 +236,17 @@ impl SupplyTracker {
 /// Result of a supply audit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SupplyAuditResult {
-    /// Whether the supply is healthy (no critical issues)
     pub is_healthy: bool,
-    /// Critical issues that need immediate attention
     pub issues: Vec<String>,
-    /// Warnings that should be investigated
     pub warnings: Vec<String>,
-    /// Total emissions recorded
     pub total_emissions: RewardAmount,
-    /// Total burns recorded
     pub total_burns: RewardAmount,
-    /// Net supply (emissions - burns)
     pub net_supply: RewardAmount,
 }
 
 impl Default for SupplyTracker {
     fn default() -> Self {
-        Self::new(2_100_000_000_000) // 21M IPN in micro-IPN
+        Self::new(2_100_000_000_000) // 21 M IPN in micro-IPN
     }
 }
 
@@ -324,22 +269,16 @@ mod tests {
     }
 
     #[test]
-    fn test_supply_cap_enforcement() {
+    fn test_cap_enforcement() {
         let mut tracker = SupplyTracker::new(100_000);
-
-        // Try to emit more than the cap
         tracker.record_emission(1, 150_000).unwrap();
-        assert_eq!(tracker.total_supply(), 100_000); // Should be capped
+        assert_eq!(tracker.total_supply(), 100_000);
     }
 
     #[test]
-    fn test_supply_verification() {
+    fn test_verification_tolerance() {
         let tracker = SupplyTracker::new(1_000_000);
-
-        // Should pass with tolerance
-        tracker.verify_supply_integrity(0, 1000).unwrap();
-
-        // Should fail without tolerance
+        tracker.verify_supply_integrity(0, 1_000).unwrap();
         assert!(tracker.verify_supply_integrity(100_000, 0).is_err());
     }
 }
