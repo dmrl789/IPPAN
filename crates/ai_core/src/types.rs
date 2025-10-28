@@ -109,15 +109,14 @@ impl DataType {
     /// Returns the nominal byte size for this type (approximation)
     pub fn size_bytes(&self) -> usize {
         match self {
-            DataType::Text => 0,
-            DataType::Binary => 0,
-            DataType::Json => 0,
-            DataType::Numeric => 0,
+            // Variable-length or complex data types: treat as 1 byte per element to
+            // preserve legacy validation behavior and avoid rejecting valid inputs.
+            DataType::Text | DataType::Binary | DataType::Json | DataType::Numeric => 1,
             DataType::Int8 | DataType::UInt8 => 1,
             DataType::Int16 | DataType::UInt16 => 2,
             DataType::Int32 | DataType::UInt32 | DataType::Float32 => 4,
             DataType::Int64 | DataType::UInt64 | DataType::Float64 => 8,
-            DataType::Image | DataType::Audio | DataType::Video => 0,
+            DataType::Image | DataType::Audio | DataType::Video => 1,
         }
     }
 }
