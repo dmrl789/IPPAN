@@ -123,6 +123,10 @@ impl SupplyTracker {
         };
 
         if difference > tolerance {
+            error!(
+                "Supply verification failed: expected {}, actual {}, diff {}",
+                expected_supply, self.total_supply, difference
+            );
             return Err(SupplyError::VerificationFailed(format!(
                 "Supply verification failed: expected {}, actual {}",
                 expected_supply, self.total_supply

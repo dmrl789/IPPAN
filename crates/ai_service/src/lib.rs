@@ -18,13 +18,30 @@ pub mod optimization;
 pub mod service;
 pub mod smart_contracts;
 pub mod types;
+pub mod health;
+pub mod metrics;
+pub mod config;
 
 pub use errors::AIServiceError;
+
+#[cfg(feature = "analytics")]
 pub use monitoring::{
-    AlertHandler, AlertSeverity, AlertType, ConsoleAlertHandler, FileAlertHandler,
-    MonitoringConfig, ServiceAlert, ServiceHealthReport, ServiceMetrics, ServiceMetricsSnapshot,
-    ServiceMonitor, ServiceStatus,
+    ServiceMonitor,
+    MonitoringService,
+    ServiceStatus,
+    ServiceMetrics,
+    ServiceMetricsSnapshot,
+    ServiceHealthReport,
+    MonitoringConfig,
+    AlertHandler,
+    ServiceAlert,
+    AlertType,
+    AlertSeverity,
+    ConsoleAlertHandler,
+    FileAlertHandler,
+    MonitoringStatistics,
 };
+
 pub use service::AIService;
 pub use types::*;
 
@@ -35,10 +52,6 @@ pub use ippan_ai_core::{
 
 /// Re-export registry functionality
 pub use ippan_ai_registry::{validate_proposal, AiModelProposal, ModelRegistryEntry, ModelStatus};
-
-/// Re-export governance functionality
-// Note: Removed to avoid circular dependencies
-// pub use ippan_governance::*;
 
 /// AI Service version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

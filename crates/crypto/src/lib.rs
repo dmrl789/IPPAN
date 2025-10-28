@@ -10,10 +10,17 @@ use rand::Rng;
 pub mod commitment_schemes;
 pub mod hash_functions;
 pub mod merkle_trees;
+pub mod confidential;
 
-pub use commitment_schemes::{Commitment, CommitmentError, PedersenCommitment};
-pub use hash_functions::{BLAKE2b, Blake3, HashFunction, Keccak256, SHA256, SHA3_256};
-pub use merkle_trees::{MerkleError, MerkleProof, MerkleTree};
+// Re-export modules and types
+pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256, SHA3_256, BLAKE2b};
+pub use merkle_trees::{MerkleTree, MerkleProof, MerkleError};
+pub use commitment_schemes::{PedersenCommitment, Commitment, CommitmentError};
+pub use confidential::{
+    validate_transaction as validate_confidential_transaction,
+    validate_block as validate_confidential_block,
+    ConfidentialTransactionError,
+};
 
 /// Cryptographic key pair for IPPAN
 #[derive(Debug, Clone)]
@@ -80,6 +87,15 @@ impl CryptoUtils {
         let mut nonce = [0u8; 32];
         rand::thread_rng().fill(&mut nonce);
         nonce
+    }
+
+    /// Validate a confidential transaction (basic placeholder)
+    pub fn validate_confidential_transaction(transaction_data: &[u8]) -> Result<bool> {
+        // Placeholder: real version checks commitments and range proofs
+        if transaction_data.is_empty() {
+            return Ok(false);
+        }
+        Ok(transaction_data.len() >= 32)
     }
 }
 

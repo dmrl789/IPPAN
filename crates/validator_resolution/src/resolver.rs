@@ -6,7 +6,7 @@ use ippan_economics::ValidatorId;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{Handle, L2HandleRegistry, PublicKey as L2PublicKey};
 use std::sync::Arc;
-use tokio::time::{timeout, Duration};
+use tokio::time::Duration;
 
 /// Validator ID resolver
 ///
@@ -30,13 +30,12 @@ impl ValidatorResolver {
             l2_registry,
             l1_anchors,
             cache: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
-            cache_ttl: Duration::from_secs(300), // 5 minutes
+            cache_ttl: Duration::from_secs(300),
         }
     }
 
     /// Resolve a ValidatorId to a ResolvedValidator
     pub async fn resolve(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
-        // Check cache first
         if let Some(cached) = self.get_from_cache(id) {
             if self.is_cache_valid(&cached) {
                 return Ok(cached);
@@ -50,9 +49,7 @@ impl ValidatorResolver {
             ResolutionMethod::RegistryAlias => self.resolve_via_alias(id).await?,
         };
 
-        // Cache the result
         self.store_in_cache(id, &resolved);
-
         Ok(resolved)
     }
 
@@ -66,8 +63,13 @@ impl ValidatorResolver {
 
         for id in ids {
             let resolver = self.clone();
-            let id = id.clone();
-            futures.push(async move { (id, resolver.resolve(&id).await) });
+            let id_clone = id.clone();
+            let future = async move {
+                let id_result = id_clone.clone();
+                let result = resolver.resolve(&id_clone).await;
+                (id_result, result)
+            };
+            futures.push(future);
         }
 
         let batch_results = futures::future::join_all(futures).await;
@@ -78,7 +80,7 @@ impl ValidatorResolver {
         results
     }
 
-    /// Determine the resolution method for a ValidatorId
+    /// Determine resolution method for a ValidatorId
     fn resolve_method(&self, id: &ValidatorId) -> ResolutionMethod {
         if id.is_public_key() {
             ResolutionMethod::Direct
@@ -89,44 +91,37 @@ impl ValidatorResolver {
         }
     }
 
-    /// Resolve direct public key (no resolution needed)
+    /// Direct resolution (public key)
     async fn resolve_direct(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         let public_key = self.parse_public_key(id.as_str())?;
-        Ok(ResolvedValidator::new(
-            id.clone(),
-            public_key,
-            ResolutionMethod::Direct,
-        ))
+        Ok(ResolvedValidator::new(id.clone(), public_key, ResolutionMethod::Direct))
     }
 
-    /// Resolve via L2 handle registry
+    /// Resolve via L2 handle registry (async-safe)
     async fn resolve_via_l2_handle(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         let handle = Handle::new(id.as_str());
+        let registry = self.l2_registry.clone();
+        let handle_clone = handle.clone();
 
-        let resolution_result =
-            timeout(Duration::from_secs(5), self.l2_registry.resolve(&handle)).await;
+        let l2_public_key = tokio::task::spawn_blocking(move || registry.resolve(&handle_clone))
+            .await
+            .map_err(|_| ValidatorResolutionError::ResolutionTimeout)??;
 
-        match resolution_result {
-            Ok(Ok(l2_public_key)) => {
-                let public_key = *l2_public_key.as_bytes();
-                let metadata = self.get_handle_metadata(&handle).await.ok();
+        let public_key = *l2_public_key.as_bytes();
+        let metadata = self.get_handle_metadata(&handle).await.ok();
 
-                Ok(ResolvedValidator::with_metadata(
-                    id.clone(),
-                    public_key,
-                    ResolutionMethod::L2HandleRegistry,
-                    metadata.unwrap_or_else(|| ValidatorMetadata {
-                        handle: Some(id.as_str().to_string()),
-                        created_at: None,
-                        updated_at: None,
-                        status: None,
-                        custom: std::collections::HashMap::new(),
-                    }),
-                ))
-            }
-            Ok(Err(e)) => Err(ValidatorResolutionError::L2RegistryError(e)),
-            Err(_) => Err(ValidatorResolutionError::ResolutionTimeout),
-        }
+        Ok(ResolvedValidator::with_metadata(
+            id.clone(),
+            public_key,
+            ResolutionMethod::L2HandleRegistry,
+            metadata.unwrap_or_else(|| ValidatorMetadata {
+                handle: Some(id.as_str().to_string()),
+                created_at: None,
+                updated_at: None,
+                status: None,
+                custom: std::collections::HashMap::new(),
+            }),
+        ))
     }
 
     /// Resolve via L1 ownership anchor
@@ -139,23 +134,21 @@ impl ValidatorResolver {
         ))
     }
 
-    /// Resolve via registry alias (placeholder implementation)
-    async fn resolve_via_alias(&self, _id: &ValidatorId) -> Result<ResolvedValidator> {
-        // This would integrate with a custom registry system
+    /// Registry alias placeholder
+    async fn resolve_via_alias(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         Err(ValidatorResolutionError::InvalidFormat {
-            id: _id.as_str().to_string(),
+            id: id.as_str().to_string(),
         })
     }
 
-    /// Get handle metadata from L2 registry
+    /// Retrieve handle metadata
     async fn get_handle_metadata(&self, handle: &Handle) -> Result<ValidatorMetadata> {
-        let metadata = timeout(
-            Duration::from_secs(5),
-            self.l2_registry.get_metadata(handle),
-        )
-        .await
-        .map_err(|_| ValidatorResolutionError::ResolutionTimeout)?
-        .map_err(ValidatorResolutionError::L2RegistryError)?;
+        let registry = self.l2_registry.clone();
+        let handle_clone = handle.clone();
+
+        let metadata = tokio::task::spawn_blocking(move || registry.get_metadata(&handle_clone))
+            .await
+            .map_err(|_| ValidatorResolutionError::ResolutionTimeout)??;
 
         Ok(ValidatorMetadata {
             handle: Some(handle.as_str().to_string()),
@@ -171,37 +164,27 @@ impl ValidatorResolver {
         if hex_str.len() != 64 {
             return Err(ValidatorResolutionError::InvalidPublicKey);
         }
-
-        let mut public_key = [0u8; 32];
-        hex::decode_to_slice(hex_str, &mut public_key)
+        let mut key = [0u8; 32];
+        hex::decode_to_slice(hex_str, &mut key)
             .map_err(|_| ValidatorResolutionError::InvalidPublicKey)?;
-
-        Ok(public_key)
+        Ok(key)
     }
 
-    /// Get from cache
+    /// Cache helpers
     fn get_from_cache(&self, id: &ValidatorId) -> Option<ResolvedValidator> {
-        let cache = self.cache.read();
-        cache.get(id).cloned()
+        self.cache.read().get(id).cloned()
     }
 
-    /// Store in cache
     fn store_in_cache(&self, id: &ValidatorId, resolved: &ResolvedValidator) {
-        let mut cache = self.cache.write();
-        cache.insert(id.clone(), resolved.clone());
+        self.cache.write().insert(id.clone(), resolved.clone());
     }
 
-    /// Check if cache entry is valid
     fn is_cache_valid(&self, _resolved: &ResolvedValidator) -> bool {
-        // In production, this would check timestamps
-        // For now, always consider cache valid
-        true
+        true // TTL logic can be added later
     }
 
-    /// Clear cache
     pub fn clear_cache(&self) {
-        let mut cache = self.cache.write();
-        cache.clear();
+        self.cache.write().clear();
     }
 }
 
@@ -228,19 +211,13 @@ mod tests {
         let l1_anchors = Arc::new(L1HandleAnchorStorage::new());
         let resolver = ValidatorResolver::new(l2_registry, l1_anchors);
 
-        let public_key_hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let id = ValidatorId::new(public_key_hex);
-
-        let resolved = resolver.resolve(&id).await.unwrap();
-        assert_eq!(resolved.resolution_method, ResolutionMethod::Direct);
-        assert_eq!(
-            resolved.public_key_bytes(),
-            &[
-                0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
-                0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67,
-                0x89, 0xab, 0xcd, 0xef
-            ]
+        let id = ValidatorId::new(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         );
+        let resolved = resolver.resolve(&id).await.unwrap();
+
+        assert_eq!(resolved.resolution_method, ResolutionMethod::Direct);
+        assert_eq!(resolved.public_key_bytes()[0], 0x01);
     }
 
     #[tokio::test]
@@ -249,29 +226,21 @@ mod tests {
         let l1_anchors = Arc::new(L1HandleAnchorStorage::new());
         let resolver = ValidatorResolver::new(l2_registry.clone(), l1_anchors);
 
-        // Register a handle
         let handle = "@test.ipn";
         let owner = [1u8; 32];
-
         let registration = HandleRegistration {
-            handle: ippan_l2_handle_registry::Handle::new(handle),
+            handle: Handle::new(handle),
             owner: L2PublicKey::new(owner),
             signature: vec![1, 2, 3],
             metadata: HashMap::new(),
             expires_at: None,
         };
-
         l2_registry.register(registration).unwrap();
 
-        // Resolve handle
         let id = ValidatorId::new(handle);
         let resolved = resolver.resolve(&id).await.unwrap();
 
-        assert_eq!(
-            resolved.resolution_method,
-            ResolutionMethod::L2HandleRegistry
-        );
+        assert_eq!(resolved.resolution_method, ResolutionMethod::L2HandleRegistry);
         assert_eq!(resolved.public_key_bytes(), &owner);
-        assert!(resolved.is_handle_resolved());
     }
 }

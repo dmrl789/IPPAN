@@ -11,6 +11,10 @@ pub struct SecurityConfig {
     pub enabled: bool,
     /// Enable input validation
     pub enable_input_validation: bool,
+    /// Enable integrity checking
+    pub enable_integrity_checking: bool,
+    /// Enable rate limiting
+    pub enable_rate_limiting: bool,
     /// Maximum requests per minute
     pub max_requests_per_minute: u32,
     /// Maximum execution time (seconds)
@@ -47,6 +51,8 @@ impl Default for SecurityConfig {
         Self {
             enabled: true,
             enable_input_validation: true,
+            enable_integrity_checking: true,
+            enable_rate_limiting: true,
             max_requests_per_minute: 1000,
             max_execution_time: 30,
             max_memory_usage: 1024 * 1024 * 1024, // 1GB
@@ -186,8 +192,8 @@ pub enum SecurityError {
     ExecutionTimeExceeded { actual: u64, max: u64 },
     #[error("Memory usage exceeded: {actual} bytes > {max} bytes")]
     MemoryUsageExceeded { actual: u64, max: u64 },
-    #[error("Source not allowed: {source}")]
-    SourceNotAllowed { source: String },
+    #[error("Source not allowed: {model_source}")]
+    SourceNotAllowed { model_source: String },
     #[error("Model not signed")]
     ModelNotSigned,
     #[error("Security policy violation: {policy}")]

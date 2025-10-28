@@ -353,7 +353,7 @@ impl ModelValidator {
     fn validate_format(
         &self,
         model_data: &[u8],
-        metadata: &ModelMetadata,
+        _metadata: &ModelMetadata,
     ) -> std::result::Result<(), ValidationError> {
         // Check minimum data size
         if model_data.len() < 1024 {

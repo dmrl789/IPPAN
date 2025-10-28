@@ -2,9 +2,11 @@
 
 use crate::errors::*;
 use crate::types::*;
+use crate::L2HandleRegistry;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::time::{timeout, Duration};
+use std::time::SystemTime;
+use tokio::time::Duration;
 
 /// Handle resolution service
 ///
@@ -23,32 +25,30 @@ impl HandleResolver {
         Self {
             registry,
             cache: Arc::new(parking_lot::RwLock::new(HashMap::new())),
-            cache_ttl: Duration::from_secs(300), // 5 minutes
+            cache_ttl: Duration::from_secs(300), // 5 minutes TTL
         }
     }
 
     /// Resolve handle to public key with caching
     pub async fn resolve(&self, handle: &Handle) -> Result<PublicKey> {
         // Check cache first
-        if let Some((cached_key, timestamp)) = self.get_from_cache(handle) {
-            if self.is_cache_valid(timestamp) {
+        if let Some((cached_key, ts)) = self.get_from_cache(handle) {
+            if self.is_cache_valid(ts) {
                 return Ok(cached_key);
             }
         }
 
-        // Resolve from registry with timeout
-        let resolution_result =
-            timeout(Duration::from_secs(5), self.registry.resolve(handle)).await;
+        // Resolve from registry (run blocking sync call safely)
+        let registry = self.registry.clone();
+        let handle_clone = handle.clone();
 
-        match resolution_result {
-            Ok(Ok(public_key)) => {
-                // Cache the result
-                self.store_in_cache(handle, &public_key);
-                Ok(public_key)
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(HandleRegistryError::ResolutionTimeout),
-        }
+        let public_key = tokio::task::spawn_blocking(move || registry.resolve(&handle_clone))
+            .await
+            .map_err(|_| HandleRegistryError::ResolutionTimeout)??;
+
+        // Cache result
+        self.store_in_cache(handle, &public_key);
+        Ok(public_key)
     }
 
     /// Resolve multiple handles in parallel
@@ -58,8 +58,12 @@ impl HandleResolver {
 
         for handle in handles {
             let resolver = self.clone();
-            let handle = handle.clone();
-            futures.push(async move { (handle, resolver.resolve(&handle).await) });
+            let handle_clone = handle.clone();
+            let future = async move {
+                let result = resolver.resolve(&handle_clone).await;
+                (handle_clone, result)
+            };
+            futures.push(future);
         }
 
         let batch_results = futures::future::join_all(futures).await;
@@ -72,31 +76,31 @@ impl HandleResolver {
 
     /// Get handle metadata
     pub async fn get_metadata(&self, handle: &Handle) -> Result<HandleMetadata> {
-        timeout(Duration::from_secs(5), self.registry.get_metadata(handle))
+        let registry = self.registry.clone();
+        let handle_clone = handle.clone();
+        tokio::task::spawn_blocking(move || registry.get_metadata(&handle_clone))
             .await
             .map_err(|_| HandleRegistryError::ResolutionTimeout)?
     }
 
-    /// List all handles for an owner
+    /// List all handles owned by a public key
     pub async fn list_owner_handles(&self, owner: &PublicKey) -> Vec<Handle> {
         self.registry.list_owner_handles(owner)
     }
 
     /// Clear cache
     pub fn clear_cache(&self) {
-        let mut cache = self.cache.write();
-        cache.clear();
+        self.cache.write().clear();
     }
 
-    /// Get cache statistics
+    /// Get cache stats
     pub fn cache_stats(&self) -> (usize, Duration) {
         let cache = self.cache.read();
         (cache.len(), self.cache_ttl)
     }
 
     fn get_from_cache(&self, handle: &Handle) -> Option<(PublicKey, u64)> {
-        let cache = self.cache.read();
-        cache.get(handle).cloned()
+        self.cache.read().get(handle).cloned()
     }
 
     fn store_in_cache(&self, handle: &Handle, public_key: &PublicKey) {
@@ -105,8 +109,9 @@ impl HandleResolver {
             .unwrap()
             .as_secs();
 
-        let mut cache = self.cache.write();
-        cache.insert(handle.clone(), (public_key.clone(), timestamp));
+        self.cache
+            .write()
+            .insert(handle.clone(), (public_key.clone(), timestamp));
     }
 
     fn is_cache_valid(&self, timestamp: u64) -> bool {
@@ -139,11 +144,10 @@ mod tests {
         let registry = Arc::new(L2HandleRegistry::new());
         let resolver = HandleResolver::new(registry.clone());
 
-        // Register a handle
         let handle = Handle::new("@test.ipn");
         let owner = PublicKey::new([1u8; 32]);
 
-        let registration = HandleRegistration {
+        let reg = HandleRegistration {
             handle: handle.clone(),
             owner: owner.clone(),
             signature: vec![1, 2, 3],
@@ -151,9 +155,8 @@ mod tests {
             expires_at: None,
         };
 
-        registry.register(registration).unwrap();
+        registry.register(reg).unwrap();
 
-        // Resolve handle
         let resolved = resolver.resolve(&handle).await.unwrap();
         assert_eq!(resolved, owner);
     }
@@ -163,7 +166,6 @@ mod tests {
         let registry = Arc::new(L2HandleRegistry::new());
         let resolver = HandleResolver::new(registry.clone());
 
-        // Register multiple handles
         let handles = vec![
             Handle::new("@alice.ipn"),
             Handle::new("@bob.ipn"),
@@ -172,17 +174,16 @@ mod tests {
 
         for (i, handle) in handles.iter().enumerate() {
             let owner = PublicKey::new([i as u8; 32]);
-            let registration = HandleRegistration {
+            let reg = HandleRegistration {
                 handle: handle.clone(),
                 owner,
                 signature: vec![1, 2, 3],
                 metadata: HashMap::new(),
                 expires_at: None,
             };
-            registry.register(registration).unwrap();
+            registry.register(reg).unwrap();
         }
 
-        // Resolve all handles
         let results = resolver.resolve_batch(&handles).await;
         assert_eq!(results.len(), 3);
 
