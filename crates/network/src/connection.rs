@@ -119,7 +119,7 @@ impl ConnectionManager {
     /// Create a new connection manager
     pub fn new(config: ConnectionConfig) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             connections: Arc::new(RwLock::new(HashMap::new())),
@@ -133,7 +133,7 @@ impl ConnectionManager {
     /// Start the connection manager
     pub async fn start(&mut self, listen_addr: SocketAddr) -> Result<()> {
         *self.is_running.write() = true;
-        
+
         // Start listening for incoming connections
         self.listener = Some(TcpListener::bind(listen_addr).await?);
         info!("Connection manager listening on {}", listen_addr);
@@ -149,7 +149,7 @@ impl ConnectionManager {
     /// Stop the connection manager
     pub async fn stop(&mut self) -> Result<()> {
         *self.is_running.write() = false;
-        
+
         // Close all connections
         {
             let mut connections = self.connections.write();
@@ -165,7 +165,7 @@ impl ConnectionManager {
     /// Connect to a peer
     pub async fn connect(&self, peer: Peer) -> Result<()> {
         let peer_id = peer.id.clone().unwrap_or_else(|| peer.address.clone());
-        
+
         // Check if already connected
         {
             let connections = self.connections.read();
@@ -220,7 +220,7 @@ impl ConnectionManager {
     pub fn get_stats(&self) -> ConnectionStats {
         let connections = self.connections.read();
         let mut stats = ConnectionStats::default();
-        
+
         for conn in connections.values() {
             stats.total_connections += 1;
             match conn.state {
@@ -256,13 +256,27 @@ impl ConnectionManager {
                 if let Some(message) = message_receiver.recv().await {
                     match message {
                         NetworkMessage::Connect { peer_id, address } => {
-                            Self::handle_connect(&connections, &config, &message_sender, &peer_id, &address).await;
+                            Self::handle_connect(
+                                &connections,
+                                &config,
+                                &message_sender,
+                                &peer_id,
+                                &address,
+                            )
+                            .await;
                         }
                         NetworkMessage::Disconnect { peer_id } => {
                             Self::handle_disconnect(&connections, &peer_id).await;
                         }
                         NetworkMessage::Data { peer_id, data } => {
-                            Self::handle_send_data(&connections, &config, &message_sender, &peer_id, data).await;
+                            Self::handle_send_data(
+                                &connections,
+                                &config,
+                                &message_sender,
+                                &peer_id,
+                                data,
+                            )
+                            .await;
                         }
                         NetworkMessage::KeepAlive { peer_id } => {
                             Self::handle_keep_alive(&connections, &peer_id).await;
@@ -285,13 +299,14 @@ impl ConnectionManager {
 
         tokio::spawn(async move {
             let mut interval = interval(config.keep_alive_interval);
-            
+
             while *is_running.read() {
                 interval.tick().await;
-                
+
                 let keep_alive_peers: Vec<String> = {
                     let conns = connections.read();
-                    conns.iter()
+                    conns
+                        .iter()
                         .filter(|(_, conn)| conn.state == ConnectionState::Connected)
                         .map(|(peer_id, _)| peer_id.clone())
                         .collect()
@@ -315,20 +330,23 @@ impl ConnectionManager {
 
         tokio::spawn(async move {
             let mut interval = interval(config.reconnect_interval);
-            
+
             while *is_running.read() {
                 interval.tick().await;
-                
+
                 let reconnect_peers: Vec<(String, String)> = {
                     let conns = connections.read();
-                    conns.iter()
+                    conns
+                        .iter()
                         .filter(|(_, conn)| conn.should_reconnect(&config))
                         .map(|(peer_id, conn)| (peer_id.clone(), conn.peer.address.clone()))
                         .collect()
                 };
 
                 for (peer_id, address) in reconnect_peers {
-                    if let Err(e) = message_sender.send(NetworkMessage::Connect { peer_id, address }) {
+                    if let Err(e) =
+                        message_sender.send(NetworkMessage::Connect { peer_id, address })
+                    {
                         warn!("Failed to send reconnect message: {}", e);
                     }
                 }
@@ -369,7 +387,7 @@ impl ConnectionManager {
         match timeout(config.connection_timeout, TcpStream::connect(addr)).await {
             Ok(Ok(mut stream)) => {
                 info!("Connected to peer {} at {}", peer_id, address);
-                
+
                 // Update connection state
                 {
                     let mut conns = connections.write();
@@ -382,15 +400,29 @@ impl ConnectionManager {
                 }
 
                 // Start connection handler
-                Self::handle_connection_stream(connections, config, message_sender, peer_id, stream).await;
+                Self::handle_connection_stream(
+                    connections,
+                    config,
+                    message_sender,
+                    peer_id,
+                    stream,
+                )
+                .await;
             }
             Ok(Err(e)) => {
                 error!("Failed to connect to {}: {}", address, e);
-                Self::handle_connection_error(connections, message_sender, peer_id, &e.to_string()).await;
+                Self::handle_connection_error(connections, message_sender, peer_id, &e.to_string())
+                    .await;
             }
             Err(_) => {
                 error!("Connection timeout to {}", address);
-                Self::handle_connection_error(connections, message_sender, peer_id, "Connection timeout").await;
+                Self::handle_connection_error(
+                    connections,
+                    message_sender,
+                    peer_id,
+                    "Connection timeout",
+                )
+                .await;
             }
         }
     }
@@ -404,7 +436,7 @@ impl ConnectionManager {
         mut stream: TcpStream,
     ) {
         let mut buffer = vec![0u8; config.buffer_size];
-        
+
         loop {
             // Check if connection is still valid
             {
@@ -426,7 +458,7 @@ impl ConnectionManager {
                 }
                 Ok(Ok(n)) => {
                     let data = buffer[..n].to_vec();
-                    
+
                     // Update connection stats
                     {
                         let mut conns = connections.write();
@@ -532,7 +564,7 @@ impl ConnectionManager {
         error: &str,
     ) {
         warn!("Connection error for peer {}: {}", peer_id, error);
-        
+
         {
             let mut conns = connections.write();
             if let Some(conn) = conns.get_mut(peer_id) {
@@ -582,7 +614,7 @@ mod tests {
         let config = ConnectionConfig::default();
         let manager = ConnectionManager::new(config);
         let peer = Peer::with_id("test-peer", "127.0.0.1:8080");
-        
+
         // This would normally connect, but we're just testing the API
         let result = manager.connect(peer).await;
         assert!(result.is_ok());

@@ -4,9 +4,9 @@
 //! Each round emits a fixed reward (R₀ / 2^⌊t / Tₕ⌋) subdivided by validator participation,
 //! uptime, and AI reputation. Designed for 21 M IPN total supply and ≈2-year halving cycles.
 
+use anyhow::Result;
 use ippan_types::{Amount, SUPPLY_CAP};
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use std::collections::HashMap;
 
 /// Core emission parameters.
@@ -54,10 +54,15 @@ impl DAGEmissionParams {
         if self.supply_cap.is_zero() {
             return Err(anyhow::anyhow!("Supply cap must be positive"));
         }
-        let total_bps = self.base_emission_bps + self.tx_fee_bps +
-                        self.ai_commission_bps + self.network_pool_bps;
+        let total_bps = self.base_emission_bps
+            + self.tx_fee_bps
+            + self.ai_commission_bps
+            + self.network_pool_bps;
         if total_bps != 10_000 {
-            return Err(anyhow::anyhow!("Percentages must sum to 10_000 bps, got {}", total_bps));
+            return Err(anyhow::anyhow!(
+                "Percentages must sum to 10_000 bps, got {}",
+                total_bps
+            ));
         }
         Ok(())
     }
@@ -65,7 +70,11 @@ impl DAGEmissionParams {
 
 /// Validator role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ValidatorRole { Proposer, Verifier, AIService }
+pub enum ValidatorRole {
+    Proposer,
+    Verifier,
+    AIService,
+}
 
 /// Validator participation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,7 +171,10 @@ pub fn distribute_dag_fair_rewards(
     }
 
     let effective_fees = collected_fees.min(Amount::from_atomic(round_emission.fee_cap_limit));
-    let total_score: f64 = participations.iter().map(calculate_participation_score).sum();
+    let total_score: f64 = participations
+        .iter()
+        .map(calculate_participation_score)
+        .sum();
     if total_score == 0.0 {
         return Ok(vec![]);
     }
@@ -177,8 +189,8 @@ pub fn distribute_dag_fair_rewards(
             ValidatorRole::AIService => 1.1,
         };
 
-        let base = Amount::from_atomic(round_emission.base_emission)
-            .percentage((ratio * 1000.0) as u16);
+        let base =
+            Amount::from_atomic(round_emission.base_emission).percentage((ratio * 1000.0) as u16);
         let tx = effective_fees.percentage((ratio * 1000.0) as u16);
         let ai = if p.role == ValidatorRole::AIService {
             ai_commissions.percentage((ratio * 1000.0) as u16)
@@ -212,7 +224,9 @@ pub struct FeeRecyclingParams {
 
 impl Default for FeeRecyclingParams {
     fn default() -> Self {
-        Self { recycle_bps: 10_000 }
+        Self {
+            recycle_bps: 10_000,
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use ed25519_dalek::Verifier;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Vote on a governance proposal
@@ -98,7 +98,7 @@ impl VotingSession {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         Self {
             proposal_id,
             start_time,
@@ -117,7 +117,7 @@ impl VotingSession {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         if current_time > self.end_time {
             return Err(anyhow::anyhow!("Voting period has ended"));
         }
@@ -135,7 +135,7 @@ impl VotingSession {
         // Add vote
         self.votes.insert(vote.voter, vote.clone());
         self.total_voting_stake = self.total_voting_stake.saturating_add(voting_power);
-        
+
         if vote.approve {
             self.approval_stake = self.approval_stake.saturating_add(voting_power);
         }
@@ -148,7 +148,7 @@ impl VotingSession {
         if self.total_voting_stake == 0 {
             return false;
         }
-        
+
         let approval_percentage = self.approval_stake as f64 / self.total_voting_stake as f64;
         approval_percentage >= self.threshold
     }
@@ -181,22 +181,22 @@ impl VotingSession {
 
     /// Verify vote signature
     fn verify_vote_signature(&self, vote: &Vote) -> bool {
-        use ed25519_dalek::{VerifyingKey, Signature};
-        
+        use ed25519_dalek::{Signature, VerifyingKey};
+
         let verifying_key = match VerifyingKey::from_bytes(&vote.voter) {
             Ok(key) => key,
             Err(_) => return false,
         };
-        
+
         let signature = Signature::from_bytes(&vote.signature);
-        
+
         // Create message for signature verification
         let mut message = Vec::new();
         message.extend_from_slice(&vote.proposal_id.as_bytes());
         message.extend_from_slice(&(vote.approve as u8).to_be_bytes());
         message.extend_from_slice(&vote.stake_weight.to_be_bytes());
         message.extend_from_slice(&vote.timestamp.to_be_bytes());
-        
+
         verifying_key.verify(&message, &signature).is_ok()
     }
 }
@@ -228,15 +228,15 @@ mod tests {
     fn create_test_vote(proposal_id: &str, approve: bool) -> Vote {
         let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let pubkey = signing_key.verifying_key().to_bytes();
-        
+
         let mut message = Vec::new();
         message.extend_from_slice(proposal_id.as_bytes());
         message.extend_from_slice(&(approve as u8).to_be_bytes());
         message.extend_from_slice(&1000u64.to_be_bytes());
         message.extend_from_slice(&1234567890u64.to_be_bytes());
-        
+
         let signature = signing_key.sign(&message);
-        
+
         Vote {
             voter: pubkey,
             proposal_id: proposal_id.to_string(),
@@ -250,10 +250,10 @@ mod tests {
     #[test]
     fn test_voting_power_calculation() {
         let mut calculator = VotingPowerCalculator::new();
-        
+
         calculator.update_stake([1u8; 32], 1000);
         calculator.update_stake([2u8; 32], 2000);
-        
+
         assert_eq!(calculator.total_stake(), 3000);
         assert_eq!(calculator.get_voting_power(&[1u8; 32]), 1000);
         assert_eq!(calculator.get_voting_power(&[2u8; 32]), 2000);
@@ -264,13 +264,13 @@ mod tests {
     #[test]
     fn test_voting_session() {
         let mut session = VotingSession::new("proposal_1".to_string(), 3600, 0.67);
-        
+
         let vote1 = create_test_vote("proposal_1", true);
         let vote2 = create_test_vote("proposal_1", false);
-        
+
         assert!(session.cast_vote(vote1, 1000).is_ok());
         assert!(session.cast_vote(vote2, 500).is_ok());
-        
+
         let results = session.get_results();
         assert_eq!(results.total_votes, 2);
         assert_eq!(results.total_stake, 1500);
@@ -283,9 +283,9 @@ mod tests {
     #[test]
     fn test_duplicate_vote() {
         let mut session = VotingSession::new("proposal_1".to_string(), 3600, 0.67);
-        
+
         let vote = create_test_vote("proposal_1", true);
-        
+
         assert!(session.cast_vote(vote.clone(), 1000).is_ok());
         assert!(session.cast_vote(vote, 1000).is_err());
     }

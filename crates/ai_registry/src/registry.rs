@@ -5,189 +5,343 @@
 //! management (propose → activate → deprecate → revoke) and
 //! Ed25519-based signature verification.
 
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use ed25519_dalek::{VerifyingKey, Signature, Verifier};
+use crate::{
+    errors::{RegistryError, Result},
+    types::*,
+    storage::RegistryStorage,
+};
+use ai_core::types::{ModelId, ModelMetadata};
 use std::collections::HashMap;
-
-/// Status of a model in the registry
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ModelStatus {
-    /// Model is proposed but not yet activated
-    Proposed,
-    /// Model is active and can be used for consensus
-    Active,
-    /// Model is deprecated and will soon be replaced
-    Deprecated,
-    /// Model is deactivated or revoked
-    Deactivated,
-}
-
-/// Entry in the AI model registry
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelRegistryEntry {
-    /// Unique model identifier
-    pub model_id: String,
-    /// SHA-256 hash of the model
-    pub hash_sha256: [u8; 32],
-    /// Model version
-    pub version: u32,
-    /// Round when the model becomes active
-    pub activation_round: u64,
-    /// Optional round when the model is deactivated
-    pub deactivation_round: Option<u64>,
-    /// Ed25519 signature of the model
-    #[serde(with = "serde_bytes")]
-    pub signature: [u8; 64],
-    /// Public key of the signer
-    pub signer_pubkey: [u8; 32],
-    /// Current status
-    pub status: ModelStatus,
-    /// Timestamp when created (Unix micros or round index)
-    pub created_at: u64,
-    /// Additional metadata (IPFS URL, rationale, etc.)
-    #[serde(default)]
-    pub metadata: HashMap<String, String>,
-}
+use tracing::{info, warn, error};
 
 /// Deterministic in-memory AI model registry
 ///
 /// This struct can be serialized and verified on-chain,
 /// ensuring consistent behavior across all nodes.
 pub struct ModelRegistry {
-    /// All known models
-    models: HashMap<String, ModelRegistryEntry>,
-    /// Models indexed by activation round
-    activation_index: HashMap<u64, Vec<String>>,
+    /// Storage backend
+    storage: RegistryStorage,
     /// Currently active model ID
-    active_model_id: Option<String>,
+    active_model_id: Option<ModelId>,
+    /// Configuration
+    config: RegistryConfig,
+    /// In-memory cache for quick access
+    cache: HashMap<String, ModelRegistration>,
 }
 
 impl ModelRegistry {
-    /// Create a new, empty registry
-    pub fn new() -> Self {
+    /// Create a new registry with storage backend
+    pub fn new(storage: RegistryStorage, config: RegistryConfig) -> Self {
         Self {
-            models: HashMap::new(),
-            activation_index: HashMap::new(),
+            storage,
             active_model_id: None,
+            config,
+            cache: HashMap::new(),
         }
     }
 
-    /// Register a model proposal (must have valid signature)
-    pub fn register_model(&mut self, entry: ModelRegistryEntry) -> Result<()> {
-        self.validate_entry(&entry)?;
+    /// Register a model
+    pub async fn register_model(
+        &mut self,
+        model_id: ModelId,
+        metadata: ModelMetadata,
+        registrant: String,
+        category: ModelCategory,
+        description: Option<String>,
+        license: Option<String>,
+        source_url: Option<String>,
+        tags: Vec<String>,
+    ) -> Result<ModelRegistration> {
+        info!("Registering model: {:?}", model_id);
+        
+        // Validate model size
+        if metadata.size_bytes > self.config.max_model_size {
+            return Err(RegistryError::InvalidRegistration(format!(
+                "Model size {} exceeds maximum {}",
+                metadata.size_bytes, self.config.max_model_size
+            )));
+        }
+        
+        // Validate parameter count
+        if metadata.parameter_count > self.config.max_parameter_count {
+            return Err(RegistryError::InvalidRegistration(format!(
+                "Parameter count {} exceeds maximum {}",
+                metadata.parameter_count, self.config.max_parameter_count
+            )));
+        }
+        
+        // Check if model already exists
+        if self.storage.load_model_registration(&model_id).await?.is_some() {
+            return Err(RegistryError::ModelAlreadyExists(format!(
+                "Model {} already exists",
+                model_id.name
+            )));
+        }
+        
+        let now = chrono::Utc::now();
+        
+        let registration = ModelRegistration {
+            model_id: model_id.clone(),
+            metadata,
+            status: RegistrationStatus::Pending,
+            registrant,
+            registered_at: now,
+            updated_at: now,
+            registration_fee: self.config.min_registration_fee,
+            category,
+            tags,
+            description,
+            license,
+            source_url,
+        };
+        
+        // Store registration
+        self.storage.store_model_registration(&registration).await?;
+        
+        // Update cache
+        self.cache.insert(model_id.name.clone(), registration.clone());
+        
+        info!("Model registered successfully: {:?}", model_id);
+        Ok(registration)
+    }
 
-        let model_id = entry.model_id.clone();
-        let activation_round = entry.activation_round;
+    /// Get model registration
+    pub async fn get_model_registration(&mut self, model_id: &ModelId) -> Result<Option<ModelRegistration>> {
+        // Check cache first
+        if let Some(registration) = self.cache.get(&model_id.name) {
+            return Ok(Some(registration.clone()));
+        }
+        
+        // Load from storage
+        let registration = self.storage.load_model_registration(model_id).await?;
+        
+        // Update cache
+        if let Some(ref reg) = registration {
+            self.cache.insert(model_id.name.clone(), reg.clone());
+        }
+        
+        Ok(registration)
+    }
 
-        self.models.insert(model_id.clone(), entry);
-        self.activation_index
-            .entry(activation_round)
-            .or_insert_with(Vec::new)
-            .push(model_id);
-
+    /// Update model status
+    pub async fn update_model_status(&mut self, model_id: &ModelId, status: RegistrationStatus) -> Result<()> {
+        info!("Updating model status: {:?} -> {:?}", model_id, status);
+        
+        let mut registration = self.storage.load_model_registration(model_id)
+            .await?
+            .ok_or_else(|| RegistryError::ModelNotFound(model_id.name.clone()))?;
+        
+        registration.status = status;
+        registration.updated_at = chrono::Utc::now();
+        
+        // Store updated registration
+        self.storage.store_model_registration(&registration).await?;
+        
+        // Update cache
+        self.cache.insert(model_id.name.clone(), registration.clone());
+        
+        // Update active model if needed
+        if status == RegistrationStatus::Approved {
+            self.active_model_id = Some(model_id.clone());
+        } else if self.active_model_id.as_ref() == Some(model_id) {
+            self.active_model_id = None;
+        }
+        
+        info!("Model status updated successfully");
         Ok(())
     }
 
-    /// Retrieve a model by ID
-    pub fn get_model(&self, model_id: &str) -> Option<&ModelRegistryEntry> {
-        self.models.get(model_id)
+    /// List models by status
+    pub async fn list_models_by_status(&self, status: RegistrationStatus) -> Result<Vec<ModelRegistration>> {
+        self.storage.list_models_by_status(status).await
     }
 
-    /// Retrieve all registered models
-    pub fn get_all_models(&self) -> &HashMap<String, ModelRegistryEntry> {
-        &self.models
+    /// List models by category
+    pub async fn list_models_by_category(&self, category: ModelCategory) -> Result<Vec<ModelRegistration>> {
+        self.storage.list_models_by_category(category).await
     }
 
-    /// Return models that should activate at a given round
-    pub fn get_models_for_activation(&self, round: u64) -> Vec<&ModelRegistryEntry> {
-        self.activation_index
-            .get(&round)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.models.get(id))
-                    .collect()
-            })
-            .unwrap_or_default()
+    /// Search models
+    pub async fn search_models(
+        &self,
+        query: &str,
+        category: Option<ModelCategory>,
+        status: Option<RegistrationStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<ModelRegistration>> {
+        self.storage.search_models(query, category, status, limit).await
     }
 
-    /// Activate a model if its activation round is reached
-    pub fn activate_model(&mut self, model_id: &str, round: u64) -> Result<()> {
-        if let Some(entry) = self.models.get_mut(model_id) {
-            if entry.activation_round <= round {
-                entry.status = ModelStatus::Active;
-                self.active_model_id = Some(model_id.to_string());
-                Ok(())
-            } else {
-                Err(anyhow::anyhow!("Model not ready for activation at round {}", round))
-            }
-        } else {
-            Err(anyhow::anyhow!("Model {} not found", model_id))
-        }
+    /// Get model usage statistics
+    pub async fn get_model_usage_stats(&self, model_id: &ModelId) -> Result<Option<ModelUsageStats>> {
+        self.storage.get_model_usage_stats(model_id).await
     }
 
-    /// Deprecate a model, retaining it for audit purposes
-    pub fn deprecate_model(&mut self, model_id: &str) -> Result<()> {
-        if let Some(entry) = self.models.get_mut(model_id) {
-            entry.status = ModelStatus::Deprecated;
-            if self.active_model_id.as_ref() == Some(&model_id.to_string()) {
-                self.active_model_id = None;
-            }
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Model {} not found", model_id))
-        }
+    /// Update model usage statistics
+    pub async fn update_model_usage_stats(&self, stats: &ModelUsageStats) -> Result<()> {
+        self.storage.store_model_usage_stats(stats).await
     }
 
-    /// Fully deactivate or revoke a model
-    pub fn deactivate_model(&mut self, model_id: &str) -> Result<()> {
-        if let Some(entry) = self.models.get_mut(model_id) {
-            entry.status = ModelStatus::Deactivated;
-            if self.active_model_id.as_ref() == Some(&model_id.to_string()) {
-                self.active_model_id = None;
-            }
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Model {} not found", model_id))
-        }
+    /// Get the currently active model
+    pub fn get_active_model_id(&self) -> Option<&ModelId> {
+        self.active_model_id.as_ref()
     }
 
-    /// Get the currently active model entry
-    pub fn get_active_model(&self) -> Option<&ModelRegistryEntry> {
-        self.active_model_id
-            .as_ref()
-            .and_then(|id| self.models.get(id))
+    /// Set the active model
+    pub fn set_active_model(&mut self, model_id: Option<ModelId>) {
+        self.active_model_id = model_id;
     }
 
-    /// List all models by status
-    pub fn list_models_by_status(&self, status: ModelStatus) -> Vec<&ModelRegistryEntry> {
-        self.models
-            .values()
-            .filter(|entry| entry.status == status)
-            .collect()
+    /// Get registry statistics
+    pub async fn get_registry_stats(&mut self) -> Result<RegistryStats> {
+        let all_models = self.storage.list_models_by_status(RegistrationStatus::Pending).await?
+            .len() as u64
+            + self.storage.list_models_by_status(RegistrationStatus::Approved).await?
+            .len() as u64
+            + self.storage.list_models_by_status(RegistrationStatus::Rejected).await?
+            .len() as u64
+            + self.storage.list_models_by_status(RegistrationStatus::Suspended).await?
+            .len() as u64
+            + self.storage.list_models_by_status(RegistrationStatus::Deprecated).await?
+            .len() as u64;
+        
+        let active_models = self.storage.list_models_by_status(RegistrationStatus::Approved).await?.len() as u64;
+        let pending_models = self.storage.list_models_by_status(RegistrationStatus::Pending).await?.len() as u64;
+        
+        Ok(RegistryStats {
+            total_models: all_models,
+            active_models,
+            pending_models,
+            total_executions: 0, // This would be tracked separately
+            total_fees_collected: 0, // This would be tracked by FeeManager
+            total_registrants: 0, // This would require tracking unique registrants
+            avg_model_size: 0, // This would require calculating average
+            most_popular_category: None, // This would require analyzing categories
+        })
     }
 
-    /// Verify the signature of a registry entry
-    fn validate_entry(&self, entry: &ModelRegistryEntry) -> Result<()> {
-        let mut message = Vec::new();
-        message.extend_from_slice(entry.model_id.as_bytes());
-        message.extend_from_slice(&entry.hash_sha256);
-        message.extend_from_slice(&entry.version.to_be_bytes());
-        message.extend_from_slice(&entry.activation_round.to_be_bytes());
-
-        let verifying_key = VerifyingKey::from_bytes(&entry.signer_pubkey)
-            .map_err(|_| anyhow::anyhow!("Invalid signer public key"))?;
-
-        let signature = Signature::from_bytes(&entry.signature);
-
-        verifying_key
-            .verify(&message, &signature)
-            .map_err(|_| anyhow::anyhow!("Invalid signature"))
+    /// Get configuration
+    pub fn config(&self) -> &RegistryConfig {
+        &self.config
     }
 }
 
 impl Default for ModelRegistry {
     fn default() -> Self {
-        Self::new()
+        let config = RegistryConfig {
+            min_registration_fee: 1000,
+            max_registration_fee: 1000000,
+            default_execution_fee: 100,
+            storage_fee_per_byte_per_day: 1,
+            proposal_fee: 10000,
+            voting_period_seconds: 86400 * 7, // 7 days
+            execution_period_seconds: 86400 * 14, // 14 days
+            min_voting_power: 1000,
+            max_model_size: 1024 * 1024 * 100, // 100MB
+            max_parameter_count: 1_000_000_000, // 1B parameters
+        };
+        
+        Self::new(
+            RegistryStorage::new(None).unwrap(),
+            config,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_model_id() -> ModelId {
+        ModelId {
+            name: "test_model".to_string(),
+            version: "1.0.0".to_string(),
+            hash: "abc123".to_string(),
+        }
+    }
+
+    fn create_test_metadata() -> ModelMetadata {
+        ModelMetadata {
+            id: create_test_model_id(),
+            architecture: "GBDT".to_string(),
+            input_shape: vec![10],
+            output_shape: vec![1],
+            parameter_count: 1000,
+            size_bytes: 10000,
+            created_at: 1234567890,
+            description: Some("Test model".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_model_registration() {
+        let storage = RegistryStorage::new(None).unwrap();
+        let config = RegistryConfig {
+            min_registration_fee: 1000,
+            max_registration_fee: 1000000,
+            default_execution_fee: 100,
+            storage_fee_per_byte_per_day: 1,
+            proposal_fee: 10000,
+            voting_period_seconds: 86400 * 7,
+            execution_period_seconds: 86400 * 14,
+            min_voting_power: 1000,
+            max_model_size: 1024 * 1024 * 100,
+            max_parameter_count: 1_000_000_000,
+        };
+        let mut registry = ModelRegistry::new(storage, config);
+        
+        let model_id = create_test_model_id();
+        let metadata = create_test_metadata();
+        
+        let registration = registry.register_model(
+            model_id.clone(),
+            metadata,
+            "test_user".to_string(),
+            ModelCategory::Other,
+            Some("Test description".to_string()),
+            Some("MIT".to_string()),
+            Some("https://example.com".to_string()),
+            vec!["test".to_string()],
+        ).await.unwrap();
+        
+        assert_eq!(registration.status, RegistrationStatus::Pending);
+        assert_eq!(registration.model_id.name, "test_model");
+    }
+
+    #[tokio::test]
+    async fn test_model_status_update() {
+        let storage = RegistryStorage::new(None).unwrap();
+        let config = RegistryConfig {
+            min_registration_fee: 1000,
+            max_registration_fee: 1000000,
+            default_execution_fee: 100,
+            storage_fee_per_byte_per_day: 1,
+            proposal_fee: 10000,
+            voting_period_seconds: 86400 * 7,
+            execution_period_seconds: 86400 * 14,
+            min_voting_power: 1000,
+            max_model_size: 1024 * 1024 * 100,
+            max_parameter_count: 1_000_000_000,
+        };
+        let mut registry = ModelRegistry::new(storage, config);
+        
+        let model_id = create_test_model_id();
+        let metadata = create_test_metadata();
+        
+        registry.register_model(
+            model_id.clone(),
+            metadata,
+            "test_user".to_string(),
+            ModelCategory::Other,
+            None,
+            None,
+            None,
+            vec![],
+        ).await.unwrap();
+        
+        registry.update_model_status(&model_id, RegistrationStatus::Approved).await.unwrap();
+        
+        let registration = registry.get_model_registration(&model_id).await.unwrap().unwrap();
+        assert_eq!(registration.status, RegistrationStatus::Approved);
     }
 }

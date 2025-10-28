@@ -17,23 +17,22 @@
 //! - [`SupplyTracker`]: Total supply monitoring and integrity verification
 //! - [`GovernanceParams`]: On-chain configurable emission parameters
 
-pub mod emission;
 pub mod distribution;
+pub mod emission;
+pub mod errors;
 pub mod supply;
 pub mod types;
-pub mod errors;
 
-pub use emission::EmissionEngine;
 pub use distribution::RoundRewards;
+pub use emission::EmissionEngine;
+pub use errors::*;
 pub use supply::SupplyTracker;
 pub use types::*;
-pub use errors::*;
 
 /// Re-export commonly used types for convenience
 pub mod prelude {
     pub use crate::{
-        EmissionEngine, RoundRewards, SupplyTracker,
-        EmissionParams, RoundIndex, RewardAmount, ValidatorReward,
-        EmissionError, DistributionError,
+        DistributionError, EmissionEngine, EmissionError, EmissionParams, RewardAmount, RoundIndex,
+        RoundRewards, SupplyTracker, ValidatorReward,
     };
 }

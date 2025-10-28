@@ -10,7 +10,7 @@ use ippan_types::{Amount, Transaction};
 use serde::{Deserialize, Serialize};
 
 /// L1 Transaction category for fee classification
-/// 
+///
 /// L1 has NO smart contracts - only pure consensus operations.
 /// All smart contracts are handled in L2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,7 +28,7 @@ pub enum TxKind {
 }
 
 /// L1 Fee cap configuration (values in atomic IPN units)
-/// 
+///
 /// Only L1 operations - no smart contracts or AI calls
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeCapConfig {
@@ -42,11 +42,11 @@ pub struct FeeCapConfig {
 impl Default for FeeCapConfig {
     fn default() -> Self {
         Self {
-            cap_transfer: Amount::from_micro_ipn(100),            // 0.0001 IPN (minimal)
-            cap_l2_anchor: Amount::from_micro_ipn(1_000),         // 0.001 IPN (L2 state commitment)
-            cap_l2_exit: Amount::from_micro_ipn(2_000),           // 0.002 IPN (L2 exit request)
-            cap_governance: Amount::from_micro_ipn(10_000),       // 0.01 IPN
-            cap_validator: Amount::from_micro_ipn(10_000),        // 0.01 IPN
+            cap_transfer: Amount::from_micro_ipn(100), // 0.0001 IPN (minimal)
+            cap_l2_anchor: Amount::from_micro_ipn(1_000), // 0.001 IPN (L2 state commitment)
+            cap_l2_exit: Amount::from_micro_ipn(2_000), // 0.002 IPN (L2 exit request)
+            cap_governance: Amount::from_micro_ipn(10_000), // 0.01 IPN
+            cap_validator: Amount::from_micro_ipn(10_000), // 0.01 IPN
         }
     }
 }
@@ -68,13 +68,17 @@ impl FeeCapConfig {
 #[derive(thiserror::Error, Debug)]
 pub enum FeeError {
     #[error("Fee {actual} exceeds cap {cap} for {kind:?}")]
-    FeeAboveCap { kind: TxKind, actual: Amount, cap: Amount },
+    FeeAboveCap {
+        kind: TxKind,
+        actual: Amount,
+        cap: Amount,
+    },
     #[error("Fee must be positive")]
     ZeroFee,
 }
 
 /// Determine L1 transaction kind heuristically
-/// 
+///
 /// L1 only handles basic operations - no smart contracts or AI calls
 pub fn classify_transaction(tx: &Transaction) -> TxKind {
     if let Some(topic) = tx.topics.first() {
@@ -100,7 +104,11 @@ pub fn validate_fee(tx: &Transaction, fee: Amount, config: &FeeCapConfig) -> Res
     let cap = config.get_cap(kind);
 
     if fee > cap {
-        Err(FeeError::FeeAboveCap { kind, actual: fee, cap })
+        Err(FeeError::FeeAboveCap {
+            kind,
+            actual: fee,
+            cap,
+        })
     } else {
         Ok(())
     }
@@ -168,11 +176,26 @@ mod tests {
 
     #[test]
     fn classify_basic() {
-        assert_eq!(classify_transaction(&tx_with_topic("l2_anchor")), TxKind::L2Anchor);
-        assert_eq!(classify_transaction(&tx_with_topic("l2_exit")), TxKind::L2Exit);
-        assert_eq!(classify_transaction(&tx_with_topic("governance")), TxKind::Governance);
-        assert_eq!(classify_transaction(&tx_with_topic("validator_stake")), TxKind::Validator);
-        assert_eq!(classify_transaction(&tx_with_topic("random_topic")), TxKind::Transfer);
+        assert_eq!(
+            classify_transaction(&tx_with_topic("l2_anchor")),
+            TxKind::L2Anchor
+        );
+        assert_eq!(
+            classify_transaction(&tx_with_topic("l2_exit")),
+            TxKind::L2Exit
+        );
+        assert_eq!(
+            classify_transaction(&tx_with_topic("governance")),
+            TxKind::Governance
+        );
+        assert_eq!(
+            classify_transaction(&tx_with_topic("validator_stake")),
+            TxKind::Validator
+        );
+        assert_eq!(
+            classify_transaction(&tx_with_topic("random_topic")),
+            TxKind::Transfer
+        );
     }
 
     #[test]

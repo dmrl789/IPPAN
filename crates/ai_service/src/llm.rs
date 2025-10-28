@@ -1,7 +1,7 @@
 //! LLM integration module
 
-use crate::types::{LLMRequest, LLMResponse, LLMUsage, LLMConfig};
 use crate::errors::AIServiceError;
+use crate::types::{LLMConfig, LLMRequest, LLMResponse, LLMUsage};
 use serde_json::json;
 use std::time::Duration;
 
@@ -37,7 +37,8 @@ impl LLMService {
             "stream": request.stream
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&format!("{}/chat/completions", self.config.api_endpoint))
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .header("Content-Type", "application/json")
@@ -50,23 +51,26 @@ impl LLMService {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AIServiceError::LLMError(format!(
                 "API request failed: {} - {}",
-                status,
-                error_text
+                status, error_text
             )));
         }
 
         let response_json: serde_json::Value = response.json().await?;
-        
-        let choice = response_json["choices"][0].as_object()
+
+        let choice = response_json["choices"][0]
+            .as_object()
             .ok_or_else(|| AIServiceError::LLMError("Invalid response format".to_string()))?;
 
-        let message = choice["message"]["content"].as_str()
+        let message = choice["message"]["content"]
+            .as_str()
             .ok_or_else(|| AIServiceError::LLMError("No content in response".to_string()))?;
 
-        let usage = response_json["usage"].as_object()
+        let usage = response_json["usage"]
+            .as_object()
             .ok_or_else(|| AIServiceError::LLMError("No usage data in response".to_string()))?;
 
-        let finish_reason = choice["finish_reason"].as_str()
+        let finish_reason = choice["finish_reason"]
+            .as_str()
             .unwrap_or("unknown")
             .to_string();
 
