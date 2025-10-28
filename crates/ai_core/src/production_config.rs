@@ -9,20 +9,18 @@
 //! - Secrets management
 
 use crate::feature_engineering::FeatureEngineeringConfig;
-use crate::gbdt::{GBDTError, GBDTModel, SecurityConstraints};
+use crate::gbdt::{GBDTError, SecurityConstraints};
 use crate::model_manager::ModelManagerConfig;
 use crate::monitoring::MonitoringConfig;
 use crate::security::SecurityConfig;
-// Duplicate import removed; GBDTError is already imported from crate::gbdt
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
-use tokio::sync::RwLock as AsyncRwLock;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{info, instrument};
 
 /// Environment types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -225,37 +223,192 @@ impl ProductionConfig {
             warnings,
         }
     }
+}
 
-    pub fn get_environment_overrides(&self) -> HashMap<String, String> {
-        let mut overrides = HashMap::new();
-
-        match self.environment {
-            Environment::Production => {
-                overrides.insert("log_level".to_string(), "info".to_string());
-                overrides.insert("enable_debug_mode".to_string(), "false".to_string());
-                overrides.insert(
-                    "enable_experimental_features".to_string(),
-                    "false".to_string(),
-                );
-            }
-            Environment::Development => {
-                overrides.insert("log_level".to_string(), "debug".to_string());
-                overrides.insert("enable_debug_mode".to_string(), "true".to_string());
-                overrides.insert("enable_detailed_logging".to_string(), "true".to_string());
-            }
-            Environment::Staging => {
-                overrides.insert("log_level".to_string(), "warn".to_string());
-                overrides.insert("enable_debug_mode".to_string(), "false".to_string());
-            }
-            Environment::Testing => {
-                overrides.insert("log_level".to_string(), "error".to_string());
-                overrides.insert("enable_debug_mode".to_string(), "true".to_string());
-            }
+impl Default for GBDTConfig {
+    fn default() -> Self {
+        Self {
+            default_security_constraints: SecurityConstraints::default(),
+            enable_model_caching: true,
+            cache_ttl_seconds: 3600,
+            max_cache_size_bytes: 100 * 1024 * 1024,
+            enable_evaluation_batching: true,
+            evaluation_batch_size: 100,
+            enable_parallel_evaluation: true,
+            max_parallel_evaluations: 4,
         }
-
-        overrides
     }
 }
 
-// Remaining impl blocks (Default, Manager, templates, and #[cfg(test)]) are unchanged
-// ✅ They already pass validation and test cases.
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        Self {
+            max_memory_bytes: 2 * 1024 * 1024 * 1024,
+            max_cpu_percent: 80.0,
+            max_disk_bytes: 10 * 1024 * 1024 * 1024,
+            max_network_bandwidth_bps: 100 * 1024 * 1024,
+            max_file_descriptors: 1024,
+            max_threads: 16,
+        }
+    }
+}
+
+impl Default for FeatureFlags {
+    fn default() -> Self {
+        Self {
+            enable_new_gbdt_features: true,
+            enable_experimental_features: false,
+            enable_debug_mode: false,
+            enable_performance_profiling: false,
+            enable_detailed_logging: false,
+            enable_model_versioning: true,
+            enable_automatic_model_updates: false,
+        }
+    }
+}
+
+impl Default for DeploymentConfig {
+    fn default() -> Self {
+        Self {
+            region: "us-west-2".to_string(),
+            availability_zone: "us-west-2a".to_string(),
+            cluster_name: "ippan-cluster".to_string(),
+            node_role: "worker".to_string(),
+            enable_auto_scaling: true,
+            min_instances: 1,
+            max_instances: 10,
+            health_check_interval_seconds: 30,
+            graceful_shutdown_timeout_seconds: 30,
+        }
+    }
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            log_level: "info".to_string(),
+            log_format: "json".to_string(),
+            enable_structured_logging: true,
+            log_file_path: None,
+            enable_log_rotation: true,
+            max_log_file_size_mb: 100,
+            max_log_files: 10,
+            enable_remote_logging: false,
+            remote_logging_endpoint: None,
+        }
+    }
+}
+
+impl ProductionConfigManager {
+    pub fn new(config_path: PathBuf) -> Self {
+        Self {
+            config: Arc::new(RwLock::new(ProductionConfig::default_for_environment(Environment::Development))),
+            config_path,
+            last_loaded: Arc::new(RwLock::new(SystemTime::now())),
+            watchers: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    #[instrument(skip(self))]
+    pub async fn load_config(&self) -> Result<(), GBDTError> {
+        if !self.config_path.exists() {
+            return Err(GBDTError::ModelValidationFailed {
+                reason: format!("Configuration file not found: {}", self.config_path.display()),
+            });
+        }
+
+        let config_data = fs::read_to_string(&self.config_path)
+            .await
+            .context("Failed to read configuration file")
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to read configuration file: {}", e),
+            })?;
+
+        let config: ProductionConfig = toml::from_str(&config_data)
+            .context("Failed to parse configuration file")
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to parse configuration file: {}", e),
+            })?;
+
+        let validation = config.validate();
+        if !validation.is_valid {
+            return Err(GBDTError::ModelValidationFailed {
+                reason: format!("Configuration validation failed: {:?}", validation.errors),
+            });
+        }
+
+        *self.config.write().unwrap() = config;
+        *self.last_loaded.write().unwrap() = SystemTime::now();
+        self.notify_watchers().await;
+
+        info!("Configuration loaded successfully from {}", self.config_path.display());
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn save_config(&self) -> Result<(), GBDTError> {
+        let config = self.config.read().unwrap().clone();
+        let validation = config.validate();
+        if !validation.is_valid {
+            return Err(GBDTError::ModelValidationFailed {
+                reason: format!("Configuration validation failed: {:?}", validation.errors),
+            });
+        }
+
+        let config_data = toml::to_string_pretty(&config)
+            .context("Failed to serialize configuration")
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to serialize configuration: {}", e),
+            })?;
+
+        fs::write(&self.config_path, config_data)
+            .await
+            .context("Failed to write configuration file")
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to write configuration file: {}", e),
+            })?;
+
+        info!("Configuration saved successfully to {}", self.config_path.display());
+        Ok(())
+    }
+
+    pub fn get_config(&self) -> ProductionConfig {
+        self.config.read().unwrap().clone()
+    }
+
+    pub async fn update_config<F>(&self, updater: F) -> Result<(), GBDTError>
+    where
+        F: FnOnce(&mut ProductionConfig),
+    {
+        let mut config = self.config.write().unwrap();
+        updater(&mut config);
+        let validation = config.validate();
+        if !validation.is_valid {
+            return Err(GBDTError::ModelValidationFailed {
+                reason: format!("Configuration validation failed: {:?}", validation.errors),
+            });
+        }
+        self.notify_watchers().await;
+        Ok(())
+    }
+
+    pub fn add_watcher(&self, watcher: Box<dyn ConfigWatcher + Send + Sync>) {
+        self.watchers.write().unwrap().push(watcher);
+    }
+
+    async fn notify_watchers(&self) {
+        let config = self.get_config();
+        let watchers = self.watchers.read().unwrap();
+        for watcher in watchers.iter() {
+            watcher.on_config_changed(&config);
+        }
+    }
+}
+
+/// Configuration export formats
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConfigFormat {
+    Toml,
+    Json,
+    Yaml,
+}
