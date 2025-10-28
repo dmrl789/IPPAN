@@ -1,17 +1,17 @@
 //! Tests for deterministic GBDT + IPPAN Time integration
-//! Verifies identical inference results across nodes with
-//! different local system times but same IPPAN Time median.
+//!
+//! Ensures identical inference results across nodes using
+//! the same IPPAN Time median and HashTimer anchor.
 
 use ai_core::deterministic_gbdt::{
-    compute_scores, normalize_features, DecisionNode, DeterministicGBDT, GBDTTree, ValidatorFeatures,
+    compute_scores, normalize_features, DecisionNode, DeterministicGBDT, GBDTTree,
 };
 use std::collections::HashMap;
 
+/// Build a simple deterministic GBDT model
 fn build_simple_model() -> DeterministicGBDT {
-    // Two tiny trees to exercise traversal and accumulation
     let tree1 = GBDTTree {
         nodes: vec![
-            // root: if feature[0] <= 0 go left else right
             DecisionNode {
                 feature: 0,
                 threshold: 0.0,
@@ -19,7 +19,6 @@ fn build_simple_model() -> DeterministicGBDT {
                 right: Some(2),
                 value: None,
             },
-            // left leaf
             DecisionNode {
                 feature: 0,
                 threshold: 0.0,
@@ -27,7 +26,6 @@ fn build_simple_model() -> DeterministicGBDT {
                 right: None,
                 value: Some(1.5),
             },
-            // right leaf
             DecisionNode {
                 feature: 0,
                 threshold: 0.0,
@@ -40,7 +38,6 @@ fn build_simple_model() -> DeterministicGBDT {
 
     let tree2 = GBDTTree {
         nodes: vec![
-            // root: if feature[1] <= 1.0 go left else right
             DecisionNode {
                 feature: 1,
                 threshold: 1.0,
@@ -48,7 +45,6 @@ fn build_simple_model() -> DeterministicGBDT {
                 right: Some(2),
                 value: None,
             },
-            // left leaf
             DecisionNode {
                 feature: 1,
                 threshold: 0.0,
@@ -56,7 +52,6 @@ fn build_simple_model() -> DeterministicGBDT {
                 right: None,
                 value: Some(0.25),
             },
-            // right leaf
             DecisionNode {
                 feature: 1,
                 threshold: 0.0,
@@ -86,7 +81,7 @@ fn deterministic_prediction_same_features() {
 
 #[test]
 fn normalize_features_clock_offset_cancels_when_median_also_offset() {
-    // Simulate two observers with +5000µs clock offset, but both use IPPAN median also +5000µs
+    // Simulate two observers with +5000µs clock offset, both using IPPAN median also +5000µs
     let telemetry_a: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
         ("nodeA".into(), (100_000, 1.2, 99.9, 0.42)),
         ("nodeB".into(), (100_080, 0.9, 99.8, 0.38)),
@@ -145,4 +140,61 @@ fn compute_scores_and_certificate_consistency() {
 
     assert_eq!(cert_a, cert_b);
     assert!(!cert_a.is_empty());
+}
+
+#[test]
+fn cross_node_consensus_scores_identical() {
+    // All nodes compute identical scores given same telemetry + HashTimer
+    let model = build_simple_model();
+    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
+        ("val1".into(), (10_000_050, 1.2, 99.9, 0.95)),
+        ("val2".into(), (10_000_100, 2.5, 98.5, 0.85)),
+    ]);
+    let median = 10_000_000_i64;
+    let round_ht = "round_42_hashtimer_abc123";
+
+    let f1 = normalize_features(&telemetry, median);
+    let s1 = compute_scores(&model, &f1, round_ht);
+
+    let f2 = normalize_features(&telemetry, median);
+    let s2 = compute_scores(&model, &f2, round_ht);
+
+    let f3 = normalize_features(&telemetry, median);
+    let s3 = compute_scores(&model, &f3, round_ht);
+
+    assert_eq!(s1, s2);
+    assert_eq!(s2, s3);
+}
+
+#[test]
+fn model_hash_is_reproducible() {
+    let model = build_simple_model();
+    let round_ht = "hash_42_test";
+    let h1 = model.model_hash(round_ht);
+    let h2 = model.model_hash(round_ht);
+    assert_eq!(h1, h2);
+}
+
+#[test]
+fn fixed_point_prediction_stable() {
+    let model = build_simple_model();
+    let features = vec![1.0, 2.0, 3.0, 4.0];
+    let y1 = model.predict(&features);
+    let y2 = model.predict(&features);
+    assert!((y1 - y2).abs() < 1e-12);
+}
+
+#[test]
+fn normalize_features_produces_expected_dimensions() {
+    let median = 5_000_000;
+    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
+        ("validator1".into(), (5_000_100, 1.0, 99.5, 0.9)),
+        ("validator2".into(), (4_999_900, 2.5, 98.0, 0.7)),
+    ]);
+
+    let feats = normalize_features(&telemetry, median);
+    assert_eq!(feats.len(), 2);
+    for f in feats {
+        assert!(f.node_id.starts_with("validator"));
+    }
 }

@@ -1,22 +1,21 @@
 //! Deterministic Gradient-Boosted Decision Tree (GBDT) inference
 //! Anchored to IPPAN Time and HashTimer for consensus-safe validator scoring.
 //!
-//! Ensures that every node computes identical predictions, rankings, and
-//! model hashes during a round — regardless of clock drift or architecture.
+//! Ensures identical predictions, rankings, and hashes across all validator nodes.
 
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{collections::HashMap, fs, path::Path};
 use tracing::{info, warn};
 
-/// Fixed-point arithmetic precision (1e-6)
+/// Fixed-point arithmetic precision (1 µ = 1e-6)
 const FP_PRECISION: f64 = 1_000_000.0;
 
 /// Normalized validator telemetry (anchored to IPPAN Time)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorFeatures {
     pub node_id: String,
-    pub delta_time_us: i64, // difference from IPPAN median time (µs)
+    pub delta_time_us: i64, // deviation from IPPAN Time median (µs)
     pub latency_ms: f64,
     pub uptime_pct: f64,
     pub peer_entropy: f64,
@@ -55,8 +54,6 @@ pub enum DeterministicGBDTError {
     ModelLoadError(String),
     #[error("Invalid model structure: {0}")]
     InvalidModelStructure(String),
-    #[error("Feature vector size mismatch: expected {expected}, got {actual}")]
-    FeatureSizeMismatch { expected: usize, actual: usize },
     #[error("Invalid node reference in tree {tree} node {node}")]
     InvalidNodeReference { tree: usize, node: usize },
     #[error("Serialization error: {0}")]
@@ -65,7 +62,7 @@ pub enum DeterministicGBDTError {
 
 impl DeterministicGBDT {
     // ---------------------------------------------------------------------
-    // Loading & saving
+    // Loading / saving
     // ---------------------------------------------------------------------
 
     pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, DeterministicGBDTError> {
@@ -106,7 +103,7 @@ impl DeterministicGBDT {
     // Deterministic inference
     // ---------------------------------------------------------------------
 
-    /// Deterministic prediction using fixed-point math
+    /// Deterministic prediction using fixed-point arithmetic
     pub fn predict(&self, features: &[f64]) -> f64 {
         let mut score_fp: i64 = 0;
 
@@ -145,7 +142,7 @@ impl DeterministicGBDT {
         (score_fp as f64 / FP_PRECISION) * self.learning_rate
     }
 
-    /// Compute deterministic model certificate hash
+    /// Deterministic model certificate hash (anchors to HashTimer)
     pub fn model_hash(&self, round_hash_timer: &str) -> String {
         let serialized = serde_json::to_string(self).unwrap();
         let mut hasher = Sha3_256::new();
@@ -158,7 +155,7 @@ impl DeterministicGBDT {
     pub fn validate(&self) -> Result<(), DeterministicGBDTError> {
         if self.trees.is_empty() {
             return Err(DeterministicGBDTError::InvalidModelStructure(
-                "Model has no trees".to_string(),
+                "Model has no trees".into(),
             ));
         }
 
@@ -193,11 +190,11 @@ impl DeterministicGBDT {
 }
 
 // ---------------------------------------------------------------------
-// Feature normalization and scoring
+// Feature normalization & scoring
 // ---------------------------------------------------------------------
 
 /// Normalize raw telemetry using IPPAN Time median.
-/// Input: map of node_id → (local_time_us, latency_ms, uptime, entropy)
+/// Input: map (node_id → (local_time_us, latency_ms, uptime, entropy))
 pub fn normalize_features(
     telemetry: &HashMap<String, (i64, f64, f64, f64)>,
     ippan_time_median: i64,
@@ -297,9 +294,9 @@ mod tests {
     #[test]
     fn test_model_hash_consistency() {
         let model = create_test_model();
-        let hash1 = model.model_hash("test_round");
-        let hash2 = model.model_hash("test_round");
-        assert_eq!(hash1, hash2);
+        let h1 = model.model_hash("round1");
+        let h2 = model.model_hash("round1");
+        assert_eq!(h1, h2);
     }
 
     #[test]
