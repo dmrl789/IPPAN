@@ -565,26 +565,43 @@ async fn handle_p2p_transactions(
 async fn handle_p2p_block_request(
     State(state): State<SharedState>,
     Json(msg): Json<NetworkMessage>,
-) -> Result<StatusCode, ApiError> {
+) -> Result<Response, ApiError> {
     if let NetworkMessage::BlockRequest { hash } = msg {
         // Log the block request for debugging
         debug!("Received block request for hash: {}", hex::encode(hash));
         
         // Check if we have the block
-        if let Some(_block) = state
+        match state
             .storage
             .get_block(&hash)
             .map_err(|e| ApiError::internal(format!("failed to read block: {e}")))?
         {
-            debug!("Block found for requested hash: {}", hex::encode(hash));
-            // Note: In a full implementation, we would need a way to send the response back
-            // For now, we just log that we have the block
-        } else {
-            debug!("Block not found for requested hash: {}", hex::encode(hash));
+            Some(block) => {
+                debug!("Block found for requested hash: {}", hex::encode(hash));
+                // Return the block as a BlockResponse in the HTTP response body
+                let response = NetworkMessage::BlockResponse(block);
+                let json = serde_json::to_string(&response)
+                    .map_err(|e| ApiError::internal(format!("failed to serialize block response: {e}")))?;
+                
+                Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/json")
+                    .body(json.into())
+                    .map_err(|e| ApiError::internal(format!("failed to build response: {e}")))?)
+            }
+            None => {
+                debug!("Block not found for requested hash: {}", hex::encode(hash));
+                Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body("Block not found".into())
+                    .map_err(|e| ApiError::internal(format!("failed to build response: {e}")))?)
+            }
         }
-        Ok(StatusCode::OK)
     } else {
-        Ok(StatusCode::OK)
+        Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body("Invalid message type".into())
+            .map_err(|e| ApiError::internal(format!("failed to build response: {e}")))?)
     }
 }
 

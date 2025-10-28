@@ -440,6 +440,47 @@ impl HttpP2PNetwork {
         Ok(())
     }
 
+    /// Request a block from a specific peer and wait for response
+    pub async fn request_block_from_peer(&self, hash: [u8; 32], peer_address: &str) -> Result<Option<Block>> {
+        let client = reqwest::Client::new();
+        let message = NetworkMessage::BlockRequest { hash };
+        
+        let url = format!("{}/p2p/block-request", peer_address.trim_end_matches('/'));
+        
+        match client.post(&url).json(&message).send().await {
+            Ok(response) if response.status().is_success() => {
+                let response_text = response.text().await
+                    .map_err(|e| anyhow::anyhow!("Failed to read response: {}", e))?;
+                
+                let network_message: NetworkMessage = serde_json::from_str(&response_text)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse response: {}", e))?;
+                
+                match network_message {
+                    NetworkMessage::BlockResponse(block) => {
+                        debug!("Received block response for hash: {}", hex::encode(hash));
+                        Ok(Some(block))
+                    }
+                    _ => {
+                        warn!("Unexpected response type for block request");
+                        Ok(None)
+                    }
+                }
+            }
+            Ok(response) if response.status() == 404 => {
+                debug!("Block not found on peer {}", peer_address);
+                Ok(None)
+            }
+            Ok(response) => {
+                warn!("Unexpected status code {} from peer {}", response.status(), peer_address);
+                Ok(None)
+            }
+            Err(e) => {
+                warn!("Failed to request block from peer {}: {}", peer_address, e);
+                Ok(None)
+            }
+        }
+    }
+
     fn local_advertised_addresses(&self) -> Vec<String> {
         let mut addresses = vec![self.announce_address.read().clone()];
         if !addresses.contains(&self.local_address) {
