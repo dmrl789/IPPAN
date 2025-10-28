@@ -175,7 +175,8 @@ impl ModelManager {
         let start = std::time::Instant::now();
 
         if self.config.enable_integrity_checking {
-            self.validate_model(model).await?;
+            let mut model_clone = model.clone();
+            self.validate_model(&mut model_clone).await?;
         }
 
         let serialized_size =
@@ -274,7 +275,7 @@ impl ModelManager {
         Ok(package.model)
     }
 
-    async fn validate_model(&self, model: &GBDTModel) -> Result<bool, GBDTError> {
+    async fn validate_model(&self, model: &mut GBDTModel) -> Result<bool, GBDTError> {
         model.validate()?;
 
         let expected = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);

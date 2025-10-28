@@ -10,7 +10,7 @@ use crate::deployment::{DeploymentStatus, HealthStatus, ProductionDeployment};
 use crate::feature_engineering::{
     FeatureEngineeringConfig, FeatureEngineeringPipeline, RawFeatureData,
 };
-use crate::gbdt::{GBDTError, GBDTModel};
+use crate::gbdt::GBDTModel;
 use crate::model_manager::{ModelManager, ModelManagerConfig};
 use crate::monitoring::{MonitoringConfig, MonitoringSystem};
 use crate::production_config::{Environment, ProductionConfig, ProductionConfigManager};
@@ -309,7 +309,7 @@ impl BenchmarkSuite {
 
         let start = Instant::now();
         for _ in 0..iterations {
-            let _ = model.evaluate(&features);
+            let _ = model.evaluate(&features)?;
         }
         let duration = start.elapsed();
         let evals_per_sec = iterations as f64 / duration.as_secs_f64();
@@ -350,11 +350,7 @@ impl BenchmarkSuite {
         let start = Instant::now();
 
         for _ in 0..iterations {
-            monitoring.record_metric(
-                "eval_time_ms".to_string(),
-                10.0,
-                HashMap::new(),
-            );
+            monitoring.record_metric("eval_time_ms".to_string(), 10.0, HashMap::new());
         }
 
         let duration = start.elapsed();
@@ -374,7 +370,7 @@ impl BenchmarkSuite {
         let start = Instant::now();
 
         for _ in 0..iterations {
-            // placeholder for validation or sandbox call
+            // Placeholder for validation or sandbox call
         }
 
         let duration = start.elapsed();

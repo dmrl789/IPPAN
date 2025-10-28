@@ -85,6 +85,7 @@ pub use production_config::{
 };
 
 // Test suites and benchmarks
+#[cfg(test)]
 pub use tests::{test_utils, BenchmarkSuite, TestConfig, TestResult, TestSuite};
 
 // Health and monitoring

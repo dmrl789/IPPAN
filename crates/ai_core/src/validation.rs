@@ -277,6 +277,7 @@ impl ModelValidator {
             warn!("Large model may impact deterministic validation speed");
         }
 
+        // Verify deterministic hash presence
         if metadata.id.hash.is_empty() {
             return Err(ValidationError {
                 error_type: "DeterminismCheck".into(),

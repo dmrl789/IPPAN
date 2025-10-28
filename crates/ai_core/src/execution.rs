@@ -239,7 +239,7 @@ impl ExecutionEngine {
 
     /// Estimate CPU cycles from duration
     fn estimate_cpu_cycles(&self, d: std::time::Duration) -> u64 {
-        const FREQ: u64 = 3_000_000_000; // 3GHz
+        const FREQ: u64 = 3_000_000_000; // 3 GHz
         (d.as_secs_f64() * FREQ as f64) as u64
     }
 

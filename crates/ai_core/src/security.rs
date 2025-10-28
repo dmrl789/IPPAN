@@ -90,7 +90,7 @@ pub struct AuditEntry {
     pub resource: Option<String>,
 }
 
-/// Security severity
+/// Security severity levels
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SecuritySeverity {
     Low,
@@ -145,7 +145,7 @@ impl SecuritySystem {
         self.config.allowed_sources.contains(&source.to_string())
     }
 
-    /// Validate execution parameters
+    /// Validate execution parameters (time + memory)
     pub fn validate_execution(
         &self,
         execution_time: u64,
@@ -168,12 +168,12 @@ impl SecuritySystem {
         Ok(())
     }
 
-    /// Get audit log
+    /// Get all audit log entries
     pub fn get_audit_log(&self) -> &Vec<AuditEntry> {
         &self.audit_log
     }
 
-    /// Get only critical/high violations
+    /// Get only critical or high-severity violations
     pub fn get_violations(&self) -> Vec<&AuditEntry> {
         self.audit_log
             .iter()
@@ -199,4 +199,68 @@ pub enum SecurityError {
 
     #[error("Security policy violation: {policy}")]
     PolicyViolation { policy: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_security_config() {
+        let cfg = SecurityConfig::default();
+        assert!(cfg.enabled);
+        assert!(cfg.enable_input_validation);
+        assert_eq!(cfg.max_requests_per_minute, 1000);
+        assert!(cfg.policies.require_model_signing);
+    }
+
+    #[test]
+    fn test_is_source_allowed() {
+        let cfg = SecurityConfig::default();
+        let sys = SecuritySystem::new(cfg);
+        assert!(sys.is_source_allowed("local"));
+        assert!(!sys.is_source_allowed("unauthorized"));
+    }
+
+    #[test]
+    fn test_validate_execution_limits() {
+        let sys = SecuritySystem::new(SecurityConfig::default());
+        assert!(sys.validate_execution(5, 512 * 1024 * 1024).is_ok());
+        assert!(sys.validate_execution(100, 512 * 1024 * 1024).is_err());
+    }
+
+    #[test]
+    fn test_audit_logging() {
+        let mut sys = SecuritySystem::new(SecurityConfig::default());
+        sys.log_audit(
+            "TestEvent".into(),
+            "Testing log".into(),
+            SecuritySeverity::Low,
+            Some("user1".into()),
+            Some("resourceA".into()),
+        );
+        assert_eq!(sys.get_audit_log().len(), 1);
+    }
+
+    #[test]
+    fn test_violations_filter() {
+        let mut sys = SecuritySystem::new(SecurityConfig::default());
+        sys.log_audit(
+            "Warning".into(),
+            "Minor issue".into(),
+            SecuritySeverity::Low,
+            None,
+            None,
+        );
+        sys.log_audit(
+            "Critical breach".into(),
+            "Unauthorized model load".into(),
+            SecuritySeverity::Critical,
+            None,
+            None,
+        );
+        let v = sys.get_violations();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].event_type, "Critical breach");
+    }
 }

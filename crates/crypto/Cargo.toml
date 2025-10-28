@@ -29,6 +29,9 @@ blake3 = "1.5"
 blake2 = "0.10"
 hex = "0.4"
 base64 = "0.21"
+thiserror = "1.0"
+winterfell = "0.13.1"
+ippan-types = { path = "../types" }
 
 # Local workspace crates
 ippan-types = { path = "../types" }

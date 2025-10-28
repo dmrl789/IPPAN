@@ -286,15 +286,27 @@ impl ProductionDeployment {
         })
     }
 
-    async fn check_system_resources(&self) -> bool { true }
-    async fn check_models(&self) -> bool { !self.gbdt_models.read().await.is_empty() }
-    async fn check_monitoring(&self) -> bool { self.monitoring.read().await.is_some() }
-    async fn check_security(&self) -> bool { self.security.read().await.is_some() }
+    async fn check_system_resources(&self) -> bool {
+        true
+    }
+    async fn check_models(&self) -> bool {
+        !self.gbdt_models.read().await.is_empty()
+    }
+    async fn check_monitoring(&self) -> bool {
+        self.monitoring.read().await.is_some()
+    }
+    async fn check_security(&self) -> bool {
+        self.security.read().await.is_some()
+    }
 
     async fn update_health_metrics(&self, ok: bool) {
         let mut m = self.metrics.write().unwrap();
         m.last_health_check = SystemTime::now();
-        if ok { m.consecutive_failures = 0; } else { m.consecutive_failures += 1; }
+        if ok {
+            m.consecutive_failures = 0;
+        } else {
+            m.consecutive_failures += 1;
+        }
     }
 
     async fn update_startup_metrics(&self) {
@@ -303,9 +315,15 @@ impl ProductionDeployment {
         m.uptime = Duration::ZERO;
     }
 
-    pub fn get_status(&self) -> DeploymentStatus { self.status.read().unwrap().clone() }
-    pub fn get_metrics(&self) -> DeploymentMetrics { self.metrics.read().unwrap().clone() }
-    pub async fn get_health_status(&self) -> Result<HealthCheckResult, GBDTError> { self.perform_health_check().await }
+    pub fn get_status(&self) -> DeploymentStatus {
+        self.status.read().unwrap().clone()
+    }
+    pub fn get_metrics(&self) -> DeploymentMetrics {
+        self.metrics.read().unwrap().clone()
+    }
+    pub async fn get_health_status(&self) -> Result<HealthCheckResult, GBDTError> {
+        self.perform_health_check().await
+    }
 
     #[instrument(skip(self))]
     pub async fn shutdown(&self) -> Result<(), GBDTError> {
@@ -344,11 +362,18 @@ impl ProductionDeployment {
         Ok(())
     }
 
-    pub fn is_ready(&self) -> bool { matches!(self.get_status(), DeploymentStatus::Ready) }
-    pub async fn is_healthy(&self) -> bool {
-        self.perform_health_check().await.map(|r| r.status == HealthStatus::Healthy).unwrap_or(false)
+    pub fn is_ready(&self) -> bool {
+        matches!(self.get_status(), DeploymentStatus::Ready)
     }
-    pub fn get_uptime(&self) -> Duration { self.startup_time.elapsed() }
+    pub async fn is_healthy(&self) -> bool {
+        self.perform_health_check()
+            .await
+            .map(|r| r.status == HealthStatus::Healthy)
+            .unwrap_or(false)
+    }
+    pub fn get_uptime(&self) -> Duration {
+        self.startup_time.elapsed()
+    }
 
     pub async fn get_resource_usage(&self) -> HashMap<String, f64> {
         HashMap::from([

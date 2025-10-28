@@ -15,7 +15,6 @@ use crate::monitoring::MonitoringConfig;
 use crate::security::SecurityConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -297,7 +296,9 @@ impl Default for LoggingConfig {
 impl ProductionConfigManager {
     pub fn new(config_path: PathBuf) -> Self {
         Self {
-            config: Arc::new(RwLock::new(ProductionConfig::default_for_environment(Environment::Development))),
+            config: Arc::new(RwLock::new(ProductionConfig::default_for_environment(
+                Environment::Development,
+            ))),
             config_path,
             last_loaded: Arc::new(RwLock::new(SystemTime::now())),
             watchers: Arc::new(RwLock::new(Vec::new())),
@@ -336,7 +337,10 @@ impl ProductionConfigManager {
         *self.last_loaded.write().unwrap() = SystemTime::now();
         self.notify_watchers().await;
 
-        info!("Configuration loaded successfully from {}", self.config_path.display());
+        info!(
+            "Configuration loaded successfully from {}",
+            self.config_path.display()
+        );
         Ok(())
     }
 
@@ -363,7 +367,10 @@ impl ProductionConfigManager {
                 reason: format!("Failed to write configuration file: {}", e),
             })?;
 
-        info!("Configuration saved successfully to {}", self.config_path.display());
+        info!(
+            "Configuration saved successfully to {}",
+            self.config_path.display()
+        );
         Ok(())
     }
 
