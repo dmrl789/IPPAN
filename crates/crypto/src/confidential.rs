@@ -80,7 +80,6 @@ fn validate_stark_proof(
     tx: &Transaction,
     proof: &ConfidentialProof,
 ) -> Result<(), ConfidentialTransactionError> {
-    // Basic structural validation without full STARK verification
     let _proof_bytes = decode_proof_bytes(&proof.proof)?;
 
     let public_inputs = &proof.public_inputs;
@@ -114,12 +113,29 @@ fn validate_stark_proof(
         return Err(ConfidentialTransactionError::InvalidSequenceLength);
     }
 
-    // Verify result field exists
     let _result_value = parse_numeric_input(public_inputs, "result")?;
 
-    // TODO: Implement full STARK proof verification when winterfell is available
-    // For now, we validate the structure and public inputs but skip cryptographic verification
-    
+    // SECURITY: Full cryptographic verification of the STARK proof
+    // This ensures the confidential transaction is valid and prevents forgery
+    #[cfg(feature = "stark-verification")]
+    {
+        use crate::zk_stark::{verify_fibonacci_proof, StarkProof};
+        let stark_proof = StarkProof::from_bytes(sequence_length, _result_value, &_proof_bytes)?;
+        verify_fibonacci_proof(&stark_proof)?;
+    }
+
+    // SECURITY CRITICAL: Without STARK verification, we MUST reject confidential transactions
+    // to prevent accepting forged or invalid proofs. This is a fail-safe default.
+    #[cfg(not(feature = "stark-verification"))]
+    {
+        return Err(ConfidentialTransactionError::ProofVerificationNotImplemented(
+            "STARK proof verification requires 'stark-verification' feature. \
+             Confidential transactions are rejected by default for security. \
+             Enable the feature flag to accept confidential transactions with full cryptographic verification."
+                .to_string(),
+        ));
+    }
+
     Ok(())
 }
 
@@ -269,12 +285,29 @@ mod tests {
             proof.public_inputs.get("tx_id").unwrap(),
             &hex::encode(canonical.message_digest())
         );
-        validate_transaction(&tx).expect("validation");
+        
+        // SECURITY: Without stark-verification feature, confidential transactions are rejected
+        #[cfg(not(feature = "stark-verification"))]
+        {
+            let result = validate_transaction(&tx);
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                ConfidentialTransactionError::ProofVerificationNotImplemented(_)
+            ));
+        }
+        
+        // With stark-verification feature, full validation occurs
+        #[cfg(feature = "stark-verification")]
+        {
+            validate_transaction(&tx).expect("validation");
+        }
     }
 
     #[test]
     fn rejects_invalid_public_inputs() {
         let (mut tx, mut inputs) = prepare_transaction();
+        // Modify inputs to cause mismatch (but keep tx_id valid so we reach the feature check)
         inputs.insert("sequence_length".into(), "16".into());
         let mock_proof = general_purpose::STANDARD.encode(vec![0u8; 64]);
         tx.set_confidential_proof(ConfidentialProof {
@@ -283,10 +316,35 @@ mod tests {
             public_inputs: inputs,
         });
         let err = validate_transaction(&tx).expect_err("expected failure");
+        
+        // The transaction will fail on tx_id mismatch because we modified inputs after signing
+        // This happens regardless of feature flag (and is correct behavior)
         assert!(matches!(
             err,
             ConfidentialTransactionError::TransactionIdMismatch
         ));
+    }
+
+    #[test]
+    fn rejects_confidential_without_feature_flag() {
+        // Test that confidential transactions are properly rejected when feature flag is disabled
+        let (tx, _) = prepare_transaction();
+        
+        #[cfg(not(feature = "stark-verification"))]
+        {
+            let result = validate_transaction(&tx);
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                ConfidentialTransactionError::ProofVerificationNotImplemented(_)
+            ));
+        }
+        
+        #[cfg(feature = "stark-verification")]
+        {
+            // With feature flag, validation should succeed for valid transactions
+            validate_transaction(&tx).expect("validation succeeds with feature flag");
+        }
     }
 
     #[test]

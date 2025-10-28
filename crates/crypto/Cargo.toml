@@ -9,6 +9,10 @@ repository = "https://github.com/ippan/ippan"
 keywords = ["blockchain", "cryptography", "rust"]
 categories = ["cryptography", "algorithms"]
 
+[features]
+default = []
+stark-verification = []  # Enable full STARK proof verification (requires winterfell in production)
+
 [dependencies]
 ippan-types = { path = "../types" }
 anyhow = "1.0"
@@ -25,3 +29,4 @@ thiserror = "1.0"
 
 [dev-dependencies]
 criterion = "0.5"
+rand_core = "0.6"

@@ -10,6 +10,8 @@ use rand::Rng;
 pub mod hash_functions;
 pub mod merkle_trees;
 pub mod commitment_schemes;
+#[cfg(feature = "stark-verification")]
+pub mod zk_stark;
 pub mod confidential;
 
 pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256, SHA3_256, BLAKE2b};
