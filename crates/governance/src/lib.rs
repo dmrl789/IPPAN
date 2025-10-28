@@ -9,12 +9,12 @@
 //! and cryptographically signed by authorized validators or domain owners.
 
 pub mod ai_models;
-pub mod voting;
 pub mod parameters;
+pub mod voting;
 
 pub use ai_models::*;
-pub use voting::*;
 pub use parameters::*;
+pub use voting::*;
 
 /// Governance module version (for API introspection)
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

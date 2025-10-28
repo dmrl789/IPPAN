@@ -1,8 +1,8 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use ippan_economics::EmissionParams;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 
 /// Governance and Economics parameter management
 ///
@@ -87,7 +87,8 @@ impl ParameterManager {
             ));
         }
 
-        self.pending_changes.insert(proposal.proposal_id.clone(), proposal);
+        self.pending_changes
+            .insert(proposal.proposal_id.clone(), proposal);
         Ok(())
     }
 
@@ -185,12 +186,10 @@ impl ParameterManager {
                     proposal.new_value.as_u64().unwrap();
             }
             "economics.halving_interval_rounds" => {
-                self.parameters.economics.halving_interval =
-                    proposal.new_value.as_u64().unwrap();
+                self.parameters.economics.halving_interval = proposal.new_value.as_u64().unwrap();
             }
             "economics.max_supply_micro" => {
-                self.parameters.economics.total_supply_cap =
-                    proposal.new_value.as_u64().unwrap();
+                self.parameters.economics.total_supply_cap = proposal.new_value.as_u64().unwrap();
             }
             "economics.fee_cap_numer" => {
                 // Note: fee_cap_fraction is a Decimal, would need special handling
@@ -212,7 +211,12 @@ impl ParameterManager {
                 // Note: fee_recycling_bps is not a field in EmissionParams
                 // This would need to be handled differently
             }
-            _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unknown parameter: {}",
+                    proposal.parameter_name
+                ))
+            }
         }
         Ok(())
     }
