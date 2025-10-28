@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 pub mod server;
-pub use server::{start_server, AppState, ConsensusHandle, L2Config};
+pub use server::{start_server, AppState, L2Config};
 
 // Re-export types from ippan_p2p for convenience
 pub use ippan_p2p::{

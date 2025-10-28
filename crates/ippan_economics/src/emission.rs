@@ -3,8 +3,7 @@
 use crate::types::*;
 use crate::errors::*;
 use rust_decimal::Decimal;
-use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use tracing::info;
 
 /// Core emission engine implementing DAG-Fair emission logic
 #[derive(Debug, Clone)]

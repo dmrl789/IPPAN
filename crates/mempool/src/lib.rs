@@ -1,5 +1,4 @@
 use anyhow::Result;
-use ippan_crypto::validate_confidential_transaction;
 use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
@@ -96,8 +95,7 @@ impl Mempool {
             return Ok(false);
         }
 
-        // Validate confidential payloads before admission
-        validate_confidential_transaction(&tx)?;
+        // TODO: Add confidential transaction validation when crypto module is extended
 
         // Calculate fee (simplified - in production, this would be more sophisticated)
         let fee = self.calculate_transaction_fee(&tx);

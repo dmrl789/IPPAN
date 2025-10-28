@@ -408,6 +408,8 @@ impl TestSuite {
         metrics.insert("duration_ms".to_string(), duration.as_millis() as f64);
         metrics.insert("memory_mb".to_string(), get_memory_usage() as f64 / (1024.0 * 1024.0));
         
+        let error_display = error.as_ref().map(|e| e.as_str()).unwrap_or("Unknown error");
+        
         let test_result = TestResult {
             name: name.to_string(),
             passed,
@@ -421,7 +423,7 @@ impl TestSuite {
         if passed {
             println!("✓ {} passed in {:?}", name, duration);
         } else {
-            println!("✗ {} failed in {:?}: {:?}", name, duration, &error);
+            println!("✗ {} failed in {:?}: {}", name, duration, error_display);
         }
     }
 
@@ -512,13 +514,13 @@ impl BenchmarkSuite {
     /// Benchmark GBDT evaluation
     async fn benchmark_gbdt_evaluation(&self) -> Result<()> {
         let model = create_test_model();
-        let features = vec![1.0; 10];
+        let features = vec![1i64; 10];
         
         let iterations = 10000;
         let start = Instant::now();
         
         for _ in 0..iterations {
-            let _ = model.evaluate(&features).await?;
+            let _ = model.evaluate(&features)?;
         }
         
         let duration = start.elapsed();

@@ -15,7 +15,8 @@ pub fn distribute_round(
     params: &EconomicsParams,
 ) -> Result<(Payouts, MicroIPN, MicroIPN)> {
     if participants.is_empty() {
-        return Ok((HashMap::new(), 0, 0));
+        // Return empty payouts but preserve emission value
+        return Ok((HashMap::new(), emission_micro, 0));
     }
 
     // Apply fee cap
@@ -251,10 +252,11 @@ mod tests {
         let params = EconomicsParams::default();
         let participants = vec![];
         
-        let (payouts, emission, _) = distribute_round(1_000_000, 0, &participants, &params).unwrap();
+        let (payouts, returned_emission, _) = distribute_round(1_000_000, 0, &participants, &params).unwrap();
         
         assert_eq!(payouts.len(), 0);
-        assert_eq!(emission, 1_000_000);
+        // The emission passed in should be returned unchanged
+        assert_eq!(returned_emission, 1_000_000);
     }
 
     #[test]

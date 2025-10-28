@@ -404,3 +404,122 @@ impl AlertHandler for FileAlertHandler {
         "file"
     }
 }
+
+/// High-level monitoring service that wraps ServiceMonitor
+pub struct MonitoringService {
+    monitor: ServiceMonitor,
+    alerts: Vec<MonitoringAlert>,
+    metrics_store: HashMap<String, Vec<f64>>,
+}
+
+impl MonitoringService {
+    pub fn new(config: MonitoringConfig) -> Self {
+        Self {
+            monitor: ServiceMonitor::new(config),
+            alerts: Vec::new(),
+            metrics_store: HashMap::new(),
+        }
+    }
+
+    pub fn add_metric(&mut self, metric_name: String, value: f64) {
+        self.metrics_store
+            .entry(metric_name.clone())
+            .or_insert_with(Vec::new)
+            .push(value);
+        
+        // Also record in the underlying monitor
+        if metric_name == "memory_usage" {
+            self.monitor.record_memory_usage(value as u64);
+        }
+    }
+
+    pub async fn check_alerts(&mut self) -> Result<Vec<MonitoringAlert>, AIServiceError> {
+        let status = self.monitor.check_health().await;
+        let mut new_alerts = Vec::new();
+
+        // Check for high memory usage
+        if let Some(memory_values) = self.metrics_store.get("memory_usage") {
+            if let Some(&latest) = memory_values.last() {
+                if latest > 80.0 {
+                    let alert = MonitoringAlert {
+                        alert_id: format!("memory_{}", chrono::Utc::now().timestamp()),
+                        alert_type: "high_memory_usage".to_string(),
+                        severity: SeverityLevel::High,
+                        title: "High Memory Usage".to_string(),
+                        description: format!("Memory usage is at {:.1}%", latest),
+                        metrics: [("memory_usage".to_string(), latest)].into(),
+                        timestamp: chrono::Utc::now(),
+                        status: AlertStatus::Active,
+                        actions_taken: Vec::new(),
+                    };
+                    new_alerts.push(alert);
+                }
+            }
+        }
+
+        // Check for high CPU usage
+        if let Some(cpu_values) = self.metrics_store.get("cpu_usage") {
+            if let Some(&latest) = cpu_values.last() {
+                if latest > 90.0 {
+                    let alert = MonitoringAlert {
+                        alert_id: format!("cpu_{}", chrono::Utc::now().timestamp()),
+                        alert_type: "high_cpu_usage".to_string(),
+                        severity: SeverityLevel::High,
+                        title: "High CPU Usage".to_string(),
+                        description: format!("CPU usage is at {:.1}%", latest),
+                        metrics: [("cpu_usage".to_string(), latest)].into(),
+                        timestamp: chrono::Utc::now(),
+                        status: AlertStatus::Active,
+                        actions_taken: Vec::new(),
+                    };
+                    new_alerts.push(alert);
+                }
+            }
+        }
+
+        self.alerts.extend(new_alerts.clone());
+        Ok(new_alerts)
+    }
+
+    pub fn get_alerts(&self) -> &[MonitoringAlert] {
+        &self.alerts
+    }
+
+    pub fn acknowledge_alert(&mut self, alert_id: &str) -> Result<(), AIServiceError> {
+        if let Some(alert) = self.alerts.iter_mut().find(|a| a.alert_id == alert_id) {
+            alert.status = AlertStatus::Acknowledged;
+            Ok(())
+        } else {
+            Err(AIServiceError::ValidationError(format!("Alert {} not found", alert_id)))
+        }
+    }
+
+    pub fn resolve_alert(&mut self, alert_id: &str, resolution: String) -> Result<(), AIServiceError> {
+        if let Some(alert) = self.alerts.iter_mut().find(|a| a.alert_id == alert_id) {
+            alert.status = AlertStatus::Resolved;
+            alert.actions_taken.push(resolution);
+            Ok(())
+        } else {
+            Err(AIServiceError::ValidationError(format!("Alert {} not found", alert_id)))
+        }
+    }
+
+    pub fn get_statistics(&self) -> MonitoringStatistics {
+        let total_metrics = self.metrics_store.values().map(|v| v.len()).sum();
+        MonitoringStatistics {
+            metrics_count: self.metrics_store.len(),
+            total_data_points: total_metrics,
+            active_alerts: self.alerts.iter().filter(|a| a.status == AlertStatus::Active).count(),
+            resolved_alerts: self.alerts.iter().filter(|a| a.status == AlertStatus::Resolved).count(),
+        }
+    }
+}
+
+/// Monitoring statistics
+#[derive(Debug, Clone)]
+pub struct MonitoringStatistics {
+    pub metrics_count: usize,
+    pub total_data_points: usize,
+    pub active_alerts: usize,
+    pub resolved_alerts: usize,
+}
