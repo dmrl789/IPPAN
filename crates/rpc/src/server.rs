@@ -2,27 +2,24 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
-use axum::body::Body;
-use axum::extract::{Path as AxumPath, Query, State};
-use axum::http::{Request, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::extract::{Path as AxumPath, State};
+use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_mempool::Mempool;
 use ippan_storage::{Account, Storage};
 use ippan_types::time_service::ippan_time_now;
-use ippan_types::{Block, IppanTimeMicros, L2Commit, L2ExitRecord, L2Network, Transaction};
-use serde::{Deserialize, Serialize};
+use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
+use serde::Serialize;
 use tokio::sync::{mpsc, Mutex};
-use tower::ServiceExt;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 use crate::{HttpP2PNetwork, NetworkMessage};
 
@@ -66,11 +63,7 @@ impl ConsensusHandle {
         tx_sender: mpsc::UnboundedSender<Transaction>,
         mempool: Arc<Mempool>,
     ) -> Self {
-        Self {
-            consensus,
-            tx_sender,
-            mempool,
-        }
+        Self { consensus, tx_sender, mempool }
     }
 
     pub async fn snapshot(&self) -> Result<ConsensusStateView> {
@@ -94,65 +87,45 @@ pub struct ConsensusStateView {
 
 impl From<ConsensusState> for ConsensusStateView {
     fn from(state: ConsensusState) -> Self {
-        Self {
-            round: state.round,
-            validators: state.validators,
-        }
+        Self { round: state.round, validators: state.validators }
     }
 }
 
-/// Start the RPC server with production configuration
+/// Start the RPC server
 pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     info!("Starting RPC server on {}", addr);
-
     let shared = Arc::new(state);
     let app = build_router(shared.clone());
     let listener = bind_listener(addr).await?;
-
     info!("RPC server listening on {}", listener.local_addr()?);
-    axum::serve(listener, app)
-        .await
-        .context("RPC server terminated unexpectedly")
+    axum::serve(listener, app).await.context("RPC server terminated unexpectedly")
 }
 
 /// Bind to TCP listener
 async fn bind_listener(addr: &str) -> Result<tokio::net::TcpListener> {
-    if let Ok(socket_addr) = addr.parse::<SocketAddr>() {
-        tokio::net::TcpListener::bind(socket_addr)
-            .await
-            .with_context(|| format!("failed to bind RPC listener on {socket_addr}"))
-    } else {
-        tokio::net::TcpListener::bind(addr)
-            .await
-            .with_context(|| format!("failed to bind RPC listener on {addr}"))
-    }
+    let socket_addr: SocketAddr = addr.parse()?;
+    tokio::net::TcpListener::bind(socket_addr)
+        .await
+        .with_context(|| format!("failed to bind RPC listener on {socket_addr}"))
 }
 
-/// Build the router with middleware, routes, and optional UI
+/// Build router and endpoints
 fn build_router(state: Arc<AppState>) -> Router {
     let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any);
-
     let mut router = Router::new()
-        // Core endpoints
         .route("/health", get(handle_health))
         .route("/time", get(handle_time))
         .route("/version", get(handle_version))
         .route("/metrics", get(handle_metrics))
-        // Blockchain endpoints
         .route("/tx", post(handle_submit_tx))
         .route("/tx/:hash", get(handle_get_transaction))
         .route("/block/:id", get(handle_get_block))
         .route("/account/:address", get(handle_get_account))
         .route("/peers", get(handle_get_peers))
-        // P2P internal endpoints
         .route("/p2p/blocks", post(handle_p2p_blocks))
         .route("/p2p/transactions", post(handle_p2p_transactions))
-        .route("/p2p/block-request", post(handle_p2p_block_request))
-        .route("/p2p/block-response", post(handle_p2p_block_response))
         .route("/p2p/peer-info", post(handle_p2p_peer_info))
         .route("/p2p/peer-discovery", post(handle_p2p_peer_discovery))
-        .route("/p2p/peers", get(handle_p2p_list_peers))
-        // L2 endpoints
         .route("/l2/config", get(handle_get_l2_config))
         .route("/l2/networks", get(handle_list_l2_networks))
         .route("/l2/commits", get(handle_list_l2_commits))
@@ -170,7 +143,9 @@ fn build_router(state: Arc<AppState>) -> Router {
     router.layer(cors).layer(TraceLayer::new_for_http()).with_state(state)
 }
 
-// --- Handlers (simplified for clarity) ---
+// -----------------------------------------------------------------------------
+// Handlers
+// -----------------------------------------------------------------------------
 
 async fn handle_health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
@@ -184,10 +159,7 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Json<serde_json::V
 
 async fn handle_time() -> Json<serde_json::Value> {
     let now = ippan_time_now();
-    Json(serde_json::json!({
-        "timestamp": now,
-        "time_us": now
-    }))
+    Json(serde_json::json!({ "timestamp": now, "time_us": now }))
 }
 
 async fn handle_version() -> Json<serde_json::Value> {
@@ -198,40 +170,35 @@ async fn handle_version() -> Json<serde_json::Value> {
     }))
 }
 
-async fn handle_metrics() -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        "# HELP ippan_peer_count Connected peers\nippan_peer_count 0\n",
-    )
+async fn handle_metrics() -> (StatusCode, &'static str) {
+    (StatusCode::OK, "# HELP ippan_peer_count Connected peers\nippan_peer_count 0\n")
 }
 
 async fn handle_submit_tx(
     State(state): State<Arc<AppState>>,
     Json(tx): Json<Transaction>,
-) -> impl IntoResponse {
+) -> (StatusCode, &'static str) {
     if let Some(consensus) = &state.consensus {
         if let Err(e) = consensus.submit_transaction(tx.clone()) {
-            error!("Failed to enqueue transaction: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to submit tx").into_response();
+            warn!("Failed to enqueue transaction: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to submit tx");
         }
-        info!("Transaction submitted via consensus");
+        (StatusCode::OK, "Transaction accepted")
     } else {
-        warn!("Consensus not active, dropping tx");
-        return (StatusCode::SERVICE_UNAVAILABLE, "Consensus not available").into_response();
+        (StatusCode::SERVICE_UNAVAILABLE, "Consensus not active")
     }
-    (StatusCode::OK, "Transaction accepted").into_response()
 }
 
-async fn handle_get_transaction(AxumPath(_hash): AxumPath<String>) -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "Transaction not found").into_response()
+async fn handle_get_transaction(AxumPath(_hash): AxumPath<String>) -> (StatusCode, &'static str) {
+    (StatusCode::NOT_FOUND, "Transaction not found")
 }
 
-async fn handle_get_block(AxumPath(_id): AxumPath<String>) -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "Block not found").into_response()
+async fn handle_get_block(AxumPath(_id): AxumPath<String>) -> (StatusCode, &'static str) {
+    (StatusCode::NOT_FOUND, "Block not found")
 }
 
-async fn handle_get_account(AxumPath(_addr): AxumPath<String>) -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "Account not found").into_response()
+async fn handle_get_account(AxumPath(_addr): AxumPath<String>) -> (StatusCode, &'static str) {
+    (StatusCode::NOT_FOUND, "Account not found")
 }
 
 async fn handle_get_peers(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
@@ -242,39 +209,42 @@ async fn handle_get_peers(State(state): State<Arc<AppState>>) -> Json<Vec<String
     }
 }
 
-// Placeholder P2P message handlers
+// -----------------------------------------------------------------------------
+// P2P Handlers
+// -----------------------------------------------------------------------------
+
 async fn handle_p2p_blocks() -> StatusCode {
     StatusCode::OK
 }
+
 async fn handle_p2p_transactions() -> StatusCode {
     StatusCode::OK
 }
-async fn handle_p2p_block_request() -> StatusCode {
-    StatusCode::OK
-}
-async fn handle_p2p_block_response() -> StatusCode {
-    StatusCode::OK
-}
+
 async fn handle_p2p_peer_info() -> StatusCode {
     StatusCode::OK
 }
+
 async fn handle_p2p_peer_discovery() -> StatusCode {
     StatusCode::OK
 }
-async fn handle_p2p_list_peers() -> Json<Vec<String>> {
-    Json(vec![])
-}
 
-// Layer 2 endpoints
+// -----------------------------------------------------------------------------
+// L2 Endpoints
+// -----------------------------------------------------------------------------
+
 async fn handle_get_l2_config(State(state): State<Arc<AppState>>) -> Json<L2Config> {
     Json(state.l2_config.clone())
 }
+
 async fn handle_list_l2_networks() -> Json<Vec<L2Network>> {
     Json(vec![])
 }
+
 async fn handle_list_l2_commits() -> Json<Vec<L2Commit>> {
     Json(vec![])
 }
+
 async fn handle_list_l2_exits() -> Json<Vec<L2ExitRecord>> {
     Json(vec![])
 }
@@ -300,13 +270,13 @@ mod tests {
                 da_mode: "test".into(),
                 max_l2_count: 1,
             },
-            mempool: Arc::new(Mempool::default()),
+            mempool: Arc::new(Mempool::new(1000)),
             unified_ui_dist: None,
             req_count: Arc::new(AtomicUsize::new(0)),
         });
 
         let response = handle_health(State(app_state)).await;
         let json = response.0;
-        assert!(json.get("status").unwrap() == "healthy");
+        assert_eq!(json.get("status").unwrap(), "healthy");
     }
 }

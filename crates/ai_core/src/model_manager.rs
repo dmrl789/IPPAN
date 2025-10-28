@@ -5,7 +5,7 @@
 //! - Integrity verification and performance metrics
 //! - Secure storage with hash checking and rollback capability
 
-use crate::gbdt::{GBDTModel, GBDTError, ModelMetadata, SecurityConstraints, GBDTMetrics};
+use crate::gbdt::{GBDTError, GBDTMetrics, GBDTModel, ModelMetadata, SecurityConstraints};
 use crate::model::ModelPackage;
 use anyhow::{Context, Result};
 use hex;
@@ -14,8 +14,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
-use tracing::{debug, error, info, warn, instrument};
 use tokio::fs;
+use tracing::{debug, error, info, instrument, warn};
 
 /// Model manager configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,11 +144,11 @@ impl ModelManager {
 
         // Load from disk
         let path = self.get_model_path(model_id);
-        let model = self.load_model_from_disk(&path).await?;
+        let mut model = self.load_model_from_disk(&path).await?;
 
         // Validate
         let validation_passed = if self.config.enable_integrity_checking {
-            self.validate_model(&model).await?
+            self.validate_model(&mut model).await?
         } else {
             true
         };
@@ -159,7 +159,8 @@ impl ModelManager {
         let elapsed = start.elapsed();
         self.update_load_metrics(elapsed);
 
-        let file_size = path.metadata()
+        let file_size = path
+            .metadata()
             .map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Failed to get file metadata: {}", e),
             })?
@@ -196,8 +197,8 @@ impl ModelManager {
         }
 
         // Enforce file size limit
-        let serialized_size = bincode::serialized_size(model)
-            .map_err(|e| GBDTError::ModelValidationFailed {
+        let serialized_size =
+            bincode::serialized_size(model).map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Failed to compute serialized size: {}", e),
             })?;
         if serialized_size > self.config.max_model_size_bytes {
@@ -223,7 +224,11 @@ impl ModelManager {
             model_id: model_id.to_string(),
             version: 1,
             model_type: "gbdt".to_string(),
-            hash_sha256: model_hash.clone().into_bytes().try_into().unwrap_or([0; 32]),
+            hash_sha256: model_hash
+                .clone()
+                .into_bytes()
+                .try_into()
+                .unwrap_or([0; 32]),
             feature_count: model.metadata.feature_count,
             output_scale: model.scale,
             output_min: -10_000,
@@ -234,10 +239,9 @@ impl ModelManager {
             model: model.clone(),
         };
 
-        let data = bincode::serialize(&package)
-            .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Serialization failed: {}", e),
-            })?;
+        let data = bincode::serialize(&package).map_err(|e| GBDTError::ModelValidationFailed {
+            reason: format!("Serialization failed: {}", e),
+        })?;
 
         fs::write(&path, &data)
             .await
@@ -286,14 +290,14 @@ impl ModelManager {
             .map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Failed to read model file: {}", e),
             })?;
-        let package: ModelPackage = bincode::deserialize(&bytes)
-            .map_err(|e| GBDTError::ModelValidationFailed {
+        let package: ModelPackage =
+            bincode::deserialize(&bytes).map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Deserialization failed: {}", e),
             })?;
         Ok(package.model)
     }
 
-    async fn validate_model(&self, model: &GBDTModel) -> Result<bool, GBDTError> {
+    async fn validate_model(&self, model: &mut GBDTModel) -> Result<bool, GBDTError> {
         model.validate()?;
         if model.trees.len() > model.security_constraints.max_trees {
             return Err(GBDTError::SecurityValidationFailed {
@@ -325,23 +329,24 @@ impl ModelManager {
         Ok(true)
     }
 
-    async fn cache_model(
-        &self,
-        id: &str,
-        model: &GBDTModel,
-        path: &Path,
-    ) -> Result<(), GBDTError> {
-        let mut models = self.models.write().map_err(|_| GBDTError::ModelValidationFailed {
-            reason: "Failed to acquire write lock".to_string(),
-        })?;
+    async fn cache_model(&self, id: &str, model: &GBDTModel, path: &Path) -> Result<(), GBDTError> {
+        let mut models = self
+            .models
+            .write()
+            .map_err(|_| GBDTError::ModelValidationFailed {
+                reason: "Failed to acquire write lock".to_string(),
+            })?;
 
         if models.len() >= self.config.max_cached_models {
             self.evict_oldest(&mut models)?;
         }
 
-        let file_size = path.metadata().map_err(|e| GBDTError::ModelValidationFailed {
-            reason: format!("Metadata read failed: {}", e),
-        })?.len();
+        let file_size = path
+            .metadata()
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Metadata read failed: {}", e),
+            })?
+            .len();
 
         let entry = CachedModel {
             model: model.clone(),
@@ -356,10 +361,7 @@ impl ModelManager {
         Ok(())
     }
 
-    fn evict_oldest(
-        &self,
-        models: &mut HashMap<String, CachedModel>,
-    ) -> Result<(), GBDTError> {
+    fn evict_oldest(&self, models: &mut HashMap<String, CachedModel>) -> Result<(), GBDTError> {
         if let Some(oldest) = models
             .iter()
             .min_by_key(|(_, c)| c.last_accessed)
@@ -389,9 +391,8 @@ impl ModelManager {
         if let Ok(mut m) = self.metrics.write() {
             m.total_models_loaded += 1;
             let ms = d.as_millis() as f64;
-            m.avg_load_time_ms =
-                (m.avg_load_time_ms * (m.total_models_loaded - 1) as f64 + ms)
-                    / m.total_models_loaded as f64;
+            m.avg_load_time_ms = (m.avg_load_time_ms * (m.total_models_loaded - 1) as f64 + ms)
+                / m.total_models_loaded as f64;
         }
     }
 
@@ -399,9 +400,8 @@ impl ModelManager {
         if let Ok(mut m) = self.metrics.write() {
             m.total_models_saved += 1;
             let ms = d.as_millis() as f64;
-            m.avg_save_time_ms =
-                (m.avg_save_time_ms * (m.total_models_saved - 1) as f64 + ms)
-                    / m.total_models_saved as f64;
+            m.avg_save_time_ms = (m.avg_save_time_ms * (m.total_models_saved - 1) as f64 + ms)
+                / m.total_models_saved as f64;
         }
     }
 
@@ -428,9 +428,14 @@ impl ModelManager {
                 reason: format!("Read dir failed: {}", e),
             })?;
 
-        while let Some(entry) = entries.next_entry().await.map_err(|e| GBDTError::ModelValidationFailed {
-            reason: format!("Read entry failed: {}", e),
-        })? {
+        while let Some(entry) =
+            entries
+                .next_entry()
+                .await
+                .map_err(|e| GBDTError::ModelValidationFailed {
+                    reason: format!("Read entry failed: {}", e),
+                })?
+        {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("model") {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
@@ -461,9 +466,12 @@ impl ModelManager {
         if !self.config.enable_auto_cleanup {
             return Ok(());
         }
-        let mut models = self.models.write().map_err(|_| GBDTError::ModelValidationFailed {
-            reason: "Write lock failed".to_string(),
-        })?;
+        let mut models = self
+            .models
+            .write()
+            .map_err(|_| GBDTError::ModelValidationFailed {
+                reason: "Write lock failed".to_string(),
+            })?;
         let ttl = Duration::from_secs(self.config.cache_ttl_seconds);
         models.retain(|id, c| {
             let valid = c.loaded_at.elapsed().unwrap_or_default() <= ttl;
@@ -477,4 +485,3 @@ impl ModelManager {
         Ok(())
     }
 }
-

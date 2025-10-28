@@ -1,133 +1,3 @@
-//! DAG-Fair Emission calculation with hard supply cap enforcement
-
-use crate::types::{EconomicsParams, EmissionResult, MicroIPN, RoundId, MICRO_PER_IPN};
-use anyhow::Result;
-use tracing::{debug, info, warn};
-
-/// Calculate emission for a round with hard supply cap enforcement
-pub fn emission_for_round_capped(
-    round: RoundId,
-    current_issued_micro: MicroIPN,
-    params: &EconomicsParams,
-) -> Result<MicroIPN> {
-    if round == 0 {
-        return Ok(0);
-    }
-
-    // Calculate base emission for this round
-    let base_emission = calculate_base_emission(round, params);
-
-    // Calculate halving epoch
-    let halving_epoch = (round - 1) / params.halving_interval_rounds;
-
-    // Check if we've hit the supply cap
-    let remaining_cap = params.max_supply_micro.saturating_sub(current_issued_micro);
-
-    if remaining_cap == 0 {
-        debug!(
-            target: "emission",
-            "Round {}: Supply cap reached, no emission",
-            round
-        );
-        return Ok(0);
-    }
-
-    // Cap emission to remaining supply
-    let capped_emission = base_emission.min(remaining_cap);
-
-    if capped_emission != base_emission {
-        warn!(
-            target: "emission",
-            "Round {}: Emission capped from {} to {} micro-IPN (supply cap)",
-            round,
-            base_emission,
-            capped_emission
-        );
-    }
-
-    info!(
-        target: "emission",
-        "Round {}: Emitting {} micro-IPN (≈ {:.6} IPN), halving epoch {}",
-        round,
-        capped_emission,
-        (capped_emission as f64) / (MICRO_PER_IPN as f64),
-        halving_epoch
-    );
-
-    Ok(capped_emission)
-}
-
-/// Calculate base emission for a round (before supply cap)
-fn calculate_base_emission(round: RoundId, params: &EconomicsParams) -> MicroIPN {
-    if round == 0 {
-        return 0;
-    }
-
-    let halving_epoch = (round - 1) / params.halving_interval_rounds;
-
-    // Prevent overflow with too many halvings
-    if halving_epoch >= 64 {
-        return 0;
-    }
-
-    // Apply halving: emission = initial / (2^halving_epoch)
-    params.initial_round_reward_micro >> halving_epoch
-}
-
-/// Project total supply after a given number of rounds
-pub fn project_total_supply(rounds: RoundId, params: &EconomicsParams) -> MicroIPN {
-    if rounds == 0 {
-        return 0;
-    }
-
-    let mut total = 0u128;
-    let mut current_round = 1;
-
-    while current_round <= rounds {
-        let emission = calculate_base_emission(current_round, params);
-        if emission == 0 {
-            break;
-        }
-
-        total = total.saturating_add(emission);
-        current_round += 1;
-    }
-
-    total.min(params.max_supply_micro)
-}
-
-/// Calculate remaining supply cap
-pub fn calculate_remaining_cap(current_issued_micro: MicroIPN, params: &EconomicsParams) -> MicroIPN {
-    params.max_supply_micro.saturating_sub(current_issued_micro)
-}
-
-/// Get emission details for a round
-pub fn get_emission_details(
-    round: RoundId,
-    current_issued_micro: MicroIPN,
-    params: &EconomicsParams,
-) -> Result<EmissionResult> {
-    let emission_micro = emission_for_round_capped(round, current_issued_micro, params)?;
-    let total_issued_micro = current_issued_micro.saturating_add(emission_micro);
-    let remaining_cap_micro = calculate_remaining_cap(total_issued_micro, params);
-
-    // Convert to u32 safely
-    let halving_epoch: u32 = if round == 0 {
-        0
-    } else {
-        let epoch_u64 = (round - 1) / params.halving_interval_rounds;
-        epoch_u64.min(u32::MAX as u64) as u32
-    };
-
-    Ok(EmissionResult {
-        round,
-        emission_micro,
-        total_issued_micro,
-        remaining_cap_micro,
-        halving_epoch,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,17 +10,17 @@ mod tests {
             ..Default::default()
         };
 
-        // First halving epoch (rounds 1-1000)
+        // First halving epoch (rounds 1–1000)
         assert_eq!(emission_for_round_capped(1, 0, &params).unwrap(), 1_000_000);
         assert_eq!(emission_for_round_capped(500, 0, &params).unwrap(), 1_000_000);
         assert_eq!(emission_for_round_capped(1000, 0, &params).unwrap(), 1_000_000);
-        
-        // Second halving epoch (rounds 1001-2000)
+
+        // Second halving epoch (rounds 1001–2000)
         assert_eq!(emission_for_round_capped(1001, 0, &params).unwrap(), 500_000);
         assert_eq!(emission_for_round_capped(1500, 0, &params).unwrap(), 500_000);
         assert_eq!(emission_for_round_capped(2000, 0, &params).unwrap(), 500_000);
 
-        // Third halving epoch (rounds 2001-3000)
+        // Third halving epoch (rounds 2001–3000)
         assert_eq!(emission_for_round_capped(2001, 0, &params).unwrap(), 250_000);
         assert_eq!(emission_for_round_capped(3000, 0, &params).unwrap(), 250_000);
     }

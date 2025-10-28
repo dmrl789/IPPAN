@@ -165,7 +165,8 @@ impl Storage for SledStorage {
         let data = serde_json::to_vec(&block)?;
         self.blocks.insert(&hash[..], data)?;
         let height = block.header.round;
-        self.metadata.insert(b"latest_height", &height.to_be_bytes())?;
+        self.metadata
+            .insert(b"latest_height", &height.to_be_bytes())?;
         Ok(())
     }
 
@@ -252,7 +253,8 @@ impl Storage for SledStorage {
     }
 
     fn put_l2_network(&self, n: L2Network) -> Result<()> {
-        self.l2_networks.insert(n.id.as_bytes(), serde_json::to_vec(&n)?)?;
+        self.l2_networks
+            .insert(n.id.as_bytes(), serde_json::to_vec(&n)?)?;
         Ok(())
     }
 
@@ -275,7 +277,8 @@ impl Storage for SledStorage {
     }
 
     fn store_l2_commit(&self, c: L2Commit) -> Result<()> {
-        self.l2_commits.insert(c.id.as_bytes(), serde_json::to_vec(&c)?)?;
+        self.l2_commits
+            .insert(c.id.as_bytes(), serde_json::to_vec(&c)?)?;
         Ok(())
     }
 
@@ -292,7 +295,8 @@ impl Storage for SledStorage {
     }
 
     fn store_l2_exit(&self, x: L2ExitRecord) -> Result<()> {
-        self.l2_exits.insert(x.id.as_bytes(), serde_json::to_vec(&x)?)?;
+        self.l2_exits
+            .insert(x.id.as_bytes(), serde_json::to_vec(&x)?)?;
         Ok(())
     }
 
@@ -324,7 +328,8 @@ impl Storage for SledStorage {
 
     fn store_round_finalization(&self, rec: RoundFinalizationRecord) -> Result<()> {
         let key = rec.round.to_be_bytes();
-        self.round_finalizations.insert(key, serde_json::to_vec(&rec)?)?;
+        self.round_finalizations
+            .insert(key, serde_json::to_vec(&rec)?)?;
         self.metadata.insert(b"latest_finalized_round", &key)?;
         Ok(())
     }
@@ -354,7 +359,8 @@ impl Storage for SledStorage {
 
     fn update_chain_state(&self, s: &ChainState) -> Result<()> {
         *self.chain_state.write() = s.clone();
-        self.metadata.insert(b"chain_state", serde_json::to_vec(s)?)?;
+        self.metadata
+            .insert(b"chain_state", serde_json::to_vec(s)?)?;
         Ok(())
     }
 }
@@ -419,9 +425,7 @@ impl Storage for MemoryStorage {
     }
 
     fn update_account(&self, acc: Account) -> Result<()> {
-        self.accounts
-            .write()
-            .insert(hex::encode(acc.address), acc);
+        self.accounts.write().insert(hex::encode(acc.address), acc);
         Ok(())
     }
 
@@ -444,18 +448,42 @@ impl Storage for MemoryStorage {
     }
 
     // The rest of L2 and round methods are no-ops in memory mode for brevity
-    fn put_l2_network(&self, _n: L2Network) -> Result<()> { Ok(()) }
-    fn get_l2_network(&self, _id: &str) -> Result<Option<L2Network>> { Ok(None) }
-    fn list_l2_networks(&self) -> Result<Vec<L2Network>> { Ok(vec![]) }
-    fn store_l2_commit(&self, _c: L2Commit) -> Result<()> { Ok(()) }
-    fn list_l2_commits(&self, _f: Option<&str>) -> Result<Vec<L2Commit>> { Ok(vec![]) }
-    fn store_l2_exit(&self, _x: L2ExitRecord) -> Result<()> { Ok(()) }
-    fn list_l2_exits(&self, _f: Option<&str>) -> Result<Vec<L2ExitRecord>> { Ok(vec![]) }
-    fn store_round_certificate(&self, _c: RoundCertificate) -> Result<()> { Ok(()) }
-    fn get_round_certificate(&self, _r: RoundId) -> Result<Option<RoundCertificate>> { Ok(None) }
-    fn store_round_finalization(&self, _r: RoundFinalizationRecord) -> Result<()> { Ok(()) }
-    fn get_round_finalization(&self, _r: RoundId) -> Result<Option<RoundFinalizationRecord>> { Ok(None) }
-    fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>> { Ok(None) }
+    fn put_l2_network(&self, _n: L2Network) -> Result<()> {
+        Ok(())
+    }
+    fn get_l2_network(&self, _id: &str) -> Result<Option<L2Network>> {
+        Ok(None)
+    }
+    fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
+        Ok(vec![])
+    }
+    fn store_l2_commit(&self, _c: L2Commit) -> Result<()> {
+        Ok(())
+    }
+    fn list_l2_commits(&self, _f: Option<&str>) -> Result<Vec<L2Commit>> {
+        Ok(vec![])
+    }
+    fn store_l2_exit(&self, _x: L2ExitRecord) -> Result<()> {
+        Ok(())
+    }
+    fn list_l2_exits(&self, _f: Option<&str>) -> Result<Vec<L2ExitRecord>> {
+        Ok(vec![])
+    }
+    fn store_round_certificate(&self, _c: RoundCertificate) -> Result<()> {
+        Ok(())
+    }
+    fn get_round_certificate(&self, _r: RoundId) -> Result<Option<RoundCertificate>> {
+        Ok(None)
+    }
+    fn store_round_finalization(&self, _r: RoundFinalizationRecord) -> Result<()> {
+        Ok(())
+    }
+    fn get_round_finalization(&self, _r: RoundId) -> Result<Option<RoundFinalizationRecord>> {
+        Ok(None)
+    }
+    fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>> {
+        Ok(None)
+    }
 
     fn get_chain_state(&self) -> Result<ChainState> {
         Ok(self.chain_state.read().clone())

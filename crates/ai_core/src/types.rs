@@ -18,7 +18,11 @@ pub struct ModelId {
 }
 
 impl ModelId {
-    pub fn new(name: impl Into<String>, version: impl Into<String>, hash: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        version: impl Into<String>,
+        hash: impl Into<String>,
+    ) -> Self {
         Self {
             name: name.into(),
             version: version.into(),
@@ -209,4 +213,3 @@ pub struct ExecutionResult {
     /// Output data type
     pub data_type: DataType,
 }
-

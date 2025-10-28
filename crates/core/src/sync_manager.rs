@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
@@ -152,7 +152,7 @@ impl SyncManager {
         config: SyncConfig,
     ) -> Result<(Self, mpsc::UnboundedReceiver<SyncEvent>)> {
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
-        
+
         let dag_arc = Arc::new(RwLock::new(dag));
         let dag_ops = Arc::new(RwLock::new(DAGOperations::new(
             dag_arc.clone(),
@@ -246,7 +246,10 @@ impl SyncManager {
     pub async fn trigger_sync(&self) -> Result<()> {
         let mut queue = self.sync_queue.write().await;
         let task = SyncTask {
-            task_id: format!("manual_sync_{}", SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()),
+            task_id: format!(
+                "manual_sync_{}",
+                SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
+            ),
             task_type: SyncTaskType::BlockSync,
             priority: 10, // High priority
             created_at: Instant::now(),
@@ -261,50 +264,50 @@ impl SyncManager {
     /// Start the main synchronization loop
     async fn start_sync_loop(&self) -> Result<()> {
         let mut interval = interval(self.config.sync_interval);
-        
+
         while *self.is_running.read().await {
             interval.tick().await;
-            
+
             if let Err(e) = self.perform_sync_cycle().await {
                 error!("Sync cycle failed: {}", e);
                 self.set_state(SyncState::Error(e.to_string())).await;
             }
         }
-        
+
         Ok(())
     }
 
     /// Start the performance monitoring loop
     async fn start_performance_monitor(&self) -> Result<()> {
         let mut interval = interval(Duration::from_secs(5));
-        
+
         while *self.is_running.read().await {
             interval.tick().await;
-            
+
             if self.config.performance_monitoring {
                 self.update_performance_metrics().await?;
             }
         }
-        
+
         Ok(())
     }
 
     /// Start the peer management loop
     async fn start_peer_manager(&self) -> Result<()> {
         let mut interval = interval(Duration::from_secs(10));
-        
+
         while *self.is_running.read().await {
             interval.tick().await;
             self.cleanup_inactive_peers().await?;
         }
-        
+
         Ok(())
     }
 
     /// Perform a single synchronization cycle
     async fn perform_sync_cycle(&self) -> Result<()> {
         debug!("Starting sync cycle");
-        
+
         // Check if we have peers
         let peer_count = self.peer_connections.read().await.len();
         if peer_count == 0 {
@@ -330,7 +333,7 @@ impl SyncManager {
 
         self.set_state(SyncState::UpToDate).await;
         self.send_event(SyncEvent::SyncCompleted).await?;
-        
+
         debug!("Sync cycle completed");
         Ok(())
     }
@@ -339,7 +342,7 @@ impl SyncManager {
     async fn process_sync_queue(&self) -> Result<()> {
         let mut queue = self.sync_queue.write().await;
         let mut processed_tasks = Vec::new();
-        
+
         while let Some(mut task) = queue.pop_front() {
             match self.process_sync_task(&task).await {
                 Ok(_) => {
@@ -347,21 +350,24 @@ impl SyncManager {
                 }
                 Err(e) => {
                     error!("Failed to process sync task {}: {}", task.task_id, e);
-                    
+
                     task.retry_count += 1;
                     if task.retry_count < self.config.retry_attempts {
                         queue.push_back(task);
                     } else {
-                        warn!("Dropping sync task {} after {} retries", task.task_id, self.config.retry_attempts);
+                        warn!(
+                            "Dropping sync task {} after {} retries",
+                            task.task_id, self.config.retry_attempts
+                        );
                     }
                 }
             }
         }
-        
+
         if !processed_tasks.is_empty() {
             info!("Processed {} sync tasks", processed_tasks.len());
         }
-        
+
         Ok(())
     }
 
@@ -390,9 +396,7 @@ impl SyncManager {
     /// Synchronize blocks with peers
     async fn sync_blocks(&self) -> Result<()> {
         let connections = self.peer_connections.read().await;
-        let active_peers: Vec<_> = connections.values()
-            .filter(|conn| conn.is_active)
-            .collect();
+        let active_peers: Vec<_> = connections.values().filter(|conn| conn.is_active).collect();
 
         if active_peers.is_empty() {
             return Ok(());
@@ -405,7 +409,8 @@ impl SyncManager {
 
         // Request blocks from peers
         for peer in active_peers {
-            self.request_blocks_from_peer(&peer.peer_id, &our_tips).await?;
+            self.request_blocks_from_peer(&peer.peer_id, &our_tips)
+                .await?;
         }
 
         Ok(())
@@ -422,12 +427,15 @@ impl SyncManager {
     async fn resolve_conflicts(&self) -> Result<()> {
         let mut dag_ops = self.dag_ops.write().await;
         let analysis = dag_ops.analyze_dag().await?;
-        
+
         if analysis.convergence_ratio > 0.5 {
-            warn!("High convergence ratio detected: {:.2}%", analysis.convergence_ratio * 100.0);
+            warn!(
+                "High convergence ratio detected: {:.2}%",
+                analysis.convergence_ratio * 100.0
+            );
             self.send_event(SyncEvent::ConflictDetected(vec![])).await?;
         }
-        
+
         Ok(())
     }
 
@@ -436,11 +444,14 @@ impl SyncManager {
         let mut dag_ops = self.dag_ops.write().await;
         let pruned = dag_ops.optimize_dag().await?;
         let compacted = dag_ops.compact_dag()?;
-        
+
         if pruned > 0 || compacted > 0 {
-            info!("DAG optimization: {} pruned, {} compacted", pruned, compacted);
+            info!(
+                "DAG optimization: {} pruned, {} compacted",
+                pruned, compacted
+            );
         }
-        
+
         Ok(())
     }
 
@@ -469,22 +480,24 @@ impl SyncManager {
     /// Update performance metrics
     async fn update_performance_metrics(&self) -> Result<()> {
         let mut performance = self.performance.write().await;
-        
+
         // Calculate blocks per second
         let last_sync = self.last_sync_time.read().await;
         if let Some(last) = *last_sync {
             let elapsed = last.elapsed();
             if elapsed.as_secs() > 0 {
-                performance.blocks_per_second = performance.total_blocks_synced as f64 / elapsed.as_secs() as f64;
+                performance.blocks_per_second =
+                    performance.total_blocks_synced as f64 / elapsed.as_secs() as f64;
             }
         }
-        
+
         // Update other metrics
         performance.average_latency_ms = 50.0; // Placeholder
         performance.success_rate = 0.95; // Placeholder
         performance.memory_usage_mb = 100.0; // Placeholder
-        
-        self.send_event(SyncEvent::PerformanceUpdate(performance.clone())).await?;
+
+        self.send_event(SyncEvent::PerformanceUpdate(performance.clone()))
+            .await?;
         Ok(())
     }
 
@@ -492,18 +505,18 @@ impl SyncManager {
     async fn cleanup_inactive_peers(&self) -> Result<()> {
         let mut connections = self.peer_connections.write().await;
         let cutoff_time = Instant::now() - Duration::from_secs(300); // 5 minutes
-        
+
         let inactive_peers: Vec<String> = connections
             .iter()
             .filter(|(_, conn)| conn.last_seen < cutoff_time)
             .map(|(peer_id, _)| peer_id.clone())
             .collect();
-        
+
         for peer_id in inactive_peers {
             connections.remove(&peer_id);
             info!("Removed inactive peer: {}", peer_id);
         }
-        
+
         Ok(())
     }
 
@@ -512,8 +525,10 @@ impl SyncManager {
         let mut state = self.state.write().await;
         *state = new_state.clone();
         drop(state);
-        
-        self.send_event(SyncEvent::StateChanged(new_state)).await.ok();
+
+        self.send_event(SyncEvent::StateChanged(new_state))
+            .await
+            .ok();
     }
 
     /// Send a synchronization event
@@ -535,7 +550,6 @@ impl Default for SyncPerformance {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -559,15 +573,18 @@ mod tests {
     #[tokio::test]
     async fn test_peer_management() {
         let (manager, _) = create_test_sync_manager().await;
-        
+
         let capability = SyncCapability {
             max_batch_size: 100,
             supported_protocols: vec!["v1".to_string()],
             compression_enabled: true,
             encryption_enabled: true,
         };
-        
-        manager.add_peer("test_peer".to_string(), capability).await.unwrap();
+
+        manager
+            .add_peer("test_peer".to_string(), capability)
+            .await
+            .unwrap();
         manager.remove_peer("test_peer").await.unwrap();
     }
 

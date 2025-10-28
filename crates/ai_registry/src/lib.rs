@@ -16,7 +16,6 @@
 //! - **Storage**: Persistent storage with Sled database backend
 //!
 //! ## Example
-//!
 //! ```rust,no_run
 //! use ippan_ai_registry::{ModelRegistry, RegistryStorage, RegistryConfig};
 //! use ai_core::types::{ModelId, ModelMetadata};
@@ -26,16 +25,15 @@
 //!     let storage = RegistryStorage::new(None)?;
 //!     let config = RegistryConfig::default();
 //!     let mut registry = ModelRegistry::new(storage, config);
-//!     
+//!
 //!     let model_id = ModelId {
 //!         name: "my_model".to_string(),
 //!         version: "1.0.0".to_string(),
 //!         hash: "abc123".to_string(),
 //!     };
-//!     
-//!     // Register a model
-//!     // ...
-//!     
+//!
+//!     // Register a model...
+//!
 //!     Ok(())
 //! }
 //! ```
@@ -63,7 +61,7 @@ pub use fees::{FeeManager, FeeStats, FeeCalculation};
 pub use activation::ActivationManager;
 pub use proposal::{ProposalManager, AiModelProposal, ProposalStatus};
 
-// API module is optional (requires 'api' feature)
+// API module (optional)
 #[cfg(feature = "api")]
 pub mod api;
 

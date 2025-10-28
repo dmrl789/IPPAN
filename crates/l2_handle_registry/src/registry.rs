@@ -1,4 +1,7 @@
 //! L2 Handle Registry implementation
+//!
+//! Provides Layer-2 human-readable handle mapping
+//! and metadata management (e.g. `@alice.ipn`, `@device.iot`).
 
 use crate::errors::*;
 use crate::types::*;
@@ -14,14 +17,14 @@ use std::time::SystemTime;
 /// L1 only stores ownership anchors pointing to this registry.
 #[derive(Debug)]
 pub struct L2HandleRegistry {
-    /// Handle to metadata mapping
+    /// Handle → metadata mapping
     handles: Arc<RwLock<HashMap<Handle, HandleMetadata>>>,
-    /// Public key to handles mapping (for reverse lookup)
+    /// Owner public key → list of handles
     owner_to_handles: Arc<RwLock<HashMap<PublicKey, Vec<Handle>>>>,
 }
 
 impl L2HandleRegistry {
-    /// Create a new L2 handle registry
+    /// Create a new handle registry
     pub fn new() -> Self {
         Self {
             handles: Arc::new(RwLock::new(HashMap::new())),
@@ -31,14 +34,13 @@ impl L2HandleRegistry {
 
     /// Register a new handle
     pub fn register(&self, registration: HandleRegistration) -> Result<()> {
-        // Validate handle format
         if !registration.handle.is_valid() {
             return Err(HandleRegistryError::InvalidHandleFormat {
                 handle: registration.handle.as_str().to_string(),
             });
         }
 
-        // Check if handle already exists
+        // Check duplicate
         {
             let handles = self.handles.read();
             if handles.contains_key(&registration.handle) {
@@ -48,14 +50,14 @@ impl L2HandleRegistry {
             }
         }
 
-        // Verify signature (simplified - in production, use proper crypto)
+        // Verify ownership signature (placeholder)
         if !self.verify_signature(&registration.owner, &registration.signature) {
             return Err(HandleRegistryError::Unauthorized {
                 handle: registration.handle.as_str().to_string(),
             });
         }
 
-        // Create handle metadata
+        // Create metadata
         let mut metadata = HandleMetadata {
             owner: registration.owner.clone(),
             expires_at: registration.expires_at.unwrap_or(0),
@@ -63,21 +65,19 @@ impl L2HandleRegistry {
             ..Default::default()
         };
 
-        // Set L1 anchor (would be provided by L1 in production)
-        metadata.l1_anchor =
-            Some(self.compute_l1_anchor(&registration.handle, &registration.owner));
+        // Compute L1 anchor
+        metadata.l1_anchor = Some(self.compute_l1_anchor(&registration.handle, &registration.owner));
 
-        // Store handle
+        // Insert handle
         {
             let mut handles = self.handles.write();
             handles.insert(registration.handle.clone(), metadata);
         }
 
-        // Update owner mapping
+        // Update reverse lookup
         {
-            let mut owner_map = self.owner_to_handles.write();
-            owner_map
-                .entry(registration.owner)
+            let mut map = self.owner_to_handles.write();
+            map.entry(registration.owner)
                 .or_insert_with(Vec::new)
                 .push(registration.handle);
         }
@@ -87,11 +87,11 @@ impl L2HandleRegistry {
 
     /// Update handle metadata
     pub fn update(&self, update: HandleUpdate) -> Result<()> {
-        // Verify ownership and signature
+        // Ownership check
         {
             let handles = self.handles.read();
-            if let Some(metadata) = handles.get(&update.handle) {
-                if metadata.owner != update.owner {
+            if let Some(meta) = handles.get(&update.handle) {
+                if meta.owner != update.owner {
                     return Err(HandleRegistryError::Unauthorized {
                         handle: update.handle.as_str().to_string(),
                     });
@@ -109,15 +109,15 @@ impl L2HandleRegistry {
             });
         }
 
-        // Update metadata
+        // Apply updates
         {
             let mut handles = self.handles.write();
-            if let Some(metadata) = handles.get_mut(&update.handle) {
-                metadata.updated_at = SystemTime::now()
+            if let Some(meta) = handles.get_mut(&update.handle) {
+                meta.updated_at = SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs();
-                metadata.metadata.extend(update.updates);
+                meta.metadata.extend(update.updates);
             }
         }
 
@@ -126,11 +126,11 @@ impl L2HandleRegistry {
 
     /// Transfer handle ownership
     pub fn transfer(&self, transfer: HandleTransfer) -> Result<()> {
-        // Verify current ownership
+        // Check ownership
         {
             let handles = self.handles.read();
-            if let Some(metadata) = handles.get(&transfer.handle) {
-                if metadata.owner != transfer.from_owner {
+            if let Some(meta) = handles.get(&transfer.handle) {
+                if meta.owner != transfer.from_owner {
                     return Err(HandleRegistryError::Unauthorized {
                         handle: transfer.handle.as_str().to_string(),
                     });
@@ -151,27 +151,24 @@ impl L2HandleRegistry {
         // Update ownership
         {
             let mut handles = self.handles.write();
-            if let Some(metadata) = handles.get_mut(&transfer.handle) {
-                metadata.owner = transfer.to_owner.clone();
-                metadata.updated_at = SystemTime::now()
+            if let Some(meta) = handles.get_mut(&transfer.handle) {
+                meta.owner = transfer.to_owner.clone();
+                meta.updated_at = SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs();
             }
         }
 
-        // Update owner mappings
+        // Update reverse mappings
         {
-            let mut owner_map = self.owner_to_handles.write();
+            let mut map = self.owner_to_handles.write();
 
-            // Remove from old owner
-            if let Some(handles) = owner_map.get_mut(&transfer.from_owner) {
-                handles.retain(|h| h != &transfer.handle);
+            if let Some(list) = map.get_mut(&transfer.from_owner) {
+                list.retain(|h| h != &transfer.handle);
             }
 
-            // Add to new owner
-            owner_map
-                .entry(transfer.to_owner)
+            map.entry(transfer.to_owner)
                 .or_insert_with(Vec::new)
                 .push(transfer.handle);
         }
@@ -179,13 +176,13 @@ impl L2HandleRegistry {
         Ok(())
     }
 
-    /// Resolve handle to public key
+    /// Resolve handle → owner key
     pub fn resolve(&self, handle: &Handle) -> Result<PublicKey> {
         let handles = self.handles.read();
-        if let Some(metadata) = handles.get(handle) {
-            // Check if handle is expired
-            if metadata.expires_at > 0
-                && metadata.expires_at
+        if let Some(meta) = handles.get(handle) {
+            // Expiry check
+            if meta.expires_at > 0
+                && meta.expires_at
                     < SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
@@ -195,8 +192,7 @@ impl L2HandleRegistry {
                     handle: handle.as_str().to_string(),
                 });
             }
-
-            Ok(metadata.owner.clone())
+            Ok(meta.owner.clone())
         } else {
             Err(HandleRegistryError::HandleNotFound {
                 handle: handle.as_str().to_string(),
@@ -204,7 +200,7 @@ impl L2HandleRegistry {
         }
     }
 
-    /// Get handle metadata
+    /// Fetch handle metadata
     pub fn get_metadata(&self, handle: &Handle) -> Result<HandleMetadata> {
         let handles = self.handles.read();
         handles
@@ -215,24 +211,22 @@ impl L2HandleRegistry {
             })
     }
 
-    /// List handles owned by a public key
+    /// List all handles of an owner
     pub fn list_owner_handles(&self, owner: &PublicKey) -> Vec<Handle> {
-        let owner_map = self.owner_to_handles.read();
-        owner_map.get(owner).cloned().unwrap_or_default()
+        let map = self.owner_to_handles.read();
+        map.get(owner).cloned().unwrap_or_default()
     }
 
-    /// Compute L1 anchor hash
+    /// Compute deterministic L1 anchor hash
     fn compute_l1_anchor(&self, handle: &Handle, owner: &PublicKey) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(handle.as_str().as_bytes());
-        hasher.update(owner.as_bytes());
-        hasher.finalize().into()
+        let mut h = Sha256::new();
+        h.update(handle.as_str().as_bytes());
+        h.update(owner.as_bytes());
+        h.finalize().into()
     }
 
-    /// Verify signature (simplified - in production, use proper Ed25519 verification)
-    fn verify_signature(&self, _owner: &PublicKey, _signature: &[u8]) -> bool {
-        // In production, this would verify Ed25519 signatures
-        // For now, just return true for testing
+    /// Dummy signature verification (placeholder)
+    fn verify_signature(&self, _owner: &PublicKey, _sig: &[u8]) -> bool {
         true
     }
 }
@@ -253,7 +247,7 @@ mod tests {
         let handle = Handle::new("@test.ipn");
         let owner = PublicKey::new([1u8; 32]);
 
-        let registration = HandleRegistration {
+        let reg = HandleRegistration {
             handle: handle.clone(),
             owner: owner.clone(),
             signature: vec![1, 2, 3],
@@ -261,7 +255,7 @@ mod tests {
             expires_at: None,
         };
 
-        assert!(registry.register(registration).is_ok());
+        assert!(registry.register(reg).is_ok());
         assert_eq!(registry.resolve(&handle).unwrap(), owner);
     }
 
@@ -269,7 +263,6 @@ mod tests {
     fn test_handle_not_found() {
         let registry = L2HandleRegistry::new();
         let handle = Handle::new("@nonexistent.ipn");
-
         assert!(registry.resolve(&handle).is_err());
     }
 

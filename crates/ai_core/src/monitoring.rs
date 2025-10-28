@@ -215,7 +215,9 @@ mod tests {
 
         let alerts = monitor.check_alerts();
         assert_eq!(alerts.len(), 2);
-        assert!(alerts.iter().any(|a| matches!(a.severity, AlertSeverity::Warning | AlertSeverity::Critical)));
+        assert!(alerts
+            .iter()
+            .any(|a| matches!(a.severity, AlertSeverity::Warning | AlertSeverity::Critical)));
     }
 
     #[test]

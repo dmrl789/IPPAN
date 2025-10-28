@@ -7,15 +7,20 @@ use anyhow::Result;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::Rng;
 
+pub mod commitment_schemes;
 pub mod hash_functions;
 pub mod merkle_trees;
-pub mod commitment_schemes;
 pub mod confidential;
 
+// Re-export modules and types
 pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256, SHA3_256, BLAKE2b};
 pub use merkle_trees::{MerkleTree, MerkleProof, MerkleError};
 pub use commitment_schemes::{PedersenCommitment, Commitment, CommitmentError};
-pub use confidential::{validate_transaction as validate_confidential_transaction, validate_block as validate_confidential_block, ConfidentialTransactionError};
+pub use confidential::{
+    validate_transaction as validate_confidential_transaction,
+    validate_block as validate_confidential_block,
+    ConfidentialTransactionError,
+};
 
 /// Cryptographic key pair for IPPAN
 #[derive(Debug, Clone)]
@@ -84,22 +89,12 @@ impl CryptoUtils {
         nonce
     }
 
-    /// Validate a confidential transaction
-    /// This is a placeholder implementation for confidential transaction validation
+    /// Validate a confidential transaction (basic placeholder)
     pub fn validate_confidential_transaction(transaction_data: &[u8]) -> Result<bool> {
-        // Basic validation - in a real implementation, this would:
-        // 1. Verify the transaction structure
-        // 2. Check cryptographic proofs
-        // 3. Validate commitments
-        // 4. Verify range proofs
-        // 5. Check balance equations
-        
+        // Placeholder: real version checks commitments and range proofs
         if transaction_data.is_empty() {
             return Ok(false);
         }
-        
-        // For now, just check that the data is not empty and has a minimum length
-        // In production, this would be much more sophisticated
         Ok(transaction_data.len() >= 32)
     }
 }

@@ -107,12 +107,19 @@ impl SecuritySystem {
     }
 
     /// Log an audit entry
-    pub fn log_audit(&mut self, event_type: String, details: String, severity: SecuritySeverity, user_id: Option<String>, resource: Option<String>) {
+    pub fn log_audit(
+        &mut self,
+        event_type: String,
+        details: String,
+        severity: SecuritySeverity,
+        user_id: Option<String>,
+        resource: Option<String>,
+    ) {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         self.audit_log.push(AuditEntry {
             timestamp,
             event_type,
@@ -128,30 +135,34 @@ impl SecuritySystem {
         if self.config.blocked_sources.contains(&source.to_string()) {
             return false;
         }
-        
+
         if self.config.allowed_sources.is_empty() {
             return true;
         }
-        
+
         self.config.allowed_sources.contains(&source.to_string())
     }
 
     /// Validate execution parameters
-    pub fn validate_execution(&self, execution_time: u64, memory_usage: u64) -> Result<(), SecurityError> {
+    pub fn validate_execution(
+        &self,
+        execution_time: u64,
+        memory_usage: u64,
+    ) -> Result<(), SecurityError> {
         if execution_time > self.config.max_execution_time {
             return Err(SecurityError::ExecutionTimeExceeded {
                 actual: execution_time,
                 max: self.config.max_execution_time,
             });
         }
-        
+
         if memory_usage > self.config.max_memory_usage {
             return Err(SecurityError::MemoryUsageExceeded {
                 actual: memory_usage,
                 max: self.config.max_memory_usage,
             });
         }
-        
+
         Ok(())
     }
 
@@ -164,7 +175,12 @@ impl SecuritySystem {
     pub fn get_violations(&self) -> Vec<&AuditEntry> {
         self.audit_log
             .iter()
-            .filter(|entry| matches!(entry.severity, SecuritySeverity::High | SecuritySeverity::Critical))
+            .filter(|entry| {
+                matches!(
+                    entry.severity,
+                    SecuritySeverity::High | SecuritySeverity::Critical
+                )
+            })
             .collect()
     }
 }

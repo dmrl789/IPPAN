@@ -5,7 +5,7 @@ use crate::{
     types::*,
 };
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Model execution engine
 pub struct ExecutionEngine {
@@ -49,7 +49,10 @@ impl ExecutionEngine {
         // Store model metadata
         self.models.insert(metadata.id.clone(), metadata);
 
-        info!("Model loaded successfully. Total loaded: {}", self.models.len());
+        info!(
+            "Model loaded successfully. Total loaded: {}",
+            self.models.len()
+        );
         Ok(())
     }
 
@@ -82,6 +85,9 @@ impl ExecutionEngine {
 
         // Assemble execution result
         let result = ExecutionResult {
+            data_type: output.dtype,
+            execution_time_us: execution_time.as_micros() as u64,
+            memory_usage: (output.data.len() + input.data.len()) as u64,
             output,
             context,
             success: true,
@@ -186,16 +192,25 @@ impl ExecutionEngine {
 
         Ok(ModelOutput {
             data: output_data,
-            data_type: input.dtype,
-            shape: metadata.output_shape.clone(),
             dtype: input.dtype,
+            shape: metadata.output_shape.clone(),
             confidence: 1.0,
             metadata: ExecutionMetadata {
-                execution_time_us: execution_time.as_micros() as u64,
-                memory_usage_bytes: metadata.size_bytes + input.data.len() as u64,
-                cpu_cycles: self.estimate_cpu_cycles(execution_time),
-                execution_hash,
-                model_version: metadata.id.version.clone(),
+                execution_id: context.id.clone(),
+                model_id: metadata.id.to_string(),
+                start_time: 0,
+                end_time: 0,
+                duration_us: execution_time.as_micros() as u64,
+                memory_usage: metadata.size_bytes + input.data.len() as u64,
+                cpu_usage: 0.0,
+                success: true,
+                error: None,
+                metadata: {
+                    let mut m = HashMap::new();
+                    m.insert("execution_hash".to_string(), execution_hash);
+                    m.insert("model_version".to_string(), metadata.id.version.clone());
+                    m
+                },
             },
         })
     }
@@ -309,28 +324,4 @@ impl ExecutionEngine {
     }
 }
 
-impl DataType {
-    /// Get the size in bytes for this data type
-    pub fn size_bytes(self) -> usize {
-        match self {
-            DataType::Int8 => 1,
-            DataType::UInt8 => 1,
-            DataType::Int16 => 2,
-            DataType::UInt16 => 2,
-            DataType::Int32 => 4,
-            DataType::UInt32 => 4,
-            DataType::Int64 => 8,
-            DataType::UInt64 => 8,
-            DataType::Float32 => 4,
-            DataType::Float64 => 8,
-            // Variable-length or complex data types
-            DataType::Text
-            | DataType::Binary
-            | DataType::Json
-            | DataType::Numeric
-            | DataType::Image
-            | DataType::Audio
-            | DataType::Video => 0,
-        }
-    }
-}
+// Removed duplicate size_bytes implementation (now defined on types::DataType)
