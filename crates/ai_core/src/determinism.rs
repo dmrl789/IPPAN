@@ -109,7 +109,8 @@ impl DeterminismManager {
         let expected_hash = self.compute_execution_hash(context, output)?;
         
         // Compare with actual execution hash
-        let is_deterministic = expected_hash == *output.metadata.get("execution_hash").unwrap_or(&String::new());
+        // Check if execution hash matches (placeholder for now - needs proper metadata structure)
+        let is_deterministic = expected_hash == output.metadata.execution_id;
         
         if !is_deterministic {
             warn!("Non-deterministic execution detected for: {}", context.execution_id);
