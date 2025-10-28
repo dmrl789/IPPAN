@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ippan_crypto::confidential::validate_transaction as validate_confidential_transaction;
+use ippan_crypto::validate_confidential_transaction;
 use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
