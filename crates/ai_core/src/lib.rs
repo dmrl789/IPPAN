@@ -114,7 +114,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Used in AI and reputation subsystems to ensure sorting
 /// consistency across validator nodes.
 pub fn deterministically_sorted<T: Ord>(mut items: Vec<T>) -> Vec<T> {
-    // Rust’s sort is deterministic for identical inputs and ordering.
     items.sort();
     items
 }

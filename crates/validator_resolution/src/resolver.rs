@@ -1,7 +1,14 @@
 //! Validator ID resolver implementation
+//!
+//! Resolves human-readable handles or public keys to deterministic validator identities.
+//!
+//! Sources used in resolution:
+//! 1. Direct Ed25519 public key (no lookup needed)
+//! 2. L2 Handle Registry (@handle.ipn)
+//! 3. L1 Ownership Anchor (chain-anchored ownership records)
+//! 4. Registry alias (reserved internal identifiers)
 
 use crate::errors::*;
-use crate::types::*;
 use ippan_economics::ValidatorId;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{Handle, L2HandleRegistry, PublicKey as L2PublicKey};
@@ -10,11 +17,8 @@ use tokio::time::Duration;
 
 /// Validator ID resolver
 ///
-/// Resolves ValidatorId to public keys using multiple resolution methods:
-/// 1. Direct public key (no resolution needed)
-/// 2. L2 handle registry lookup
-/// 3. L1 ownership anchor lookup
-/// 4. Registry alias lookup
+/// Provides unified resolution of validator identities across
+/// L1 and L2 namespaces. Used by consensus and governance modules.
 #[derive(Debug)]
 pub struct ValidatorResolver {
     l2_registry: Arc<L2HandleRegistry>,
@@ -34,7 +38,7 @@ impl ValidatorResolver {
         }
     }
 
-    /// Resolve a ValidatorId to a ResolvedValidator
+    /// Resolve a single `ValidatorId` into a public key and metadata
     pub async fn resolve(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         if let Some(cached) = self.get_from_cache(id) {
             if self.is_cache_valid(&cached) {
@@ -64,12 +68,11 @@ impl ValidatorResolver {
         for id in ids {
             let resolver = self.clone();
             let id_clone = id.clone();
-            let future = async move {
-                let id_result = id_clone.clone();
+            let fut = async move {
                 let result = resolver.resolve(&id_clone).await;
-                (id_result, result)
+                (id_clone, result)
             };
-            futures.push(future);
+            futures.push(fut);
         }
 
         let batch_results = futures::future::join_all(futures).await;
@@ -80,7 +83,7 @@ impl ValidatorResolver {
         results
     }
 
-    /// Determine resolution method for a ValidatorId
+    /// Determine resolution method for a given ID
     fn resolve_method(&self, id: &ValidatorId) -> ResolutionMethod {
         if id.is_public_key() {
             ResolutionMethod::Direct
@@ -91,13 +94,13 @@ impl ValidatorResolver {
         }
     }
 
-    /// Direct resolution (public key)
+    /// Direct resolution for Ed25519 public keys
     async fn resolve_direct(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         let public_key = self.parse_public_key(id.as_str())?;
         Ok(ResolvedValidator::new(id.clone(), public_key, ResolutionMethod::Direct))
     }
 
-    /// Resolve via L2 handle registry (async-safe)
+    /// Resolve handle via L2 Handle Registry
     async fn resolve_via_l2_handle(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         let handle = Handle::new(id.as_str());
         let registry = self.l2_registry.clone();
@@ -124,7 +127,7 @@ impl ValidatorResolver {
         ))
     }
 
-    /// Resolve via L1 ownership anchor
+    /// Resolve validator ownership via L1 anchors
     async fn resolve_via_l1_anchor(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         let anchor = self.l1_anchors.get_anchor_by_handle(id.as_str())?;
         Ok(ResolvedValidator::new(
@@ -134,14 +137,14 @@ impl ValidatorResolver {
         ))
     }
 
-    /// Registry alias placeholder
+    /// Registry alias fallback (reserved internal identifiers)
     async fn resolve_via_alias(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         Err(ValidatorResolutionError::InvalidFormat {
             id: id.as_str().to_string(),
         })
     }
 
-    /// Retrieve handle metadata
+    /// Retrieve handle metadata from the L2 registry
     async fn get_handle_metadata(&self, handle: &Handle) -> Result<ValidatorMetadata> {
         let registry = self.l2_registry.clone();
         let handle_clone = handle.clone();
@@ -170,7 +173,10 @@ impl ValidatorResolver {
         Ok(key)
     }
 
-    /// Cache helpers
+    // -------------------------------------------------------------------------
+    // Cache Management
+    // -------------------------------------------------------------------------
+
     fn get_from_cache(&self, id: &ValidatorId) -> Option<ResolvedValidator> {
         self.cache.read().get(id).cloned()
     }
@@ -180,7 +186,7 @@ impl ValidatorResolver {
     }
 
     fn is_cache_valid(&self, _resolved: &ResolvedValidator) -> bool {
-        true // TTL logic can be added later
+        true // Placeholder; extend with TTL validation later
     }
 
     pub fn clear_cache(&self) {

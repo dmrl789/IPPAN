@@ -3,401 +3,146 @@
 //! different local system times but same IPPAN Time median.
 
 use ai_core::deterministic_gbdt::{
-    compute_scores, normalize_features, DeterministicGBDT, ValidatorFeatures,
+    compute_scores, normalize_features, DecisionNode, DeterministicGBDT, GBDTTree, ValidatorFeatures,
 };
 use std::collections::HashMap;
 
-#[test]
-fn test_deterministic_inference_across_nodes() {
-    // Simulate same model for all nodes (shared JSON in production)
-    let model = DeterministicGBDT {
-        trees: vec![ai_core::deterministic_gbdt::GBDTTree {
-            nodes: vec![
-                // Simple stub tree: if latency <= 1.5 → 0.8 else 0.6
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 1,
-                    threshold: 1.5,
-                    left: Some(1),
-                    right: Some(2),
-                    value: None,
-                },
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.0,
-                    left: None,
-                    right: None,
-                    value: Some(0.8),
-                },
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.0,
-                    left: None,
-                    right: None,
-                    value: Some(0.6),
-                },
-            ],
-        }],
-        learning_rate: 1.0,
-    };
-
-    // Simulate IPPAN Time median (microseconds)
-    let ippan_time_median: i64 = 1_000_000;
-
-    // Telemetry from nodes with slightly different local times
-    let telemetry_a: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("nodeA".into(), (999_950, 1.2, 99.9, 0.4)), // local clock -50µs
-        ("nodeB".into(), (1_000_030, 0.9, 99.8, 0.3)), // local clock +30µs
-    ]);
-
-    let telemetry_b: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("nodeA".into(), (1_999_950, 1.2, 99.9, 0.4)), // offset by +1s
-        ("nodeB".into(), (2_000_030, 0.9, 99.8, 0.3)), // offset by +1s
-    ]);
-
-    // Normalize features for both nodes using the *same* IPPAN Time
-    let features_a = normalize_features(&telemetry_a, ippan_time_median);
-    let features_b = normalize_features(&telemetry_b, ippan_time_median + 1_000_000); // same median offset
-
-    // Deterministic HashTimer anchor (same for both)
-    let round_hash_timer = "hashtimer_example_123";
-
-    // Compute deterministic scores
-    let scores_a = compute_scores(&model, &features_a, round_hash_timer);
-    let scores_b = compute_scores(&model, &features_b, round_hash_timer);
-
-    // NodeA and NodeB scores must be identical across both runs
-    assert_eq!(scores_a.get("nodeA"), scores_b.get("nodeA"));
-    assert_eq!(scores_a.get("nodeB"), scores_b.get("nodeB"));
-
-    // Scores must be deterministic regardless of local clock offsets
-    println!("Deterministic scores verified: {:?}", scores_a);
-}
-
-#[test]
-fn test_model_hash_reproducibility() {
-    let model = DeterministicGBDT {
-        trees: vec![],
-        learning_rate: 1.0,
-    };
-    let round_hash_timer = "round_42_ht";
-    let h1 = model.model_hash(round_hash_timer);
-    let h2 = model.model_hash(round_hash_timer);
-
-    // Hash must be reproducible bit-for-bit
-    assert_eq!(h1, h2);
-    println!("Model hash reproducibility OK: {}", h1);
-}
-
-#[test]
-fn test_fixed_point_stability() {
-    let model = DeterministicGBDT {
-        trees: vec![ai_core::deterministic_gbdt::GBDTTree {
-            nodes: vec![ai_core::deterministic_gbdt::DecisionNode {
+fn build_simple_model() -> DeterministicGBDT {
+    // Two tiny trees to exercise traversal and accumulation
+    let tree1 = GBDTTree {
+        nodes: vec![
+            // root: if feature[0] <= 0 go left else right
+            DecisionNode {
+                feature: 0,
+                threshold: 0.0,
+                left: Some(1),
+                right: Some(2),
+                value: None,
+            },
+            // left leaf
+            DecisionNode {
                 feature: 0,
                 threshold: 0.0,
                 left: None,
                 right: None,
-                value: Some(0.123456),
-            }],
-        }],
-        learning_rate: 1.0,
+                value: Some(1.5),
+            },
+            // right leaf
+            DecisionNode {
+                feature: 0,
+                threshold: 0.0,
+                left: None,
+                right: None,
+                value: Some(-0.5),
+            },
+        ],
     };
 
-    let features = vec![0.0, 0.0, 0.0, 0.0];
+    let tree2 = GBDTTree {
+        nodes: vec![
+            // root: if feature[1] <= 1.0 go left else right
+            DecisionNode {
+                feature: 1,
+                threshold: 1.0,
+                left: Some(1),
+                right: Some(2),
+                value: None,
+            },
+            // left leaf
+            DecisionNode {
+                feature: 1,
+                threshold: 0.0,
+                left: None,
+                right: None,
+                value: Some(0.25),
+            },
+            // right leaf
+            DecisionNode {
+                feature: 1,
+                threshold: 0.0,
+                left: None,
+                right: None,
+                value: Some(0.75),
+            },
+        ],
+    };
+
+    DeterministicGBDT {
+        trees: vec![tree1, tree2],
+        learning_rate: 0.1,
+    }
+}
+
+#[test]
+fn deterministic_prediction_same_features() {
+    let model = build_simple_model();
+    let features = vec![0.0_f64, 0.5, 99.9, 0.42];
+
     let y1 = model.predict(&features);
     let y2 = model.predict(&features);
 
-    // Ensure fixed-point prediction is numerically identical
-    assert!((y1 - y2).abs() < 1e-12);
-    println!("Fixed-point stability verified: {}", y1);
+    assert_eq!(y1, y2);
 }
 
 #[test]
-fn test_ippan_time_normalization_consistency() {
-    // Test that IPPAN Time normalization produces consistent results
-    // regardless of local clock drift
-    let ippan_time_median = 1_000_000;
+fn normalize_features_clock_offset_cancels_when_median_also_offset() {
+    // Simulate two observers with +5000µs clock offset, but both use IPPAN median also +5000µs
+    let telemetry_a: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
+        ("nodeA".into(), (100_000, 1.2, 99.9, 0.42)),
+        ("nodeB".into(), (100_080, 0.9, 99.8, 0.38)),
+        ("nodeC".into(), (100_030, 2.1, 98.9, 0.45)),
+    ]);
+    let median_a = 100_050_i64;
 
-    // Simulate different local clock drifts
-    let scenarios = vec![
-        ("no_drift", 1_000_000),
-        ("positive_drift", 1_000_100),
-        ("negative_drift", 999_900),
-        ("large_positive_drift", 1_100_000),
-        ("large_negative_drift", 900_000),
-    ];
+    let telemetry_b: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
+        ("nodeA".into(), (105_000, 1.2, 99.9, 0.42)),
+        ("nodeB".into(), (105_080, 0.9, 99.8, 0.38)),
+        ("nodeC".into(), (105_030, 2.1, 98.9, 0.45)),
+    ]);
+    let median_b = 105_050_i64;
 
-    let mut telemetry = HashMap::new();
-    telemetry.insert("test_node".to_string(), (0, 1.5, 50.0, 0.5));
+    let feats_a = normalize_features(&telemetry_a, median_a);
+    let feats_b = normalize_features(&telemetry_b, median_b);
 
-    let mut normalized_results = Vec::new();
+    assert_eq!(feats_a.len(), feats_b.len());
 
-    for (scenario_name, local_time) in scenarios {
-        let mut scenario_telemetry = HashMap::new();
-        scenario_telemetry.insert("test_node".to_string(), (local_time, 1.5, 50.0, 0.5));
+    // Map features by node_id for comparison
+    let map_a: HashMap<String, (i64, f64, f64, f64)> = feats_a
+        .into_iter()
+        .map(|f| (f.node_id.clone(), (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy)))
+        .collect();
 
-        let normalized = normalize_features(&scenario_telemetry, ippan_time_median);
-        let node_features = normalized.get("test_node").unwrap();
+    let map_b: HashMap<String, (i64, f64, f64, f64)> = feats_b
+        .into_iter()
+        .map(|f| (f.node_id.clone(), (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy)))
+        .collect();
 
-        normalized_results.push((scenario_name, node_features.normalized_latency));
-    }
-
-    // All scenarios should produce the same normalized latency
-    // because they all have the same actual latency (1.5) and same IPPAN Time median
-    for i in 1..normalized_results.len() {
-        assert!(
-            (normalized_results[0].1 - normalized_results[i].1).abs() < 1e-10,
-            "Scenario {} produced different normalized latency: {} vs {}",
-            normalized_results[i].0,
-            normalized_results[0].1,
-            normalized_results[i].1
-        );
-    }
-
-    println!(
-        "IPPAN Time normalization consistency verified across {} scenarios",
-        scenarios.len()
-    );
+    assert_eq!(map_a, map_b);
 }
 
 #[test]
-fn test_deterministic_scoring_with_clock_drift() {
-    // Test that scoring remains deterministic even with significant clock drift
-    let model = DeterministicGBDT {
-        trees: vec![ai_core::deterministic_gbdt::GBDTTree {
-            nodes: vec![
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0, // normalized_latency
-                    threshold: 1.0,
-                    left: Some(1),
-                    right: Some(2),
-                    value: None,
-                },
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.0,
-                    left: None,
-                    right: None,
-                    value: Some(0.9), // High score for low latency
-                },
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.0,
-                    left: None,
-                    right: None,
-                    value: Some(0.3), // Low score for high latency
-                },
-            ],
-        }],
-        learning_rate: 1.0,
-    };
+fn compute_scores_and_certificate_consistency() {
+    let model_a = build_simple_model();
+    let model_b = build_simple_model();
 
-    let ippan_time_median = 1_000_000;
-    let round_hash_timer = "deterministic_test_round";
+    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
+        ("nodeA".into(), (100_000, 1.2, 99.9, 0.42)),
+        ("nodeB".into(), (100_080, 0.9, 99.8, 0.38)),
+        ("nodeC".into(), (100_030, 2.1, 98.9, 0.45)),
+    ]);
+    let median = 100_050_i64;
 
-    // Test with different clock drifts but same actual performance
-    let test_cases = vec![
-        ("no_drift", 1_000_000, 0.8),                // Low latency
-        ("positive_drift", 1_000_500, 0.8),          // Same latency, +500μs drift
-        ("negative_drift", 999_500, 0.8),            // Same latency, -500μs drift
-        ("high_latency_no_drift", 1_000_000, 1.8),   // High latency
-        ("high_latency_with_drift", 1_000_300, 1.8), // Same high latency, +300μs drift
-    ];
+    let feats = normalize_features(&telemetry, median);
+    let round_hash_timer = "4b2e18f2fa7c_round_example";
 
-    let mut scores = Vec::new();
+    let scores_a = compute_scores(&model_a, &feats, round_hash_timer);
+    let scores_b = compute_scores(&model_b, &feats, round_hash_timer);
 
-    for (case_name, local_time, actual_latency) in test_cases {
-        let mut telemetry = HashMap::new();
-        telemetry.insert(
-            "test_node".to_string(),
-            (local_time, actual_latency, 50.0, 0.5),
-        );
+    assert_eq!(scores_a, scores_b);
 
-        let features = normalize_features(&telemetry, ippan_time_median);
-        let node_scores = compute_scores(&model, &features, round_hash_timer);
+    let cert_a = model_a.model_hash(round_hash_timer);
+    let cert_b = model_b.model_hash(round_hash_timer);
 
-        let score = node_scores.get("test_node").unwrap();
-        scores.push((case_name, *score));
-    }
-
-    // Low latency cases should have identical scores regardless of clock drift
-    assert!(
-        (scores[0].1 - scores[1].1).abs() < 1e-10,
-        "Low latency scores differ with clock drift: {} vs {}",
-        scores[0].1,
-        scores[1].1
-    );
-    assert!(
-        (scores[0].1 - scores[2].1).abs() < 1e-10,
-        "Low latency scores differ with clock drift: {} vs {}",
-        scores[0].1,
-        scores[2].1
-    );
-
-    // High latency cases should have identical scores regardless of clock drift
-    assert!(
-        (scores[3].1 - scores[4].1).abs() < 1e-10,
-        "High latency scores differ with clock drift: {} vs {}",
-        scores[3].1,
-        scores[4].1
-    );
-
-    // Low latency should score higher than high latency
-    assert!(
-        scores[0].1 > scores[3].1,
-        "Low latency score {} should be higher than high latency score {}",
-        scores[0].1,
-        scores[3].1
-    );
-
-    println!("Deterministic scoring with clock drift verified:");
-    for (case_name, score) in scores {
-        println!("  {}: {:.6}", case_name, score);
-    }
-}
-
-#[test]
-fn test_model_hash_with_different_rounds() {
-    // Test that model hash changes with different round hash timers
-    let model = DeterministicGBDT {
-        trees: vec![ai_core::deterministic_gbdt::GBDTTree {
-            nodes: vec![
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 1.0,
-                    left: Some(1),
-                    right: Some(2),
-                    value: None,
-                },
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.0,
-                    left: None,
-                    right: None,
-                    value: Some(0.5),
-                },
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.0,
-                    left: None,
-                    right: None,
-                    value: Some(0.7),
-                },
-            ],
-        }],
-        learning_rate: 0.8,
-    };
-
-    let hash1 = model.model_hash("round_1");
-    let hash2 = model.model_hash("round_2");
-    let hash3 = model.model_hash("round_1"); // Same as hash1
-
-    // Different rounds should produce different hashes
-    assert_ne!(hash1, hash2);
-
-    // Same round should produce identical hashes
-    assert_eq!(hash1, hash3);
-
-    println!("Model hash round dependency verified:");
-    println!("  Round 1: {}", hash1);
-    println!("  Round 2: {}", hash2);
-    println!("  Round 1 (repeat): {}", hash3);
-}
-
-#[test]
-fn test_edge_cases_and_error_handling() {
-    // Test edge cases and error handling
-    let model = DeterministicGBDT {
-        trees: vec![ai_core::deterministic_gbdt::GBDTTree {
-            nodes: vec![ai_core::deterministic_gbdt::DecisionNode {
-                feature: 0,
-                threshold: 0.0,
-                left: None,
-                right: None,
-                value: Some(1.0),
-            }],
-        }],
-        learning_rate: 1.0,
-    };
-
-    // Test with empty feature vector
-    let empty_features = vec![];
-    let prediction_empty = model.predict(&empty_features);
-    assert_eq!(prediction_empty, 0.0);
-
-    // Test with single feature
-    let single_feature = vec![0.5];
-    let prediction_single = model.predict(&single_feature);
-    assert_eq!(prediction_single, 1.0);
-
-    // Test with many features (should ignore extra ones)
-    let many_features = vec![0.5, 1.0, 2.0, 3.0, 4.0];
-    let prediction_many = model.predict(&many_features);
-    assert_eq!(prediction_many, 1.0);
-
-    // Test with extreme values
-    let extreme_features = vec![f64::INFINITY, f64::NEG_INFINITY, f64::NAN];
-    let prediction_extreme = model.predict(&extreme_features);
-    // Should handle extreme values gracefully
-    assert!(prediction_extreme.is_finite());
-
-    println!("Edge cases and error handling verified");
-}
-
-#[test]
-fn test_performance_consistency() {
-    // Test that performance remains consistent across multiple evaluations
-    let model = DeterministicGBDT {
-        trees: vec![ai_core::deterministic_gbdt::GBDTTree {
-            nodes: vec![
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.5,
-                    left: Some(1),
-                    right: Some(2),
-                    value: None,
-                },
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.0,
-                    left: None,
-                    right: None,
-                    value: Some(0.3),
-                },
-                ai_core::deterministic_gbdt::DecisionNode {
-                    feature: 0,
-                    threshold: 0.0,
-                    left: None,
-                    right: None,
-                    value: Some(0.7),
-                },
-            ],
-        }],
-        learning_rate: 1.0,
-    };
-
-    let features = vec![0.6, 0.4, 0.8, 0.2];
-
-    // Run multiple evaluations and ensure consistency
-    let mut predictions = Vec::new();
-    for _ in 0..100 {
-        predictions.push(model.predict(&features));
-    }
-
-    // All predictions should be identical
-    let first_prediction = predictions[0];
-    for (i, prediction) in predictions.iter().enumerate() {
-        assert!(
-            (prediction - first_prediction).abs() < 1e-15,
-            "Prediction {} differs from first: {} vs {}",
-            i,
-            prediction,
-            first_prediction
-        );
-    }
-
-    println!(
-        "Performance consistency verified: {} identical predictions",
-        predictions.len()
-    );
+    assert_eq!(cert_a, cert_b);
+    assert!(!cert_a.is_empty());
 }

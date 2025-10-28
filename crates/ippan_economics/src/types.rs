@@ -59,7 +59,7 @@ impl fmt::Display for ValidatorId {
     }
 }
 
-/// Validator → reward (in micro-IPN)
+/// Validator → reward mapping (in micro-IPN)
 pub type Payouts = HashMap<ValidatorId, u128>;
 
 /// Emission parameters configurable via governance
@@ -78,10 +78,10 @@ pub struct EmissionParams {
 impl Default for EmissionParams {
     fn default() -> Self {
         Self {
-            initial_round_reward: 10_000,         // 0.0001 IPN = 10,000 micro-IPN
-            halving_interval: 630_000_000,        // ≈ 2 years at 10 rounds/sec
-            total_supply_cap: 2_100_000_000_000,  // 21 million IPN = 2.1e12 micro-IPN
-            fee_cap_fraction: Decimal::new(1, 1), // 0.1 = 10%
+            initial_round_reward: 10_000,         // 0.0001 IPN = 10 000 micro-IPN
+            halving_interval: 630_000_000,        // ≈ 2 years @ 10 rounds/sec
+            total_supply_cap: 2_100_000_000_000,  // 21 million IPN = 2.1 × 10¹² µIPN
+            fee_cap_fraction: Decimal::new(1, 1), // 0.1 = 10 %
         }
     }
 }
@@ -129,7 +129,7 @@ pub struct RoundRewardDistribution {
     pub excess_burned: RewardAmount,
 }
 
-/// Detailed breakdown of a validator's reward
+/// Detailed breakdown of a validator’s reward
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorReward {
     pub round_emission: RewardAmount,
@@ -154,14 +154,14 @@ pub struct SupplyInfo {
 /// Breakdown of per-round reward composition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RewardComposition {
-    pub round_emission: RewardAmount,   // 60%
-    pub transaction_fees: RewardAmount, // 25%
-    pub ai_commissions: RewardAmount,   // 10%
-    pub network_dividend: RewardAmount, // 5%
+    pub round_emission: RewardAmount,   // 60 %
+    pub transaction_fees: RewardAmount, // 25 %
+    pub ai_commissions: RewardAmount,   // 10 %
+    pub network_dividend: RewardAmount, // 5 %
 }
 
 impl RewardComposition {
-    /// Deterministic 60/25/10/5 distribution
+    /// Deterministic 60 / 25 / 10 / 5 distribution
     pub fn new(total_reward: RewardAmount) -> Self {
         let round_emission = (total_reward * 60) / 100;
         let transaction_fees = (total_reward * 25) / 100;
@@ -192,7 +192,10 @@ impl RewardComposition {
 
     /// Compute total reward
     pub fn total(&self) -> RewardAmount {
-        self.round_emission + self.transaction_fees + self.ai_commissions + self.network_dividend
+        self.round_emission
+            + self.transaction_fees
+            + self.ai_commissions
+            + self.network_dividend
     }
 }
 

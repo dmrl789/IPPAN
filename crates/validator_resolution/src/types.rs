@@ -1,4 +1,7 @@
 //! Types for validator resolution
+//!
+//! Defines canonical types used for validator identity resolution across
+//! L1 anchors, L2 handle registry, and direct Ed25519 identifiers.
 
 use ippan_economics::ValidatorId;
 use serde::{Deserialize, Serialize};
@@ -16,7 +19,7 @@ pub struct ResolvedValidator {
     pub metadata: Option<ValidatorMetadata>,
 }
 
-/// Resolution method used
+/// Resolution method used for validator identification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResolutionMethod {
     /// Direct public key (no resolution needed)
@@ -29,18 +32,18 @@ pub enum ResolutionMethod {
     RegistryAlias,
 }
 
-/// Validator metadata
+/// Extended metadata about a validator (from registry or anchor)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ValidatorMetadata {
-    /// Handle if resolved from handle
+    /// Handle if resolved from handle (e.g., "@alice.ipn")
     pub handle: Option<String>,
-    /// Creation timestamp
+    /// Creation timestamp (HashTimer or UNIX micros)
     pub created_at: Option<u64>,
     /// Last updated timestamp
     pub updated_at: Option<u64>,
-    /// Status
+    /// Status (e.g., "active", "revoked", "expired")
     pub status: Option<String>,
-    /// Additional custom metadata
+    /// Arbitrary custom metadata (JSON key–value map)
     pub custom: std::collections::HashMap<String, String>,
 }
 
@@ -55,7 +58,7 @@ impl ResolvedValidator {
         }
     }
 
-    /// Create with metadata
+    /// Create a resolved validator with metadata
     pub fn with_metadata(
         id: ValidatorId,
         public_key: [u8; 32],
@@ -70,13 +73,14 @@ impl ResolvedValidator {
         }
     }
 
-    /// Get the public key as bytes
+    /// Get the public key as raw bytes
     pub fn public_key_bytes(&self) -> &[u8; 32] {
         &self.public_key
     }
 
-    /// Check if this was resolved from a handle
+    /// Check if this was resolved from a human-readable handle
     pub fn is_handle_resolved(&self) -> bool {
         matches!(self.resolution_method, ResolutionMethod::L2HandleRegistry)
     }
 }
+
