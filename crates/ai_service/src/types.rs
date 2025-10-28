@@ -1,9 +1,9 @@
 //! AI Service type definitions
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 #[cfg(feature = "analytics")]
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// AI Service configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,7 +107,7 @@ pub struct LLMUsage {
 }
 
 /// Analytics insight
-#[cfg_attr(feature = "analytics" , derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "analytics", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct AnalyticsInsight {
     /// Insight ID
@@ -162,7 +162,7 @@ pub enum SeverityLevel {
 }
 
 /// Data point for analytics
-#[cfg_attr(feature = "analytics" , derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "analytics", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct DataPoint {
     /// Metric name
@@ -349,7 +349,7 @@ pub enum DifficultyLevel {
 }
 
 /// Monitoring alert
-#[cfg_attr(feature = "analytics" , derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "analytics", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct MonitoringAlert {
     /// Alert ID

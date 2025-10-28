@@ -1,7 +1,7 @@
 //! Types for validator resolution
 
-use serde::{Deserialize, Serialize};
 use ippan_economics::ValidatorId;
+use serde::{Deserialize, Serialize};
 
 /// Resolved validator information
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,11 +46,7 @@ pub struct ValidatorMetadata {
 
 impl ResolvedValidator {
     /// Create a new resolved validator
-    pub fn new(
-        id: ValidatorId,
-        public_key: [u8; 32],
-        resolution_method: ResolutionMethod,
-    ) -> Self {
+    pub fn new(id: ValidatorId, public_key: [u8; 32], resolution_method: ResolutionMethod) -> Self {
         Self {
             id,
             public_key,
@@ -58,7 +54,7 @@ impl ResolvedValidator {
             metadata: None,
         }
     }
-    
+
     /// Create with metadata
     pub fn with_metadata(
         id: ValidatorId,
@@ -73,12 +69,12 @@ impl ResolvedValidator {
             metadata: Some(metadata),
         }
     }
-    
+
     /// Get the public key as bytes
     pub fn public_key_bytes(&self) -> &[u8; 32] {
         &self.public_key
     }
-    
+
     /// Check if this was resolved from a handle
     pub fn is_handle_resolved(&self) -> bool {
         matches!(self.resolution_method, ResolutionMethod::L2HandleRegistry)

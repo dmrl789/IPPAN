@@ -1,7 +1,7 @@
 //! Fee collection and management for the treasury
 
-use ippan_types::MicroIPN;
 use anyhow::Result;
+use ippan_types::MicroIPN;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info};

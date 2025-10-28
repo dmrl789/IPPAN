@@ -113,11 +113,11 @@ pub fn create_hashtimer_proof(
     proof_data.extend_from_slice(model_id.as_bytes());
     proof_data.extend_from_slice(&score.to_be_bytes());
     proof_data.extend_from_slice(&timestamp.to_be_bytes());
-    
+
     for feature in features {
         proof_data.extend_from_slice(&feature.to_be_bytes());
     }
-    
+
     // Create a simple hash-based proof for now
     use blake3::Hasher;
     let mut hasher = Hasher::new();
@@ -125,7 +125,7 @@ pub fn create_hashtimer_proof(
     hasher.update(&proof_data);
     hasher.update(&score.to_be_bytes());
     hasher.update(&timestamp.to_be_bytes());
-    
+
     let hash = hasher.finalize();
     format!("ai_proof_{}", hex::encode(hash.as_bytes()))
 }
@@ -133,7 +133,7 @@ pub fn create_hashtimer_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gbdt::{GBDTModel as Model, Tree, Node};
+    use crate::gbdt::{GBDTModel as Model, Node, Tree};
 
     fn create_test_model() -> Model {
         Model::new(
@@ -173,23 +173,20 @@ mod tests {
     fn test_ai_logger() {
         let mut logger = AiLogger::new();
         let model = create_test_model();
-        
+
         // Set active model
         assert!(logger.set_active_model(model).is_ok());
         assert!(logger.get_active_model().is_some());
-        
+
         // Log an evaluation
         let features = vec![30, 20, 10];
         let score = 1100;
         let proof = create_hashtimer_proof("test_model", &features, score, 1234567890);
-        
-        assert!(logger.log_evaluation(
-            "test_model".to_string(),
-            features.clone(),
-            score,
-            proof
-        ).is_ok());
-        
+
+        assert!(logger
+            .log_evaluation("test_model".to_string(), features.clone(), score, proof)
+            .is_ok());
+
         // Check history
         let history = logger.get_evaluation_history();
         assert_eq!(history.len(), 1);
@@ -202,9 +199,9 @@ mod tests {
         let features = vec![30, 20, 10];
         let score = 1100;
         let timestamp = 1234567890;
-        
+
         let proof = create_hashtimer_proof("test_model", &features, score, timestamp);
-        
+
         // Proof should be a valid proof string
         assert!(!proof.is_empty());
         assert!(proof.starts_with("ai_proof_"));
@@ -215,10 +212,10 @@ mod tests {
         let features = vec![30, 20, 10];
         let score = 1100;
         let timestamp = 1234567890;
-        
+
         let proof1 = create_hashtimer_proof("test_model", &features, score, timestamp);
         let proof2 = create_hashtimer_proof("test_model", &features, score, timestamp);
-        
+
         // Same inputs should produce same proof
         assert_eq!(proof1, proof2);
     }

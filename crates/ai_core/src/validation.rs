@@ -1,11 +1,8 @@
 //! Model validation and verification
 
-use crate::{
-    errors::AiCoreError,
-    types::*,
-};
+use crate::{errors::AiCoreError, types::*};
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Model validator for ensuring model integrity and correctness
 pub struct ModelValidator {
@@ -121,13 +118,13 @@ impl ModelValidator {
         &mut self,
         model_data: &[u8],
         metadata: &ModelMetadata,
-    ) -> std::result::Result<ValidationResult, AiCoreError> {
+    ) -> Result<ValidationResult, AiCoreError> {
         info!("Validating model: {:?}", metadata.id);
-        
+
         let start_time = std::time::Instant::now();
         let mut errors: Vec<ValidationError> = Vec::new();
         let mut warnings: Vec<ValidationWarning> = Vec::new();
-        
+
         // Run validation rules
         for rule in &self.rules {
             match rule {
@@ -135,36 +132,37 @@ impl ModelValidator {
                     if let Err(e) = self.validate_hash_integrity(model_data, metadata) {
                         errors.push(e);
                     }
-                },
+                }
                 ValidationRule::ShapeValidation => {
                     if let Err(e) = self.validate_shapes(metadata) {
                         errors.push(e);
                     }
-                },
+                }
                 ValidationRule::ParameterBounds => {
                     if let Err(e) = self.validate_parameter_bounds(metadata) {
                         errors.push(e);
                     }
-                },
+                }
                 ValidationRule::DeterminismCheck => {
                     if let Err(e) = self.validate_determinism(model_data, metadata).await {
                         errors.push(e);
                     }
-                },
+                }
                 ValidationRule::FormatValidation => {
                     if let Err(e) = self.validate_format(model_data, metadata) {
                         errors.push(e);
                     }
-                },
+                }
             }
         }
-        
+
         let duration = start_time.elapsed();
-        let passed = errors.is_empty() || errors.iter().all(|e| e.severity != ErrorSeverity::Critical);
-        
+        let passed =
+            errors.is_empty() || errors.iter().all(|e| e.severity != ErrorSeverity::Critical);
+
         // Update statistics
         self.update_stats(passed, &errors);
-        
+
         let result = ValidationResult {
             passed,
             errors,
@@ -179,8 +177,11 @@ impl ModelValidator {
                 model_version: metadata.version.clone(),
             },
         };
-        
-        info!("Model validation completed: {}", if passed { "PASSED" } else { "FAILED" });
+
+        info!(
+            "Model validation completed: {}",
+            if passed { "PASSED" } else { "FAILED" }
+        );
         Ok(result)
     }
 
@@ -189,7 +190,7 @@ impl ModelValidator {
         &self,
         model_data: &[u8],
         metadata: &ModelMetadata,
-    ) -> std::result::Result<(), ValidationError> {
+    ) -> Result<(), ValidationError> {
         let computed_hash = blake3::hash(model_data).to_hex().to_string();
         if computed_hash != metadata.id.hash {
             return Err(ValidationError {
@@ -205,8 +206,7 @@ impl ModelValidator {
     }
 
     /// Validate input/output shapes
-    fn validate_shapes(&self, metadata: &ModelMetadata) -> std::result::Result<(), ValidationError> {
-        // Check input shape
+    fn validate_shapes(&self, metadata: &ModelMetadata) -> Result<(), ValidationError> {
         if metadata.input_shape.is_empty() {
             return Err(ValidationError {
                 error_type: "ShapeValidation".to_string(),
@@ -214,8 +214,7 @@ impl ModelValidator {
                 severity: ErrorSeverity::Critical,
             });
         }
-        
-        // Check output shape
+
         if metadata.output_shape.is_empty() {
             return Err(ValidationError {
                 error_type: "ShapeValidation".to_string(),
@@ -223,8 +222,7 @@ impl ModelValidator {
                 severity: ErrorSeverity::Critical,
             });
         }
-        
-        // Check for reasonable shape dimensions
+
         for (i, dim) in metadata.input_shape.iter().enumerate() {
             if *dim == 0 {
                 return Err(ValidationError {
@@ -234,7 +232,7 @@ impl ModelValidator {
                 });
             }
         }
-        
+
         for (i, dim) in metadata.output_shape.iter().enumerate() {
             if *dim == 0 {
                 return Err(ValidationError {
@@ -244,13 +242,12 @@ impl ModelValidator {
                 });
             }
         }
-        
+
         Ok(())
     }
 
     /// Validate parameter bounds
-    fn validate_parameter_bounds(&self, metadata: &ModelMetadata) -> std::result::Result<(), ValidationError> {
-        // Check parameter count is reasonable
+    fn validate_parameter_bounds(&self, metadata: &ModelMetadata) -> Result<(), ValidationError> {
         if metadata.parameter_count == 0 {
             return Err(ValidationError {
                 error_type: "ParameterBounds".to_string(),
@@ -258,8 +255,7 @@ impl ModelValidator {
                 severity: ErrorSeverity::Critical,
             });
         }
-        
-        // Check for extremely large parameter counts (potential overflow)
+
         if metadata.parameter_count > 1_000_000_000 {
             return Err(ValidationError {
                 error_type: "ParameterBounds".to_string(),
@@ -267,8 +263,7 @@ impl ModelValidator {
                 severity: ErrorSeverity::High,
             });
         }
-        
-        // Check model size is reasonable
+
         if metadata.size_bytes == 0 {
             return Err(ValidationError {
                 error_type: "ParameterBounds".to_string(),
@@ -276,16 +271,15 @@ impl ModelValidator {
                 severity: ErrorSeverity::Critical,
             });
         }
-        
-        // Check for extremely large model size
-        if metadata.size_bytes > 10_000_000_000 { // 10GB
+
+        if metadata.size_bytes > 10_000_000_000 {
             return Err(ValidationError {
                 error_type: "ParameterBounds".to_string(),
                 message: "Model size is extremely large, may cause memory issues".to_string(),
                 severity: ErrorSeverity::Medium,
             });
         }
-        
+
         Ok(())
     }
 
@@ -294,18 +288,13 @@ impl ModelValidator {
         &self,
         model_data: &[u8],
         metadata: &ModelMetadata,
-    ) -> std::result::Result<(), ValidationError> {
+    ) -> Result<(), ValidationError> {
         info!("Validating model determinism");
-        
-        // Create test input data for determinism checking
-        let test_input_size = metadata.input_shape.iter().product::<usize>() * 4; // Assume float32
-        let _test_input = vec![42u8; test_input_size]; // Deterministic test input
-        
-        // Check that model structure is deterministic
-        // For GBDT models, ensure no random components
+
+        let test_input_size = metadata.input_shape.iter().product::<usize>() * 4;
+        let _test_input = vec![42u8; test_input_size];
+
         if metadata.architecture == "gbdt" {
-            // GBDT models should be fully deterministic
-            // Check for any probabilistic components
             if let Ok(model_str) = std::str::from_utf8(model_data) {
                 if model_str.contains("random") || model_str.contains("stochastic") {
                     return Err(ValidationError {
@@ -316,56 +305,33 @@ impl ModelValidator {
                 }
             }
         }
-        
-        // Check for reasonable model size for deterministic execution
-        if metadata.size_bytes > 10_000_000_000 { // 10GB
+
+        if metadata.size_bytes > 10_000_000_000 {
             warn!("Large model size may impact determinism verification");
         }
-        
-        // Verify that model metadata includes deterministic hash
-        if metadata.hash.is_empty() {
+
+        if metadata.id.hash.is_empty() {
             return Err(ValidationError {
                 error_type: "DeterminismCheck".to_string(),
                 message: "Model hash is required for determinism verification".to_string(),
                 severity: ErrorSeverity::Critical,
             });
         }
-        
-        // Additional determinism checks could include:
-        // - Verifying no timestamp-based logic
-        // - Checking for proper seed handling
-        // - Ensuring reproducible initialization
-        
+
         info!("Determinism validation completed successfully");
         Ok(())
     }
 
     /// Validate model format
-    fn validate_format(
-        &self,
-        model_data: &[u8],
-        metadata: &ModelMetadata,
-    ) -> std::result::Result<(), ValidationError> {
-        // Check minimum data size
-        if model_data.len() < 1024 { // 1KB minimum
+    fn validate_format(&self, model_data: &[u8], _metadata: &ModelMetadata) -> Result<(), ValidationError> {
+        if model_data.len() < 1024 {
             return Err(ValidationError {
                 error_type: "FormatValidation".to_string(),
                 message: "Model data too small, likely corrupted".to_string(),
                 severity: ErrorSeverity::High,
             });
         }
-        
-        // Check for common model format signatures
-        // This is a placeholder - in reality, you'd check for specific format headers
-        if model_data.len() < 4 {
-            return Err(ValidationError {
-                error_type: "FormatValidation".to_string(),
-                message: "Model data too small for format validation".to_string(),
-                severity: ErrorSeverity::Critical,
-            });
-        }
-        
-        // Check for null bytes at the beginning (common corruption indicator)
+
         if model_data[0] == 0 {
             return Err(ValidationError {
                 error_type: "FormatValidation".to_string(),
@@ -373,23 +339,26 @@ impl ModelValidator {
                 severity: ErrorSeverity::Medium,
             });
         }
-        
+
         Ok(())
     }
 
     /// Update validation statistics
     fn update_stats(&mut self, passed: bool, errors: &[ValidationError]) {
         self.stats.total_validations += 1;
-        
+
         if passed {
             self.stats.successful_validations += 1;
         } else {
             self.stats.failed_validations += 1;
         }
-        
-        // Count errors by type
+
         for error in errors {
-            *self.stats.error_counts.entry(error.error_type.clone()).or_insert(0) += 1;
+            *self
+                .stats
+                .error_counts
+                .entry(error.error_type.clone())
+                .or_insert(0) += 1;
         }
     }
 

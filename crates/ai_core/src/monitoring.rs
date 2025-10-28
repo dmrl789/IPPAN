@@ -11,7 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Monitoring configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +20,10 @@ pub struct MonitoringConfig {
     pub enabled: bool,
     /// Enable performance monitoring
     pub enable_performance_monitoring: bool,
+    /// Enable health monitoring
+    pub enable_health_monitoring: bool,
+    /// Enable security monitoring
+    pub enable_security_monitoring: bool,
     /// Monitoring interval (seconds)
     pub interval_seconds: u64,
     /// Metrics retention period (days)
@@ -33,6 +37,8 @@ impl Default for MonitoringConfig {
         Self {
             enabled: true,
             enable_performance_monitoring: true,
+            enable_health_monitoring: true,
+            enable_security_monitoring: true,
             interval_seconds: 60,
             retention_days: 7,
             alert_thresholds: AlertThresholds::default(),
@@ -90,6 +96,7 @@ pub enum AlertSeverity {
 }
 
 /// Monitoring system
+#[derive(Debug)]
 pub struct MonitoringSystem {
     config: MonitoringConfig,
     metrics: HashMap<String, MetricValue>,
@@ -208,7 +215,9 @@ mod tests {
 
         let alerts = monitor.check_alerts();
         assert_eq!(alerts.len(), 2);
-        assert!(alerts.iter().any(|a| matches!(a.severity, AlertSeverity::Warning | AlertSeverity::Critical)));
+        assert!(alerts
+            .iter()
+            .any(|a| matches!(a.severity, AlertSeverity::Warning | AlertSeverity::Critical)));
     }
 
     #[test]

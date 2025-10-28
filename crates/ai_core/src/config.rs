@@ -212,7 +212,7 @@ impl Default for SecurityConfig {
         Self {
             validate_inputs: true,
             validate_outputs: true,
-            max_input_size: 10_000_000, // 10MB
+            max_input_size: 10_000_000,  // 10MB
             max_output_size: 10_000_000, // 10MB
             rate_limiting: true,
             rate_limit: 1000,
@@ -301,48 +301,73 @@ impl ConfigManager {
         // Health configuration
         if let Ok(val) = std::env::var("AI_CORE_HEALTH_ENABLED") {
             config.health.enabled = val.parse().unwrap_or(config.health.enabled);
-            overrides.insert("health.enabled".to_string(), serde_json::Value::Bool(config.health.enabled));
+            overrides.insert(
+                "health.enabled".to_string(),
+                serde_json::Value::Bool(config.health.enabled),
+            );
         }
 
         if let Ok(val) = std::env::var("AI_CORE_HEALTH_MEMORY_THRESHOLD") {
             config.health.memory_threshold = val.parse().unwrap_or(config.health.memory_threshold);
-            overrides.insert("health.memory_threshold".to_string(), serde_json::Value::Number(config.health.memory_threshold.into()));
+            overrides.insert(
+                "health.memory_threshold".to_string(),
+                serde_json::Value::Number(config.health.memory_threshold.into()),
+            );
         }
 
         // Execution configuration
         if let Ok(val) = std::env::var("AI_CORE_EXECUTION_MAX_TIME") {
             if let Ok(secs) = val.parse::<u64>() {
                 config.execution.max_execution_time = Duration::from_secs(secs);
-                overrides.insert("execution.max_execution_time".to_string(), serde_json::Value::Number(secs.into()));
+                overrides.insert(
+                    "execution.max_execution_time".to_string(),
+                    serde_json::Value::Number(secs.into()),
+                );
             }
         }
 
         if let Ok(val) = std::env::var("AI_CORE_EXECUTION_MAX_MEMORY") {
-            config.execution.max_memory_usage = val.parse().unwrap_or(config.execution.max_memory_usage);
-            overrides.insert("execution.max_memory_usage".to_string(), serde_json::Value::Number(config.execution.max_memory_usage.into()));
+            config.execution.max_memory_usage =
+                val.parse().unwrap_or(config.execution.max_memory_usage);
+            overrides.insert(
+                "execution.max_memory_usage".to_string(),
+                serde_json::Value::Number(config.execution.max_memory_usage.into()),
+            );
         }
 
         // Logging configuration
         if let Ok(val) = std::env::var("AI_CORE_LOG_LEVEL") {
             config.logging.level = val;
-            overrides.insert("logging.level".to_string(), serde_json::Value::String(config.logging.level.clone()));
+            overrides.insert(
+                "logging.level".to_string(),
+                serde_json::Value::String(config.logging.level.clone()),
+            );
         }
 
         if let Ok(val) = std::env::var("AI_CORE_LOG_FILE") {
             config.logging.file_path = Some(val);
-            overrides.insert("logging.file_path".to_string(), serde_json::Value::String(config.logging.file_path.clone().unwrap()));
+            overrides.insert(
+                "logging.file_path".to_string(),
+                serde_json::Value::String(config.logging.file_path.clone().unwrap()),
+            );
         }
 
         // Security configuration
         if let Ok(val) = std::env::var("AI_CORE_SECURITY_RATE_LIMIT") {
             config.security.rate_limit = val.parse().unwrap_or(config.security.rate_limit);
-            overrides.insert("security.rate_limit".to_string(), serde_json::Value::Number(config.security.rate_limit.into()));
+            overrides.insert(
+                "security.rate_limit".to_string(),
+                serde_json::Value::Number(config.security.rate_limit.into()),
+            );
         }
 
         // Performance configuration
         if let Ok(val) = std::env::var("AI_CORE_PERFORMANCE_METRICS") {
             config.performance.metrics = val.parse().unwrap_or(config.performance.metrics);
-            overrides.insert("performance.metrics".to_string(), serde_json::Value::Bool(config.performance.metrics));
+            overrides.insert(
+                "performance.metrics".to_string(),
+                serde_json::Value::Bool(config.performance.metrics),
+            );
         }
 
         self.update_config(config)?;
@@ -456,9 +481,10 @@ impl ConfigManager {
     pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
         let config = self.get_config();
-        
-        let content = toml::to_string_pretty(&config)
-            .map_err(|e| AiCoreError::Serialization(format!("Failed to serialize config: {}", e)))?;
+
+        let content = toml::to_string_pretty(&config).map_err(|e| {
+            AiCoreError::Serialization(format!("Failed to serialize config: {}", e))
+        })?;
 
         std::fs::write(path, content)
             .map_err(|e| AiCoreError::Io(format!("Failed to write config file: {}", e)))?;
@@ -472,11 +498,26 @@ impl ConfigManager {
         let config = self.get_config();
         let mut summary = HashMap::new();
 
-        summary.insert("health_enabled".to_string(), serde_json::Value::Bool(config.health.enabled));
-        summary.insert("execution_caching".to_string(), serde_json::Value::Bool(config.execution.enable_caching));
-        summary.insert("security_rate_limiting".to_string(), serde_json::Value::Bool(config.security.rate_limiting));
-        summary.insert("performance_metrics".to_string(), serde_json::Value::Bool(config.performance.metrics));
-        summary.insert("validation_enabled".to_string(), serde_json::Value::Bool(config.validation.enabled));
+        summary.insert(
+            "health_enabled".to_string(),
+            serde_json::Value::Bool(config.health.enabled),
+        );
+        summary.insert(
+            "execution_caching".to_string(),
+            serde_json::Value::Bool(config.execution.enable_caching),
+        );
+        summary.insert(
+            "security_rate_limiting".to_string(),
+            serde_json::Value::Bool(config.security.rate_limiting),
+        );
+        summary.insert(
+            "performance_metrics".to_string(),
+            serde_json::Value::Bool(config.performance.metrics),
+        );
+        summary.insert(
+            "validation_enabled".to_string(),
+            serde_json::Value::Bool(config.validation.enabled),
+        );
 
         summary
     }
@@ -514,7 +555,9 @@ mod tests {
     #[test]
     fn test_config_override() {
         let manager = ConfigManager::new();
-        manager.set_override("health.enabled".to_string(), serde_json::Value::Bool(false)).unwrap();
+        manager
+            .set_override("health.enabled".to_string(), serde_json::Value::Bool(false))
+            .unwrap();
         let value = manager.get_override("health.enabled").unwrap();
         assert_eq!(value, serde_json::Value::Bool(false));
     }
@@ -523,17 +566,20 @@ mod tests {
     fn test_config_save_load() {
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("config.toml");
-        
+
         let manager = ConfigManager::new();
         manager.save_to_file(&config_path).unwrap();
-        
+
         let new_manager = ConfigManager::new();
         new_manager.load_from_file(&config_path).unwrap();
-        
+
         let config1 = manager.get_config();
         let config2 = new_manager.get_config();
         assert_eq!(config1.health.enabled, config2.health.enabled);
-        assert_eq!(config1.execution.enable_caching, config2.execution.enable_caching);
+        assert_eq!(
+            config1.execution.enable_caching,
+            config2.execution.enable_caching
+        );
     }
 
     #[test]

@@ -57,7 +57,11 @@ pub enum GovernanceError {
     InsufficientVotingPower { required: u64, actual: u64 },
 
     #[error("Invalid parameter: {param}={value}, reason: {reason}")]
-    InvalidParameter { param: String, value: String, reason: String },
+    InvalidParameter {
+        param: String,
+        value: String,
+        reason: String,
+    },
 
     #[error("Governance error: {0}")]
     GovernanceError(String),
