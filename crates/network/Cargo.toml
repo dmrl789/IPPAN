@@ -4,16 +4,31 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+description = "IPPAN networking layer: deterministic peer discovery, DHT messaging, and round synchronization"
 
 [dependencies]
+# Core crates
 ippan-types = { path = "../types" }
-tokio = { workspace = true }
+anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
-anyhow = { workspace = true }
 parking_lot = { workspace = true }
-bincode = "1.3"
-chrono = "0.4"
+thiserror = { workspace = true }
+
+# Cryptographic and hashing
+blake3 = { workspace = true }
+sha2 = { workspace = true }
+
+# Async / traits / serialization
 async-trait = { workspace = true }
+bincode = "1.3"
+
+# Time utilities
+chrono = "0.4"
+
+[dev-dependencies]
+rand = { version = "0.8", features = ["std", "std_rng"] }
+tokio-test = "0.4"
