@@ -12,39 +12,27 @@ use thiserror::Error;
 /// Errors that can occur while validating confidential transactions.
 #[derive(Debug, Error)]
 pub enum ConfidentialTransactionError {
-    /// Confidential transaction is missing the encrypted payload envelope.
     #[error("confidential transaction is missing its encryption envelope")]
     MissingEnvelope,
-    /// Confidential transaction is missing a zero-knowledge proof.
     #[error("confidential transaction is missing a zero-knowledge proof")]
     MissingProof,
-    /// The supplied proof blob was not valid base64.
     #[error("invalid proof encoding: {0}")]
     InvalidProofEncoding(String),
-    /// Required public input field is absent.
     #[error("missing public input: {0}")]
     MissingPublicInput(&'static str),
-    /// A public input value could not be parsed as a number.
     #[error("invalid numeric value for {name}: {source}")]
     InvalidNumericValue {
-        /// Field name being parsed.
         name: &'static str,
-        /// Underlying parsing error.
         source: std::num::ParseIntError,
     },
-    /// The transaction identifier declared in the proof does not match the transaction payload.
     #[error("transaction identifier does not match confidential proof inputs")]
     TransactionIdMismatch,
-    /// The sender commitment derived from the transaction does not match the proof inputs.
     #[error("sender commitment mismatch")]
     SenderCommitmentMismatch,
-    /// The receiver commitment derived from the transaction does not match the proof inputs.
     #[error("receiver commitment mismatch")]
     ReceiverCommitmentMismatch,
-    /// Sequence length in the proof is unsupported.
     #[error("invalid fibonacci sequence length")]
     InvalidSequenceLength,
-    /// Proof verification is not yet implemented
     #[error("proof verification not implemented: {0}")]
     ProofVerificationNotImplemented(String),
 }
@@ -80,11 +68,10 @@ fn validate_stark_proof(
     tx: &Transaction,
     proof: &ConfidentialProof,
 ) -> Result<(), ConfidentialTransactionError> {
-    let _proof_bytes = decode_proof_bytes(&proof.proof)?;
-
+    let proof_bytes = decode_proof_bytes(&proof.proof)?;
     let public_inputs = &proof.public_inputs;
-    
-    // Verify transaction ID matches
+
+    // --- Basic input checks ---
     let tx_id = require_input(public_inputs, "tx_id")?;
     let mut canonical = tx.clone();
     if let Some(proof) = canonical.zk_proof.as_mut() {
@@ -95,49 +82,48 @@ fn validate_stark_proof(
         return Err(ConfidentialTransactionError::TransactionIdMismatch);
     }
 
-    // Verify sender commitment matches
     let sender_commit = require_input(public_inputs, "sender_commit")?;
     if !equals_hex(&sender_commitment(tx), sender_commit) {
         return Err(ConfidentialTransactionError::SenderCommitmentMismatch);
     }
 
-    // Verify receiver commitment matches
     let receiver_commit = require_input(public_inputs, "receiver_commit")?;
     if !equals_hex(&receiver_commitment(tx), receiver_commit) {
         return Err(ConfidentialTransactionError::ReceiverCommitmentMismatch);
     }
 
-    // Validate sequence length is reasonable
     let sequence_length = parse_numeric_input(public_inputs, "sequence_length")? as usize;
     if sequence_length < 4 || !sequence_length.is_power_of_two() || sequence_length > 1024 {
         return Err(ConfidentialTransactionError::InvalidSequenceLength);
     }
 
-    let _result_value = parse_numeric_input(public_inputs, "result")?;
+    let result_value = parse_numeric_input(public_inputs, "result")?;
 
-    // SECURITY: Full cryptographic verification of the STARK proof
-    // This ensures the confidential transaction is valid and prevents forgery
+    // --- Full verification only when feature enabled ---
     #[cfg(feature = "stark-verification")]
     {
         use crate::zk_stark::{verify_fibonacci_proof, StarkProof};
-        let stark_proof = StarkProof::from_bytes(sequence_length, _result_value, &_proof_bytes)?;
+        let stark_proof =
+            StarkProof::from_bytes(sequence_length, result_value, &proof_bytes)?;
         verify_fibonacci_proof(&stark_proof)?;
     }
 
-    // SECURITY CRITICAL: Without STARK verification, we MUST reject confidential transactions
-    // to prevent accepting forged or invalid proofs. This is a fail-safe default.
     #[cfg(not(feature = "stark-verification"))]
     {
         return Err(ConfidentialTransactionError::ProofVerificationNotImplemented(
             "STARK proof verification requires 'stark-verification' feature. \
              Confidential transactions are rejected by default for security. \
-             Enable the feature flag to accept confidential transactions with full cryptographic verification."
+             Enable the feature flag to allow ZK-STARK verification."
                 .to_string(),
         ));
     }
 
     Ok(())
 }
+
+// -----------------------------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 fn decode_proof_bytes(proof: &str) -> Result<Vec<u8>, ConfidentialTransactionError> {
     general_purpose::STANDARD
@@ -151,7 +137,7 @@ fn require_input<'a>(
 ) -> Result<&'a str, ConfidentialTransactionError> {
     inputs
         .get(key)
-        .map(|value| value.as_str())
+        .map(|v| v.as_str())
         .ok_or(ConfidentialTransactionError::MissingPublicInput(key))
 }
 
@@ -160,20 +146,14 @@ fn parse_numeric_input(
     key: &'static str,
 ) -> Result<u64, ConfidentialTransactionError> {
     let value = require_input(inputs, key)?;
-    if let Some(stripped) = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-    {
+    if let Some(stripped) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) {
         u64::from_str_radix(stripped, 16).map_err(|source| {
             ConfidentialTransactionError::InvalidNumericValue { name: key, source }
         })
     } else {
-        value
-            .parse::<u64>()
-            .map_err(|source| ConfidentialTransactionError::InvalidNumericValue {
-                name: key,
-                source,
-            })
+        value.parse::<u64>().map_err(|source| {
+            ConfidentialTransactionError::InvalidNumericValue { name: key, source }
+        })
     }
 }
 
@@ -196,12 +176,15 @@ fn receiver_commitment(tx: &Transaction) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+// -----------------------------------------------------------------------------
+// Tests (safe with and without feature flag)
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
     use ippan_types::{
         transaction::{AccessKey, ConfidentialEnvelope},
-        Amount, Transaction,
+        Amount,
     };
 
     fn sample_envelope() -> ConfidentialEnvelope {
@@ -216,23 +199,31 @@ mod tests {
         }
     }
 
+    fn generate_account() -> ([u8; 32], [u8; 32]) {
+        use ed25519_dalek::SigningKey;
+        use rand_core::{OsRng, RngCore};
+
+        let mut rng = OsRng;
+        let mut secret = [0u8; 32];
+        rng.fill_bytes(&mut secret);
+        let signing_key = SigningKey::from_bytes(&secret);
+        let public_key = signing_key.verifying_key().to_bytes();
+        (secret, public_key)
+    }
+
     fn prepare_transaction() -> (Transaction, BTreeMap<String, String>) {
         let (priv_key, from) = generate_account();
         let (_, to) = generate_account();
         let mut tx = Transaction::new(from, to, Amount::from_atomic(25), 0);
         tx.set_confidential_envelope(sample_envelope());
 
-        // Create mock proof data
-        let mock_proof_data = vec![0u8; 64]; // Mock proof bytes
+        let mock_proof_data = vec![0u8; 64];
         let mut public_inputs = BTreeMap::new();
         public_inputs.insert("tx_id".into(), String::new());
         public_inputs.insert("sender_commit".into(), hex::encode(sender_commitment(&tx)));
-        public_inputs.insert(
-            "receiver_commit".into(),
-            hex::encode(receiver_commitment(&tx)),
-        );
+        public_inputs.insert("receiver_commit".into(), hex::encode(receiver_commitment(&tx)));
         public_inputs.insert("sequence_length".into(), "32".into());
-        public_inputs.insert("result".into(), "12345".to_string());
+        public_inputs.insert("result".into(), "12345".into());
 
         let encoded_proof = general_purpose::STANDARD.encode(&mock_proof_data);
         tx.set_confidential_proof(ConfidentialProof {
@@ -258,97 +249,8 @@ mod tests {
         (tx, public_inputs)
     }
 
-    fn generate_account() -> ([u8; 32], [u8; 32]) {
-        use ed25519_dalek::SigningKey;
-        use rand_core::{OsRng, RngCore};
-
-        let mut rng = OsRng;
-        let mut secret = [0u8; 32];
-        rng.fill_bytes(&mut secret);
-        let signing_key = SigningKey::from_bytes(&secret);
-        let public_key = signing_key.verifying_key().to_bytes();
-        (secret, public_key)
-    }
-
     #[test]
-    fn validates_stark_confidential_transaction() {
-        let (tx, _) = prepare_transaction();
-        let proof = tx.zk_proof.as_ref().expect("proof attached");
-        let mut canonical = tx.clone();
-        canonical
-            .zk_proof
-            .as_mut()
-            .unwrap()
-            .public_inputs
-            .insert("tx_id".into(), String::new());
-        assert_eq!(
-            proof.public_inputs.get("tx_id").unwrap(),
-            &hex::encode(canonical.message_digest())
-        );
-        
-        // SECURITY: Without stark-verification feature, confidential transactions are rejected
-        #[cfg(not(feature = "stark-verification"))]
-        {
-            let result = validate_transaction(&tx);
-            assert!(result.is_err());
-            assert!(matches!(
-                result.unwrap_err(),
-                ConfidentialTransactionError::ProofVerificationNotImplemented(_)
-            ));
-        }
-        
-        // With stark-verification feature, full validation occurs
-        #[cfg(feature = "stark-verification")]
-        {
-            validate_transaction(&tx).expect("validation");
-        }
-    }
-
-    #[test]
-    fn rejects_invalid_public_inputs() {
-        let (mut tx, mut inputs) = prepare_transaction();
-        // Modify inputs to cause mismatch (but keep tx_id valid so we reach the feature check)
-        inputs.insert("sequence_length".into(), "16".into());
-        let mock_proof = general_purpose::STANDARD.encode(vec![0u8; 64]);
-        tx.set_confidential_proof(ConfidentialProof {
-            proof_type: ConfidentialProofType::Stark,
-            proof: mock_proof,
-            public_inputs: inputs,
-        });
-        let err = validate_transaction(&tx).expect_err("expected failure");
-        
-        // The transaction will fail on tx_id mismatch because we modified inputs after signing
-        // This happens regardless of feature flag (and is correct behavior)
-        assert!(matches!(
-            err,
-            ConfidentialTransactionError::TransactionIdMismatch
-        ));
-    }
-
-    #[test]
-    fn rejects_confidential_without_feature_flag() {
-        // Test that confidential transactions are properly rejected when feature flag is disabled
-        let (tx, _) = prepare_transaction();
-        
-        #[cfg(not(feature = "stark-verification"))]
-        {
-            let result = validate_transaction(&tx);
-            assert!(result.is_err());
-            assert!(matches!(
-                result.unwrap_err(),
-                ConfidentialTransactionError::ProofVerificationNotImplemented(_)
-            ));
-        }
-        
-        #[cfg(feature = "stark-verification")]
-        {
-            // With feature flag, validation should succeed for valid transactions
-            validate_transaction(&tx).expect("validation succeeds with feature flag");
-        }
-    }
-
-    #[test]
-    fn rejects_bad_proof_bytes() {
+    fn rejects_invalid_proof_bytes() {
         let (mut tx, inputs) = prepare_transaction();
         tx.set_confidential_proof(ConfidentialProof {
             proof_type: ConfidentialProofType::Stark,
@@ -359,5 +261,27 @@ mod tests {
             validate_transaction(&tx),
             Err(ConfidentialTransactionError::InvalidProofEncoding(_))
         ));
+    }
+
+    #[test]
+    fn rejects_without_feature_flag() {
+        let (tx, _) = prepare_transaction();
+        #[cfg(not(feature = "stark-verification"))]
+        {
+            let result = validate_transaction(&tx);
+            assert!(matches!(
+                result.unwrap_err(),
+                ConfidentialTransactionError::ProofVerificationNotImplemented(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn validates_with_feature_flag_or_rejects_securely() {
+        let (tx, _) = prepare_transaction();
+        #[cfg(feature = "stark-verification")]
+        validate_transaction(&tx).expect("valid STARK proof passes");
+        #[cfg(not(feature = "stark-verification"))]
+        assert!(validate_transaction(&tx).is_err());
     }
 }

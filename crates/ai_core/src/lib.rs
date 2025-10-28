@@ -21,148 +21,85 @@
 //! - `tests`: Deterministic test harness and benchmarking
 
 pub mod config;
+pub mod deployment;
+pub mod determinism;
+pub mod deterministic_gbdt;
 pub mod errors;
+pub mod execution;
+pub mod feature_engineering;
 pub mod features;
 pub mod gbdt;
-pub mod deterministic_gbdt;
 pub mod health;
+pub mod log;
 pub mod model;
 pub mod model_manager;
-pub mod feature_engineering;
-pub mod types;
-pub mod execution;
 pub mod models;
-pub mod validation;
-pub mod determinism;
-pub mod log;
-pub mod production_config;
-pub mod deployment;
-pub mod tests;
 pub mod monitoring;
+pub mod production_config;
 pub mod security;
+pub mod tests;
+pub mod types;
+pub mod validation;
 
 // ------------------------------------------------------------
 // Re-exports for external crates and downstream use
 // ------------------------------------------------------------
 
 pub use config::{
-    AiCoreConfig,
-    ConfigManager,
-    HealthConfig as ConfigHealthConfig,
-    ExecutionConfig,
-    LoggingConfig as ConfigLoggingConfig,
-    SecurityConfig as ConfigSecurityConfig,
-    PerformanceConfig,
-    FeatureConfig as ConfigFeatureConfig,
-    ValidationConfig,
+    AiCoreConfig, ConfigManager, ExecutionConfig, FeatureConfig as ConfigFeatureConfig,
+    HealthConfig as ConfigHealthConfig, LoggingConfig as ConfigLoggingConfig, PerformanceConfig,
+    SecurityConfig as ConfigSecurityConfig, ValidationConfig,
 };
 
 pub use features::{
-    extract_features,
-    normalize_features,
-    FeatureVector,
-    FeatureConfig,
-    ValidatorTelemetry,
+    extract_features, normalize_features, FeatureConfig, FeatureVector, ValidatorTelemetry,
 };
 
 // GBDT and deterministic evaluation
-pub use gbdt::{
-    eval_gbdt,
-    GBDTModel,
-    Node,
-    Tree,
-    GBDTError,
-    GBDTResult,
-    GBDTMetrics,
-    ModelMetadata as GBDTModelMetadata,
-    SecurityConstraints,
-    FeatureNormalization,
-};
 pub use deterministic_gbdt::{
-    DeterministicGBDT,
+    compute_scores, DecisionNode, DeterministicGBDT, DeterministicGBDTError, GBDTTree,
     ValidatorFeatures,
-    DecisionNode,
-    GBDTTree,
-    DeterministicGBDTError,
-    compute_scores,
+};
+pub use gbdt::{
+    eval_gbdt, FeatureNormalization, GBDTError, GBDTMetrics, GBDTModel, GBDTResult,
+    ModelMetadata as GBDTModelMetadata, Node, SecurityConstraints, Tree,
 };
 
 // Model management and feature pipeline
-pub use model_manager::{
-    ModelManager,
-    ModelManagerConfig,
-    ModelManagerMetrics,
-    ModelLoadResult,
-    ModelSaveResult,
-};
 pub use feature_engineering::{
-    FeatureEngineeringPipeline,
-    FeatureEngineeringConfig,
-    RawFeatureData,
-    ProcessedFeatureData,
-    FeatureStatistics,
-    FeatureImportance,
+    FeatureEngineeringConfig, FeatureEngineeringPipeline, FeatureImportance, FeatureStatistics,
+    ProcessedFeatureData, RawFeatureData,
+};
+pub use model_manager::{
+    ModelLoadResult, ModelManager, ModelManagerConfig, ModelManagerMetrics, ModelSaveResult,
 };
 
 // Production configuration and deployment
-pub use production_config::{
-    ProductionConfig,
-    ProductionConfigManager,
-    Environment,
-    GBDTConfig,
-    ResourceLimits,
-    FeatureFlags,
-    DeploymentConfig,
-    LoggingConfig,
-    ConfigFormat,
-    ConfigValidationResult,
-};
 pub use deployment::{
-    ProductionDeployment,
-    DeploymentStatus,
-    HealthCheckResult,
-    HealthStatus as DeploymentHealthStatus,
-    DeploymentMetrics,
-    utils,
+    utils, DeploymentMetrics, DeploymentStatus, HealthCheckResult,
+    HealthStatus as DeploymentHealthStatus, ProductionDeployment,
+};
+pub use production_config::{
+    ConfigFormat, ConfigValidationResult, DeploymentConfig, Environment, FeatureFlags, GBDTConfig,
+    LoggingConfig, ProductionConfig, ProductionConfigManager, ResourceLimits,
 };
 
 // Test suites and benchmarks
-pub use tests::{
-    TestSuite,
-    TestConfig,
-    TestResult,
-    BenchmarkSuite,
-    test_utils,
-};
+pub use tests::{test_utils, BenchmarkSuite, TestConfig, TestResult, TestSuite};
 
 // Health and monitoring
 pub use health::{
-    HealthMonitor,
-    HealthConfig,
-    SystemHealth,
-    PerformanceMetrics,
-    HealthChecker,
-    MemoryUsageChecker,
-    ModelExecutionChecker,
+    HealthChecker, HealthConfig, HealthMonitor, MemoryUsageChecker, ModelExecutionChecker,
+    PerformanceMetrics, SystemHealth,
 };
 
 // Core model and execution types
-pub use model::{
-    load_model,
-    verify_model_hash,
-    ModelPackage,
-    MODEL_HASH_SIZE,
-};
-pub use types::{
-    ModelId,
-    ModelInput,
-    ModelOutput,
-    ExecutionContext,
-    ExecutionResult,
-    DataType,
-    ExecutionMetadata,
-};
 pub use errors::AiCoreError;
+pub use model::{load_model, verify_model_hash, ModelPackage, MODEL_HASH_SIZE};
+pub use types::{
+    DataType, ExecutionContext, ExecutionMetadata, ExecutionResult, ModelId, ModelInput,
+    ModelOutput,
+};
 
 // ------------------------------------------------------------
 // Constants and helper functions
@@ -192,10 +129,7 @@ pub fn deterministically_sorted<T: Ord>(mut items: Vec<T>) -> Vec<T> {
 ///
 /// # Returns
 /// Scaled integer reputation score (0–10000)
-pub fn compute_validator_score(
-    telemetry: &ValidatorTelemetry,
-    model: &GBDTModel,
-) -> i32 {
+pub fn compute_validator_score(telemetry: &ValidatorTelemetry, model: &GBDTModel) -> i32 {
     let config = FeatureConfig::default();
     let features = extract_features(telemetry, &config);
     eval_gbdt(model, &features)
@@ -235,9 +169,27 @@ mod internal_tests {
             scale: 10_000,
             trees: vec![Tree {
                 nodes: vec![
-                    Node { feature_index: 0, threshold: 5000, left: 1, right: 2, value: None },
-                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(100) },
-                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(200) },
+                    Node {
+                        feature_index: 0,
+                        threshold: 5000,
+                        left: 1,
+                        right: 2,
+                        value: None,
+                    },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(100),
+                    },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(200),
+                    },
                 ],
             }],
         };

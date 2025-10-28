@@ -457,9 +457,19 @@ mod tests {
     fn sample_transactions() -> Vec<Transaction> {
         let secret1 = SigningKey::from_bytes(&[7u8; 32]);
         let secret2 = SigningKey::from_bytes(&[8u8; 32]);
-        let mut tx1 = Transaction::new(secret1.verifying_key().to_bytes(), [4u8; 32], Amount::from_atomic(1000), 1);
+        let mut tx1 = Transaction::new(
+            secret1.verifying_key().to_bytes(),
+            [4u8; 32],
+            Amount::from_atomic(1000),
+            1,
+        );
         tx1.sign(&secret1.to_bytes()).expect("sign tx1");
-        let mut tx2 = Transaction::new(secret2.verifying_key().to_bytes(), [6u8; 32], Amount::from_atomic(2000), 2);
+        let mut tx2 = Transaction::new(
+            secret2.verifying_key().to_bytes(),
+            [6u8; 32],
+            Amount::from_atomic(2000),
+            2,
+        );
         tx2.sign(&secret2.to_bytes()).expect("sign tx2");
         vec![tx1, tx2]
     }

@@ -13,7 +13,7 @@ pub mod transaction;
 pub use address::*;
 pub use block::*;
 pub use chain_state::*;
-pub use currency::{Amount, AtomicIPN, denominations, IPN_DECIMALS, ATOMIC_PER_IPN, SUPPLY_CAP};
+pub use currency::{denominations, Amount, AtomicIPN, ATOMIC_PER_IPN, IPN_DECIMALS, SUPPLY_CAP};
 pub use hashtimer::{random_nonce, HashTimer, IppanTimeMicros};
 pub use l2::*;
 pub use receipt::*;

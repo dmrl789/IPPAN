@@ -5,8 +5,8 @@
 
 use crate::account_ledger::AccountLedger;
 use ippan_types::MicroIPN;
-use std::collections::HashMap;
 use ippan_types::ValidatorId;
+use std::collections::HashMap;
 
 /// Payouts map from validator ID to amount
 pub type Payouts = HashMap<ValidatorId, u128>;
@@ -229,8 +229,14 @@ mod tests {
 
         assert_eq!(sink.get_total_distributed(), 3000);
         assert_eq!(sink.get_rounds().len(), 1);
-        assert_eq!(sink.validator_total(&ValidatorId(hex::encode([1u8; 32]))), 1000);
-        assert_eq!(sink.validator_total(&ValidatorId(hex::encode([2u8; 32]))), 2000);
+        assert_eq!(
+            sink.validator_total(&ValidatorId(hex::encode([1u8; 32]))),
+            1000
+        );
+        assert_eq!(
+            sink.validator_total(&ValidatorId(hex::encode([2u8; 32]))),
+            2000
+        );
     }
 
     #[test]
@@ -250,8 +256,14 @@ mod tests {
 
         assert_eq!(sink.get_total_distributed(), 3000);
         assert_eq!(sink.get_rounds().len(), 2);
-        assert_eq!(sink.validator_total(&ValidatorId(hex::encode([1u8; 32]))), 1500);
-        assert_eq!(sink.validator_total(&ValidatorId(hex::encode([2u8; 32]))), 1500);
+        assert_eq!(
+            sink.validator_total(&ValidatorId(hex::encode([1u8; 32]))),
+            1500
+        );
+        assert_eq!(
+            sink.validator_total(&ValidatorId(hex::encode([2u8; 32]))),
+            1500
+        );
     }
 
     #[test]

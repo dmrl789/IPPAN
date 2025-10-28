@@ -9,6 +9,10 @@ description = "High-level AI service layer with LLM integration for IPPAN blockc
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "ippan-ai-service"
+path = "src/main.rs"
+
 [features]
 default = ["llm", "analytics", "smart_contracts"]
 
@@ -71,6 +75,10 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 base64 = { workspace = true }
 hex = { workspace = true }
 blake3 = { workspace = true }
+
+# Production dependencies
+toml = "0.8"
+warp = "0.3"
 
 [dev-dependencies]
 tokio = { workspace = true }

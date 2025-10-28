@@ -3,10 +3,8 @@
 //! Tracks cumulative emission, validates consistency with the emission schedule,
 //! and provides audit records for governance and transparency.
 
-use ippan_economics::{
-    EmissionParams, RoundRewardDistribution, ValidatorParticipation,
-};
 use blake3::Hasher;
+use ippan_economics::{EmissionParams, RoundRewardDistribution, ValidatorParticipation};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -58,7 +56,7 @@ pub struct EmissionTracker {
 
     /// Network reward pool balance
     pub network_pool_balance: u128,
-    
+
     /// Total network dividends distributed (lifetime)
     pub total_network_dividends: u128,
 
@@ -148,20 +146,16 @@ impl EmissionTracker {
         }
 
         // Update fee and commission totals
-        self.total_fees_collected = self
-            .total_fees_collected
-            .saturating_add(transaction_fees);
+        self.total_fees_collected = self.total_fees_collected.saturating_add(transaction_fees);
 
-        self.total_ai_commissions = self
-            .total_ai_commissions
-            .saturating_add(ai_commissions);
+        self.total_ai_commissions = self.total_ai_commissions.saturating_add(ai_commissions);
 
         // Update network pool (add new dividends, subtract distributed)
         self.network_pool_balance = self
             .network_pool_balance
             .saturating_add(transaction_fees / 20); // 5% of fees go to pool
-            // .saturating_sub(distribution.network_dividend); // Field doesn't exist
-        
+                                                    // .saturating_sub(distribution.network_dividend); // Field doesn't exist
+
         // Track total network dividends distributed
         // Note: network_dividend field doesn't exist in RoundRewardDistribution
         // self.total_network_dividends = self
@@ -175,11 +169,11 @@ impl EmissionTracker {
             if id_bytes.len() >= 32 {
                 let mut key = [0u8; 32];
                 key.copy_from_slice(&id_bytes[..32]);
-                *self.validator_earnings.entry(key).or_insert(0) =
-                    self.validator_earnings
-                        .get(&key)
-                        .unwrap_or(&0)
-                        .saturating_add(reward.total_reward as u128);
+                *self.validator_earnings.entry(key).or_insert(0) = self
+                    .validator_earnings
+                    .get(&key)
+                    .unwrap_or(&0)
+                    .saturating_add(reward.total_reward as u128);
             }
         }
 
@@ -280,7 +274,8 @@ impl EmissionTracker {
             cumulative_supply: self.cumulative_supply,
             supply_cap: self.params.total_supply_cap as u128,
             percentage_emitted: if self.params.total_supply_cap > 0 {
-                ((self.cumulative_supply as f64 / self.params.total_supply_cap as f64) * 10000.0) as u32
+                ((self.cumulative_supply as f64 / self.params.total_supply_cap as f64) * 10000.0)
+                    as u32
             } else {
                 0
             },
@@ -295,7 +290,9 @@ impl EmissionTracker {
 
     /// Get top validators by earnings
     pub fn get_top_validators(&self, limit: usize) -> Vec<([u8; 32], u128)> {
-        let mut validators: Vec<_> = self.validator_earnings.iter()
+        let mut validators: Vec<_> = self
+            .validator_earnings
+            .iter()
             .map(|(id, earnings)| (*id, *earnings))
             .collect();
 
@@ -446,7 +443,9 @@ mod tests {
 
         // Process 100 rounds
         for round in 1..=100 {
-            tracker.process_round(round, &contributions, 100, 50).unwrap();
+            tracker
+                .process_round(round, &contributions, 100, 50)
+                .unwrap();
         }
 
         // Verify consistency
@@ -468,7 +467,9 @@ mod tests {
 
         // Process 20 rounds (should create 2 checkpoints)
         for round in 1..=20 {
-            tracker.process_round(round, &contributions, 100, 50).unwrap();
+            tracker
+                .process_round(round, &contributions, 100, 50)
+                .unwrap();
         }
 
         assert!(tracker.audit_history.len() >= 1);
@@ -498,7 +499,9 @@ mod tests {
 
         // Process 50 rounds
         for round in 1..=50 {
-            tracker.process_round(round, &contributions, 100, 50).unwrap();
+            tracker
+                .process_round(round, &contributions, 100, 50)
+                .unwrap();
         }
 
         let stats = tracker.get_statistics();
@@ -539,7 +542,9 @@ mod tests {
 
         // Process rounds
         for round in 1..=10 {
-            tracker.process_round(round, &contributions, 100, 50).unwrap();
+            tracker
+                .process_round(round, &contributions, 100, 50)
+                .unwrap();
         }
 
         let top = tracker.get_top_validators(2);

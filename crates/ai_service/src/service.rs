@@ -1,21 +1,23 @@
 //! Main AI Service implementation
 
+#[cfg(feature = "analytics")]
 use crate::{
-    types::{
-        AIServiceConfig, LLMConfig, AnalyticsConfig, MonitoringConfig,
-        LLMRequest, LLMResponse, AnalyticsInsight, MonitoringAlert,
-        SmartContractAnalysisRequest, SmartContractAnalysisResponse,
-        TransactionOptimizationRequest, TransactionOptimizationResponse,
-    },
+    analytics::AnalyticsService, monitoring::MonitoringService, optimization::OptimizationService,
+};
+use crate::{
     errors::AIServiceError,
     llm::LLMService,
     smart_contracts::SmartContractService,
+    types::{
+        AIServiceConfig, AnalyticsConfig, AnalyticsInsight, LLMConfig, LLMRequest, LLMResponse,
+        MonitoringAlert, MonitoringConfig, SmartContractAnalysisRequest,
+        SmartContractAnalysisResponse, TransactionOptimizationRequest,
+        TransactionOptimizationResponse,
+    },
 };
-#[cfg(feature = "analytics")]
-use crate::{analytics::AnalyticsService, monitoring::MonitoringService, optimization::OptimizationService};
 use std::collections::HashMap;
 use tokio::time::{interval, Duration};
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 
 /// Main AI Service that coordinates all AI functionality
 pub struct AIService {
@@ -66,7 +68,9 @@ impl AIService {
     /// Start the AI Service
     pub async fn start(&mut self) -> Result<(), AIServiceError> {
         if self.is_running {
-            return Err(AIServiceError::Internal("Service is already running".to_string()));
+            return Err(AIServiceError::Internal(
+                "Service is already running".to_string(),
+            ));
         }
 
         info!("Starting AI Service v{}", crate::VERSION);
@@ -90,7 +94,9 @@ impl AIService {
     /// Stop the AI Service
     pub async fn stop(&mut self) -> Result<(), AIServiceError> {
         if !self.is_running {
-            return Err(AIServiceError::Internal("Service is not running".to_string()));
+            return Err(AIServiceError::Internal(
+                "Service is not running".to_string(),
+            ));
         }
 
         info!("Stopping AI Service");
@@ -120,13 +126,14 @@ impl AIService {
 
     pub async fn generate_text(&self, request: LLMRequest) -> Result<LLMResponse, AIServiceError> {
         if !self.config.enable_llm {
-            return Err(AIServiceError::ConfigError("LLM features are disabled".to_string()));
+            return Err(AIServiceError::ConfigError(
+                "LLM features are disabled".to_string(),
+            ));
         }
 
-        let llm_service = self
-            .llm_service
-            .as_ref()
-            .ok_or_else(|| AIServiceError::ConfigError("LLM service not initialized".to_string()))?;
+        let llm_service = self.llm_service.as_ref().ok_or_else(|| {
+            AIServiceError::ConfigError("LLM service not initialized".to_string())
+        })?;
 
         llm_service.generate(request).await
     }
@@ -137,15 +144,18 @@ impl AIService {
         analysis_prompt: &str,
     ) -> Result<String, AIServiceError> {
         if !self.config.enable_llm {
-            return Err(AIServiceError::ConfigError("LLM features are disabled".to_string()));
+            return Err(AIServiceError::ConfigError(
+                "LLM features are disabled".to_string(),
+            ));
         }
 
-        let llm_service = self
-            .llm_service
-            .as_ref()
-            .ok_or_else(|| AIServiceError::ConfigError("LLM service not initialized".to_string()))?;
+        let llm_service = self.llm_service.as_ref().ok_or_else(|| {
+            AIServiceError::ConfigError("LLM service not initialized".to_string())
+        })?;
 
-        llm_service.analyze_blockchain_data(data, analysis_prompt).await
+        llm_service
+            .analyze_blockchain_data(data, analysis_prompt)
+            .await
     }
 
     pub async fn generate_contract_docs(
@@ -154,15 +164,18 @@ impl AIService {
         language: &str,
     ) -> Result<String, AIServiceError> {
         if !self.config.enable_llm {
-            return Err(AIServiceError::ConfigError("LLM features are disabled".to_string()));
+            return Err(AIServiceError::ConfigError(
+                "LLM features are disabled".to_string(),
+            ));
         }
 
-        let llm_service = self
-            .llm_service
-            .as_ref()
-            .ok_or_else(|| AIServiceError::ConfigError("LLM service not initialized".to_string()))?;
+        let llm_service = self.llm_service.as_ref().ok_or_else(|| {
+            AIServiceError::ConfigError("LLM service not initialized".to_string())
+        })?;
 
-        llm_service.generate_contract_docs(contract_code, language).await
+        llm_service
+            .generate_contract_docs(contract_code, language)
+            .await
     }
 
     // -------------------
@@ -178,20 +191,27 @@ impl AIService {
     ) {
         #[cfg(feature = "analytics")]
         if self.config.enable_analytics {
-            self.analytics_service.add_data_point(metric, value, unit, tags);
+            self.analytics_service
+                .add_data_point(metric, value, unit, tags);
         }
     }
 
-    pub async fn get_analytics_insights(&mut self) -> Result<Vec<AnalyticsInsight>, AIServiceError> {
+    pub async fn get_analytics_insights(
+        &mut self,
+    ) -> Result<Vec<AnalyticsInsight>, AIServiceError> {
         if !self.config.enable_analytics {
-            return Err(AIServiceError::ConfigError("Analytics features are disabled".to_string()));
+            return Err(AIServiceError::ConfigError(
+                "Analytics features are disabled".to_string(),
+            ));
         }
         #[cfg(feature = "analytics")]
         {
             return self.analytics_service.analyze().await;
         }
         #[allow(unreachable_code)]
-        Err(AIServiceError::ConfigError("Analytics feature not compiled".to_string()))
+        Err(AIServiceError::ConfigError(
+            "Analytics feature not compiled".to_string(),
+        ))
     }
 
     pub fn get_all_insights(&self) -> &[AnalyticsInsight] {
@@ -216,16 +236,22 @@ impl AIService {
         }
     }
 
-    pub async fn check_monitoring_alerts(&mut self) -> Result<Vec<MonitoringAlert>, AIServiceError> {
+    pub async fn check_monitoring_alerts(
+        &mut self,
+    ) -> Result<Vec<MonitoringAlert>, AIServiceError> {
         if !self.config.enable_monitoring {
-            return Err(AIServiceError::ConfigError("Monitoring features are disabled".to_string()));
+            return Err(AIServiceError::ConfigError(
+                "Monitoring features are disabled".to_string(),
+            ));
         }
         #[cfg(feature = "analytics")]
         {
             return self.monitoring_service.check_alerts().await;
         }
         #[allow(unreachable_code)]
-        Err(AIServiceError::ConfigError("Monitoring feature not compiled".to_string()))
+        Err(AIServiceError::ConfigError(
+            "Monitoring feature not compiled".to_string(),
+        ))
     }
 
     pub fn get_monitoring_alerts(&self) -> &[MonitoringAlert] {
@@ -246,18 +272,26 @@ impl AIService {
         }
         #[cfg(not(feature = "analytics"))]
         {
-            Err(AIServiceError::ConfigError("Monitoring features are disabled".to_string()))
+            Err(AIServiceError::ConfigError(
+                "Monitoring features are disabled".to_string(),
+            ))
         }
     }
 
-    pub fn resolve_alert(&mut self, alert_id: &str, resolution: String) -> Result<(), AIServiceError> {
+    pub fn resolve_alert(
+        &mut self,
+        alert_id: &str,
+        resolution: String,
+    ) -> Result<(), AIServiceError> {
         #[cfg(feature = "analytics")]
         {
             self.monitoring_service.resolve_alert(alert_id, resolution)
         }
         #[cfg(not(feature = "analytics"))]
         {
-            Err(AIServiceError::ConfigError("Monitoring features are disabled".to_string()))
+            Err(AIServiceError::ConfigError(
+                "Monitoring features are disabled".to_string(),
+            ))
         }
     }
 
@@ -270,7 +304,9 @@ impl AIService {
         request: SmartContractAnalysisRequest,
     ) -> Result<SmartContractAnalysisResponse, AIServiceError> {
         if !self.config.enable_smart_contracts {
-            return Err(AIServiceError::ConfigError("Smart contract features are disabled".to_string()));
+            return Err(AIServiceError::ConfigError(
+                "Smart contract features are disabled".to_string(),
+            ));
         }
         self.smart_contract_service.analyze_contract(request).await
     }
@@ -281,18 +317,26 @@ impl AIService {
     ) -> Result<TransactionOptimizationResponse, AIServiceError> {
         #[cfg(feature = "analytics")]
         {
-            self.optimization_service.optimize_transaction(request).await
+            self.optimization_service
+                .optimize_transaction(request)
+                .await
         }
         #[cfg(not(feature = "analytics"))]
         {
-            Err(AIServiceError::ConfigError("Optimization features are disabled".to_string()))
+            Err(AIServiceError::ConfigError(
+                "Optimization features are disabled".to_string(),
+            ))
         }
     }
 
-    pub fn get_optimization_recommendations(&self, tx_type: &str) -> Vec<crate::types::OptimizationSuggestion> {
+    pub fn get_optimization_recommendations(
+        &self,
+        tx_type: &str,
+    ) -> Vec<crate::types::OptimizationSuggestion> {
         #[cfg(feature = "analytics")]
         {
-            self.optimization_service.get_recommendations_for_type(tx_type)
+            self.optimization_service
+                .get_recommendations_for_type(tx_type)
         }
         #[cfg(not(feature = "analytics"))]
         {
@@ -306,7 +350,9 @@ impl AIService {
 
     #[cfg(feature = "analytics")]
     async fn start_analytics_task(&self) -> Result<(), AIServiceError> {
-        let mut interval = interval(Duration::from_secs(self.config.analytics_config.analysis_interval));
+        let mut interval = interval(Duration::from_secs(
+            self.config.analytics_config.analysis_interval,
+        ));
         tokio::spawn(async move {
             loop {
                 interval.tick().await;
@@ -318,7 +364,9 @@ impl AIService {
 
     #[cfg(feature = "analytics")]
     async fn start_monitoring_task(&self) -> Result<(), AIServiceError> {
-        let mut interval = interval(Duration::from_secs(self.config.monitoring_config.monitoring_interval));
+        let mut interval = interval(Duration::from_secs(
+            self.config.monitoring_config.monitoring_interval,
+        ));
         tokio::spawn(async move {
             loop {
                 interval.tick().await;
@@ -400,7 +448,12 @@ mod tests {
         for i in 0..5 {
             let mut t = HashMap::new();
             t.insert("node".to_string(), format!("node{}", i));
-            service.add_analytics_data("cpu_usage".to_string(), 70.0 + (i as f64), "percent".to_string(), t);
+            service.add_analytics_data(
+                "cpu_usage".to_string(),
+                70.0 + (i as f64),
+                "percent".to_string(),
+                t,
+            );
         }
         let _ = service.get_analytics_insights().await.unwrap_or_default();
     }

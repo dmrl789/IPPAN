@@ -16,6 +16,7 @@ stark-verification = []  # Enable full STARK proof verification (requires winter
 [dependencies]
 ippan-types = { path = "../types" }
 anyhow = "1.0"
+thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 ed25519-dalek = "2.0"
 rand = "0.8"

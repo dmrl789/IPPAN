@@ -1,10 +1,10 @@
 //! Types for L1 handle ownership anchors
 
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 /// L1 handle ownership anchor
-/// 
+///
 /// This is the minimal data stored on L1 for handle ownership.
 /// The actual handle mappings are stored on L2.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,7 +40,7 @@ impl HandleOwnershipAnchor {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-            
+
         Self {
             handle_hash,
             owner,
@@ -51,34 +51,34 @@ impl HandleOwnershipAnchor {
             signature,
         }
     }
-    
+
     /// Compute hash of handle string
     pub fn compute_handle_hash(handle: &str) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(handle.as_bytes());
         hasher.finalize().into()
     }
-    
+
     /// Verify the ownership signature
     pub fn verify_signature(&self) -> bool {
         // In production, this would verify Ed25519 signatures
         // For now, just check that signature is not empty
         !self.signature.is_empty()
     }
-    
+
     /// Check if anchor is expired (older than 1 year)
     pub fn is_expired(&self) -> bool {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-            
+
         now - self.timestamp > 365 * 24 * 60 * 60 // 1 year
     }
 }
 
 /// Handle ownership proof
-/// 
+///
 /// Contains the minimal information needed to prove handle ownership
 /// without storing the full handle mapping on L1.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,12 +96,12 @@ impl HandleOwnershipProof {
     pub fn verify(&self) -> bool {
         self.anchor.verify_signature() && !self.anchor.is_expired()
     }
-    
+
     /// Get the handle hash
     pub fn handle_hash(&self) -> [u8; 32] {
         self.anchor.handle_hash
     }
-    
+
     /// Get the owner
     pub fn owner(&self) -> [u8; 32] {
         self.anchor.owner

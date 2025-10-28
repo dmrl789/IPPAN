@@ -16,7 +16,7 @@ const FP_PRECISION: f64 = 1_000_000.0;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorFeatures {
     pub node_id: String,
-    pub delta_time_us: i64,    // difference from IPPAN median time (µs)
+    pub delta_time_us: i64, // difference from IPPAN median time (µs)
     pub latency_ms: f64,
     pub uptime_pct: f64,
     pub peer_entropy: f64,

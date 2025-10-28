@@ -8,7 +8,7 @@ use std::io::Write;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tracing::{info, warn, error, debug, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Service health status
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,7 +137,9 @@ impl ServiceMonitor {
         self.metrics.total_requests.fetch_add(1, Ordering::Relaxed);
 
         if success {
-            self.metrics.successful_requests.fetch_add(1, Ordering::Relaxed);
+            self.metrics
+                .successful_requests
+                .fetch_add(1, Ordering::Relaxed);
         } else {
             self.metrics.failed_requests.fetch_add(1, Ordering::Relaxed);
         }
@@ -145,7 +147,9 @@ impl ServiceMonitor {
         let total = self.metrics.total_requests.load(Ordering::Relaxed);
         let current_avg = self.metrics.avg_response_time_us.load(Ordering::Relaxed);
         let new_avg = ((current_avg * (total - 1)) + response_time_us) / total;
-        self.metrics.avg_response_time_us.store(new_avg, Ordering::Relaxed);
+        self.metrics
+            .avg_response_time_us
+            .store(new_avg, Ordering::Relaxed);
 
         let failed = self.metrics.failed_requests.load(Ordering::Relaxed);
         let error_rate = (failed * 100) / total;
@@ -158,10 +162,14 @@ impl ServiceMonitor {
     }
 
     pub fn record_memory_usage(&self, memory_usage: u64) {
-        self.metrics.current_memory_usage.store(memory_usage, Ordering::Relaxed);
+        self.metrics
+            .current_memory_usage
+            .store(memory_usage, Ordering::Relaxed);
         let current_peak = self.metrics.peak_memory_usage.load(Ordering::Relaxed);
         if memory_usage > current_peak {
-            self.metrics.peak_memory_usage.store(memory_usage, Ordering::Relaxed);
+            self.metrics
+                .peak_memory_usage
+                .store(memory_usage, Ordering::Relaxed);
         }
     }
 
@@ -170,7 +178,9 @@ impl ServiceMonitor {
         let hits = self.metrics.cache_hit_rate.load(Ordering::Relaxed);
         if total > 0 {
             let hit_rate = ((hits + 1) * 100) / total;
-            self.metrics.cache_hit_rate.store(hit_rate, Ordering::Relaxed);
+            self.metrics
+                .cache_hit_rate
+                .store(hit_rate, Ordering::Relaxed);
         }
     }
 
@@ -191,7 +201,10 @@ impl ServiceMonitor {
                 alert_type: AlertType::HighMemoryUsage,
                 severity: AlertSeverity::High,
                 message: format!("Memory {} > {}", mem, self.config.memory_threshold),
-                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 metadata: [("memory_usage".into(), mem.to_string())].into(),
             });
         }
@@ -204,8 +217,14 @@ impl ServiceMonitor {
                 id: format!("err_{}", now.elapsed().as_secs()),
                 alert_type: AlertType::HighErrorRate,
                 severity: AlertSeverity::Medium,
-                message: format!("Error rate {}% > {}%", error_rate, self.config.error_rate_threshold),
-                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                message: format!(
+                    "Error rate {}% > {}%",
+                    error_rate, self.config.error_rate_threshold
+                ),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 metadata: [("error_rate".into(), error_rate.to_string())].into(),
             });
         }
@@ -218,8 +237,14 @@ impl ServiceMonitor {
                 id: format!("rt_{}", now.elapsed().as_secs()),
                 alert_type: AlertType::SlowResponseTime,
                 severity: AlertSeverity::Medium,
-                message: format!("Response time {}μs > {}μs", rt, self.config.response_time_threshold),
-                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                message: format!(
+                    "Response time {}μs > {}μs",
+                    rt, self.config.response_time_threshold
+                ),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 metadata: [("response_time".into(), rt.to_string())].into(),
             });
         }
@@ -227,7 +252,9 @@ impl ServiceMonitor {
         self.status = status.clone();
 
         // Alert dispatch
-        if self.config.enable_alerting && now.duration_since(self.last_alert_time) > self.config.alert_cooldown {
+        if self.config.enable_alerting
+            && now.duration_since(self.last_alert_time) > self.config.alert_cooldown
+        {
             for alert in alerts {
                 self.handle_alert(alert).await;
             }
@@ -270,7 +297,10 @@ impl ServiceMonitor {
         ServiceHealthReport {
             status,
             metrics,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
@@ -403,4 +433,123 @@ impl AlertHandler for FileAlertHandler {
     fn name(&self) -> &str {
         "file"
     }
+}
+
+/// High-level monitoring service that wraps ServiceMonitor
+pub struct MonitoringService {
+    monitor: ServiceMonitor,
+    alerts: Vec<MonitoringAlert>,
+    metrics_store: HashMap<String, Vec<f64>>,
+}
+
+impl MonitoringService {
+    pub fn new(config: MonitoringConfig) -> Self {
+        Self {
+            monitor: ServiceMonitor::new(config),
+            alerts: Vec::new(),
+            metrics_store: HashMap::new(),
+        }
+    }
+
+    pub fn add_metric(&mut self, metric_name: String, value: f64) {
+        self.metrics_store
+            .entry(metric_name.clone())
+            .or_insert_with(Vec::new)
+            .push(value);
+        
+        // Also record in the underlying monitor
+        if metric_name == "memory_usage" {
+            self.monitor.record_memory_usage(value as u64);
+        }
+    }
+
+    pub async fn check_alerts(&mut self) -> Result<Vec<MonitoringAlert>, AIServiceError> {
+        let status = self.monitor.check_health().await;
+        let mut new_alerts = Vec::new();
+
+        // Check for high memory usage
+        if let Some(memory_values) = self.metrics_store.get("memory_usage") {
+            if let Some(&latest) = memory_values.last() {
+                if latest > 80.0 {
+                    let alert = MonitoringAlert {
+                        alert_id: format!("memory_{}", chrono::Utc::now().timestamp()),
+                        alert_type: "high_memory_usage".to_string(),
+                        severity: SeverityLevel::High,
+                        title: "High Memory Usage".to_string(),
+                        description: format!("Memory usage is at {:.1}%", latest),
+                        metrics: [("memory_usage".to_string(), latest)].into(),
+                        timestamp: chrono::Utc::now(),
+                        status: AlertStatus::Active,
+                        actions_taken: Vec::new(),
+                    };
+                    new_alerts.push(alert);
+                }
+            }
+        }
+
+        // Check for high CPU usage
+        if let Some(cpu_values) = self.metrics_store.get("cpu_usage") {
+            if let Some(&latest) = cpu_values.last() {
+                if latest > 90.0 {
+                    let alert = MonitoringAlert {
+                        alert_id: format!("cpu_{}", chrono::Utc::now().timestamp()),
+                        alert_type: "high_cpu_usage".to_string(),
+                        severity: SeverityLevel::High,
+                        title: "High CPU Usage".to_string(),
+                        description: format!("CPU usage is at {:.1}%", latest),
+                        metrics: [("cpu_usage".to_string(), latest)].into(),
+                        timestamp: chrono::Utc::now(),
+                        status: AlertStatus::Active,
+                        actions_taken: Vec::new(),
+                    };
+                    new_alerts.push(alert);
+                }
+            }
+        }
+
+        self.alerts.extend(new_alerts.clone());
+        Ok(new_alerts)
+    }
+
+    pub fn get_alerts(&self) -> &[MonitoringAlert] {
+        &self.alerts
+    }
+
+    pub fn acknowledge_alert(&mut self, alert_id: &str) -> Result<(), AIServiceError> {
+        if let Some(alert) = self.alerts.iter_mut().find(|a| a.alert_id == alert_id) {
+            alert.status = AlertStatus::Acknowledged;
+            Ok(())
+        } else {
+            Err(AIServiceError::ValidationError(format!("Alert {} not found", alert_id)))
+        }
+    }
+
+    pub fn resolve_alert(&mut self, alert_id: &str, resolution: String) -> Result<(), AIServiceError> {
+        if let Some(alert) = self.alerts.iter_mut().find(|a| a.alert_id == alert_id) {
+            alert.status = AlertStatus::Resolved;
+            alert.actions_taken.push(resolution);
+            Ok(())
+        } else {
+            Err(AIServiceError::ValidationError(format!("Alert {} not found", alert_id)))
+        }
+    }
+
+    pub fn get_statistics(&self) -> MonitoringStatistics {
+        let total_metrics = self.metrics_store.values().map(|v| v.len()).sum();
+        MonitoringStatistics {
+            metrics_count: self.metrics_store.len(),
+            total_data_points: total_metrics,
+            active_alerts: self.alerts.iter().filter(|a| a.status == AlertStatus::Active).count(),
+            resolved_alerts: self.alerts.iter().filter(|a| a.status == AlertStatus::Resolved).count(),
+        }
+    }
+}
+
+/// Monitoring statistics
+#[derive(Debug, Clone)]
+pub struct MonitoringStatistics {
+    pub metrics_count: usize,
+    pub total_data_points: usize,
+    pub active_alerts: usize,
+    pub resolved_alerts: usize,
 }

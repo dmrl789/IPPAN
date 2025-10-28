@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  ai-service:
+    image: ippan-ai-service:latest
+    container_name: ippan-ai-service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - IPPAN_ENV=production
+      - RUST_LOG=info
+      - LOG_FORMAT=json
+      - ENABLE_LLM=true
+      - ENABLE_ANALYTICS=true
+      - ENABLE_SMART_CONTRACTS=true
+      - ENABLE_MONITORING=true
+      - LLM_API_ENDPOINT=${LLM_API_ENDPOINT}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4}
+      - MONITORING_INTERVAL=30
+      - HEALTH_PORT=8080
+    volumes:
+      - ./config/production.toml:/app/config/production.toml:ro
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - ippan-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ippan-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - ippan-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ippan-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - ippan-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: ippan-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - ai-service
+    networks:
+      - ippan-network
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  ippan-network:
+    driver: bridge
