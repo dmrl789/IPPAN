@@ -4,13 +4,13 @@
 //! and fair validator reward distribution into the consensus layer.
 
 use crate::fees::FeeCollector;
-use ippan_economics::{
-    EmissionEngine, RoundRewards, EmissionParams, ValidatorParticipation, ValidatorRole,
-    Payouts, ValidatorId, RewardAmount, RoundIndex,
-};
-use ippan_treasury::{RewardSink, AccountLedger};
-use ippan_types::{ChainState, MicroIPN, RoundId};
 use anyhow::Result;
+use ippan_economics::{
+    EmissionEngine, EmissionParams, Payouts, RewardAmount, RoundIndex, RoundRewards, ValidatorId,
+    ValidatorParticipation, ValidatorRole,
+};
+use ippan_treasury::{AccountLedger, RewardSink};
+use ippan_types::{ChainState, MicroIPN, RoundId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info};
@@ -69,14 +69,16 @@ impl RoundExecutor {
     ) -> Result<RoundExecutionResult> {
         // Collect transaction fees for this round
         // Collect fees into economics-aware collector: convert Amount from types
-        self.fee_collector.collect(ippan_types::Amount::from_micro_ipn(fees_micro as u64));
+        self.fee_collector
+            .collect(ippan_types::Amount::from_micro_ipn(fees_micro as u64));
 
         // Calculate emission for this round (enforcing supply cap)
         let issued = chain_state.total_issued_micro();
         let emission_micro = self.emission_engine.calculate_round_reward(round)?;
 
         // Convert participants to ValidatorParticipation format
-        let participations = self.convert_participants_to_validator_participations(participants.clone())?;
+        let participations =
+            self.convert_participants_to_validator_participations(participants.clone())?;
 
         // Distribute rewards proportionally to participants
         let distribution = self.round_rewards.distribute_round_rewards(
@@ -105,7 +107,8 @@ impl RoundExecutor {
             .collect();
 
         // Credit rewards to the treasury sink
-        self.reward_sink.credit_round_payouts(round, &treasury_payouts)?;
+        self.reward_sink
+            .credit_round_payouts(round, &treasury_payouts)?;
 
         // Update chain state
         chain_state.update_after_round(
@@ -191,7 +194,11 @@ pub fn create_participation_set(
 ) -> ParticipationSet {
     let mut parts: ParticipationSet = HashMap::new();
     for (_stake, id, blocks_proposed, _reputation) in validators {
-        let role = if *id == proposer_id { ValidatorRole::Proposer } else { ValidatorRole::Verifier };
+        let role = if *id == proposer_id {
+            ValidatorRole::Proposer
+        } else {
+            ValidatorRole::Verifier
+        };
         let vid = ValidatorId(hex::encode(id));
         parts.insert(
             vid,
@@ -212,7 +219,11 @@ pub fn create_full_participation_set(
     let mut parts: ParticipationSet = HashMap::new();
     for (_stake, id, blocks_proposed, blocks_verified, _reputation) in validators {
         // Economics Role enum does not support Both; choose Proposer if proposer else Verifier
-        let role = if *id == proposer_id { ValidatorRole::Proposer } else { ValidatorRole::Verifier };
+        let role = if *id == proposer_id {
+            ValidatorRole::Proposer
+        } else {
+            ValidatorRole::Verifier
+        };
         let total_blocks = (*blocks_proposed as u64 + *blocks_verified as u64) as u32;
         let vid = ValidatorId(hex::encode(id));
         parts.insert(
@@ -273,10 +284,7 @@ mod tests {
 
     #[test]
     fn test_create_participation_set() {
-        let validators = vec![
-            (1000, [1u8; 32], 1, 1.0),
-            (2000, [2u8; 32], 0, 1.2),
-        ];
+        let validators = vec![(1000, [1u8; 32], 1, 1.0), (2000, [2u8; 32], 0, 1.2)];
         let proposer_id = [1u8; 32];
         let parts = create_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
@@ -286,10 +294,7 @@ mod tests {
 
     #[test]
     fn test_create_full_participation_set() {
-        let validators = vec![
-            (1000, [1u8; 32], 1, 2, 1.0),
-            (2000, [2u8; 32], 0, 3, 1.2),
-        ];
+        let validators = vec![(1000, [1u8; 32], 1, 2, 1.0), (2000, [2u8; 32], 0, 3, 1.2)];
         let proposer_id = [1u8; 32];
         let parts = create_full_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
@@ -303,11 +308,10 @@ mod tests {
         let ledger = Box::new(MockAccountLedger::new());
         let mut executor = RoundExecutor::new(params, ledger);
         let mut state = ChainState::new();
-        let participants = create_participation_set(
-            &[(1000, [1u8; 32], 1, 1.0)],
-            [1u8; 32],
-        );
-        let result = executor.execute_round(1, &mut state, participants, 1000).unwrap();
+        let participants = create_participation_set(&[(1000, [1u8; 32], 1, 1.0)], [1u8; 32]);
+        let result = executor
+            .execute_round(1, &mut state, participants, 1000)
+            .unwrap();
         assert_eq!(result.round, 1);
         assert!(result.emission_micro > 0);
         assert!(result.total_participants > 0);

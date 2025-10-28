@@ -19,67 +19,124 @@ pub struct NetworkMetrics {
 }
 
 /// Metrics data structure
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct MetricsData {
     // Connection metrics
     pub total_connections: u64,
     pub active_connections: u64,
     pub failed_connections: u64,
     pub connection_attempts: u64,
-    
+
     // Message metrics
     pub messages_sent: u64,
     pub messages_received: u64,
     pub messages_dropped: u64,
     pub message_errors: u64,
-    
+
     // Bandwidth metrics
     pub bytes_sent: u64,
     pub bytes_received: u64,
     pub peak_bandwidth_sent: u64,
     pub peak_bandwidth_received: u64,
-    
+
     // Peer metrics
     pub peers_discovered: u64,
     pub peers_connected: u64,
     pub peers_disconnected: u64,
     pub peer_exchanges: u64,
-    
+
     // Protocol metrics
     pub handshakes_successful: u64,
     pub handshakes_failed: u64,
     pub ping_requests: u64,
     pub pong_responses: u64,
-    
+
     // Error metrics
     pub timeout_errors: u64,
     pub serialization_errors: u64,
     pub network_errors: u64,
     pub protocol_errors: u64,
-    
+
     // Performance metrics
     pub average_latency_ms: f64,
     pub max_latency_ms: f64,
     pub min_latency_ms: f64,
-    
+
     // Timestamps
+    #[serde(skip)]
     pub start_time: Instant,
+    #[serde(skip)]
     pub last_update: Instant,
 }
 
+impl Default for MetricsData {
+    fn default() -> Self {
+        Self {
+            total_connections: 0,
+            active_connections: 0,
+            failed_connections: 0,
+            connection_attempts: 0,
+            messages_sent: 0,
+            messages_received: 0,
+            messages_dropped: 0,
+            message_errors: 0,
+            bytes_sent: 0,
+            bytes_received: 0,
+            peak_bandwidth_sent: 0,
+            peak_bandwidth_received: 0,
+            peers_discovered: 0,
+            peers_connected: 0,
+            peers_disconnected: 0,
+            peer_exchanges: 0,
+            handshakes_successful: 0,
+            handshakes_failed: 0,
+            ping_requests: 0,
+            pong_responses: 0,
+            timeout_errors: 0,
+            serialization_errors: 0,
+            network_errors: 0,
+            protocol_errors: 0,
+            average_latency_ms: 0.0,
+            max_latency_ms: 0.0,
+            min_latency_ms: 0.0,
+            start_time: Instant::now(),
+            last_update: Instant::now(),
+        }
+    }
+}
+
 /// Per-peer metrics
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PeerMetrics {
     pub peer_id: String,
     pub messages_sent: u64,
     pub messages_received: u64,
     pub bytes_sent: u64,
     pub bytes_received: u64,
+    #[serde(skip)]
     pub connection_time: Instant,
+    #[serde(skip)]
     pub last_activity: Instant,
     pub latency_ms: f64,
     pub reputation_score: f64,
     pub error_count: u64,
+}
+
+impl Default for PeerMetrics {
+    fn default() -> Self {
+        Self {
+            peer_id: String::new(),
+            messages_sent: 0,
+            messages_received: 0,
+            bytes_sent: 0,
+            bytes_received: 0,
+            connection_time: Instant::now(),
+            last_activity: Instant::now(),
+            latency_ms: 0.0,
+            reputation_score: 0.5,
+            error_count: 0,
+        }
+    }
 }
 
 /// Metrics collector implementation
@@ -94,8 +151,9 @@ impl NetworkMetrics {
 
     /// Start the metrics collector
     pub async fn start(&self) -> Result<()> {
-        self.is_running.store(true, std::sync::atomic::Ordering::SeqCst);
-        
+        self.is_running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
         // Start metrics collection tasks
         self.start_metrics_aggregation().await;
         self.start_metrics_reporting().await;
@@ -106,7 +164,8 @@ impl NetworkMetrics {
 
     /// Stop the metrics collector
     pub async fn stop(&self) -> Result<()> {
-        self.is_running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.is_running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         info!("Network metrics collector stopped");
         Ok(())
     }
@@ -252,7 +311,7 @@ impl NetworkMetrics {
     /// Record latency measurement
     pub fn record_latency(&self, latency_ms: f64) {
         let mut metrics = self.metrics.write();
-        
+
         // Update min/max latency
         if metrics.min_latency_ms == 0.0 || latency_ms < metrics.min_latency_ms {
             metrics.min_latency_ms = latency_ms;
@@ -260,14 +319,14 @@ impl NetworkMetrics {
         if latency_ms > metrics.max_latency_ms {
             metrics.max_latency_ms = latency_ms;
         }
-        
+
         // Update average latency (simple moving average)
         if metrics.average_latency_ms == 0.0 {
             metrics.average_latency_ms = latency_ms;
         } else {
             metrics.average_latency_ms = (metrics.average_latency_ms + latency_ms) / 2.0;
         }
-        
+
         metrics.last_update = Instant::now();
     }
 
@@ -280,7 +339,7 @@ impl NetworkMetrics {
     pub fn get_summary(&self) -> MetricsSummary {
         let metrics = self.metrics.read();
         let uptime = metrics.start_time.elapsed();
-        
+
         MetricsSummary {
             uptime_seconds: uptime.as_secs(),
             total_connections: metrics.total_connections,
@@ -311,16 +370,16 @@ impl NetworkMetrics {
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(60)); // 1 minute
-            
+
             while is_running.load(std::sync::atomic::Ordering::SeqCst) {
                 interval.tick().await;
-                
+
                 // Update peak bandwidth metrics
                 {
                     let mut metrics_guard = metrics.write();
                     let current_bandwidth_sent = metrics_guard.bytes_sent;
                     let current_bandwidth_received = metrics_guard.bytes_received;
-                    
+
                     if current_bandwidth_sent > metrics_guard.peak_bandwidth_sent {
                         metrics_guard.peak_bandwidth_sent = current_bandwidth_sent;
                     }
@@ -339,14 +398,14 @@ impl NetworkMetrics {
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(300)); // 5 minutes
-            
+
             while is_running.load(std::sync::atomic::Ordering::SeqCst) {
                 interval.tick().await;
-                
+
                 let summary = {
                     let metrics_guard = metrics.read();
                     let uptime = metrics_guard.start_time.elapsed();
-                    
+
                     MetricsSummary {
                         uptime_seconds: uptime.as_secs(),
                         total_connections: metrics_guard.total_connections,
@@ -363,13 +422,15 @@ impl NetworkMetrics {
                         },
                         average_latency_ms: metrics_guard.average_latency_ms,
                         error_rate: if metrics_guard.messages_sent > 0 {
-                            (metrics_guard.message_errors as f64 / metrics_guard.messages_sent as f64) * 100.0
+                            (metrics_guard.message_errors as f64
+                                / metrics_guard.messages_sent as f64)
+                                * 100.0
                         } else {
                             0.0
                         },
                     }
                 };
-                
+
                 info!("Network metrics: {:?}", summary);
             }
         });
@@ -430,7 +491,7 @@ mod tests {
         metrics.record_connection_attempt();
         metrics.record_connection_success();
         metrics.record_message_sent(1024);
-        
+
         let data = metrics.get_metrics();
         assert_eq!(data.connection_attempts, 1);
         assert_eq!(data.total_connections, 1);
@@ -443,7 +504,7 @@ mod tests {
         let metrics = NetworkMetrics::new();
         metrics.record_connection_success();
         metrics.record_message_sent(1024);
-        
+
         let summary = metrics.get_summary();
         assert_eq!(summary.total_connections, 1);
         assert_eq!(summary.active_connections, 1);

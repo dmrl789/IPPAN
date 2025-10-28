@@ -56,18 +56,22 @@ impl EconomicsParameterManager {
     ) -> Result<()> {
         // Validate parameter name
         self.validate_parameter_name(&proposal.parameter_name)?;
-        
+
         // Validate new value
         self.validate_parameter_value(&proposal.parameter_name, &proposal.new_value)?;
-        
+
         // Check for duplicate proposal ID
         if self.pending_proposals.contains_key(&proposal.proposal_id) {
-            return Err(anyhow!("Proposal ID {} already exists", proposal.proposal_id));
+            return Err(anyhow!(
+                "Proposal ID {} already exists",
+                proposal.proposal_id
+            ));
         }
-        
+
         // Add to pending proposals
-        self.pending_proposals.insert(proposal.proposal_id.clone(), proposal);
-        
+        self.pending_proposals
+            .insert(proposal.proposal_id.clone(), proposal);
+
         Ok(())
     }
 
@@ -76,10 +80,10 @@ impl EconomicsParameterManager {
         if let Some(proposal) = self.pending_proposals.remove(proposal_id) {
             // Apply the parameter change
             self.apply_parameter_change(&proposal)?;
-            
+
             // Add to history
             self.parameter_history.push(proposal);
-            
+
             Ok(())
         } else {
             Err(anyhow!("Proposal {} not found", proposal_id))
@@ -108,11 +112,11 @@ impl EconomicsParameterManager {
             "verifier_weight_bps",
             "fee_recycling_bps",
         ];
-        
+
         if !valid_parameters.contains(&name) {
             return Err(anyhow!("Invalid parameter name: {}", name));
         }
-        
+
         Ok(())
     }
 
@@ -149,7 +153,10 @@ impl EconomicsParameterManager {
             "proposer_weight_bps" | "verifier_weight_bps" | "fee_recycling_bps" => {
                 if let Some(val) = value.as_u64() {
                     if val > 10000 {
-                        return Err(anyhow!("Parameter {} cannot exceed 10000 basis points", name));
+                        return Err(anyhow!(
+                            "Parameter {} cannot exceed 10000 basis points",
+                            name
+                        ));
                     }
                 } else {
                     return Err(anyhow!("Parameter {} must be a positive integer", name));
@@ -157,7 +164,7 @@ impl EconomicsParameterManager {
             }
             _ => return Err(anyhow!("Unknown parameter: {}", name)),
         }
-        
+
         Ok(())
     }
 
@@ -165,7 +172,8 @@ impl EconomicsParameterManager {
     fn apply_parameter_change(&mut self, proposal: &EconomicsParameterProposal) -> Result<()> {
         match proposal.parameter_name.as_str() {
             "initial_round_reward_micro" => {
-                self.current_params.initial_round_reward_micro = proposal.new_value.as_u64().unwrap() as u128;
+                self.current_params.initial_round_reward_micro =
+                    proposal.new_value.as_u64().unwrap() as u128;
             }
             "halving_interval_rounds" => {
                 self.current_params.halving_interval_rounds = proposal.new_value.as_u64().unwrap();
@@ -180,17 +188,19 @@ impl EconomicsParameterManager {
                 self.current_params.fee_cap_denom = proposal.new_value.as_u64().unwrap();
             }
             "proposer_weight_bps" => {
-                self.current_params.proposer_weight_bps = proposal.new_value.as_u64().unwrap() as u16;
+                self.current_params.proposer_weight_bps =
+                    proposal.new_value.as_u64().unwrap() as u16;
             }
             "verifier_weight_bps" => {
-                self.current_params.verifier_weight_bps = proposal.new_value.as_u64().unwrap() as u16;
+                self.current_params.verifier_weight_bps =
+                    proposal.new_value.as_u64().unwrap() as u16;
             }
             "fee_recycling_bps" => {
                 self.current_params.fee_recycling_bps = proposal.new_value.as_u64().unwrap() as u16;
             }
             _ => return Err(anyhow!("Unknown parameter: {}", proposal.parameter_name)),
         }
-        
+
         Ok(())
     }
 }
@@ -212,7 +222,7 @@ pub fn create_parameter_proposal(
 ) -> EconomicsParameterProposal {
     let proposal_id = format!("{}_{}", parameter_name, chrono::Utc::now().timestamp());
     let created_at = chrono::Utc::now().timestamp() as u64;
-    
+
     EconomicsParameterProposal {
         proposal_id,
         parameter_name: parameter_name.to_string(),
@@ -233,7 +243,7 @@ mod tests {
     fn test_parameter_manager_creation() {
         let manager = EconomicsParameterManager::new();
         let params = manager.get_current_params();
-        
+
         assert_eq!(params.initial_round_reward_micro, 10_000_000);
         assert_eq!(params.halving_interval_rounds, 315_000_000);
     }
@@ -241,7 +251,7 @@ mod tests {
     #[test]
     fn test_parameter_proposal_submission() {
         let mut manager = EconomicsParameterManager::new();
-        
+
         let proposal = create_parameter_proposal(
             "initial_round_reward_micro",
             serde_json::Value::Number(serde_json::Number::from(20_000_000)),
@@ -250,7 +260,7 @@ mod tests {
             [1u8; 32],
             7 * 24 * 3600, // 7 days
         );
-        
+
         assert!(manager.submit_parameter_proposal(proposal).is_ok());
         assert_eq!(manager.get_pending_proposals().len(), 1);
     }
@@ -258,7 +268,7 @@ mod tests {
     #[test]
     fn test_invalid_parameter_name() {
         let mut manager = EconomicsParameterManager::new();
-        
+
         let proposal = create_parameter_proposal(
             "invalid_parameter",
             serde_json::Value::Number(serde_json::Number::from(100)),
@@ -267,14 +277,14 @@ mod tests {
             [1u8; 32],
             3600,
         );
-        
+
         assert!(manager.submit_parameter_proposal(proposal).is_err());
     }
 
     #[test]
     fn test_parameter_execution() {
         let mut manager = EconomicsParameterManager::new();
-        
+
         let proposal = create_parameter_proposal(
             "initial_round_reward_micro",
             serde_json::Value::Number(serde_json::Number::from(20_000_000)),
@@ -283,17 +293,17 @@ mod tests {
             [1u8; 32],
             3600,
         );
-        
+
         let proposal_id = proposal.proposal_id.clone();
         manager.submit_parameter_proposal(proposal).unwrap();
-        
+
         // Execute the change
         manager.execute_parameter_change(&proposal_id).unwrap();
-        
+
         // Check that the parameter was updated
         let params = manager.get_current_params();
         assert_eq!(params.initial_round_reward_micro, 20_000_000);
-        
+
         // Check that it was moved to history
         assert_eq!(manager.get_pending_proposals().len(), 0);
         assert_eq!(manager.get_parameter_history().len(), 1);

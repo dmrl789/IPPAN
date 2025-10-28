@@ -52,10 +52,12 @@ pub struct PeerDiscovery {
 }
 
 /// Discovered peer information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DiscoveredPeer {
     pub peer: Peer,
+    #[serde(skip)]
     pub discovered_at: Instant,
+    #[serde(skip)]
     pub last_seen: Instant,
     pub connection_attempts: usize,
     pub is_connected: bool,
@@ -103,7 +105,7 @@ impl PeerDiscovery {
     /// Create a new peer discovery service
     pub fn new(config: DiscoveryConfig) -> Self {
         let (discovery_sender, discovery_receiver) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             known_peers: Arc::new(RwLock::new(HashMap::new())),
@@ -116,8 +118,9 @@ impl PeerDiscovery {
 
     /// Start the discovery service
     pub async fn start(&mut self) -> Result<()> {
-        self.is_running.store(true, std::sync::atomic::Ordering::SeqCst);
-        
+        self.is_running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
         // Start discovery tasks
         self.start_discovery_loop().await;
         self.start_peer_exchange_loop().await;
@@ -130,7 +133,8 @@ impl PeerDiscovery {
 
     /// Stop the discovery service
     pub async fn stop(&mut self) -> Result<()> {
-        self.is_running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.is_running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         info!("Peer discovery service stopped");
         Ok(())
     }
@@ -145,13 +149,14 @@ impl PeerDiscovery {
     /// Add a discovered peer
     pub async fn add_peer(&self, peer: Peer) -> Result<()> {
         let peer_id = peer.id.clone().unwrap_or_else(|| peer.address.clone());
-        
+
         {
             let mut known_peers = self.known_peers.write();
             known_peers.insert(peer_id.clone(), DiscoveredPeer::new(peer));
         }
 
-        self.discovery_sender.send(DiscoveryMessage::PeerFound { peer })?;
+        self.discovery_sender
+            .send(DiscoveryMessage::PeerFound { peer })?;
         Ok(())
     }
 
@@ -167,8 +172,8 @@ impl PeerDiscovery {
             active_peers.remove(peer_id);
         }
 
-        self.discovery_sender.send(DiscoveryMessage::PeerLost { 
-            peer_id: peer_id.to_string() 
+        self.discovery_sender.send(DiscoveryMessage::PeerLost {
+            peer_id: peer_id.to_string(),
         })?;
         Ok(())
     }
@@ -187,11 +192,11 @@ impl PeerDiscovery {
     pub fn get_peers_for_connection(&self) -> Vec<Peer> {
         let known_peers = self.known_peers.read();
         let active_peers = self.active_peers.read();
-        
+
         known_peers
             .values()
             .filter(|peer| {
-                !peer.is_stale(&self.config) 
+                !peer.is_stale(&self.config)
                     && !active_peers.contains(&peer.peer.id.as_ref().unwrap_or(&peer.peer.address))
                     && peer.should_retry_connection()
             })
@@ -208,10 +213,11 @@ impl PeerDiscovery {
             }
         }
 
-        self.discovery_sender.send(DiscoveryMessage::UpdateReputation {
-            peer_id: peer_id.to_string(),
-            score,
-        })?;
+        self.discovery_sender
+            .send(DiscoveryMessage::UpdateReputation {
+                peer_id: peer_id.to_string(),
+                score,
+            })?;
         Ok(())
     }
 
@@ -230,9 +236,10 @@ impl PeerDiscovery {
             active_peers.insert(peer_id.to_string());
         }
 
-        self.discovery_sender.send(DiscoveryMessage::PeerConnected {
-            peer_id: peer_id.to_string(),
-        })?;
+        self.discovery_sender
+            .send(DiscoveryMessage::PeerConnected {
+                peer_id: peer_id.to_string(),
+            })?;
         Ok(())
     }
 
@@ -251,9 +258,10 @@ impl PeerDiscovery {
             active_peers.remove(peer_id);
         }
 
-        self.discovery_sender.send(DiscoveryMessage::PeerDisconnected {
-            peer_id: peer_id.to_string(),
-        })?;
+        self.discovery_sender
+            .send(DiscoveryMessage::PeerDisconnected {
+                peer_id: peer_id.to_string(),
+            })?;
         Ok(())
     }
 
@@ -265,10 +273,10 @@ impl PeerDiscovery {
 
         tokio::spawn(async move {
             let mut interval = interval(config.discovery_interval);
-            
+
             while is_running.load(std::sync::atomic::Ordering::SeqCst) {
                 interval.tick().await;
-                
+
                 if let Err(e) = discovery_sender.send(DiscoveryMessage::DiscoverPeers) {
                     warn!("Failed to send discovery message: {}", e);
                 }
@@ -284,10 +292,10 @@ impl PeerDiscovery {
 
         tokio::spawn(async move {
             let mut interval = interval(config.peer_exchange_interval);
-            
+
             while is_running.load(std::sync::atomic::Ordering::SeqCst) {
                 interval.tick().await;
-                
+
                 // Exchange peers with connected peers
                 // This would be implemented with actual peer communication
                 debug!("Performing peer exchange");
@@ -303,10 +311,10 @@ impl PeerDiscovery {
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(300)); // 5 minutes
-            
+
             while is_running.load(std::sync::atomic::Ordering::SeqCst) {
                 interval.tick().await;
-                
+
                 // Remove stale peers
                 let mut peers_to_remove = Vec::new();
                 {
@@ -395,7 +403,7 @@ impl PeerDiscovery {
     pub fn get_stats(&self) -> DiscoveryStats {
         let known_peers = self.known_peers.read();
         let active_peers = self.active_peers.read();
-        
+
         let connected_peers = known_peers
             .values()
             .filter(|peer| peer.is_connected)
@@ -428,7 +436,7 @@ mod tests {
         let config = DiscoveryConfig::default();
         let discovery = PeerDiscovery::new(config);
         let peer = Peer::new("127.0.0.1:8080".to_string());
-        
+
         assert!(discovery.add_peer(peer).await.is_ok());
         assert_eq!(discovery.get_known_peers().len(), 1);
     }
@@ -438,8 +446,11 @@ mod tests {
         let config = DiscoveryConfig::default();
         let discovery = PeerDiscovery::new(config);
         let peer = Peer::with_id("test-peer", "127.0.0.1:8080");
-        
+
         discovery.add_peer(peer).await.unwrap();
-        assert!(discovery.update_peer_reputation("test-peer", 0.8).await.is_ok());
+        assert!(discovery
+            .update_peer_reputation("test-peer", 0.8)
+            .await
+            .is_ok());
     }
 }

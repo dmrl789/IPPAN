@@ -34,7 +34,13 @@ impl Model {
         scale: i32,
         trees: Vec<crate::gbdt::Tree>,
     ) -> Self {
-        Self { version, feature_count, bias, scale, trees }
+        Self {
+            version,
+            feature_count,
+            bias,
+            scale,
+            trees,
+        }
     }
 
     /// Validate structural invariants of this model
@@ -111,7 +117,9 @@ pub fn load_model(path: impl AsRef<Path>) -> Result<ModelPackage, ModelError> {
         return Err(ModelError::InvalidStructure("No trees in model".into()));
     }
     if package.metadata.feature_count == 0 {
-        return Err(ModelError::InvalidStructure("Feature count cannot be zero".into()));
+        return Err(ModelError::InvalidStructure(
+            "Feature count cannot be zero".into(),
+        ));
     }
 
     Ok(package)
@@ -149,9 +157,27 @@ mod tests {
         GBDTModel {
             trees: vec![Tree {
                 nodes: vec![
-                    Node { feature_index: 0, threshold: 50, left: 1, right: 2, value: None },
-                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(10) },
-                    Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(20) },
+                    Node {
+                        feature_index: 0,
+                        threshold: 50,
+                        left: 1,
+                        right: 2,
+                        value: None,
+                    },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(10),
+                    },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(20),
+                    },
                 ],
             }],
             bias: 0,

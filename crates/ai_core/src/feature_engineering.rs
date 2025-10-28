@@ -1,42 +1,30 @@
 //! Production-grade feature engineering and data preprocessing for GBDT models
 //!
-//! This module provides comprehensive feature engineering capabilities including:
-//! - Feature extraction from various data sources
-//! - Data normalization and scaling
-//! - Feature selection and dimensionality reduction
-//! - Data validation and quality checking
-//! - Feature importance analysis
-//! - Real-time feature pipeline processing
+//! Provides deterministic preprocessing for GBDT inference:
+//! - Normalization, scaling, feature selection
+//! - Outlier handling (IQR-based)
+//! - Integer scaling for deterministic inference
+//! - Supports reproducible transformation and normalization stats reuse
 
-use crate::gbdt::{GBDTModel, GBDTError, FeatureNormalization};
+use crate::gbdt::{FeatureNormalization, GBDTError, GBDTModel};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Feature engineering configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureEngineeringConfig {
-    /// Enable feature engineering
     pub enable_feature_engineering: bool,
-    /// Enable feature normalization
     pub enable_normalization: bool,
-    /// Enable feature scaling
     pub enable_scaling: bool,
-    /// Enable feature selection
     pub enable_feature_selection: bool,
-    /// Maximum number of features
     pub max_features: usize,
-    /// Feature selection threshold (0.0 to 1.0)
     pub feature_selection_threshold: f64,
-    /// Enable outlier detection
     pub enable_outlier_detection: bool,
-    /// Outlier detection threshold (standard deviations)
     pub outlier_threshold: f64,
-    /// Enable feature interaction generation
     pub enable_feature_interactions: bool,
-    /// Maximum interaction depth
     pub max_interaction_depth: usize,
 }
 
@@ -57,7 +45,7 @@ impl Default for FeatureEngineeringConfig {
     }
 }
 
-/// Feature statistics for normalization and scaling
+/// Feature statistics used for normalization and scaling
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureStatistics {
     pub means: Vec<f64>,
@@ -65,7 +53,7 @@ pub struct FeatureStatistics {
     pub mins: Vec<f64>,
     pub maxs: Vec<f64>,
     pub medians: Vec<f64>,
-    pub quartiles: Vec<[f64; 4]>, // Q1, Q2, Q3, Q4
+    pub quartiles: Vec<[f64; 4]>,
     pub feature_counts: Vec<usize>,
     pub missing_counts: Vec<usize>,
 }
@@ -79,7 +67,7 @@ pub struct FeatureImportance {
     pub total_variance_explained: f64,
 }
 
-/// Raw feature data from various sources
+/// Raw numeric features (float-based)
 #[derive(Debug, Clone)]
 pub struct RawFeatureData {
     pub features: Vec<Vec<f64>>,
@@ -89,10 +77,10 @@ pub struct RawFeatureData {
     pub metadata: HashMap<String, String>,
 }
 
-/// Processed feature data ready for GBDT
+/// Processed deterministic integer features
 #[derive(Debug, Clone)]
 pub struct ProcessedFeatureData {
-    pub features: Vec<Vec<i64>>, // Scaled to integers for GBDT
+    pub features: Vec<Vec<i64>>,
     pub feature_names: Vec<String>,
     pub feature_importance: Option<FeatureImportance>,
     pub normalization: Option<FeatureNormalization>,
@@ -100,7 +88,7 @@ pub struct ProcessedFeatureData {
     pub processing_time_ms: u64,
 }
 
-/// Feature engineering pipeline
+/// Main feature engineering pipeline
 #[derive(Debug)]
 pub struct FeatureEngineeringPipeline {
     config: FeatureEngineeringConfig,
@@ -110,7 +98,6 @@ pub struct FeatureEngineeringPipeline {
 }
 
 impl FeatureEngineeringPipeline {
-    /// Create a new feature engineering pipeline
     pub fn new(config: FeatureEngineeringConfig) -> Self {
         Self {
             config,
@@ -120,172 +107,147 @@ impl FeatureEngineeringPipeline {
         }
     }
 
-    /// Fit the pipeline on training data
+    /// Fit pipeline on raw training data
     #[instrument(skip(self, data))]
     pub async fn fit(&mut self, data: &RawFeatureData) -> Result<(), GBDTError> {
-        let start_time = std::time::Instant::now();
-        
+        let start = std::time::Instant::now();
         info!(
-            "Fitting feature engineering pipeline on {} samples with {} features",
-            data.sample_count,
-            data.feature_count
+            "Fitting feature pipeline on {} samples × {} features",
+            data.sample_count, data.feature_count
         );
 
-        // Calculate feature statistics
         self.statistics = Some(self.calculate_statistics(data)?);
 
-        // Detect and handle outliers
         if self.config.enable_outlier_detection {
             self.handle_outliers(data)?;
         }
 
-        // Calculate feature importance
         if self.config.enable_feature_selection {
             self.feature_importance = Some(self.calculate_feature_importance(data)?);
         }
 
-        // Calculate normalization parameters
         if self.config.enable_normalization {
             self.normalization = Some(self.calculate_normalization(data)?);
         }
 
-        let processing_time = start_time.elapsed();
         info!(
-            "Feature engineering pipeline fitted in {}ms",
-            processing_time.as_millis()
+            "Feature pipeline fitted in {} ms",
+            start.elapsed().as_millis()
         );
-
         Ok(())
     }
 
-    /// Transform raw data using the fitted pipeline
+    /// Transform new data deterministically
     #[instrument(skip(self, data))]
     pub async fn transform(&self, data: &RawFeatureData) -> Result<ProcessedFeatureData, GBDTError> {
-        let start_time = std::time::Instant::now();
-        
-        if self.statistics.is_none() {
-            return Err(GBDTError::ModelValidationFailed {
-                reason: "Pipeline not fitted. Call fit() first.".to_string(),
-            });
-        }
+        let start = std::time::Instant::now();
+        let stats = self
+            .statistics
+            .as_ref()
+            .ok_or_else(|| GBDTError::ModelValidationFailed {
+                reason: "Pipeline not fitted (call fit first)".into(),
+            })?;
 
-        let statistics = self.statistics.as_ref().unwrap();
-        let mut processed_features = Vec::with_capacity(data.sample_count);
+        let mut processed = Vec::with_capacity(data.sample_count);
 
         for sample in &data.features {
-            let mut processed_sample = Vec::with_capacity(sample.len());
-
-            for (i, &value) in sample.iter().enumerate() {
-                if i >= statistics.means.len() {
+            let mut row = Vec::with_capacity(sample.len());
+            for (i, &v) in sample.iter().enumerate() {
+                if i >= stats.means.len() {
                     return Err(GBDTError::FeatureSizeMismatch {
-                        expected: statistics.means.len(),
+                        expected: stats.means.len(),
                         actual: sample.len(),
                     });
                 }
 
-                // Handle missing values
-                let processed_value = if value.is_nan() || value.is_infinite() {
-                    statistics.medians[i] // Use median for missing values
+                let clean = if v.is_nan() || v.is_infinite() {
+                    stats.medians[i]
                 } else {
-                    value
+                    v
                 };
 
-                // Apply normalization if enabled
-                let normalized_value = if let Some(ref norm) = self.normalization {
-                    self.normalize_value(processed_value, i, norm)?
+                let norm = if let Some(ref n) = self.normalization {
+                    self.normalize_value(clean, i, n)?
                 } else {
-                    processed_value
+                    clean
                 };
 
-                // Scale to integer for GBDT
-                let scaled_value = self.scale_to_integer(normalized_value)?;
-                processed_sample.push(scaled_value);
+                row.push(self.scale_to_integer(norm)?);
             }
-
-            processed_features.push(processed_sample);
+            processed.push(row);
         }
 
-        // Apply feature selection if enabled
-        let (final_features, final_feature_names) = if let Some(ref importance) = self.feature_importance {
-            self.apply_feature_selection(&processed_features, &data.feature_names, importance)?
+        let (final_features, final_names) = if let Some(ref imp) = self.feature_importance {
+            self.apply_feature_selection(&processed, &data.feature_names, imp)?
         } else {
-            (processed_features, data.feature_names.clone())
+            (processed, data.feature_names.clone())
         };
-
-        let processing_time = start_time.elapsed();
 
         Ok(ProcessedFeatureData {
             features: final_features,
-            feature_names: final_feature_names,
+            feature_names: final_names,
             feature_importance: self.feature_importance.clone(),
             normalization: self.normalization.clone(),
-            statistics: statistics.clone(),
-            processing_time_ms: processing_time.as_millis() as u64,
+            statistics: stats.clone(),
+            processing_time_ms: start.elapsed().as_millis() as u64,
         })
     }
 
-    /// Calculate comprehensive feature statistics
+    /// Compute statistics (mean, std, quartiles, etc.)
     fn calculate_statistics(&self, data: &RawFeatureData) -> Result<FeatureStatistics, GBDTError> {
-        let feature_count = data.feature_count;
-        let mut means = vec![0.0; feature_count];
-        let mut std_devs = vec![0.0; feature_count];
-        let mut mins = vec![f64::INFINITY; feature_count];
-        let mut maxs = vec![f64::NEG_INFINITY; feature_count];
-        let mut medians = vec![0.0; feature_count];
-        let mut quartiles = vec![[0.0; 4]; feature_count];
-        let mut feature_counts = vec![0; feature_count];
-        let mut missing_counts = vec![0; feature_count];
+        let n = data.feature_count;
+        let mut means = vec![0.0; n];
+        let mut stds = vec![0.0; n];
+        let mut mins = vec![f64::INFINITY; n];
+        let mut maxs = vec![f64::NEG_INFINITY; n];
+        let mut medians = vec![0.0; n];
+        let mut quartiles = vec![[0.0; 4]; n];
+        let mut counts = vec![0; n];
+        let mut missing = vec![0; n];
 
-        // Calculate basic statistics
-        for sample in &data.features {
-            for (i, &value) in sample.iter().enumerate() {
-                if i >= feature_count {
+        for row in &data.features {
+            for (i, &v) in row.iter().enumerate() {
+                if v.is_nan() || v.is_infinite() {
+                    missing[i] += 1;
                     continue;
                 }
+                means[i] += v;
+                mins[i] = mins[i].min(v);
+                maxs[i] = maxs[i].max(v);
+                counts[i] += 1;
+            }
+        }
 
-                if value.is_nan() || value.is_infinite() {
-                    missing_counts[i] += 1;
-                } else {
-                    means[i] += value;
-                    mins[i] = mins[i].min(value);
-                    maxs[i] = maxs[i].max(value);
-                    feature_counts[i] += 1;
+        for i in 0..n {
+            if counts[i] > 0 {
+                means[i] /= counts[i] as f64;
+            }
+        }
+
+        for row in &data.features {
+            for (i, &v) in row.iter().enumerate() {
+                if !v.is_nan() && !v.is_infinite() {
+                    let diff = v - means[i];
+                    stds[i] += diff * diff;
                 }
             }
         }
 
-        // Calculate means
-        for i in 0..feature_count {
-            if feature_counts[i] > 0 {
-                means[i] /= feature_counts[i] as f64;
+        for i in 0..n {
+            if counts[i] > 1 {
+                stds[i] = (stds[i] / (counts[i] - 1) as f64).sqrt();
             }
         }
 
-        // Calculate standard deviations
-        for sample in &data.features {
-            for (i, &value) in sample.iter().enumerate() {
-                if i < feature_count && !value.is_nan() && !value.is_infinite() {
-                    let diff = value - means[i];
-                    std_devs[i] += diff * diff;
-                }
-            }
-        }
-
-        for i in 0..feature_count {
-            if feature_counts[i] > 1 {
-                std_devs[i] = (std_devs[i] / (feature_counts[i] - 1) as f64).sqrt();
-            }
-        }
-
-        // Calculate medians and quartiles
-        for i in 0..feature_count {
-            let mut values: Vec<f64> = data.features
+        for i in 0..n {
+            let mut values: Vec<f64> = data
+                .features
                 .iter()
-                .filter_map(|sample| {
-                    if i < sample.len() {
-                        let value = sample[i];
-                        if !value.is_nan() && !value.is_infinite() {
-                            Some(value)
+                .filter_map(|r| {
+                    if i < r.len() {
+                        let v = r[i];
+                        if v.is_finite() {
+                            Some(v)
                         } else {
                             None
                         }
@@ -294,9 +256,7 @@ impl FeatureEngineeringPipeline {
                     }
                 })
                 .collect();
-
             values.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
             if !values.is_empty() {
                 let len = values.len();
                 medians[i] = if len % 2 == 0 {
@@ -304,285 +264,215 @@ impl FeatureEngineeringPipeline {
                 } else {
                     values[len / 2]
                 };
-
-                // Calculate quartiles
                 quartiles[i] = [
-                    values[len / 4],                    // Q1
-                    medians[i],                         // Q2
-                    values[3 * len / 4],                // Q3
-                    values[len - 1],                    // Q4 (max)
+                    values[len / 4],
+                    medians[i],
+                    values[3 * len / 4],
+                    values[len - 1],
                 ];
             }
         }
 
         Ok(FeatureStatistics {
             means,
-            std_devs,
+            std_devs: stds,
             mins,
             maxs,
             medians,
             quartiles,
-            feature_counts,
-            missing_counts,
+            feature_counts: counts,
+            missing_counts: missing,
         })
     }
 
-    /// Calculate feature importance using variance analysis
+    /// Compute variance-based feature importance
     fn calculate_feature_importance(&self, data: &RawFeatureData) -> Result<FeatureImportance, GBDTError> {
-        let statistics = self.statistics.as_ref().unwrap();
-        let mut importance_scores = Vec::with_capacity(data.feature_count);
-        let mut total_variance = 0.0;
+        let stats = self.statistics.as_ref().unwrap();
+        let mut scores = Vec::with_capacity(data.feature_count);
+        let mut total = 0.0;
 
-        // Calculate variance for each feature
         for i in 0..data.feature_count {
-            let variance = statistics.std_devs[i] * statistics.std_devs[i];
-            importance_scores.push(variance);
-            total_variance += variance;
+            let var = stats.std_devs[i].powi(2);
+            scores.push(var);
+            total += var;
         }
 
-        // Normalize importance scores
-        for score in &mut importance_scores {
-            *score /= total_variance;
+        for s in &mut scores {
+            *s /= total.max(1e-12);
         }
 
-        // Select features above threshold
-        let mut selected_features = Vec::new();
-        for (i, &score) in importance_scores.iter().enumerate() {
-            if score >= self.config.feature_selection_threshold {
-                selected_features.push(i);
-            }
-        }
-
-        // Limit to max features
-        if selected_features.len() > self.config.max_features {
-            let mut indexed_scores: Vec<(usize, f64)> = selected_features
-                .iter()
-                .map(|&i| (i, importance_scores[i]))
-                .collect();
-            indexed_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-            selected_features = indexed_scores
-                .iter()
-                .take(self.config.max_features)
-                .map(|(i, _)| *i)
-                .collect();
-        }
-
-        let total_variance_explained: f64 = selected_features
+        let mut selected: Vec<usize> = scores
             .iter()
-            .map(|&i| importance_scores[i])
-            .sum();
+            .enumerate()
+            .filter(|(_, &s)| s >= self.config.feature_selection_threshold)
+            .map(|(i, _)| i)
+            .collect();
+
+        if selected.len() > self.config.max_features {
+            let mut sorted: Vec<(usize, f64)> =
+                selected.iter().map(|&i| (i, scores[i])).collect();
+            sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            selected = sorted.iter().take(self.config.max_features).map(|(i, _)| *i).collect();
+        }
+
+        let variance_explained: f64 = selected.iter().map(|&i| scores[i]).sum();
 
         Ok(FeatureImportance {
             feature_names: data.feature_names.clone(),
-            importance_scores,
-            selected_features,
-            total_variance_explained,
+            importance_scores: scores,
+            selected_features: selected,
+            total_variance_explained: variance_explained,
         })
     }
 
-    /// Calculate normalization parameters
+    /// Calculate normalization (scaled to int for deterministic GBDT)
     fn calculate_normalization(&self, data: &RawFeatureData) -> Result<FeatureNormalization, GBDTError> {
-        let statistics = self.statistics.as_ref().unwrap();
-        let mut means = Vec::with_capacity(data.feature_count);
-        let mut std_devs = Vec::with_capacity(data.feature_count);
-        let mut mins = Vec::with_capacity(data.feature_count);
-        let mut maxs = Vec::with_capacity(data.feature_count);
+        let stats = self.statistics.as_ref().unwrap();
+        let mut means = Vec::new();
+        let mut stds = Vec::new();
+        let mut mins = Vec::new();
+        let mut maxs = Vec::new();
 
         for i in 0..data.feature_count {
-            // Scale to integers for GBDT compatibility
-            means.push((statistics.means[i] * 1000.0) as i64);
-            std_devs.push((statistics.std_devs[i] * 1000.0).max(1.0) as i64);
-            mins.push((statistics.mins[i] * 1000.0) as i64);
-            maxs.push((statistics.maxs[i] * 1000.0) as i64);
+            means.push((stats.means[i] * 1000.0) as i64);
+            stds.push((stats.std_devs[i] * 1000.0).max(1.0) as i64);
+            mins.push((stats.mins[i] * 1000.0) as i64);
+            maxs.push((stats.maxs[i] * 1000.0) as i64);
         }
 
-        Ok(FeatureNormalization {
-            means,
-            std_devs,
-            mins,
-            maxs,
-        })
+        Ok(FeatureNormalization { means, std_devs: stds, mins, maxs })
     }
 
-    /// Normalize a single value
-    fn normalize_value(&self, value: f64, feature_idx: usize, norm: &FeatureNormalization) -> Result<f64, GBDTError> {
-        if feature_idx >= norm.means.len() {
-            return Err(GBDTError::FeatureSizeMismatch {
-                expected: norm.means.len(),
-                actual: feature_idx + 1,
-            });
+    fn normalize_value(&self, value: f64, idx: usize, norm: &FeatureNormalization) -> Result<f64, GBDTError> {
+        if idx >= norm.means.len() {
+            return Err(GBDTError::FeatureSizeMismatch { expected: norm.means.len(), actual: idx + 1 });
         }
-
-        // Z-score normalization: (x - mean) / std
-        let normalized = (value - (norm.means[feature_idx] as f64 / 1000.0))
-            / (norm.std_devs[feature_idx] as f64 / 1000.0);
-
-        // Clip to min/max bounds
-        let min_bound = norm.mins[feature_idx] as f64 / 1000.0;
-        let max_bound = norm.maxs[feature_idx] as f64 / 1000.0;
-        Ok(normalized.max(min_bound).min(max_bound))
+        let normalized = (value - (norm.means[idx] as f64 / 1000.0))
+            / (norm.std_devs[idx] as f64 / 1000.0);
+        let minb = norm.mins[idx] as f64 / 1000.0;
+        let maxb = norm.maxs[idx] as f64 / 1000.0;
+        Ok(normalized.clamp(minb, maxb))
     }
 
-    /// Scale value to integer for GBDT
     fn scale_to_integer(&self, value: f64) -> Result<i64, GBDTError> {
-        // Scale to 6 decimal places and convert to integer
-        let scaled = (value * 1_000_000.0).round() as i64;
-        
-        // Clamp to reasonable bounds
-        Ok(scaled.clamp(-1_000_000_000, 1_000_000_000))
+        Ok((value * 1_000_000.0).round() as i64).map(|v| v.clamp(-1_000_000_000, 1_000_000_000))
     }
 
-    /// Apply feature selection
     fn apply_feature_selection(
         &self,
         features: &[Vec<i64>],
-        feature_names: &[String],
-        importance: &FeatureImportance,
+        names: &[String],
+        imp: &FeatureImportance,
     ) -> Result<(Vec<Vec<i64>>, Vec<String>), GBDTError> {
-        let mut selected_features = Vec::with_capacity(features.len());
-        let mut selected_names = Vec::with_capacity(importance.selected_features.len());
+        let mut selected_rows = Vec::with_capacity(features.len());
+        let mut selected_names = Vec::new();
 
-        for sample in features {
-            let mut selected_sample = Vec::with_capacity(importance.selected_features.len());
-            for &feature_idx in &importance.selected_features {
-                if feature_idx < sample.len() {
-                    selected_sample.push(sample[feature_idx]);
-                } else {
-                    return Err(GBDTError::FeatureSizeMismatch {
-                        expected: sample.len(),
-                        actual: feature_idx + 1,
-                    });
+        for row in features {
+            let mut sel_row = Vec::with_capacity(imp.selected_features.len());
+            for &idx in &imp.selected_features {
+                if idx >= row.len() {
+                    return Err(GBDTError::FeatureSizeMismatch { expected: row.len(), actual: idx + 1 });
                 }
+                sel_row.push(row[idx]);
             }
-            selected_features.push(selected_sample);
+            selected_rows.push(sel_row);
         }
 
-        for &feature_idx in &importance.selected_features {
-            if feature_idx < feature_names.len() {
-                selected_names.push(feature_names[feature_idx].clone());
+        for &idx in &imp.selected_features {
+            if idx < names.len() {
+                selected_names.push(names[idx].clone());
             }
         }
-
-        Ok((selected_features, selected_names))
+        Ok((selected_rows, selected_names))
     }
 
-    /// Handle outliers using IQR method
     fn handle_outliers(&self, data: &RawFeatureData) -> Result<(), GBDTError> {
-        let statistics = self.statistics.as_ref().unwrap();
-        
+        let stats = self.statistics.as_ref().unwrap();
         for i in 0..data.feature_count {
-            let q1 = statistics.quartiles[i][0];
-            let q3 = statistics.quartiles[i][2];
+            let q1 = stats.quartiles[i][0];
+            let q3 = stats.quartiles[i][2];
             let iqr = q3 - q1;
-            let lower_bound = q1 - self.config.outlier_threshold * iqr;
-            let upper_bound = q3 + self.config.outlier_threshold * iqr;
+            let lower = q1 - self.config.outlier_threshold * iqr;
+            let upper = q3 + self.config.outlier_threshold * iqr;
 
-            let mut outlier_count = 0;
-            for sample in &data.features {
-                if i < sample.len() {
-                    let value = sample[i];
-                    if value < lower_bound || value > upper_bound {
-                        outlier_count += 1;
+            let mut outliers = 0;
+            for row in &data.features {
+                if i < row.len() {
+                    let v = row[i];
+                    if v < lower || v > upper {
+                        outliers += 1;
                     }
                 }
             }
-
-            if outlier_count > 0 {
+            if outliers > 0 {
                 warn!(
-                    "Feature {} has {} outliers ({}% of data)",
+                    "Feature {} has {} outliers ({:.2}%)",
                     i,
-                    outlier_count,
-                    (outlier_count as f64 / data.sample_count as f64) * 100.0
+                    outliers,
+                    (outliers as f64 / data.sample_count as f64) * 100.0
                 );
             }
         }
-
         Ok(())
     }
 
-    /// Get feature importance information
-    pub fn get_feature_importance(&self) -> Option<&FeatureImportance> {
-        self.feature_importance.as_ref()
-    }
-
-    /// Get normalization parameters
-    pub fn get_normalization(&self) -> Option<&FeatureNormalization> {
-        self.normalization.as_ref()
-    }
-
-    /// Get feature statistics
-    pub fn get_statistics(&self) -> Option<&FeatureStatistics> {
-        self.statistics.as_ref()
-    }
+    pub fn get_feature_importance(&self) -> Option<&FeatureImportance> { self.feature_importance.as_ref() }
+    pub fn get_normalization(&self) -> Option<&FeatureNormalization> { self.normalization.as_ref() }
+    pub fn get_statistics(&self) -> Option<&FeatureStatistics> { self.statistics.as_ref() }
 }
 
-/// Utility functions for feature engineering
+/// Utilities for data generation and conversion
 pub mod utils {
     use super::*;
 
-    /// Create raw feature data from a simple matrix
-    pub fn create_raw_data(
-        features: Vec<Vec<f64>>,
-        feature_names: Vec<String>,
-    ) -> RawFeatureData {
-        let sample_count = features.len();
-        let feature_count = if sample_count > 0 { features[0].len() } else { 0 };
-
+    pub fn create_raw_data(features: Vec<Vec<f64>>, names: Vec<String>) -> RawFeatureData {
+        let samples = features.len();
+        let count = if samples > 0 { features[0].len() } else { 0 };
         RawFeatureData {
             features,
-            feature_names,
-            sample_count,
-            feature_count,
+            feature_names: names,
+            sample_count: samples,
+            feature_count: count,
             metadata: HashMap::new(),
         }
     }
 
-    /// Create raw feature data with metadata
     pub fn create_raw_data_with_metadata(
         features: Vec<Vec<f64>>,
-        feature_names: Vec<String>,
+        names: Vec<String>,
         metadata: HashMap<String, String>,
     ) -> RawFeatureData {
-        let sample_count = features.len();
-        let feature_count = if sample_count > 0 { features[0].len() } else { 0 };
-
+        let samples = features.len();
+        let count = if samples > 0 { features[0].len() } else { 0 };
         RawFeatureData {
             features,
-            feature_names,
-            sample_count,
-            feature_count,
+            feature_names: names,
+            sample_count: samples,
+            feature_count: count,
             metadata,
         }
     }
 
-    /// Generate synthetic training data for testing
-    pub fn generate_synthetic_data(
-        samples: usize,
-        features: usize,
-        noise_level: f64,
-    ) -> RawFeatureData {
+    pub fn generate_synthetic_data(samples: usize, features: usize, noise: f64) -> RawFeatureData {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-
-        let mut feature_data = Vec::with_capacity(samples);
-        let mut feature_names = Vec::with_capacity(features);
-
+        let mut names = Vec::with_capacity(features);
         for i in 0..features {
-            feature_names.push(format!("feature_{}", i));
+            names.push(format!("feature_{}", i));
         }
 
+        let mut data = Vec::with_capacity(samples);
         for _ in 0..samples {
-            let mut sample = Vec::with_capacity(features);
+            let mut row = Vec::with_capacity(features);
             for i in 0..features {
-                // Generate correlated features
-                let base_value = (i as f64) * 10.0 + rng.gen_range(0.0..10.0);
-                let noise = rng.gen_range(-noise_level..noise_level);
-                sample.push(base_value + noise);
+                let base = (i as f64) * 10.0 + rng.gen_range(0.0..10.0);
+                let eps = rng.gen_range(-noise..noise);
+                row.push(base + eps);
             }
-            feature_data.push(sample);
+            data.push(row);
         }
 
-        create_raw_data(feature_data, feature_names)
+        create_raw_data(data, names)
     }
 }
 
@@ -592,21 +482,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_feature_engineering_pipeline() {
-        let config = FeatureEngineeringConfig::default();
-        let mut pipeline = FeatureEngineeringPipeline::new(config);
-
-        // Create test data
-        let raw_data = utils::generate_synthetic_data(100, 5, 0.1);
-        
-        // Fit pipeline
-        pipeline.fit(&raw_data).await.unwrap();
-
-        // Transform data
-        let processed_data = pipeline.transform(&raw_data).await.unwrap();
-
-        assert_eq!(processed_data.features.len(), 100);
-        assert_eq!(processed_data.feature_names.len(), 5);
-        assert!(processed_data.processing_time_ms > 0);
+        let mut pipeline = FeatureEngineeringPipeline::new(FeatureEngineeringConfig::default());
+        let raw = utils::generate_synthetic_data(100, 5, 0.1);
+        pipeline.fit(&raw).await.unwrap();
+        let processed = pipeline.transform(&raw).await.unwrap();
+        assert_eq!(processed.features.len(), 100);
+        assert_eq!(processed.feature_names.len(), 5);
     }
 
     #[tokio::test]
@@ -617,44 +498,30 @@ mod tests {
             max_features: 3,
             ..Default::default()
         };
-
         let mut pipeline = FeatureEngineeringPipeline::new(config);
-        let raw_data = utils::generate_synthetic_data(100, 10, 0.1);
-
-        pipeline.fit(&raw_data).await.unwrap();
-        let processed_data = pipeline.transform(&raw_data).await.unwrap();
-
-        // Should have selected at most 3 features
-        assert!(processed_data.feature_names.len() <= 3);
+        let raw = utils::generate_synthetic_data(100, 10, 0.1);
+        pipeline.fit(&raw).await.unwrap();
+        let processed = pipeline.transform(&raw).await.unwrap();
+        assert!(processed.feature_names.len() <= 3);
     }
 
     #[tokio::test]
     async fn test_normalization() {
-        let config = FeatureEngineeringConfig {
+        let mut pipeline = FeatureEngineeringPipeline::new(FeatureEngineeringConfig {
             enable_normalization: true,
             ..Default::default()
-        };
-
-        let mut pipeline = FeatureEngineeringPipeline::new(config);
-        let raw_data = utils::generate_synthetic_data(100, 5, 0.1);
-
-        pipeline.fit(&raw_data).await.unwrap();
-        let processed_data = pipeline.transform(&raw_data).await.unwrap();
-
-        assert!(processed_data.normalization.is_some());
-        assert!(processed_data.statistics.means.len() == 5);
+        });
+        let raw = utils::generate_synthetic_data(100, 5, 0.1);
+        pipeline.fit(&raw).await.unwrap();
+        let processed = pipeline.transform(&raw).await.unwrap();
+        assert!(processed.normalization.is_some());
+        assert_eq!(processed.statistics.means.len(), 5);
     }
 
     #[test]
     fn test_utils_create_raw_data() {
-        let features = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-        ];
-        let feature_names = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-
-        let raw_data = utils::create_raw_data(features, feature_names);
-        assert_eq!(raw_data.sample_count, 2);
-        assert_eq!(raw_data.feature_count, 3);
+        let raw = utils::create_raw_data(vec![vec![1.0, 2.0], vec![3.0, 4.0]], vec!["a".into(), "b".into()]);
+        assert_eq!(raw.sample_count, 2);
+        assert_eq!(raw.feature_count, 2);
     }
 }
