@@ -63,8 +63,8 @@ fn test_deterministic_inference_across_nodes() {
     let round_hash_timer = "hashtimer_example_123";
 
     // Compute deterministic scores
-    let scores_a = compute_scores(&model, &features_a, round_hash_timer);
-    let scores_b = compute_scores(&model, &features_b, round_hash_timer);
+    let scores_a = compute_scores(&model, &features_a, round_hash_timer).unwrap();
+    let scores_b = compute_scores(&model, &features_b, round_hash_timer).unwrap();
 
     // NodeA and NodeB scores must be identical across both runs
     assert_eq!(scores_a.get("nodeA"), scores_b.get("nodeA"));
@@ -81,8 +81,8 @@ fn test_model_hash_reproducibility() {
         learning_rate: 1.0,
     };
     let round_hash_timer = "round_42_ht";
-    let h1 = model.model_hash(round_hash_timer);
-    let h2 = model.model_hash(round_hash_timer);
+    let h1 = model.model_hash(round_hash_timer).unwrap();
+    let h2 = model.model_hash(round_hash_timer).unwrap();
 
     // Hash must be reproducible bit-for-bit
     assert_eq!(h1, h2);
@@ -203,14 +203,14 @@ fn test_deterministic_scoring_with_complex_model() {
     ]);
     
     let features = normalize_features(&telemetry, 1_000_000);
-    let scores = compute_scores(&model, &features, "round_100");
+    let scores = compute_scores(&model, &features, "round_100").unwrap();
     
     // Verify scores are computed
     assert!(scores.contains_key("node1"));
     assert!(scores.contains_key("node2"));
     
     // Verify determinism by computing again
-    let scores2 = compute_scores(&model, &features, "round_100");
+    let scores2 = compute_scores(&model, &features, "round_100").unwrap();
     assert_eq!(scores, scores2);
     
     println!("Complex model scoring verified: {:?}", scores);
@@ -259,19 +259,72 @@ fn test_cross_node_consensus() {
     
     // Node 1 computes
     let features_node1 = normalize_features(&shared_telemetry, ippan_time);
-    let scores_node1 = compute_scores(&model, &features_node1, round_ht);
+    let scores_node1 = compute_scores(&model, &features_node1, round_ht).unwrap();
     
     // Node 2 computes (independently)
     let features_node2 = normalize_features(&shared_telemetry, ippan_time);
-    let scores_node2 = compute_scores(&model, &features_node2, round_ht);
+    let scores_node2 = compute_scores(&model, &features_node2, round_ht).unwrap();
     
     // Node 3 computes (independently)
     let features_node3 = normalize_features(&shared_telemetry, ippan_time);
-    let scores_node3 = compute_scores(&model, &features_node3, round_ht);
+    let scores_node3 = compute_scores(&model, &features_node3, round_ht).unwrap();
     
     // All nodes must arrive at identical scores
     assert_eq!(scores_node1, scores_node2);
     assert_eq!(scores_node2, scores_node3);
     
     println!("Cross-node consensus verified: {:?}", scores_node1);
+}
+
+#[test]
+fn test_invalid_model_detection() {
+    // Test that models with NaN values are properly rejected
+    let model_with_nan = DeterministicGBDT {
+        trees: vec![GBDTTree {
+            nodes: vec![
+                DecisionNode {
+                    feature: 0,
+                    threshold: f64::NAN,
+                    left: None,
+                    right: None,
+                    value: Some(1.0),
+                },
+            ],
+        }],
+        learning_rate: 1.0,
+    };
+
+    // Model hash should fail for NaN values
+    assert!(model_with_nan.model_hash("test_round").is_err());
+
+    // Test that models with infinity values are also rejected
+    let model_with_inf = DeterministicGBDT {
+        trees: vec![GBDTTree {
+            nodes: vec![
+                DecisionNode {
+                    feature: 0,
+                    threshold: f64::INFINITY,
+                    left: None,
+                    right: None,
+                    value: Some(1.0),
+                },
+            ],
+        }],
+        learning_rate: 1.0,
+    };
+
+    // Model hash should fail for infinity values
+    assert!(model_with_inf.model_hash("test_round").is_err());
+
+    // Test that compute_scores also properly propagates these errors
+    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
+        ("node1".into(), (1_000_000, 1.0, 99.0, 0.8)),
+    ]);
+    let features = normalize_features(&telemetry, 1_000_000);
+
+    // Should fail when trying to compute scores with invalid model
+    assert!(compute_scores(&model_with_nan, &features, "test_round").is_err());
+    assert!(compute_scores(&model_with_inf, &features, "test_round").is_err());
+
+    println!("Invalid model detection verified - NaN and inf properly rejected");
 }

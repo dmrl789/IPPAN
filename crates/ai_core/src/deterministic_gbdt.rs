@@ -96,18 +96,21 @@ impl DeterministicGBDT {
     }
     
     /// Compute deterministic model hash using HashTimer anchor
-    pub fn model_hash(&self, round_hash_timer: &str) -> String {
+    ///
+    /// Returns an error if the model cannot be serialized (e.g., contains NaN or inf values)
+    pub fn model_hash(&self, round_hash_timer: &str) -> Result<String, serde_json::Error> {
         let mut hasher = Sha3_256::new();
         
         // Hash the model structure (serialized)
-        let model_json = serde_json::to_string(self).unwrap_or_default();
-        hasher.update(model_json.as_bytes());
+        // Propagate serialization errors instead of silently defaulting
+        let model_bytes = serde_json::to_vec(self)?;
+        hasher.update(&model_bytes);
         
         // Hash the round HashTimer for consensus anchor
         hasher.update(round_hash_timer.as_bytes());
         
         // Return hex string
-        format!("{:x}", hasher.finalize())
+        Ok(format!("{:x}", hasher.finalize()))
     }
 }
 
@@ -158,16 +161,17 @@ pub fn normalize_features(
 /// * `round_hash_timer` - Current round HashTimer for reproducibility
 ///
 /// # Returns
-/// Map of node_id -> deterministic score
+/// Map of node_id -> deterministic score, or error if model serialization fails
 pub fn compute_scores(
     model: &DeterministicGBDT,
     features: &HashMap<String, ValidatorFeatures>,
     round_hash_timer: &str,
-) -> HashMap<String, f64> {
+) -> Result<HashMap<String, f64>, serde_json::Error> {
     let mut scores = HashMap::new();
     
     // Compute model hash for this round (for verification)
-    let _model_hash = model.model_hash(round_hash_timer);
+    // This will fail if the model contains invalid values (NaN, inf)
+    let _model_hash = model.model_hash(round_hash_timer)?;
     
     // Score each validator
     for (node_id, feature_vec) in features {
@@ -175,7 +179,7 @@ pub fn compute_scores(
         scores.insert(node_id.clone(), score);
     }
     
-    scores
+    Ok(scores)
 }
 
 #[cfg(test)]
@@ -240,10 +244,30 @@ mod tests {
             learning_rate: 1.0,
         };
 
-        let hash1 = model.model_hash("test_round");
-        let hash2 = model.model_hash("test_round");
+        let hash1 = model.model_hash("test_round").unwrap();
+        let hash2 = model.model_hash("test_round").unwrap();
 
         assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_model_hash_error_on_invalid_values() {
+        // Test that model_hash properly fails on NaN values
+        let model = DeterministicGBDT {
+            trees: vec![GBDTTree {
+                nodes: vec![DecisionNode {
+                    feature: 0,
+                    threshold: f64::NAN,
+                    left: None,
+                    right: None,
+                    value: Some(1.0),
+                }],
+            }],
+            learning_rate: 1.0,
+        };
+
+        // Should fail because NaN cannot be serialized to JSON
+        assert!(model.model_hash("test_round").is_err());
     }
 
     #[test]
