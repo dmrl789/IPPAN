@@ -12,13 +12,16 @@ pub mod hash_functions;
 pub mod merkle_trees;
 pub mod confidential;
 
+#[cfg(feature = "stark-verification")]
+pub mod zk_stark;
+
 // Re-export modules and types
-pub use hash_functions::{HashFunction, Blake3, SHA256, Keccak256, SHA3_256, BLAKE2b};
-pub use merkle_trees::{MerkleTree, MerkleProof, MerkleError};
-pub use commitment_schemes::{PedersenCommitment, Commitment, CommitmentError};
+pub use hash_functions::{Blake3, Keccak256, SHA256, SHA3_256, BLAKE2b, HashFunction};
+pub use merkle_trees::{MerkleError, MerkleProof, MerkleTree};
+pub use commitment_schemes::{Commitment, CommitmentError, PedersenCommitment};
 pub use confidential::{
-    validate_transaction as validate_confidential_transaction,
     validate_block as validate_confidential_block,
+    validate_transaction as validate_confidential_transaction,
     ConfidentialTransactionError,
 };
 
@@ -78,7 +81,7 @@ impl CryptoUtils {
         hasher.update(data);
         let hash = hasher.finalize();
         let mut result = [0u8; 32];
-        result.copy_from_slice(&hash.as_bytes()[0..32]);
+        result.copy_from_slice(&hash.as_bytes()[..32]);
         result
     }
 
@@ -89,7 +92,7 @@ impl CryptoUtils {
         nonce
     }
 
-    /// Validate a confidential transaction (basic placeholder)
+    /// Basic confidential transaction validator placeholder
     pub fn validate_confidential_transaction(transaction_data: &[u8]) -> Result<bool> {
         // Placeholder: real version checks commitments and range proofs
         if transaction_data.is_empty() {
@@ -114,23 +117,32 @@ mod tests {
     }
 
     #[test]
-    fn test_signing_and_verification() {
+    fn test_sign_and_verify() {
         let keypair = KeyPair::generate();
         let message = b"Hello, IPPAN!";
-
         let signature = keypair.sign(message);
-        let result = keypair.verify(message, &signature);
-
-        assert!(result.is_ok());
+        assert!(keypair.verify(message, &signature).is_ok());
     }
 
     #[test]
-    fn test_hash_function() {
+    fn test_blake3_hash_consistency() {
         let data = b"test data";
-        let hash1 = CryptoUtils::hash(data);
-        let hash2 = CryptoUtils::hash(data);
+        let h1 = CryptoUtils::hash(data);
+        let h2 = CryptoUtils::hash(data);
+        assert_eq!(h1, h2);
+        assert_ne!(h1, [0u8; 32]);
+    }
 
-        assert_eq!(hash1, hash2);
-        assert_ne!(hash1, [0u8; 32]);
+    #[test]
+    fn test_random_nonce_uniqueness() {
+        let n1 = CryptoUtils::random_nonce();
+        let n2 = CryptoUtils::random_nonce();
+        assert_ne!(n1, n2);
+    }
+
+    #[test]
+    fn test_confidential_transaction_placeholder() {
+        assert!(!CryptoUtils::validate_confidential_transaction(&[]).unwrap());
+        assert!(CryptoUtils::validate_confidential_transaction(&[1u8; 64]).unwrap());
     }
 }

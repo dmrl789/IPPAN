@@ -1,13 +1,23 @@
+//! # IPPAN Mempool
+//!
+//! Production-grade transaction mempool for the IPPAN blockchain.
+//!
+//! ## Features
+//! - **Fee-based prioritization**
+//! - **Nonce ordering**
+//! - **Automatic expiration**
+//! - **Size limits**
+//! - **Thread-safe**
+//! - **Confidential transaction support**
+
 use anyhow::Result;
-// Local light validation that mirrors crypto confidential checks
-// (avoid tight coupling to crypto crate public API here)
 use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap, HashMap};
 use std::time::{Duration, Instant};
 
-/// Transaction metadata for mempool management
+/// Transaction metadata
 #[derive(Debug, Clone)]
 struct TransactionMeta {
     transaction: Transaction,
@@ -15,6 +25,7 @@ struct TransactionMeta {
     fee: u64,
 }
 
+/// Candidate for block inclusion
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BlockCandidate {
     fee: u64,
@@ -39,17 +50,12 @@ impl PartialOrd for BlockCandidate {
     }
 }
 
-/// Mempool for managing pending transactions
+/// Thread-safe, fee-prioritized, nonce-ordered mempool
 pub struct Mempool {
-    /// Pending transactions indexed by hash
     transactions: RwLock<HashMap<String, TransactionMeta>>,
-    /// Transactions indexed by sender nonce for ordering
     sender_nonces: RwLock<HashMap<String, BTreeMap<u64, String>>>,
-    /// Maximum number of transactions to keep
     max_size: usize,
-    /// Transaction expiration time
     expiration_duration: Duration,
-    /// Last cleanup time
     last_cleanup: RwLock<Instant>,
 }
 
@@ -74,61 +80,49 @@ impl Mempool {
         }
     }
 
-    /// Add a transaction to the mempool
     pub fn add_transaction(&self, tx: Transaction) -> Result<bool> {
         let tx_hash = hex::encode(tx.hash());
         let sender = hex::encode(tx.from);
 
-        // Cleanup expired transactions
         self.cleanup_expired_transactions();
 
         let mut transactions = self.transactions.write();
         let mut sender_nonces = self.sender_nonces.write();
 
-        // Skip duplicates
         if transactions.contains_key(&tx_hash) {
             return Ok(false);
         }
 
-        // Check mempool size, make space if needed
         if transactions.len() >= self.max_size
             && !self.make_space_for_transaction(&mut transactions, &mut sender_nonces, 0)
         {
             return Ok(false);
         }
 
-        // ✅ Validate confidential payloads before admission
         if tx.visibility == ippan_types::TransactionVisibility::Confidential {
             if tx.confidential.is_none() || tx.zk_proof.is_none() {
                 return Ok(false);
             }
         }
 
-        // Simplified fee calculation
         let fee = self.calculate_transaction_fee(&tx);
-
-        // Cap fee to prevent DoS via massive fees
         const MAX_FEE_PER_TX: u64 = 10_000_000;
         if fee > MAX_FEE_PER_TX {
             return Ok(false);
         }
 
-        // Store metadata
         let meta = TransactionMeta {
             transaction: tx.clone(),
             added_at: Instant::now(),
             fee,
         };
+
         transactions.insert(tx_hash.clone(), meta);
-        sender_nonces
-            .entry(sender)
-            .or_default()
-            .insert(tx.nonce, tx_hash);
+        sender_nonces.entry(sender).or_default().insert(tx.nonce, tx_hash);
 
         Ok(true)
     }
 
-    /// Remove transaction
     pub fn remove_transaction(&self, tx_hash: &str) -> Result<Option<Transaction>> {
         let mut transactions = self.transactions.write();
         let mut sender_nonces = self.sender_nonces.write();
@@ -147,7 +141,6 @@ impl Mempool {
         }
     }
 
-    /// Get transaction by hash
     pub fn get_transaction(&self, tx_hash: &str) -> Option<Transaction> {
         self.transactions
             .read()
@@ -155,7 +148,6 @@ impl Mempool {
             .map(|meta| meta.transaction.clone())
     }
 
-    /// Get all transactions for a sender
     pub fn get_sender_transactions(&self, sender: &str) -> Vec<Transaction> {
         let transactions = self.transactions.read();
         let sender_nonces = self.sender_nonces.read();
@@ -171,7 +163,7 @@ impl Mempool {
         }
     }
 
-    /// Select transactions for block inclusion (by fee, nonce order)
+    /// Fee-prioritized selection for block building
     pub fn get_transactions_for_block(&self, max_count: usize) -> Vec<Transaction> {
         if max_count == 0 {
             return Vec::new();
@@ -184,10 +176,7 @@ impl Mempool {
         let mut next_index = HashMap::new();
 
         for (sender, nonces) in sender_nonces.iter() {
-            let entries: Vec<(u64, String)> = nonces
-                .iter()
-                .map(|(&n, h)| (n, h.clone()))
-                .collect();
+            let entries: Vec<(u64, String)> = nonces.iter().map(|(&n, h)| (n, h.clone())).collect();
 
             if let Some((nonce, tx_hash)) = entries.first() {
                 if let Some(meta) = transactions.get(tx_hash) {
@@ -205,21 +194,19 @@ impl Mempool {
         }
 
         let mut selected = Vec::new();
-        let mut last_selected_nonce: HashMap<String, u64> = HashMap::new();
+        let mut last_nonce: HashMap<String, u64> = HashMap::new();
 
         while selected.len() < max_count {
-            let Some(candidate) = heap.pop() else { break; };
-
-            if let Some(&last_nonce) = last_selected_nonce.get(&candidate.sender) {
-                if candidate.nonce != last_nonce + 1 {
+            let Some(candidate) = heap.pop() else { break };
+            if let Some(&last) = last_nonce.get(&candidate.sender) {
+                if candidate.nonce != last + 1 {
                     continue;
                 }
             }
 
-            let Some(meta) = transactions.get(&candidate.tx_hash) else { continue; };
-
+            let Some(meta) = transactions.get(&candidate.tx_hash) else { continue };
             selected.push(meta.transaction.clone());
-            last_selected_nonce.insert(candidate.sender.clone(), candidate.nonce);
+            last_nonce.insert(candidate.sender.clone(), candidate.nonce);
 
             if let Some(entries) = per_sender_entries.get(&candidate.sender) {
                 if let Some(next_idx) = next_index.get_mut(&candidate.sender) {
@@ -252,18 +239,15 @@ impl Mempool {
         selected
     }
 
-    /// Return mempool size
     pub fn size(&self) -> usize {
         self.transactions.read().len()
     }
 
-    /// Clear all transactions
     pub fn clear(&self) {
         self.transactions.write().clear();
         self.sender_nonces.write().clear();
     }
 
-    /// Remove expired transactions periodically
     fn cleanup_expired_transactions(&self) {
         let now = Instant::now();
         let last_cleanup = *self.last_cleanup.read();
@@ -298,10 +282,12 @@ impl Mempool {
         *self.last_cleanup.write() = now;
     }
 
-    /// Estimate transaction fee
     fn calculate_transaction_fee(&self, tx: &Transaction) -> u64 {
         let base_fee = 1000;
-        let mut size = 32 * 3 + 8 * 2 + 64 + tx.hashtimer.time_prefix.len() + tx.hashtimer.hash_suffix.len() + std::mem::size_of_val(&tx.timestamp.0);
+        let mut size = 32 * 3 + 8 * 2 + 64
+            + tx.hashtimer.time_prefix.len()
+            + tx.hashtimer.hash_suffix.len()
+            + std::mem::size_of_val(&tx.timestamp.0);
         size += tx.topics.iter().map(|t| t.len()).sum::<usize>();
 
         if let Some(env) = &tx.confidential {
@@ -316,7 +302,6 @@ impl Mempool {
         base_fee + (size as u64 * 10)
     }
 
-    /// Evict lowest-fee transaction if needed
     fn make_space_for_transaction(
         &self,
         transactions: &mut HashMap<String, TransactionMeta>,
@@ -347,11 +332,10 @@ impl Mempool {
                 }
             }
         }
-
         false
     }
 
-    /// Gather mempool statistics
+    /// Collect mempool diagnostics
     pub fn get_stats(&self) -> MempoolStats {
         let transactions = self.transactions.read();
         let mut total_fee = 0u64;
@@ -384,4 +368,90 @@ pub struct MempoolStats {
     pub total_fee: u64,
     pub oldest_tx_age: Duration,
     pub newest_tx_age: Duration,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ippan_types::{Amount, Transaction};
+    use std::time::Duration;
+
+    #[test]
+    fn test_mempool_add_remove() {
+        let mempool = Mempool::new(100);
+        let tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx_hash = hex::encode(tx.hash());
+        assert!(mempool.add_transaction(tx.clone()).unwrap());
+        assert_eq!(mempool.size(), 1);
+        assert!(!mempool.add_transaction(tx.clone()).unwrap());
+        let removed = mempool.remove_transaction(&tx_hash).unwrap();
+        assert!(removed.is_some());
+        assert_eq!(mempool.size(), 0);
+    }
+
+    #[test]
+    fn test_mempool_sender_transactions() {
+        let mempool = Mempool::new(100);
+        let sender = [1u8; 32];
+        let tx1 = Transaction::new(sender, [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new(sender, [3u8; 32], Amount::from_atomic(2000), 2);
+        mempool.add_transaction(tx1).unwrap();
+        mempool.add_transaction(tx2).unwrap();
+        let sender_txs = mempool.get_sender_transactions(&hex::encode(sender));
+        assert_eq!(sender_txs.len(), 2);
+    }
+
+    #[test]
+    fn test_mempool_fee_prioritization() {
+        let mempool = Mempool::new(100);
+        let sender1 = [1u8; 32];
+        let sender2 = [2u8; 32];
+        let tx1 = Transaction::new(sender1, [3u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new(sender2, [4u8; 32], Amount::from_atomic(2000), 1);
+        let tx3 = Transaction::new(sender1, [5u8; 32], Amount::from_atomic(1500), 2);
+        mempool.add_transaction(tx1).unwrap();
+        mempool.add_transaction(tx2).unwrap();
+        mempool.add_transaction(tx3).unwrap();
+        let block_txs = mempool.get_transactions_for_block(3);
+        assert_eq!(block_txs.len(), 3);
+    }
+
+    #[test]
+    fn test_mempool_nonce_ordering() {
+        let mempool = Mempool::new(100);
+        let sender = [1u8; 32];
+        let tx1 = Transaction::new(sender, [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new(sender, [3u8; 32], Amount::from_atomic(2000), 2);
+        let tx3 = Transaction::new(sender, [4u8; 32], Amount::from_atomic(1500), 3);
+        mempool.add_transaction(tx2.clone()).unwrap();
+        mempool.add_transaction(tx1.clone()).unwrap();
+        mempool.add_transaction(tx3.clone()).unwrap();
+        let block_txs = mempool.get_transactions_for_block(3);
+        let nonces: Vec<_> = block_txs.iter().filter(|tx| tx.from == sender).map(|tx| tx.nonce).collect();
+        assert_eq!(nonces, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_mempool_expiration() {
+        let mempool = Mempool::new_with_expiration(100, Duration::from_millis(100));
+        let tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
+        assert!(mempool.add_transaction(tx).unwrap());
+        assert_eq!(mempool.size(), 1);
+        std::thread::sleep(Duration::from_millis(150));
+        let tx2 = Transaction::new([3u8; 32], [4u8; 32], Amount::from_atomic(1000), 1);
+        assert!(mempool.add_transaction(tx2).unwrap());
+        assert_eq!(mempool.size(), 1);
+    }
+
+    #[test]
+    fn test_mempool_stats() {
+        let mempool = Mempool::new(100);
+        let tx1 = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = Transaction::new([3u8; 32], [4u8; 32], Amount::from_atomic(2000), 1);
+        mempool.add_transaction(tx1).unwrap();
+        mempool.add_transaction(tx2).unwrap();
+        let stats = mempool.get_stats();
+        assert_eq!(stats.size, 2);
+        assert!(stats.total_fee > 0);
+    }
 }
