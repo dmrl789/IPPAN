@@ -194,7 +194,7 @@ impl DeterminismManager {
         
         // Hash execution metadata
         hasher.update(context.execution_id.as_bytes());
-        hasher.update(output.metadata.get("model_version").unwrap_or(&String::new()).as_bytes());
+        hasher.update(output.metadata.model_id.as_bytes());
         
         Ok(hasher.finalize().to_hex().to_string())
     }

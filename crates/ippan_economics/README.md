@@ -1,18 +1,20 @@
-<<<<<<< HEAD
-# IPPAN Economics
+# IPPAN Economics - DAG-Fair Emission Framework
 
 Deterministic round-based emission and fair distribution for IPPAN BlockDAG.
 
 ## Overview
 
+IPPAN's DAG-Fair Emission Framework transforms traditional block-based mining into **time-anchored micro-rewards**. Unlike linear blockchains where block intervals define issuance, IPPAN's BlockDAG creates thousands of micro-blocks per second within overlapping rounds. Rewards are computed **per round** and distributed proportionally to validators based on their participation.
+
 This crate implements the core economics logic for the IPPAN blockchain, providing:
 
-- **Deterministic Emission**: Round-based emission with halving schedule
-- **Hard Cap Enforcement**: 21M IPN maximum supply with automatic clamping
-- **Fair Distribution**: Role-weighted proportional distribution across validators
+- **Deterministic Emission**: Round-based emission with Bitcoin-style halving schedule
+- **Hard Cap Enforcement**: 21M IPN maximum supply with automatic clamping and burn
+- **DAG-Fair Distribution**: Role-weighted proportional distribution across validators
 - **Fee Management**: Configurable fee caps per round
 - **Precision**: Uses micro-IPN (μIPN) for exact calculations without floating point
 - **Parallel Simulation**: High-performance multi-core simulation using Rayon
+- **Governance Controls**: On-chain parameter updates via validator voting
 
 ## Key Features
 
@@ -25,13 +27,26 @@ This crate implements the core economics logic for the IPPAN blockchain, providi
 - **Initial Reward**: 0.0001 IPN per round (100 μIPN)
 - **Halving Interval**: ~2 years (630,720,000 rounds at 10 rounds/second)
 - **Hard Cap**: 21,000,000 IPN total supply
-- **Formula**: `R(t) = R0 / 2^floor(t / T_h)`
+- **Formula**: `R(t) = R0 / 2^floor(t / T_h)` - Bitcoin-style deterministic halving
 
 ### Distribution Logic
-- **Role Weights**: Proposers get 1.2x weight vs Verifiers (1.0x)
+- **Role Weights**: 
+  - Proposer: 1.2× weight
+  - Verifier: 1.0× weight
+  - Observer: 0× weight (no rewards)
 - **Proportional**: Based on number of micro-blocks contributed
 - **Fee Cap**: Maximum 10% of round emission can come from fees
 - **Fair**: All validators paid proportionally to their weighted contribution
+- **Uptime Score**: Performance-based reward scaling
+
+### Reward Composition
+
+Each round's reward is distributed across four components:
+
+- **Round Emission (60%)**: Base reward distributed per round
+- **Transaction Fees (25%)**: Deterministic micro-fees per transaction
+- **AI Service Commissions (10%)**: From inference and compute tasks
+- **Network Reward Dividend (5%)**: Weekly redistribution by uptime × reputation
 
 ## Usage
 
@@ -122,6 +137,54 @@ if burn_amount > 0 {
 }
 ```
 
+## Core Components
+
+### EmissionEngine
+Calculates round rewards using the halving formula with supply cap enforcement:
+
+```rust
+use ippan_economics::prelude::*;
+
+let mut engine = EmissionEngine::new();
+let reward = engine.calculate_round_reward(1000)?;
+```
+
+### RoundRewards
+Distributes rewards proportionally among validators based on role, blocks contributed, and uptime:
+
+```rust
+let round_rewards = RoundRewards::new(emission_params);
+let distribution = round_rewards.distribute_round_rewards(
+    round_index,
+    round_reward,
+    participations,
+    fees_collected,
+)?;
+```
+
+### SupplyTracker
+Monitors total supply and enforces the 21M IPN cap:
+
+```rust
+let mut tracker = SupplyTracker::new(2_100_000_000_000); // 21M IPN in micro-IPN
+tracker.record_emission(round, amount)?;
+let supply_info = tracker.get_supply_info();
+```
+
+### GovernanceParams
+Enables on-chain parameter updates through validator voting:
+
+```rust
+let mut governance = GovernanceParams::new(emission_params);
+let proposal_id = governance.create_proposal(
+    proposer,
+    new_params,
+    voting_period,
+    justification,
+    current_round,
+)?;
+```
+
 ## Examples
 
 ### Basic Usage
@@ -168,17 +231,37 @@ round,emission_micro,total_supply_micro,halving_index
 ...
 ```
 
+### DAG-Fair Emission Demo
+
+Run the demo to see the framework in action:
+
+```bash
+cargo run --example dag_fair_emission_demo
+```
+
 ## Configuration
 
 The `EconomicsParams` struct allows configuration of:
 
-- **Hard Cap**: Maximum total supply (default: 21M IPN)
-- **Initial Reward**: Base reward per round (default: 0.0001 IPN)
-- **Halving Interval**: Rounds between halvings (default: ~2 years)
-- **Fee Cap**: Maximum fee percentage (default: 10%)
-- **Role Weights**: Proposer vs Verifier weights (default: 1.2x vs 1.0x)
+| Parameter | Default Value | Description |
+|-----------|---------------|-------------|
+| **Hard Cap** | 21M IPN (2.1e12 μIPN) | Maximum total supply |
+| **Initial Reward** | 0.0001 IPN (100 μIPN) | Base reward per round |
+| **Halving Interval** | 630,720,000 rounds | ~2 years at 10 rounds/second |
+| **Fee Cap** | 10% | Maximum fee percentage of emission |
+| **Proposer Weight** | 1.2× | Proposer reward multiplier |
+| **Verifier Weight** | 1.0× | Verifier reward multiplier |
 
 These parameters should be stored on-chain and only modifiable through governance.
+
+## Governance
+
+All emission parameters can be updated through on-chain governance:
+
+1. **Proposal Creation**: Validators create proposals with new parameters
+2. **Voting Period**: Other validators vote (approve/reject/abstain)
+3. **Threshold Check**: Requires 66% supermajority approval
+4. **Execution**: Approved proposals update parameters immediately
 
 ## Error Handling
 
@@ -196,6 +279,12 @@ Run the test suite:
 cargo test -p ippan_economics
 ```
 
+Run benchmarks to test performance:
+
+```bash
+cargo bench -p ippan_economics
+```
+
 ## Architecture
 
 The crate is organized into modular components:
@@ -206,12 +295,14 @@ The crate is organized into modular components:
 - `types`: Core types (ValidatorId, Participation, Payouts, etc.)
 - `errors`: Error types for economic operations
 - `verify`: Supply and distribution verification
+- `governance`: On-chain parameter management
 
 ## Dependencies
 
 - `serde`: Serialization support for on-chain storage
 - `thiserror`: Error handling
 - `ippan-types`: Core IPPAN types
+- `ippan-time`: HashTimer-based round indexing
 
 ### Dev Dependencies (for examples)
 
@@ -220,191 +311,7 @@ The crate is organized into modular components:
 - `csv`: CSV output generation
 - `plotters`: Chart generation (optional)
 - `image`: Image format support for charts
-
-## Notes
-
-- All emission calculations are deterministic and reproducible
-- The parallel simulator uses per-thread RNG seeding for reproducibility
-- Chart generation gracefully handles headless/CI environments
-- CSV output is always generated regardless of plotting success
-- Fairness ratio measures max/min validator rewards (closer to 1.0 is more fair)
-
-## License
-
-Apache-2.0
-=======
-# IPPAN Economics - DAG-Fair Emission Framework
-
-This crate implements the deterministic round-based token economics for IPPAN, providing fair emission distribution across the BlockDAG structure.
-
-## Overview
-
-IPPAN's DAG-Fair Emission Framework transforms traditional block-based mining into **time-anchored micro-rewards**. Unlike linear blockchains where block intervals define issuance, IPPAN's BlockDAG creates thousands of micro-blocks per second within overlapping rounds. Rewards are computed **per round** and distributed proportionally to validators based on their participation.
-
-## Key Features
-
-- **Round-based emission**: Rewards calculated per round, not per block
-- **DAG-Fair distribution**: Proportional rewards based on validator participation
-- **Deterministic halving**: Bitcoin-style halving schedule with round precision
-- **Supply integrity**: Hard-capped 21M IPN with automatic burn of excess
-- **Governance controls**: On-chain parameter updates via validator voting
-- **Comprehensive auditing**: Supply verification and integrity checks
-
-## Core Components
-
-### EmissionEngine
-Calculates round rewards using the halving formula: `R(t) = R₀ / 2^(⌊t/Tₕ⌋)`
-
-```rust
-use ippan_economics::prelude::*;
-
-let mut engine = EmissionEngine::new();
-let reward = engine.calculate_round_reward(1000)?;
-```
-
-### RoundRewards
-Distributes rewards proportionally among validators based on:
-- Role (Proposer: 1.2×, Verifier: 1.0×, Observer: 0×)
-- Blocks contributed
-- Uptime score
-
-```rust
-let round_rewards = RoundRewards::new(emission_params);
-let distribution = round_rewards.distribute_round_rewards(
-    round_index,
-    round_reward,
-    participations,
-    fees_collected,
-)?;
-```
-
-### SupplyTracker
-Monitors total supply and enforces the 21M IPN cap:
-
-```rust
-let mut tracker = SupplyTracker::new(2_100_000_000_000); // 21M IPN in micro-IPN
-tracker.record_emission(round, amount)?;
-let supply_info = tracker.get_supply_info();
-```
-
-### GovernanceParams
-Enables on-chain parameter updates through validator voting:
-
-```rust
-let mut governance = GovernanceParams::new(emission_params);
-let proposal_id = governance.create_proposal(
-    proposer,
-    new_params,
-    voting_period,
-    justification,
-    current_round,
-)?;
-```
-
-## Usage Example
-
-```rust
-use ippan_economics::prelude::*;
-use rust_decimal::Decimal;
-
-// Create emission engine
-let mut emission_engine = EmissionEngine::new();
-
-// Calculate reward for a round
-let round_reward = emission_engine.calculate_round_reward(1000)?;
-
-// Create validator participations
-let participations = vec![
-    ValidatorParticipation {
-        validator_id: "validator_1".to_string(),
-        role: ValidatorRole::Proposer,
-        blocks_contributed: 15,
-        uptime_score: Decimal::new(95, 2), // 0.95
-    },
-    ValidatorParticipation {
-        validator_id: "validator_2".to_string(),
-        role: ValidatorRole::Verifier,
-        blocks_contributed: 12,
-        uptime_score: Decimal::new(98, 2), // 0.98
-    },
-];
-
-// Distribute rewards
-let round_rewards = RoundRewards::new(emission_engine.params().clone());
-let distribution = round_rewards.distribute_round_rewards(
-    1000,
-    round_reward,
-    participations,
-    500, // fees
-)?;
-
-// Track supply
-let mut supply_tracker = SupplyTracker::new(emission_engine.params().total_supply_cap);
-supply_tracker.record_emission(1000, round_reward)?;
-```
-
-## Emission Parameters
-
-| Parameter | Default Value | Description |
-|-----------|---------------|-------------|
-| `initial_round_reward` | 10,000 micro-IPN | Base reward per round (0.0001 IPN) |
-| `halving_interval` | 630,000,000 rounds | Halving schedule (~2 years at 10 rounds/second) |
-| `total_supply_cap` | 2,100,000,000,000 micro-IPN | Hard cap (21M IPN) |
-| `fee_cap_fraction` | 0.1 | Maximum fees as fraction of round reward (10%) |
-
-## Reward Composition
-
-Each round's reward is distributed across four components:
-
-- **Round Emission (60%)**: Base reward distributed per round
-- **Transaction Fees (25%)**: Deterministic micro-fees per transaction
-- **AI Service Commissions (10%)**: From inference and compute tasks
-- **Network Reward Dividend (5%)**: Weekly redistribution by uptime × reputation
-
-## Governance
-
-All emission parameters can be updated through on-chain governance:
-
-1. **Proposal Creation**: Validators create proposals with new parameters
-2. **Voting Period**: Other validators vote (approve/reject/abstain)
-3. **Threshold Check**: Requires 66% supermajority approval
-4. **Execution**: Approved proposals update parameters immediately
-
-## Testing
-
-Run the comprehensive test suite:
-
-```bash
-cargo test
-```
-
-Run the demo to see the framework in action:
-
-```bash
-cargo run --example dag_fair_emission_demo
-```
-
-Run benchmarks to test performance:
-
-```bash
-cargo bench
-```
-
-## Integration
-
-This crate integrates with other IPPAN components:
-
-- **`ippan_time`**: HashTimer-based round indexing
-- **`ippan_types`**: Core data structures
-- **`ippan_governance`**: Parameter update mechanisms
-
-## Security Considerations
-
-- All calculations use deterministic arithmetic to prevent consensus forks
-- Supply cap enforcement prevents inflation beyond 21M IPN
-- Fee caps prevent economic centralization
-- Comprehensive auditing ensures supply integrity
-- Governance requires supermajority approval for parameter changes
+- `rust_decimal`: Decimal arithmetic
 
 ## Performance
 
@@ -415,7 +322,31 @@ The framework is optimized for high-throughput scenarios:
 - Supply tracking: ~10ns per operation
 - Governance voting: ~100ns per vote
 
+## Security Considerations
+
+- All calculations use deterministic arithmetic to prevent consensus forks
+- Supply cap enforcement prevents inflation beyond 21M IPN
+- Fee caps prevent economic centralization
+- Comprehensive auditing ensures supply integrity
+- Governance requires supermajority approval for parameter changes
+
+## Notes
+
+- All emission calculations are deterministic and reproducible
+- The parallel simulator uses per-thread RNG seeding for reproducibility
+- Chart generation gracefully handles headless/CI environments
+- CSV output is always generated regardless of plotting success
+- Fairness ratio measures max/min validator rewards (closer to 1.0 is more fair)
+
+## Integration
+
+This crate integrates with other IPPAN components:
+
+- **`ippan_time`**: HashTimer-based round indexing
+- **`ippan_types`**: Core data structures
+- **`ippan_governance`**: Parameter update mechanisms
+- **`ippan_consensus`**: Round settlement and validator management
+
 ## License
 
-This crate is part of the IPPAN project and is licensed under Apache-2.0.
->>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
+Apache-2.0
