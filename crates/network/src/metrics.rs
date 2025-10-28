@@ -19,7 +19,7 @@ pub struct NetworkMetrics {
 }
 
 /// Metrics data structure
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct MetricsData {
     // Connection metrics
     pub total_connections: u64,
@@ -63,23 +63,80 @@ pub struct MetricsData {
     pub min_latency_ms: f64,
 
     // Timestamps
+    #[serde(skip)]
     pub start_time: Instant,
+    #[serde(skip)]
     pub last_update: Instant,
 }
 
+impl Default for MetricsData {
+    fn default() -> Self {
+        Self {
+            total_connections: 0,
+            active_connections: 0,
+            failed_connections: 0,
+            connection_attempts: 0,
+            messages_sent: 0,
+            messages_received: 0,
+            messages_dropped: 0,
+            message_errors: 0,
+            bytes_sent: 0,
+            bytes_received: 0,
+            peak_bandwidth_sent: 0,
+            peak_bandwidth_received: 0,
+            peers_discovered: 0,
+            peers_connected: 0,
+            peers_disconnected: 0,
+            peer_exchanges: 0,
+            handshakes_successful: 0,
+            handshakes_failed: 0,
+            ping_requests: 0,
+            pong_responses: 0,
+            timeout_errors: 0,
+            serialization_errors: 0,
+            network_errors: 0,
+            protocol_errors: 0,
+            average_latency_ms: 0.0,
+            max_latency_ms: 0.0,
+            min_latency_ms: 0.0,
+            start_time: Instant::now(),
+            last_update: Instant::now(),
+        }
+    }
+}
+
 /// Per-peer metrics
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PeerMetrics {
     pub peer_id: String,
     pub messages_sent: u64,
     pub messages_received: u64,
     pub bytes_sent: u64,
     pub bytes_received: u64,
+    #[serde(skip)]
     pub connection_time: Instant,
+    #[serde(skip)]
     pub last_activity: Instant,
     pub latency_ms: f64,
     pub reputation_score: f64,
     pub error_count: u64,
+}
+
+impl Default for PeerMetrics {
+    fn default() -> Self {
+        Self {
+            peer_id: String::new(),
+            messages_sent: 0,
+            messages_received: 0,
+            bytes_sent: 0,
+            bytes_received: 0,
+            connection_time: Instant::now(),
+            last_activity: Instant::now(),
+            latency_ms: 0.0,
+            reputation_score: 0.5,
+            error_count: 0,
+        }
+    }
 }
 
 /// Metrics collector implementation

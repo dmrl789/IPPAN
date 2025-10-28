@@ -422,7 +422,7 @@ impl PoAConsensus {
         if !block.is_valid() {
             return Err(anyhow::anyhow!("Invalid block"));
         }
-        validate_confidential_block(&block)?;
+        validate_confidential_block(&block.transactions)?;
 
         storage.store_block(block.clone())?;
         for tx in &block.transactions {
@@ -602,10 +602,10 @@ impl PoAConsensus {
     /// Load GBDT models for L1 AI consensus
     pub fn load_ai_models(
         &self,
-        validator_model: Option<ippan_ai_core::gbdt::GBDTModel>,
-        fee_model: Option<ippan_ai_core::gbdt::GBDTModel>,
-        health_model: Option<ippan_ai_core::gbdt::GBDTModel>,
-        ordering_model: Option<ippan_ai_core::gbdt::GBDTModel>,
+        validator_model: Option<ippan_ai_core::GBDTModel>,
+        fee_model: Option<ippan_ai_core::GBDTModel>,
+        health_model: Option<ippan_ai_core::GBDTModel>,
+        ordering_model: Option<ippan_ai_core::GBDTModel>,
     ) -> Result<(), String> {
         self.l1_ai_consensus.write().load_models(
             validator_model,

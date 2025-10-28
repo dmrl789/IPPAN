@@ -52,10 +52,12 @@ pub struct PeerDiscovery {
 }
 
 /// Discovered peer information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DiscoveredPeer {
     pub peer: Peer,
+    #[serde(skip)]
     pub discovered_at: Instant,
+    #[serde(skip)]
     pub last_seen: Instant,
     pub connection_attempts: usize,
     pub is_connected: bool,

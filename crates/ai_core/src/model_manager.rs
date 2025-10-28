@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 use tokio::fs;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, info, instrument};
 
 /// Model manager configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,8 +139,7 @@ impl ModelManager {
         };
 
         self.cache_model(model_id, &model, &path).await?;
-        let elapsed = start.elapsed();
-        self.update_load_metrics(elapsed);
+        self.update_load_metrics(start.elapsed());
 
         let file_size = path
             .metadata()
@@ -152,14 +151,14 @@ impl ModelManager {
         info!(
             "Model {} loaded ({}ms, {} bytes, validation={})",
             model_id,
-            elapsed.as_millis(),
+            start.elapsed().as_millis(),
             file_size,
             validation_passed
         );
 
         Ok(ModelLoadResult {
             model,
-            load_time_ms: elapsed.as_millis() as u64,
+            load_time_ms: start.elapsed().as_millis() as u64,
             file_size,
             from_cache: false,
             validation_passed,
@@ -199,8 +198,8 @@ impl ModelManager {
             })?;
 
         let path = self.get_model_path(model_id);
-
         let model_hash = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);
+
         let metadata = crate::model::ModelMetadata {
             model_id: model_id.to_string(),
             version: 1,
@@ -211,7 +210,11 @@ impl ModelManager {
             output_min: -10_000,
             output_max: 10_000,
         };
-        let package = ModelPackage { metadata, model: model.clone() };
+
+        let package = ModelPackage {
+            metadata,
+            model: model.clone(),
+        };
 
         let data = bincode::serialize(&package).map_err(|e| GBDTError::ModelValidationFailed {
             reason: format!("Serialization failed: {}", e),
@@ -303,9 +306,12 @@ impl ModelManager {
             self.evict_oldest(&mut models)?;
         }
 
-        let file_size = path.metadata().map_err(|e| GBDTError::ModelValidationFailed {
-            reason: format!("Metadata read failed: {}", e),
-        })?.len();
+        let file_size = path
+            .metadata()
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Metadata read failed: {}", e),
+            })?
+            .len();
 
         let entry = CachedModel {
             model: model.clone(),
@@ -321,7 +327,11 @@ impl ModelManager {
     }
 
     fn evict_oldest(&self, models: &mut HashMap<String, CachedModel>) -> Result<(), GBDTError> {
-        if let Some(oldest) = models.iter().min_by_key(|(_, c)| c.last_accessed).map(|(k, _)| k.clone()) {
+        if let Some(oldest) = models
+            .iter()
+            .min_by_key(|(_, c)| c.last_accessed)
+            .map(|(k, _)| k.clone())
+        {
             models.remove(&oldest);
             debug!("Evicted oldest model {}", oldest);
         }
@@ -385,9 +395,13 @@ impl ModelManager {
                 reason: format!("Read dir failed: {}", e),
             })?;
 
-        while let Some(entry) = entries.next_entry().await.map_err(|e| GBDTError::ModelValidationFailed {
-            reason: format!("Read entry failed: {}", e),
-        })? {
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Read entry failed: {}", e),
+            })?
+        {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("model") {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {

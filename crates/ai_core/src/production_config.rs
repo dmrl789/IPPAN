@@ -1,6 +1,6 @@
 //! Production configuration and deployment system for GBDT
 //!
-//! This module provides comprehensive configuration management including:
+//! Provides comprehensive configuration management including:
 //! - Environment-specific configurations
 //! - Feature flags and toggles
 //! - Resource limits and quotas
@@ -115,7 +115,7 @@ pub struct LoggingConfig {
 
 /// Configuration manager for production deployments
 pub struct ProductionConfigManager {
-    config: Arc<RwLock<ProductionConfig>>,
+    pub config: Arc<RwLock<ProductionConfig>>,
     config_path: PathBuf,
     last_loaded: Arc<RwLock<SystemTime>>,
     watchers: Arc<RwLock<Vec<Box<dyn ConfigWatcher + Send + Sync>>>>,
@@ -196,23 +196,18 @@ impl ProductionConfig {
         if self.resources.max_cpu_percent > 100.0 {
             errors.push("CPU limit cannot exceed 100%".to_string());
         }
-
         if self.resources.max_memory_bytes == 0 {
             errors.push("Memory limit must be greater than 0".to_string());
         }
-
         if self.gbdt.evaluation_batch_size == 0 {
             errors.push("Evaluation batch size must be greater than 0".to_string());
         }
-
         if self.gbdt.max_parallel_evaluations == 0 {
             errors.push("Maximum parallel evaluations must be greater than 0".to_string());
         }
-
         if self.monitoring.interval_seconds == 0 {
             errors.push("Metrics interval must be greater than 0".to_string());
         }
-
         if self.security.max_requests_per_minute == 0 {
             errors.push("Rate limit must be greater than 0".to_string());
         }
@@ -411,4 +406,96 @@ pub enum ConfigFormat {
     Toml,
     Json,
     Yaml,
+}
+
+/// Configuration templates for different environments
+pub mod templates {
+    use super::*;
+
+    /// Create a production configuration template
+    pub fn production_template() -> ProductionConfig {
+        let mut config = ProductionConfig::default_for_environment(Environment::Production);
+        config.resources.max_memory_bytes = 8 * 1024 * 1024 * 1024;
+        config.resources.max_cpu_percent = 90.0;
+        config.resources.max_threads = 32;
+        config.monitoring.enable_performance_monitoring = true;
+        config.security.enable_input_validation = true;
+        config.security.max_requests_per_minute = 10000;
+        config.feature_flags.enable_debug_mode = false;
+        config.feature_flags.enable_performance_profiling = true;
+        config.logging.log_level = "info".to_string();
+        config.logging.enable_structured_logging = true;
+        config.logging.enable_remote_logging = true;
+        config
+    }
+
+    /// Create a development configuration template
+    pub fn development_template() -> ProductionConfig {
+        let mut config = ProductionConfig::default_for_environment(Environment::Development);
+        config.resources.max_memory_bytes = 2 * 1024 * 1024 * 1024;
+        config.resources.max_cpu_percent = 50.0;
+        config.monitoring.enable_performance_monitoring = false;
+        config.security.enable_input_validation = true;
+        config.feature_flags.enable_debug_mode = true;
+        config.feature_flags.enable_experimental_features = true;
+        config.feature_flags.enable_detailed_logging = true;
+        config.logging.log_level = "debug".to_string();
+        config.logging.enable_structured_logging = true;
+        config
+    }
+
+    /// Create a testing configuration template
+    pub fn testing_template() -> ProductionConfig {
+        let mut config = ProductionConfig::default_for_environment(Environment::Testing);
+        config.resources.max_memory_bytes = 512 * 1024 * 1024;
+        config.resources.max_cpu_percent = 25.0;
+        config.monitoring.enable_performance_monitoring = false;
+        config.security.enable_input_validation = false;
+        config.feature_flags.enable_debug_mode = true;
+        config.feature_flags.enable_experimental_features = true;
+        config.logging.log_level = "error".to_string();
+        config.logging.enable_structured_logging = false;
+        config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_production_config_creation() {
+        let config = ProductionConfig::default_for_environment(Environment::Production);
+        assert_eq!(config.environment, Environment::Production);
+        assert!(!config.feature_flags.enable_debug_mode);
+    }
+
+    #[test]
+    fn test_config_validation() {
+        let mut config = ProductionConfig::default_for_environment(Environment::Production);
+        config.resources.max_cpu_percent = 150.0;
+        let validation = config.validate();
+        assert!(!validation.is_valid);
+        assert!(!validation.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_config_manager_load_save() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("prod_config.toml");
+        let manager = ProductionConfigManager::new(config_path.clone());
+        manager.save_config().await.unwrap();
+        assert!(config_path.exists());
+        manager.load_config().await.unwrap();
+        assert_eq!(manager.get_config().environment, Environment::Development);
+    }
+
+    #[test]
+    fn test_config_templates() {
+        let prod = templates::production_template();
+        assert_eq!(prod.environment, Environment::Production);
+        let dev = templates::development_template();
+        assert!(dev.feature_flags.enable_debug_mode);
+    }
 }

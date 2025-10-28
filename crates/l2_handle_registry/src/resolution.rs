@@ -1,4 +1,8 @@
 //! Handle resolution service for L2 lookups
+//!
+//! Provides async resolution of human-readable handles (`@user.ipn`)
+//! to corresponding public keys. Includes caching, batch resolution,
+//! and metadata retrieval.
 
 use crate::errors::*;
 use crate::types::*;
@@ -134,6 +138,9 @@ impl Clone for HandleResolver {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,8 +194,8 @@ mod tests {
         let results = resolver.resolve_batch(&handles).await;
         assert_eq!(results.len(), 3);
 
-        for (i, handle) in handles.iter().enumerate() {
-            assert!(results.get(handle).unwrap().is_ok());
+        for handle in handles {
+            assert!(results.get(&handle).unwrap().is_ok());
         }
     }
 }

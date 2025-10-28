@@ -7,7 +7,7 @@ authors.workspace = true
 description = "IPPAN Proof-of-Authority + AI Reputation Consensus Engine with DAG-Fair emission and deterministic block scheduling."
 
 [features]
-default = []
+default = ["ai_l1"]
 integration-tests = []
 # Enables L1 AI for validator reputation and selection
 ai_l1 = ["ippan-ai-core", "ippan-ai-registry"]

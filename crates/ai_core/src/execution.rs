@@ -7,7 +7,7 @@ use crate::{
     types::*,
 };
 use std::collections::HashMap;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// Model execution engine
 pub struct ExecutionEngine {
@@ -80,7 +80,7 @@ impl ExecutionEngine {
             output,
         };
 
-        info!("Model execution completed successfully");
+        info!("✅ Model execution completed successfully");
         Ok(result)
     }
 
@@ -115,7 +115,7 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    /// Deterministic model execution (e.g. D-GBDT)
+    /// Deterministic model execution (e.g., D-GBDT)
     async fn execute_model_deterministic(
         &self,
         metadata: &ModelMetadata,
@@ -135,7 +135,8 @@ impl ExecutionEngine {
             input.data.len()
         );
 
-        let output_size = metadata.output_shape.iter().product::<usize>() * input.dtype.size_bytes();
+        let output_size =
+            metadata.output_shape.iter().product::<usize>() * input.dtype.size_bytes();
         let mut output_data = vec![0u8; output_size];
 
         if metadata.architecture == "gbdt" {
@@ -162,7 +163,7 @@ impl ExecutionEngine {
         }
 
         let exec_time = start_time.elapsed();
-        let exec_hash = self.compute_execution_hash(metadata, input, context)?;
+        let execution_hash = self.compute_execution_hash(metadata, input, context)?;
 
         let metadata_block = ExecutionMetadata {
             execution_id: context.id.clone(),
@@ -176,7 +177,7 @@ impl ExecutionEngine {
             error: None,
             metadata: {
                 let mut m = HashMap::new();
-                m.insert("execution_hash".into(), exec_hash);
+                m.insert("execution_hash".into(), execution_hash);
                 m.insert("model_version".into(), metadata.id.version.clone());
                 m.insert(
                     "cpu_cycles".into(),

@@ -1,4 +1,7 @@
 //! Security system for AI Core
+//!
+//! Provides sandboxing, rate limiting, audit logging, and execution validation
+//! for deterministic AI inference (used in IPPAN/FinDAG’s GBDT modules).
 
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -170,16 +173,11 @@ impl SecuritySystem {
         &self.audit_log
     }
 
-    /// Get security violations
+    /// Get only critical/high violations
     pub fn get_violations(&self) -> Vec<&AuditEntry> {
         self.audit_log
             .iter()
-            .filter(|entry| {
-                matches!(
-                    entry.severity,
-                    SecuritySeverity::High | SecuritySeverity::Critical
-                )
-            })
+            .filter(|entry| matches!(entry.severity, SecuritySeverity::High | SecuritySeverity::Critical))
             .collect()
     }
 }
@@ -193,8 +191,8 @@ pub enum SecurityError {
     #[error("Memory usage exceeded: {actual} bytes > {max} bytes")]
     MemoryUsageExceeded { actual: u64, max: u64 },
 
-    #[error("Source not allowed: {model_source}")]
-    SourceNotAllowed { model_source: String },
+    #[error("Source not allowed: {src}")]
+    SourceNotAllowed { src: String },
 
     #[error("Model not signed")]
     ModelNotSigned,

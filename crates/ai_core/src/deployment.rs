@@ -13,7 +13,7 @@ use crate::model_manager::ModelManager;
 use crate::monitoring::MonitoringSystem;
 use crate::production_config::{Environment, ProductionConfig, ProductionConfigManager};
 use crate::security::SecuritySystem;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -203,8 +203,9 @@ impl ProductionDeployment {
         let mgr = self.model_manager.read().await;
         if let Some(manager) = mgr.as_ref() {
             match manager.load_model(model_path).await {
-                Ok(load) => {
-                    self.gbdt_models.write().await.insert(model_path.to_string(), load.model);
+                Ok(load_result) => {
+                    let mut models = self.gbdt_models.write().await;
+                    models.insert(model_path.to_string(), load_result.model);
                     info!("Model loaded: {}", model_path);
                     Ok(())
                 }

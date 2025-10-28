@@ -12,6 +12,7 @@
 
 use anyhow::Result;
 use ippan_types::Transaction;
+use ippan_crypto::validate_confidential_transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap, HashMap};
@@ -80,6 +81,7 @@ impl Mempool {
         }
     }
 
+    /// Add transaction to mempool
     pub fn add_transaction(&self, tx: Transaction) -> Result<bool> {
         let tx_hash = hex::encode(tx.hash());
         let sender = hex::encode(tx.from);
@@ -93,14 +95,16 @@ impl Mempool {
             return Ok(false);
         }
 
+        // Ensure space before adding new transaction
         if transactions.len() >= self.max_size
             && !self.make_space_for_transaction(&mut transactions, &mut sender_nonces, 0)
         {
             return Ok(false);
         }
 
+        // Lightweight confidential validation
         if tx.visibility == ippan_types::TransactionVisibility::Confidential {
-            if tx.confidential.is_none() || tx.zk_proof.is_none() {
+            if !validate_confidential_transaction(&tx)? {
                 return Ok(false);
             }
         }
@@ -370,6 +374,9 @@ pub struct MempoolStats {
     pub newest_tx_age: Duration,
 }
 
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,7 +434,8 @@ mod tests {
         mempool.add_transaction(tx1.clone()).unwrap();
         mempool.add_transaction(tx3.clone()).unwrap();
         let block_txs = mempool.get_transactions_for_block(3);
-        let nonces: Vec<_> = block_txs.iter().filter(|tx| tx.from == sender).map(|tx| tx.nonce).collect();
+        let nonces: Vec<_> =
+            block_txs.iter().filter(|tx| tx.from == sender).map(|tx| tx.nonce).collect();
         assert_eq!(nonces, vec![1, 2, 3]);
     }
 

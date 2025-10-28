@@ -2,34 +2,35 @@
 //!
 //! This crate provides essential cryptographic functionality for the IPPAN blockchain.
 //! It includes key generation, signing, hashing, and basic encryption capabilities.
+//!
+//! ## Modules
+//! - `hash_functions`: Implements multiple hashing algorithms (Blake3, SHA2, Keccak, etc.)
+//! - `merkle_trees`: Provides Merkle tree construction and proof verification
+//! - `commitment_schemes`: Contains Pedersen and other zero-knowledge commitments
+//! - `validators`: Cryptographic validation helpers for confidential blocks and transactions
 
 use anyhow::Result;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::Rng;
 
+// -----------------------------------------------------------------------------
+// Module exports
+// -----------------------------------------------------------------------------
 pub mod commitment_schemes;
 pub mod hash_functions;
 pub mod merkle_trees;
-pub mod confidential;
+pub mod validators;
 
-#[cfg(feature = "stark-verification")]
-pub mod zk_stark;
-
-// -----------------------------------------------------------------------------
-// Re-exports for external crates
-// -----------------------------------------------------------------------------
-pub use hash_functions::{Blake3, Keccak256, SHA256, SHA3_256, BLAKE2b, HashFunction};
-pub use merkle_trees::{MerkleError, MerkleProof, MerkleTree};
 pub use commitment_schemes::{Commitment, CommitmentError, PedersenCommitment};
-pub use confidential::{
-    validate_block as validate_confidential_block,
-    validate_transaction as validate_confidential_transaction,
-    ConfidentialTransactionError,
-};
+pub use hash_functions::{Blake3, HashFunction, Keccak256, SHA256, SHA3_256, BLAKE2b};
+pub use merkle_trees::{MerkleError, MerkleProof, MerkleTree};
+pub use validators::{validate_confidential_block, validate_confidential_transaction};
 
 // -----------------------------------------------------------------------------
-// KeyPair structure
+// Ed25519 Key Management
 // -----------------------------------------------------------------------------
+
+/// Cryptographic key pair for IPPAN (Ed25519)
 #[derive(Debug, Clone)]
 pub struct KeyPair {
     signing_key: SigningKey,
@@ -74,12 +75,14 @@ impl KeyPair {
 }
 
 // -----------------------------------------------------------------------------
-// Crypto utilities
+// Crypto Utilities
 // -----------------------------------------------------------------------------
+
+/// Utility functions for hashing and randomness
 pub struct CryptoUtils;
 
 impl CryptoUtils {
-    /// Hash arbitrary data using Blake3
+    /// Hash arbitrary data using Blake3 (32-byte output)
     pub fn hash(data: &[u8]) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(data);
@@ -96,7 +99,7 @@ impl CryptoUtils {
         nonce
     }
 
-    /// Placeholder confidential transaction validator
+    /// Placeholder confidential transaction validator (for testing)
     pub fn validate_confidential_transaction(transaction_data: &[u8]) -> Result<bool> {
         if transaction_data.is_empty() {
             return Ok(false);
