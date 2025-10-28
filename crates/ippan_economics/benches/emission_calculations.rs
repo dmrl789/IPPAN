@@ -7,17 +7,15 @@ use std::collections::HashMap;
 
 fn bench_round_reward_calculation(c: &mut Criterion) {
     let emission_engine = EmissionEngine::new();
-    
+
     c.bench_function("calculate_round_reward", |b| {
-        b.iter(|| {
-            emission_engine.calculate_round_reward(black_box(1000))
-        })
+        b.iter(|| emission_engine.calculate_round_reward(black_box(1000)))
     });
 }
 
 fn bench_emission_curve_generation(c: &mut Criterion) {
     let emission_engine = EmissionEngine::new();
-    
+
     c.bench_function("generate_emission_curve", |b| {
         b.iter(|| {
             emission_engine.generate_emission_curve(black_box(1), black_box(1000), black_box(10))
@@ -28,7 +26,7 @@ fn bench_emission_curve_generation(c: &mut Criterion) {
 fn bench_reward_distribution(c: &mut Criterion) {
     let params = EmissionParams::default();
     let round_rewards = RoundRewards::new(params);
-    
+
     let participations = vec![
         ValidatorParticipation {
             validator_id: "validator1".to_string(),
@@ -49,7 +47,7 @@ fn bench_reward_distribution(c: &mut Criterion) {
             uptime_score: Decimal::new(92, 2),
         },
     ];
-    
+
     c.bench_function("distribute_round_rewards", |b| {
         b.iter(|| {
             round_rewards.distribute_round_rewards(
@@ -64,11 +62,9 @@ fn bench_reward_distribution(c: &mut Criterion) {
 
 fn bench_supply_tracking(c: &mut Criterion) {
     let mut supply_tracker = SupplyTracker::new(2_100_000_000_000);
-    
+
     c.bench_function("record_emission", |b| {
-        b.iter(|| {
-            supply_tracker.record_emission(black_box(1000), black_box(10_000))
-        })
+        b.iter(|| supply_tracker.record_emission(black_box(1000), black_box(10_000)))
     });
 }
 
@@ -77,15 +73,17 @@ fn bench_governance_voting(c: &mut Criterion) {
     governance.set_validator_power("validator1".to_string(), 100);
     governance.set_validator_power("validator2".to_string(), 80);
     governance.set_validator_power("validator3".to_string(), 60);
-    
-    let proposal_id = governance.create_proposal(
-        "validator1".to_string(),
-        EmissionParams::default(),
-        100,
-        "Test proposal".to_string(),
-        1000,
-    ).unwrap();
-    
+
+    let proposal_id = governance
+        .create_proposal(
+            "validator1".to_string(),
+            EmissionParams::default(),
+            100,
+            "Test proposal".to_string(),
+            1000,
+        )
+        .unwrap();
+
     c.bench_function("vote_on_proposal", |b| {
         b.iter(|| {
             governance.vote_on_proposal(
@@ -100,7 +98,7 @@ fn bench_governance_voting(c: &mut Criterion) {
 
 fn bench_supply_audit(c: &mut Criterion) {
     let mut supply_tracker = SupplyTracker::new(2_100_000_000_000);
-    
+
     // Pre-populate with some data
     for round in 1..=1000 {
         supply_tracker.record_emission(round, 10_000).unwrap();
@@ -108,30 +106,24 @@ fn bench_supply_audit(c: &mut Criterion) {
             supply_tracker.record_burn(round, 1_000).unwrap();
         }
     }
-    
-    c.bench_function("audit_supply", |b| {
-        b.iter(|| {
-            supply_tracker.audit_supply()
-        })
-    });
+
+    c.bench_function("audit_supply", |b| b.iter(|| supply_tracker.audit_supply()));
 }
 
 fn bench_cumulative_supply_calculation(c: &mut Criterion) {
     let emission_engine = EmissionEngine::new();
-    
+
     c.bench_function("calculate_cumulative_supply", |b| {
-        b.iter(|| {
-            emission_engine.calculate_cumulative_supply(black_box(1000))
-        })
+        b.iter(|| emission_engine.calculate_cumulative_supply(black_box(1000)))
     });
 }
 
 fn bench_emission_parameters_validation(c: &mut Criterion) {
     let governance = GovernanceParams::new(EmissionParams::default());
-    
+
     let mut params = EmissionParams::default();
     params.initial_round_reward = 15_000;
-    
+
     c.bench_function("validate_emission_params", |b| {
         b.iter(|| {
             // This would be an internal method, so we'll simulate it

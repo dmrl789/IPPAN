@@ -1,12 +1,12 @@
 //! Smart contract AI analysis module
 
-use crate::types::{
-    SmartContractAnalysisRequest, SmartContractAnalysisResponse, ContractAnalysisType,
-    ContractIssue, ContractAnalysisMetadata, SeverityLevel,
-};
 use crate::errors::AIServiceError;
-use uuid::Uuid;
+use crate::types::{
+    ContractAnalysisMetadata, ContractAnalysisType, ContractIssue, SeverityLevel,
+    SmartContractAnalysisRequest, SmartContractAnalysisResponse,
+};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 /// Smart contract analysis service
 pub struct SmartContractService {
@@ -240,8 +240,8 @@ impl SmartContractService {
                 issues.push(ContractIssue {
                     issue_type: "eval_usage".to_string(),
                     severity: SeverityLevel::High,
-                    description:
-                        "eval() can execute arbitrary code and is a security risk".to_string(),
+                    description: "eval() can execute arbitrary code and is a security risk"
+                        .to_string(),
                     line_number: Some(line_num),
                     suggested_fix: Some("Avoid eval() and use safer alternatives".to_string()),
                 });
@@ -338,7 +338,11 @@ impl SmartContractService {
     }
 
     /// Generate optimized code
-    fn generate_optimized_code(&self, code: &str, language: &str) -> Result<String, AIServiceError> {
+    fn generate_optimized_code(
+        &self,
+        code: &str,
+        language: &str,
+    ) -> Result<String, AIServiceError> {
         // This is a simplified example - in reality, this would use more sophisticated optimization
         let mut optimized = code.to_string();
 

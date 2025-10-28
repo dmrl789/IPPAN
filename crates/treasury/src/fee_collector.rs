@@ -1,12 +1,15 @@
 //! Fee collection and management for the treasury
+//!
+//! Tracks per-round transaction fees, aggregates statistics, and supports
+//! deterministic recycling back into validator rewards or system funds.
 
-use ippan_economics::MicroIPN;
 use anyhow::Result;
+use ippan_types::MicroIPN;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-/// Fee collection statistics
+/// Fee collection statistics for monitoring and analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeCollectionStats {
     pub total_collected_micro: MicroIPN,
@@ -19,7 +22,7 @@ pub struct FeeCollectionStats {
 /// Fee collector for managing transaction fees
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FeeCollector {
-    /// Round → total fees collected
+    /// Round → total fees collected (in µIPN)
     round_fees: HashMap<u64, MicroIPN>,
     /// Total fees collected across all rounds
     total_collected_micro: MicroIPN,
@@ -46,7 +49,7 @@ impl FeeCollector {
 
         info!(
             target: "treasury",
-            "Round {}: Collected {} micro-IPN in fees",
+            "Round {}: Collected {} µIPN in fees",
             round,
             fees_micro
         );
@@ -54,7 +57,7 @@ impl FeeCollector {
         Ok(())
     }
 
-    /// Get fees for a specific round
+    /// Get fees collected in a specific round
     pub fn get_round_fees(&self, round: u64) -> MicroIPN {
         self.round_fees.get(&round).copied().unwrap_or(0)
     }
@@ -64,12 +67,12 @@ impl FeeCollector {
         self.total_collected_micro
     }
 
-    /// Get all rounds with fees
+    /// Return all rounds with recorded fees
     pub fn get_rounds_with_fees(&self) -> Vec<u64> {
         self.round_fees.keys().copied().collect()
     }
 
-    /// Get fee collection statistics
+    /// Generate summary statistics
     pub fn get_statistics(&self) -> FeeCollectionStats {
         let total_rounds = self.round_fees.len() as u64;
         let fees: Vec<MicroIPN> = self.round_fees.values().copied().collect();
@@ -92,37 +95,36 @@ impl FeeCollector {
         }
     }
 
-    /// Clear old fee data (for memory management)
-    pub fn clear_old_fees(&mut self, keep_rounds: u64) {
+    /// Clear older rounds from the map to save memory
+    pub fn clear_old_fees(&mut self, keep_from_round: u64) {
         let rounds_to_remove: Vec<u64> = self
             .round_fees
             .keys()
-            .filter(|&&round| round < keep_rounds)
+            .filter(|&&round| round < keep_from_round)
             .copied()
             .collect();
 
-        let count = rounds_to_remove.len();
-
-        for round in rounds_to_remove {
-            self.round_fees.remove(&round);
+        for round in rounds_to_remove.iter() {
+            self.round_fees.remove(round);
         }
 
         debug!(
             target: "treasury",
-            "Cleared fee data for {} old rounds",
-            count
+            "Cleared {} outdated round fee entries (kept ≥ {})",
+            rounds_to_remove.len(),
+            keep_from_round
         );
     }
 
-    /// Get fees for a range of rounds
+    /// Get cumulative fees within a round range
     pub fn get_fees_for_range(&self, start_round: u64, end_round: u64) -> MicroIPN {
         (start_round..=end_round)
-            .map(|round| self.get_round_fees(round))
+            .map(|r| self.get_round_fees(r))
             .sum()
     }
 }
 
-/// Fee recycling manager
+/// Manages recycling of collected fees into treasury or reward pools
 #[derive(Debug, Clone)]
 pub struct FeeRecyclingManager {
     collector: FeeCollector,
@@ -148,34 +150,34 @@ impl FeeRecyclingManager {
         (total_fees_micro * self.recycling_rate_bps as u128) / 10_000
     }
 
-    /// Get total amount available for recycling
+    /// Get total amount available for recycling (based on all collected fees)
     pub fn get_available_for_recycling(&self) -> MicroIPN {
         self.calculate_recycling_amount(self.collector.get_total_collected())
     }
 
-    /// Get immutable reference to the fee collector
+    /// Immutable access to the fee collector
     pub fn get_collector(&self) -> &FeeCollector {
         &self.collector
     }
 
-    /// Get mutable reference to the fee collector
+    /// Mutable access to the fee collector
     pub fn get_collector_mut(&mut self) -> &mut FeeCollector {
         &mut self.collector
     }
 
-    /// Update recycling rate
+    /// Update recycling rate dynamically (in basis points)
     pub fn set_recycling_rate(&mut self, rate_bps: u16) {
         self.recycling_rate_bps = rate_bps;
         info!(
             target: "treasury",
-            "Updated fee recycling rate to {} basis points",
+            "Updated fee recycling rate to {} bps",
             rate_bps
         );
     }
 }
 
 // -----------------------------------------------------------------------------
-// ✅ Tests
+// ✅ Unit Tests
 // -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -204,7 +206,6 @@ mod tests {
     #[test]
     fn test_fee_statistics() {
         let mut collector = FeeCollector::new();
-
         collector.collect_round_fees(1, 1000).unwrap();
         collector.collect_round_fees(2, 2000).unwrap();
         collector.collect_round_fees(3, 500).unwrap();
@@ -212,7 +213,7 @@ mod tests {
         let stats = collector.get_statistics();
         assert_eq!(stats.total_collected_micro, 3500);
         assert_eq!(stats.total_rounds, 3);
-        assert_eq!(stats.average_per_round, 1166); // 3500 / 3
+        assert_eq!(stats.average_per_round, 1166);
         assert_eq!(stats.highest_round, 2000);
         assert_eq!(stats.lowest_round, 500);
     }
@@ -229,21 +230,17 @@ mod tests {
 
         manager.set_recycling_rate(10000); // 100% recycling
         let available = manager.get_available_for_recycling();
-        assert_eq!(available, 3000); // 100% of 3000
+        assert_eq!(available, 3000);
     }
 
     #[test]
     fn test_fee_range_query() {
         let mut collector = FeeCollector::new();
-
         collector.collect_round_fees(1, 1000).unwrap();
         collector.collect_round_fees(2, 2000).unwrap();
         collector.collect_round_fees(4, 500).unwrap(); // skip round 3
 
-        let range_fees = collector.get_fees_for_range(1, 4);
-        assert_eq!(range_fees, 3500);
-
-        let partial_range = collector.get_fees_for_range(2, 3);
-        assert_eq!(partial_range, 2000); // only round 2 (round 3 = 0)
+        assert_eq!(collector.get_fees_for_range(1, 4), 3500);
+        assert_eq!(collector.get_fees_for_range(2, 3), 2000);
     }
 }

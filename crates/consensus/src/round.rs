@@ -1,11 +1,11 @@
 use anyhow::Result;
-use std::collections::HashMap;
 use rand::Rng;
+use std::collections::HashMap;
 
 #[cfg(feature = "ai_l1")]
-use ippan_ai_core::{compute_validator_score, gbdt::GBDTModel};
-#[cfg(feature = "ai_l1")]
 pub use ippan_ai_core::features::ValidatorTelemetry;
+#[cfg(feature = "ai_l1")]
+use ippan_ai_core::{compute_validator_score, gbdt::GBDTModel};
 
 #[cfg(not(feature = "ai_l1"))]
 use serde::{Deserialize, Serialize};
@@ -150,7 +150,8 @@ impl RoundConsensus {
             .filter_map(|v| selection_weights.get(v).map(|&w| (*v, w)))
             .collect();
 
-        let verifiers = self.select_multiple_weighted(&verifier_candidates, &verifier_weights, 3)?;
+        let verifiers =
+            self.select_multiple_weighted(&verifier_candidates, &verifier_weights, 3)?;
 
         Ok(ValidatorSelection {
             proposer,
@@ -238,12 +239,18 @@ impl Default for RoundConsensus {
 // ✅ Helper (standalone function)
 // -----------------------------------------------------------------------------
 #[cfg(feature = "ai_l1")]
-pub fn calculate_reputation_score(model: &GBDTModel, telemetry: &ValidatorTelemetry) -> Result<i32> {
+pub fn calculate_reputation_score(
+    model: &GBDTModel,
+    telemetry: &ValidatorTelemetry,
+) -> Result<i32> {
     Ok(compute_validator_score(telemetry, model))
 }
 
 #[cfg(not(feature = "ai_l1"))]
-pub fn calculate_reputation_score(_model: &GBDTModel, _telemetry: &ValidatorTelemetry) -> Result<i32> {
+pub fn calculate_reputation_score(
+    _model: &GBDTModel,
+    _telemetry: &ValidatorTelemetry,
+) -> Result<i32> {
     Ok(5000)
 }
 
@@ -318,7 +325,9 @@ mod tests {
             consensus.update_telemetry(*validator, telemetry);
         }
 
-        let selection = consensus.select_validators(&validators, &stake_weights).unwrap();
+        let selection = consensus
+            .select_validators(&validators, &stake_weights)
+            .unwrap();
         assert!(validators.contains(&selection.proposer));
         assert_eq!(selection.verifiers.len(), 3);
         assert!(!selection.verifiers.contains(&selection.proposer));

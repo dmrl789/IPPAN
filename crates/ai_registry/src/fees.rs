@@ -22,7 +22,7 @@ pub struct FeeManager {
 }
 
 /// Fee collection statistics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FeeStats {
     /// Total fees collected
     pub total_fees_collected: u64,
@@ -35,7 +35,7 @@ pub struct FeeStats {
 }
 
 /// Fee calculation result
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FeeCalculation {
     /// Fee type
     pub fee_type: FeeType,
@@ -131,21 +131,33 @@ impl FeeManager {
                 (fee_structure.base_fee, 1)
             },
             FeeCalculationMethod::Linear => {
-                let units = units.unwrap_or_else(|| self.calculate_units(fee_type, model_metadata, additional_data)?);
-                let unit_fee = fee_structure.unit_fee * units;
-                (fee_structure.base_fee + unit_fee, units)
+                let calculated_units = if let Some(u) = units {
+                    u
+                } else {
+                    self.calculate_units(fee_type, model_metadata, additional_data.clone())?
+                };
+                let unit_fee = fee_structure.unit_fee * calculated_units;
+                (fee_structure.base_fee + unit_fee, calculated_units)
             },
             FeeCalculationMethod::Logarithmic => {
-                let units = units.unwrap_or_else(|| self.calculate_units(fee_type, model_metadata, additional_data)?);
-                let log_units = (units as f64).ln().max(1.0) as u64;
+                let calculated_units = if let Some(u) = units {
+                    u
+                } else {
+                    self.calculate_units(fee_type, model_metadata, additional_data.clone())?
+                };
+                let log_units = (calculated_units as f64).ln().max(1.0) as u64;
                 let unit_fee = fee_structure.unit_fee * log_units;
-                (fee_structure.base_fee + unit_fee, units)
+                (fee_structure.base_fee + unit_fee, calculated_units)
             },
             FeeCalculationMethod::Step => {
-                let units = units.unwrap_or_else(|| self.calculate_units(fee_type, model_metadata, additional_data)?);
-                let steps = (units + 999) / 1000; // 1000 units per step
+                let calculated_units = if let Some(u) = units {
+                    u
+                } else {
+                    self.calculate_units(fee_type, model_metadata, additional_data.clone())?
+                };
+                let steps = (calculated_units + 999) / 1000; // 1000 units per step
                 let unit_fee = fee_structure.unit_fee * steps;
-                (fee_structure.base_fee + unit_fee, units)
+                (fee_structure.base_fee + unit_fee, calculated_units)
             },
         };
         
