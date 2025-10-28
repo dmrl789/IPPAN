@@ -1,18 +1,17 @@
 //! Deterministic AI Core for L1 Blockchain Operations
 //!
-//! Provides integer-only AI evaluation for validator reputation, model
-//! verification, and on-chain inference under consensus constraints.
+//! Provides integer-only deterministic AI evaluation for validator reputation,
+//! model verification, and on-chain inference under consensus constraints.
 //!
 //! ## Modules
 //! - `features`: Deterministic feature extraction from validator telemetry
 //! - `gbdt`: Integer-only Gradient Boosted Decision Tree evaluator
-//! - `deterministic_gbdt`: Deterministic, consensus-safe GBDT evaluator
+//! - `determinism`: Deterministic context and RNG utilities
+//! - `execution`: Deterministic model execution engine
 //! - `model`: Model packaging and verification utilities
 //! - `model_manager`: Model registry and lifecycle management
-//! - `types`: Common data structures for models and execution
-//! - `execution`: Deterministic execution engine for packaged models
-//! - `feature_engineering`: Feature preprocessing and statistical profiling
-//! - `production_config`: Environment and deployment configuration management
+//! - `feature_engineering`: Feature preprocessing and statistics
+//! - `production_config`: Environment and deployment configuration
 //! - `deployment`: Production deployment orchestration and monitoring
 //! - `validation`: Model validation and benchmarking
 //! - `health`: Runtime health and performance monitoring
@@ -42,20 +41,22 @@ pub mod types;
 pub mod validation;
 
 // ------------------------------------------------------------
-// Re-exports for external crates and downstream use
+// Re-exports for workspace-wide use
 // ------------------------------------------------------------
 
+// Config & environment
 pub use config::{
     AiCoreConfig, ConfigManager, ExecutionConfig, FeatureConfig as ConfigFeatureConfig,
     HealthConfig as ConfigHealthConfig, LoggingConfig as ConfigLoggingConfig, PerformanceConfig,
     SecurityConfig as ConfigSecurityConfig, ValidationConfig,
 };
 
+// Features and telemetry
 pub use features::{
     extract_features, normalize_features, FeatureConfig, FeatureVector, ValidatorTelemetry,
 };
 
-// GBDT and deterministic evaluation
+// GBDT and deterministic inference
 pub use deterministic_gbdt::{
     compute_scores, DecisionNode, DeterministicGBDT, DeterministicGBDTError, GBDTTree,
     ValidatorFeatures,
@@ -65,7 +66,7 @@ pub use gbdt::{
     ModelMetadata as GBDTModelMetadata, Node, SecurityConstraints, Tree,
 };
 
-// Model management and feature pipeline
+// Feature pipeline & model management
 pub use feature_engineering::{
     FeatureEngineeringConfig, FeatureEngineeringPipeline, FeatureImportance, FeatureStatistics,
     ProcessedFeatureData, RawFeatureData,
@@ -74,7 +75,7 @@ pub use model_manager::{
     ModelLoadResult, ModelManager, ModelManagerConfig, ModelManagerMetrics, ModelSaveResult,
 };
 
-// Production configuration and deployment
+// Deployment & production config
 pub use deployment::{
     utils, DeploymentMetrics, DeploymentStatus, HealthCheckResult,
     HealthStatus as DeploymentHealthStatus, ProductionDeployment,
@@ -84,35 +85,28 @@ pub use production_config::{
     LoggingConfig, ProductionConfig, ProductionConfigManager, ResourceLimits,
 };
 
-// Test suites and benchmarks
-#[cfg(test)]
-pub use tests::{test_utils, BenchmarkSuite, TestConfig, TestResult, TestSuite};
-
-// Health and monitoring
+// Health & monitoring
 pub use health::{
     HealthChecker, HealthConfig, HealthMonitor, MemoryUsageChecker, ModelExecutionChecker,
     PerformanceMetrics, SystemHealth,
 };
 
-// Core model and execution types
+// Core model and execution
 pub use errors::AiCoreError;
 pub use model::{load_model, verify_model_hash, ModelPackage, MODEL_HASH_SIZE};
 pub use types::{
     DataType, ExecutionContext, ExecutionMetadata, ExecutionResult, ModelId, ModelInput,
-    ModelOutput,
+    ModelMetadata, ModelOutput,
 };
 
 // ------------------------------------------------------------
 // Constants and helper functions
 // ------------------------------------------------------------
 
-/// AI Core version — crate version string for metadata and validation reports
+/// AI Core crate version string for metadata and validation reports.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Deterministically sorts a vector for reproducible consensus behavior.
-///
-/// Used in AI and reputation subsystems to ensure sorting
-/// consistency across validator nodes.
+/// Deterministically sorts a vector (used for consensus reproducibility).
 pub fn deterministically_sorted<T: Ord>(mut items: Vec<T>) -> Vec<T> {
     items.sort();
     items
@@ -120,12 +114,8 @@ pub fn deterministically_sorted<T: Ord>(mut items: Vec<T>) -> Vec<T> {
 
 /// High-level deterministic validator reputation computation.
 ///
-/// Combines feature extraction and GBDT evaluation.
-/// Used by consensus to score validators in each round.
-///
-/// # Arguments
-/// * `telemetry` - ValidatorTelemetry (normalized telemetry data)
-/// * `model` - Loaded GBDT model package
+/// Combines telemetry feature extraction and GBDT evaluation.
+/// Used by consensus to score validators per round.
 ///
 /// # Returns
 /// Scaled integer reputation score (0–10000)
@@ -202,7 +192,6 @@ mod internal_tests {
 
     #[test]
     fn test_no_float_usage() {
-        // Ensures no floating-point operations are required in deterministic consensus paths.
         let x = 42;
         assert_eq!(x + 1, 43);
     }

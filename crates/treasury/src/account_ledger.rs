@@ -1,30 +1,35 @@
 //! Account ledger interface for reward distribution
+//!
+//! Provides a lightweight, deterministic interface for crediting, debiting,
+//! and tracking validator balances across the IPPAN or FinDAG network.
+//!
+//! Used by the emission and economics subsystems for deterministic reward payout.
 
 use anyhow::Result;
 use ippan_types::{MicroIPN, ValidatorId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Interface for account ledger operations
+/// Interface for account ledger operations.
 pub trait AccountLedger: Send + Sync {
-    /// Credit a validator's account with micro-IPN
+    /// Credit a validator’s account with micro-IPN.
     fn credit_validator(&mut self, validator_id: &ValidatorId, amount: MicroIPN) -> Result<()>;
 
-    /// Get a validator's balance
+    /// Retrieve a validator’s balance.
     fn get_validator_balance(&self, validator_id: &ValidatorId) -> Result<MicroIPN>;
 
-    /// Debit a validator's account (for fees, penalties, etc.)
+    /// Debit a validator’s account (e.g. for fees or penalties).
     fn debit_validator(&mut self, validator_id: &ValidatorId, amount: MicroIPN) -> Result<()>;
 
-    /// Get total supply
+    /// Return total circulating supply across all accounts.
     fn get_total_supply(&self) -> Result<MicroIPN>;
 
-    /// Get all validator balances
+    /// Retrieve all validator balances (snapshot).
     fn get_all_balances(&self) -> Result<HashMap<ValidatorId, MicroIPN>>;
 }
 
 // -----------------------------------------------------------------------------
-// 🧠 In-memory implementation
+// 🧠 In-memory implementation (for node runtime or testing)
 // -----------------------------------------------------------------------------
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InMemoryAccountLedger {
@@ -82,7 +87,7 @@ impl AccountLedger for InMemoryAccountLedger {
 }
 
 // -----------------------------------------------------------------------------
-// 🧪 Mock ledger for testing
+// 🧪 Mock ledger (for deterministic testing and simulation)
 // -----------------------------------------------------------------------------
 #[derive(Debug, Clone, Default)]
 pub struct MockAccountLedger {
@@ -167,7 +172,7 @@ mod tests {
     #[test]
     fn test_in_memory_ledger_operations() {
         let mut ledger = InMemoryAccountLedger::new();
-        let validator_id: ValidatorId = [1u8; 32];
+        let validator_id = ValidatorId::new("@test.ipn");
 
         // Credit
         ledger.credit_validator(&validator_id, 1000).unwrap();
@@ -183,7 +188,7 @@ mod tests {
     #[test]
     fn test_insufficient_balance() {
         let mut ledger = InMemoryAccountLedger::new();
-        let validator_id: ValidatorId = [1u8; 32];
+        let validator_id = ValidatorId::new("@node1.ipn");
 
         ledger.credit_validator(&validator_id, 1000).unwrap();
 
@@ -196,7 +201,7 @@ mod tests {
     #[test]
     fn test_mock_ledger_calls() {
         let mut mock = MockAccountLedger::new();
-        let validator_id: ValidatorId = [1u8; 32];
+        let validator_id = ValidatorId::new("@mock.ipn");
 
         mock.credit_validator(&validator_id, 1000).unwrap();
         mock.debit_validator(&validator_id, 300).unwrap();

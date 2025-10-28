@@ -296,5 +296,3 @@ impl ExecutionEngine {
         self.models.len()
     }
 }
-
-// Note: DataType::size_bytes is defined in `types.rs`.

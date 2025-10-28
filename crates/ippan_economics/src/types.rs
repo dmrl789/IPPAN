@@ -24,7 +24,7 @@ pub type MicroIPN = u128;
 ///
 /// Can represent:
 /// - Ed25519 public key (hex-encoded 64-character string)
-/// - Human-readable handle (e.g. `@alice.ipn`)
+/// - Human-readable handle (e.g., `@alice.ipn`)
 /// - Registry alias (short internal identifier)
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ValidatorId(pub String);
@@ -69,22 +69,28 @@ pub type Payouts = HashMap<ValidatorId, u128>;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmissionParams {
     /// Initial reward per round (micro-IPN)
-    pub initial_round_reward: RewardAmount,
+    pub initial_round_reward_micro: RewardAmount,
     /// Halving interval in rounds (~2 years @ 10 rounds/sec)
-    pub halving_interval: RoundIndex,
+    pub halving_interval_rounds: RoundIndex,
     /// Total supply cap (micro-IPN)
-    pub total_supply_cap: RewardAmount,
+    pub max_supply_micro: RewardAmount,
     /// Fee cap as fraction of round reward (e.g., 0.1 = 10%)
     pub fee_cap_fraction: Decimal,
+    /// Proposer reward weight (basis points)
+    pub proposer_weight_bps: u32,
+    /// Verifier reward weight (basis points)
+    pub verifier_weight_bps: u32,
 }
 
 impl Default for EmissionParams {
     fn default() -> Self {
         Self {
-            initial_round_reward: 10_000,         // 0.0001 IPN = 10 000 µIPN
-            halving_interval: 630_000_000,        // ≈ 2 years @ 10 rounds/sec
-            total_supply_cap: 2_100_000_000_000,  // 21 million IPN = 2.1×10¹² µIPN
-            fee_cap_fraction: Decimal::new(1, 1), // 0.1 = 10%
+            initial_round_reward_micro: 10_000,        // 0.0001 IPN per round
+            halving_interval_rounds: 630_000_000,      // ≈ 2 years @ 10 rps
+            max_supply_micro: 2_100_000_000_000,       // 21 M IPN
+            fee_cap_fraction: Decimal::new(1, 1),      // 0.1 = 10%
+            proposer_weight_bps: 2000,                 // 20 %
+            verifier_weight_bps: 8000,                 // 80 %
         }
     }
 }
@@ -164,7 +170,7 @@ pub struct RewardComposition {
 }
 
 impl RewardComposition {
-    /// Deterministic 60 / 25 / 10 / 5 distribution
+    /// Deterministic 60 / 25 / 10 / 5 split
     pub fn new(total_reward: RewardAmount) -> Self {
         let round_emission = (total_reward * 60) / 100;
         let transaction_fees = (total_reward * 25) / 100;
@@ -178,7 +184,7 @@ impl RewardComposition {
         }
     }
 
-    /// Adjusts distribution using actual collected fees
+    /// Adjust distribution using actual collected fees
     pub fn new_with_fees(round_reward: RewardAmount, actual_fees: RewardAmount) -> Self {
         let transaction_fees = actual_fees;
         let remaining = round_reward.saturating_sub(transaction_fees);
