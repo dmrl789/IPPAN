@@ -15,7 +15,9 @@ pub mod confidential;
 #[cfg(feature = "stark-verification")]
 pub mod zk_stark;
 
+// -----------------------------------------------------------------------------
 // Re-exports for external crates
+// -----------------------------------------------------------------------------
 pub use hash_functions::{Blake3, Keccak256, SHA256, SHA3_256, BLAKE2b, HashFunction};
 pub use merkle_trees::{MerkleError, MerkleProof, MerkleTree};
 pub use commitment_schemes::{Commitment, CommitmentError, PedersenCommitment};
@@ -25,7 +27,9 @@ pub use confidential::{
     ConfidentialTransactionError,
 };
 
-/// Cryptographic key pair for IPPAN
+// -----------------------------------------------------------------------------
+// KeyPair structure
+// -----------------------------------------------------------------------------
 #[derive(Debug, Clone)]
 pub struct KeyPair {
     signing_key: SigningKey,
@@ -33,7 +37,7 @@ pub struct KeyPair {
 }
 
 impl KeyPair {
-    /// Generate a new key pair
+    /// Generate a new Ed25519 key pair
     pub fn generate() -> Self {
         let mut rng = rand::thread_rng();
         let mut secret_key = [0u8; 32];
@@ -46,22 +50,22 @@ impl KeyPair {
         }
     }
 
-    /// Get the public key bytes
+    /// Get public key bytes
     pub fn public_key(&self) -> [u8; 32] {
         self.verifying_key.to_bytes()
     }
 
-    /// Get the private key bytes
+    /// Get private key bytes
     pub fn private_key(&self) -> [u8; 32] {
         self.signing_key.to_bytes()
     }
 
-    /// Sign arbitrary data
+    /// Sign a message (Ed25519)
     pub fn sign(&self, message: &[u8]) -> [u8; 64] {
         self.signing_key.sign(message).to_bytes()
     }
 
-    /// Verify signature
+    /// Verify a message signature
     pub fn verify(&self, message: &[u8], signature: &[u8; 64]) -> Result<()> {
         let sig = Signature::from_bytes(signature);
         self.verifying_key.verify(message, &sig)?;
@@ -69,11 +73,13 @@ impl KeyPair {
     }
 }
 
-/// Cryptographic helper utilities
+// -----------------------------------------------------------------------------
+// Crypto utilities
+// -----------------------------------------------------------------------------
 pub struct CryptoUtils;
 
 impl CryptoUtils {
-    /// Hash arbitrary data with Blake3
+    /// Hash arbitrary data using Blake3
     pub fn hash(data: &[u8]) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(data);
@@ -90,7 +96,7 @@ impl CryptoUtils {
         nonce
     }
 
-    /// Placeholder confidential tx validation
+    /// Placeholder confidential transaction validator
     pub fn validate_confidential_transaction(transaction_data: &[u8]) -> Result<bool> {
         if transaction_data.is_empty() {
             return Ok(false);
@@ -99,15 +105,18 @@ impl CryptoUtils {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_keypair_generation() {
-        let keypair = KeyPair::generate();
-        assert_ne!(keypair.public_key(), [0u8; 32]);
-        assert_ne!(keypair.private_key(), [0u8; 32]);
+        let kp = KeyPair::generate();
+        assert_ne!(kp.public_key(), [0u8; 32]);
+        assert_ne!(kp.private_key(), [0u8; 32]);
     }
 
     #[test]

@@ -4,16 +4,15 @@
 //! integrated with the DAG-Fair emission system.
 
 use crate::account_ledger::AccountLedger;
-use ippan_types::MicroIPN;
-use ippan_types::ValidatorId;
+use ippan_types::{MicroIPN, ValidatorId};
 use std::collections::HashMap;
-
-/// Payouts map from validator ID to amount
-pub type Payouts = HashMap<ValidatorId, u128>;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tracing::{debug, info};
+
+/// Payouts map from validator ID to amount
+pub type Payouts = HashMap<ValidatorId, u128>;
 
 /// In-memory staging of payouts; in production this maps to persistent state storage.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -86,15 +85,13 @@ impl RewardSink {
 
         for (round, payouts) in &self.rounds {
             for (vid, amount) in payouts {
-                accounts.credit_validator(vid, *amount as u128)?;
-                total_settled = total_settled.saturating_add(*amount as u128);
+                accounts.credit_validator(vid, *amount)?;
+                total_settled = total_settled.saturating_add(*amount);
 
                 debug!(
                     target: "treasury",
                     "Settled {} μIPN to validator {:?} for round {}",
-                    amount,
-                    vid, // unified reference to ValidatorId displayable via Debug/Display
-                    round
+                    amount, vid, round
                 );
             }
             rounds_settled += 1;
@@ -222,60 +219,53 @@ mod tests {
     fn test_credit_round_payouts() {
         let mut sink = RewardSink::new();
         let mut payouts: Payouts = HashMap::new();
-        payouts.insert(ValidatorId(hex::encode([1u8; 32])), 1000);
-        payouts.insert(ValidatorId(hex::encode([2u8; 32])), 2000);
+        let vid1 = ValidatorId::new("validator1");
+        let vid2 = ValidatorId::new("validator2");
+        payouts.insert(vid1.clone(), 1000);
+        payouts.insert(vid2.clone(), 2000);
 
         sink.credit_round_payouts(1, &payouts).unwrap();
 
         assert_eq!(sink.get_total_distributed(), 3000);
         assert_eq!(sink.get_rounds().len(), 1);
-        assert_eq!(
-            sink.validator_total(&ValidatorId(hex::encode([1u8; 32]))),
-            1000
-        );
-        assert_eq!(
-            sink.validator_total(&ValidatorId(hex::encode([2u8; 32]))),
-            2000
-        );
+        assert_eq!(sink.validator_total(&vid1), 1000);
+        assert_eq!(sink.validator_total(&vid2), 2000);
     }
 
     #[test]
     fn test_multiple_rounds() {
         let mut sink = RewardSink::new();
+        let vid1 = ValidatorId::new("validator1");
+        let vid2 = ValidatorId::new("validator2");
 
-        // Round 1
         let mut payouts1: Payouts = HashMap::new();
-        payouts1.insert(ValidatorId(hex::encode([1u8; 32])), 1000);
+        payouts1.insert(vid1.clone(), 1000);
         sink.credit_round_payouts(1, &payouts1).unwrap();
 
-        // Round 2
         let mut payouts2: Payouts = HashMap::new();
-        payouts2.insert(ValidatorId(hex::encode([1u8; 32])), 500);
-        payouts2.insert(ValidatorId(hex::encode([2u8; 32])), 1500);
+        payouts2.insert(vid1.clone(), 500);
+        payouts2.insert(vid2.clone(), 1500);
         sink.credit_round_payouts(2, &payouts2).unwrap();
 
         assert_eq!(sink.get_total_distributed(), 3000);
         assert_eq!(sink.get_rounds().len(), 2);
-        assert_eq!(
-            sink.validator_total(&ValidatorId(hex::encode([1u8; 32]))),
-            1500
-        );
-        assert_eq!(
-            sink.validator_total(&ValidatorId(hex::encode([2u8; 32]))),
-            1500
-        );
+        assert_eq!(sink.validator_total(&vid1), 1500);
+        assert_eq!(sink.validator_total(&vid2), 1500);
     }
 
     #[test]
     fn test_statistics() {
         let mut sink = RewardSink::new();
+        let vid1 = ValidatorId::new("validator1");
+        let vid2 = ValidatorId::new("validator2");
+
         let mut payouts1: Payouts = HashMap::new();
-        payouts1.insert(ValidatorId(hex::encode([1u8; 32])), 1000);
-        payouts1.insert(ValidatorId(hex::encode([2u8; 32])), 2000);
+        payouts1.insert(vid1.clone(), 1000);
+        payouts1.insert(vid2.clone(), 2000);
         sink.credit_round_payouts(1, &payouts1).unwrap();
 
         let mut payouts2: Payouts = HashMap::new();
-        payouts2.insert(ValidatorId(hex::encode([1u8; 32])), 500);
+        payouts2.insert(vid1.clone(), 500);
         sink.credit_round_payouts(2, &payouts2).unwrap();
 
         let stats = sink.get_statistics();
@@ -291,7 +281,8 @@ mod tests {
         let mut manager = RewardPoolManager::new(account_ledger);
 
         let mut payouts: Payouts = HashMap::new();
-        payouts.insert(ValidatorId(hex::encode([1u8; 32])), 1000);
+        let vid1 = ValidatorId::new("validator1");
+        payouts.insert(vid1.clone(), 1000);
 
         manager.process_round_rewards(1, &payouts).unwrap();
 
