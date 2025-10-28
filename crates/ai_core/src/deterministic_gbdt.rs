@@ -68,21 +68,48 @@ impl DeterministicGBDT {
     }
 
     /// Deterministic prediction using fixed-point math
+    ///
+    /// This function is hardened against malformed or adversarial models:
+    /// - Validates child indices are present and in-bounds for internal nodes
+    /// - Caps traversal depth to the number of nodes to avoid infinite loops
     pub fn predict(&self, features: &[f64]) -> f64 {
         let mut score_fp: i64 = 0;
         for tree in &self.trees {
-            let mut node_idx = 0;
-            loop {
+            if tree.nodes.is_empty() {
+                continue;
+            }
+
+            let mut node_idx: usize = 0;
+            let mut steps_remaining = tree.nodes.len();
+
+            while steps_remaining > 0 {
+                steps_remaining -= 1;
                 let node = &tree.nodes[node_idx];
                 if let Some(value) = node.value {
+                    // Leaf: accumulate value in fixed-point and stop this tree
                     score_fp += (value * FP_PRECISION) as i64;
                     break;
                 }
+
+                // Internal node: ensure feature index is valid
+                if node.feature >= features.len() {
+                    // Feature out of range: treat as neutral split, terminate deterministically
+                    break;
+                }
+
                 let feat_val = features[node.feature];
-                if feat_val <= node.threshold {
-                    node_idx = node.left.unwrap_or(node_idx);
-                } else {
-                    node_idx = node.right.unwrap_or(node_idx);
+                let next_idx_opt = if feat_val <= node.threshold { node.left } else { node.right };
+
+                match next_idx_opt {
+                    Some(next_idx) if next_idx < tree.nodes.len() => {
+                        // Progress to next node
+                        if next_idx == node_idx { break; }
+                        node_idx = next_idx;
+                    }
+                    _ => {
+                        // Missing or out-of-bounds child: stop traversal deterministically
+                        break;
+                    }
                 }
             }
         }

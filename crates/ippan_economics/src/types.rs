@@ -46,6 +46,12 @@ impl ValidatorId {
     }
 }
 
+impl std::fmt::Display for ValidatorId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Validator rewards mapping (validator → micro-IPN)
 pub type Payouts = HashMap<ValidatorId, u128>;
 
