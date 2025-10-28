@@ -1,0 +1,47 @@
+[Unit]
+Description=IPPAN AI Service
+Documentation=https://github.com/ippan/ai-service
+After=network.target
+
+[Service]
+Type=simple
+User=ippan
+Group=ippan
+WorkingDirectory=/opt/ippan-ai-service
+ExecStart=/usr/local/bin/ippan-ai-service
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ippan-ai-service
+
+# Environment
+Environment=IPPAN_ENV=production
+Environment=RUST_LOG=info
+Environment=LOG_FORMAT=json
+Environment=ENABLE_LLM=true
+Environment=ENABLE_ANALYTICS=true
+Environment=ENABLE_SMART_CONTRACTS=true
+Environment=ENABLE_MONITORING=true
+Environment=LLM_MODEL=gpt-4
+Environment=MONITORING_INTERVAL=30
+Environment=HEALTH_PORT=8080
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/ippan-ai-service/logs /opt/ippan-ai-service/data
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=32768
+MemoryMax=2G
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

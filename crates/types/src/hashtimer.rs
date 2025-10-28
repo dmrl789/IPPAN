@@ -101,7 +101,12 @@ impl HashTimer {
 
     /// Convert to hex string representation
     pub fn to_hex(&self) -> String {
-        let time_hex = hex::encode(self.time_prefix);
+        // Expand the 7-byte time prefix to 8-byte big-endian before hex-encoding
+        let mut time_bytes = [0u8; 8];
+        time_bytes[1..8].copy_from_slice(&self.time_prefix);
+        let time_hex_full = hex::encode(time_bytes);
+        // Take the last 14 hex characters (56 bits) as the canonical prefix
+        let time_hex = &time_hex_full[2..16];
         let hash_hex = hex::encode(self.hash_suffix);
         format!("{time_hex}{hash_hex}")
     }

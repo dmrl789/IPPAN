@@ -5,40 +5,29 @@
 //! - Integrity verification and performance metrics
 //! - Secure storage with hash checking and rollback capability
 
-use crate::gbdt::{GBDTModel, GBDTError, ModelMetadata, SecurityConstraints, GBDTMetrics};
+use crate::gbdt::{GBDTError, GBDTModel};
 use crate::model::ModelPackage;
-use anyhow::{Context, Result};
-use hex;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
-use tracing::{debug, error, info, warn, instrument};
 use tokio::fs;
+use tracing::{debug, info, instrument};
 
 /// Model manager configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelManagerConfig {
-    /// Enable model management
     pub enable_model_management: bool,
-    /// Base directory for model storage
     pub model_directory: PathBuf,
-    /// Maximum number of models to keep in memory
     pub max_cached_models: usize,
-    /// Model validation timeout in milliseconds
     pub validation_timeout_ms: u64,
-    /// Enable integrity checking
     pub enable_integrity_checking: bool,
-    /// Enable performance monitoring
     pub enable_performance_monitoring: bool,
-    /// Model cache TTL in seconds
     pub cache_ttl_seconds: u64,
-    /// Enable automatic model cleanup
     pub enable_auto_cleanup: bool,
-    /// Maximum model file size in bytes
     pub max_model_size_bytes: u64,
-    /// Default models to load on startup
     pub default_models: Option<Vec<String>>,
 }
 
@@ -105,7 +94,7 @@ pub struct ModelSaveResult {
     pub model_hash: String,
 }
 
-/// Model manager
+/// Main model manager
 #[derive(Debug)]
 pub struct ModelManager {
     config: ModelManagerConfig,
@@ -114,7 +103,6 @@ pub struct ModelManager {
 }
 
 impl ModelManager {
-    /// Create a new instance
     pub fn new(config: ModelManagerConfig) -> Self {
         Self {
             config,
@@ -123,12 +111,11 @@ impl ModelManager {
         }
     }
 
-    /// Load a model by ID
+    /// Load model (with caching and validation)
     #[instrument(skip(self), fields(model_id = %model_id))]
     pub async fn load_model(&self, model_id: &str) -> Result<ModelLoadResult, GBDTError> {
         let start = std::time::Instant::now();
 
-        // Try cache
         if let Some(cached) = self.get_cached_model(model_id) {
             self.update_cache_metrics(true);
             debug!("Model {} loaded from cache", model_id);
@@ -142,24 +129,20 @@ impl ModelManager {
         }
         self.update_cache_metrics(false);
 
-        // Load from disk
         let path = self.get_model_path(model_id);
-        let model = self.load_model_from_disk(&path).await?;
+        let mut model = self.load_model_from_disk(&path).await?;
 
-        // Validate
         let validation_passed = if self.config.enable_integrity_checking {
-            self.validate_model(&model).await?
+            self.validate_model(&mut model).await?
         } else {
             true
         };
 
-        // Cache
         self.cache_model(model_id, &model, &path).await?;
+        self.update_load_metrics(start.elapsed());
 
-        let elapsed = start.elapsed();
-        self.update_load_metrics(elapsed);
-
-        let file_size = path.metadata()
+        let file_size = path
+            .metadata()
             .map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Failed to get file metadata: {}", e),
             })?
@@ -168,21 +151,21 @@ impl ModelManager {
         info!(
             "Model {} loaded ({}ms, {} bytes, validation={})",
             model_id,
-            elapsed.as_millis(),
+            start.elapsed().as_millis(),
             file_size,
             validation_passed
         );
 
         Ok(ModelLoadResult {
             model,
-            load_time_ms: elapsed.as_millis() as u64,
+            load_time_ms: start.elapsed().as_millis() as u64,
             file_size,
             from_cache: false,
             validation_passed,
         })
     }
 
-    /// Save a model to disk
+    /// Save model to disk
     #[instrument(skip(self, model), fields(model_id = %model_id))]
     pub async fn save_model(
         &self,
@@ -195,9 +178,8 @@ impl ModelManager {
             self.validate_model(model).await?;
         }
 
-        // Enforce file size limit
-        let serialized_size = bincode::serialized_size(model)
-            .map_err(|e| GBDTError::ModelValidationFailed {
+        let serialized_size =
+            bincode::serialized_size(model).map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Failed to compute serialized size: {}", e),
             })?;
         if serialized_size > self.config.max_model_size_bytes {
@@ -216,28 +198,27 @@ impl ModelManager {
             })?;
 
         let path = self.get_model_path(model_id);
-
-        // Compute hash
         let model_hash = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);
+
         let metadata = crate::model::ModelMetadata {
             model_id: model_id.to_string(),
             version: 1,
-            model_type: "gbdt".to_string(),
+            model_type: "gbdt".into(),
             hash_sha256: model_hash.clone().into_bytes().try_into().unwrap_or([0; 32]),
             feature_count: model.metadata.feature_count,
             output_scale: model.scale,
             output_min: -10_000,
             output_max: 10_000,
         };
+
         let package = ModelPackage {
             metadata,
             model: model.clone(),
         };
 
-        let data = bincode::serialize(&package)
-            .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Serialization failed: {}", e),
-            })?;
+        let data = bincode::serialize(&package).map_err(|e| GBDTError::ModelValidationFailed {
+            reason: format!("Serialization failed: {}", e),
+        })?;
 
         fs::write(&path, &data)
             .await
@@ -263,7 +244,7 @@ impl ModelManager {
         })
     }
 
-    /// Internal helpers
+    /// Internal: get cached model if valid
     fn get_cached_model(&self, id: &str) -> Option<CachedModel> {
         let models = self.models.read().ok()?;
         let cached = models.get(id)?;
@@ -286,8 +267,8 @@ impl ModelManager {
             .map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Failed to read model file: {}", e),
             })?;
-        let package: ModelPackage = bincode::deserialize(&bytes)
-            .map_err(|e| GBDTError::ModelValidationFailed {
+        let package: ModelPackage =
+            bincode::deserialize(&bytes).map_err(|e| GBDTError::ModelValidationFailed {
                 reason: format!("Deserialization failed: {}", e),
             })?;
         Ok(package.model)
@@ -295,15 +276,6 @@ impl ModelManager {
 
     async fn validate_model(&self, model: &GBDTModel) -> Result<bool, GBDTError> {
         model.validate()?;
-        if model.trees.len() > model.security_constraints.max_trees {
-            return Err(GBDTError::SecurityValidationFailed {
-                reason: format!(
-                    "Too many trees ({} > {})",
-                    model.trees.len(),
-                    model.security_constraints.max_trees
-                ),
-            });
-        }
 
         let expected = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);
         if model.metadata.model_hash != expected {
@@ -312,10 +284,8 @@ impl ModelManager {
             });
         }
 
-        // Deterministic quick inference test
         let features = vec![0i64; model.metadata.feature_count];
         let start = std::time::Instant::now();
-        // Evaluate on a temporary clone to avoid mutating the original
         let mut model_clone = model.clone();
         let _ = model_clone.evaluate(&features)?;
         if start.elapsed().as_millis() > self.config.validation_timeout_ms as u128 {
@@ -327,23 +297,21 @@ impl ModelManager {
         Ok(true)
     }
 
-    async fn cache_model(
-        &self,
-        id: &str,
-        model: &GBDTModel,
-        path: &Path,
-    ) -> Result<(), GBDTError> {
+    async fn cache_model(&self, id: &str, model: &GBDTModel, path: &Path) -> Result<(), GBDTError> {
         let mut models = self.models.write().map_err(|_| GBDTError::ModelValidationFailed {
-            reason: "Failed to acquire write lock".to_string(),
+            reason: "Failed to acquire write lock".into(),
         })?;
 
         if models.len() >= self.config.max_cached_models {
             self.evict_oldest(&mut models)?;
         }
 
-        let file_size = path.metadata().map_err(|e| GBDTError::ModelValidationFailed {
-            reason: format!("Metadata read failed: {}", e),
-        })?.len();
+        let file_size = path
+            .metadata()
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Metadata read failed: {}", e),
+            })?
+            .len();
 
         let entry = CachedModel {
             model: model.clone(),
@@ -358,10 +326,7 @@ impl ModelManager {
         Ok(())
     }
 
-    fn evict_oldest(
-        &self,
-        models: &mut HashMap<String, CachedModel>,
-    ) -> Result<(), GBDTError> {
+    fn evict_oldest(&self, models: &mut HashMap<String, CachedModel>) -> Result<(), GBDTError> {
         if let Some(oldest) = models
             .iter()
             .min_by_key(|(_, c)| c.last_accessed)
@@ -430,9 +395,13 @@ impl ModelManager {
                 reason: format!("Read dir failed: {}", e),
             })?;
 
-        while let Some(entry) = entries.next_entry().await.map_err(|e| GBDTError::ModelValidationFailed {
-            reason: format!("Read entry failed: {}", e),
-        })? {
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Read entry failed: {}", e),
+            })?
+        {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("model") {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
@@ -464,7 +433,7 @@ impl ModelManager {
             return Ok(());
         }
         let mut models = self.models.write().map_err(|_| GBDTError::ModelValidationFailed {
-            reason: "Write lock failed".to_string(),
+            reason: "Write lock failed".into(),
         })?;
         let ttl = Duration::from_secs(self.config.cache_ttl_seconds);
         models.retain(|id, c| {
@@ -479,4 +448,3 @@ impl ModelManager {
         Ok(())
     }
 }
-

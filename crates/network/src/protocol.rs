@@ -19,31 +19,31 @@ pub enum MessageType {
     // Handshake messages
     Handshake,
     HandshakeAck,
-    
+
     // Block messages
     BlockAnnouncement,
     BlockRequest,
     BlockResponse,
-    
+
     // Transaction messages
     TransactionAnnouncement,
     TransactionRequest,
     TransactionResponse,
-    
+
     // Peer management
     PeerInfo,
     PeerList,
     PeerDiscovery,
-    
+
     // Consensus messages
     ConsensusMessage,
     RoundProposal,
     RoundVote,
-    
+
     // Keep-alive
     Ping,
     Pong,
-    
+
     // Error
     Error,
 }
@@ -62,11 +62,7 @@ pub struct NetworkMessage {
 
 impl NetworkMessage {
     /// Create a new network message
-    pub fn new(
-        message_type: MessageType,
-        sender_id: String,
-        payload: Vec<u8>,
-    ) -> Self {
+    pub fn new(message_type: MessageType, sender_id: String, payload: Vec<u8>) -> Self {
         Self {
             version: PROTOCOL_VERSION,
             message_type,
@@ -126,7 +122,7 @@ impl NetworkMessage {
 pub trait MessageHandler: Send + Sync {
     /// Handle an incoming message
     async fn handle_message(&self, message: NetworkMessage) -> Result<()>;
-    
+
     /// Get the message types this handler can process
     fn supported_message_types(&self) -> Vec<MessageType>;
 }
@@ -177,7 +173,7 @@ impl NetworkProtocol {
     /// Create a new network protocol
     pub fn new() -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
-        
+
         Self {
             handlers: HashMap::new(),
             message_sender,
@@ -195,8 +191,9 @@ impl NetworkProtocol {
 
     /// Start the protocol
     pub async fn start(&mut self) -> Result<()> {
-        self.is_running.store(true, std::sync::atomic::Ordering::SeqCst);
-        
+        self.is_running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
         let mut message_receiver = self.message_receiver.take().unwrap();
         let handlers = self.handlers.clone();
         let is_running = self.is_running.clone();
@@ -215,7 +212,8 @@ impl NetworkProtocol {
 
     /// Stop the protocol
     pub async fn stop(&mut self) -> Result<()> {
-        self.is_running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.is_running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         info!("Network protocol stopped");
         Ok(())
     }
@@ -232,13 +230,16 @@ impl NetworkProtocol {
         message: NetworkMessage,
     ) {
         debug!("Processing message: {:?}", message.message_type);
-        
+
         if let Some(handler) = handlers.get(&message.message_type) {
             if let Err(e) = handler.handle_message(message).await {
                 error!("Error handling message: {}", e);
             }
         } else {
-            warn!("No handler found for message type: {:?}", message.message_type);
+            warn!(
+                "No handler found for message type: {:?}",
+                message.message_type
+            );
         }
     }
 }
@@ -265,7 +266,10 @@ impl MessageHandler for HandshakeHandler {
                 // Process handshake and send acknowledgment
             }
             MessageType::HandshakeAck => {
-                info!("Received handshake acknowledgment from {}", message.sender_id);
+                info!(
+                    "Received handshake acknowledgment from {}",
+                    message.sender_id
+                );
                 // Process handshake acknowledgment
             }
             _ => {
@@ -349,7 +353,10 @@ impl MessageHandler for TransactionHandler {
     async fn handle_message(&self, message: NetworkMessage) -> Result<()> {
         match message.message_type {
             MessageType::TransactionAnnouncement => {
-                info!("Received transaction announcement from {}", message.sender_id);
+                info!(
+                    "Received transaction announcement from {}",
+                    message.sender_id
+                );
                 // Process transaction announcement
             }
             MessageType::TransactionRequest => {
@@ -414,7 +421,7 @@ mod tests {
             "test-sender".to_string(),
             vec![1, 2, 3, 4],
         );
-        
+
         assert_eq!(message.version, PROTOCOL_VERSION);
         assert_eq!(message.message_type, MessageType::Ping);
         assert_eq!(message.sender_id, "test-sender");
@@ -428,10 +435,10 @@ mod tests {
             "test-sender".to_string(),
             vec![1, 2, 3, 4],
         );
-        
+
         let serialized = message.serialize().unwrap();
         let deserialized = NetworkMessage::deserialize(&serialized).unwrap();
-        
+
         assert_eq!(message.version, deserialized.version);
         assert_eq!(message.message_type, deserialized.message_type);
         assert_eq!(message.sender_id, deserialized.sender_id);
@@ -443,7 +450,7 @@ mod tests {
         let mut protocol = NetworkProtocol::new();
         let handler = Arc::new(HandshakeHandler::new("test-node".to_string()));
         protocol.register_handler(handler);
-        
+
         assert!(protocol.start().await.is_ok());
         assert!(protocol.stop().await.is_ok());
     }

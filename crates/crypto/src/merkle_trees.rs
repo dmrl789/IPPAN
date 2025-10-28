@@ -61,7 +61,7 @@ impl MerkleTree {
 
         while current_level.len() > 1 {
             let mut next_level = Vec::new();
-            
+
             for i in (0..current_level.len()).step_by(2) {
                 let left = &current_level[i];
                 let right = if i + 1 < current_level.len() {
@@ -95,7 +95,8 @@ impl MerkleTree {
 
     /// Get a leaf by index
     pub fn get_leaf(&self, index: usize) -> Result<&Vec<u8>> {
-        self.leaves.get(index)
+        self.leaves
+            .get(index)
             .ok_or_else(|| anyhow!(MerkleError::InvalidIndex))
     }
 
@@ -282,17 +283,19 @@ impl SparseMerkleTree {
     /// Recursively compute the root
     fn compute_root_recursive(&self, key: &[u8], level: usize) -> Vec<u8> {
         if level == self.depth {
-            return self.leaves.get(key)
+            return self
+                .leaves
+                .get(key)
                 .map(|v| self.hash(v))
                 .unwrap_or_else(|| Self::empty_hash(0));
         }
 
         let left_key = [key, &[0]].concat();
         let right_key = [key, &[1]].concat();
-        
+
         let left_hash = self.compute_root_recursive(&left_key, level + 1);
         let right_hash = self.compute_root_recursive(&right_key, level + 1);
-        
+
         let combined = [left_hash.as_slice(), right_hash.as_slice()].concat();
         self.hash(&combined)
     }
@@ -330,9 +333,7 @@ pub struct MerkleTreeBuilder {
 impl MerkleTreeBuilder {
     /// Create a new builder
     pub fn new() -> Self {
-        Self {
-            leaves: Vec::new(),
-        }
+        Self { leaves: Vec::new() }
     }
 
     /// Add a leaf to the builder
@@ -388,7 +389,7 @@ mod tests {
 
         let tree = MerkleTree::new(leaves).unwrap();
         let proof = tree.generate_proof(0).unwrap();
-        
+
         assert_eq!(proof.leaf_index, 0);
         assert_eq!(proof.leaf_hash, b"leaf1".to_vec());
     }
@@ -405,17 +406,17 @@ mod tests {
         let tree = MerkleTree::new(leaves).unwrap();
         let proof = tree.generate_proof(0).unwrap();
         let is_valid = tree.verify_proof(&proof).unwrap();
-        
+
         assert!(is_valid);
     }
 
     #[test]
     fn test_sparse_merkle_tree() {
         let mut tree = SparseMerkleTree::new(256);
-        
+
         tree.set_leaf(vec![1, 2, 3, 4], b"value1".to_vec()).unwrap();
         tree.set_leaf(vec![5, 6, 7, 8], b"value2".to_vec()).unwrap();
-        
+
         assert_eq!(tree.get_leaf(&[1, 2, 3, 4]), Some(&b"value1".to_vec()));
         assert_eq!(tree.get_leaf(&[5, 6, 7, 8]), Some(&b"value2".to_vec()));
     }

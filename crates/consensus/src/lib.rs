@@ -10,8 +10,8 @@ use ippan_crypto::{validate_confidential_block, validate_confidential_transactio
 use ippan_mempool::Mempool;
 use ippan_storage::Storage;
 use ippan_types::{
-    IppanTimeMicros, Block, BlockId, RoundCertificate, RoundFinalizationRecord,
-    RoundId, RoundWindow, Transaction,
+    Block, BlockId, IppanTimeMicros, RoundCertificate, RoundFinalizationRecord, RoundId,
+    RoundWindow, Transaction,
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -30,42 +30,35 @@ use tracing::{error, info, warn};
 // Submodules
 // ---------------------------------------------------------------------
 
-pub mod ordering;
-pub mod parallel_dag;
-pub mod reputation;
 pub mod emission;
 pub mod emission_tracker;
 pub mod fees;
+pub mod l1_ai_consensus;
+pub mod ordering;
+pub mod parallel_dag;
+pub mod reputation;
 pub mod round;
 pub mod round_executor;
-pub mod l1_ai_consensus;
 
 // ---------------------------------------------------------------------
 // Public re-exports
 // ---------------------------------------------------------------------
 
 pub use emission::{
-    DAGEmissionParams, ValidatorRole, ValidatorParticipation,
-    RoundEmission, ValidatorReward,
-    calculate_round_reward, calculate_round_emission, distribute_dag_fair_rewards,
-    calculate_fee_recycling, FeeRecyclingParams,
+    calculate_fee_recycling, calculate_round_emission, calculate_round_reward,
+    distribute_dag_fair_rewards, DAGEmissionParams, FeeRecyclingParams, RoundEmission,
+    ValidatorParticipation, ValidatorReward, ValidatorRole,
 };
 pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use l1_ai_consensus::{
-    L1AIConsensus, L1AIConfig, NetworkState, ValidatorCandidate, 
-    ValidatorSelectionResult, FeeOptimizationResult, NetworkHealthReport
+    FeeOptimizationResult, L1AIConfig, L1AIConsensus, NetworkHealthReport, NetworkState,
+    ValidatorCandidate, ValidatorSelectionResult,
 };
 pub use ordering::order_round;
 // Primary DAG-Fair emission integration from round_executor
 // Re-export RoundExecutor utilities once
-pub use round_executor::{
-    create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
-};
-pub use ippan_economics::{
-    EmissionEngine, RoundRewards, EmissionParams,
-    RewardAmount, RoundIndex,
-};
+pub use ippan_economics::{EmissionEngine, EmissionParams, RewardAmount, RoundIndex, RoundRewards};
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
     ValidationResult,
@@ -73,6 +66,9 @@ pub use parallel_dag::{
 pub use reputation::{
     apply_reputation_weight, calculate_reputation, ReputationScore, ValidatorTelemetry,
     DEFAULT_REPUTATION,
+};
+pub use round_executor::{
+    create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
 };
 // (duplicate re-export removed)
 use round::RoundConsensus;
@@ -214,7 +210,9 @@ impl PoAConsensus {
             tx_sender,
             mempool: Arc::new(Mempool::new(10_000)),
             round_tracker: Arc::new(RwLock::new(tracker)),
-            finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
+            finalization_interval: Duration::from_millis(
+                config.finalization_interval_ms.clamp(100, 250),
+            ),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
             l1_ai_consensus: Arc::new(RwLock::new(l1_ai_consensus)),
@@ -241,20 +239,31 @@ impl PoAConsensus {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
         *self.current_slot.write() = now / self.config.slot_duration_ms;
 
-        let (is_running, current_slot, config, storage, mempool, round_tracker, round_consensus, finalization_interval, validator_id, fee_collector, l1_ai_consensus) =
-            (
-                self.is_running.clone(),
-                self.current_slot.clone(),
-                self.config.clone(),
-                self.storage.clone(),
-                self.mempool.clone(),
-                self.round_tracker.clone(),
-                self.round_consensus.clone(),
-                self.finalization_interval,
-                self.validator_id,
-                self.fee_collector.clone(),
-                self.l1_ai_consensus.clone(),
-            );
+        let (
+            is_running,
+            current_slot,
+            config,
+            storage,
+            mempool,
+            round_tracker,
+            round_consensus,
+            finalization_interval,
+            validator_id,
+            fee_collector,
+            l1_ai_consensus,
+        ) = (
+            self.is_running.clone(),
+            self.current_slot.clone(),
+            self.config.clone(),
+            self.storage.clone(),
+            self.mempool.clone(),
+            self.round_tracker.clone(),
+            self.round_consensus.clone(),
+            self.finalization_interval,
+            self.validator_id,
+            self.fee_collector.clone(),
+            self.l1_ai_consensus.clone(),
+        );
 
         let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
         tokio::spawn(async move {
@@ -263,18 +272,30 @@ impl PoAConsensus {
                     break;
                 }
 
-                if let Err(e) =
-                    Self::finalize_round_if_ready(&storage, &round_tracker, finalization_interval, &config, &fee_collector)
-                {
+                if let Err(e) = Self::finalize_round_if_ready(
+                    &storage,
+                    &round_tracker,
+                    finalization_interval,
+                    &config,
+                    &fee_collector,
+                ) {
                     error!("Round finalization error: {e}");
                 }
 
                 let slot = *current_slot.read();
-                if let Some(proposer) = Self::select_proposer(&config, &round_consensus, slot, &l1_ai_consensus) {
+                if let Some(proposer) =
+                    Self::select_proposer(&config, &round_consensus, slot, &l1_ai_consensus)
+                {
                     if proposer == validator_id {
-                        if let Err(e) =
-                            Self::propose_block(&storage, &mempool, &config, &round_tracker, slot, validator_id)
-                                .await
+                        if let Err(e) = Self::propose_block(
+                            &storage,
+                            &mempool,
+                            &config,
+                            &round_tracker,
+                            slot,
+                            validator_id,
+                        )
+                        .await
                         {
                             error!("Block proposal failed: {e}");
                         }
@@ -307,28 +328,34 @@ impl PoAConsensus {
         slot: u64,
         l1_ai: &Arc<RwLock<L1AIConsensus>>,
     ) -> Option<[u8; 32]> {
-        let active: Vec<_> = config.validators.iter().filter(|v| v.is_active).map(|v| v.id).collect();
+        let active: Vec<_> = config
+            .validators
+            .iter()
+            .filter(|v| v.is_active)
+            .map(|v| v.id)
+            .collect();
         if active.is_empty() {
             return None;
         }
 
         if config.enable_ai_reputation {
             // Use L1 AI consensus for validator selection
-            let candidates: Vec<ValidatorCandidate> = config.validators
+            let candidates: Vec<ValidatorCandidate> = config
+                .validators
                 .iter()
                 .filter(|v| v.is_active)
                 .map(|v| ValidatorCandidate {
                     id: v.id,
                     stake: v.stake,
-                    reputation_score: 8000, // Default reputation
-                    uptime_percentage: 99.0, // Default uptime
-                    recent_performance: 0.9, // Default performance
+                    reputation_score: 8000,    // Default reputation
+                    uptime_percentage: 99.0,   // Default uptime
+                    recent_performance: 0.9,   // Default performance
                     network_contribution: 0.8, // Default contribution
                 })
                 .collect();
 
             let network_state = NetworkState {
-                congestion_level: 0.3, // Default congestion
+                congestion_level: 0.3,    // Default congestion
                 avg_block_time_ms: 200.0, // Default block time
                 active_validators: active.len(),
                 total_stake: config.validators.iter().map(|v| v.stake).sum(),
@@ -338,8 +365,11 @@ impl PoAConsensus {
 
             match l1_ai.read().select_validator(&candidates, &network_state) {
                 Ok(result) => {
-                    info!("L1 AI selected validator: {} (confidence: {:.2})", 
-                          hex::encode(result.selected_validator), result.confidence_score);
+                    info!(
+                        "L1 AI selected validator: {} (confidence: {:.2})",
+                        hex::encode(result.selected_validator),
+                        result.confidence_score
+                    );
                     Some(result.selected_validator)
                 }
                 Err(e) => {
@@ -441,7 +471,10 @@ impl PoAConsensus {
             (id, blocks, ws, t.round_start_time)
         };
 
-        let blocks: Vec<_> = block_ids.iter().filter_map(|id| storage.get_block(id).ok().flatten()).collect();
+        let blocks: Vec<_> = block_ids
+            .iter()
+            .filter_map(|id| storage.get_block(id).ok().flatten())
+            .collect();
         if blocks.is_empty() {
             return Ok(());
         }
@@ -455,8 +488,16 @@ impl PoAConsensus {
         let ordered = order_round(
             round_id,
             &blocks,
-            |bid| map.get(bid).map(|b| b.header.parent_ids.clone()).unwrap_or_default(),
-            |bid| map.get(bid).map(|b| b.header.payload_ids.clone()).unwrap_or_default(),
+            |bid| {
+                map.get(bid)
+                    .map(|b| b.header.parent_ids.clone())
+                    .unwrap_or_default()
+            },
+            |bid| {
+                map.get(bid)
+                    .map(|b| b.header.payload_ids.clone())
+                    .unwrap_or_default()
+            },
             |_| true,
             |txid| conflicts.push(*txid),
         );
@@ -503,13 +544,17 @@ impl PoAConsensus {
             proof: cert.clone(),
         };
         storage.store_round_finalization(record)?;
-        info!("Finalized round {} -> state root {}", round_id, hex::encode(state_root));
+        info!(
+            "Finalized round {} -> state root {}",
+            round_id,
+            hex::encode(state_root)
+        );
 
         // -----------------------------------------------------------------
         // DAG-Fair Emission (delegated to RoundExecutor/Treasury in this build)
         // -----------------------------------------------------------------
         if config.enable_dag_fair_emission {
-            use ippan_economics::{EmissionParams, EmissionEngine};
+            use ippan_economics::{EmissionEngine, EmissionParams};
             let params = EmissionParams::default();
             let engine = EmissionEngine::with_params(params);
             let _ = engine.calculate_round_reward(round_id).unwrap_or(0);
@@ -528,7 +573,12 @@ impl PoAConsensus {
 
     pub fn get_state(&self) -> ConsensusState {
         let slot = *self.current_slot.read();
-        let proposer = Self::select_proposer(&self.config, &self.round_consensus, slot, &self.l1_ai_consensus);
+        let proposer = Self::select_proposer(
+            &self.config,
+            &self.round_consensus,
+            slot,
+            &self.l1_ai_consensus,
+        );
         ConsensusState {
             current_slot: slot,
             current_proposer: proposer,
@@ -607,10 +657,19 @@ impl ConsensusEngine for PoAConsensus {
                 .ok_or_else(|| anyhow::anyhow!("Missing previous block"))?
                 .hash()
         };
-        Ok(Block::new(if h == 0 { vec![] } else { vec![prev] }, txs, h + 1, self.validator_id))
+        Ok(Block::new(
+            if h == 0 { vec![] } else { vec![prev] },
+            txs,
+            h + 1,
+            self.validator_id,
+        ))
     }
     async fn validate_block(&self, block: &Block) -> Result<bool> {
-        if block.transactions.iter().any(|tx| validate_confidential_transaction(tx).is_err()) {
+        if block
+            .transactions
+            .iter()
+            .any(|tx| validate_confidential_transaction(tx).is_err())
+        {
             return Ok(false);
         }
         Ok(true)

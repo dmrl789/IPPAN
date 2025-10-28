@@ -45,14 +45,14 @@ impl PedersenCommitment {
         let mut generator = [0u8; 32];
         let mut h_generator = [0u8; 32];
         let mut modulus = [0u8; 32];
-        
+
         rand::thread_rng().fill(&mut generator);
         rand::thread_rng().fill(&mut h_generator);
         rand::thread_rng().fill(&mut modulus);
-        
+
         // Ensure modulus is odd (simplified)
         modulus[0] |= 1;
-        
+
         Self {
             generator,
             h_generator,
@@ -68,7 +68,7 @@ impl PedersenCommitment {
 
         let m = self.bytes_to_scalar(message);
         let r = self.bytes_to_scalar(randomness);
-        
+
         let g_m = self.modular_exponentiation(&self.generator, &m);
         let h_r = self.modular_exponentiation(&self.h_generator, &r);
         let commitment = self.modular_multiply(&g_m, &h_r);
@@ -80,7 +80,12 @@ impl PedersenCommitment {
     }
 
     /// Open a commitment
-    pub fn open(&self, _commitment: &Commitment, message: &[u8], randomness: &[u8]) -> Result<Opening> {
+    pub fn open(
+        &self,
+        _commitment: &Commitment,
+        message: &[u8],
+        randomness: &[u8],
+    ) -> Result<Opening> {
         if message.len() != 32 || randomness.len() != 32 {
             return Err(anyhow!(CommitmentError::InvalidInput));
         }
@@ -148,7 +153,12 @@ impl HashCommitment {
     }
 
     /// Open a commitment
-    pub fn open(&self, _commitment: &Commitment, message: &[u8], randomness: &[u8]) -> Result<Opening> {
+    pub fn open(
+        &self,
+        _commitment: &Commitment,
+        message: &[u8],
+        randomness: &[u8],
+    ) -> Result<Opening> {
         Ok(Opening {
             message: message.to_vec(),
             randomness: randomness.to_vec(),
@@ -295,7 +305,7 @@ impl CommitmentUtils {
     pub fn generate_random_opening(message: &[u8]) -> Opening {
         let mut randomness = [0u8; 32];
         rand::thread_rng().fill(&mut randomness);
-        
+
         Opening {
             message: message.to_vec(),
             randomness: randomness.to_vec(),
@@ -347,11 +357,11 @@ mod tests {
         let scheme = PedersenCommitment::new();
         let message = &[0u8; 32];
         let randomness = &[1u8; 32];
-        
+
         let commitment = scheme.commit(message, randomness).unwrap();
         let opening = scheme.open(&commitment, message, randomness).unwrap();
         let is_valid = scheme.verify(&commitment, &opening).unwrap();
-        
+
         assert!(is_valid);
     }
 
@@ -360,27 +370,23 @@ mod tests {
         let scheme = HashCommitment::new();
         let message = b"test message";
         let randomness = b"random data here!";
-        
+
         let commitment = scheme.commit(message, randomness).unwrap();
         let opening = scheme.open(&commitment, message, randomness).unwrap();
         let is_valid = scheme.verify(&commitment, &opening).unwrap();
-        
+
         assert!(is_valid);
     }
 
     #[test]
     fn test_vector_commitment() {
         let scheme = VectorCommitment::new(3);
-        let messages = vec![
-            b"msg1".to_vec(),
-            b"msg2".to_vec(),
-            b"msg3".to_vec(),
-        ];
-        
+        let messages = vec![b"msg1".to_vec(), b"msg2".to_vec(), b"msg3".to_vec()];
+
         let commitment = scheme.commit(&messages).unwrap();
         let opening = scheme.open(&commitment, &messages).unwrap();
         let is_valid = scheme.verify(&commitment, &opening).unwrap();
-        
+
         assert!(is_valid);
     }
 
@@ -389,7 +395,7 @@ mod tests {
         let pedersen = CommitmentFactory::create_pedersen();
         let hash = CommitmentFactory::create_hash();
         let vector = CommitmentFactory::create_vector(5);
-        
+
         assert_eq!(vector.vector_size, 5);
     }
 
@@ -397,7 +403,7 @@ mod tests {
     fn test_commitment_utils() {
         let scheme = HashCommitment::new();
         let (commitment, opening) = CommitmentUtils::commit_string(&scheme, "test").unwrap();
-        
+
         let is_valid = scheme.verify(&commitment, &opening).unwrap();
         assert!(is_valid);
     }

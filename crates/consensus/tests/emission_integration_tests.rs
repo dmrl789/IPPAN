@@ -70,10 +70,10 @@ fn test_supply_cap_never_exceeded() {
 
     // Test at extreme round numbers
     let extreme_rounds = vec![
-        1_000_000_000u64,      // 1 billion rounds
-        10_000_000_000u64,     // 10 billion rounds
-        100_000_000_000u64,    // 100 billion rounds
-        u64::MAX / 1000,       // Near maximum
+        1_000_000_000u64,   // 1 billion rounds
+        10_000_000_000u64,  // 10 billion rounds
+        100_000_000_000u64, // 100 billion rounds
+        u64::MAX / 1000,    // Near maximum
     ];
 
     for rounds in extreme_rounds {
@@ -106,8 +106,8 @@ fn test_validator_contribution_weighting() {
         validator_id: [2u8; 32],
         blocks_proposed: 50,
         blocks_verified: 100,
-        reputation_score: 8000,  // 80%
-        uptime_factor: 9000,     // 90%
+        reputation_score: 8000, // 80%
+        uptime_factor: 9000,    // 90%
     };
 
     // Low performer: few blocks, lower reputation, reduced uptime
@@ -115,8 +115,8 @@ fn test_validator_contribution_weighting() {
         validator_id: [3u8; 32],
         blocks_proposed: 10,
         blocks_verified: 20,
-        reputation_score: 5000,  // 50%
-        uptime_factor: 7000,     // 70%
+        reputation_score: 5000, // 50%
+        uptime_factor: 7000,    // 70%
     };
 
     let high_score = high_performer.weighted_score(&params);
@@ -315,21 +315,20 @@ fn test_emission_with_varying_participation() {
             ]
         } else if round % 2 == 0 {
             // Medium participation
-            vec![
-                ValidatorContribution {
-                    validator_id: [1u8; 32],
-                    blocks_proposed: 5,
-                    blocks_verified: 10,
-                    reputation_score: 10000,
-                    uptime_factor: 10000,
-                },
-            ]
+            vec![ValidatorContribution {
+                validator_id: [1u8; 32],
+                blocks_proposed: 5,
+                blocks_verified: 10,
+                reputation_score: 10000,
+                uptime_factor: 10000,
+            }]
         } else {
             // Low/no participation
             vec![]
         };
 
-        let result = tracker.process_round(round, &contributions, 50 * contributions.len() as u128, 25);
+        let result =
+            tracker.process_round(round, &contributions, 50 * contributions.len() as u128, 25);
         assert!(result.is_ok());
     }
 
@@ -368,7 +367,10 @@ fn test_long_term_emission_projection() {
     // Year 10 emission should be less than year 1 (due to halvings)
     // Only check if year 10 incremental is non-zero
     if year10_incremental > 0 {
-        assert!(year10_incremental < year1, "Later years should emit less due to halvings");
+        assert!(
+            year10_incremental < year1,
+            "Later years should emit less due to halvings"
+        );
     }
 }
 
@@ -384,7 +386,7 @@ fn test_rounds_to_supply_cap() {
         supply_cap: 1_500_000_000, // 1.5B µIPN (achievable)
         ..Default::default()
     };
-    
+
     let cap_round = rounds_until_cap(&params);
 
     assert!(cap_round > 0, "Should take non-zero rounds to reach cap");
@@ -394,13 +396,12 @@ fn test_rounds_to_supply_cap() {
 
     // Should be at or above cap (within one round's reward)
     assert!(
-        supply_at_cap >= params.supply_cap || 
-        (params.supply_cap - supply_at_cap) <= params.r0,
+        supply_at_cap >= params.supply_cap || (params.supply_cap - supply_at_cap) <= params.r0,
         "Supply at cap round {} should be >= cap {}",
         supply_at_cap,
         params.supply_cap
     );
-    
+
     // Previous round should be below cap
     assert!(
         supply_before < params.supply_cap,
@@ -508,7 +509,9 @@ fn test_audit_trail_creation() {
 
     // Process 250 rounds (should create 2 audit checkpoints)
     for round in 1..=250 {
-        tracker.process_round(round, &contributions, 100, 50).unwrap();
+        tracker
+            .process_round(round, &contributions, 100, 50)
+            .unwrap();
     }
 
     assert!(
