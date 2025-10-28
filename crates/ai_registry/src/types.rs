@@ -268,6 +268,23 @@ pub struct RegistryConfig {
     pub max_parameter_count: u64,
 }
 
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        Self {
+            min_registration_fee: 1000,
+            max_registration_fee: 1_000_000,
+            default_execution_fee: 100,
+            storage_fee_per_byte_per_day: 1,
+            proposal_fee: 10_000,
+            voting_period_seconds: 86400 * 7, // 7 days
+            execution_period_seconds: 86400 * 14, // 14 days
+            min_voting_power: 1000,
+            max_model_size: 1024 * 1024 * 100, // 100MB
+            max_parameter_count: 1_000_000_000, // 1B parameters
+        }
+    }
+}
+
 /// Registry statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegistryStats {

@@ -11,35 +11,43 @@ pub enum AiCoreError {
     /// Execution error
     #[error("Execution error: {0}")]
     Execution(String),
-    
+
+    /// Execution failed
+    #[error("Execution failed: {0}")]
+    ExecutionFailed(String),
+
     /// Validation error
     #[error("Validation error: {0}")]
     Validation(String),
-    
+
+    /// Validation failed
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
+
     /// Determinism error
     #[error("Determinism error: {0}")]
     Determinism(String),
-    
+
     /// Unsupported format
     #[error("Unsupported format: {0}")]
     UnsupportedFormat(String),
-    
+
     /// Invalid parameters
     #[error("Invalid parameters: {0}")]
     InvalidParameters(String),
-    
+
     /// I/O error
     #[error("I/O error: {0}")]
     Io(String),
-    
+
     /// Serialization error
     #[error("Serialization error: {0}")]
     Serialization(String),
-    
+
     /// Cryptographic error
     #[error("Cryptographic error: {0}")]
     Cryptographic(String),
-    
+
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),

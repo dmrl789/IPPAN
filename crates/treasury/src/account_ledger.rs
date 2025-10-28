@@ -1,7 +1,7 @@
 //! Account ledger interface for reward distribution
 
-use ippan_economics::{MicroIPN, ValidatorId};
 use anyhow::Result;
+use ippan_types::{MicroIPN, ValidatorId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_in_memory_ledger_operations() {
         let mut ledger = InMemoryAccountLedger::new();
-        let validator_id = ValidatorId(hex::encode([1u8; 32]));
+        let validator_id: ValidatorId = [1u8; 32];
 
         // Credit
         ledger.credit_validator(&validator_id, 1000).unwrap();
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn test_insufficient_balance() {
         let mut ledger = InMemoryAccountLedger::new();
-        let validator_id = ValidatorId(hex::encode([1u8; 32]));
+        let validator_id: ValidatorId = [1u8; 32];
 
         ledger.credit_validator(&validator_id, 1000).unwrap();
 
@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn test_mock_ledger_calls() {
         let mut mock = MockAccountLedger::new();
-        let validator_id = ValidatorId(hex::encode([1u8; 32]));
+        let validator_id: ValidatorId = [1u8; 32];
 
         mock.credit_validator(&validator_id, 1000).unwrap();
         mock.debit_validator(&validator_id, 300).unwrap();
