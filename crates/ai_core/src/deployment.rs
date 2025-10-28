@@ -240,9 +240,9 @@ impl ProductionDeployment {
         if let Some(manager) = model_manager.as_ref() {
             let result = manager.load_model(model_path).await;
             match result {
-                Ok(model) => {
+                Ok(load) => {
                     let mut models = self.gbdt_models.write().await;
-                    models.insert(model_path.to_string(), model);
+                    models.insert(model_path.to_string(), load.model);
                     info!("Model loaded: {}", model_path);
                     Ok(())
                 }

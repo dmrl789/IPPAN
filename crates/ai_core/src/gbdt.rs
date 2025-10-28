@@ -44,7 +44,7 @@ pub enum GBDTError {
 }
 
 /// GBDT evaluation result with metadata
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GBDTResult {
     /// The predicted value (clamped to [0, scale])
     pub value: i32,
@@ -61,7 +61,7 @@ pub struct GBDTResult {
 }
 
 /// Performance metrics for GBDT evaluation
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct GBDTMetrics {
     pub total_evaluations: u64,
     pub total_time_us: u64,
@@ -87,7 +87,7 @@ pub struct ModelMetadata {
 }
 
 /// A decision tree node (internal or leaf)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Node {
     /// Feature index to compare (for internal nodes)
     pub feature_index: u16,
@@ -102,7 +102,7 @@ pub struct Node {
 }
 
 /// A single decision tree
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Tree {
     /// Nodes in breadth-first or depth-first order
     pub nodes: Vec<Node>,

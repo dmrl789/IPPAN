@@ -120,10 +120,12 @@ impl DeterminismManager {
 
         // Compare with actual execution hash
         let is_deterministic = expected_hash
-            == *output
+            == output
+                .metadata
                 .metadata
                 .get("execution_hash")
-                .unwrap_or(&String::new());
+                .cloned()
+                .unwrap_or_default();
 
         if !is_deterministic {
             warn!(
@@ -233,6 +235,7 @@ impl DeterminismManager {
         hasher.update(context.execution_id.as_bytes());
         hasher.update(
             output
+                .metadata
                 .metadata
                 .get("model_version")
                 .unwrap_or(&String::new())

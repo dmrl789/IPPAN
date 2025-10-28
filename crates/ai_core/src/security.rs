@@ -65,6 +65,7 @@ impl Default for SecurityConfig {
 }
 
 /// Security system
+#[derive(Debug)]
 pub struct SecuritySystem {
     config: SecurityConfig,
     audit_log: Vec<AuditEntry>,

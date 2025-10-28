@@ -144,11 +144,11 @@ impl ModelManager {
 
         // Load from disk
         let path = self.get_model_path(model_id);
-        let model = self.load_model_from_disk(&path).await?;
+        let mut model = self.load_model_from_disk(&path).await?;
 
         // Validate
         let validation_passed = if self.config.enable_integrity_checking {
-            self.validate_model(&model).await?
+            self.validate_model(&mut model).await?
         } else {
             true
         };
@@ -297,7 +297,7 @@ impl ModelManager {
         Ok(package.model)
     }
 
-    async fn validate_model(&self, model: &GBDTModel) -> Result<bool, GBDTError> {
+    async fn validate_model(&self, model: &mut GBDTModel) -> Result<bool, GBDTError> {
         model.validate()?;
         if model.trees.len() > model.security_constraints.max_trees {
             return Err(GBDTError::SecurityValidationFailed {

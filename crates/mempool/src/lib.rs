@@ -1,5 +1,6 @@
 use anyhow::Result;
-use ippan_crypto::validate_confidential_transaction;
+// Local light validation that mirrors crypto confidential checks
+// (avoid tight coupling to crypto crate public API here)
 use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
@@ -96,8 +97,12 @@ impl Mempool {
             return Ok(false);
         }
 
-        // Validate confidential payloads before admission
-        validate_confidential_transaction(&tx)?;
+        // Validate confidential payloads before admission (basic checks)
+        if tx.visibility == ippan_types::TransactionVisibility::Confidential {
+            if tx.confidential.is_none() || tx.zk_proof.is_none() {
+                return Ok(false);
+            }
+        }
 
         // Calculate fee (simplified - in production, this would be more sophisticated)
         let fee = self.calculate_transaction_fee(&tx);

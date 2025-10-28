@@ -332,7 +332,7 @@ impl ModelValidator {
         }
 
         // Verify that model metadata includes deterministic hash
-        if metadata.hash.is_empty() {
+        if metadata.id.hash.is_empty() {
             return Err(ValidationError {
                 error_type: "DeterminismCheck".to_string(),
                 message: "Model hash is required for determinism verification".to_string(),
