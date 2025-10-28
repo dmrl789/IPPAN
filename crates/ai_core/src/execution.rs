@@ -314,12 +314,12 @@ impl DataType {
     pub fn size_bytes(self) -> usize {
         match self {
             DataType::Int8 => 1,
-            DataType::Int16 => 2,
-            DataType::Int32 => 4,
-            DataType::Int64 => 8,
             DataType::UInt8 => 1,
+            DataType::Int16 => 2,
             DataType::UInt16 => 2,
+            DataType::Int32 => 4,
             DataType::UInt32 => 4,
+            DataType::Int64 => 8,
             DataType::UInt64 => 8,
             DataType::Float32 => 4,
             DataType::Float64 => 8,
