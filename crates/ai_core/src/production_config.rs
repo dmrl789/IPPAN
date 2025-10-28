@@ -13,7 +13,6 @@ use crate::model_manager::ModelManagerConfig;
 use crate::feature_engineering::FeatureEngineeringConfig;
 use crate::monitoring::MonitoringConfig;
 use crate::security::SecurityConfig;
-use crate::GBDTError;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
