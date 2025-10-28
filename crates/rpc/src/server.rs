@@ -19,7 +19,7 @@ use tokio::sync::{mpsc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{HttpP2PNetwork, NetworkMessage};
 
@@ -63,7 +63,11 @@ impl ConsensusHandle {
         tx_sender: mpsc::UnboundedSender<Transaction>,
         mempool: Arc<Mempool>,
     ) -> Self {
-        Self { consensus, tx_sender, mempool }
+        Self {
+            consensus,
+            tx_sender,
+            mempool,
+        }
     }
 
     pub async fn snapshot(&self) -> Result<ConsensusStateView> {
@@ -87,7 +91,10 @@ pub struct ConsensusStateView {
 
 impl From<ConsensusState> for ConsensusStateView {
     fn from(state: ConsensusState) -> Self {
-        Self { round: state.round, validators: state.validators }
+        Self {
+            round: state.round,
+            validators: state.validators,
+        }
     }
 }
 
@@ -98,7 +105,9 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     let app = build_router(shared.clone());
     let listener = bind_listener(addr).await?;
     info!("RPC server listening on {}", listener.local_addr()?);
-    axum::serve(listener, app).await.context("RPC server terminated unexpectedly")
+    axum::serve(listener, app)
+        .await
+        .context("RPC server terminated unexpectedly")
 }
 
 /// Bind to TCP listener
@@ -171,7 +180,10 @@ async fn handle_version() -> Json<serde_json::Value> {
 }
 
 async fn handle_metrics() -> (StatusCode, &'static str) {
-    (StatusCode::OK, "# HELP ippan_peer_count Connected peers\nippan_peer_count 0\n")
+    (
+        StatusCode::OK,
+        "# HELP ippan_peer_count Connected peers\nippan_peer_count 0\n",
+    )
 }
 
 async fn handle_submit_tx(
