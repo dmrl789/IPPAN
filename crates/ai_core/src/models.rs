@@ -10,7 +10,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::fs;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Optional dependency for remote loading (activated via `remote_loading` feature)
 #[cfg(feature = "remote_loading")]
@@ -145,7 +145,9 @@ impl ModelManager {
     /// Core loader: read model data from any supported source type
     async fn load_model_data(&self, source: &ModelSource) -> Result<Vec<u8>> {
         match source.source_type {
-            SourceType::Local => fs::read(&source.location).map_err(AiCoreError::Io),
+            SourceType::Local => {
+                fs::read(&source.location).map_err(|e| AiCoreError::Io(e.to_string()))
+            }
             SourceType::Remote => self.load_from_url(&source.location).await,
             SourceType::Ipfs => self.load_from_ipfs(&source.location).await,
             SourceType::Blockchain => self.load_from_blockchain(&source.location).await,
@@ -156,10 +158,10 @@ impl ModelManager {
     async fn load_from_url(&self, url: &str) -> Result<Vec<u8>> {
         info!("Loading model from URL: {}", url);
 
-        // Support data: or hex:// inline encodings for offline or test use
+        // Inline formats for testing or offline deployment
         if let Some(data) = url.strip_prefix("data:application/octet-stream;base64,") {
             let bytes = base64::decode(data)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 data URL: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 data: {}", e)))?;
             return Ok(bytes);
         }
 
@@ -175,33 +177,31 @@ impl ModelManager {
             ));
         }
 
-        // HTTP client enabled only when `remote_loading` feature is active
         #[cfg(feature = "remote_loading")]
         {
             let client = Client::builder()
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to create HTTP client: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("HTTP client init failed: {}", e)))?;
 
-            let response = client
-                .get(url)
-                .send()
-                .await
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to fetch model: {}", e)))?;
+            let response = client.get(url).send().await.map_err(|e| {
+                AiCoreError::ExecutionFailed(format!("HTTP request failed: {}", e))
+            })?;
 
             if !response.status().is_success() {
                 return Err(AiCoreError::ExecutionFailed(format!(
-                    "HTTP error: {}", response.status()
+                    "HTTP error: {}",
+                    response.status()
                 )));
             }
 
             let data = response
                 .bytes()
                 .await
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to read model data: {}", e)))?
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Read failed: {}", e)))?
                 .to_vec();
 
-            info!("Model loaded from URL successfully, size: {} bytes", data.len());
+            info!("Model loaded from URL successfully ({} bytes)", data.len());
             Ok(data)
         }
 
@@ -220,14 +220,13 @@ impl ModelManager {
 
         if let Some(b64) = hash.strip_prefix("base64:") {
             let bytes = base64::decode(b64)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 for IPFS: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64: {}", e)))?;
             return Ok(bytes);
         }
 
         if !hash.starts_with("Qm") && !hash.starts_with("bafy") {
             return Err(AiCoreError::InvalidParameters(
-                "Invalid IPFS hash format (must start with Qm or bafy, or use base64: prefix)"
-                    .to_string(),
+                "Invalid IPFS hash format (must start with Qm or bafy)".to_string(),
             ));
         }
 
@@ -243,7 +242,7 @@ impl ModelManager {
             let client = Client::builder()
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Failed to create HTTP client: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("HTTP client init failed: {}", e)))?;
 
             for gateway_url in &gateways {
                 info!("Trying IPFS gateway: {}", gateway_url);
@@ -251,13 +250,13 @@ impl ModelManager {
                     Ok(resp) if resp.status().is_success() => match resp.bytes().await {
                         Ok(data) => {
                             info!(
-                                "Model loaded from IPFS via {}, size: {} bytes",
+                                "Model loaded from IPFS via {} ({} bytes)",
                                 gateway_url,
                                 data.len()
                             );
                             return Ok(data.to_vec());
                         }
-                        Err(e) => warn!("Failed to read data from {}: {}", gateway_url, e),
+                        Err(e) => warn!("Failed to read from {}: {}", gateway_url, e),
                     },
                     Ok(resp) => warn!("Gateway {} returned {}", gateway_url, resp.status()),
                     Err(e) => warn!("Failed to connect to {}: {}", gateway_url, e),
@@ -265,14 +264,16 @@ impl ModelManager {
             }
 
             Err(AiCoreError::ExecutionFailed(
-                "Failed to load model from all IPFS gateways".to_string(),
+                "Failed to load model from IPFS gateways".to_string(),
             ))
         }
 
         #[cfg(not(feature = "remote_loading"))]
         {
             error!("IPFS client not available (requires remote_loading feature)");
-            Err(AiCoreError::ExecutionFailed("IPFS client not available".to_string()))
+            Err(AiCoreError::ExecutionFailed(
+                "IPFS client not available".to_string(),
+            ))
         }
     }
 
@@ -282,7 +283,7 @@ impl ModelManager {
 
         if let Some(b64) = storage_key.strip_prefix("base64:") {
             let bytes = base64::decode(b64)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 for chain: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64: {}", e)))?;
             return Ok(bytes);
         }
 
@@ -305,26 +306,28 @@ impl ModelManager {
 
     /// Validate model metadata structure
     fn validate_metadata(&self, metadata: &ModelMetadata) -> Result<()> {
-        if metadata.id.name.is_empty() {
-            return Err(AiCoreError::InvalidParameters("Model name cannot be empty".to_string()));
-        }
-        if metadata.id.version.is_empty() {
-            return Err(AiCoreError::InvalidParameters("Model version cannot be empty".to_string()));
-        }
-        if metadata.id.hash.is_empty() {
-            return Err(AiCoreError::InvalidParameters("Model hash cannot be empty".to_string()));
+        if metadata.id.name.is_empty()
+            || metadata.id.version.is_empty()
+            || metadata.id.hash.is_empty()
+        {
+            return Err(AiCoreError::InvalidParameters(
+                "Model ID fields cannot be empty".to_string(),
+            ));
         }
         if metadata.input_shape.is_empty() {
-            return Err(AiCoreError::InvalidParameters("Input shape cannot be empty".to_string()));
+            return Err(AiCoreError::InvalidParameters(
+                "Input shape cannot be empty".to_string(),
+            ));
         }
         if metadata.output_shape.is_empty() {
-            return Err(AiCoreError::InvalidParameters("Output shape cannot be empty".to_string()));
+            return Err(AiCoreError::InvalidParameters(
+                "Output shape cannot be empty".to_string(),
+            ));
         }
-        if metadata.parameter_count == 0 {
-            return Err(AiCoreError::InvalidParameters("Parameter count cannot be zero".to_string()));
-        }
-        if metadata.size_bytes == 0 {
-            return Err(AiCoreError::InvalidParameters("Model size cannot be zero".to_string()));
+        if metadata.parameter_count == 0 || metadata.size_bytes == 0 {
+            return Err(AiCoreError::InvalidParameters(
+                "Parameter count and size must be nonzero".to_string(),
+            ));
         }
         Ok(())
     }
@@ -332,12 +335,16 @@ impl ModelManager {
     /// Validate integrity of loaded model data (size and hash)
     fn validate_model_data(&self, data: &[u8], metadata: &ModelMetadata) -> Result<()> {
         if data.len() as u64 != metadata.size_bytes {
-            return Err(AiCoreError::ValidationFailed("Model data size mismatch".to_string()));
+            return Err(AiCoreError::ValidationFailed(
+                "Model data size mismatch".to_string(),
+            ));
         }
 
         let computed_hash = blake3::hash(data).to_hex().to_string();
         if computed_hash != metadata.id.hash {
-            return Err(AiCoreError::ValidationFailed("Model hash verification failed".to_string()));
+            return Err(AiCoreError::ValidationFailed(
+                "Model hash verification failed".to_string(),
+            ));
         }
 
         Ok(())

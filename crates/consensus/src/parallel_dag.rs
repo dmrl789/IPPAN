@@ -527,7 +527,7 @@ impl ParallelDagEngine {
             errors.push("block structure invalid".to_string());
         }
 
-        if let Err(err) = validate_confidential_block(block) {
+        if let Err(err) = validate_confidential_block(&block.transactions) {
             errors.push(format!("confidential block validation failed: {err}"));
         }
 

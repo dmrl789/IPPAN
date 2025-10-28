@@ -1,25 +1,31 @@
 use anyhow::Result;
+use ippan_economics::EmissionParams;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-// Use the core economics params definition for governance coupling
-use ippan_economics_core::types::EconomicsParams;
 use serde_json::json;
 
 /// Governance and Economics parameter management
 ///
-/// This module defines on-chain governance parameters that can be modified
-/// through parameter proposals, subject to validator approval.
-/// It reuses `EconomicsParams` from `ippan_economics_core` to avoid type drift.
+/// Defines all tunable parameters subject to on-chain proposals and validator approval.
+/// Integrates directly with `EmissionParams` to keep token economics in sync.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceParameters {
+    /// Minimum IPN stake to submit a proposal
     pub min_proposal_stake: u64,
+    /// Minimum approval threshold (0–1)
     pub voting_threshold: f64,
+    /// Duration of voting window (seconds)
     pub voting_duration: u64,
+    /// Maximum number of concurrent proposals
     pub max_active_proposals: usize,
+    /// Minimum interval between proposals from same proposer (seconds)
     pub min_proposal_interval: u64,
+    /// Fee to submit a proposal (micro-IPN)
     pub proposal_fee: u64,
+    /// Fee to cast a vote (micro-IPN)
     pub voting_fee: u64,
-    pub economics: EconomicsParams,
+    /// Core economics configuration
+    pub economics: EmissionParams,
 }
 
 impl Default for GovernanceParameters {
@@ -32,7 +38,7 @@ impl Default for GovernanceParameters {
             min_proposal_interval: 24 * 3600,
             proposal_fee: 10_000,
             voting_fee: 1_000,
-            economics: EconomicsParams::default(),
+            economics: EmissionParams::default(),
         }
     }
 }
@@ -69,12 +75,12 @@ impl ParameterManager {
         &self.parameters
     }
 
-    pub fn get_economics_params(&self) -> &EconomicsParams {
+    pub fn get_economics_params(&self) -> &EmissionParams {
         &self.parameters.economics
     }
 
-    pub fn update_economics_params(&mut self, params: EconomicsParams) {
-        self.parameters.economics = params.clone();
+    pub fn update_economics_params(&mut self, params: EmissionParams) {
+        self.parameters.economics = params;
     }
 
     pub fn submit_parameter_change(&mut self, proposal: ParameterChangeProposal) -> Result<()> {
@@ -88,7 +94,8 @@ impl ParameterManager {
             ));
         }
 
-        self.pending_changes.insert(proposal.proposal_id.clone(), proposal);
+        self.pending_changes
+            .insert(proposal.proposal_id.clone(), proposal);
         Ok(())
     }
 
@@ -110,9 +117,13 @@ impl ParameterManager {
         &self.pending_changes
     }
 
+    // ------------------------------------------------------------
+    // Internal validation and application
+    // ------------------------------------------------------------
+
     fn validate_parameter_name(&self, name: &str) -> Result<()> {
         let valid = [
-            // General governance
+            // Governance core
             "min_proposal_stake",
             "voting_threshold",
             "voting_duration",
@@ -120,15 +131,12 @@ impl ParameterManager {
             "min_proposal_interval",
             "proposal_fee",
             "voting_fee",
-            // Economics
+            // Economics (EmissionParams)
             "economics.initial_round_reward_micro",
             "economics.halving_interval_rounds",
             "economics.max_supply_micro",
-            "economics.fee_cap_numer",
-            "economics.fee_cap_denom",
             "economics.proposer_weight_bps",
             "economics.verifier_weight_bps",
-            // fee_recycling_bps removed; handled by distribution policy elsewhere
         ];
         if !valid.contains(&name) {
             return Err(anyhow::anyhow!("Invalid parameter: {}", name));
@@ -159,6 +167,7 @@ impl ParameterManager {
 
     fn apply_parameter_change(&mut self, proposal: &ParameterChangeProposal) -> Result<()> {
         match proposal.parameter_name.as_str() {
+            // Governance
             "min_proposal_stake" => {
                 self.parameters.min_proposal_stake = proposal.new_value.as_u64().unwrap();
             }
@@ -181,31 +190,26 @@ impl ParameterManager {
             "voting_fee" => {
                 self.parameters.voting_fee = proposal.new_value.as_u64().unwrap();
             }
+
+            // Economics
             "economics.initial_round_reward_micro" => {
                 self.parameters.economics.initial_round_reward_micro =
-                    proposal.new_value.as_u64().unwrap() as u128;
+                    proposal.new_value.as_u64().unwrap();
             }
             "economics.halving_interval_rounds" => {
                 self.parameters.economics.halving_interval_rounds =
                     proposal.new_value.as_u64().unwrap();
             }
             "economics.max_supply_micro" => {
-                self.parameters.economics.max_supply_micro =
-                    proposal.new_value.as_u64().unwrap() as u128;
-            }
-            "economics.fee_cap_numer" => {
-                self.parameters.economics.fee_cap_numer = proposal.new_value.as_u64().unwrap();
-            }
-            "economics.fee_cap_denom" => {
-                self.parameters.economics.fee_cap_denom = proposal.new_value.as_u64().unwrap();
+                self.parameters.economics.max_supply_micro = proposal.new_value.as_u64().unwrap();
             }
             "economics.proposer_weight_bps" => {
                 self.parameters.economics.proposer_weight_bps =
-                    proposal.new_value.as_u64().unwrap() as u16;
+                    proposal.new_value.as_u64().unwrap() as u32;
             }
             "economics.verifier_weight_bps" => {
                 self.parameters.economics.verifier_weight_bps =
-                    proposal.new_value.as_u64().unwrap() as u16;
+                    proposal.new_value.as_u64().unwrap() as u32;
             }
             _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
         }
@@ -225,7 +229,6 @@ impl Default for ParameterManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_default_governance_params() {

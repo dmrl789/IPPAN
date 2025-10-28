@@ -13,26 +13,23 @@ impl Handle {
     pub fn new(handle: impl Into<String>) -> Self {
         Self(handle.into())
     }
-    
+
     /// Get the handle as string
     pub fn as_str(&self) -> &str {
         &self.0
     }
-    
+
     /// Validate handle format
     pub fn is_valid(&self) -> bool {
         let handle = &self.0;
-        handle.starts_with('@') && 
-        handle.contains('.') && 
-        handle.len() > 3 &&
-        handle.len() < 64
+        handle.starts_with('@') && handle.contains('.') && handle.len() > 3 && handle.len() < 64
     }
-    
+
     /// Get the TLD (top-level domain) of the handle
     pub fn tld(&self) -> Option<&str> {
         self.0.split('.').last()
     }
-    
+
     /// Check if this is a premium TLD
     pub fn is_premium(&self) -> bool {
         matches!(self.tld(), Some("cyborg") | Some("iot") | Some("m"))
@@ -48,7 +45,7 @@ impl PublicKey {
     pub fn new(key: [u8; 32]) -> Self {
         Self(key)
     }
-    
+
     /// Get as byte array
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
@@ -89,7 +86,7 @@ impl Default for HandleMetadata {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-            
+
         Self {
             owner: PublicKey([0u8; 32]),
             created_at: now,
