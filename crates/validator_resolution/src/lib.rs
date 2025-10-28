@@ -5,10 +5,10 @@
 //! - Human-readable handles (resolved via L2 handle registry)
 //! - Registry aliases
 
-pub mod resolver;
 pub mod errors;
+pub mod resolver;
 pub mod types;
 
-pub use resolver::*;
 pub use errors::*;
+pub use resolver::*;
 pub use types::*;

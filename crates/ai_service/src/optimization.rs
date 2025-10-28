@@ -3,11 +3,11 @@
 //! Provides AI-driven heuristics for optimizing transaction cost, latency,
 //! throughput, gas usage, and security parameters before submission.
 
-use crate::types::{
-    TransactionOptimizationRequest, TransactionOptimizationResponse, TransactionData,
-    OptimizationGoal, OptimizationConstraints, OptimizationSuggestion, DifficultyLevel,
-};
 use crate::errors::AIServiceError;
+use crate::types::{
+    DifficultyLevel, OptimizationConstraints, OptimizationGoal, OptimizationSuggestion,
+    TransactionData, TransactionOptimizationRequest, TransactionOptimizationResponse,
+};
 use std::collections::HashMap;
 
 /// Optimization service
@@ -136,7 +136,8 @@ impl OptimizationService {
         if optimized.tx_type == "transfer" {
             suggestions.push(OptimizationSuggestion {
                 suggestion_type: "batch_operations".into(),
-                description: "Consider batching multiple transfers into a single transaction".into(),
+                description: "Consider batching multiple transfers into a single transaction"
+                    .into(),
                 expected_improvement: 0.25,
                 difficulty: DifficultyLevel::Hard,
             });

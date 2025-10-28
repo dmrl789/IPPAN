@@ -1,7 +1,7 @@
 //! Account ledger interface for reward distribution
 
-use ippan_types::{MicroIPN, ValidatorId};
 use anyhow::Result;
+use ippan_types::{MicroIPN, ValidatorId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
