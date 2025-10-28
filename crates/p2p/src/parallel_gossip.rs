@@ -246,7 +246,7 @@ impl ParallelGossipNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{RoundId, ValidatorId};
+    use ippan_types::{RoundId, ValidatorId, Amount};
     use rand::{rngs::StdRng, RngCore, SeedableRng};
     use std::time::Duration;
 
@@ -262,7 +262,7 @@ mod tests {
         if to == from {
             to[0] ^= 0xAA;
         }
-        let mut tx = Transaction::new(from, to, 1, nonce);
+        let mut tx = Transaction::new(from, to, Amount(1), nonce);
         tx.id = tx.hash();
         tx
     }

@@ -135,7 +135,7 @@ mod tests {
             reputation_score: 1.0,
             stake_weight: 1000,
         };
-        
+
         assert_eq!(participation.validator_id, [1u8; 32]);
         assert_eq!(participation.role, Role::Proposer);
         assert_eq!(participation.blocks_proposed, 1);

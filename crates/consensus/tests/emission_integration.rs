@@ -4,8 +4,8 @@
 //! and proportional fairness among validators with mixed roles.
 
 use ippan_consensus::*;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
 
 #[test]
@@ -34,8 +34,8 @@ fn simulate_emission_across_many_rounds() {
     // simulate 1000 rounds
     let rounds: u64 = 1_000;
     for round in 0..rounds {
-        let emission_micro = emission_for_round_capped(round, total_issued, &params)
-            .expect("hard cap not exceeded");
+        let emission_micro =
+            emission_for_round_capped(round, total_issued, &params).expect("hard cap not exceeded");
 
         // random 0–5 μIPN of fees (small relative to emission)
         let fees_micro = rng.gen_range(0..=5);
@@ -43,7 +43,11 @@ fn simulate_emission_across_many_rounds() {
         // participation: each validator 1–5 blocks, random role
         let mut parts = ParticipationSet::default();
         for vid in &validators {
-            let role = if rng.gen_bool(0.25) { Role::Proposer } else { Role::Verifier };
+            let role = if rng.gen_bool(0.25) {
+                Role::Proposer
+            } else {
+                Role::Verifier
+            };
             let blocks = rng.gen_range(1..=5);
             parts.insert(vid.clone(), Participation { role, blocks });
         }
@@ -63,11 +67,8 @@ fn simulate_emission_across_many_rounds() {
 
         // occasionally simulate epoch reconciliation every 250 rounds
         if round > 0 && round % 250 == 0 {
-            let expected = sum_emission_over_rounds(
-                round - 249,
-                round,
-                |r| emission_for_round(r, &params),
-            );
+            let expected =
+                sum_emission_over_rounds(round - 249, round, |r| emission_for_round(r, &params));
             let actual = total_issued.min(expected);
             let burn = epoch_auto_burn(expected, actual);
             total_burned = total_burned.saturating_add(burn);
@@ -171,11 +172,17 @@ fn test_fair_distribution_proportionality() {
         },
     );
 
-    let (payouts, _, _) = distribute_round(emission, fees, &parts, &params)
-        .expect("distribution succeeds");
+    let (payouts, _, _) =
+        distribute_round(emission, fees, &parts, &params).expect("distribution succeeds");
 
-    let alice_payout = payouts.get(&ValidatorId("alice.ipn".into())).copied().unwrap_or(0);
-    let bob_payout = payouts.get(&ValidatorId("bob.ipn".into())).copied().unwrap_or(0);
+    let alice_payout = payouts
+        .get(&ValidatorId("alice.ipn".into()))
+        .copied()
+        .unwrap_or(0);
+    let bob_payout = payouts
+        .get(&ValidatorId("bob.ipn".into()))
+        .copied()
+        .unwrap_or(0);
 
     // Alice should get ~2× Bob's reward (10 blocks vs 5)
     let ratio = alice_payout as f64 / bob_payout as f64;
@@ -213,11 +220,17 @@ fn test_proposer_verifier_split() {
         },
     );
 
-    let (payouts, _, _) = distribute_round(emission, fees, &parts, &params)
-        .expect("distribution succeeds");
+    let (payouts, _, _) =
+        distribute_round(emission, fees, &parts, &params).expect("distribution succeeds");
 
-    let proposer_payout = payouts.get(&ValidatorId("proposer.ipn".into())).copied().unwrap_or(0);
-    let verifier_payout = payouts.get(&ValidatorId("verifier.ipn".into())).copied().unwrap_or(0);
+    let proposer_payout = payouts
+        .get(&ValidatorId("proposer.ipn".into()))
+        .copied()
+        .unwrap_or(0);
+    let verifier_payout = payouts
+        .get(&ValidatorId("verifier.ipn".into()))
+        .copied()
+        .unwrap_or(0);
 
     // Proposer should get ~20%, verifier ~80%
     let proposer_pct = (proposer_payout as f64 / emission as f64) * 100.0;

@@ -1,28 +1,32 @@
-//! Deterministic Gradient-Boosted Decision Tree inference
-//! Anchored to IPPAN Time and HashTimer
+//! Deterministic Gradient-Boosted Decision Tree (GBDT) inference
+//! Anchored to IPPAN Time and HashTimer for consensus-safe validator scoring.
 //!
-//! Ensures that every node in the network computes identical
-//! predictions and validator rankings within a round.
+//! Ensures that every node computes identical predictions, rankings, and
+//! model hashes during a round — regardless of clock drift or architecture.
 
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{collections::HashMap, fs, path::Path};
+use tracing::{info, warn};
 
 /// Fixed-point arithmetic precision (1e-6)
 const FP_PRECISION: f64 = 1_000_000.0;
 
 /// Normalized validator telemetry (anchored to IPPAN Time)
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorFeatures {
     pub node_id: String,
-    pub delta_time_us: i64,   // difference from IPPAN median time (µs)
+    pub delta_time_us: i64, // difference from IPPAN median time (µs)
     pub latency_ms: f64,
     pub uptime_pct: f64,
     pub peer_entropy: f64,
+    pub cpu_usage: Option<f64>,
+    pub memory_usage: Option<f64>,
+    pub network_reliability: Option<f64>,
 }
 
-/// Single decision node in a GBDT tree
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Decision node in a GBDT tree
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DecisionNode {
     pub feature: usize,
     pub threshold: f64,
@@ -32,91 +36,116 @@ pub struct DecisionNode {
 }
 
 /// One decision tree
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct GBDTTree {
     pub nodes: Vec<DecisionNode>,
 }
 
 /// Full deterministic GBDT model
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DeterministicGBDT {
     pub trees: Vec<GBDTTree>,
     pub learning_rate: f64,
 }
 
+/// Error types for deterministic GBDT operations
+#[derive(Debug, thiserror::Error)]
+pub enum DeterministicGBDTError {
+    #[error("Failed to load model: {0}")]
+    ModelLoadError(String),
+    #[error("Invalid model structure: {0}")]
+    InvalidModelStructure(String),
+    #[error("Feature vector size mismatch: expected {expected}, got {actual}")]
+    FeatureSizeMismatch { expected: usize, actual: usize },
+    #[error("Invalid node reference in tree {tree} node {node}")]
+    InvalidNodeReference { tree: usize, node: usize },
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+}
+
 impl DeterministicGBDT {
-    /// Load model from JSON file (shared by all validators)
-    pub fn from_json_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let data = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&data)?)
+    // ---------------------------------------------------------------------
+    // Loading & saving
+    // ---------------------------------------------------------------------
+
+    pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, DeterministicGBDTError> {
+        let data = fs::read_to_string(path.as_ref())
+            .map_err(|e| DeterministicGBDTError::ModelLoadError(e.to_string()))?;
+        let model: Self = serde_json::from_str(&data)
+            .map_err(|e| DeterministicGBDTError::ModelLoadError(e.to_string()))?;
+        model.validate()?;
+        Ok(model)
     }
 
-    /// Load model from binary file encoded with bincode
-    pub fn from_bin_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let bytes = fs::read(path)?;
-        Ok(bincode::deserialize(&bytes)?)
+    pub fn from_binary_file<P: AsRef<Path>>(path: P) -> Result<Self, DeterministicGBDTError> {
+        let data = fs::read(path.as_ref())
+            .map_err(|e| DeterministicGBDTError::ModelLoadError(e.to_string()))?;
+        let model: Self = bincode::deserialize(&data)
+            .map_err(|e| DeterministicGBDTError::ModelLoadError(e.to_string()))?;
+        model.validate()?;
+        Ok(model)
     }
 
-    /// Load model inferring format from file extension (json|bin)
-    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let p = path.as_ref();
-        match p.extension().and_then(|s| s.to_str()) {
-            Some("json") => Self::from_json_file(p),
-            Some("bin") => Self::from_bin_file(p),
-            _ => Self::from_json_file(p),
-        }
+    pub fn save_json<P: AsRef<Path>>(&self, path: P) -> Result<(), DeterministicGBDTError> {
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
+        fs::write(path, json)
+            .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
+        Ok(())
     }
+
+    pub fn save_binary<P: AsRef<Path>>(&self, path: P) -> Result<(), DeterministicGBDTError> {
+        let data = bincode::serialize(self)
+            .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
+        fs::write(path, data)
+            .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------
+    // Deterministic inference
+    // ---------------------------------------------------------------------
 
     /// Deterministic prediction using fixed-point math
-    ///
-    /// This function is hardened against malformed or adversarial models:
-    /// - Validates child indices are present and in-bounds for internal nodes
-    /// - Caps traversal depth to the number of nodes to avoid infinite loops
     pub fn predict(&self, features: &[f64]) -> f64 {
         let mut score_fp: i64 = 0;
+
         for tree in &self.trees {
-            if tree.nodes.is_empty() {
-                continue;
-            }
-
-            let mut node_idx: usize = 0;
-            let mut steps_remaining = tree.nodes.len();
-
-            while steps_remaining > 0 {
-                steps_remaining -= 1;
+            let mut node_idx = 0usize;
+            loop {
+                if node_idx >= tree.nodes.len() {
+                    warn!("Invalid node index {}", node_idx);
+                    break;
+                }
                 let node = &tree.nodes[node_idx];
+
                 if let Some(value) = node.value {
-                    // Leaf: accumulate value in fixed-point and stop this tree
                     score_fp += (value * FP_PRECISION) as i64;
                     break;
                 }
 
-                // Internal node: ensure feature index is valid
                 if node.feature >= features.len() {
-                    // Feature out of range: treat as neutral split, terminate deterministically
+                    warn!(
+                        "Feature index {} out of bounds (len={})",
+                        node.feature,
+                        features.len()
+                    );
                     break;
                 }
 
                 let feat_val = features[node.feature];
-                let next_idx_opt = if feat_val <= node.threshold { node.left } else { node.right };
-
-                match next_idx_opt {
-                    Some(next_idx) if next_idx < tree.nodes.len() => {
-                        // Progress to next node
-                        if next_idx == node_idx { break; }
-                        node_idx = next_idx;
-                    }
-                    _ => {
-                        // Missing or out-of-bounds child: stop traversal deterministically
-                        break;
-                    }
-                }
+                node_idx = if feat_val <= node.threshold {
+                    node.left.unwrap_or(node_idx)
+                } else {
+                    node.right.unwrap_or(node_idx)
+                };
             }
         }
+
         (score_fp as f64 / FP_PRECISION) * self.learning_rate
     }
 
-    /// Compute model certificate hash (for on-chain verification)
+    /// Compute deterministic model certificate hash
     pub fn model_hash(&self, round_hash_timer: &str) -> String {
         let serialized = serde_json::to_string(self).unwrap();
         let mut hasher = Sha3_256::new();
@@ -124,21 +153,69 @@ impl DeterministicGBDT {
         hasher.update(round_hash_timer.as_bytes());
         format!("{:x}", hasher.finalize())
     }
+
+    /// Validate structural correctness
+    pub fn validate(&self) -> Result<(), DeterministicGBDTError> {
+        if self.trees.is_empty() {
+            return Err(DeterministicGBDTError::InvalidModelStructure(
+                "Model has no trees".to_string(),
+            ));
+        }
+
+        for (t_idx, tree) in self.trees.iter().enumerate() {
+            if tree.nodes.is_empty() {
+                return Err(DeterministicGBDTError::InvalidModelStructure(format!(
+                    "Tree {t_idx} has no nodes"
+                )));
+            }
+
+            for (n_idx, node) in tree.nodes.iter().enumerate() {
+                if let Some(left) = node.left {
+                    if left >= tree.nodes.len() {
+                        return Err(DeterministicGBDTError::InvalidNodeReference {
+                            tree: t_idx,
+                            node: n_idx,
+                        });
+                    }
+                }
+                if let Some(right) = node.right {
+                    if right >= tree.nodes.len() {
+                        return Err(DeterministicGBDTError::InvalidNodeReference {
+                            tree: t_idx,
+                            node: n_idx,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
-/// Normalize raw telemetry using IPPAN Time median
+// ---------------------------------------------------------------------
+// Feature normalization and scoring
+// ---------------------------------------------------------------------
+
+/// Normalize raw telemetry using IPPAN Time median.
+/// Input: map of node_id → (local_time_us, latency_ms, uptime, entropy)
 pub fn normalize_features(
-    telemetry: &HashMap<String, (i64, f64, f64, f64)>, // (local_time_us, latency, uptime, entropy)
+    telemetry: &HashMap<String, (i64, f64, f64, f64)>,
     ippan_time_median: i64,
 ) -> Vec<ValidatorFeatures> {
     telemetry
         .iter()
-        .map(|(node_id, (local_time_us, latency, uptime, entropy))| ValidatorFeatures {
-            node_id: node_id.clone(),
-            delta_time_us: local_time_us - ippan_time_median,
-            latency_ms: *latency,
-            uptime_pct: *uptime,
-            peer_entropy: *entropy,
+        .map(|(node_id, (local_time_us, latency, uptime, entropy))| {
+            let delta_time_us = local_time_us - ippan_time_median;
+            ValidatorFeatures {
+                node_id: node_id.clone(),
+                delta_time_us,
+                latency_ms: *latency,
+                uptime_pct: *uptime,
+                peer_entropy: *entropy,
+                cpu_usage: None,
+                memory_usage: None,
+                network_reliability: None,
+            }
         })
         .collect()
 }
@@ -150,19 +227,102 @@ pub fn compute_scores(
     round_hash_timer: &str,
 ) -> HashMap<String, f64> {
     let mut scores = HashMap::new();
+
     for v in features {
-        let x = vec![
+        let feature_vector = vec![
             v.delta_time_us as f64,
             v.latency_ms,
             v.uptime_pct,
             v.peer_entropy,
         ];
-        let y = model.predict(&x);
-        scores.insert(v.node_id.clone(), y);
+        let score = model.predict(&feature_vector);
+        scores.insert(v.node_id.clone(), score);
     }
 
-    // Generate reproducible hash certificate
     let cert = model.model_hash(round_hash_timer);
-    tracing::info!("Deterministic GBDT certificate: {}", cert);
+    info!("Deterministic GBDT certificate: {}", cert);
     scores
+}
+
+// ---------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_model() -> DeterministicGBDT {
+        let tree = GBDTTree {
+            nodes: vec![
+                DecisionNode {
+                    feature: 0,
+                    threshold: 0.0,
+                    left: Some(1),
+                    right: Some(2),
+                    value: None,
+                },
+                DecisionNode {
+                    feature: 0,
+                    threshold: 0.0,
+                    left: None,
+                    right: None,
+                    value: Some(0.1),
+                },
+                DecisionNode {
+                    feature: 0,
+                    threshold: 0.0,
+                    left: None,
+                    right: None,
+                    value: Some(0.2),
+                },
+            ],
+        };
+        DeterministicGBDT {
+            trees: vec![tree],
+            learning_rate: 0.1,
+        }
+    }
+
+    #[test]
+    fn test_prediction_determinism() {
+        let model = create_test_model();
+        let features = vec![1.0, 2.0, 3.0, 4.0];
+        let r1 = model.predict(&features);
+        let r2 = model.predict(&features);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn test_model_hash_consistency() {
+        let model = create_test_model();
+        let hash1 = model.model_hash("test_round");
+        let hash2 = model.model_hash("test_round");
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_normalization_and_scores() {
+        let mut telemetry = HashMap::new();
+        telemetry.insert("node1".into(), (100_000, 1.2, 99.9, 0.42));
+        telemetry.insert("node2".into(), (100_080, 0.9, 99.8, 0.38));
+        let median = 100_050;
+        let features = normalize_features(&telemetry, median);
+        let model = create_test_model();
+        let scores = compute_scores(&model, &features, "round_hash");
+        assert_eq!(scores.len(), 2);
+        assert!(scores.contains_key("node1"));
+    }
+
+    #[test]
+    fn test_model_validation() {
+        let valid = create_test_model();
+        assert!(valid.validate().is_ok());
+        let invalid = DeterministicGBDT {
+            trees: vec![],
+            learning_rate: 0.1,
+        };
+        assert!(invalid.validate().is_err());
+    }
 }

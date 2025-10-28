@@ -13,6 +13,7 @@ thiserror = "1.0"
 parking_lot = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+futures = "0.3"
 
 # IPPAN crates
 ippan-types = { path = "../types" }
