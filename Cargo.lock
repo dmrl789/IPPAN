@@ -2790,8 +2790,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "criterion",
+ "ippan-types",
  "serde",
  "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]

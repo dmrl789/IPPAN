@@ -6,10 +6,12 @@
 //! - Complex computations and applications
 
 use serde::{Deserialize, Serialize};
+use tracing::{debug, instrument};
 use std::collections::HashMap;
 
 /// L2 transaction types (smart contracts and AI operations)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum L2TxKind {
     /// Smart contract deployment
     ContractDeploy,
@@ -103,6 +105,24 @@ impl Default for L2FeeStructure {
     }
 }
 
+impl L2FeeStructure {
+    /// Load fee structure from a JSON string
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    /// Serialize fee structure to a compact JSON string
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum L2FeeError {
+    #[error("No base fee configured for {0:?}")]
+    MissingBaseFee(L2TxKind),
+}
+
 /// L2 fee calculation result
 #[derive(Debug, Clone)]
 pub struct L2FeeCalculation {
@@ -133,16 +153,19 @@ impl L2FeeManager {
     }
     
     /// Calculate fee for an L2 operation
+    #[instrument(skip(self, additional_data))]
     pub fn calculate_fee(
         &self,
         tx_kind: L2TxKind,
         units: Option<u64>,
         additional_data: Option<HashMap<String, u64>>,
-    ) -> Result<L2FeeCalculation, String> {
-        let base_fee = self.fee_structure.base_fees
+    ) -> Result<L2FeeCalculation, L2FeeError> {
+        let base_fee = self
+            .fee_structure
+            .base_fees
             .get(&tx_kind)
             .copied()
-            .ok_or_else(|| format!("No base fee configured for {:?}", tx_kind))?;
+            .ok_or(L2FeeError::MissingBaseFee(tx_kind))?;
         
         let unit_fee = self.fee_structure.unit_fees
             .get(&tx_kind)
@@ -183,45 +206,53 @@ impl L2FeeManager {
             }
         };
         
-        Ok(L2FeeCalculation {
+        let calculation = L2FeeCalculation {
             tx_kind,
             base_fee,
             unit_fee,
             units,
             total_fee: final_fee,
             calculation_method,
-        })
+        };
+
+        debug!(?calculation, "l2 fee calculated");
+        Ok(calculation)
     }
     
     /// Calculate units for variable-cost operations
     fn calculate_units(&self, tx_kind: L2TxKind, additional_data: Option<HashMap<String, u64>>) -> u64 {
+        let data_ref = additional_data.as_ref();
         match tx_kind {
             L2TxKind::ContractDeploy | L2TxKind::AIModelRegister | L2TxKind::AIModelUpdate => {
-                additional_data
+                data_ref
                     .and_then(|data| data.get("size_bytes").copied())
                     .unwrap_or(1000) // Default 1KB
             }
             L2TxKind::ContractCall | L2TxKind::AIModelInference => {
-                additional_data
-                    .and_then(|data| data.get("gas_units").or_else(|| data.get("compute_units")).copied())
+                data_ref
+                    .and_then(|data| {
+                        data.get("gas_units").copied().or_else(|| data.get("compute_units").copied())
+                    })
                     .unwrap_or(1000) // Default 1000 gas/compute units
             }
             L2TxKind::AIModelStorage => {
-                let size_mb = additional_data
-                    .and_then(|data| data.get("size_mb").copied())
-                    .unwrap_or(1);
-                let days = additional_data
-                    .and_then(|data| data.get("days").copied())
-                    .unwrap_or(1);
+                let (size_mb, days) = if let Some(d) = data_ref {
+                    (
+                        d.get("size_mb").copied().unwrap_or(1),
+                        d.get("days").copied().unwrap_or(1),
+                    )
+                } else {
+                    (1, 1)
+                };
                 size_mb * days
             }
             L2TxKind::FederatedLearning => {
-                additional_data
+                data_ref
                     .and_then(|data| data.get("rounds").copied())
                     .unwrap_or(1)
             }
             L2TxKind::ProofOfInference => {
-                additional_data
+                data_ref
                     .and_then(|data| data.get("complexity").copied())
                     .unwrap_or(100)
             }
@@ -263,6 +294,13 @@ impl Default for L2FeeManager {
     }
 }
 
+impl L2FeeCalculation {
+    /// Convert the calculated total fee (in micro-IPN) into `Amount`
+    pub fn to_amount(&self) -> ippan_types::Amount {
+        ippan_types::Amount::from_micro_ipn(self.total_fee)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,7 +325,8 @@ mod tests {
         let result = manager.calculate_fee(L2TxKind::AIModelInference, None, Some(data)).unwrap();
         assert_eq!(result.base_fee, 100);
         assert_eq!(result.units, 1000);
-        assert_eq!(result.total_fee, 10_100); // 100 + (1000 * 10)
+        // Capped by max fee (10_000)
+        assert_eq!(result.total_fee, 10_000);
     }
     
     #[test]
