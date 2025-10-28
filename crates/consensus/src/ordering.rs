@@ -81,8 +81,12 @@ mod tests {
         let parents = vec![[id_seed.wrapping_sub(1); 32]];
         let mut txs: Vec<Transaction> = Vec::new();
         for (idx, tx_id) in tx_ids.iter().copied().enumerate() {
-            let mut tx =
-                Transaction::new([id_seed; 32], [id_seed; 32], ippan_types::Amount::from_atomic((idx + 1) as u128), idx as u64);
+            let mut tx = Transaction::new(
+                [id_seed; 32],
+                [id_seed; 32],
+                ippan_types::Amount::from_atomic((idx + 1) as u128),
+                idx as u64,
+            );
             tx.id = tx_id;
             txs.push(tx);
         }

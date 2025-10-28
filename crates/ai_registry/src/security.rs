@@ -69,8 +69,11 @@ impl RateLimiter {
         let cutoff = now - self.window;
 
         // Get user's request history
-        let user_requests = self.requests.entry(user_id.to_string()).or_insert_with(Vec::new);
-        
+        let user_requests = self
+            .requests
+            .entry(user_id.to_string())
+            .or_insert_with(Vec::new);
+
         // Remove old requests
         user_requests.retain(|&time| time > cutoff);
 
@@ -169,7 +172,10 @@ impl SecurityManager {
 
         if let Some(auth_token) = self.tokens.get(token) {
             // Check if token is expired
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
             if now > auth_token.expires_at {
                 warn!("Token expired for user: {}", auth_token.user_id);
                 return Ok(None);
@@ -216,8 +222,15 @@ impl SecurityManager {
     }
 
     /// Generate authentication token
-    pub fn generate_token(&mut self, user_id: String, scope: Vec<String>) -> Result<AuthToken, RegistryError> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    pub fn generate_token(
+        &mut self,
+        user_id: String,
+        scope: Vec<String>,
+    ) -> Result<AuthToken, RegistryError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let expires_at = now + self.config.token_expiration;
 
         let token = AuthToken {
@@ -281,7 +294,9 @@ impl SecurityManager {
 
         // Check for potential injection attacks
         if input.contains("script") || input.contains("javascript") || input.contains("onload") {
-            return Err(RegistryError::InvalidInput("Potentially malicious input detected".to_string()));
+            return Err(RegistryError::InvalidInput(
+                "Potentially malicious input detected".to_string(),
+            ));
         }
 
         Ok(())
@@ -299,7 +314,9 @@ impl SecurityManager {
 
         // Check for executable content
         if data.starts_with(b"MZ") || data.starts_with(b"\x7fELF") {
-            return Err(RegistryError::InvalidInput("Executable content detected in model data".to_string()));
+            return Err(RegistryError::InvalidInput(
+                "Executable content detected in model data".to_string(),
+            ));
         }
 
         Ok(())
@@ -353,11 +370,11 @@ mod tests {
             ..Default::default()
         };
         let manager = SecurityManager::new(config);
-        
+
         // First two requests should be allowed
         assert!(manager.check_rate_limit("user1").await.unwrap());
         assert!(manager.check_rate_limit("user1").await.unwrap());
-        
+
         // Third request should be rate limited
         assert!(!manager.check_rate_limit("user1").await.unwrap());
     }
@@ -366,17 +383,19 @@ mod tests {
     async fn test_authentication() {
         let config = SecurityConfig::default();
         let mut manager = SecurityManager::new(config);
-        
+
         // Generate token
-        let token = manager.generate_token("user1".to_string(), vec!["read".to_string()]).unwrap();
-        
+        let token = manager
+            .generate_token("user1".to_string(), vec!["read".to_string()])
+            .unwrap();
+
         // Authenticate with valid token
         let user_id = manager.authenticate(&token.token).await.unwrap();
         assert_eq!(user_id, Some("user1".to_string()));
-        
+
         // Revoke token
         manager.revoke_token(&token.token).unwrap();
-        
+
         // Authentication should fail
         let user_id = manager.authenticate(&token.token).await.unwrap();
         assert_eq!(user_id, None);
@@ -386,7 +405,7 @@ mod tests {
     async fn test_permissions() {
         let config = SecurityConfig::default();
         let mut manager = SecurityManager::new(config);
-        
+
         // Set permissions
         let permissions = UserPermissions {
             can_register: true,
@@ -398,7 +417,7 @@ mod tests {
             rate_limit: 100,
         };
         manager.set_user_permissions("user1".to_string(), permissions);
-        
+
         // Check permissions
         assert!(manager.has_permission("user1", "register"));
         assert!(!manager.has_permission("user1", "update"));
@@ -410,13 +429,15 @@ mod tests {
     async fn test_input_validation() {
         let config = SecurityConfig::default();
         let manager = SecurityManager::new(config);
-        
+
         // Valid input
         assert!(manager.validate_input("valid input", 100).is_ok());
-        
+
         // Input too long
-        assert!(manager.validate_input("x".repeat(101).as_str(), 100).is_err());
-        
+        assert!(manager
+            .validate_input("x".repeat(101).as_str(), 100)
+            .is_err());
+
         // Potentially malicious input
         assert!(manager.validate_input("script alert('xss')", 100).is_err());
     }
@@ -425,15 +446,15 @@ mod tests {
     async fn test_model_data_validation() {
         let config = SecurityConfig::default();
         let manager = SecurityManager::new(config);
-        
+
         // Valid data
         let valid_data = b"valid model data";
         assert!(manager.validate_model_data(valid_data, 1000).is_ok());
-        
+
         // Data too large
         let large_data = vec![0u8; 1001];
         assert!(manager.validate_model_data(&large_data, 1000).is_err());
-        
+
         // Executable content
         let exe_data = b"MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00";
         assert!(manager.validate_model_data(exe_data, 1000).is_err());
