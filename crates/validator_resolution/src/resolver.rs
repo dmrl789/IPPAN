@@ -14,7 +14,7 @@ use ippan_economics::ValidatorId;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{Handle, L2HandleRegistry, PublicKey as L2PublicKey};
 use std::sync::Arc;
-use tokio::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Validator ID resolver
 ///
@@ -24,8 +24,14 @@ use tokio::time::Duration;
 pub struct ValidatorResolver {
     l2_registry: Arc<L2HandleRegistry>,
     l1_anchors: Arc<L1HandleAnchorStorage>,
-    cache: Arc<parking_lot::RwLock<std::collections::HashMap<ValidatorId, ResolvedValidator>>>,
+    cache: Arc<parking_lot::RwLock<std::collections::HashMap<ValidatorId, CachedEntry>>>,
     cache_ttl: Duration,
+}
+
+#[derive(Debug, Clone)]
+struct CachedEntry {
+    value: ResolvedValidator,
+    inserted_at: Instant,
 }
 
 impl ValidatorResolver {
@@ -41,9 +47,9 @@ impl ValidatorResolver {
 
     /// Resolve a single `ValidatorId` into a public key and metadata
     pub async fn resolve(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
-        if let Some(cached) = self.get_from_cache(id) {
-            if self.is_cache_valid(&cached) {
-                return Ok(cached);
+        if let Some(cached_entry) = self.get_from_cache(id) {
+            if self.is_cache_valid(&cached_entry) {
+                return Ok(cached_entry.value.clone());
             }
         }
 
@@ -177,16 +183,20 @@ impl ValidatorResolver {
     // -------------------------------------------------------------------------
     // Cache Management
     // -------------------------------------------------------------------------
-    fn get_from_cache(&self, id: &ValidatorId) -> Option<ResolvedValidator> {
+    fn get_from_cache(&self, id: &ValidatorId) -> Option<CachedEntry> {
         self.cache.read().get(id).cloned()
     }
 
     fn store_in_cache(&self, id: &ValidatorId, resolved: &ResolvedValidator) {
-        self.cache.write().insert(id.clone(), resolved.clone());
+        let entry = CachedEntry {
+            value: resolved.clone(),
+            inserted_at: Instant::now(),
+        };
+        self.cache.write().insert(id.clone(), entry);
     }
 
-    fn is_cache_valid(&self, _resolved: &ResolvedValidator) -> bool {
-        true // TODO: extend with TTL validation
+    fn is_cache_valid(&self, entry: &CachedEntry) -> bool {
+        entry.inserted_at.elapsed() < self.cache_ttl
     }
 
     pub fn clear_cache(&self) {
