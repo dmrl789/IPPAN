@@ -138,10 +138,10 @@ impl EmissionTracker {
             .saturating_add(distribution.total_reward as u128);
 
         // Check supply cap
-        if self.cumulative_supply > self.params.total_supply_cap as u128 {
+        if self.cumulative_supply > self.params.max_supply_micro as u128 {
             return Err(format!(
                 "Supply cap exceeded: {} > {}",
-                self.cumulative_supply, self.params.total_supply_cap as u128
+                self.cumulative_supply, self.params.max_supply_micro as u128
             ));
         }
 
@@ -272,9 +272,9 @@ impl EmissionTracker {
         EmissionStatistics {
             current_round: self.last_round,
             cumulative_supply: self.cumulative_supply,
-            supply_cap: self.params.total_supply_cap as u128,
-            percentage_emitted: if self.params.total_supply_cap > 0 {
-                ((self.cumulative_supply as f64 / self.params.total_supply_cap as f64) * 10000.0)
+            supply_cap: self.params.max_supply_micro as u128,
+            percentage_emitted: if self.params.max_supply_micro > 0 {
+                ((self.cumulative_supply as f64 / self.params.max_supply_micro as f64) * 10000.0)
                     as u32
             } else {
                 0

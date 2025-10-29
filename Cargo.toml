@@ -14,9 +14,9 @@ members = [
 
   # AI and deterministic intelligence
   "crates/ai_core",
-  # "crates/ai_registry",      # Disabled – awaiting type unification with ai_core
-  # "crates/ai_service",       # Disabled – depends on ai_registry
-  # "crates/governance",       # Disabled – depends on ai_registry and ai_service
+  "crates/ai_registry",      # Re-enabled: fixed import paths and type issues
+  # "crates/ai_service",     # Disabled – needs refactoring beyond ai_core fix
+  "crates/governance",       # Re-enabled: fixed dependencies on ai_registry
 
   # Economics and treasury
   "crates/ippan_economics",
@@ -31,7 +31,7 @@ members = [
   "crates/wallet",
 
   # Node orchestration
-  # "node",                    # Disabled – depends on consensus & RPC integration
+  "node",                    # Re-enabled: fixed dependencies
 ]
 
 resolver = "2"
