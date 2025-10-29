@@ -128,25 +128,57 @@ impl ProposalManager {
 
     /// Execute a proposal (create registry entry)
     pub fn execute_proposal(&mut self, proposal_id: &str) -> Result<crate::types::ModelRegistration> {
+        use chrono::{DateTime, Utc};
+        use ippan_ai_core::types::{ModelId, ModelMetadata};
+        
         if let Some((proposal, status)) = self.proposals.get_mut(proposal_id) {
             if *status != ProposalStatus::Approved {
                 return Err(anyhow::anyhow!("Proposal {} is not approved", proposal_id));
             }
 
+            // Convert timestamp to DateTime
+            let timestamp = DateTime::from_timestamp(proposal.created_at as i64, 0)
+                .unwrap_or_else(|| Utc::now());
+
+            // Create ModelId from proposal
+            let model_id = ModelId {
+                name: proposal.model_id.clone(),
+                version: proposal.version.to_string(),
+                hash: hex::encode(&proposal.model_hash),
+            };
+
+            // Create ModelMetadata
+            let metadata = ModelMetadata {
+                id: model_id.clone(),
+                name: proposal.model_id.clone(),
+                version: proposal.version.to_string(),
+                description: proposal.description.clone(),
+                author: String::new(),
+                license: String::new(),
+                tags: Vec::new(),
+                created_at: timestamp.timestamp() as u64,
+                updated_at: timestamp.timestamp() as u64,
+                architecture: String::from("gbdt"),
+                input_shape: Vec::new(),
+                output_shape: Vec::new(),
+                size_bytes: 0,
+                parameter_count: 0,
+            };
+
             // Create registry entry
             let entry = crate::types::ModelRegistration {
-                model_id: proposal.model_id.clone(),
-                metadata: proposal.metadata.clone(),
-                status: crate::types::RegistrationStatus::Proposed,
-                registrant: String::new(), // Placeholder - should be set by caller
-                registered_at: proposal.created_at,
-                updated_at: proposal.created_at,
+                model_id,
+                metadata,
+                status: crate::types::RegistrationStatus::Pending,
+                registrant: hex::encode(proposal.proposer),
+                registered_at: timestamp,
+                updated_at: timestamp,
                 registration_fee: 0, // Placeholder - should be set by caller
                 category: crate::types::ModelCategory::default(),
                 tags: Vec::new(),
-                description: None,
+                description: Some(proposal.description.clone()),
                 license: None,
-                source_url: None,
+                source_url: Some(proposal.model_url.clone()),
             };
 
             *status = ProposalStatus::Executed;
