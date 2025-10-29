@@ -173,19 +173,19 @@ impl NetworkMetrics {
     // Async reporting
     // ----------------------------
 
-    pub async fn start_reporting(&self, interval_secs: u64) -> Result<()> {
+    pub async fn start_reporting(self: Arc<Self>, interval_secs: u64) -> Result<()> {
         if self.is_running.load(Ordering::SeqCst) {
             return Ok(()); // already running
         }
         self.is_running.store(true, Ordering::SeqCst);
         let is_running = self.is_running.clone();
-        let snapshot_source = Arc::new(self);
+        let metrics = self;
 
         tokio::spawn(async move {
             let mut ticker = interval(Duration::from_secs(interval_secs));
             while is_running.load(Ordering::SeqCst) {
                 ticker.tick().await;
-                let snapshot = snapshot_source.snapshot();
+                let snapshot = metrics.snapshot();
                 info!(
                     target: "network::metrics",
                     "Metrics snapshot: messages={} recv={} conn={} uptime={}s avg_lat={:.2}ms",

@@ -104,9 +104,7 @@ impl Mempool {
 
         // Lightweight confidential validation
         if tx.visibility == ippan_types::TransactionVisibility::Confidential {
-            if !validate_confidential_transaction(&tx)? {
-                return Ok(false);
-            }
+            validate_confidential_transaction(&tx)?;
         }
 
         let fee = self.calculate_transaction_fee(&tx);

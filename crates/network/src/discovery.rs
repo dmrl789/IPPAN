@@ -55,9 +55,7 @@ pub struct PeerDiscovery {
 #[derive(Debug, Clone)]
 pub struct DiscoveredPeer {
     pub peer: Peer,
-    #[serde(skip)]
     pub discovered_at: Instant,
-    #[serde(skip)]
     pub last_seen: Instant,
     pub connection_attempts: usize,
     pub is_connected: bool,
@@ -152,7 +150,7 @@ impl PeerDiscovery {
 
         {
             let mut known_peers = self.known_peers.write();
-            known_peers.insert(peer_id.clone(), DiscoveredPeer::new(peer));
+            known_peers.insert(peer_id.clone(), DiscoveredPeer::new(peer.clone()));
         }
 
         self.discovery_sender
@@ -197,7 +195,7 @@ impl PeerDiscovery {
             .values()
             .filter(|peer| {
                 !peer.is_stale(&self.config)
-                    && !active_peers.contains(&peer.peer.id.as_ref().unwrap_or(&peer.peer.address))
+                    && !active_peers.contains(peer.peer.id.as_ref().unwrap_or(&peer.peer.address))
                     && peer.should_retry_connection()
             })
             .map(|peer| peer.peer.clone())
@@ -338,7 +336,7 @@ impl PeerDiscovery {
     }
 
     /// Start the message handler
-    async fn start_message_handler(&self) {
+    async fn start_message_handler(&mut self) {
         let mut discovery_receiver = self.discovery_receiver.take().unwrap();
         let is_running = self.is_running.clone();
 

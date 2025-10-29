@@ -9,6 +9,7 @@
 //! 4. Registry alias (reserved internal identifiers)
 
 use crate::errors::*;
+use crate::types::{ResolvedValidator, ResolutionMethod, ValidatorMetadata};
 use ippan_economics::ValidatorId;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{Handle, L2HandleRegistry, PublicKey as L2PublicKey};

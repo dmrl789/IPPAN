@@ -14,7 +14,7 @@ use tracing::{debug, error, info, warn};
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// Message types for the network protocol
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MessageType {
     // Handshake messages
     Handshake,
@@ -119,6 +119,7 @@ impl NetworkMessage {
 }
 
 /// Message handler trait
+#[async_trait::async_trait]
 pub trait MessageHandler: Send + Sync {
     /// Handle an incoming message
     async fn handle_message(&self, message: NetworkMessage) -> Result<()>;
@@ -289,6 +290,7 @@ pub struct BlockHandler {
     block_storage: Arc<dyn BlockStorage>,
 }
 
+#[async_trait::async_trait]
 pub trait BlockStorage: Send + Sync {
     async fn store_block(&self, block: &[u8]) -> Result<()>;
     async fn get_block(&self, block_id: &str) -> Result<Option<Vec<u8>>>;
@@ -337,6 +339,7 @@ pub struct TransactionHandler {
     mempool: Arc<dyn MempoolStorage>,
 }
 
+#[async_trait::async_trait]
 pub trait MempoolStorage: Send + Sync {
     async fn add_transaction(&self, transaction: &[u8]) -> Result<()>;
     async fn get_transaction(&self, tx_id: &str) -> Result<Option<Vec<u8>>>;

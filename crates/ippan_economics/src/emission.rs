@@ -38,17 +38,17 @@ impl EmissionEngine {
         }
 
         // Calculate halving epoch
-        let halving_epoch = (round - 1) / self.params.halving_interval;
+        let halving_epoch = (round - 1) / self.params.halving_interval_rounds;
 
         // Calculate reward with halving
-        let base_reward = self.params.initial_round_reward;
+        let base_reward = self.params.initial_round_reward_micro;
         let halved_reward = base_reward >> halving_epoch.min(63); // Prevent overflow
 
         // Check if we've reached the supply cap
-        if self.total_supply + halved_reward > self.params.total_supply_cap {
+        if self.total_supply + halved_reward > self.params.max_supply_micro {
             let remaining = self
                 .params
-                .total_supply_cap
+                .max_supply_micro
                 .saturating_sub(self.total_supply);
             return Ok(remaining);
         }
@@ -82,21 +82,21 @@ impl EmissionEngine {
     pub fn get_supply_info(&self) -> SupplyInfo {
         let remaining = self
             .params
-            .total_supply_cap
+            .max_supply_micro
             .saturating_sub(self.total_supply);
-        let emission_percentage = if self.params.total_supply_cap > 0 {
-            Decimal::from(self.total_supply) / Decimal::from(self.params.total_supply_cap)
+        let emission_percentage = if self.params.max_supply_micro > 0 {
+            Decimal::from(self.total_supply) / Decimal::from(self.params.max_supply_micro)
         } else {
             Decimal::ZERO
         };
 
-        let next_halving_round = ((self.current_round / self.params.halving_interval) + 1)
-            * self.params.halving_interval
+        let next_halving_round = ((self.current_round / self.params.halving_interval_rounds) + 1)
+            * self.params.halving_interval_rounds
             + 1;
 
         SupplyInfo {
             total_supply: self.total_supply,
-            supply_cap: self.params.total_supply_cap,
+            supply_cap: self.params.max_supply_micro,
             remaining_supply: remaining,
             emission_percentage,
             current_round: self.current_round,
@@ -127,7 +127,7 @@ impl EmissionEngine {
                         "Cumulative supply overflow".to_string(),
                     ))?;
 
-            let halving_epoch = (round - 1) / self.params.halving_interval;
+            let halving_epoch = (round - 1) / self.params.halving_interval_rounds;
             let annual_issuance = reward * 315_360_000; // Approximate seconds per year at 10 rounds/second
 
             curve.push(EmissionCurvePoint {
@@ -150,19 +150,19 @@ impl EmissionEngine {
     /// Update emission parameters (requires governance approval)
     pub fn update_params(&mut self, new_params: EmissionParams) -> Result<(), EmissionError> {
         // Validate new parameters
-        if new_params.initial_round_reward == 0 {
+        if new_params.initial_round_reward_micro == 0 {
             return Err(EmissionError::InvalidParameters(
                 "Initial round reward must be > 0".to_string(),
             ));
         }
 
-        if new_params.halving_interval == 0 {
+        if new_params.halving_interval_rounds == 0 {
             return Err(EmissionError::InvalidParameters(
                 "Halving interval must be > 0".to_string(),
             ));
         }
 
-        if new_params.total_supply_cap == 0 {
+        if new_params.max_supply_micro == 0 {
             return Err(EmissionError::InvalidParameters(
                 "Total supply cap must be > 0".to_string(),
             ));
@@ -202,15 +202,15 @@ mod tests {
         assert_eq!(engine.calculate_round_reward(1).unwrap(), 10_000);
 
         // After halving interval, reward should be halved
-        let halving_round = engine.params().halving_interval + 1;
+        let halving_round = engine.params().halving_interval_rounds + 1;
         assert_eq!(engine.calculate_round_reward(halving_round).unwrap(), 5_000);
     }
 
     #[test]
     fn test_supply_cap_enforcement() {
         let mut params = EmissionParams::default();
-        params.total_supply_cap = 100_000; // Very low cap for testing
-        params.initial_round_reward = 50_000; // Higher than cap
+        params.max_supply_micro = 100_000; // Very low cap for testing
+        params.initial_round_reward_micro = 50_000; // Higher than cap
 
         let mut engine = EmissionEngine::with_params(params);
 
@@ -250,6 +250,6 @@ mod tests {
         }
 
         let supply_info = engine.get_supply_info();
-        assert!(supply_info.total_supply <= engine.params().total_supply_cap);
+        assert!(supply_info.total_supply <= engine.params().max_supply_micro);
     }
 }
