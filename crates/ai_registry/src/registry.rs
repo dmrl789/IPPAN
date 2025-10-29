@@ -10,7 +10,7 @@ use crate::{
     types::*,
     storage::RegistryStorage,
 };
-use ai_core::types::{ModelId, ModelMetadata};
+use ippan_ai_core::types::{ModelId, ModelMetadata};
 use std::collections::HashMap;
 use tracing::{info, warn, error};
 

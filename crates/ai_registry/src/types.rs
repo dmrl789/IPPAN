@@ -1,6 +1,6 @@
 //! Type definitions for the AI Registry module
 
-use ai_core::types::{ModelId, ModelMetadata};
+use ippan_ai_core::types::{ModelId, ModelMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
@@ -50,8 +50,9 @@ pub struct ModelRegistration {
 }
 
 /// Model category
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ModelCategory {
+    #[default]
     /// Natural language processing
     NLP,
     /// Computer vision
@@ -178,7 +179,7 @@ pub enum VoteChoice {
 }
 
 /// Fee type
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FeeType {
     /// Model registration fee
     Registration,

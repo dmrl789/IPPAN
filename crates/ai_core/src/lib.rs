@@ -77,7 +77,7 @@ pub use model_manager::{
 
 // Deployment & production config
 pub use deployment::{
-    utils, DeploymentMetrics, DeploymentStatus, HealthCheckResult,
+    DeploymentMetrics, DeploymentStatus, HealthCheckResult,
     HealthStatus as DeploymentHealthStatus, ProductionDeployment,
 };
 pub use production_config::{

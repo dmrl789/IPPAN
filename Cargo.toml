@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  # Core Layer
   "crates/types",
   "crates/crypto",
   "crates/storage",
@@ -10,20 +11,27 @@ members = [
   "crates/rpc",
   "crates/core",
   "crates/time",
+
+  # AI and deterministic intelligence
   "crates/ai_core",
-  "crates/ai_registry",
-  "crates/ai_service",
-  "crates/governance",
-  "crates/economics",
+  # "crates/ai_registry",      # Disabled – awaiting type unification with ai_core
+  # "crates/ai_service",       # Disabled – depends on ai_registry
+  # "crates/governance",       # Disabled – depends on ai_registry and ai_service
+
+  # Economics and treasury
   "crates/ippan_economics",
   "crates/treasury",
   "crates/l2_fees",
   "crates/l2_handle_registry",
   "crates/l1_handle_anchors",
   "crates/validator_resolution",
+
+  # Security and user wallet layer
   "crates/security",
   "crates/wallet",
-  # "node",  # Temporarily disabled to isolate ai_core dependency issue
+
+  # Node orchestration
+  # "node",                    # Disabled – depends on consensus & RPC integration
 ]
 
 resolver = "2"
@@ -35,8 +43,22 @@ license = "Apache-2.0"
 authors = ["IPPAN Contributors"]
 
 [workspace.dependencies]
+# --------------------------
+# Core libraries
+# --------------------------
 anyhow = "1"
 thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+once_cell = "1"
+parking_lot = "0.12"
+futures = "0.3"
+time = { version = "0.3", features = ["formatting", "macros"] }
+
+# --------------------------
+# Async runtime & utilities
+# --------------------------
 tokio = { version = "1", features = [
   "rt-multi-thread",
   "macros",
@@ -47,27 +69,49 @@ tokio = { version = "1", features = [
   "signal",
   "io-util"
 ] }
+async-trait = "0.1"
+
+# --------------------------
+# Logging and tracing
+# --------------------------
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-hex = "0.4"
+log = "0.4"
+
+# --------------------------
+# Cryptography
+# --------------------------
 blake3 = "1"
+sha2 = "0.10"
+sha3 = "0.10"
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
 rand_core = "0.6"
-time = { version = "0.3", features = ["formatting", "macros"] }
-once_cell = "1"
-parking_lot = "0.12"
+
+# --------------------------
+# Math and numeric systems
+# --------------------------
+num-bigint = "0.4"
+num-traits = "0.2"
+rust_decimal = "1.32"
 heapless = "0.8"
-winterfell = "0.13.1"
-base64 = "0.21"
 rayon = "1.10"
 
-# Production dependencies
-axum = { version = "0.7", features = ["macros", "tracing"] }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
-sled = "0.34"
+# --------------------------
+# Advanced cryptography / STARKs
+# --------------------------
+winterfell = "0.13.1"
+
+# --------------------------
+# Configuration, CLI, and I/O
+# --------------------------
+config = "0.14"
+clap = { version = "4", features = ["derive"] }
+dirs = "5"
+tempfile = "3"
+
+# --------------------------
+# Networking and web layer
+# --------------------------
 libp2p = { version = "0.53", features = [
   "tcp",
   "yamux",
@@ -82,15 +126,16 @@ libp2p = { version = "0.53", features = [
   "tokio",
   "macros"
 ] }
-futures = "0.3"
-clap = { version = "4", features = ["derive"] }
-config = "0.14"
-dirs = "5"
-tempfile = "3"
-async-trait = "0.1"
-log = "0.4"
-sha2 = "0.10"
-sha3 = "0.10"
-num-bigint = "0.4"
-num-traits = "0.2"
-rust_decimal = "1.32"
+
+# --------------------------
+# REST APIs and Web interfaces
+# --------------------------
+axum = { version = "0.7", features = ["macros", "tracing"] }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
+
+# --------------------------
+# Persistence and local DB
+# --------------------------
+sled = "0.34"
+base64 = "0.21"

@@ -18,7 +18,7 @@
 //! ## Example
 //! ```rust,no_run
 //! use ippan_ai_registry::{ModelRegistry, RegistryStorage, RegistryConfig};
-//! use ai_core::types::{ModelId, ModelMetadata};
+//! use ippan_ai_core::types::{ModelId, ModelMetadata};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
