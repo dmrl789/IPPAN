@@ -50,8 +50,9 @@ pub struct ModelRegistration {
 }
 
 /// Model category
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ModelCategory {
+    #[default]
     /// Natural language processing
     NLP,
     /// Computer vision
