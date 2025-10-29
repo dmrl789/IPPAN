@@ -208,6 +208,12 @@ mod tests {
     use super::*;
     use crate::account_ledger::MockAccountLedger;
 
+    /// Helper function to create a ValidatorId from a string for testing
+    fn test_validator_id(s: &str) -> ValidatorId {
+        let hash = blake3::hash(s.as_bytes());
+        *hash.as_bytes()
+    }
+
     #[test]
     fn test_reward_sink_creation() {
         let sink = RewardSink::new();
@@ -219,10 +225,10 @@ mod tests {
     fn test_credit_round_payouts() {
         let mut sink = RewardSink::new();
         let mut payouts: Payouts = HashMap::new();
-        let vid1 = ValidatorId::new("validator1");
-        let vid2 = ValidatorId::new("validator2");
-        payouts.insert(vid1.clone(), 1000);
-        payouts.insert(vid2.clone(), 2000);
+        let vid1 = test_validator_id("validator1");
+        let vid2 = test_validator_id("validator2");
+        payouts.insert(vid1, 1000);
+        payouts.insert(vid2, 2000);
 
         sink.credit_round_payouts(1, &payouts).unwrap();
 
@@ -235,16 +241,16 @@ mod tests {
     #[test]
     fn test_multiple_rounds() {
         let mut sink = RewardSink::new();
-        let vid1 = ValidatorId::new("validator1");
-        let vid2 = ValidatorId::new("validator2");
+        let vid1 = test_validator_id("validator1");
+        let vid2 = test_validator_id("validator2");
 
         let mut payouts1: Payouts = HashMap::new();
-        payouts1.insert(vid1.clone(), 1000);
+        payouts1.insert(vid1, 1000);
         sink.credit_round_payouts(1, &payouts1).unwrap();
 
         let mut payouts2: Payouts = HashMap::new();
-        payouts2.insert(vid1.clone(), 500);
-        payouts2.insert(vid2.clone(), 1500);
+        payouts2.insert(vid1, 500);
+        payouts2.insert(vid2, 1500);
         sink.credit_round_payouts(2, &payouts2).unwrap();
 
         assert_eq!(sink.get_total_distributed(), 3000);
@@ -256,16 +262,16 @@ mod tests {
     #[test]
     fn test_statistics() {
         let mut sink = RewardSink::new();
-        let vid1 = ValidatorId::new("validator1");
-        let vid2 = ValidatorId::new("validator2");
+        let vid1 = test_validator_id("validator1");
+        let vid2 = test_validator_id("validator2");
 
         let mut payouts1: Payouts = HashMap::new();
-        payouts1.insert(vid1.clone(), 1000);
+        payouts1.insert(vid1, 1000);
         payouts1.insert(vid2.clone(), 2000);
         sink.credit_round_payouts(1, &payouts1).unwrap();
 
         let mut payouts2: Payouts = HashMap::new();
-        payouts2.insert(vid1.clone(), 500);
+        payouts2.insert(vid1, 500);
         sink.credit_round_payouts(2, &payouts2).unwrap();
 
         let stats = sink.get_statistics();
@@ -281,8 +287,8 @@ mod tests {
         let mut manager = RewardPoolManager::new(account_ledger);
 
         let mut payouts: Payouts = HashMap::new();
-        let vid1 = ValidatorId::new("validator1");
-        payouts.insert(vid1.clone(), 1000);
+        let vid1 = test_validator_id("validator1");
+        payouts.insert(vid1, 1000);
 
         manager.process_round_rewards(1, &payouts).unwrap();
 

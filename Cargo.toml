@@ -6,22 +6,22 @@ members = [
   "crates/network",
   "crates/p2p",
   "crates/mempool",
-  # "crates/consensus",  # Temporarily disabled due to governance dependency
-  # "crates/rpc",  # Temporarily disabled due to consensus dependency
+  # "crates/consensus",  # Disabled - depends on governance
+  # "crates/rpc",  # Disabled - depends on consensus
   "crates/core",
   "crates/time",
-  # "crates/ai_core",  # Temporarily disabled due to build issues
-  # "crates/ai_registry",  # Temporarily disabled due to ai_core dependency
-  # "crates/ai_service",   # Temporarily disabled due to ai_core dependency
-  # "crates/governance",  # Temporarily disabled due to ai_registry dependency
-  "crates/economics",
+  "crates/ai_core",
+  # "crates/ai_registry",  # Disabled - needs architectural refactoring (type mismatches)
+  # "crates/ai_service",  # Disabled - depends on ai_registry  
+  # "crates/governance",  # Disabled - depends on ai_registry
+  # "crates/economics",  # OLD - removed in favor of ippan_economics
   "crates/ippan_economics",
   "crates/treasury",
   "crates/l2_fees",
   "crates/l2_handle_registry",
   "crates/l1_handle_anchors",
   "crates/validator_resolution",
-  # "node",  # Temporarily disabled to isolate ai_core dependency issue
+  # "node",  # Disabled - depends on consensus/rpc
 ]
 
 resolver = "2"

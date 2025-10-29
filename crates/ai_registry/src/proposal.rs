@@ -127,24 +127,26 @@ impl ProposalManager {
     }
 
     /// Execute a proposal (create registry entry)
-    pub fn execute_proposal(&mut self, proposal_id: &str) -> Result<crate::registry::ModelRegistryEntry> {
+    pub fn execute_proposal(&mut self, proposal_id: &str) -> Result<crate::types::ModelRegistration> {
         if let Some((proposal, status)) = self.proposals.get_mut(proposal_id) {
             if *status != ProposalStatus::Approved {
                 return Err(anyhow::anyhow!("Proposal {} is not approved", proposal_id));
             }
 
             // Create registry entry
-            let entry = crate::registry::ModelRegistryEntry {
+            let entry = crate::types::ModelRegistration {
                 model_id: proposal.model_id.clone(),
-                hash_sha256: proposal.model_hash,
-                version: proposal.version,
-                activation_round: proposal.activation_round,
-                deactivation_round: None,
-                signature: proposal.signature,
-                signer_pubkey: proposal.signer_pubkey,
-                status: crate::registry::ModelStatus::Proposed,
-                created_at: proposal.created_at,
                 metadata: proposal.metadata.clone(),
+                status: crate::types::RegistrationStatus::Proposed,
+                registrant: String::new(), // Placeholder - should be set by caller
+                registered_at: proposal.created_at,
+                updated_at: proposal.created_at,
+                registration_fee: 0, // Placeholder - should be set by caller
+                category: crate::types::ModelCategory::default(),
+                tags: Vec::new(),
+                description: None,
+                license: None,
+                source_url: None,
             };
 
             *status = ProposalStatus::Executed;

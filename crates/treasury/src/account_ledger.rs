@@ -163,6 +163,12 @@ impl AccountLedger for MockAccountLedger {
 mod tests {
     use super::*;
 
+    /// Helper function to create a ValidatorId from a string for testing
+    fn test_validator_id(s: &str) -> ValidatorId {
+        let hash = blake3::hash(s.as_bytes());
+        *hash.as_bytes()
+    }
+
     #[test]
     fn test_in_memory_ledger_creation() {
         let ledger = InMemoryAccountLedger::new();
@@ -172,7 +178,7 @@ mod tests {
     #[test]
     fn test_in_memory_ledger_operations() {
         let mut ledger = InMemoryAccountLedger::new();
-        let validator_id = ValidatorId::new("@test.ipn");
+        let validator_id = test_validator_id("@test.ipn");
 
         // Credit
         ledger.credit_validator(&validator_id, 1000).unwrap();
@@ -188,7 +194,7 @@ mod tests {
     #[test]
     fn test_insufficient_balance() {
         let mut ledger = InMemoryAccountLedger::new();
-        let validator_id = ValidatorId::new("@node1.ipn");
+        let validator_id = test_validator_id("@node1.ipn");
 
         ledger.credit_validator(&validator_id, 1000).unwrap();
 
@@ -201,7 +207,7 @@ mod tests {
     #[test]
     fn test_mock_ledger_calls() {
         let mut mock = MockAccountLedger::new();
-        let validator_id = ValidatorId::new("@mock.ipn");
+        let validator_id = test_validator_id("@mock.ipn");
 
         mock.credit_validator(&validator_id, 1000).unwrap();
         mock.debit_validator(&validator_id, 300).unwrap();
@@ -211,7 +217,7 @@ mod tests {
 
         assert_eq!(credit_calls.len(), 1);
         assert_eq!(debit_calls.len(), 1);
-        assert_eq!(credit_calls[0], (validator_id.clone(), 1000));
-        assert_eq!(debit_calls[0], (validator_id.clone(), 300));
+        assert_eq!(credit_calls[0], (validator_id, 1000));
+        assert_eq!(debit_calls[0], (validator_id, 300));
     }
 }

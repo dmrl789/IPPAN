@@ -4,7 +4,7 @@ use crate::{
     errors::{RegistryError, Result},
     types::*,
 };
-use ai_core::types::ModelId;
+use ippan_ai_core::types::ModelId;
 use std::collections::HashMap;
 use tracing::{info, warn, error};
 

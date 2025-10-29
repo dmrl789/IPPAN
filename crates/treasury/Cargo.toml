@@ -19,4 +19,5 @@ ippan-types = { path = "../types" }
 
 [dev-dependencies]
 tokio = { workspace = true }
+blake3 = { workspace = true }
 criterion = "0.5"
