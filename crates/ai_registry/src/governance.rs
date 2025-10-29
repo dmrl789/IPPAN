@@ -5,7 +5,7 @@ use crate::{
     types::*,
     storage::RegistryStorage,
 };
-use ai_core::types::ModelId;
+use ippan_ai_core::types::ModelId;
 use std::collections::HashMap;
 use tracing::{info, warn, error};
 use chrono::{Utc, Duration};

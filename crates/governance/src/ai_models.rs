@@ -1,7 +1,42 @@
 use anyhow::Result;
-use ippan_ai_registry::{AiModelProposal, ModelRegistryEntry};
+use ippan_ai_registry::AiModelProposal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Model registry entry for governance
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelRegistryEntry {
+    pub model_id: String,
+    pub model_hash: [u8; 32],
+    pub version: u32,
+    pub activation_round: u64,
+    #[serde(with = "serde_bytes")]
+    pub signature: [u8; 64],
+    pub registered_at_round: u64,
+    pub model_url: String,
+}
+
+impl ModelRegistryEntry {
+    pub fn new(
+        model_id: String,
+        model_hash: [u8; 32],
+        version: u32,
+        activation_round: u64,
+        signature: [u8; 64],
+        registered_at_round: u64,
+        model_url: String,
+    ) -> Self {
+        Self {
+            model_id,
+            model_hash,
+            version,
+            activation_round,
+            signature,
+            registered_at_round,
+            model_url,
+        }
+    }
+}
 
 // -----------------------------------------------------------------------------
 // 🧩 Proposal Manager — handles voting and stake-based approval
@@ -139,7 +174,7 @@ impl ProposalManager {
             state.proposal.model_hash,
             state.proposal.version,
             state.proposal.activation_round,
-            state.proposal.signature_foundation,
+            state.proposal.signature,
             0,
             state.proposal.model_url.clone(),
         );
@@ -304,7 +339,7 @@ impl AiModelGovernance {
         if proposal.model_id.is_empty() {
             return Err(anyhow::anyhow!("Model ID cannot be empty"));
         }
-        if proposal.rationale.is_empty() {
+        if proposal.description.is_empty() {
             return Err(anyhow::anyhow!("Rationale cannot be empty"));
         }
         if proposal.activation_round == 0 {
@@ -331,7 +366,7 @@ impl AiModelGovernance {
                 proposal.model_hash,
                 proposal.version,
                 proposal.activation_round,
-                proposal.signature_foundation,
+                proposal.signature,
                 round,
                 proposal.model_url,
             );
@@ -416,7 +451,7 @@ pub fn validate_proposal_format(proposal: &AiModelProposal) -> Result<()> {
     if proposal.model_url.is_empty() {
         return Err(anyhow::anyhow!("Model URL cannot be empty"));
     }
-    if proposal.rationale.is_empty() {
+    if proposal.description.is_empty() {
         return Err(anyhow::anyhow!("Rationale cannot be empty"));
     }
     if proposal.activation_round == 0 {

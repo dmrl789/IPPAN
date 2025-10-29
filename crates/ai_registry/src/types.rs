@@ -1,12 +1,12 @@
 //! Type definitions for the AI Registry module
 
-use ai_core::types::{ModelId, ModelMetadata};
+use ippan_ai_core::types::{ModelId, ModelMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 
 /// Model registration status
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RegistrationStatus {
     /// Model is pending approval
     Pending,
@@ -178,7 +178,7 @@ pub enum VoteChoice {
 }
 
 /// Fee type
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FeeType {
     /// Model registration fee
     Registration,
@@ -210,7 +210,7 @@ pub struct FeeStructure {
 }
 
 /// Fee calculation method
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FeeCalculationMethod {
     /// Fixed fee
     Fixed,

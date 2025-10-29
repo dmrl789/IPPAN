@@ -4,7 +4,7 @@ use crate::{
     errors::{RegistryError, Result},
     types::*,
 };
-use ai_core::types::ModelId;
+use ippan_ai_core::types::ModelId;
 use std::collections::HashMap;
 use tracing::{info, warn, error};
 
@@ -37,7 +37,7 @@ impl RegistryStorage {
     pub async fn store_model_registration(&self, registration: &ModelRegistration) -> Result<()> {
         let key = format!("model_registration:{}", registration.model_id.name);
         let data = bincode::serialize(registration)
-            .map_err(|e| RegistryError::Serialization(e.into()))?;
+            .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
         
         if let Some(ref db) = self.db {
             db.insert(key.as_bytes(), data.as_slice())
@@ -64,7 +64,7 @@ impl RegistryStorage {
         
         if let Some(data) = data {
             let registration = bincode::deserialize(&data)
-                .map_err(|e| RegistryError::Serialization(e.into()))?;
+                .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
             Ok(Some(registration))
         } else {
             Ok(None)
@@ -212,7 +212,7 @@ impl RegistryStorage {
     pub async fn store_governance_proposal(&self, proposal: &GovernanceProposal) -> Result<()> {
         let key = format!("governance_proposal:{}", proposal.id);
         let data = bincode::serialize(proposal)
-            .map_err(|e| RegistryError::Serialization(e.into()))?;
+            .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
         
         if let Some(ref db) = self.db {
             db.insert(key.as_bytes(), data.as_slice())
@@ -238,7 +238,7 @@ impl RegistryStorage {
         
         if let Some(data) = data {
             let proposal = bincode::deserialize(&data)
-                .map_err(|e| RegistryError::Serialization(e.into()))?;
+                .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
             Ok(Some(proposal))
         } else {
             Ok(None)
@@ -282,7 +282,7 @@ impl RegistryStorage {
     pub async fn store_model_usage_stats(&self, stats: &ModelUsageStats) -> Result<()> {
         let key = format!("model_usage_stats:{}", stats.model_id.name);
         let data = bincode::serialize(stats)
-            .map_err(|e| RegistryError::Serialization(e.into()))?;
+            .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
         
         if let Some(ref db) = self.db {
             db.insert(key.as_bytes(), data.as_slice())
@@ -308,7 +308,7 @@ impl RegistryStorage {
         
         if let Some(data) = data {
             let stats = bincode::deserialize(&data)
-                .map_err(|e| RegistryError::Serialization(e.into()))?;
+                .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
             Ok(Some(stats))
         } else {
             Ok(None)
@@ -339,7 +339,7 @@ impl RegistryStorage {
         };
         
         let data = bincode::serialize(&fee_record)
-            .map_err(|e| RegistryError::Serialization(e.into()))?;
+            .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
         
         if let Some(ref db) = self.db {
             db.insert(key.as_bytes(), data.as_slice())

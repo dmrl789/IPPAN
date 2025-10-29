@@ -36,7 +36,7 @@ pub struct L2Config {
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
-    pub storage: Arc<Storage>,
+    pub storage: Arc<dyn Storage + Send + Sync>,
     pub start_time: Instant,
     pub peer_count: Arc<AtomicUsize>,
     pub p2p_network: Option<Arc<HttpP2PNetwork>>,
@@ -92,8 +92,8 @@ pub struct ConsensusStateView {
 impl From<ConsensusState> for ConsensusStateView {
     fn from(state: ConsensusState) -> Self {
         Self {
-            round: state.round,
-            validators: state.validators,
+            round: state.current_round,
+            validators: vec![], // TODO: get validators from consensus
         }
     }
 }

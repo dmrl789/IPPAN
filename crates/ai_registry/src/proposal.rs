@@ -126,29 +126,15 @@ impl ProposalManager {
         }
     }
 
-    /// Execute a proposal (create registry entry)
-    pub fn execute_proposal(&mut self, proposal_id: &str) -> Result<crate::registry::ModelRegistryEntry> {
+    /// Execute a proposal (returns proposal ID)
+    pub fn execute_proposal(&mut self, proposal_id: &str) -> Result<String> {
         if let Some((proposal, status)) = self.proposals.get_mut(proposal_id) {
             if *status != ProposalStatus::Approved {
                 return Err(anyhow::anyhow!("Proposal {} is not approved", proposal_id));
             }
 
-            // Create registry entry
-            let entry = crate::registry::ModelRegistryEntry {
-                model_id: proposal.model_id.clone(),
-                hash_sha256: proposal.model_hash,
-                version: proposal.version,
-                activation_round: proposal.activation_round,
-                deactivation_round: None,
-                signature: proposal.signature,
-                signer_pubkey: proposal.signer_pubkey,
-                status: crate::registry::ModelStatus::Proposed,
-                created_at: proposal.created_at,
-                metadata: proposal.metadata.clone(),
-            };
-
             *status = ProposalStatus::Executed;
-            Ok(entry)
+            Ok(proposal.model_id.clone())
         } else {
             Err(anyhow::anyhow!("Proposal {} not found", proposal_id))
         }

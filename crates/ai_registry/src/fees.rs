@@ -5,7 +5,7 @@ use crate::{
     types::*,
     storage::RegistryStorage,
 };
-use ai_core::types::{ModelId, ModelMetadata};
+use ippan_ai_core::types::{ModelId, ModelMetadata};
 use std::collections::HashMap;
 use tracing::{info, warn, error};
 
@@ -267,12 +267,12 @@ impl FeeManager {
             FeeType::Update => {
                 if let Some(data) = additional_data {
                     if let Some(size_change) = data.get("size_change") {
-                        size_change.parse().unwrap_or(0)
+                        Ok(size_change.parse::<u64>().unwrap_or(0))
                     } else {
-                        0
+                        Ok(0)
                     }
                 } else {
-                    0
+                    Ok(0)
                 }
             },
         }
