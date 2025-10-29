@@ -10,8 +10,8 @@ use rust_decimal::Decimal;
 
 #[test]
 fn test_complete_emission_cycle() {
-    let emission_engine = EmissionEngine::new();
-    let mut supply_tracker = SupplyTracker::new(emission_engine.params().total_supply_cap);
+    let mut emission_engine = EmissionEngine::new();
+    let mut supply_tracker = SupplyTracker::new(emission_engine.params().max_supply_micro);
 
     // Simulate 1000 rounds
     for round in 1..=1000 {
@@ -29,7 +29,7 @@ fn test_complete_emission_cycle() {
 #[test]
 fn test_halving_schedule() {
     let mut params = EmissionParams::default();
-    params.halving_interval = 10; // small interval for test
+    params.halving_interval_rounds = 10; // small interval for test
     let emission_engine = EmissionEngine::with_params(params);
 
     let before_halving = emission_engine.calculate_round_reward(10).unwrap();

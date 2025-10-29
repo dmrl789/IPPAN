@@ -109,6 +109,20 @@ impl BlockDAG {
             .context("failed to flush BlockDAG database")?;
         Ok(())
     }
+
+    /// Get all block hashes in the DAG
+    pub fn get_all_blocks(&self) -> Result<Vec<[u8; 32]>> {
+        let mut block_hashes = Vec::new();
+        for result in self.blocks.iter() {
+            let (key, _) = result.context("failed to read block from database")?;
+            if key.len() == 32 {
+                let mut hash = [0u8; 32];
+                hash.copy_from_slice(&key);
+                block_hashes.push(hash);
+            }
+        }
+        Ok(block_hashes)
+    }
 }
 
 #[cfg(test)]

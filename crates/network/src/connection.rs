@@ -244,7 +244,7 @@ impl ConnectionManager {
     }
 
     /// Start the main connection handler
-    async fn start_connection_handler(&self) {
+    async fn start_connection_handler(&mut self) {
         let connections = self.connections.clone();
         let config = self.config.clone();
         let message_sender = self.message_sender.clone();
