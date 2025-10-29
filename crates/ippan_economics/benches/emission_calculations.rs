@@ -2,8 +2,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ippan_economics::prelude::*;
+use ippan_economics::{ValidatorParticipation, ValidatorRole, EconomicsParams, ValidatorId};
 use rust_decimal::Decimal;
-use std::collections::HashMap;
 
 fn bench_round_reward_calculation(c: &mut Criterion) {
     let emission_engine = EmissionEngine::new();
@@ -29,19 +29,19 @@ fn bench_reward_distribution(c: &mut Criterion) {
 
     let participations = vec![
         ValidatorParticipation {
-            validator_id: "validator1".to_string(),
+            validator_id: ValidatorId::new("validator1"),
             role: ValidatorRole::Proposer,
             blocks_contributed: 15,
             uptime_score: Decimal::new(95, 2),
         },
         ValidatorParticipation {
-            validator_id: "validator2".to_string(),
+            validator_id: ValidatorId::new("validator2"),
             role: ValidatorRole::Verifier,
             blocks_contributed: 12,
             uptime_score: Decimal::new(98, 2),
         },
         ValidatorParticipation {
-            validator_id: "validator3".to_string(),
+            validator_id: ValidatorId::new("validator3"),
             role: ValidatorRole::Verifier,
             blocks_contributed: 8,
             uptime_score: Decimal::new(92, 2),
@@ -69,29 +69,16 @@ fn bench_supply_tracking(c: &mut Criterion) {
 }
 
 fn bench_governance_voting(c: &mut Criterion) {
-    let mut governance = GovernanceParams::new(EmissionParams::default());
-    governance.set_validator_power("validator1".to_string(), 100);
-    governance.set_validator_power("validator2".to_string(), 80);
-    governance.set_validator_power("validator3".to_string(), 60);
+    let governance = EconomicsParams::default();
 
-    let proposal_id = governance
-        .create_proposal(
-            "validator1".to_string(),
-            EmissionParams::default(),
-            100,
-            "Test proposal".to_string(),
-            1000,
-        )
-        .unwrap();
-
-    c.bench_function("vote_on_proposal", |b| {
+    c.bench_function("access_governance_params", |b| {
         b.iter(|| {
-            governance.vote_on_proposal(
-                black_box(proposal_id),
-                black_box("validator1".to_string()),
-                black_box(Vote::Approve),
-                black_box(1001),
-            )
+            let _ = governance.hard_cap_micro;
+            let _ = governance.initial_round_reward_micro;
+            let _ = governance.halving_interval_rounds;
+            let _ = governance.fee_cap_fraction();
+            let _ = governance.role_weight_milli(true);
+            let _ = governance.role_weight_milli(false);
         })
     });
 }
@@ -114,22 +101,22 @@ fn bench_cumulative_supply_calculation(c: &mut Criterion) {
     let emission_engine = EmissionEngine::new();
 
     c.bench_function("calculate_cumulative_supply", |b| {
-        b.iter(|| emission_engine.calculate_cumulative_supply(black_box(1000)))
+        b.iter(|| emission_engine.get_supply_info())
     });
 }
 
 fn bench_emission_parameters_validation(c: &mut Criterion) {
-    let governance = GovernanceParams::new(EmissionParams::default());
+    let governance = EconomicsParams::default();
 
     let mut params = EmissionParams::default();
-    params.initial_round_reward = 15_000;
+    params.initial_round_reward_micro = 15_000;
 
     c.bench_function("validate_emission_params", |b| {
         b.iter(|| {
             // This would be an internal method, so we'll simulate it
-            let _ = params.initial_round_reward > 0;
-            let _ = params.halving_interval > 0;
-            let _ = params.total_supply_cap > 0;
+            let _ = params.initial_round_reward_micro > 0;
+            let _ = params.halving_interval_rounds > 0;
+            let _ = params.max_supply_micro > 0;
             let _ = params.fee_cap_fraction >= Decimal::ZERO;
             let _ = params.fee_cap_fraction <= Decimal::ONE;
         })
