@@ -6,6 +6,7 @@ use serde_json::json;
 use std::time::Duration;
 
 /// LLM service client
+#[derive(Clone)]
 pub struct LLMService {
     config: LLMConfig,
     client: reqwest::Client,

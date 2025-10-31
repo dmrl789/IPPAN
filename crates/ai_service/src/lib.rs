@@ -44,6 +44,9 @@ pub use monitoring::{
 
 pub use service::AIService;
 pub use types::*;
+pub use config::{ConfigManager, Environment};
+pub use metrics::{MetricsCollector, MetricsExporter, PrometheusExporter, JsonExporter, MetricsSnapshot};
+pub use health::{HealthResponse, HealthStatus, CheckResult, CheckStatus};
 
 /// Re-export core AI functionality
 pub use ippan_ai_core::{
@@ -51,7 +54,7 @@ pub use ippan_ai_core::{
 };
 
 /// Re-export registry functionality
-pub use ippan_ai_registry::{validate_proposal, AiModelProposal, ModelRegistryEntry, ModelStatus};
+pub use ippan_ai_registry::AiModelProposal;
 
 /// AI Service version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
