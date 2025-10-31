@@ -1,4 +1,4 @@
-use crate::hashtimer::{HashTimer, IppanTimeMicros};
+use crate::{HashTimer, IppanTimeMicros};
 use crate::transaction::Transaction;
 use blake3::Hasher as Blake3;
 use hex;
@@ -104,8 +104,8 @@ impl BlockHeader {
         let mut hasher = Blake3::new();
         hasher.update(creator);
         hasher.update(&round.to_be_bytes());
-        hasher.update(&hashtimer.time_prefix);
-        hasher.update(&hashtimer.hash_suffix);
+        // Use HashTimer digest for consistent hashing
+        hasher.update(&hashtimer.digest());
         hasher.update(merkle_payload);
         hasher.update(merkle_parents);
         for parent in parent_ids {

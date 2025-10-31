@@ -43,8 +43,8 @@ where
     sorted_blocks.sort_by(|a, b| {
         a.header
             .hashtimer
-            .time_prefix
-            .cmp(&b.header.hashtimer.time_prefix)
+            .timestamp_us
+            .cmp(&b.header.hashtimer.timestamp_us)
             .then(a.header.creator.cmp(&b.header.creator))
             .then(a.header.id.cmp(&b.header.id))
     });
