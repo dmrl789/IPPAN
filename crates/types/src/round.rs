@@ -1,5 +1,5 @@
 use crate::block::{BlockId, RoundId};
-use crate::hashtimer::IppanTimeMicros;
+use crate::IppanTimeMicros;
 use serde::{Deserialize, Serialize};
 use serde_bytes;
 

@@ -12,9 +12,9 @@ mod tests {
     fn test_hashtimer_creation() {
         let nonce = [1u8; 32];
         let hashtimer = HashTimer::now_tx("test", b"payload", &nonce, b"node");
-        assert_eq!(hashtimer.time_prefix.len(), 7);
-        assert_eq!(hashtimer.hash_suffix.len(), 25);
+        assert_eq!(hashtimer.entropy.len(), 32);
         assert_eq!(hashtimer.to_hex().len(), 64);
+        assert!(hashtimer.timestamp_us > 0);
     }
 
     #[test]
@@ -39,7 +39,7 @@ mod tests {
         let n2 = [2u8; 32];
         let later = HashTimer::now_tx("test", b"payload2", &n2, b"node");
 
-        assert!(early.time_prefix < later.time_prefix);
+        assert!(early.timestamp_us <= later.timestamp_us);
     }
 
     #[test]

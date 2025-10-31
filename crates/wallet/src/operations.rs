@@ -228,8 +228,8 @@ impl WalletManager {
         let mut estimated_size = 0usize;
 
         estimated_size += 32 + 32 + 32 + 8 + 8 + 64;
-        estimated_size += tx.hashtimer.time_prefix.len();
-        estimated_size += tx.hashtimer.hash_suffix.len();
+        estimated_size += std::mem::size_of_val(&tx.hashtimer.timestamp_us);
+        estimated_size += tx.hashtimer.entropy.len();
         estimated_size += std::mem::size_of_val(&tx.timestamp.0);
         estimated_size += tx.topics.iter().map(|t| t.len()).sum::<usize>();
 

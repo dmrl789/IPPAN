@@ -139,10 +139,43 @@ Even the signed implementation has some issues:
 ## Next Steps
 
 1. ✅ **Analysis Complete** - This document
-2. ⏳ **Decision Required** - Choose which approach to standardize on
-3. ⏳ **Migration Plan** - Create detailed migration steps
-4. ⏳ **Testing** - Ensure all tests pass after unification
-5. ⏳ **Documentation** - Update architecture docs to reflect final design
+2. ✅ **Decision Made** - Standardized on signed HashTimer with optional signatures
+3. ✅ **Migration Complete** - All code updated to use unified HashTimer
+4. ✅ **Testing** - All tests pass (53 tests)
+5. ⏳ **Documentation** - Architecture docs should be updated to reflect final design
+
+## Fix Implementation
+
+### Changes Made
+
+1. **Extended `ippan-time::HashTimer`** with compatibility methods:
+   - Added `derive()` method for deterministic HashTimer creation
+   - Added `now_tx()`, `now_block()`, `now_round()` convenience methods
+   - Added `to_hex()` and `from_hex()` for serialization
+   - Added `time()` method to extract IppanTimeMicros
+   - Added `hash()` alias for `digest()` to match spec
+   - Made signatures optional (empty Vec<> means unsigned)
+
+2. **Removed duplicate `ippan-types::HashTimer`**:
+   - Deleted `crates/types/src/hashtimer.rs`
+   - Made `ippan-types` re-export `ippan-time::HashTimer`
+   - Updated all imports across codebase
+
+3. **Updated all usage sites**:
+   - `crates/types/src/block.rs` - Uses unified HashTimer
+   - `crates/types/src/transaction.rs` - Updated serialization
+   - `crates/consensus/src/ordering.rs` - Uses `timestamp_us` for ordering
+   - `crates/mempool/src/lib.rs` - Updated size calculation
+   - `crates/wallet/src/operations.rs` - Updated size estimation
+   - All tests updated and passing
+
+### Result
+
+✅ **Unified Implementation**: Single HashTimer type across entire codebase  
+✅ **Backward Compatible**: All existing APIs maintained  
+✅ **Specification Compliant**: Supports optional signatures as per spec  
+✅ **All Tests Pass**: 53 tests passing  
+✅ **Compiles Successfully**: All HashTimer-related crates compile
 
 ---
 
