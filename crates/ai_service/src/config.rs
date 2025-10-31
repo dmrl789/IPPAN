@@ -105,7 +105,7 @@ impl ConfigManager {
             .map_err(|e| AIServiceError::Io(format!("Failed to read config file {}: {}", path, e)))?;
 
         let config: ConfigFile = toml::from_str(&content)
-            .map_err(|e| AIServiceError::Serialization(format!("Failed to parse config file: {}", e)))?;
+            .map_err(|e| AIServiceError::SerializationError(format!("Failed to parse config file: {}", e)))?;
 
         Ok(config.into())
     }
@@ -142,8 +142,8 @@ impl ConfigManager {
                     .unwrap_or(4000),
                 temperature: env::var("LLM_TEMPERATURE")
                     .unwrap_or_else(|_| "0.7".to_string())
-                    .parse()
-                    .unwrap_or(0.7),
+                    .parse::<f32>()
+                    .unwrap_or(0.7f32),
                 timeout_seconds: env::var("LLM_TIMEOUT")
                     .unwrap_or_else(|_| "30".to_string())
                     .parse()
@@ -296,7 +296,7 @@ impl From<ConfigFile> for AIServiceConfig {
                 api_key: "".to_string(), // Will be loaded from secrets
                 model_name: config.llm.model_name,
                 max_tokens: config.llm.max_tokens,
-                temperature: config.llm.temperature,
+                temperature: config.llm.temperature as f32,
                 timeout_seconds: config.llm.timeout_seconds,
             },
             analytics_config: crate::AnalyticsConfig {

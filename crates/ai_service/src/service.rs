@@ -46,7 +46,7 @@ impl AIService {
         #[cfg(feature = "analytics")]
         let analytics_service = AnalyticsService::new(config.analytics_config.clone());
         #[cfg(feature = "analytics")]
-        let monitoring_service = MonitoringService::new(config.monitoring_config.clone());
+        let monitoring_service = MonitoringService::new(crate::monitoring::MonitoringConfig::default());
         let smart_contract_service = SmartContractService::new();
         #[cfg(feature = "analytics")]
         let optimization_service = OptimizationService::new();

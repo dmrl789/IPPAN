@@ -32,7 +32,6 @@ pub use monitoring::{
     ServiceMetrics,
     ServiceMetricsSnapshot,
     ServiceHealthReport,
-    MonitoringConfig,
     AlertHandler,
     ServiceAlert,
     AlertType,
@@ -51,7 +50,7 @@ pub use ippan_ai_core::{
 };
 
 /// Re-export registry functionality
-pub use ippan_ai_registry::{validate_proposal, AiModelProposal, ModelRegistryEntry, ModelStatus};
+pub use ippan_ai_registry::{AiModelProposal, ProposalStatus, ModelRegistry};
 
 /// AI Service version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -21,7 +21,7 @@ pub enum ServiceStatus {
 }
 
 /// Service metrics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct ServiceMetrics {
     pub total_requests: AtomicU64,
     pub successful_requests: AtomicU64,
