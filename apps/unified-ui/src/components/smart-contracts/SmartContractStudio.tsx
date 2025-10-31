@@ -4,6 +4,14 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Code, Play, Save, Download, Upload, Brain, Shield, Zap } from 'lucide-react';
 
+type AnalysisIssue = { type: 'warning' | 'info' | 'error'; message: string };
+type AnalysisResult = {
+  securityScore: number;
+  gasEfficiency: number;
+  issues: AnalysisIssue[];
+  suggestions: string[];
+};
+
 export function SmartContractStudio() {
   const [code, setCode] = useState(`// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
@@ -21,7 +29,7 @@ contract SimpleStorage {
 }`);
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
   const analyzeCode = async () => {
     setIsAnalyzing(true);

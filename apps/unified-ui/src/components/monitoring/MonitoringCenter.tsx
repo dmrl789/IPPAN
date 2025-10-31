@@ -10,7 +10,7 @@ import {
   Database, 
   Network,
   Cpu,
-  Memory,
+  Gauge,
   HardDrive
 } from 'lucide-react';
 
@@ -123,7 +123,7 @@ export function MonitoringCenter() {
           <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
-                <Memory className="w-5 h-5 text-green-500" />
+                <Gauge className="w-5 h-5 text-green-500" />
                 <span className="font-medium text-gray-900 dark:text-white">Memory</span>
               </div>
               <span className={`text-2xl font-bold ${getMetricColor(systemMetrics.memory)}`}>
