@@ -21,7 +21,7 @@ pub enum ServiceStatus {
 }
 
 /// Service metrics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct ServiceMetrics {
     pub total_requests: AtomicU64,
     pub successful_requests: AtomicU64,
@@ -436,6 +436,7 @@ impl AlertHandler for FileAlertHandler {
 }
 
 /// High-level monitoring service that wraps ServiceMonitor
+#[derive(Clone)]
 pub struct MonitoringService {
     monitor: ServiceMonitor,
     alerts: Vec<MonitoringAlert>,
