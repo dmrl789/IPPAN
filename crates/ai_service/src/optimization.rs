@@ -11,6 +11,7 @@ use crate::types::{
 use std::collections::HashMap;
 
 /// Optimization service
+#[derive(Clone)]
 pub struct OptimizationService;
 
 impl OptimizationService {

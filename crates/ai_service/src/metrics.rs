@@ -70,10 +70,10 @@ impl MetricsCollector {
     /// Record a service-specific request
     pub fn record_service_request(&self, service: &str) {
         match service {
-            "llm" => self.llm_requests.fetch_add(1, Ordering::Relaxed),
-            "analytics" => self.analytics_requests.fetch_add(1, Ordering::Relaxed),
-            "smart_contracts" => self.smart_contract_requests.fetch_add(1, Ordering::Relaxed),
-            "optimization" => self.optimization_requests.fetch_add(1, Ordering::Relaxed),
+            "llm" => { self.llm_requests.fetch_add(1, Ordering::Relaxed); },
+            "analytics" => { self.analytics_requests.fetch_add(1, Ordering::Relaxed); },
+            "smart_contracts" => { self.smart_contract_requests.fetch_add(1, Ordering::Relaxed); },
+            "optimization" => { self.optimization_requests.fetch_add(1, Ordering::Relaxed); },
             _ => {}
         }
     }
