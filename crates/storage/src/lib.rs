@@ -395,6 +395,39 @@ impl Storage for SledStorage {
             .insert(b"chain_state", serde_json::to_vec(s)?)?;
         Ok(())
     }
+
+    fn store_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+        telemetry: &ValidatorTelemetry,
+    ) -> Result<()> {
+        self.validator_telemetry
+            .insert(validator_id, serde_json::to_vec(telemetry)?)?;
+        Ok(())
+    }
+
+    fn get_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+    ) -> Result<Option<ValidatorTelemetry>> {
+        self.validator_telemetry
+            .get(validator_id)?
+            .map(|v| serde_json::from_slice(&v))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
+        let mut telemetry = HashMap::new();
+        for entry in self.validator_telemetry.iter() {
+            let (key, value) = entry?;
+            let mut validator_id = [0u8; 32];
+            validator_id.copy_from_slice(key.as_ref());
+            let record: ValidatorTelemetry = serde_json::from_slice(value.as_ref())?;
+            telemetry.insert(validator_id, record);
+        }
+        Ok(telemetry)
+    }
 }
 
 /// In-memory testing backend

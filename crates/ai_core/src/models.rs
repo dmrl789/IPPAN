@@ -8,9 +8,12 @@ use crate::{
     errors::{AiCoreError, Result},
     types::*,
 };
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::collections::HashMap;
 use std::fs;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
+#[cfg(not(feature = "remote_loading"))]
+use tracing::error;
 
 /// Optional dependency for remote loading (activated via `remote_loading` feature)
 #[cfg(feature = "remote_loading")]
@@ -160,7 +163,8 @@ impl ModelManager {
 
         // Inline formats for testing or offline deployment
         if let Some(data) = url.strip_prefix("data:application/octet-stream;base64,") {
-            let bytes = base64::decode(data)
+            let bytes = STANDARD
+                .decode(data)
                 .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 data: {}", e)))?;
             return Ok(bytes);
         }
@@ -222,7 +226,8 @@ impl ModelManager {
         info!("Loading model from IPFS: {}", hash);
 
         if let Some(b64) = hash.strip_prefix("base64:") {
-            let bytes = base64::decode(b64)
+            let bytes = STANDARD
+                .decode(b64)
                 .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64: {}", e)))?;
             return Ok(bytes);
         }
@@ -287,7 +292,8 @@ impl ModelManager {
         info!("Loading model from blockchain storage: {}", storage_key);
 
         if let Some(b64) = storage_key.strip_prefix("base64:") {
-            let bytes = base64::decode(b64)
+            let bytes = STANDARD
+                .decode(b64)
                 .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64: {}", e)))?;
             return Ok(bytes);
         }
