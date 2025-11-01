@@ -91,7 +91,9 @@ impl ReputationManager {
     pub fn record_success(&self, peer_address: &str) {
         self.maybe_decay();
         let mut peers = self.peers.write();
-        let reputation = peers.entry(peer_address.to_string()).or_insert_with(PeerReputation::new);
+        let reputation = peers
+            .entry(peer_address.to_string())
+            .or_insert_with(PeerReputation::new);
         reputation.successful_messages += 1;
         reputation.last_seen = Instant::now();
         reputation.update_score(1);
@@ -101,7 +103,9 @@ impl ReputationManager {
     pub fn record_failure(&self, peer_address: &str) {
         self.maybe_decay();
         let mut peers = self.peers.write();
-        let reputation = peers.entry(peer_address.to_string()).or_insert_with(PeerReputation::new);
+        let reputation = peers
+            .entry(peer_address.to_string())
+            .or_insert_with(PeerReputation::new);
         reputation.failed_messages += 1;
         reputation.last_seen = Instant::now();
         reputation.update_score(-5);
@@ -111,15 +115,25 @@ impl ReputationManager {
     pub fn record_invalid(&self, peer_address: &str) {
         self.maybe_decay();
         let mut peers = self.peers.write();
-        let reputation = peers.entry(peer_address.to_string()).or_insert_with(PeerReputation::new);
+        let reputation = peers
+            .entry(peer_address.to_string())
+            .or_insert_with(PeerReputation::new);
         reputation.invalid_messages += 1;
         reputation.last_seen = Instant::now();
         reputation.update_score(-20);
-        
+
         if reputation.score.is_banned() {
-            warn!("Peer {} has been banned due to low reputation score: {}", peer_address, reputation.score.value());
+            warn!(
+                "Peer {} has been banned due to low reputation score: {}",
+                peer_address,
+                reputation.score.value()
+            );
         } else if reputation.score.is_warning() {
-            warn!("Peer {} has low reputation score: {}", peer_address, reputation.score.value());
+            warn!(
+                "Peer {} has low reputation score: {}",
+                peer_address,
+                reputation.score.value()
+            );
         }
     }
 
@@ -139,14 +153,17 @@ impl ReputationManager {
 
     /// Get reputation statistics for a peer
     pub fn get_stats(&self, peer_address: &str) -> Option<PeerReputationStats> {
-        self.peers.read().get(peer_address).map(|r| PeerReputationStats {
-            score: r.score.value(),
-            successful_messages: r.successful_messages,
-            failed_messages: r.failed_messages,
-            invalid_messages: r.invalid_messages,
-            uptime_seconds: r.first_seen.elapsed().as_secs(),
-            last_seen_seconds: r.last_seen.elapsed().as_secs(),
-        })
+        self.peers
+            .read()
+            .get(peer_address)
+            .map(|r| PeerReputationStats {
+                score: r.score.value(),
+                successful_messages: r.successful_messages,
+                failed_messages: r.failed_messages,
+                invalid_messages: r.invalid_messages,
+                uptime_seconds: r.first_seen.elapsed().as_secs(),
+                last_seen_seconds: r.last_seen.elapsed().as_secs(),
+            })
     }
 
     /// Get all peer addresses
@@ -172,7 +189,11 @@ impl ReputationManager {
                 } else if reputation.score.value() < 0 {
                     reputation.update_score(self.decay_amount);
                 }
-                debug!("Decayed reputation for {}: {}", addr, reputation.score.value());
+                debug!(
+                    "Decayed reputation for {}: {}",
+                    addr,
+                    reputation.score.value()
+                );
             }
             *last_decay = Instant::now();
         }
@@ -218,20 +239,20 @@ mod tests {
     #[test]
     fn test_reputation_manager() {
         let manager = ReputationManager::new(Duration::from_secs(60), 10);
-        
+
         let peer = "127.0.0.1:9000";
-        
+
         // Initial score should be 0
         assert_eq!(manager.get_score(peer).value(), 0);
-        
+
         // Record success should increase score
         manager.record_success(peer);
         assert_eq!(manager.get_score(peer).value(), 1);
-        
+
         // Record failure should decrease score
         manager.record_failure(peer);
         assert_eq!(manager.get_score(peer).value(), -4);
-        
+
         // Record invalid should decrease score significantly
         manager.record_invalid(peer);
         assert_eq!(manager.get_score(peer).value(), -24);
@@ -240,13 +261,13 @@ mod tests {
     #[test]
     fn test_reputation_stats() {
         let manager = ReputationManager::new(Duration::from_secs(60), 10);
-        
+
         let peer = "127.0.0.1:9000";
-        
+
         manager.record_success(peer);
         manager.record_success(peer);
         manager.record_failure(peer);
-        
+
         let stats = manager.get_stats(peer).unwrap();
         assert_eq!(stats.successful_messages, 2);
         assert_eq!(stats.failed_messages, 1);
@@ -256,14 +277,14 @@ mod tests {
     #[test]
     fn test_should_ban() {
         let manager = ReputationManager::new(Duration::from_secs(60), 10);
-        
+
         let peer = "127.0.0.1:9000";
-        
+
         // Record many invalid messages to trigger ban
         for _ in 0..30 {
             manager.record_invalid(peer);
         }
-        
+
         assert!(manager.should_ban(peer));
     }
 }

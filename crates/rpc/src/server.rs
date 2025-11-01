@@ -120,7 +120,10 @@ async fn bind_listener(addr: &str) -> Result<tokio::net::TcpListener> {
 
 /// Build router and endpoints
 fn build_router(state: Arc<AppState>) -> Router {
-    let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any);
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
     let mut router = Router::new()
         .route("/health", get(handle_health))
         .route("/time", get(handle_time))
@@ -149,7 +152,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         }
     }
 
-    router.layer(cors).layer(TraceLayer::new_for_http()).with_state(state)
+    router
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }
 
 // -----------------------------------------------------------------------------

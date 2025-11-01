@@ -101,11 +101,13 @@ impl ConfigManager {
 
     /// Load configuration from TOML file
     fn load_config_from_file(path: &str) -> Result<AIServiceConfig, AIServiceError> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| AIServiceError::Io(format!("Failed to read config file {}: {}", path, e)))?;
+        let content = fs::read_to_string(path).map_err(|e| {
+            AIServiceError::Io(format!("Failed to read config file {}: {}", path, e))
+        })?;
 
-        let config: ConfigFile = toml::from_str(&content)
-            .map_err(|e| AIServiceError::SerializationError(format!("Failed to parse config file: {}", e)))?;
+        let config: ConfigFile = toml::from_str(&content).map_err(|e| {
+            AIServiceError::SerializationError(format!("Failed to parse config file: {}", e))
+        })?;
 
         Ok(config.into())
     }
@@ -134,8 +136,7 @@ impl ConfigManager {
                     .unwrap_or_else(|_| "https://api.openai.com/v1".to_string()),
                 api_key: env::var("LLM_API_KEY")
                     .unwrap_or_else(|_| "your-api-key-here".to_string()),
-                model_name: env::var("LLM_MODEL")
-                    .unwrap_or_else(|_| "gpt-4".to_string()),
+                model_name: env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4".to_string()),
                 max_tokens: env::var("LLM_MAX_TOKENS")
                     .unwrap_or_else(|_| "4000".to_string())
                     .parse()
@@ -241,7 +242,6 @@ struct AnalyticsConfigFile {
     analysis_interval: u64,
     enable_predictive: bool,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LoggingConfig {

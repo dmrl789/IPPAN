@@ -12,17 +12,38 @@ mod tests {
 
         // First halving epoch (rounds 1–1000)
         assert_eq!(emission_for_round_capped(1, 0, &params).unwrap(), 1_000_000);
-        assert_eq!(emission_for_round_capped(500, 0, &params).unwrap(), 1_000_000);
-        assert_eq!(emission_for_round_capped(1000, 0, &params).unwrap(), 1_000_000);
+        assert_eq!(
+            emission_for_round_capped(500, 0, &params).unwrap(),
+            1_000_000
+        );
+        assert_eq!(
+            emission_for_round_capped(1000, 0, &params).unwrap(),
+            1_000_000
+        );
 
         // Second halving epoch (rounds 1001–2000)
-        assert_eq!(emission_for_round_capped(1001, 0, &params).unwrap(), 500_000);
-        assert_eq!(emission_for_round_capped(1500, 0, &params).unwrap(), 500_000);
-        assert_eq!(emission_for_round_capped(2000, 0, &params).unwrap(), 500_000);
+        assert_eq!(
+            emission_for_round_capped(1001, 0, &params).unwrap(),
+            500_000
+        );
+        assert_eq!(
+            emission_for_round_capped(1500, 0, &params).unwrap(),
+            500_000
+        );
+        assert_eq!(
+            emission_for_round_capped(2000, 0, &params).unwrap(),
+            500_000
+        );
 
         // Third halving epoch (rounds 2001–3000)
-        assert_eq!(emission_for_round_capped(2001, 0, &params).unwrap(), 250_000);
-        assert_eq!(emission_for_round_capped(3000, 0, &params).unwrap(), 250_000);
+        assert_eq!(
+            emission_for_round_capped(2001, 0, &params).unwrap(),
+            250_000
+        );
+        assert_eq!(
+            emission_for_round_capped(3000, 0, &params).unwrap(),
+            250_000
+        );
     }
 
     #[test]

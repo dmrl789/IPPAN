@@ -15,22 +15,22 @@ pub struct MetricsCollector {
     pub successful_requests: Arc<AtomicU64>,
     pub failed_requests: Arc<AtomicU64>,
     pub request_duration_ms: Arc<AtomicU64>,
-    
+
     // Service-specific metrics
     pub llm_requests: Arc<AtomicU64>,
     pub analytics_requests: Arc<AtomicU64>,
     pub smart_contract_requests: Arc<AtomicU64>,
     pub optimization_requests: Arc<AtomicU64>,
-    
+
     // System metrics
     pub memory_usage_bytes: Arc<AtomicU64>,
     pub cpu_usage_percent: Arc<AtomicU64>,
     pub active_connections: Arc<AtomicUsize>,
-    
+
     // Error metrics
     pub error_count: Arc<AtomicU64>,
     pub error_rate: Arc<AtomicU64>,
-    
+
     // Start time for uptime calculation
     start_time: SystemTime,
 }
@@ -64,16 +64,25 @@ impl MetricsCollector {
         } else {
             self.failed_requests.fetch_add(1, Ordering::Relaxed);
         }
-        self.request_duration_ms.fetch_add(duration_ms, Ordering::Relaxed);
+        self.request_duration_ms
+            .fetch_add(duration_ms, Ordering::Relaxed);
     }
 
     /// Record a service-specific request
     pub fn record_service_request(&self, service: &str) {
         match service {
-            "llm" => { self.llm_requests.fetch_add(1, Ordering::Relaxed); },
-            "analytics" => { self.analytics_requests.fetch_add(1, Ordering::Relaxed); },
-            "smart_contracts" => { self.smart_contract_requests.fetch_add(1, Ordering::Relaxed); },
-            "optimization" => { self.optimization_requests.fetch_add(1, Ordering::Relaxed); },
+            "llm" => {
+                self.llm_requests.fetch_add(1, Ordering::Relaxed);
+            }
+            "analytics" => {
+                self.analytics_requests.fetch_add(1, Ordering::Relaxed);
+            }
+            "smart_contracts" => {
+                self.smart_contract_requests.fetch_add(1, Ordering::Relaxed);
+            }
+            "optimization" => {
+                self.optimization_requests.fetch_add(1, Ordering::Relaxed);
+            }
             _ => {}
         }
     }
@@ -86,7 +95,8 @@ impl MetricsCollector {
 
     /// Update system metrics
     pub fn update_system_metrics(&self, memory_bytes: u64, cpu_percent: u64) {
-        self.memory_usage_bytes.store(memory_bytes, Ordering::Relaxed);
+        self.memory_usage_bytes
+            .store(memory_bytes, Ordering::Relaxed);
         self.cpu_usage_percent.store(cpu_percent, Ordering::Relaxed);
     }
 
@@ -101,7 +111,7 @@ impl MetricsCollector {
         let successful_requests = self.successful_requests.load(Ordering::Relaxed);
         let failed_requests = self.failed_requests.load(Ordering::Relaxed);
         let request_duration_ms = self.request_duration_ms.load(Ordering::Relaxed);
-        
+
         let success_rate = if total_requests > 0 {
             successful_requests as f64 / total_requests as f64
         } else {
@@ -143,7 +153,7 @@ impl MetricsCollector {
     fn update_error_rate(&self) {
         let total_requests = self.total_requests.load(Ordering::Relaxed);
         let error_count = self.error_count.load(Ordering::Relaxed);
-        
+
         if total_requests > 0 {
             let rate = (error_count as f64 / total_requests as f64 * 100.0) as u64;
             self.error_rate.store(rate, Ordering::Relaxed);

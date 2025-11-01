@@ -89,8 +89,15 @@ pub trait Storage {
     fn update_chain_state(&self, state: &ChainState) -> Result<()>;
 
     /// Validator telemetry storage for AI consensus
-    fn store_validator_telemetry(&self, validator_id: &[u8; 32], telemetry: &ValidatorTelemetry) -> Result<()>;
-    fn get_validator_telemetry(&self, validator_id: &[u8; 32]) -> Result<Option<ValidatorTelemetry>>;
+    fn store_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+        telemetry: &ValidatorTelemetry,
+    ) -> Result<()>;
+    fn get_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+    ) -> Result<Option<ValidatorTelemetry>>;
     fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>>;
 }
 
@@ -521,12 +528,21 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn store_validator_telemetry(&self, validator_id: &[u8; 32], telemetry: &ValidatorTelemetry) -> Result<()> {
-        self.validator_telemetry.write().insert(*validator_id, telemetry.clone());
+    fn store_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+        telemetry: &ValidatorTelemetry,
+    ) -> Result<()> {
+        self.validator_telemetry
+            .write()
+            .insert(*validator_id, telemetry.clone());
         Ok(())
     }
 
-    fn get_validator_telemetry(&self, validator_id: &[u8; 32]) -> Result<Option<ValidatorTelemetry>> {
+    fn get_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+    ) -> Result<Option<ValidatorTelemetry>> {
         Ok(self.validator_telemetry.read().get(validator_id).cloned())
     }
 

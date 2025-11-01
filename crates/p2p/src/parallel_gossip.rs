@@ -246,7 +246,7 @@ impl ParallelGossipNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{RoundId, ValidatorId, Amount};
+    use ippan_types::{Amount, RoundId, ValidatorId};
     use rand::{rngs::StdRng, RngCore, SeedableRng};
     use std::time::Duration;
 

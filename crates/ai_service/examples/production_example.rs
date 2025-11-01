@@ -4,40 +4,35 @@
 //! with proper configuration, monitoring, and error handling.
 
 use ippan_ai_service::{
-    AIService, AIServiceConfig, LLMConfig, AnalyticsConfig, MonitoringConfig,
-    LLMRequest, SmartContractAnalysisRequest, ContractAnalysisType,
-    TransactionOptimizationRequest, OptimizationGoal, TransactionData,
-    OptimizationConstraints,
+    AIService, AIServiceConfig, AnalyticsConfig, ContractAnalysisType, LLMConfig, LLMRequest,
+    MonitoringConfig, OptimizationConstraints, OptimizationGoal, SmartContractAnalysisRequest,
+    TransactionData, TransactionOptimizationRequest,
 };
 use std::collections::HashMap;
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("info").init();
 
     info!("Starting AI Service in production mode");
 
     // Create production configuration
     let config = create_production_config();
-    
+
     // Initialize AI Service
-    let mut service = AIService::new(config)
-        .map_err(|e| {
-            error!("Failed to create AI Service: {}", e);
-            e
-        })?;
+    let mut service = AIService::new(config).map_err(|e| {
+        error!("Failed to create AI Service: {}", e);
+        e
+    })?;
 
     // Start the service
-    service.start().await
-        .map_err(|e| {
-            error!("Failed to start AI Service: {}", e);
-            e
-        })?;
+    service.start().await.map_err(|e| {
+        error!("Failed to start AI Service: {}", e);
+        e
+    })?;
 
     info!("AI Service started successfully");
 
@@ -68,11 +63,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Service Status: {:?}", status);
 
     // Graceful shutdown
-    service.stop().await
-        .map_err(|e| {
-            error!("Failed to stop AI Service: {}", e);
-            e
-        })?;
+    service.stop().await.map_err(|e| {
+        error!("Failed to stop AI Service: {}", e);
+        e
+    })?;
 
     info!("AI Service stopped gracefully");
     Ok(())
@@ -89,8 +83,7 @@ fn create_production_config() -> AIServiceConfig {
                 .unwrap_or_else(|_| "https://api.openai.com/v1".to_string()),
             api_key: std::env::var("LLM_API_KEY")
                 .unwrap_or_else(|_| "your-api-key-here".to_string()),
-            model_name: std::env::var("LLM_MODEL")
-                .unwrap_or_else(|_| "gpt-4".to_string()),
+            model_name: std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4".to_string()),
             max_tokens: 4000,
             temperature: 0.7,
             timeout_seconds: 30,
@@ -116,15 +109,23 @@ fn create_production_config() -> AIServiceConfig {
     }
 }
 
-async fn demonstrate_llm_functionality(service: &AIService) -> Result<(), Box<dyn std::error::Error>> {
+async fn demonstrate_llm_functionality(
+    service: &AIService,
+) -> Result<(), Box<dyn std::error::Error>> {
     info!("Demonstrating LLM functionality");
 
     let request = LLMRequest {
         prompt: "Explain the benefits of using AI in blockchain technology".to_string(),
         context: Some({
             let mut context = HashMap::new();
-            context.insert("domain".to_string(), serde_json::Value::String("blockchain".to_string()));
-            context.insert("audience".to_string(), serde_json::Value::String("developers".to_string()));
+            context.insert(
+                "domain".to_string(),
+                serde_json::Value::String("blockchain".to_string()),
+            );
+            context.insert(
+                "audience".to_string(),
+                serde_json::Value::String("developers".to_string()),
+            );
             context
         }),
         max_tokens: Some(500),
@@ -138,14 +139,19 @@ async fn demonstrate_llm_functionality(service: &AIService) -> Result<(), Box<dy
             info!("Usage: {:?}", response.usage);
         }
         Err(e) => {
-            warn!("LLM request failed (this is expected without a real API key): {}", e);
+            warn!(
+                "LLM request failed (this is expected without a real API key): {}",
+                e
+            );
         }
     }
 
     Ok(())
 }
 
-async fn demonstrate_smart_contract_analysis(service: &AIService) -> Result<(), Box<dyn std::error::Error>> {
+async fn demonstrate_smart_contract_analysis(
+    service: &AIService,
+) -> Result<(), Box<dyn std::error::Error>> {
     info!("Demonstrating smart contract analysis");
 
     let contract_code = r#"
@@ -173,7 +179,10 @@ contract VulnerableContract {
         Ok(analysis) => {
             info!("Contract Analysis Results:");
             info!("  Security Score: {:.2}", analysis.security_score);
-            info!("  Gas Efficiency Score: {:.2}", analysis.gas_efficiency_score);
+            info!(
+                "  Gas Efficiency Score: {:.2}",
+                analysis.gas_efficiency_score
+            );
             info!("  Issues Found: {}", analysis.issues.len());
             for issue in &analysis.issues {
                 info!("    - {}: {}", issue.issue_type, issue.description);
@@ -191,7 +200,9 @@ contract VulnerableContract {
     Ok(())
 }
 
-async fn demonstrate_transaction_optimization(service: &AIService) -> Result<(), Box<dyn std::error::Error>> {
+async fn demonstrate_transaction_optimization(
+    service: &AIService,
+) -> Result<(), Box<dyn std::error::Error>> {
     info!("Demonstrating transaction optimization");
 
     let transaction = TransactionData {
@@ -214,7 +225,7 @@ async fn demonstrate_transaction_optimization(service: &AIService) -> Result<(),
         constraints: Some(OptimizationConstraints {
             max_gas_limit: Some(50000),
             max_gas_price: Some(50000000000), // 50 gwei
-            max_latency_ms: Some(30000), // 30 seconds
+            max_latency_ms: Some(30000),      // 30 seconds
             security_requirements: vec!["multisig".to_string()],
         }),
     };
@@ -225,7 +236,10 @@ async fn demonstrate_transaction_optimization(service: &AIService) -> Result<(),
             info!("  Confidence: {:.2}", optimization.confidence);
             info!("  Suggestions: {}", optimization.suggestions.len());
             for suggestion in &optimization.suggestions {
-                info!("    - {}: {}", suggestion.suggestion_type, suggestion.description);
+                info!(
+                    "    - {}: {}",
+                    suggestion.suggestion_type, suggestion.description
+                );
             }
             info!("  Expected Improvements:");
             for (metric, improvement) in &optimization.expected_improvements {
@@ -276,8 +290,10 @@ async fn demonstrate_analytics(service: &mut AIService) -> Result<(), Box<dyn st
         Ok(insights) => {
             info!("Analytics Insights Generated: {}", insights.len());
             for insight in &insights {
-                info!("  - {}: {} (confidence: {:.2})", 
-                      insight.title, insight.description, insight.confidence);
+                info!(
+                    "  - {}: {} (confidence: {:.2})",
+                    insight.title, insight.description, insight.confidence
+                );
             }
         }
         Err(e) => {
@@ -301,8 +317,10 @@ async fn demonstrate_monitoring(service: &mut AIService) -> Result<(), Box<dyn s
         Ok(alerts) => {
             info!("Monitoring Alerts Generated: {}", alerts.len());
             for alert in &alerts {
-                info!("  - {}: {} (severity: {:?})", 
-                      alert.title, alert.description, alert.severity);
+                info!(
+                    "  - {}: {} (severity: {:?})",
+                    alert.title, alert.description, alert.severity
+                );
             }
         }
         Err(e) => {

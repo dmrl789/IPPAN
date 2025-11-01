@@ -4,10 +4,10 @@
 //! integrated with the DAG-Fair emission system.
 
 use crate::account_ledger::AccountLedger;
-use ippan_types::{MicroIPN, ValidatorId};
-use std::collections::HashMap;
 use anyhow::Result;
+use ippan_types::{MicroIPN, ValidatorId};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::collections::HashSet;
 use tracing::{debug, info};
 

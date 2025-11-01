@@ -1,12 +1,12 @@
 pub mod audit;
+pub mod circuit_breaker;
 pub mod rate_limiter;
 pub mod validation;
-pub mod circuit_breaker;
 
 pub use audit::{AuditEvent, AuditLogger, SecurityEvent};
-pub use rate_limiter::{RateLimiter, RateLimitConfig, RateLimitError};
-pub use validation::{InputValidator, ValidationError, ValidationRule};
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState};
+pub use rate_limiter::{RateLimitConfig, RateLimitError, RateLimiter};
+pub use validation::{InputValidator, ValidationError, ValidationRule};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -86,32 +86,38 @@ impl SecurityManager {
     pub async fn check_request(&self, ip: IpAddr, endpoint: &str) -> Result<bool, SecurityError> {
         // Check if IP is blocked due to failed attempts
         if self.is_ip_blocked(ip) {
-            self.audit_logger.log_security_event(SecurityEvent::BlockedRequest {
-                ip,
-                endpoint: endpoint.to_string(),
-                reason: "Too many failed attempts".to_string(),
-                timestamp: SystemTime::now(),
-            }).await?;
+            self.audit_logger
+                .log_security_event(SecurityEvent::BlockedRequest {
+                    ip,
+                    endpoint: endpoint.to_string(),
+                    reason: "Too many failed attempts".to_string(),
+                    timestamp: SystemTime::now(),
+                })
+                .await?;
             return Err(SecurityError::IpBlocked);
         }
 
         // Check IP whitelist if enabled
         if self.config.enable_ip_whitelist && !self.config.whitelisted_ips.contains(&ip) {
-            self.audit_logger.log_security_event(SecurityEvent::UnauthorizedAccess {
-                ip,
-                endpoint: endpoint.to_string(),
-                timestamp: SystemTime::now(),
-            }).await?;
+            self.audit_logger
+                .log_security_event(SecurityEvent::UnauthorizedAccess {
+                    ip,
+                    endpoint: endpoint.to_string(),
+                    timestamp: SystemTime::now(),
+                })
+                .await?;
             return Err(SecurityError::IpNotWhitelisted);
         }
 
         // Check rate limits
         if !self.rate_limiter.check_rate_limit(ip, endpoint).await? {
-            self.audit_logger.log_security_event(SecurityEvent::RateLimitExceeded {
-                ip,
-                endpoint: endpoint.to_string(),
-                timestamp: SystemTime::now(),
-            }).await?;
+            self.audit_logger
+                .log_security_event(SecurityEvent::RateLimitExceeded {
+                    ip,
+                    endpoint: endpoint.to_string(),
+                    timestamp: SystemTime::now(),
+                })
+                .await?;
             return Err(SecurityError::RateLimitExceeded);
         }
 
@@ -124,18 +130,25 @@ impl SecurityManager {
     }
 
     /// Record a failed attempt
-    pub async fn record_failed_attempt(&self, ip: IpAddr, endpoint: &str, reason: &str) -> Result<()> {
+    pub async fn record_failed_attempt(
+        &self,
+        ip: IpAddr,
+        endpoint: &str,
+        reason: &str,
+    ) -> Result<()> {
         let mut attempts = self.failed_attempts.write();
         let (count, _) = attempts.entry(ip).or_insert((0, SystemTime::now()));
         *count += 1;
 
-        self.audit_logger.log_security_event(SecurityEvent::FailedAttempt {
-            ip,
-            endpoint: endpoint.to_string(),
-            reason: reason.to_string(),
-            attempt_count: *count,
-            timestamp: SystemTime::now(),
-        }).await?;
+        self.audit_logger
+            .log_security_event(SecurityEvent::FailedAttempt {
+                ip,
+                endpoint: endpoint.to_string(),
+                reason: reason.to_string(),
+                attempt_count: *count,
+                timestamp: SystemTime::now(),
+            })
+            .await?;
 
         Ok(())
     }
@@ -144,14 +157,16 @@ impl SecurityManager {
     pub async fn record_success(&self, ip: IpAddr, endpoint: &str) -> Result<()> {
         // Reset failed attempts on success
         self.failed_attempts.write().remove(&ip);
-        
+
         self.circuit_breaker.record_success().await;
-        
-        self.audit_logger.log_security_event(SecurityEvent::SuccessfulRequest {
-            ip,
-            endpoint: endpoint.to_string(),
-            timestamp: SystemTime::now(),
-        }).await?;
+
+        self.audit_logger
+            .log_security_event(SecurityEvent::SuccessfulRequest {
+                ip,
+                endpoint: endpoint.to_string(),
+                timestamp: SystemTime::now(),
+            })
+            .await?;
 
         Ok(())
     }
@@ -159,19 +174,25 @@ impl SecurityManager {
     /// Record a failure
     pub async fn record_failure(&self, ip: IpAddr, endpoint: &str, error: &str) -> Result<()> {
         self.circuit_breaker.record_failure().await;
-        
-        self.audit_logger.log_security_event(SecurityEvent::RequestFailure {
-            ip,
-            endpoint: endpoint.to_string(),
-            error: error.to_string(),
-            timestamp: SystemTime::now(),
-        }).await?;
+
+        self.audit_logger
+            .log_security_event(SecurityEvent::RequestFailure {
+                ip,
+                endpoint: endpoint.to_string(),
+                error: error.to_string(),
+                timestamp: SystemTime::now(),
+            })
+            .await?;
 
         Ok(())
     }
 
     /// Validate input data
-    pub fn validate_input<T>(&self, data: &T, rules: &[ValidationRule]) -> Result<(), ValidationError>
+    pub fn validate_input<T>(
+        &self,
+        data: &T,
+        rules: &[ValidationRule],
+    ) -> Result<(), ValidationError>
     where
         T: Serialize,
     {
@@ -194,7 +215,7 @@ impl SecurityManager {
     pub async fn cleanup_expired_blocks(&self) {
         let mut attempts = self.failed_attempts.write();
         let block_duration = Duration::from_secs(self.config.block_duration);
-        
+
         attempts.retain(|_, (_, timestamp)| {
             timestamp.elapsed().unwrap_or(Duration::ZERO) < block_duration
         });
@@ -204,7 +225,7 @@ impl SecurityManager {
     pub fn get_stats(&self) -> SecurityStats {
         let blocked_ips = self.failed_attempts.read().len();
         let circuit_breaker_state = self.circuit_breaker.get_state();
-        
+
         SecurityStats {
             blocked_ips,
             circuit_breaker_state,
@@ -255,7 +276,7 @@ mod tests {
         let config = SecurityConfig::default();
         let manager = SecurityManager::new(config).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        
+
         let result = manager.check_request(ip, "/health").await;
         assert!(result.is_ok());
     }
@@ -264,14 +285,20 @@ mod tests {
     async fn test_failed_attempts_blocking() {
         let mut config = SecurityConfig::default();
         config.max_failed_attempts = 2;
-        
+
         let manager = SecurityManager::new(config).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        
+
         // Record failed attempts
-        manager.record_failed_attempt(ip, "/api", "Invalid credentials").await.unwrap();
-        manager.record_failed_attempt(ip, "/api", "Invalid credentials").await.unwrap();
-        
+        manager
+            .record_failed_attempt(ip, "/api", "Invalid credentials")
+            .await
+            .unwrap();
+        manager
+            .record_failed_attempt(ip, "/api", "Invalid credentials")
+            .await
+            .unwrap();
+
         // Should be blocked now
         let result = manager.check_request(ip, "/api").await;
         assert!(matches!(result, Err(SecurityError::IpBlocked)));
@@ -282,15 +309,19 @@ mod tests {
         let mut config = SecurityConfig::default();
         config.enable_ip_whitelist = true;
         config.whitelisted_ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))];
-        
+
         let manager = SecurityManager::new(config).unwrap();
-        
+
         // Whitelisted IP should pass
-        let result = manager.check_request(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), "/api").await;
+        let result = manager
+            .check_request(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), "/api")
+            .await;
         assert!(result.is_ok());
-        
+
         // Non-whitelisted IP should fail
-        let result = manager.check_request(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), "/api").await;
+        let result = manager
+            .check_request(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), "/api")
+            .await;
         assert!(matches!(result, Err(SecurityError::IpNotWhitelisted)));
     }
 }
