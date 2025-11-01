@@ -148,9 +148,7 @@ impl ChainState {
 
     /// Check if supply cap would be exceeded
     pub fn would_exceed_cap(&self, additional_micro: MicroIPN, cap_micro: MicroIPN) -> bool {
-        self.total_issued_micro
-            .saturating_add(additional_micro)
-            >= cap_micro
+        self.total_issued_micro.saturating_add(additional_micro) >= cap_micro
     }
 
     /// Get remaining supply cap

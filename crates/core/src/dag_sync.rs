@@ -34,7 +34,9 @@ use tokio::time::interval;
 
 use crate::block::Block;
 use crate::dag::BlockDAG;
-use crate::zk_stark::{deserialize_proof, generate_stark_proof, serialize_proof, verify_stark_proof};
+use crate::zk_stark::{
+    deserialize_proof, generate_stark_proof, serialize_proof, verify_stark_proof,
+};
 
 /// Gossip topic name shared by every IPPAN node.
 const DAG_TOPIC: &str = "ippan-dag";
@@ -312,8 +314,8 @@ fn handle_gossip_event(
 ) -> Result<()> {
     match event {
         gossipsub::Event::Message { message, .. } => {
-            let msg: GossipMsg =
-                serde_json::from_slice(&message.data).context("failed to decode DAG gossip payload")?;
+            let msg: GossipMsg = serde_json::from_slice(&message.data)
+                .context("failed to decode DAG gossip payload")?;
             match msg {
                 GossipMsg::Tip(hash) => {
                     if !seen.contains(&hash) {
@@ -329,18 +331,28 @@ fn handle_gossip_event(
                     if let Some(proof_bytes) = stark_proof {
                         if let Ok(proof) = deserialize_proof(&proof_bytes) {
                             match verify_stark_proof(&proof, &block) {
-                                Ok(true) => debug!("zk-STARK proof verified for block {}", hex::encode(hash)),
+                                Ok(true) => debug!(
+                                    "zk-STARK proof verified for block {}",
+                                    hex::encode(hash)
+                                ),
                                 Ok(false) => {
                                     warn!("zk-STARK proof invalid for block {}", hex::encode(hash));
                                     return Ok(());
                                 }
                                 Err(e) => {
-                                    warn!("zk-STARK proof verification error for block {}: {}", hex::encode(hash), e);
+                                    warn!(
+                                        "zk-STARK proof verification error for block {}: {}",
+                                        hex::encode(hash),
+                                        e
+                                    );
                                     return Ok(());
                                 }
                             }
                         } else {
-                            warn!("Failed to deserialize zk-STARK proof for block {}", hex::encode(hash));
+                            warn!(
+                                "Failed to deserialize zk-STARK proof for block {}",
+                                hex::encode(hash)
+                            );
                             return Ok(());
                         }
                     }
@@ -373,8 +385,8 @@ fn broadcast_tips(
 ) -> Result<()> {
     let tips = dag.get_tips()?;
     for hash in &tips {
-        let payload =
-            serde_json::to_vec(&GossipMsg::Tip(*hash)).context("failed to serialize tip gossip message")?;
+        let payload = serde_json::to_vec(&GossipMsg::Tip(*hash))
+            .context("failed to serialize tip gossip message")?;
         if let Err(err) = gossip.publish(topic.clone(), payload) {
             warn!("failed to publish tip gossip: {err:?}");
         }

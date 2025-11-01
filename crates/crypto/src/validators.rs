@@ -1,7 +1,7 @@
 //! Lightweight validators for confidential transactions and blocks
 
 use anyhow::{anyhow, Result};
-use ippan_types::{Transaction, ConfidentialEnvelope, ConfidentialProof, TransactionVisibility};
+use ippan_types::{ConfidentialEnvelope, ConfidentialProof, Transaction, TransactionVisibility};
 
 /// Validate a confidential transaction's envelope and basic proof structure.
 ///

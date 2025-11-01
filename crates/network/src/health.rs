@@ -75,7 +75,7 @@ impl PeerHealthStatus {
         self.consecutive_failures += 1;
         self.last_check = Instant::now();
         self.total_checks += 1;
-        
+
         if self.consecutive_failures >= failure_threshold {
             self.health = PeerHealth::Unhealthy;
         } else if self.consecutive_failures >= failure_threshold / 2 {
@@ -116,7 +116,9 @@ impl HealthMonitor {
     /// Record a successful health check for a peer
     pub fn record_success(&self, peer_address: &str) {
         let mut health = self.peer_health.write();
-        let status = health.entry(peer_address.to_string()).or_insert_with(PeerHealthStatus::new);
+        let status = health
+            .entry(peer_address.to_string())
+            .or_insert_with(PeerHealthStatus::new);
         status.record_success();
         debug!("Health check succeeded for peer {}", peer_address);
     }
@@ -124,13 +126,17 @@ impl HealthMonitor {
     /// Record a failed health check for a peer
     pub fn record_failure(&self, peer_address: &str) {
         let mut health = self.peer_health.write();
-        let status = health.entry(peer_address.to_string()).or_insert_with(PeerHealthStatus::new);
+        let status = health
+            .entry(peer_address.to_string())
+            .or_insert_with(PeerHealthStatus::new);
         status.record_failure(self.config.failure_threshold);
-        
+
         match status.health {
             PeerHealth::Unhealthy => {
-                warn!("Peer {} is unhealthy after {} consecutive failures", 
-                      peer_address, status.consecutive_failures);
+                warn!(
+                    "Peer {} is unhealthy after {} consecutive failures",
+                    peer_address, status.consecutive_failures
+                );
             }
             PeerHealth::Degraded => {
                 warn!("Peer {} connection is degraded", peer_address);
@@ -179,7 +185,7 @@ impl HealthMonitor {
         health
             .iter()
             .filter(|(_, status)| {
-                status.health == PeerHealth::Unhealthy 
+                status.health == PeerHealth::Unhealthy
                     || status.is_stale(self.config.stale_threshold)
             })
             .map(|(addr, _)| addr.clone())
@@ -234,21 +240,21 @@ mod tests {
     fn test_health_tracking() {
         let monitor = HealthMonitor::default();
         let peer = "127.0.0.1:9000";
-        
+
         // Initial state should be healthy
         assert!(monitor.is_healthy(peer));
-        
+
         // Record success
         monitor.record_success(peer);
         assert_eq!(monitor.get_health(peer), PeerHealth::Healthy);
-        
+
         // Record some failures
         monitor.record_failure(peer);
         monitor.record_failure(peer);
-        
+
         // Should be degraded after 2 failures (threshold is 3)
         assert_eq!(monitor.get_health(peer), PeerHealth::Degraded);
-        
+
         // One more failure should make it unhealthy
         monitor.record_failure(peer);
         assert_eq!(monitor.get_health(peer), PeerHealth::Unhealthy);
@@ -258,11 +264,11 @@ mod tests {
     fn test_health_stats() {
         let monitor = HealthMonitor::default();
         let peer = "127.0.0.1:9000";
-        
+
         monitor.record_success(peer);
         monitor.record_success(peer);
         monitor.record_failure(peer);
-        
+
         let stats = monitor.get_stats(peer).unwrap();
         assert_eq!(stats.total_checks, 3);
         assert!((stats.success_rate - 0.666).abs() < 0.01);
@@ -271,17 +277,17 @@ mod tests {
     #[test]
     fn test_unhealthy_peers() {
         let monitor = HealthMonitor::default();
-        
+
         let peer1 = "127.0.0.1:9000";
         let peer2 = "127.0.0.1:9001";
-        
+
         monitor.record_success(peer1);
-        
+
         // Make peer2 unhealthy
         for _ in 0..3 {
             monitor.record_failure(peer2);
         }
-        
+
         let unhealthy = monitor.unhealthy_peers();
         assert_eq!(unhealthy.len(), 1);
         assert!(unhealthy.contains(&peer2.to_string()));

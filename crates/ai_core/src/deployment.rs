@@ -175,8 +175,9 @@ impl ProductionDeployment {
 
     async fn initialize_feature_engineering(&self) -> Result<(), GBDTError> {
         let conf = self.config_manager.get_config();
-        *self.feature_pipeline.write().await =
-            Some(FeatureEngineeringPipeline::new(conf.feature_engineering.clone()));
+        *self.feature_pipeline.write().await = Some(FeatureEngineeringPipeline::new(
+            conf.feature_engineering.clone(),
+        ));
         info!("Feature engineering pipeline initialized");
         Ok(())
     }
@@ -275,7 +276,8 @@ impl ProductionDeployment {
             HealthStatus::Unhealthy => "Critical subsystem failure".to_string(),
         };
 
-        self.update_health_metrics(status == HealthStatus::Healthy).await;
+        self.update_health_metrics(status == HealthStatus::Healthy)
+            .await;
 
         Ok(HealthCheckResult {
             status,

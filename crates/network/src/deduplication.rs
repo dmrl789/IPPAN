@@ -30,7 +30,7 @@ impl MessageDeduplicator {
         self.maybe_cleanup();
 
         let mut seen = self.seen_messages.write();
-        
+
         // If at capacity, remove oldest (random) entry
         if seen.len() >= self.max_size {
             if let Some(&first) = seen.iter().next() {
@@ -65,7 +65,11 @@ impl MessageDeduplicator {
             let mut seen = self.seen_messages.write();
             let target_size = seen.len() / 2;
             if seen.len() > target_size {
-                let to_remove: Vec<[u8; 32]> = seen.iter().take(seen.len() - target_size).copied().collect();
+                let to_remove: Vec<[u8; 32]> = seen
+                    .iter()
+                    .take(seen.len() - target_size)
+                    .copied()
+                    .collect();
                 for hash in to_remove {
                     seen.remove(&hash);
                 }
@@ -88,19 +92,19 @@ mod tests {
     #[test]
     fn test_deduplication() {
         let dedup = MessageDeduplicator::new(Duration::from_secs(60), 100);
-        
+
         let msg1 = [1u8; 32];
         let msg2 = [2u8; 32];
-        
+
         // First time seeing msg1 should return true
         assert!(dedup.check_and_mark(msg1));
-        
+
         // Second time seeing msg1 should return false
         assert!(!dedup.check_and_mark(msg1));
-        
+
         // First time seeing msg2 should return true
         assert!(dedup.check_and_mark(msg2));
-        
+
         // Check without marking
         assert!(dedup.has_seen(&msg1));
         assert!(dedup.has_seen(&msg2));
@@ -109,14 +113,14 @@ mod tests {
     #[test]
     fn test_max_size() {
         let dedup = MessageDeduplicator::new(Duration::from_secs(60), 10);
-        
+
         // Add more than max_size messages
         for i in 0..15u8 {
             let mut msg = [0u8; 32];
             msg[0] = i;
             dedup.check_and_mark(msg);
         }
-        
+
         // Should not exceed max_size
         assert!(dedup.size() <= 10);
     }
@@ -124,12 +128,12 @@ mod tests {
     #[test]
     fn test_clear() {
         let dedup = MessageDeduplicator::new(Duration::from_secs(60), 100);
-        
+
         dedup.check_and_mark([1u8; 32]);
         dedup.check_and_mark([2u8; 32]);
-        
+
         assert_eq!(dedup.size(), 2);
-        
+
         dedup.clear();
         assert_eq!(dedup.size(), 0);
     }

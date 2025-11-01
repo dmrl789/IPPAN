@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Starting IPPAN RPC server on http://0.0.0.0:8080");
     println!("P2P network listening on http://0.0.0.0:9000");
     println!("Web UI available at http://localhost:8080");
-    
+
     start_server("http://0.0.0.0:8080", p2p_config, l2_config).await?;
 
     Ok(())

@@ -1,6 +1,6 @@
 use anyhow::Result;
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
-use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use std::collections::HashMap;
 
 /// AI model proposal for governance
@@ -70,7 +70,11 @@ impl ProposalManager {
     }
 
     /// Submit a new AI model proposal
-    pub fn submit_proposal(&mut self, proposal: AiModelProposal, proposer_stake: u64) -> Result<()> {
+    pub fn submit_proposal(
+        &mut self,
+        proposal: AiModelProposal,
+        proposer_stake: u64,
+    ) -> Result<()> {
         // Check minimum stake requirement
         if proposer_stake < self.min_proposal_stake {
             return Err(anyhow::anyhow!(
@@ -85,7 +89,10 @@ impl ProposalManager {
 
         // Check for duplicate proposal ID
         if self.proposals.contains_key(&proposal.proposal_id) {
-            return Err(anyhow::anyhow!("Proposal ID {} already exists", proposal.proposal_id));
+            return Err(anyhow::anyhow!(
+                "Proposal ID {} already exists",
+                proposal.proposal_id
+            ));
         }
 
         // Add proposal as pending
@@ -104,7 +111,10 @@ impl ProposalManager {
                 *status = ProposalStatus::Voting;
                 Ok(())
             } else {
-                Err(anyhow::anyhow!("Proposal {} is not in pending status", proposal_id))
+                Err(anyhow::anyhow!(
+                    "Proposal {} is not in pending status",
+                    proposal_id
+                ))
             }
         } else {
             Err(anyhow::anyhow!("Proposal {} not found", proposal_id))
@@ -112,10 +122,19 @@ impl ProposalManager {
     }
 
     /// Vote on a proposal
-    pub fn vote(&mut self, proposal_id: &str, voter: [u8; 32], stake: u64, approve: bool) -> Result<()> {
+    pub fn vote(
+        &mut self,
+        proposal_id: &str,
+        voter: [u8; 32],
+        stake: u64,
+        approve: bool,
+    ) -> Result<()> {
         if let Some((proposal, status)) = self.proposals.get_mut(proposal_id) {
             if *status != ProposalStatus::Voting {
-                return Err(anyhow::anyhow!("Proposal {} is not in voting status", proposal_id));
+                return Err(anyhow::anyhow!(
+                    "Proposal {} is not in voting status",
+                    proposal_id
+                ));
             }
 
             // In a real implementation, you would track votes here
@@ -127,10 +146,13 @@ impl ProposalManager {
     }
 
     /// Execute a proposal (create registry entry)
-    pub fn execute_proposal(&mut self, proposal_id: &str) -> Result<crate::types::ModelRegistration> {
+    pub fn execute_proposal(
+        &mut self,
+        proposal_id: &str,
+    ) -> Result<crate::types::ModelRegistration> {
         use chrono::{DateTime, Utc};
         use ippan_ai_core::types::{ModelId, ModelMetadata};
-        
+
         if let Some((proposal, status)) = self.proposals.get_mut(proposal_id) {
             if *status != ProposalStatus::Approved {
                 return Err(anyhow::anyhow!("Proposal {} is not approved", proposal_id));
@@ -199,7 +221,10 @@ impl ProposalManager {
     }
 
     /// Get proposals by status
-    pub fn get_proposals_by_status(&self, status: ProposalStatus) -> Vec<&(AiModelProposal, ProposalStatus)> {
+    pub fn get_proposals_by_status(
+        &self,
+        status: ProposalStatus,
+    ) -> Vec<&(AiModelProposal, ProposalStatus)> {
         self.proposals
             .values()
             .filter(|(_, s)| *s == status)
@@ -209,13 +234,19 @@ impl ProposalManager {
     /// Validate a proposal
     fn validate_proposal(&self, proposal: &AiModelProposal) -> Result<()> {
         // Validate signature
-        use ed25519_dalek::{VerifyingKey, Signature};
+        use ed25519_dalek::{Signature, VerifyingKey};
         let verifying_key = VerifyingKey::from_bytes(&proposal.signer_pubkey)
             .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
         let signature = Signature::from_bytes(&proposal.signature);
-        
-        if verifying_key.verify(&proposal.model_hash, &signature).is_err() {
-            return Err(anyhow::anyhow!("Invalid signature for proposal {}", proposal.proposal_id));
+
+        if verifying_key
+            .verify(&proposal.model_hash, &signature)
+            .is_err()
+        {
+            return Err(anyhow::anyhow!(
+                "Invalid signature for proposal {}",
+                proposal.proposal_id
+            ));
         }
 
         // Validate activation round is in the future
@@ -242,16 +273,16 @@ mod tests {
     fn create_test_proposal() -> AiModelProposal {
         let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let pubkey = signing_key.verifying_key().to_bytes();
-        
+
         let model_data = b"test_model_data";
         let mut hasher = blake3::Hasher::new();
         hasher.update(model_data);
         let hash = hasher.finalize();
         let mut hash_bytes = [0u8; 32];
         hash_bytes.copy_from_slice(hash.as_bytes());
-        
+
         let signature = signing_key.sign(&hash_bytes);
-        
+
         AiModelProposal {
             proposal_id: "proposal_1".to_string(),
             model_id: "test_model".to_string(),
@@ -272,7 +303,7 @@ mod tests {
     fn test_proposal_submission() {
         let mut manager = ProposalManager::new(0.67, 1000000);
         let proposal = create_test_proposal();
-        
+
         assert!(manager.submit_proposal(proposal, 2000000).is_ok());
         assert!(manager.get_proposal("proposal_1").is_some());
     }
@@ -281,7 +312,7 @@ mod tests {
     fn test_insufficient_stake() {
         let mut manager = ProposalManager::new(0.67, 1000000);
         let proposal = create_test_proposal();
-        
+
         assert!(manager.submit_proposal(proposal, 500000).is_err());
     }
 
@@ -291,7 +322,7 @@ mod tests {
         let proposal1 = create_test_proposal();
         let mut proposal2 = create_test_proposal();
         proposal2.proposal_id = "proposal_1".to_string(); // Same ID
-        
+
         manager.submit_proposal(proposal1, 2000000).unwrap();
         assert!(manager.submit_proposal(proposal2, 2000000).is_err());
     }
