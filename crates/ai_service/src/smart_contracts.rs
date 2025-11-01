@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Smart contract analysis service
+#[derive(Clone)]
 pub struct SmartContractService {
     // In a real implementation, this would contain various analysis tools
     // For now, we'll implement basic static analysis

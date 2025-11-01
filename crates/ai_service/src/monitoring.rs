@@ -436,6 +436,7 @@ impl AlertHandler for FileAlertHandler {
 }
 
 /// High-level monitoring service that wraps ServiceMonitor
+#[derive(Clone)]
 pub struct MonitoringService {
     monitor: ServiceMonitor,
     alerts: Vec<MonitoringAlert>,

@@ -1,5 +1,5 @@
 use crate::currency::Amount;
-use crate::hashtimer::{HashTimer, IppanTimeMicros};
+use crate::{HashTimer, IppanTimeMicros};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_bytes;
@@ -206,8 +206,9 @@ impl Transaction {
         bytes.extend_from_slice(&self.to);
         bytes.extend_from_slice(&self.amount.atomic().to_be_bytes());
         bytes.extend_from_slice(&self.nonce.to_be_bytes());
-        bytes.extend_from_slice(&self.hashtimer.time_prefix);
-        bytes.extend_from_slice(&self.hashtimer.hash_suffix);
+        // Serialize HashTimer: timestamp_us (8 bytes) + entropy (32 bytes) = 40 bytes
+        bytes.extend_from_slice(&self.hashtimer.timestamp_us.to_be_bytes());
+        bytes.extend_from_slice(&self.hashtimer.entropy);
         bytes.extend_from_slice(&self.timestamp.0.to_be_bytes());
         bytes.push(self.visibility.as_byte());
         Self::append_topics(&mut bytes, &self.topics);

@@ -15,7 +15,7 @@ members = [
   # AI and deterministic intelligence
   "crates/ai_core",
   "crates/ai_registry",      # Re-enabled: fixed import paths and type issues
-  "crates/ai_service",       # Re-enabled: activate AI service
+  "crates/ai_service",       # Re-enabled: fixing refactoring issues
   "crates/governance",       # Re-enabled: fixed dependencies on ai_registry
 
   # Economics and treasury

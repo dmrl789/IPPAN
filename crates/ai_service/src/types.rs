@@ -20,8 +20,6 @@ pub struct AIServiceConfig {
     pub llm_config: LLMConfig,
     /// Analytics configuration
     pub analytics_config: AnalyticsConfig,
-    /// Monitoring configuration
-    pub monitoring_config: MonitoringConfig,
 }
 
 /// LLM configuration
@@ -42,7 +40,7 @@ pub struct LLMConfig {
 }
 
 /// Analytics configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AnalyticsConfig {
     /// Enable real-time analytics
     pub enable_realtime: bool,
@@ -52,19 +50,6 @@ pub struct AnalyticsConfig {
     pub analysis_interval: u64,
     /// Enable predictive analytics
     pub enable_predictive: bool,
-}
-
-/// Monitoring configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MonitoringConfig {
-    /// Enable anomaly detection
-    pub enable_anomaly_detection: bool,
-    /// Alert thresholds
-    pub alert_thresholds: HashMap<String, f64>,
-    /// Monitoring interval seconds
-    pub monitoring_interval: u64,
-    /// Enable auto-remediation
-    pub enable_auto_remediation: bool,
 }
 
 /// LLM request
@@ -406,12 +391,6 @@ impl Default for AIServiceConfig {
                 retention_days: 30,
                 analysis_interval: 60,
                 enable_predictive: true,
-            },
-            monitoring_config: MonitoringConfig {
-                enable_anomaly_detection: true,
-                alert_thresholds: HashMap::new(),
-                monitoring_interval: 30,
-                enable_auto_remediation: false,
             },
         }
     }

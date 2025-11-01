@@ -167,27 +167,6 @@ impl ConfigManager {
                     .parse()
                     .unwrap_or(true),
             },
-            monitoring_config: crate::MonitoringConfig {
-                enable_anomaly_detection: env::var("MONITORING_ANOMALY_DETECTION")
-                    .unwrap_or_else(|_| "true".to_string())
-                    .parse()
-                    .unwrap_or(true),
-                alert_thresholds: {
-                    let mut thresholds = HashMap::new();
-                    thresholds.insert("memory_usage".to_string(), 80.0);
-                    thresholds.insert("cpu_usage".to_string(), 90.0);
-                    thresholds.insert("error_rate".to_string(), 5.0);
-                    thresholds
-                },
-                monitoring_interval: env::var("MONITORING_INTERVAL")
-                    .unwrap_or_else(|_| "30".to_string())
-                    .parse()
-                    .unwrap_or(30),
-                enable_auto_remediation: env::var("MONITORING_AUTO_REMEDIATION")
-                    .unwrap_or_else(|_| "false".to_string())
-                    .parse()
-                    .unwrap_or(false),
-            },
         })
     }
 
@@ -232,8 +211,9 @@ struct ConfigFile {
     service: ServiceConfig,
     llm: LLMConfigFile,
     analytics: AnalyticsConfigFile,
-    monitoring: MonitoringConfigFile,
+    #[serde(default)]
     logging: LoggingConfig,
+    #[serde(default)]
     security: SecurityConfig,
 }
 
@@ -262,13 +242,6 @@ struct AnalyticsConfigFile {
     enable_predictive: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct MonitoringConfigFile {
-    enable_anomaly_detection: bool,
-    monitoring_interval: u64,
-    enable_auto_remediation: bool,
-    alert_thresholds: HashMap<String, f64>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LoggingConfig {
@@ -277,11 +250,31 @@ struct LoggingConfig {
     output: String,
 }
 
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: "info".to_string(),
+            format: "pretty".to_string(),
+            output: "stdout".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SecurityConfig {
     enable_encryption: bool,
     enable_authentication: bool,
     session_timeout: u64,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            enable_encryption: false,
+            enable_authentication: false,
+            session_timeout: 3600,
+        }
+    }
 }
 
 impl From<ConfigFile> for AIServiceConfig {
@@ -304,12 +297,6 @@ impl From<ConfigFile> for AIServiceConfig {
                 retention_days: config.analytics.retention_days,
                 analysis_interval: config.analytics.analysis_interval,
                 enable_predictive: config.analytics.enable_predictive,
-            },
-            monitoring_config: crate::MonitoringConfig {
-                enable_anomaly_detection: config.monitoring.enable_anomaly_detection,
-                alert_thresholds: config.monitoring.alert_thresholds,
-                monitoring_interval: config.monitoring.monitoring_interval,
-                enable_auto_remediation: config.monitoring.enable_auto_remediation,
             },
         }
     }

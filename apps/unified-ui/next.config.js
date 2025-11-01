@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    appDir: true,
-  },
   env: {
     NEXT_PUBLIC_ENABLE_FULL_UI: process.env.NEXT_PUBLIC_ENABLE_FULL_UI || '1',
     NEXT_PUBLIC_GATEWAY_URL: process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8081/api',
@@ -20,14 +17,15 @@ const nextConfig = {
     return config;
   },
   async rewrites() {
+    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8081/api';
     return [
       {
         source: '/api/ai/:path*',
-        destination: `${process.env.NEXT_PUBLIC_GATEWAY_URL}/ai/:path*`,
+        destination: `${gatewayUrl}/ai/:path*`,
       },
       {
         source: '/api/blockchain/:path*',
-        destination: `${process.env.NEXT_PUBLIC_GATEWAY_URL}/blockchain/:path*`,
+        destination: `${gatewayUrl}/blockchain/:path*`,
       },
     ];
   },

@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Analytics service
+#[derive(Clone)]
 pub struct AnalyticsService {
     config: AnalyticsConfig,
     data_store: HashMap<String, Vec<DataPoint>>,

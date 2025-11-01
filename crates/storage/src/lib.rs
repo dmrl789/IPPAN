@@ -87,6 +87,28 @@ pub trait Storage {
     /// Chain-state persistence for DAG-Fair emission tracking
     fn get_chain_state(&self) -> Result<ChainState>;
     fn update_chain_state(&self, state: &ChainState) -> Result<()>;
+
+    /// Validator telemetry storage for AI consensus
+    fn store_validator_telemetry(&self, validator_id: &[u8; 32], telemetry: &ValidatorTelemetry) -> Result<()>;
+    fn get_validator_telemetry(&self, validator_id: &[u8; 32]) -> Result<Option<ValidatorTelemetry>>;
+    fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>>;
+}
+
+/// Validator telemetry for AI consensus
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorTelemetry {
+    pub validator_id: [u8; 32],
+    pub blocks_proposed: u64,
+    pub blocks_verified: u64,
+    pub rounds_active: u64,
+    pub avg_latency_us: u64,
+    pub slash_count: u32,
+    pub stake: u64,
+    pub age_rounds: u64,
+    pub last_active_round: u64,
+    pub uptime_percentage: f64,
+    pub recent_performance: f64,
+    pub network_contribution: f64,
 }
 
 /// Sled-backed implementation
@@ -101,6 +123,7 @@ pub struct SledStorage {
     l2_exits: Tree,
     round_certificates: Tree,
     round_finalizations: Tree,
+    validator_telemetry: Tree,
     chain_state: Arc<RwLock<ChainState>>,
 }
 
@@ -115,6 +138,7 @@ impl SledStorage {
         let l2_commits = db.open_tree("l2_commits")?;
         let l2_exits = db.open_tree("l2_exits")?;
         let round_certificates = db.open_tree("round_certificates")?;
+        let validator_telemetry = db.open_tree("validator_telemetry")?;
         let round_finalizations = db.open_tree("round_finalizations")?;
 
         let chain_state = if let Some(v) = metadata.get(b"chain_state")? {
@@ -134,6 +158,7 @@ impl SledStorage {
             l2_exits,
             round_certificates,
             round_finalizations,
+            validator_telemetry,
             chain_state: Arc::new(RwLock::new(chain_state)),
         })
     }
@@ -372,6 +397,7 @@ pub struct MemoryStorage {
     accounts: Arc<RwLock<HashMap<String, Account>>>,
     chain_state: Arc<RwLock<ChainState>>,
     latest_height: Arc<RwLock<u64>>,
+    validator_telemetry: Arc<RwLock<HashMap<[u8; 32], ValidatorTelemetry>>>,
 }
 
 impl Default for MemoryStorage {
@@ -382,6 +408,7 @@ impl Default for MemoryStorage {
             accounts: Arc::new(RwLock::new(HashMap::new())),
             chain_state: Arc::new(RwLock::new(ChainState::default())),
             latest_height: Arc::new(RwLock::new(0)),
+            validator_telemetry: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -492,5 +519,18 @@ impl Storage for MemoryStorage {
     fn update_chain_state(&self, s: &ChainState) -> Result<()> {
         *self.chain_state.write() = s.clone();
         Ok(())
+    }
+
+    fn store_validator_telemetry(&self, validator_id: &[u8; 32], telemetry: &ValidatorTelemetry) -> Result<()> {
+        self.validator_telemetry.write().insert(*validator_id, telemetry.clone());
+        Ok(())
+    }
+
+    fn get_validator_telemetry(&self, validator_id: &[u8; 32]) -> Result<Option<ValidatorTelemetry>> {
+        Ok(self.validator_telemetry.read().get(validator_id).cloned())
+    }
+
+    fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
+        Ok(self.validator_telemetry.read().clone())
     }
 }

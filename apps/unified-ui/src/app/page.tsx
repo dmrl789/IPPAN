@@ -11,7 +11,8 @@ import {
   Settings,
   Play,
   Pause,
-  RefreshCw
+  RefreshCw,
+  Users
 } from 'lucide-react';
 import { AIDashboard } from '@/components/ai/AIDashboard';
 import { BlockchainExplorer } from '@/components/blockchain/BlockchainExplorer';

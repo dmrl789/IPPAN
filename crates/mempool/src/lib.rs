@@ -287,8 +287,8 @@ impl Mempool {
     fn calculate_transaction_fee(&self, tx: &Transaction) -> u64 {
         let base_fee = 1000;
         let mut size = 32 * 3 + 8 * 2 + 64
-            + tx.hashtimer.time_prefix.len()
-            + tx.hashtimer.hash_suffix.len()
+            + std::mem::size_of_val(&tx.hashtimer.timestamp_us)
+            + tx.hashtimer.entropy.len()
             + std::mem::size_of_val(&tx.timestamp.0);
         size += tx.topics.iter().map(|t| t.len()).sum::<usize>();
 

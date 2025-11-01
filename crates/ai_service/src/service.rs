@@ -10,7 +10,7 @@ use crate::{
     smart_contracts::SmartContractService,
     types::{
         AIServiceConfig, AnalyticsConfig, AnalyticsInsight, LLMConfig, LLMRequest, LLMResponse,
-        MonitoringAlert, MonitoringConfig, SmartContractAnalysisRequest,
+        MonitoringAlert, SmartContractAnalysisRequest,
         SmartContractAnalysisResponse, TransactionOptimizationRequest,
         TransactionOptimizationResponse,
     },
@@ -20,6 +20,7 @@ use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
 /// Main AI Service that coordinates all AI functionality
+#[derive(Clone)]
 pub struct AIService {
     config: AIServiceConfig,
     llm_service: Option<LLMService>,
@@ -375,9 +376,7 @@ impl AIService {
 
     #[cfg(feature = "analytics")]
     async fn start_monitoring_task(&self) -> Result<(), AIServiceError> {
-        let mut interval = interval(Duration::from_secs(
-            self.config.monitoring_config.monitoring_interval,
-        ));
+        let mut interval = interval(Duration::from_secs(30)); // Default monitoring interval
         tokio::spawn(async move {
             loop {
                 interval.tick().await;
@@ -401,10 +400,6 @@ impl AIService {
 
     pub fn update_analytics_config(&mut self, config: AnalyticsConfig) {
         self.config.analytics_config = config;
-    }
-
-    pub fn update_monitoring_config(&mut self, config: MonitoringConfig) {
-        self.config.monitoring_config = config;
     }
 
     pub fn get_config(&self) -> &AIServiceConfig {
@@ -476,12 +471,6 @@ mod tests {
 
         service.start().await.unwrap();
         service.add_monitoring_metric("memory_usage".to_string(), 85.0);
-        service.update_monitoring_config(crate::types::MonitoringConfig {
-            enable_anomaly_detection: true,
-            alert_thresholds: std::iter::once(("memory_usage".to_string(), 10.0)).collect(),
-            monitoring_interval: 1,
-            enable_auto_remediation: false,
-        });
         let _ = service.check_monitoring_alerts().await.unwrap();
     }
 }
