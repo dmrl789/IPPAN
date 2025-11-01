@@ -11,8 +11,11 @@
 //! - Security hardening against adversarial inputs
 //! - Comprehensive logging and observability
 
+use crate::model::ModelPackage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{debug, error, info, instrument, warn};
@@ -234,6 +237,44 @@ impl GBDTModel {
             metrics: GBDTMetrics::default(),
             evaluation_cache: HashMap::new(),
         };
+        model.validate()?;
+        Ok(model)
+    }
+
+    pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
+        let path_ref = path.as_ref();
+        let data = fs::read_to_string(path_ref).map_err(|e| GBDTError::ModelValidationFailed {
+            reason: format!("Failed to read model JSON {}: {}", path_ref.display(), e),
+        })?;
+
+        let mut model = match serde_json::from_str::<ModelPackage>(&data) {
+            Ok(package) => package.model,
+            Err(_) => serde_json::from_str::<Self>(&data).map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to parse model JSON {}: {}", path_ref.display(), e),
+            })?,
+        };
+
+        model.reset_metrics();
+        model.clear_cache();
+        model.validate()?;
+        Ok(model)
+    }
+
+    pub fn from_binary_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
+        let path_ref = path.as_ref();
+        let bytes = fs::read(path_ref).map_err(|e| GBDTError::ModelValidationFailed {
+            reason: format!("Failed to read model binary {}: {}", path_ref.display(), e),
+        })?;
+
+        let mut model = match bincode::deserialize::<ModelPackage>(&bytes) {
+            Ok(package) => package.model,
+            Err(_) => bincode::deserialize::<Self>(&bytes).map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to deserialize model binary {}: {}", path_ref.display(), e),
+            })?,
+        };
+
+        model.reset_metrics();
+        model.clear_cache();
         model.validate()?;
         Ok(model)
     }
