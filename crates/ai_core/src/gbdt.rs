@@ -13,6 +13,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{debug, error, info, instrument, warn};
@@ -28,6 +30,12 @@ pub enum GBDTError {
 
     #[error("Model validation failed: {reason}")]
     ModelValidationFailed { reason: String },
+
+    #[error("Model IO error: {0}")]
+    ModelIoError(String),
+
+    #[error("Model serialization error: {0}")]
+    ModelSerializationError(String),
 
     #[error("Feature vector size mismatch: expected {expected}, got {actual}")]
     FeatureSizeMismatch { expected: usize, actual: usize },
@@ -207,6 +215,40 @@ impl Default for ModelMetadata {
 }
 
 impl GBDTModel {
+    pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
+        let data = fs::read_to_string(path.as_ref())
+            .map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
+        let mut model: Self = serde_json::from_str(&data)
+            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        model.validate()?;
+        model.reset_runtime_state();
+        Ok(model)
+    }
+
+    pub fn from_binary_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
+        let data = fs::read(path.as_ref())
+            .map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
+        let mut model: Self = bincode::deserialize(&data)
+            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        model.validate()?;
+        model.reset_runtime_state();
+        Ok(model)
+    }
+
+    pub fn save_json<P: AsRef<Path>>(&self, path: P) -> Result<(), GBDTError> {
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        fs::write(path, json).map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn save_binary<P: AsRef<Path>>(&self, path: P) -> Result<(), GBDTError> {
+        let data = bincode::serialize(self)
+            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        fs::write(path, data).map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn new(
         trees: Vec<Tree>,
         bias: i32,
@@ -484,6 +526,11 @@ impl GBDTModel {
     }
     pub fn is_compatible(&self, expected: &str) -> bool {
         self.metadata.version == expected
+    }
+
+    fn reset_runtime_state(&mut self) {
+        self.metrics = GBDTMetrics::default();
+        self.evaluation_cache.clear();
     }
 }
 
