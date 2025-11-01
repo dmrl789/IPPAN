@@ -4,14 +4,15 @@ pub use parallel_gossip::{
     GossipPayload, GossipTopic, ParallelGossipNetwork,
 };
 
-use anyhow::{anyhow, Result};
-use igd::aio::search_gateway;
+use anyhow::{Result, anyhow};
 use igd::PortMappingProtocol;
-use ippan_types::{ippan_time_now, Block, Transaction};
+use igd::aio::search_gateway;
+use ippan_types::{Block, Transaction, ippan_time_now};
 use local_ip_address::local_ip;
+use parking_lot::{Mutex, RwLock};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;
@@ -70,6 +71,60 @@ pub struct PeerInfo {
     pub is_connected: bool,
 }
 
+/// Events emitted by the HTTP P2P network when inbound messages are processed.
+#[derive(Debug, Clone)]
+pub enum NetworkEvent {
+    Block {
+        from: String,
+        block: Block,
+    },
+    Transaction {
+        from: String,
+        transaction: Transaction,
+    },
+    PeerInfo {
+        from: String,
+        peer_id: String,
+        addresses: Vec<String>,
+        time_us: Option<u64>,
+    },
+    PeerDiscovery {
+        from: String,
+        peers: Vec<String>,
+    },
+    BlockRequest {
+        from: String,
+        hash: [u8; 32],
+    },
+    BlockResponse {
+        from: String,
+        block: Block,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct PeerRecord {
+    peer_id: Option<String>,
+    address: String,
+    last_seen: u64,
+    last_announced_us: Option<u64>,
+    observed_address: Option<String>,
+    advertised_addresses: Vec<String>,
+}
+
+impl PeerRecord {
+    fn new(address: String) -> Self {
+        Self {
+            peer_id: None,
+            address: address.clone(),
+            last_seen: ippan_time_now(),
+            last_announced_us: None,
+            observed_address: None,
+            advertised_addresses: Vec::new(),
+        }
+    }
+}
+
 /// P2P network configuration
 #[derive(Debug, Clone)]
 pub struct P2PConfig {
@@ -109,16 +164,19 @@ impl Default for P2PConfig {
 pub struct HttpP2PNetwork {
     config: P2PConfig,
     client: Client,
-    peers: Arc<parking_lot::RwLock<HashSet<String>>>,
+    peers: Arc<RwLock<HashSet<String>>>,
+    peer_metadata: Arc<RwLock<HashMap<String, PeerRecord>>>,
     message_sender: mpsc::UnboundedSender<NetworkMessage>,
     message_receiver: Option<mpsc::UnboundedReceiver<NetworkMessage>>,
-    peer_count: Arc<parking_lot::RwLock<usize>>,
-    is_running: Arc<parking_lot::RwLock<bool>>,
+    peer_count: Arc<RwLock<usize>>,
+    is_running: Arc<RwLock<bool>>,
     local_peer_id: String,
     listen_address: String,
     local_address: String,
-    announce_address: Arc<parking_lot::RwLock<String>>,
-    upnp_mapping_active: Arc<parking_lot::RwLock<bool>>,
+    announce_address: Arc<RwLock<String>>,
+    upnp_mapping_active: Arc<RwLock<bool>>,
+    incoming_sender: mpsc::UnboundedSender<NetworkEvent>,
+    incoming_receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<NetworkEvent>>>>,
 }
 
 impl HttpP2PNetwork {
@@ -140,20 +198,24 @@ impl HttpP2PNetwork {
 
         // Create message channels
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
+        let (incoming_sender, incoming_receiver) = mpsc::unbounded_channel();
 
         Ok(Self {
             config,
             client,
-            peers: Arc::new(parking_lot::RwLock::new(HashSet::new())),
+            peers: Arc::new(RwLock::new(HashSet::new())),
+            peer_metadata: Arc::new(RwLock::new(HashMap::new())),
             message_sender,
             message_receiver: Some(message_receiver),
-            peer_count: Arc::new(parking_lot::RwLock::new(0)),
-            is_running: Arc::new(parking_lot::RwLock::new(false)),
+            peer_count: Arc::new(RwLock::new(0)),
+            is_running: Arc::new(RwLock::new(false)),
             local_peer_id,
             listen_address: canonical_listen.clone(),
             local_address: canonical_listen.clone(),
-            announce_address: Arc::new(parking_lot::RwLock::new(canonical_listen)),
-            upnp_mapping_active: Arc::new(parking_lot::RwLock::new(false)),
+            announce_address: Arc::new(RwLock::new(canonical_listen)),
+            upnp_mapping_active: Arc::new(RwLock::new(false)),
+            incoming_sender,
+            incoming_receiver: Arc::new(Mutex::new(Some(incoming_receiver))),
         })
     }
 
@@ -217,6 +279,8 @@ impl HttpP2PNetwork {
             let local_address = self.local_address.clone();
             let announce_address = self.announce_address.clone();
             let peer_count = self.peer_count.clone();
+            let peer_metadata = self.peer_metadata.clone();
+            let incoming_sender = self.incoming_sender.clone();
 
             tokio::spawn(async move {
                 let mut interval = interval(config.peer_discovery_interval);
@@ -230,6 +294,8 @@ impl HttpP2PNetwork {
                     Self::discover_peers(
                         &client,
                         &peers,
+                        &peer_metadata,
+                        incoming_sender.clone(),
                         &local_address,
                         &announce_address,
                         &peer_count,
@@ -285,6 +351,189 @@ impl HttpP2PNetwork {
         Ok(())
     }
 
+    /// Take ownership of the incoming event stream. Returns `None` if already taken.
+    pub fn take_incoming_events(&self) -> Option<mpsc::UnboundedReceiver<NetworkEvent>> {
+        let mut guard = self.incoming_receiver.lock();
+        guard.take()
+    }
+
+    fn emit_event(&self, event: NetworkEvent) {
+        if let Err(err) = self.incoming_sender.send(event) {
+            debug!("dropping inbound network event: {}", err);
+        }
+    }
+
+    fn touch_peer(
+        &self,
+        address: &str,
+        peer_id: Option<&str>,
+        last_seen: Option<u64>,
+        observed_address: Option<&str>,
+        advertised_addresses: Option<&[String]>,
+        announced_at: Option<u64>,
+    ) {
+        let now = ippan_time_now();
+        let mut metadata = self.peer_metadata.write();
+        let entry = metadata
+            .entry(address.to_string())
+            .or_insert_with(|| PeerRecord::new(address.to_string()));
+
+        if let Some(id) = peer_id {
+            entry.peer_id = Some(id.to_string());
+        }
+
+        entry.last_seen = last_seen.unwrap_or(now);
+
+        if let Some(observed) = observed_address {
+            entry.observed_address = Some(observed.to_string());
+        }
+
+        if let Some(addresses) = advertised_addresses {
+            entry.advertised_addresses = addresses.to_vec();
+        }
+
+        if let Some(time) = announced_at {
+            entry.last_announced_us = Some(time);
+        }
+    }
+
+    fn record_peer_seen(&self, address: &str) {
+        if let Ok(canonical) = Self::canonicalize_address(address) {
+            if self.peers.read().contains(&canonical) {
+                self.touch_peer(&canonical, None, Some(ippan_time_now()), None, None, None);
+            }
+        }
+    }
+
+    async fn handle_peer_info_message(
+        &self,
+        from: &str,
+        peer_id: String,
+        mut addresses: Vec<String>,
+        time_us: Option<u64>,
+    ) -> Result<()> {
+        if addresses.is_empty() {
+            addresses.push(from.to_string());
+        }
+
+        let last_seen = time_us.unwrap_or_else(ippan_time_now);
+
+        for address in &addresses {
+            if let Err(err) = self.add_peer(address.clone()).await {
+                debug!("skip invalid announced peer {}: {}", address, err);
+            }
+        }
+
+        let canonical_from = Self::canonicalize_address(from).unwrap_or_else(|_| from.to_string());
+
+        for address in &addresses {
+            self.touch_peer(
+                address,
+                Some(&peer_id),
+                Some(last_seen),
+                Some(&canonical_from),
+                Some(&addresses),
+                time_us,
+            );
+        }
+
+        self.emit_event(NetworkEvent::PeerInfo {
+            from: canonical_from,
+            peer_id,
+            addresses,
+            time_us,
+        });
+
+        Ok(())
+    }
+
+    async fn handle_peer_discovery_message(&self, from: &str, peers: Vec<String>) -> Result<()> {
+        let canonical_from = Self::canonicalize_address(from).unwrap_or_else(|_| from.to_string());
+
+        for peer in peers.iter() {
+            if let Err(err) = self.add_peer(peer.clone()).await {
+                debug!(
+                    "skip invalid discovered peer {} from {}: {}",
+                    peer, from, err
+                );
+            } else {
+                self.record_peer_seen(peer);
+            }
+        }
+
+        self.emit_event(NetworkEvent::PeerDiscovery {
+            from: canonical_from,
+            peers,
+        });
+
+        Ok(())
+    }
+
+    /// Process an inbound network message coming from a peer.
+    ///
+    /// Returns an optional `NetworkMessage` that should be sent back to the
+    /// caller (e.g. when responding to a block request). Most message types are
+    /// handled asynchronously and therefore return `None`.
+    pub async fn process_incoming_message(
+        &self,
+        from: &str,
+        message: NetworkMessage,
+    ) -> Result<Option<NetworkMessage>> {
+        self.record_peer_seen(from);
+
+        match message {
+            NetworkMessage::Block(block) => {
+                let canonical_from =
+                    Self::canonicalize_address(from).unwrap_or_else(|_| from.to_string());
+                self.emit_event(NetworkEvent::Block {
+                    from: canonical_from,
+                    block,
+                });
+                Ok(None)
+            }
+            NetworkMessage::Transaction(transaction) => {
+                let canonical_from =
+                    Self::canonicalize_address(from).unwrap_or_else(|_| from.to_string());
+                self.emit_event(NetworkEvent::Transaction {
+                    from: canonical_from,
+                    transaction,
+                });
+                Ok(None)
+            }
+            NetworkMessage::BlockRequest { hash } => {
+                let canonical_from =
+                    Self::canonicalize_address(from).unwrap_or_else(|_| from.to_string());
+                self.emit_event(NetworkEvent::BlockRequest {
+                    from: canonical_from,
+                    hash,
+                });
+                Ok(None)
+            }
+            NetworkMessage::BlockResponse(block) => {
+                let canonical_from =
+                    Self::canonicalize_address(from).unwrap_or_else(|_| from.to_string());
+                self.emit_event(NetworkEvent::BlockResponse {
+                    from: canonical_from,
+                    block,
+                });
+                Ok(None)
+            }
+            NetworkMessage::PeerInfo {
+                peer_id,
+                addresses,
+                time_us,
+            } => {
+                self.handle_peer_info_message(from, peer_id, addresses, time_us)
+                    .await?;
+                Ok(None)
+            }
+            NetworkMessage::PeerDiscovery { peers } => {
+                self.handle_peer_discovery_message(from, peers).await?;
+                Ok(None)
+            }
+        }
+    }
+
     /// Stop the P2P network
     pub async fn stop(&self) -> Result<()> {
         *self.is_running.write() = false;
@@ -305,6 +554,8 @@ impl HttpP2PNetwork {
     pub async fn add_peer(&self, peer_address: String) -> Result<()> {
         let canonical = Self::canonicalize_address(&peer_address)?;
 
+        self.touch_peer(&canonical, None, Some(ippan_time_now()), None, None, None);
+
         let inserted = {
             let mut peers = self.peers.write();
             if peers.contains(&canonical) {
@@ -320,30 +571,28 @@ impl HttpP2PNetwork {
             }
         };
 
-        if !inserted {
-            return Ok(());
-        }
+        if inserted {
+            self.update_peer_count();
+            info!("Added peer: {}", canonical);
 
-        self.update_peer_count();
-        info!("Added peer: {}", canonical);
-
-        // Share our addresses with the newly added peer
-        let addresses = self.local_advertised_addresses();
-        let client = self.client.clone();
-        let config = self.config.clone();
-        if let Err(e) = Self::send_message_to_peer(
-            &client,
-            &canonical,
-            &NetworkMessage::PeerInfo {
-                peer_id: self.local_peer_id.clone(),
-                addresses,
-                time_us: Some(ippan_time_now()),
-            },
-            &config,
-        )
-        .await
-        {
-            warn!("Failed to send peer info to {}: {}", canonical, e);
+            // Share our addresses with the newly added peer
+            let addresses = self.local_advertised_addresses();
+            let client = self.client.clone();
+            let config = self.config.clone();
+            if let Err(e) = Self::send_message_to_peer(
+                &client,
+                &canonical,
+                &NetworkMessage::PeerInfo {
+                    peer_id: self.local_peer_id.clone(),
+                    addresses,
+                    time_us: Some(ippan_time_now()),
+                },
+                &config,
+            )
+            .await
+            {
+                warn!("Failed to send peer info to {}: {}", canonical, e);
+            }
         }
 
         Ok(())
@@ -361,6 +610,7 @@ impl HttpP2PNetwork {
                 if removed {
                     self.update_peer_count();
                     info!("Removed peer: {}", canonical);
+                    self.peer_metadata.write().remove(&canonical);
                 }
             }
             Err(e) => {
@@ -400,6 +650,21 @@ impl HttpP2PNetwork {
     /// Get list of peers
     pub fn get_peers(&self) -> Vec<String> {
         self.peers.read().iter().cloned().collect()
+    }
+
+    /// Get rich peer metadata snapshot
+    pub fn get_peer_metadata(&self) -> Vec<PeerInfo> {
+        let peers_set = self.peers.read().clone();
+        self.peer_metadata
+            .read()
+            .values()
+            .map(|record| PeerInfo {
+                id: record.peer_id.clone().unwrap_or_default(),
+                address: record.address.clone(),
+                last_seen: record.last_seen,
+                is_connected: peers_set.contains(&record.address),
+            })
+            .collect()
     }
 
     /// Get the address advertised to other peers
@@ -705,9 +970,9 @@ impl HttpP2PNetwork {
 
     async fn handle_outgoing_message(
         client: &Client,
-        peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
+        peers: &Arc<RwLock<HashSet<String>>>,
         config: &P2PConfig,
-        announce_address: &Arc<parking_lot::RwLock<String>>,
+        announce_address: &Arc<RwLock<String>>,
         local_address: &str,
         message: NetworkMessage,
     ) {
@@ -804,10 +1069,12 @@ impl HttpP2PNetwork {
 
     async fn discover_peers(
         client: &Client,
-        peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
+        peers: &Arc<RwLock<HashSet<String>>>,
+        peer_metadata: &Arc<RwLock<HashMap<String, PeerRecord>>>,
+        incoming_sender: mpsc::UnboundedSender<NetworkEvent>,
         local_address: &str,
-        announce_address: &Arc<parking_lot::RwLock<String>>,
-        peer_count: &Arc<parking_lot::RwLock<usize>>,
+        announce_address: &Arc<RwLock<String>>,
+        peer_count: &Arc<RwLock<usize>>,
     ) {
         let peer_list = peers.read().clone();
         if peer_list.is_empty() {
@@ -817,9 +1084,11 @@ impl HttpP2PNetwork {
         for peer_address in peer_list {
             let client = client.clone();
             let peers = peers.clone();
+            let peer_metadata = peer_metadata.clone();
             let local_address = local_address.to_string();
             let announce_address = announce_address.clone();
             let peer_count = peer_count.clone();
+            let incoming_sender = incoming_sender.clone();
 
             tokio::spawn(async move {
                 let announced = announce_address.read().clone();
@@ -827,6 +1096,8 @@ impl HttpP2PNetwork {
                     &client,
                     &peer_address,
                     &peers,
+                    &peer_metadata,
+                    incoming_sender.clone(),
                     &local_address,
                     &announced,
                     &peer_count,
@@ -842,10 +1113,12 @@ impl HttpP2PNetwork {
     async fn request_peers_from_peer(
         client: &Client,
         peer_address: &str,
-        peers: &Arc<parking_lot::RwLock<HashSet<String>>>,
+        peers: &Arc<RwLock<HashSet<String>>>,
+        peer_metadata: &Arc<RwLock<HashMap<String, PeerRecord>>>,
+        incoming_sender: mpsc::UnboundedSender<NetworkEvent>,
         local_address: &str,
         announce_address: &str,
-        peer_count: &Arc<parking_lot::RwLock<usize>>,
+        peer_count: &Arc<RwLock<usize>>,
     ) -> Result<()> {
         let url = format!("{peer_address}/p2p/peers");
 
@@ -854,15 +1127,25 @@ impl HttpP2PNetwork {
             let peer_list: Vec<String> = response.json().await?;
 
             let mut current_peers = peers.write();
+            let mut discovered = Vec::new();
             for peer in peer_list {
                 match Self::canonicalize_address(&peer) {
                     Ok(canonical) => {
-                        if canonical != local_address
-                            && canonical != announce_address
-                            && !current_peers.contains(&canonical)
-                        {
-                            current_peers.insert(canonical.clone());
-                            info!("Discovered new peer: {}", canonical);
+                        if canonical != local_address && canonical != announce_address {
+                            let inserted = current_peers.insert(canonical.clone());
+
+                            {
+                                let mut records = peer_metadata.write();
+                                let entry = records
+                                    .entry(canonical.clone())
+                                    .or_insert_with(|| PeerRecord::new(canonical.clone()));
+                                entry.last_seen = ippan_time_now();
+                            }
+
+                            if inserted {
+                                info!("Discovered new peer: {}", canonical);
+                                discovered.push(canonical.clone());
+                            }
                         }
                     }
                     Err(e) => debug!("Invalid peer address {} from {}: {}", peer, peer_address, e),
@@ -870,6 +1153,13 @@ impl HttpP2PNetwork {
             }
 
             *peer_count.write() = current_peers.len();
+
+            if !discovered.is_empty() {
+                let _ = incoming_sender.send(NetworkEvent::PeerDiscovery {
+                    from: peer_address.to_string(),
+                    peers: discovered,
+                });
+            }
         }
 
         Ok(())
@@ -960,5 +1250,102 @@ mod tests {
         // Test removing peers
         network.remove_peer("http://localhost:9001");
         assert_eq!(network.get_peer_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_process_incoming_block_event() {
+        let config = P2PConfig::default();
+        let network = HttpP2PNetwork::new(config, "http://localhost:9000".to_string()).unwrap();
+        let mut events = network
+            .take_incoming_events()
+            .expect("expected event receiver");
+
+        let block = Block::new(vec![[0u8; 32]], vec![], 1, [1u8; 32]);
+
+        network
+            .process_incoming_message(
+                "http://localhost:9001",
+                NetworkMessage::Block(block.clone()),
+            )
+            .await
+            .unwrap();
+
+        match events.recv().await.unwrap() {
+            NetworkEvent::Block {
+                from,
+                block: received,
+            } => {
+                assert_eq!(from, "http://localhost:9001");
+                assert_eq!(received.hash(), block.hash());
+            }
+            other => panic!("Unexpected event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_peer_info_updates_metadata() {
+        let config = P2PConfig::default();
+        let network = HttpP2PNetwork::new(config, "http://localhost:9000".to_string()).unwrap();
+        let mut events = network
+            .take_incoming_events()
+            .expect("expected event receiver");
+
+        network
+            .process_incoming_message(
+                "http://localhost:9001",
+                NetworkMessage::PeerInfo {
+                    peer_id: "peer-1".to_string(),
+                    addresses: vec!["http://localhost:9001".to_string()],
+                    time_us: Some(123_456),
+                },
+            )
+            .await
+            .unwrap();
+
+        // Drain event channel to avoid cascading into other tests.
+        assert!(matches!(
+            events.recv().await.unwrap(),
+            NetworkEvent::PeerInfo { .. }
+        ));
+
+        let metadata = network.get_peer_metadata();
+        assert_eq!(metadata.len(), 1);
+        let peer = &metadata[0];
+        assert_eq!(peer.id, "peer-1");
+        assert_eq!(peer.address, "http://localhost:9001");
+        assert_eq!(peer.last_seen, 123_456);
+        assert!(peer.is_connected);
+    }
+
+    #[tokio::test]
+    async fn test_peer_discovery_adds_peer() {
+        let config = P2PConfig::default();
+        let network = HttpP2PNetwork::new(config, "http://localhost:9000".to_string()).unwrap();
+        let mut events = network
+            .take_incoming_events()
+            .expect("expected event receiver");
+
+        network
+            .process_incoming_message(
+                "http://localhost:9001",
+                NetworkMessage::PeerDiscovery {
+                    peers: vec!["http://localhost:9002".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+
+        match events.recv().await.unwrap() {
+            NetworkEvent::PeerDiscovery { peers, .. } => {
+                assert_eq!(peers, vec!["http://localhost:9002".to_string()]);
+            }
+            other => panic!("Unexpected event: {other:?}"),
+        }
+
+        assert!(
+            network
+                .get_peers()
+                .contains(&"http://localhost:9002".to_string())
+        );
     }
 }
