@@ -10,9 +10,8 @@ use crate::{
     smart_contracts::SmartContractService,
     types::{
         AIServiceConfig, AnalyticsConfig, AnalyticsInsight, LLMConfig, LLMRequest, LLMResponse,
-        MonitoringAlert, SmartContractAnalysisRequest,
-        SmartContractAnalysisResponse, TransactionOptimizationRequest,
-        TransactionOptimizationResponse,
+        MonitoringAlert, SmartContractAnalysisRequest, SmartContractAnalysisResponse,
+        TransactionOptimizationRequest, TransactionOptimizationResponse,
     },
 };
 use std::collections::HashMap;
@@ -47,7 +46,8 @@ impl AIService {
         #[cfg(feature = "analytics")]
         let analytics_service = AnalyticsService::new(config.analytics_config.clone());
         #[cfg(feature = "analytics")]
-        let monitoring_service = MonitoringService::new(crate::monitoring::MonitoringConfig::default());
+        let monitoring_service =
+            MonitoringService::new(crate::monitoring::MonitoringConfig::default());
         let smart_contract_service = SmartContractService::new();
         #[cfg(feature = "analytics")]
         let optimization_service = OptimizationService::new();

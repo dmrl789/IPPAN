@@ -1,9 +1,9 @@
 //! Performance tests for AI Service
 
 use ippan_ai_service::{
-    AIService, AIServiceConfig, LLMConfig, AnalyticsConfig, MonitoringConfig,
-    LLMRequest, SmartContractAnalysisRequest, ContractAnalysisType,
-    TransactionOptimizationRequest, OptimizationGoal, TransactionData,
+    AIService, AIServiceConfig, AnalyticsConfig, ContractAnalysisType, LLMConfig, LLMRequest,
+    MonitoringConfig, OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
+    TransactionOptimizationRequest,
 };
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -28,7 +28,11 @@ async fn test_llm_performance() {
     let result = service.generate_text(request).await;
     let duration = start.elapsed();
 
-    assert!(duration < Duration::from_secs(30), "LLM request took too long: {:?}", duration);
+    assert!(
+        duration < Duration::from_secs(30),
+        "LLM request took too long: {:?}",
+        duration
+    );
     assert!(result.is_ok() || result.is_err()); // Should not panic
 
     service.stop().await.expect("Failed to stop service");
@@ -61,8 +65,16 @@ contract Test {
     let result = service.analyze_smart_contract(request).await;
     let duration = start.elapsed();
 
-    assert!(duration < Duration::from_secs(10), "Smart contract analysis took too long: {:?}", duration);
-    assert!(result.is_ok(), "Smart contract analysis failed: {:?}", result);
+    assert!(
+        duration < Duration::from_secs(10),
+        "Smart contract analysis took too long: {:?}",
+        duration
+    );
+    assert!(
+        result.is_ok(),
+        "Smart contract analysis failed: {:?}",
+        result
+    );
 
     service.stop().await.expect("Failed to stop service");
 }
@@ -86,7 +98,10 @@ async fn test_transaction_optimization_performance() {
 
     let request = TransactionOptimizationRequest {
         transaction,
-        goals: vec![OptimizationGoal::MinimizeGas, OptimizationGoal::MinimizeCost],
+        goals: vec![
+            OptimizationGoal::MinimizeGas,
+            OptimizationGoal::MinimizeCost,
+        ],
         constraints: None,
     };
 
@@ -95,8 +110,16 @@ async fn test_transaction_optimization_performance() {
     let result = service.optimize_transaction(request).await;
     let duration = start.elapsed();
 
-    assert!(duration < Duration::from_secs(5), "Transaction optimization took too long: {:?}", duration);
-    assert!(result.is_ok(), "Transaction optimization failed: {:?}", result);
+    assert!(
+        duration < Duration::from_secs(5),
+        "Transaction optimization took too long: {:?}",
+        duration
+    );
+    assert!(
+        result.is_ok(),
+        "Transaction optimization failed: {:?}",
+        result
+    );
 
     service.stop().await.expect("Failed to stop service");
 }
@@ -113,20 +136,26 @@ async fn test_concurrent_requests_performance() {
     // Spawn 100 concurrent health checks
     for _ in 0..100 {
         let service_clone = service.clone();
-        let handle = tokio::spawn(async move {
-            service_clone.health_check().await
-        });
+        let handle = tokio::spawn(async move { service_clone.health_check().await });
         handles.push(handle);
     }
 
     // Wait for all to complete
     for handle in handles {
         let result = handle.await.expect("Task panicked");
-        assert!(result.is_ok(), "Concurrent health check failed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Concurrent health check failed: {:?}",
+            result
+        );
     }
 
     let duration = start.elapsed();
-    assert!(duration < Duration::from_secs(10), "Concurrent requests took too long: {:?}", duration);
+    assert!(
+        duration < Duration::from_secs(10),
+        "Concurrent requests took too long: {:?}",
+        duration
+    );
 
     service.stop().await.expect("Failed to stop service");
 }
@@ -191,7 +220,11 @@ async fn test_startup_time() {
     service.start().await.expect("Failed to start service");
     let duration = start.elapsed();
 
-    assert!(duration < Duration::from_secs(5), "Service startup took too long: {:?}", duration);
+    assert!(
+        duration < Duration::from_secs(5),
+        "Service startup took too long: {:?}",
+        duration
+    );
 
     service.stop().await.expect("Failed to stop service");
 }
@@ -206,7 +239,11 @@ async fn test_shutdown_time() {
     service.stop().await.expect("Failed to stop service");
     let duration = start.elapsed();
 
-    assert!(duration < Duration::from_secs(5), "Service shutdown took too long: {:?}", duration);
+    assert!(
+        duration < Duration::from_secs(5),
+        "Service shutdown took too long: {:?}",
+        duration
+    );
 }
 
 fn create_test_config() -> AIServiceConfig {

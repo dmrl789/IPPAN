@@ -2,13 +2,13 @@
 
 use crate::{
     errors::{RegistryError, Result},
-    types::*,
     storage::RegistryStorage,
+    types::*,
 };
+use chrono::{Duration, Utc};
 use ippan_ai_core::types::ModelId;
 use std::collections::HashMap;
-use tracing::{info, warn, error};
-use chrono::{Utc, Duration};
+use tracing::{error, info, warn};
 
 /// Governance manager for AI Registry
 pub struct GovernanceManager {
@@ -43,19 +43,19 @@ impl GovernanceManager {
         data: ProposalData,
     ) -> Result<GovernanceProposal> {
         info!("Creating governance proposal: {}", title);
-        
+
         // Check if proposer has sufficient voting power
         let power = self.get_voting_power(&proposer)?;
         if power < self.config.min_voting_power {
             return Err(RegistryError::PermissionDenied(
-                "Insufficient voting power to create proposal".to_string()
+                "Insufficient voting power to create proposal".to_string(),
             ));
         }
-        
+
         // Create proposal
         let proposal_id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now();
-        
+
         let proposal = GovernanceProposal {
             id: proposal_id.clone(),
             proposal_type,
@@ -65,17 +65,19 @@ impl GovernanceManager {
             data,
             created_at: now,
             voting_deadline: now + Duration::seconds(self.config.voting_period_seconds as i64),
-            execution_deadline: Some(now + Duration::seconds(self.config.execution_period_seconds as i64)),
+            execution_deadline: Some(
+                now + Duration::seconds(self.config.execution_period_seconds as i64),
+            ),
             status: ProposalStatus::Active,
             votes: Vec::new(),
         };
-        
+
         // Store proposal
         self.storage.store_governance_proposal(&proposal).await?;
-        
+
         // Update cache
         self.proposals.insert(proposal_id.clone(), proposal.clone());
-        
+
         info!("Governance proposal created: {}", proposal_id);
         Ok(proposal)
     }
@@ -89,33 +91,35 @@ impl GovernanceManager {
         justification: Option<String>,
     ) -> Result<()> {
         info!("Voting on proposal {}: {:?}", proposal_id, choice);
-        
+
         // Get proposal
-        let proposal = self.get_proposal(proposal_id).await?
+        let proposal = self
+            .get_proposal(proposal_id)
+            .await?
             .ok_or_else(|| RegistryError::ModelNotFound(proposal_id.to_string()))?;
-        
+
         // Check if proposal is still active
         if proposal.status != ProposalStatus::Active {
             return Err(RegistryError::GovernanceViolation(
-                "Proposal is not active".to_string()
+                "Proposal is not active".to_string(),
             ));
         }
-        
+
         // Check if voting deadline has passed
         if Utc::now() > proposal.voting_deadline {
             return Err(RegistryError::GovernanceViolation(
-                "Voting deadline has passed".to_string()
+                "Voting deadline has passed".to_string(),
             ));
         }
-        
+
         // Get voter's voting power
         let power = self.get_voting_power(&voter)?;
         if power == 0 {
             return Err(RegistryError::PermissionDenied(
-                "No voting power".to_string()
+                "No voting power".to_string(),
             ));
         }
-        
+
         // Create vote
         let vote = Vote {
             voter,
@@ -124,17 +128,20 @@ impl GovernanceManager {
             timestamp: Utc::now(),
             justification,
         };
-        
+
         // Add vote to proposal
         let mut updated_proposal = proposal;
         updated_proposal.votes.push(vote);
-        
+
         // Store updated proposal
-        self.storage.store_governance_proposal(&updated_proposal).await?;
-        
+        self.storage
+            .store_governance_proposal(&updated_proposal)
+            .await?;
+
         // Update cache
-        self.proposals.insert(proposal_id.to_string(), updated_proposal);
-        
+        self.proposals
+            .insert(proposal_id.to_string(), updated_proposal);
+
         info!("Vote recorded successfully");
         Ok(())
     }
@@ -142,53 +149,64 @@ impl GovernanceManager {
     /// Execute a proposal
     pub async fn execute_proposal(&mut self, proposal_id: &str) -> Result<()> {
         info!("Executing proposal: {}", proposal_id);
-        
+
         // Get proposal
-        let proposal = self.get_proposal(proposal_id).await?
+        let proposal = self
+            .get_proposal(proposal_id)
+            .await?
             .ok_or_else(|| RegistryError::ModelNotFound(proposal_id.to_string()))?;
-        
+
         // Check if proposal passed
         if !self.is_proposal_passed(&proposal)? {
             return Err(RegistryError::GovernanceViolation(
-                "Proposal did not pass".to_string()
+                "Proposal did not pass".to_string(),
             ));
         }
-        
+
         // Check if execution deadline has passed
         if let Some(deadline) = proposal.execution_deadline {
             if Utc::now() > deadline {
                 return Err(RegistryError::GovernanceViolation(
-                    "Execution deadline has passed".to_string()
+                    "Execution deadline has passed".to_string(),
                 ));
             }
         }
-        
+
         // Execute proposal based on type
         match &proposal.data {
             ProposalData::ModelApproval { model_id, .. } => {
                 self.execute_model_approval(model_id).await?;
-            },
-            ProposalData::FeeChange { fee_type, new_fee, .. } => {
+            }
+            ProposalData::FeeChange {
+                fee_type, new_fee, ..
+            } => {
                 self.execute_fee_change(fee_type, *new_fee).await?;
-            },
-            ProposalData::ParameterChange { parameter, new_value, .. } => {
+            }
+            ProposalData::ParameterChange {
+                parameter,
+                new_value,
+                ..
+            } => {
                 self.execute_parameter_change(parameter, new_value).await?;
-            },
+            }
             ProposalData::Emergency { action, .. } => {
                 self.execute_emergency_action(action).await?;
-            },
+            }
         }
-        
+
         // Update proposal status
         let mut updated_proposal = proposal;
         updated_proposal.status = ProposalStatus::Executed;
-        
+
         // Store updated proposal
-        self.storage.store_governance_proposal(&updated_proposal).await?;
-        
+        self.storage
+            .store_governance_proposal(&updated_proposal)
+            .await?;
+
         // Update cache
-        self.proposals.insert(proposal_id.to_string(), updated_proposal);
-        
+        self.proposals
+            .insert(proposal_id.to_string(), updated_proposal);
+
         info!("Proposal executed successfully");
         Ok(())
     }
@@ -199,15 +217,15 @@ impl GovernanceManager {
         if let Some(proposal) = self.proposals.get(proposal_id) {
             return Ok(Some(proposal.clone()));
         }
-        
+
         // Load from storage
         let proposal = self.storage.load_governance_proposal(proposal_id).await?;
-        
+
         // Update cache
         if let Some(ref prop) = proposal {
             self.proposals.insert(proposal_id.to_string(), prop.clone());
         }
-        
+
         Ok(proposal)
     }
 
@@ -221,22 +239,24 @@ impl GovernanceManager {
         let mut for_votes = 0u64;
         let mut against_votes = 0u64;
         let mut total_votes = 0u64;
-        
+
         for vote in &proposal.votes {
             total_votes += vote.weight;
             match vote.choice {
                 VoteChoice::For => for_votes += vote.weight,
                 VoteChoice::Against => against_votes += vote.weight,
-                VoteChoice::Abstain => {}, // Abstain votes don't count toward pass/fail
+                VoteChoice::Abstain => {} // Abstain votes don't count toward pass/fail
             }
         }
-        
+
         // Simple majority rule
         let passed = for_votes > against_votes && total_votes > 0;
-        
-        info!("Proposal {} voting results: For={}, Against={}, Total={}, Passed={}", 
-            proposal.id, for_votes, against_votes, total_votes, passed);
-        
+
+        info!(
+            "Proposal {} voting results: For={}, Against={}, Total={}, Passed={}",
+            proposal.id, for_votes, against_votes, total_votes, passed
+        );
+
         Ok(passed)
     }
 

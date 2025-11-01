@@ -479,7 +479,9 @@ mod tests {
             blocks_verified: 200,
         }];
 
-        let report = ai_consensus.monitor_network_health(&state, &telemetry).unwrap();
+        let report = ai_consensus
+            .monitor_network_health(&state, &telemetry)
+            .unwrap();
         assert!(report.overall_health >= 0.0);
         assert!(report.overall_health <= 1.0);
         assert!(!report.recommendations.is_empty());

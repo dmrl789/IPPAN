@@ -1,5 +1,5 @@
-use crate::{HashTimer, IppanTimeMicros};
 use crate::transaction::Transaction;
+use crate::{HashTimer, IppanTimeMicros};
 use blake3::Hasher as Blake3;
 use hex;
 use serde::{Deserialize, Serialize};

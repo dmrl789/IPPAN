@@ -3,16 +3,16 @@
 //! A comprehensive wallet implementation for managing multiple IPPAN addresses,
 //! private keys, and transactions with secure encryption and storage.
 
-pub mod crypto;
-pub mod storage;
-pub mod operations;
-pub mod types;
 pub mod cli;
+pub mod crypto;
 pub mod errors;
+pub mod operations;
+pub mod storage;
+pub mod types;
 
-pub use types::*;
-pub use operations::*;
 pub use errors::*;
+pub use operations::*;
+pub use types::*;
 
 /// Re-export commonly used types
-pub use ippan_types::{Address, Transaction, Amount};
+pub use ippan_types::{Address, Amount, Transaction};

@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::errors::*;
@@ -96,32 +96,32 @@ impl WalletState {
             last_sync: None,
         }
     }
-    
+
     pub fn add_address(&mut self, address: WalletAddress) {
         self.addresses.insert(address.address.clone(), address);
         self.address_counter += 1;
     }
-    
+
     pub fn get_address(&self, address: &str) -> Option<&WalletAddress> {
         self.addresses.get(address)
     }
-    
+
     pub fn get_address_mut(&mut self, address: &str) -> Option<&mut WalletAddress> {
         self.addresses.get_mut(address)
     }
-    
+
     pub fn remove_address(&mut self, address: &str) -> Option<WalletAddress> {
         self.addresses.remove(address)
     }
-    
+
     pub fn list_addresses(&self) -> Vec<&WalletAddress> {
         self.addresses.values().collect()
     }
-    
+
     pub fn get_total_balance(&self) -> u64 {
         self.addresses.values().map(|addr| addr.balance).sum()
     }
-    
+
     pub fn update_balance(&mut self, address: &str, balance: u64) -> Result<()> {
         if let Some(addr) = self.addresses.get_mut(address) {
             addr.balance = balance;
@@ -130,7 +130,7 @@ impl WalletState {
             Err(WalletError::AddressNotFound(address.to_string()))
         }
     }
-    
+
     pub fn update_nonce(&mut self, address: &str, nonce: u64) -> Result<()> {
         if let Some(addr) = self.addresses.get_mut(address) {
             addr.nonce = nonce;
@@ -139,7 +139,7 @@ impl WalletState {
             Err(WalletError::AddressNotFound(address.to_string()))
         }
     }
-    
+
     pub fn mark_address_used(&mut self, address: &str) -> Result<()> {
         if let Some(addr) = self.addresses.get_mut(address) {
             addr.last_used = Some(Utc::now());
@@ -191,13 +191,13 @@ impl WalletBackup {
             checksum,
         }
     }
-    
+
     fn calculate_checksum(state: &WalletState) -> String {
         // Simple checksum for integrity verification
         let data = serde_json::to_string(state).unwrap_or_default();
         blake3::hash(data.as_bytes()).to_hex()[..16].to_string()
     }
-    
+
     pub fn verify_checksum(&self) -> bool {
         let calculated = Self::calculate_checksum(&self.wallet_state);
         calculated == self.checksum

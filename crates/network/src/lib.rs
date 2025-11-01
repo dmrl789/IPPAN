@@ -15,14 +15,14 @@
 //! - `health`: Monitors peer and network health
 
 pub mod connection;
+pub mod deduplication;
 pub mod discovery;
+pub mod health;
 pub mod metrics;
 pub mod parallel_gossip;
 pub mod peers;
-pub mod deduplication;
-pub mod reputation;
-pub mod health;
 pub mod protocol;
+pub mod reputation;
 
 // ------------------------------------------------------------
 // Re-exports for workspace-wide use
@@ -33,14 +33,14 @@ pub use connection::{ConnectionConfig, ConnectionManager, ConnectionState};
 pub use discovery::{DiscoveryConfig, DiscoveryService, PeerDiscovery};
 
 // Gossip & messaging
-pub use parallel_gossip::{GossipMessage, ParallelGossip};
 pub use deduplication::MessageDeduplicator;
+pub use parallel_gossip::{GossipMessage, ParallelGossip};
 pub use protocol::{MessageHandler, NetworkProtocol, ProtocolError};
 
 // Peer management & reputation
 pub use peers::{Peer, PeerDirectory};
-pub use reputation::{ReputationManager, ReputationScore, PeerReputationStats};
+pub use reputation::{PeerReputationStats, ReputationManager, ReputationScore};
 
 // Metrics & health
+pub use health::{HealthCheckConfig, HealthMonitor, PeerHealth, PeerHealthStats};
 pub use metrics::{MetricsCollector, NetworkMetrics, NetworkMetricsSnapshot};
-pub use health::{HealthMonitor, PeerHealth, HealthCheckConfig, PeerHealthStats};

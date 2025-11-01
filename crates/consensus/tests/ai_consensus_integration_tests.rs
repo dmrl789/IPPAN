@@ -8,11 +8,11 @@
 
 #[cfg(feature = "ai_l1")]
 mod ai_consensus_tests {
+    use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};
     use ippan_consensus::{
         L1AIConfig, L1AIConsensus, NetworkState, PoAConfig, PoAConsensus, Validator,
         ValidatorCandidate,
     };
-    use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};
     use ippan_mempool::Mempool;
     use ippan_storage::{SledStorage, Storage, ValidatorTelemetry};
     use std::sync::Arc;
@@ -41,7 +41,8 @@ mod ai_consensus_tests {
     #[test]
     fn test_ai_consensus_validator_selection() {
         let dir = tempdir().unwrap();
-        let storage = Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
+        let storage =
+            Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
 
         // Create validators
         let validators = vec![
@@ -81,7 +82,9 @@ mod ai_consensus_tests {
                 recent_performance: 0.9 + (v.stake as f64 / 20000.0),
                 network_contribution: 0.8,
             };
-            storage.store_validator_telemetry(&v.id, &telemetry).unwrap();
+            storage
+                .store_validator_telemetry(&v.id, &telemetry)
+                .unwrap();
         }
 
         // Create consensus with AI enabled
@@ -100,7 +103,9 @@ mod ai_consensus_tests {
 
         // Load GBDT model
         let model = create_test_gbdt_model();
-        consensus.load_ai_models(Some(model), None, None, None).unwrap();
+        consensus
+            .load_ai_models(Some(model), None, None, None)
+            .unwrap();
 
         // Get consensus state - this should trigger AI-based validator selection
         let state = consensus.get_state();
@@ -118,7 +123,8 @@ mod ai_consensus_tests {
     #[test]
     fn test_telemetry_tracking() {
         let dir = tempdir().unwrap();
-        let storage = Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
+        let storage =
+            Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
 
         let validator_id = [1u8; 32];
 
@@ -169,7 +175,10 @@ mod ai_consensus_tests {
         assert_eq!(telemetry.blocks_verified, 1);
 
         // Verify persistence
-        let stored_telemetry = storage.get_validator_telemetry(&validator_id).unwrap().unwrap();
+        let stored_telemetry = storage
+            .get_validator_telemetry(&validator_id)
+            .unwrap()
+            .unwrap();
         assert_eq!(stored_telemetry.blocks_proposed, 1);
         assert_eq!(stored_telemetry.blocks_verified, 1);
     }
@@ -180,9 +189,7 @@ mod ai_consensus_tests {
 
         // Load test model
         let model = create_test_gbdt_model();
-        l1_ai
-            .load_models(Some(model), None, None, None)
-            .unwrap();
+        l1_ai.load_models(Some(model), None, None, None).unwrap();
 
         let candidates = vec![
             ValidatorCandidate {
@@ -223,7 +230,8 @@ mod ai_consensus_tests {
     #[test]
     fn test_reputation_scoring_from_telemetry() {
         let dir = tempdir().unwrap();
-        let storage = Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
+        let storage =
+            Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
 
         let telemetry_good = ValidatorTelemetry {
             validator_id: [1u8; 32],
@@ -271,7 +279,8 @@ mod ai_consensus_tests {
     #[test]
     fn test_multi_round_telemetry_updates() {
         let dir = tempdir().unwrap();
-        let storage = Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
+        let storage =
+            Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
 
         let validator_id = [1u8; 32];
         let validators = vec![Validator {
@@ -315,7 +324,8 @@ mod ai_consensus_tests {
     #[test]
     fn test_ai_consensus_fallback() {
         let dir = tempdir().unwrap();
-        let storage = Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
+        let storage =
+            Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
 
         let validators = vec![
             Validator {
@@ -356,7 +366,8 @@ mod ai_consensus_tests {
     #[test]
     fn test_slash_penalty_in_reputation() {
         let dir = tempdir().unwrap();
-        let storage = Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
+        let storage =
+            Arc::new(SledStorage::new(dir.path()).unwrap()) as Arc<dyn Storage + Send + Sync>;
 
         let validator_id = [1u8; 32];
         let validators = vec![Validator {
@@ -388,8 +399,7 @@ mod ai_consensus_tests {
             .telemetry_manager
             .get_telemetry(&validator_id)
             .unwrap();
-        let score_before =
-            PoAConsensus::calculate_reputation_from_telemetry(&telemetry_before);
+        let score_before = PoAConsensus::calculate_reputation_from_telemetry(&telemetry_before);
 
         // Record slash
         consensus

@@ -16,7 +16,7 @@ impl Peer {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         Self {
             id: None,
             address: address.into(),
@@ -31,7 +31,7 @@ impl Peer {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         Self {
             id: Some(id.into()),
             address: address.into(),
@@ -50,7 +50,7 @@ impl Peer {
                 .as_secs(),
         );
     }
-    
+
     /// Get uptime in seconds
     pub fn uptime_seconds(&self) -> Option<u64> {
         let now = std::time::SystemTime::now()
