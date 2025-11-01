@@ -139,7 +139,10 @@ impl FeatureEngineeringPipeline {
 
     /// Transform new data deterministically
     #[instrument(skip(self, data))]
-    pub async fn transform(&self, data: &RawFeatureData) -> Result<ProcessedFeatureData, GBDTError> {
+    pub async fn transform(
+        &self,
+        data: &RawFeatureData,
+    ) -> Result<ProcessedFeatureData, GBDTError> {
         let start = std::time::Instant::now();
         let stats = self
             .statistics
@@ -286,7 +289,10 @@ impl FeatureEngineeringPipeline {
     }
 
     /// Compute variance-based feature importance
-    fn calculate_feature_importance(&self, data: &RawFeatureData) -> Result<FeatureImportance, GBDTError> {
+    fn calculate_feature_importance(
+        &self,
+        data: &RawFeatureData,
+    ) -> Result<FeatureImportance, GBDTError> {
         let stats = self.statistics.as_ref().unwrap();
         let mut scores = Vec::with_capacity(data.feature_count);
         let mut total = 0.0;
@@ -309,10 +315,13 @@ impl FeatureEngineeringPipeline {
             .collect();
 
         if selected.len() > self.config.max_features {
-            let mut sorted: Vec<(usize, f64)> =
-                selected.iter().map(|&i| (i, scores[i])).collect();
+            let mut sorted: Vec<(usize, f64)> = selected.iter().map(|&i| (i, scores[i])).collect();
             sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-            selected = sorted.iter().take(self.config.max_features).map(|(i, _)| *i).collect();
+            selected = sorted
+                .iter()
+                .take(self.config.max_features)
+                .map(|(i, _)| *i)
+                .collect();
         }
 
         let variance_explained: f64 = selected.iter().map(|&i| scores[i]).sum();
@@ -326,7 +335,10 @@ impl FeatureEngineeringPipeline {
     }
 
     /// Calculate normalization (scaled to int for deterministic GBDT)
-    fn calculate_normalization(&self, data: &RawFeatureData) -> Result<FeatureNormalization, GBDTError> {
+    fn calculate_normalization(
+        &self,
+        data: &RawFeatureData,
+    ) -> Result<FeatureNormalization, GBDTError> {
         let stats = self.statistics.as_ref().unwrap();
         let mut means = Vec::new();
         let mut stds = Vec::new();
@@ -340,15 +352,28 @@ impl FeatureEngineeringPipeline {
             maxs.push((stats.maxs[i] * 1000.0) as i64);
         }
 
-        Ok(FeatureNormalization { means, std_devs: stds, mins, maxs })
+        Ok(FeatureNormalization {
+            means,
+            std_devs: stds,
+            mins,
+            maxs,
+        })
     }
 
-    fn normalize_value(&self, value: f64, idx: usize, norm: &FeatureNormalization) -> Result<f64, GBDTError> {
+    fn normalize_value(
+        &self,
+        value: f64,
+        idx: usize,
+        norm: &FeatureNormalization,
+    ) -> Result<f64, GBDTError> {
         if idx >= norm.means.len() {
-            return Err(GBDTError::FeatureSizeMismatch { expected: norm.means.len(), actual: idx + 1 });
+            return Err(GBDTError::FeatureSizeMismatch {
+                expected: norm.means.len(),
+                actual: idx + 1,
+            });
         }
-        let normalized = (value - (norm.means[idx] as f64 / 1000.0))
-            / (norm.std_devs[idx] as f64 / 1000.0);
+        let normalized =
+            (value - (norm.means[idx] as f64 / 1000.0)) / (norm.std_devs[idx] as f64 / 1000.0);
         let minb = norm.mins[idx] as f64 / 1000.0;
         let maxb = norm.maxs[idx] as f64 / 1000.0;
         Ok(normalized.clamp(minb, maxb))
@@ -371,7 +396,10 @@ impl FeatureEngineeringPipeline {
             let mut sel_row = Vec::with_capacity(imp.selected_features.len());
             for &idx in &imp.selected_features {
                 if idx >= row.len() {
-                    return Err(GBDTError::FeatureSizeMismatch { expected: row.len(), actual: idx + 1 });
+                    return Err(GBDTError::FeatureSizeMismatch {
+                        expected: row.len(),
+                        actual: idx + 1,
+                    });
                 }
                 sel_row.push(row[idx]);
             }
@@ -416,9 +444,15 @@ impl FeatureEngineeringPipeline {
         Ok(())
     }
 
-    pub fn get_feature_importance(&self) -> Option<&FeatureImportance> { self.feature_importance.as_ref() }
-    pub fn get_normalization(&self) -> Option<&FeatureNormalization> { self.normalization.as_ref() }
-    pub fn get_statistics(&self) -> Option<&FeatureStatistics> { self.statistics.as_ref() }
+    pub fn get_feature_importance(&self) -> Option<&FeatureImportance> {
+        self.feature_importance.as_ref()
+    }
+    pub fn get_normalization(&self) -> Option<&FeatureNormalization> {
+        self.normalization.as_ref()
+    }
+    pub fn get_statistics(&self) -> Option<&FeatureStatistics> {
+        self.statistics.as_ref()
+    }
 }
 
 /// Utilities for data generation and conversion
@@ -520,7 +554,10 @@ mod tests {
 
     #[test]
     fn test_utils_create_raw_data() {
-        let raw = utils::create_raw_data(vec![vec![1.0, 2.0], vec![3.0, 4.0]], vec!["a".into(), "b".into()]);
+        let raw = utils::create_raw_data(
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+            vec!["a".into(), "b".into()],
+        );
         assert_eq!(raw.sample_count, 2);
         assert_eq!(raw.feature_count, 2);
     }

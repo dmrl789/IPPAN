@@ -104,12 +104,22 @@ fn normalize_features_clock_offset_cancels_when_median_also_offset() {
     // Map features by node_id for comparison
     let map_a: HashMap<String, (i64, f64, f64, f64)> = feats_a
         .into_iter()
-        .map(|f| (f.node_id.clone(), (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy)))
+        .map(|f| {
+            (
+                f.node_id.clone(),
+                (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy),
+            )
+        })
         .collect();
 
     let map_b: HashMap<String, (i64, f64, f64, f64)> = feats_b
         .into_iter()
-        .map(|f| (f.node_id.clone(), (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy)))
+        .map(|f| {
+            (
+                f.node_id.clone(),
+                (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy),
+            )
+        })
         .collect();
 
     assert_eq!(map_a, map_b);

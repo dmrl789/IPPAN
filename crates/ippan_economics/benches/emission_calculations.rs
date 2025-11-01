@@ -2,7 +2,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ippan_economics::prelude::*;
-use ippan_economics::{ValidatorParticipation, ValidatorRole, EconomicsParams, ValidatorId};
+use ippan_economics::{EconomicsParams, ValidatorId, ValidatorParticipation, ValidatorRole};
 use rust_decimal::Decimal;
 
 fn bench_round_reward_calculation(c: &mut Criterion) {

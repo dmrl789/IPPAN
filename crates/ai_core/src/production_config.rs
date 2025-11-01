@@ -309,7 +309,10 @@ impl ProductionConfigManager {
     pub async fn load_config(&self) -> Result<(), GBDTError> {
         if !self.config_path.exists() {
             return Err(GBDTError::ModelValidationFailed {
-                reason: format!("Configuration file not found: {}", self.config_path.display()),
+                reason: format!(
+                    "Configuration file not found: {}",
+                    self.config_path.display()
+                ),
             });
         }
 

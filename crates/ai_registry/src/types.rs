@@ -1,9 +1,8 @@
 //! Type definitions for the AI Registry module
 
+use chrono::{DateTime, Utc};
 use ippan_ai_core::types::{ModelId, ModelMetadata};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Model registration status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,10 +130,7 @@ pub enum ProposalData {
         reason: String,
     },
     /// Emergency data
-    Emergency {
-        action: String,
-        reason: String,
-    },
+    Emergency { action: String, reason: String },
 }
 
 /// Proposal status
@@ -277,10 +273,10 @@ impl Default for RegistryConfig {
             default_execution_fee: 100,
             storage_fee_per_byte_per_day: 1,
             proposal_fee: 10_000,
-            voting_period_seconds: 86400 * 7, // 7 days
+            voting_period_seconds: 86400 * 7,     // 7 days
             execution_period_seconds: 86400 * 14, // 14 days
             min_voting_power: 1000,
-            max_model_size: 1024 * 1024 * 100, // 100MB
+            max_model_size: 1024 * 1024 * 100,  // 100MB
             max_parameter_count: 1_000_000_000, // 1B parameters
         }
     }

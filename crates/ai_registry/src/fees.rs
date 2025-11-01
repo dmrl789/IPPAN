@@ -2,12 +2,12 @@
 
 use crate::{
     errors::{RegistryError, Result},
-    types::*,
     storage::RegistryStorage,
+    types::*,
 };
 use ippan_ai_core::types::{ModelId, ModelMetadata};
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::info;
 
 /// Fee manager for AI Registry
 pub struct FeeManager {
@@ -55,53 +55,68 @@ impl FeeManager {
     /// Create a new fee manager
     pub fn new(storage: RegistryStorage, config: RegistryConfig) -> Self {
         let mut fee_structures = HashMap::new();
-        
+
         // Initialize default fee structures
-        fee_structures.insert(FeeType::Registration, FeeStructure {
-            fee_type: FeeType::Registration,
-            base_fee: config.min_registration_fee,
-            unit_fee: 1, // 1 per byte
-            min_fee: config.min_registration_fee,
-            max_fee: config.max_registration_fee,
-            calculation_method: FeeCalculationMethod::Linear,
-        });
-        
-        fee_structures.insert(FeeType::Execution, FeeStructure {
-            fee_type: FeeType::Execution,
-            base_fee: config.default_execution_fee,
-            unit_fee: 1, // 1 per execution
-            min_fee: 1,
-            max_fee: 1000000, // 1M max
-            calculation_method: FeeCalculationMethod::Fixed,
-        });
-        
-        fee_structures.insert(FeeType::Storage, FeeStructure {
-            fee_type: FeeType::Storage,
-            base_fee: 0,
-            unit_fee: config.storage_fee_per_byte_per_day,
-            min_fee: 0,
-            max_fee: 1000000, // 1M max per day
-            calculation_method: FeeCalculationMethod::Linear,
-        });
-        
-        fee_structures.insert(FeeType::Proposal, FeeStructure {
-            fee_type: FeeType::Proposal,
-            base_fee: config.proposal_fee,
-            unit_fee: 0,
-            min_fee: config.proposal_fee,
-            max_fee: config.proposal_fee,
-            calculation_method: FeeCalculationMethod::Fixed,
-        });
-        
-        fee_structures.insert(FeeType::Update, FeeStructure {
-            fee_type: FeeType::Update,
-            base_fee: config.min_registration_fee / 2, // Half of registration fee
-            unit_fee: 1, // 1 per byte changed
-            min_fee: 1,
-            max_fee: config.max_registration_fee / 2,
-            calculation_method: FeeCalculationMethod::Linear,
-        });
-        
+        fee_structures.insert(
+            FeeType::Registration,
+            FeeStructure {
+                fee_type: FeeType::Registration,
+                base_fee: config.min_registration_fee,
+                unit_fee: 1, // 1 per byte
+                min_fee: config.min_registration_fee,
+                max_fee: config.max_registration_fee,
+                calculation_method: FeeCalculationMethod::Linear,
+            },
+        );
+
+        fee_structures.insert(
+            FeeType::Execution,
+            FeeStructure {
+                fee_type: FeeType::Execution,
+                base_fee: config.default_execution_fee,
+                unit_fee: 1, // 1 per execution
+                min_fee: 1,
+                max_fee: 1000000, // 1M max
+                calculation_method: FeeCalculationMethod::Fixed,
+            },
+        );
+
+        fee_structures.insert(
+            FeeType::Storage,
+            FeeStructure {
+                fee_type: FeeType::Storage,
+                base_fee: 0,
+                unit_fee: config.storage_fee_per_byte_per_day,
+                min_fee: 0,
+                max_fee: 1000000, // 1M max per day
+                calculation_method: FeeCalculationMethod::Linear,
+            },
+        );
+
+        fee_structures.insert(
+            FeeType::Proposal,
+            FeeStructure {
+                fee_type: FeeType::Proposal,
+                base_fee: config.proposal_fee,
+                unit_fee: 0,
+                min_fee: config.proposal_fee,
+                max_fee: config.proposal_fee,
+                calculation_method: FeeCalculationMethod::Fixed,
+            },
+        );
+
+        fee_structures.insert(
+            FeeType::Update,
+            FeeStructure {
+                fee_type: FeeType::Update,
+                base_fee: config.min_registration_fee / 2, // Half of registration fee
+                unit_fee: 1,                               // 1 per byte changed
+                min_fee: 1,
+                max_fee: config.max_registration_fee / 2,
+                calculation_method: FeeCalculationMethod::Linear,
+            },
+        );
+
         Self {
             storage,
             fee_structures,
@@ -119,17 +134,16 @@ impl FeeManager {
         additional_data: Option<HashMap<String, String>>,
     ) -> Result<FeeCalculation> {
         info!("Calculating fee for: {:?}", fee_type);
-        
-        let fee_structure = self.fee_structures
-            .get(&fee_type)
-            .ok_or_else(|| RegistryError::FeeCalculationError(
-                format!("Fee structure not found for type: {:?}", fee_type)
-            ))?;
-        
+
+        let fee_structure = self.fee_structures.get(&fee_type).ok_or_else(|| {
+            RegistryError::FeeCalculationError(format!(
+                "Fee structure not found for type: {:?}",
+                fee_type
+            ))
+        })?;
+
         let (amount, calculated_units) = match fee_structure.calculation_method {
-            FeeCalculationMethod::Fixed => {
-                (fee_structure.base_fee, 1)
-            },
+            FeeCalculationMethod::Fixed => (fee_structure.base_fee, 1),
             FeeCalculationMethod::Linear => {
                 let calculated_units = if let Some(u) = units {
                     u
@@ -138,7 +152,7 @@ impl FeeManager {
                 };
                 let unit_fee = fee_structure.unit_fee * calculated_units;
                 (fee_structure.base_fee + unit_fee, calculated_units)
-            },
+            }
             FeeCalculationMethod::Logarithmic => {
                 let calculated_units = if let Some(u) = units {
                     u
@@ -148,7 +162,7 @@ impl FeeManager {
                 let log_units = (calculated_units as f64).ln().max(1.0) as u64;
                 let unit_fee = fee_structure.unit_fee * log_units;
                 (fee_structure.base_fee + unit_fee, calculated_units)
-            },
+            }
             FeeCalculationMethod::Step => {
                 let calculated_units = if let Some(u) = units {
                     u
@@ -158,14 +172,12 @@ impl FeeManager {
                 let steps = (calculated_units + 999) / 1000; // 1000 units per step
                 let unit_fee = fee_structure.unit_fee * steps;
                 (fee_structure.base_fee + unit_fee, calculated_units)
-            },
+            }
         };
-        
+
         // Apply min/max bounds
-        let final_amount = amount
-            .max(fee_structure.min_fee)
-            .min(fee_structure.max_fee);
-        
+        let final_amount = amount.max(fee_structure.min_fee).min(fee_structure.max_fee);
+
         let calculation = FeeCalculation {
             fee_type,
             amount: final_amount,
@@ -174,10 +186,12 @@ impl FeeManager {
             units: calculated_units,
             method: fee_structure.calculation_method,
         };
-        
-        info!("Fee calculated: {} (base: {}, unit: {}, units: {})", 
-            final_amount, fee_structure.base_fee, fee_structure.unit_fee, calculated_units);
-        
+
+        info!(
+            "Fee calculated: {} (base: {}, unit: {}, units: {})",
+            final_amount, fee_structure.base_fee, fee_structure.unit_fee, calculated_units
+        );
+
         Ok(calculation)
     }
 
@@ -190,20 +204,19 @@ impl FeeManager {
         amount: u64,
         metadata: Option<HashMap<String, String>>,
     ) -> Result<()> {
-        info!("Collecting fee: {:?} amount={} user={}", fee_type, amount, user);
-        
+        info!(
+            "Collecting fee: {:?} amount={} user={}",
+            fee_type, amount, user
+        );
+
         // Record fee collection
-        self.storage.record_fee_collection(
-            fee_type,
-            model_id,
-            user,
-            amount,
-            metadata,
-        ).await?;
-        
+        self.storage
+            .record_fee_collection(fee_type, model_id, user, amount, metadata)
+            .await?;
+
         // Update statistics
         self.update_fee_stats(fee_type, model_id, user, amount);
-        
+
         info!("Fee collected successfully");
         Ok(())
     }
@@ -221,13 +234,14 @@ impl FeeManager {
     /// Update fee structure
     pub fn update_fee_structure(&mut self, fee_structure: FeeStructure) -> Result<()> {
         info!("Updating fee structure: {:?}", fee_structure.fee_type);
-        
+
         // Validate fee structure
         self.validate_fee_structure(&fee_structure)?;
-        
+
         // Update fee structure
-        self.fee_structures.insert(fee_structure.fee_type.clone(), fee_structure);
-        
+        self.fee_structures
+            .insert(fee_structure.fee_type.clone(), fee_structure);
+
         info!("Fee structure updated successfully");
         Ok(())
     }
@@ -245,25 +259,25 @@ impl FeeManager {
                     Ok(metadata.size_bytes)
                 } else {
                     Err(RegistryError::FeeCalculationError(
-                        "Model metadata required for registration fee calculation".to_string()
+                        "Model metadata required for registration fee calculation".to_string(),
                     ))
                 }
-            },
+            }
             FeeType::Execution => {
                 Ok(1) // 1 execution
-            },
+            }
             FeeType::Storage => {
                 if let Some(metadata) = model_metadata {
                     Ok(metadata.size_bytes)
                 } else {
                     Err(RegistryError::FeeCalculationError(
-                        "Model metadata required for storage fee calculation".to_string()
+                        "Model metadata required for storage fee calculation".to_string(),
                     ))
                 }
-            },
+            }
             FeeType::Proposal => {
                 Ok(1) // 1 proposal
-            },
+            }
             FeeType::Update => {
                 if let Some(data) = additional_data {
                     if let Some(size_change) = data.get("size_change") {
@@ -274,7 +288,7 @@ impl FeeManager {
                 } else {
                     Ok(0)
                 }
-            },
+            }
         }
     }
 
@@ -287,15 +301,19 @@ impl FeeManager {
         amount: u64,
     ) {
         self.stats.total_fees_collected += amount;
-        
+
         // Update fees by type
         *self.stats.fees_by_type.entry(fee_type).or_insert(0) += amount;
-        
+
         // Update fees by model
         if let Some(model_id) = model_id {
-            *self.stats.fees_by_model.entry(model_id.clone()).or_insert(0) += amount;
+            *self
+                .stats
+                .fees_by_model
+                .entry(model_id.clone())
+                .or_insert(0) += amount;
         }
-        
+
         // Update fees by user
         *self.stats.fees_by_user.entry(user.to_string()).or_insert(0) += amount;
     }
@@ -305,24 +323,27 @@ impl FeeManager {
         // Check min/max bounds
         if fee_structure.min_fee > fee_structure.max_fee {
             return Err(RegistryError::FeeCalculationError(
-                "Minimum fee cannot be greater than maximum fee".to_string()
+                "Minimum fee cannot be greater than maximum fee".to_string(),
             ));
         }
-        
+
         // Check base fee is within bounds
-        if fee_structure.base_fee < fee_structure.min_fee || fee_structure.base_fee > fee_structure.max_fee {
+        if fee_structure.base_fee < fee_structure.min_fee
+            || fee_structure.base_fee > fee_structure.max_fee
+        {
             return Err(RegistryError::FeeCalculationError(
-                "Base fee must be within min/max bounds".to_string()
+                "Base fee must be within min/max bounds".to_string(),
             ));
         }
-        
+
         // Check unit fee is reasonable
-        if fee_structure.unit_fee > 1000000 { // 1M max per unit
+        if fee_structure.unit_fee > 1000000 {
+            // 1M max per unit
             return Err(RegistryError::FeeCalculationError(
-                "Unit fee is too high".to_string()
+                "Unit fee is too high".to_string(),
             ));
         }
-        
+
         Ok(())
     }
 }

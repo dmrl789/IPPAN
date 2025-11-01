@@ -11,8 +11,8 @@
 //! - **Confidential transaction support**
 
 use anyhow::Result;
-use ippan_types::Transaction;
 use ippan_crypto::validate_confidential_transaction;
+use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap, HashMap};
@@ -120,7 +120,10 @@ impl Mempool {
         };
 
         transactions.insert(tx_hash.clone(), meta);
-        sender_nonces.entry(sender).or_default().insert(tx.nonce, tx_hash);
+        sender_nonces
+            .entry(sender)
+            .or_default()
+            .insert(tx.nonce, tx_hash);
 
         Ok(true)
     }
@@ -206,7 +209,9 @@ impl Mempool {
                 }
             }
 
-            let Some(meta) = transactions.get(&candidate.tx_hash) else { continue };
+            let Some(meta) = transactions.get(&candidate.tx_hash) else {
+                continue;
+            };
             selected.push(meta.transaction.clone());
             last_nonce.insert(candidate.sender.clone(), candidate.nonce);
 
@@ -286,7 +291,9 @@ impl Mempool {
 
     fn calculate_transaction_fee(&self, tx: &Transaction) -> u64 {
         let base_fee = 1000;
-        let mut size = 32 * 3 + 8 * 2 + 64
+        let mut size = 32 * 3
+            + 8 * 2
+            + 64
             + std::mem::size_of_val(&tx.hashtimer.timestamp_us)
             + tx.hashtimer.entropy.len()
             + std::mem::size_of_val(&tx.timestamp.0);
@@ -294,11 +301,19 @@ impl Mempool {
 
         if let Some(env) = &tx.confidential {
             size += env.enc_algo.len() + env.iv.len() + env.ciphertext.len();
-            size += env.access_keys.iter().map(|k| k.recipient_pub.len() + k.enc_key.len()).sum::<usize>();
+            size += env
+                .access_keys
+                .iter()
+                .map(|k| k.recipient_pub.len() + k.enc_key.len())
+                .sum::<usize>();
         }
         if let Some(proof) = &tx.zk_proof {
             size += proof.proof.len();
-            size += proof.public_inputs.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>();
+            size += proof
+                .public_inputs
+                .iter()
+                .map(|(k, v)| k.len() + v.len())
+                .sum::<usize>();
         }
 
         base_fee + (size as u64 * 10)
@@ -432,8 +447,11 @@ mod tests {
         mempool.add_transaction(tx1.clone()).unwrap();
         mempool.add_transaction(tx3.clone()).unwrap();
         let block_txs = mempool.get_transactions_for_block(3);
-        let nonces: Vec<_> =
-            block_txs.iter().filter(|tx| tx.from == sender).map(|tx| tx.nonce).collect();
+        let nonces: Vec<_> = block_txs
+            .iter()
+            .filter(|tx| tx.from == sender)
+            .map(|tx| tx.nonce)
+            .collect();
         assert_eq!(nonces, vec![1, 2, 3]);
     }
 

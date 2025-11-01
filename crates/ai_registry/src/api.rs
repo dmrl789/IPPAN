@@ -1,11 +1,10 @@
 //! API implementation for AI Registry
 
 use crate::{
-    errors::{RegistryError, Result},
-    types::*,
-    registry::ModelRegistry,
+    fees::{FeeCalculation, FeeManager, FeeStats},
     governance::GovernanceManager,
-    fees::FeeManager,
+    registry::ModelRegistry,
+    types::*,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -14,13 +13,15 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use ippan_ai_core::types::{ModelId, ModelMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{error, info};
 
-/// API state
+/// Shared API state used by Axum handlers
+#[derive(Clone)]
 pub struct ApiState {
     /// Model registry
     pub registry: Arc<RwLock<ModelRegistry>>,
@@ -29,6 +30,9 @@ pub struct ApiState {
     /// Fee manager
     pub fees: Arc<RwLock<FeeManager>>,
 }
+
+type ApiResult<T> = std::result::Result<Json<ApiResponse<T>>, StatusCode>;
+type ApiEmptyResult = ApiResult<()>;
 
 /// API response wrapper
 #[derive(Debug, Serialize)]
@@ -39,6 +43,24 @@ pub struct ApiResponse<T> {
     pub data: Option<T>,
     /// Error message
     pub error: Option<String>,
+}
+
+impl<T> ApiResponse<T> {
+    fn success(data: T) -> Self {
+        Self {
+            success: true,
+            data: Some(data),
+            error: None,
+        }
+    }
+
+    fn error(message: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            data: None,
+            error: Some(message.into()),
+        }
+    }
 }
 
 /// Model registration request
@@ -136,52 +158,78 @@ pub fn create_router(state: ApiState) -> Router {
 async fn register_model(
     State(state): State<ApiState>,
     Json(request): Json<ModelRegistrationRequest>,
-) -> Result<Json<ApiResponse<ModelRegistration>>, StatusCode> {
-    info!("API: Registering model: {}", request.name);
-    
-    let model_id = ai_core::types::ModelId {
-        name: request.name.clone(),
-        version: request.version.clone(),
-        hash: request.hash.clone(),
+) -> ApiResult<ModelRegistration> {
+    let ModelRegistrationRequest {
+        name,
+        version,
+        hash,
+        architecture,
+        input_shape,
+        output_shape,
+        parameter_count,
+        size_bytes,
+        description,
+        license,
+        source_url,
+        category,
+        tags,
+        registrant,
+    } = request;
+
+    info!("API: Registering model: {}", name);
+
+    let model_id = ModelId {
+        name: name.clone(),
+        version: version.clone(),
+        hash: hash.clone(),
     };
-    
-    let metadata = ai_core::types::ModelMetadata {
+
+    let now = chrono::Utc::now().timestamp_micros() as u64;
+    let author = registrant.clone();
+    let description_text = description
+        .clone()
+        .unwrap_or_else(|| "No description provided".to_string());
+    let license_text = license.clone().unwrap_or_else(|| "UNLICENSED".to_string());
+    let tags_clone = tags.clone();
+
+    let metadata = ModelMetadata {
         id: model_id.clone(),
-        architecture: request.architecture,
-        input_shape: request.input_shape,
-        output_shape: request.output_shape,
-        parameter_count: request.parameter_count,
-        size_bytes: request.size_bytes,
-        created_at: chrono::Utc::now().timestamp() as u64,
-        description: request.description,
+        name: name.clone(),
+        version: version.clone(),
+        description: description_text,
+        author,
+        license: license_text,
+        tags: tags_clone,
+        created_at: now,
+        updated_at: now,
+        architecture,
+        input_shape,
+        output_shape,
+        size_bytes,
+        parameter_count,
     };
-    
+
     let mut registry = state.registry.write().await;
-    match registry.register_model(
-        model_id,
-        metadata,
-        request.registrant,
-        request.category,
-        request.description,
-        request.license,
-        request.source_url,
-        request.tags,
-    ).await {
+    match registry
+        .register_model(
+            model_id,
+            metadata,
+            registrant,
+            category,
+            description,
+            license,
+            source_url,
+            tags,
+        )
+        .await
+    {
         Ok(registration) => {
             info!("API: Model registered successfully");
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(registration),
-                error: None,
-            }))
-        },
+            Ok(Json(ApiResponse::success(registration)))
+        }
         Err(e) => {
             error!("API: Model registration failed: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -190,38 +238,22 @@ async fn register_model(
 async fn get_model(
     State(state): State<ApiState>,
     Path(name): Path<String>,
-) -> Result<Json<ApiResponse<ModelRegistration>>, StatusCode> {
+) -> ApiResult<ModelRegistration> {
     info!("API: Getting model: {}", name);
-    
-    let model_id = ai_core::types::ModelId {
+
+    let model_id = ModelId {
         name,
-        version: String::new(), // We'll need to handle versioning properly
+        version: String::new(), // TODO: accept version parameter
         hash: String::new(),
     };
-    
+
     let mut registry = state.registry.write().await;
     match registry.get_model_registration(&model_id).await {
-        Ok(Some(registration)) => {
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(registration),
-                error: None,
-            }))
-        },
-        Ok(None) => {
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some("Model not found".to_string()),
-            }))
-        },
+        Ok(Some(registration)) => Ok(Json(ApiResponse::success(registration))),
+        Ok(None) => Ok(Json(ApiResponse::error("Model not found"))),
         Err(e) => {
             error!("API: Error getting model: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -230,30 +262,18 @@ async fn get_model(
 async fn search_models(
     State(state): State<ApiState>,
     Query(params): Query<SearchQuery>,
-) -> Result<Json<ApiResponse<Vec<ModelRegistration>>>, StatusCode> {
+) -> ApiResult<Vec<ModelRegistration>> {
     info!("API: Searching models: {}", params.q);
-    
+
     let registry = state.registry.read().await;
-    match registry.search_models(
-        &params.q,
-        params.category,
-        params.status,
-        params.limit,
-    ).await {
-        Ok(models) => {
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(models),
-                error: None,
-            }))
-        },
+    match registry
+        .search_models(&params.q, params.category, params.status, params.limit)
+        .await
+    {
+        Ok(models) => Ok(Json(ApiResponse::success(models))),
         Err(e) => {
             error!("API: Error searching models: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -263,31 +283,21 @@ async fn update_model_status(
     State(state): State<ApiState>,
     Path(name): Path<String>,
     Json(status): Json<RegistrationStatus>,
-) -> Result<Json<ApiResponse<()>>, StatusCode> {
+) -> ApiEmptyResult {
     info!("API: Updating model status: {} -> {:?}", name, status);
-    
-    let model_id = ai_core::types::ModelId {
+
+    let model_id = ModelId {
         name,
         version: String::new(),
         hash: String::new(),
     };
-    
+
     let mut registry = state.registry.write().await;
     match registry.update_model_status(&model_id, status).await {
-        Ok(()) => {
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(()),
-                error: None,
-            }))
-        },
+        Ok(()) => Ok(Json(ApiResponse::success(()))),
         Err(e) => {
             error!("API: Error updating model status: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -296,38 +306,22 @@ async fn update_model_status(
 async fn get_model_stats(
     State(state): State<ApiState>,
     Path(name): Path<String>,
-) -> Result<Json<ApiResponse<ModelUsageStats>>, StatusCode> {
+) -> ApiResult<ModelUsageStats> {
     info!("API: Getting model stats: {}", name);
-    
-    let model_id = ai_core::types::ModelId {
+
+    let model_id = ModelId {
         name,
         version: String::new(),
         hash: String::new(),
     };
-    
+
     let registry = state.registry.read().await;
     match registry.get_model_usage_stats(&model_id).await {
-        Ok(Some(stats)) => {
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(stats),
-                error: None,
-            }))
-        },
-        Ok(None) => {
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some("Model statistics not found".to_string()),
-            }))
-        },
+        Ok(Some(stats)) => Ok(Json(ApiResponse::success(stats))),
+        Ok(None) => Ok(Json(ApiResponse::error("Model statistics not found"))),
         Err(e) => {
             error!("API: Error getting model stats: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -336,32 +330,29 @@ async fn get_model_stats(
 async fn create_proposal(
     State(state): State<ApiState>,
     Json(request): Json<GovernanceProposalRequest>,
-) -> Result<Json<ApiResponse<GovernanceProposal>>, StatusCode> {
-    info!("API: Creating proposal: {}", request.title);
-    
+) -> ApiResult<GovernanceProposal> {
+    let GovernanceProposalRequest {
+        proposal_type,
+        title,
+        description,
+        proposer,
+        data,
+    } = request;
+
+    info!("API: Creating proposal: {}", title);
+
     let mut governance = state.governance.write().await;
-    match governance.create_proposal(
-        request.proposal_type,
-        request.title,
-        request.description,
-        request.proposer,
-        request.data,
-    ).await {
+    match governance
+        .create_proposal(proposal_type, title, description, proposer, data)
+        .await
+    {
         Ok(proposal) => {
             info!("API: Proposal created successfully");
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(proposal),
-                error: None,
-            }))
-        },
+            Ok(Json(ApiResponse::success(proposal)))
+        }
         Err(e) => {
             error!("API: Proposal creation failed: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -370,32 +361,16 @@ async fn create_proposal(
 async fn get_proposal(
     State(state): State<ApiState>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GovernanceProposal>>, StatusCode> {
+) -> ApiResult<GovernanceProposal> {
     info!("API: Getting proposal: {}", id);
-    
-    let mut governance = state.governance.read().await;
+
+    let mut governance = state.governance.write().await;
     match governance.get_proposal(&id).await {
-        Ok(Some(proposal)) => {
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(proposal),
-                error: None,
-            }))
-        },
-        Ok(None) => {
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some("Proposal not found".to_string()),
-            }))
-        },
+        Ok(Some(proposal)) => Ok(Json(ApiResponse::success(proposal))),
+        Ok(None) => Ok(Json(ApiResponse::error("Proposal not found"))),
         Err(e) => {
             error!("API: Error getting proposal: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -405,80 +380,52 @@ async fn vote_on_proposal(
     State(state): State<ApiState>,
     Path(id): Path<String>,
     Json(request): Json<VoteRequest>,
-) -> Result<Json<ApiResponse<()>>, StatusCode> {
+) -> ApiEmptyResult {
     info!("API: Voting on proposal: {}", id);
-    
+
     let mut governance = state.governance.write().await;
-    match governance.vote_on_proposal(&id, request.voter, request.choice, request.justification).await {
+    match governance
+        .vote_on_proposal(&id, request.voter, request.choice, request.justification)
+        .await
+    {
         Ok(()) => {
             info!("API: Vote recorded successfully");
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(()),
-                error: None,
-            }))
-        },
+            Ok(Json(ApiResponse::success(())))
+        }
         Err(e) => {
             error!("API: Vote failed: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
 
 /// Execute proposal
-async fn execute_proposal(
-    State(state): State<ApiState>,
-    Path(id): Path<String>,
-) -> Result<Json<ApiResponse<()>>, StatusCode> {
+async fn execute_proposal(State(state): State<ApiState>, Path(id): Path<String>) -> ApiEmptyResult {
     info!("API: Executing proposal: {}", id);
-    
+
     let mut governance = state.governance.write().await;
     match governance.execute_proposal(&id).await {
         Ok(()) => {
             info!("API: Proposal executed successfully");
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(()),
-                error: None,
-            }))
-        },
+            Ok(Json(ApiResponse::success(())))
+        }
         Err(e) => {
             error!("API: Proposal execution failed: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
 
 /// List proposals
-async fn list_proposals(
-    State(state): State<ApiState>,
-) -> Result<Json<ApiResponse<Vec<GovernanceProposal>>>, StatusCode> {
+async fn list_proposals(State(state): State<ApiState>) -> ApiResult<Vec<GovernanceProposal>> {
     info!("API: Listing proposals");
-    
+
     let governance = state.governance.read().await;
     match governance.list_active_proposals().await {
-        Ok(proposals) => {
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(proposals),
-                error: None,
-            }))
-        },
+        Ok(proposals) => Ok(Json(ApiResponse::success(proposals))),
         Err(e) => {
             error!("API: Error listing proposals: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -487,9 +434,9 @@ async fn list_proposals(
 async fn calculate_fee(
     State(state): State<ApiState>,
     Json(request): Json<FeeCalculationRequest>,
-) -> Result<Json<ApiResponse<FeeCalculation>>, StatusCode> {
+) -> ApiResult<FeeCalculation> {
     info!("API: Calculating fee: {:?}", request.fee_type);
-    
+
     let fees = state.fees.read().await;
     match fees.calculate_fee(
         request.fee_type,
@@ -497,62 +444,34 @@ async fn calculate_fee(
         request.units,
         request.additional_data,
     ) {
-        Ok(calculation) => {
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(calculation),
-                error: None,
-            }))
-        },
+        Ok(calculation) => Ok(Json(ApiResponse::success(calculation))),
         Err(e) => {
             error!("API: Fee calculation failed: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
 
 /// Get fee statistics
-async fn get_fee_stats(
-    State(state): State<ApiState>,
-) -> Result<Json<ApiResponse<FeeStats>>, StatusCode> {
+async fn get_fee_stats(State(state): State<ApiState>) -> ApiResult<FeeStats> {
     info!("API: Getting fee statistics");
-    
+
     let fees = state.fees.read().await;
     let stats = fees.get_fee_stats().clone();
-    
-    Ok(Json(ApiResponse {
-        success: true,
-        data: Some(stats),
-        error: None,
-    }))
+
+    Ok(Json(ApiResponse::success(stats)))
 }
 
 /// Get registry statistics
-async fn get_registry_stats(
-    State(state): State<ApiState>,
-) -> Result<Json<ApiResponse<RegistryStats>>, StatusCode> {
+async fn get_registry_stats(State(state): State<ApiState>) -> ApiResult<RegistryStats> {
     info!("API: Getting registry statistics");
-    
+
     let mut registry = state.registry.write().await;
     match registry.get_registry_stats().await {
-        Ok(stats) => {
-            Ok(Json(ApiResponse {
-                success: true,
-                data: Some(stats),
-                error: None,
-            }))
-        },
+        Ok(stats) => Ok(Json(ApiResponse::success(stats))),
         Err(e) => {
             error!("API: Error getting registry stats: {}", e);
-            Ok(Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }))
+            Ok(Json(ApiResponse::error(e.to_string())))
         }
     }
 }
@@ -563,7 +482,7 @@ pub struct FeeCalculationRequest {
     /// Fee type
     pub fee_type: FeeType,
     /// Model metadata (optional)
-    pub model_metadata: Option<ai_core::types::ModelMetadata>,
+    pub model_metadata: Option<ModelMetadata>,
     /// Units (optional)
     pub units: Option<u64>,
     /// Additional data (optional)

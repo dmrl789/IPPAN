@@ -324,7 +324,11 @@ impl ModelValidator {
         }
 
         for err in errors {
-            *self.stats.error_counts.entry(err.error_type.clone()).or_insert(0) += 1;
+            *self
+                .stats
+                .error_counts
+                .entry(err.error_type.clone())
+                .or_insert(0) += 1;
         }
     }
 

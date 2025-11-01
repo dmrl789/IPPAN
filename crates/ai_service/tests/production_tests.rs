@@ -1,10 +1,9 @@
 //! Production-ready integration tests for AI Service
 
 use ippan_ai_service::{
-    AIService, AIServiceConfig, LLMConfig, AnalyticsConfig, MonitoringConfig,
-    LLMRequest, SmartContractAnalysisRequest, ContractAnalysisType,
-    TransactionOptimizationRequest, OptimizationGoal, TransactionData,
-    HealthStatus, ConfigManager, Environment,
+    AIService, AIServiceConfig, AnalyticsConfig, ConfigManager, ContractAnalysisType, Environment,
+    HealthStatus, LLMConfig, LLMRequest, MonitoringConfig, OptimizationGoal,
+    SmartContractAnalysisRequest, TransactionData, TransactionOptimizationRequest,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -53,7 +52,10 @@ async fn test_health_check_endpoints() {
 
     // Test health check
     let health = service.health_check().await.expect("Health check failed");
-    assert!(matches!(health.status, HealthStatus::Healthy | HealthStatus::Degraded));
+    assert!(matches!(
+        health.status,
+        HealthStatus::Healthy | HealthStatus::Degraded
+    ));
     assert!(health.uptime.as_secs() >= 0);
     assert!(!health.checks.is_empty());
 
@@ -103,7 +105,9 @@ contract Test {
         context: None,
     };
 
-    let analysis = service.analyze_smart_contract(request).await
+    let analysis = service
+        .analyze_smart_contract(request)
+        .await
         .expect("Smart contract analysis failed");
 
     assert!(analysis.security_score >= 0.0 && analysis.security_score <= 1.0);
@@ -131,11 +135,16 @@ async fn test_transaction_optimization() {
 
     let request = TransactionOptimizationRequest {
         transaction,
-        goals: vec![OptimizationGoal::MinimizeGas, OptimizationGoal::MinimizeCost],
+        goals: vec![
+            OptimizationGoal::MinimizeGas,
+            OptimizationGoal::MinimizeCost,
+        ],
         constraints: None,
     };
 
-    let optimization = service.optimize_transaction(request).await
+    let optimization = service
+        .optimize_transaction(request)
+        .await
         .expect("Transaction optimization failed");
 
     assert!(optimization.confidence >= 0.0 && optimization.confidence <= 1.0);
@@ -164,7 +173,9 @@ async fn test_analytics_data_collection() {
     }
 
     // Get insights
-    let insights = service.get_analytics_insights().await
+    let insights = service
+        .get_analytics_insights()
+        .await
         .expect("Failed to get analytics insights");
 
     // Should have some insights
@@ -185,7 +196,9 @@ async fn test_monitoring_alerts() {
     service.add_monitoring_metric("error_rate".to_string(), 8.0);
 
     // Check for alerts
-    let alerts = service.check_monitoring_alerts().await
+    let alerts = service
+        .check_monitoring_alerts()
+        .await
         .expect("Failed to check monitoring alerts");
 
     // Should have some alerts
@@ -201,10 +214,7 @@ async fn test_service_timeout_handling() {
     service.start().await.expect("Failed to start service");
 
     // Test that service operations don't hang indefinitely
-    let result = timeout(
-        Duration::from_secs(5),
-        service.health_check()
-    ).await;
+    let result = timeout(Duration::from_secs(5), service.health_check()).await;
 
     assert!(result.is_ok(), "Service operation timed out");
 
@@ -221,7 +231,7 @@ async fn test_error_handling() {
     let invalid_request = LLMRequest {
         prompt: "".to_string(), // Empty prompt
         context: None,
-        max_tokens: Some(0), // Invalid max_tokens
+        max_tokens: Some(0),     // Invalid max_tokens
         temperature: Some(-1.0), // Invalid temperature
         stream: false,
     };
@@ -242,9 +252,7 @@ async fn test_concurrent_requests() {
     let mut handles = vec![];
     for _ in 0..10 {
         let service_clone = service.clone();
-        let handle = tokio::spawn(async move {
-            service_clone.health_check().await
-        });
+        let handle = tokio::spawn(async move { service_clone.health_check().await });
         handles.push(handle);
     }
 

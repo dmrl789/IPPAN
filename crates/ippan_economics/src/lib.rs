@@ -20,16 +20,16 @@
 pub mod distribution;
 pub mod emission;
 pub mod errors;
+pub mod params;
 pub mod supply;
 pub mod types;
-pub mod params;
 
 pub use distribution::RoundRewards;
 pub use emission::EmissionEngine;
 pub use errors::*;
+pub use params::EconomicsParams;
 pub use supply::SupplyTracker;
 pub use types::*;
-pub use params::EconomicsParams;
 
 /// Re-export commonly used types for convenience
 pub mod prelude {

@@ -6,8 +6,8 @@
 //! - Federated learning and proof-of-inference validation
 
 use serde::{Deserialize, Serialize};
-use tracing::{debug, instrument};
 use std::collections::HashMap;
+use tracing::{debug, instrument};
 
 /// L2 transaction types (smart contracts and AI operations)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -78,7 +78,12 @@ impl Default for L2FeeStructure {
         min_fees.insert(L2TxKind::FederatedLearning, 2_000);
         min_fees.insert(L2TxKind::ProofOfInference, 1_500);
 
-        Self { base_fees, unit_fees, max_fees, min_fees }
+        Self {
+            base_fees,
+            unit_fees,
+            max_fees,
+            min_fees,
+        }
     }
 }
 
@@ -154,16 +159,18 @@ impl L2FeeManager {
 
         // Enforce bounds
         let min_fee = *self.fee_structure.min_fees.get(&tx_kind).unwrap_or(&0);
-        let max_fee = *self.fee_structure.max_fees.get(&tx_kind).unwrap_or(&u64::MAX);
+        let max_fee = *self
+            .fee_structure
+            .max_fees
+            .get(&tx_kind)
+            .unwrap_or(&u64::MAX);
         let final_fee = total_fee.clamp(min_fee, max_fee);
 
         let calculation_method = match tx_kind {
             L2TxKind::ContractDeploy | L2TxKind::AIModelRegister | L2TxKind::AIModelUpdate => {
                 "base + (size_bytes * unit_fee)"
             }
-            L2TxKind::ContractCall | L2TxKind::AIModelInference => {
-                "base + (gas_units * unit_fee)"
-            }
+            L2TxKind::ContractCall | L2TxKind::AIModelInference => "base + (gas_units * unit_fee)",
             L2TxKind::AIModelStorage => "size_mb * days * unit_fee",
             L2TxKind::FederatedLearning => "base + (rounds * unit_fee)",
             L2TxKind::ProofOfInference => "base + (complexity * unit_fee)",
@@ -186,20 +193,32 @@ impl L2FeeManager {
     fn calculate_units(&self, tx_kind: L2TxKind, data_ref: Option<&HashMap<String, u64>>) -> u64 {
         match tx_kind {
             L2TxKind::ContractDeploy | L2TxKind::AIModelRegister | L2TxKind::AIModelUpdate => {
-                data_ref.and_then(|d| d.get("size_bytes").copied()).unwrap_or(1000)
-            }
-            L2TxKind::ContractCall | L2TxKind::AIModelInference => {
                 data_ref
-                    .and_then(|d| d.get("gas_units").copied().or_else(|| d.get("compute_units").copied()))
+                    .and_then(|d| d.get("size_bytes").copied())
                     .unwrap_or(1000)
             }
+            L2TxKind::ContractCall | L2TxKind::AIModelInference => data_ref
+                .and_then(|d| {
+                    d.get("gas_units")
+                        .copied()
+                        .or_else(|| d.get("compute_units").copied())
+                })
+                .unwrap_or(1000),
             L2TxKind::AIModelStorage => {
-                let size = data_ref.and_then(|d| d.get("size_mb")).copied().unwrap_or(1);
+                let size = data_ref
+                    .and_then(|d| d.get("size_mb"))
+                    .copied()
+                    .unwrap_or(1);
                 let days = data_ref.and_then(|d| d.get("days")).copied().unwrap_or(1);
                 size * days
             }
-            L2TxKind::FederatedLearning => data_ref.and_then(|d| d.get("rounds")).copied().unwrap_or(1),
-            L2TxKind::ProofOfInference => data_ref.and_then(|d| d.get("complexity")).copied().unwrap_or(100),
+            L2TxKind::FederatedLearning => {
+                data_ref.and_then(|d| d.get("rounds")).copied().unwrap_or(1)
+            }
+            L2TxKind::ProofOfInference => data_ref
+                .and_then(|d| d.get("complexity"))
+                .copied()
+                .unwrap_or(100),
         }
     }
 
@@ -276,8 +295,14 @@ mod tests {
 
         let stats = manager.get_statistics();
         assert_eq!(stats.total_collected, 51_000);
-        assert_eq!(stats.fees_by_type.get(&L2TxKind::ContractDeploy), Some(&50_000));
-        assert_eq!(stats.fees_by_type.get(&L2TxKind::AIModelInference), Some(&1_000));
+        assert_eq!(
+            stats.fees_by_type.get(&L2TxKind::ContractDeploy),
+            Some(&50_000)
+        );
+        assert_eq!(
+            stats.fees_by_type.get(&L2TxKind::AIModelInference),
+            Some(&1_000)
+        );
     }
 
     #[test]

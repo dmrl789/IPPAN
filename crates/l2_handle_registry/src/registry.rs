@@ -62,7 +62,8 @@ impl L2HandleRegistry {
             ..Default::default()
         };
 
-        metadata.l1_anchor = Some(self.compute_l1_anchor(&registration.handle, &registration.owner));
+        metadata.l1_anchor =
+            Some(self.compute_l1_anchor(&registration.handle, &registration.owner));
 
         {
             let mut handles = self.handles.write();

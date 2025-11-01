@@ -73,7 +73,7 @@ impl DAGOperations {
     pub async fn analyze_dag(&mut self) -> Result<DAGAnalysis> {
         let dag = self.dag.read().await;
         let all_blocks = dag.get_all_blocks()?;
-        
+
         let total_blocks = all_blocks.len();
         let mut max_depth = 0;
         let mut total_depth = 0;
@@ -84,7 +84,7 @@ impl DAGOperations {
             let depth = self.calculate_depth(&dag, *block_hash)?;
             max_depth = max_depth.max(depth);
             total_depth += depth;
-            
+
             if depth == 0 {
                 orphan_blocks += 1;
             }
@@ -176,8 +176,8 @@ mod tests {
     use crate::block::Block;
     use ed25519_dalek::SigningKey;
     use rand_core::OsRng;
-    use tempfile::tempdir;
     use std::sync::Arc;
+    use tempfile::tempdir;
     use tokio::sync::RwLock;
 
     fn create_test_dag() -> (BlockDAG, Vec<[u8; 32]>) {

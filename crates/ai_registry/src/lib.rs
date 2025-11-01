@@ -38,35 +38,33 @@
 //! }
 //! ```
 
-use serde::{Deserialize, Serialize};
-
+pub mod activation;
 pub mod errors;
-pub mod types;
-pub mod storage;
+pub mod fees;
+pub mod governance;
+pub mod proposal;
 pub mod registry;
 pub mod security;
-pub mod governance;
-pub mod fees;
-pub mod activation;
-pub mod proposal;
+pub mod storage;
+pub mod types;
 
 // Re-export commonly used types
-pub use errors::{RegistryError, Result};
-pub use types::*;
-pub use storage::RegistryStorage;
-pub use registry::ModelRegistry;
-pub use security::{SecurityManager, SecurityConfig, AuthToken, UserPermissions, SecurityStats};
-pub use governance::GovernanceManager;
-pub use fees::{FeeManager, FeeStats, FeeCalculation};
 pub use activation::ActivationManager;
-pub use proposal::{ProposalManager, AiModelProposal, ProposalStatus};
+pub use errors::{RegistryError, Result};
+pub use fees::{FeeCalculation, FeeManager, FeeStats};
+pub use governance::GovernanceManager;
+pub use proposal::{AiModelProposal, ProposalManager, ProposalStatus};
+pub use registry::ModelRegistry;
+pub use security::{AuthToken, SecurityConfig, SecurityManager, SecurityStats, UserPermissions};
+pub use storage::RegistryStorage;
+pub use types::*;
 
 // API module (optional)
 #[cfg(feature = "api")]
 pub mod api;
 
 #[cfg(feature = "api")]
-pub use api::{ApiState, create_router, ApiResponse};
+pub use api::{create_router, ApiResponse, ApiState};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

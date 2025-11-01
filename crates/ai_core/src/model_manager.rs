@@ -205,7 +205,11 @@ impl ModelManager {
             model_id: model_id.to_string(),
             version: 1,
             model_type: "gbdt".into(),
-            hash_sha256: model_hash.clone().into_bytes().try_into().unwrap_or([0; 32]),
+            hash_sha256: model_hash
+                .clone()
+                .into_bytes()
+                .try_into()
+                .unwrap_or([0; 32]),
             feature_count: model.metadata.feature_count,
             output_scale: model.scale,
             output_min: -10_000,
@@ -299,9 +303,12 @@ impl ModelManager {
     }
 
     async fn cache_model(&self, id: &str, model: &GBDTModel, path: &Path) -> Result<(), GBDTError> {
-        let mut models = self.models.write().map_err(|_| GBDTError::ModelValidationFailed {
-            reason: "Failed to acquire write lock".into(),
-        })?;
+        let mut models = self
+            .models
+            .write()
+            .map_err(|_| GBDTError::ModelValidationFailed {
+                reason: "Failed to acquire write lock".into(),
+            })?;
 
         if models.len() >= self.config.max_cached_models {
             self.evict_oldest(&mut models)?;
@@ -357,9 +364,8 @@ impl ModelManager {
         if let Ok(mut m) = self.metrics.write() {
             m.total_models_loaded += 1;
             let ms = d.as_millis() as f64;
-            m.avg_load_time_ms =
-                (m.avg_load_time_ms * (m.total_models_loaded - 1) as f64 + ms)
-                    / m.total_models_loaded as f64;
+            m.avg_load_time_ms = (m.avg_load_time_ms * (m.total_models_loaded - 1) as f64 + ms)
+                / m.total_models_loaded as f64;
         }
     }
 
@@ -367,9 +373,8 @@ impl ModelManager {
         if let Ok(mut m) = self.metrics.write() {
             m.total_models_saved += 1;
             let ms = d.as_millis() as f64;
-            m.avg_save_time_ms =
-                (m.avg_save_time_ms * (m.total_models_saved - 1) as f64 + ms)
-                    / m.total_models_saved as f64;
+            m.avg_save_time_ms = (m.avg_save_time_ms * (m.total_models_saved - 1) as f64 + ms)
+                / m.total_models_saved as f64;
         }
     }
 
@@ -396,12 +401,13 @@ impl ModelManager {
                 reason: format!("Read dir failed: {}", e),
             })?;
 
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Read entry failed: {}", e),
-            })?
+        while let Some(entry) =
+            entries
+                .next_entry()
+                .await
+                .map_err(|e| GBDTError::ModelValidationFailed {
+                    reason: format!("Read entry failed: {}", e),
+                })?
         {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("model") {
@@ -433,9 +439,12 @@ impl ModelManager {
         if !self.config.enable_auto_cleanup {
             return Ok(());
         }
-        let mut models = self.models.write().map_err(|_| GBDTError::ModelValidationFailed {
-            reason: "Write lock failed".into(),
-        })?;
+        let mut models = self
+            .models
+            .write()
+            .map_err(|_| GBDTError::ModelValidationFailed {
+                reason: "Write lock failed".into(),
+            })?;
         let ttl = Duration::from_secs(self.config.cache_ttl_seconds);
         models.retain(|id, c| {
             let valid = c.loaded_at.elapsed().unwrap_or_default() <= ttl;

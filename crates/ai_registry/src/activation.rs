@@ -113,16 +113,16 @@ mod tests {
     #[test]
     fn test_activation_scheduling() {
         let mut manager = ActivationManager::new();
-        
+
         manager.schedule_activation("model_1".to_string(), 100);
         manager.schedule_activation("model_2".to_string(), 100);
         manager.schedule_activation("model_3".to_string(), 200);
-        
+
         let activations_100 = manager.get_scheduled_activations(100);
         assert_eq!(activations_100.len(), 2);
         assert!(activations_100.contains(&&"model_1".to_string()));
         assert!(activations_100.contains(&&"model_2".to_string()));
-        
+
         let activations_200 = manager.get_scheduled_activations(200);
         assert_eq!(activations_200.len(), 1);
         assert!(activations_200.contains(&&"model_3".to_string()));
@@ -131,16 +131,16 @@ mod tests {
     #[test]
     fn test_round_processing() {
         let mut manager = ActivationManager::new();
-        
+
         manager.schedule_activation("model_1".to_string(), 100);
         manager.schedule_activation("model_2".to_string(), 100);
         manager.schedule_deactivation("old_model".to_string(), 100);
-        
+
         let activated = manager.process_round(100).unwrap();
         assert_eq!(activated.len(), 2);
         assert!(activated.contains(&"model_1".to_string()));
         assert!(activated.contains(&"model_2".to_string()));
-        
+
         // Models should be removed from schedule after processing
         let activations_100 = manager.get_scheduled_activations(100);
         assert_eq!(activations_100.len(), 0);
@@ -149,15 +149,15 @@ mod tests {
     #[test]
     fn test_round_advancement() {
         let mut manager = ActivationManager::new();
-        
+
         manager.schedule_activation("model_1".to_string(), 1);
         manager.schedule_activation("model_2".to_string(), 2);
-        
+
         let activated_1 = manager.advance_round().unwrap();
         assert_eq!(activated_1.len(), 1);
         assert!(activated_1.contains(&"model_1".to_string()));
         assert_eq!(manager.current_round(), 1);
-        
+
         let activated_2 = manager.advance_round().unwrap();
         assert_eq!(activated_2.len(), 1);
         assert!(activated_2.contains(&"model_2".to_string()));

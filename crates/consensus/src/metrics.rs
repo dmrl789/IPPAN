@@ -12,25 +12,25 @@ pub struct ConsensusMetrics {
     ai_selection_fallback: Arc<Mutex<u64>>,
     ai_selection_latency_us: Arc<Mutex<Vec<u64>>>,
     ai_confidence_scores: Arc<Mutex<Vec<f64>>>,
-    
+
     // Validator selection distribution
     validator_selection_count: Arc<Mutex<HashMap<String, u64>>>,
-    
+
     // Telemetry metrics
     telemetry_updates: Arc<Mutex<u64>>,
     telemetry_load_errors: Arc<Mutex<u64>>,
-    
+
     // Model metrics
     model_reload_total: Arc<Mutex<u64>>,
     model_reload_success: Arc<Mutex<u64>>,
     model_reload_failures: Arc<Mutex<u64>>,
     model_validation_errors: Arc<Mutex<u64>>,
-    
+
     // Round metrics
     rounds_finalized: Arc<Mutex<u64>>,
     blocks_proposed: Arc<Mutex<u64>>,
     blocks_validated: Arc<Mutex<u64>>,
-    
+
     // Reputation metrics
     avg_reputation_score: Arc<Mutex<f64>>,
     min_reputation_score: Arc<Mutex<i32>>,
@@ -69,17 +69,23 @@ impl ConsensusMetrics {
 
     pub fn record_ai_selection_success(&self, confidence_score: f64, latency_us: u64) {
         *self.ai_selection_success.lock() += 1;
-        self.ai_confidence_scores.lock().push(confidence_score);
-        self.ai_selection_latency_us.lock().push(latency_us);
-        
-        // Keep only last 1000 samples
-        let mut scores = self.ai_confidence_scores.lock();
-        if scores.len() > 1000 {
-            scores.drain(0..scores.len() - 1000);
+
+        {
+            let mut scores = self.ai_confidence_scores.lock();
+            scores.push(confidence_score);
+            let len = scores.len();
+            if len > 1000 {
+                scores.drain(0..len - 1000);
+            }
         }
-        let mut latencies = self.ai_selection_latency_us.lock();
-        if latencies.len() > 1000 {
-            latencies.drain(0..latencies.len() - 1000);
+
+        {
+            let mut latencies = self.ai_selection_latency_us.lock();
+            latencies.push(latency_us);
+            let len = latencies.len();
+            if len > 1000 {
+                latencies.drain(0..len - 1000);
+            }
         }
     }
 
@@ -251,84 +257,155 @@ impl ConsensusMetrics {
         let mut output = String::new();
 
         // AI Selection metrics
-        output.push_str("# HELP ippan_ai_selection_total Total number of AI validator selections attempted\n");
+        output.push_str(
+            "# HELP ippan_ai_selection_total Total number of AI validator selections attempted\n",
+        );
         output.push_str("# TYPE ippan_ai_selection_total counter\n");
-        output.push_str(&format!("ippan_ai_selection_total {}\n", self.get_ai_selection_total()));
+        output.push_str(&format!(
+            "ippan_ai_selection_total {}\n",
+            self.get_ai_selection_total()
+        ));
 
-        output.push_str("# HELP ippan_ai_selection_success Number of successful AI validator selections\n");
+        output.push_str(
+            "# HELP ippan_ai_selection_success Number of successful AI validator selections\n",
+        );
         output.push_str("# TYPE ippan_ai_selection_success counter\n");
-        output.push_str(&format!("ippan_ai_selection_success {}\n", self.get_ai_selection_success()));
+        output.push_str(&format!(
+            "ippan_ai_selection_success {}\n",
+            self.get_ai_selection_success()
+        ));
 
-        output.push_str("# HELP ippan_ai_selection_fallback Number of fallback selections (AI failed)\n");
+        output.push_str(
+            "# HELP ippan_ai_selection_fallback Number of fallback selections (AI failed)\n",
+        );
         output.push_str("# TYPE ippan_ai_selection_fallback counter\n");
-        output.push_str(&format!("ippan_ai_selection_fallback {}\n", self.get_ai_selection_fallback()));
+        output.push_str(&format!(
+            "ippan_ai_selection_fallback {}\n",
+            self.get_ai_selection_fallback()
+        ));
 
-        output.push_str("# HELP ippan_ai_selection_success_rate Success rate of AI validator selections\n");
+        output.push_str(
+            "# HELP ippan_ai_selection_success_rate Success rate of AI validator selections\n",
+        );
         output.push_str("# TYPE ippan_ai_selection_success_rate gauge\n");
-        output.push_str(&format!("ippan_ai_selection_success_rate {:.4}\n", self.get_ai_selection_success_rate()));
+        output.push_str(&format!(
+            "ippan_ai_selection_success_rate {:.4}\n",
+            self.get_ai_selection_success_rate()
+        ));
 
         output.push_str("# HELP ippan_ai_confidence_avg Average AI confidence score (0-1)\n");
         output.push_str("# TYPE ippan_ai_confidence_avg gauge\n");
-        output.push_str(&format!("ippan_ai_confidence_avg {:.4}\n", self.get_avg_ai_confidence()));
+        output.push_str(&format!(
+            "ippan_ai_confidence_avg {:.4}\n",
+            self.get_avg_ai_confidence()
+        ));
 
-        output.push_str("# HELP ippan_ai_latency_avg_us Average AI selection latency in microseconds\n");
+        output.push_str(
+            "# HELP ippan_ai_latency_avg_us Average AI selection latency in microseconds\n",
+        );
         output.push_str("# TYPE ippan_ai_latency_avg_us gauge\n");
-        output.push_str(&format!("ippan_ai_latency_avg_us {:.2}\n", self.get_avg_ai_latency_us()));
+        output.push_str(&format!(
+            "ippan_ai_latency_avg_us {:.2}\n",
+            self.get_avg_ai_latency_us()
+        ));
 
         // Validator selection distribution
-        output.push_str("# HELP ippan_validator_selected_total Number of times each validator was selected\n");
+        output.push_str(
+            "# HELP ippan_validator_selected_total Number of times each validator was selected\n",
+        );
         output.push_str("# TYPE ippan_validator_selected_total counter\n");
         for (validator, count) in self.get_validator_selection_distribution() {
-            output.push_str(&format!("ippan_validator_selected_total{{validator=\"{}\"}} {}\n", validator, count));
+            output.push_str(&format!(
+                "ippan_validator_selected_total{{validator=\"{}\"}} {}\n",
+                validator, count
+            ));
         }
 
         // Telemetry metrics
         output.push_str("# HELP ippan_telemetry_updates_total Total number of telemetry updates\n");
         output.push_str("# TYPE ippan_telemetry_updates_total counter\n");
-        output.push_str(&format!("ippan_telemetry_updates_total {}\n", self.get_telemetry_updates()));
+        output.push_str(&format!(
+            "ippan_telemetry_updates_total {}\n",
+            self.get_telemetry_updates()
+        ));
 
-        output.push_str("# HELP ippan_telemetry_load_errors_total Number of telemetry load errors\n");
+        output
+            .push_str("# HELP ippan_telemetry_load_errors_total Number of telemetry load errors\n");
         output.push_str("# TYPE ippan_telemetry_load_errors_total counter\n");
-        output.push_str(&format!("ippan_telemetry_load_errors_total {}\n", self.get_telemetry_load_errors()));
+        output.push_str(&format!(
+            "ippan_telemetry_load_errors_total {}\n",
+            self.get_telemetry_load_errors()
+        ));
 
         // Model reload metrics
         output.push_str("# HELP ippan_model_reload_total Total number of model reload attempts\n");
         output.push_str("# TYPE ippan_model_reload_total counter\n");
-        output.push_str(&format!("ippan_model_reload_total {}\n", self.get_model_reload_total()));
+        output.push_str(&format!(
+            "ippan_model_reload_total {}\n",
+            self.get_model_reload_total()
+        ));
 
         output.push_str("# HELP ippan_model_reload_success_rate Success rate of model reloads\n");
         output.push_str("# TYPE ippan_model_reload_success_rate gauge\n");
-        output.push_str(&format!("ippan_model_reload_success_rate {:.4}\n", self.get_model_reload_success_rate()));
+        output.push_str(&format!(
+            "ippan_model_reload_success_rate {:.4}\n",
+            self.get_model_reload_success_rate()
+        ));
 
-        output.push_str("# HELP ippan_model_validation_errors_total Number of model validation errors\n");
+        output.push_str(
+            "# HELP ippan_model_validation_errors_total Number of model validation errors\n",
+        );
         output.push_str("# TYPE ippan_model_validation_errors_total counter\n");
-        output.push_str(&format!("ippan_model_validation_errors_total {}\n", self.get_model_validation_errors()));
+        output.push_str(&format!(
+            "ippan_model_validation_errors_total {}\n",
+            self.get_model_validation_errors()
+        ));
 
         // Round metrics
         output.push_str("# HELP ippan_rounds_finalized_total Total number of rounds finalized\n");
         output.push_str("# TYPE ippan_rounds_finalized_total counter\n");
-        output.push_str(&format!("ippan_rounds_finalized_total {}\n", self.get_rounds_finalized()));
+        output.push_str(&format!(
+            "ippan_rounds_finalized_total {}\n",
+            self.get_rounds_finalized()
+        ));
 
         output.push_str("# HELP ippan_blocks_proposed_total Total number of blocks proposed\n");
         output.push_str("# TYPE ippan_blocks_proposed_total counter\n");
-        output.push_str(&format!("ippan_blocks_proposed_total {}\n", self.get_blocks_proposed()));
+        output.push_str(&format!(
+            "ippan_blocks_proposed_total {}\n",
+            self.get_blocks_proposed()
+        ));
 
         output.push_str("# HELP ippan_blocks_validated_total Total number of blocks validated\n");
         output.push_str("# TYPE ippan_blocks_validated_total counter\n");
-        output.push_str(&format!("ippan_blocks_validated_total {}\n", self.get_blocks_validated()));
+        output.push_str(&format!(
+            "ippan_blocks_validated_total {}\n",
+            self.get_blocks_validated()
+        ));
 
         // Reputation metrics
-        output.push_str("# HELP ippan_reputation_score_avg Average validator reputation score (0-10000)\n");
+        output.push_str(
+            "# HELP ippan_reputation_score_avg Average validator reputation score (0-10000)\n",
+        );
         output.push_str("# TYPE ippan_reputation_score_avg gauge\n");
-        output.push_str(&format!("ippan_reputation_score_avg {:.2}\n", self.get_avg_reputation_score()));
+        output.push_str(&format!(
+            "ippan_reputation_score_avg {:.2}\n",
+            self.get_avg_reputation_score()
+        ));
 
         output.push_str("# HELP ippan_reputation_score_min Minimum validator reputation score\n");
         output.push_str("# TYPE ippan_reputation_score_min gauge\n");
-        output.push_str(&format!("ippan_reputation_score_min {}\n", self.get_min_reputation_score()));
+        output.push_str(&format!(
+            "ippan_reputation_score_min {}\n",
+            self.get_min_reputation_score()
+        ));
 
         output.push_str("# HELP ippan_reputation_score_max Maximum validator reputation score\n");
         output.push_str("# TYPE ippan_reputation_score_max gauge\n");
-        output.push_str(&format!("ippan_reputation_score_max {}\n", self.get_max_reputation_score()));
+        output.push_str(&format!(
+            "ippan_reputation_score_max {}\n",
+            self.get_max_reputation_score()
+        ));
 
         output
     }
@@ -351,7 +428,7 @@ mod tests {
         // Record some AI selections
         metrics.record_ai_selection_attempt();
         metrics.record_ai_selection_success(0.85, 1500);
-        
+
         assert_eq!(metrics.get_ai_selection_total(), 1);
         assert_eq!(metrics.get_ai_selection_success(), 1);
         assert_eq!(metrics.get_ai_selection_success_rate(), 1.0);

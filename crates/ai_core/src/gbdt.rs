@@ -13,6 +13,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{debug, error, info, instrument, warn};
@@ -207,7 +209,57 @@ impl Default for ModelMetadata {
 }
 
 impl GBDTModel {
-    pub fn new(trees: Vec<Tree>, bias: i32, scale: i32, feature_count: usize) -> Result<Self, GBDTError> {
+    pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
+        let data =
+            fs::read_to_string(path.as_ref()).map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!(
+                    "Failed to read model JSON {}: {}",
+                    path.as_ref().display(),
+                    e
+                ),
+            })?;
+
+        let mut model: Self =
+            serde_json::from_str(&data).map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!(
+                    "Failed to parse model JSON {}: {}",
+                    path.as_ref().display(),
+                    e
+                ),
+            })?;
+
+        model.validate()?;
+        Ok(model)
+    }
+
+    pub fn from_binary_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
+        let data = fs::read(path.as_ref()).map_err(|e| GBDTError::ModelValidationFailed {
+            reason: format!(
+                "Failed to read model binary {}: {}",
+                path.as_ref().display(),
+                e
+            ),
+        })?;
+
+        let mut model: Self =
+            bincode::deserialize(&data).map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!(
+                    "Failed to deserialize model binary {}: {}",
+                    path.as_ref().display(),
+                    e
+                ),
+            })?;
+
+        model.validate()?;
+        Ok(model)
+    }
+
+    pub fn new(
+        trees: Vec<Tree>,
+        bias: i32,
+        scale: i32,
+        feature_count: usize,
+    ) -> Result<Self, GBDTError> {
         let metadata = ModelMetadata {
             version: "1.0.0".into(),
             created_at: chrono::Utc::now().timestamp() as u64,
@@ -256,24 +308,33 @@ impl GBDTModel {
         self.update_metrics(evaluation_time);
 
         if self.evaluation_cache.len() < 1000 {
-            self.evaluation_cache.insert(features.to_vec(), result.clone());
+            self.evaluation_cache
+                .insert(features.to_vec(), result.clone());
         }
 
         debug!(
-            "GBDT evaluation completed in {}μs, value: {}, confidence: {:.3}",
+            "GBDT evaluation completed in {}?s, value: {}, confidence: {:.3}",
             result.evaluation_time_us, result.value, result.confidence
         );
 
         Ok(result)
     }
 
-    fn evaluate_with_timeout(&self, features: &[i64], start_time: Instant) -> Result<GBDTResult, GBDTError> {
+    fn evaluate_with_timeout(
+        &self,
+        features: &[i64],
+        start_time: Instant,
+    ) -> Result<GBDTResult, GBDTError> {
         let mut sum = self.bias;
         let mut trees_evaluated = 0;
 
         for tree in &self.trees {
-            if start_time.elapsed().as_millis() > self.security_constraints.max_evaluation_time_ms as u128 {
-                return Err(GBDTError::EvaluationTimeout { timeout_ms: self.security_constraints.max_evaluation_time_ms });
+            if start_time.elapsed().as_millis()
+                > self.security_constraints.max_evaluation_time_ms as u128
+            {
+                return Err(GBDTError::EvaluationTimeout {
+                    timeout_ms: self.security_constraints.max_evaluation_time_ms,
+                });
             }
             let tree_value = self.eval_tree_safe(tree, features)?;
             sum = sum.saturating_add(tree_value);
@@ -299,10 +360,15 @@ impl GBDTModel {
         let mut depth = 0;
         loop {
             if idx >= tree.nodes.len() {
-                return Err(GBDTError::InvalidTreeStructure { node: idx, child: 0 });
+                return Err(GBDTError::InvalidTreeStructure {
+                    node: idx,
+                    child: 0,
+                });
             }
             if depth > self.security_constraints.max_tree_depth {
-                return Err(GBDTError::SecurityValidationFailed { reason: format!("Tree depth {} exceeds max", depth) });
+                return Err(GBDTError::SecurityValidationFailed {
+                    reason: format!("Tree depth {} exceeds max", depth),
+                });
             }
             let node = &tree.nodes[idx];
             if let Some(value) = node.value {
@@ -310,36 +376,60 @@ impl GBDTModel {
             }
             let feature_idx = node.feature_index as usize;
             if feature_idx >= features.len() {
-                return Err(GBDTError::InvalidFeatureIndex { index: feature_idx, max: features.len() - 1 });
+                return Err(GBDTError::InvalidFeatureIndex {
+                    index: feature_idx,
+                    max: features.len() - 1,
+                });
             }
             let left = node.left as usize;
             let right = node.right as usize;
             if left >= tree.nodes.len() || right >= tree.nodes.len() {
-                return Err(GBDTError::InvalidTreeStructure { node: idx, child: right });
+                return Err(GBDTError::InvalidTreeStructure {
+                    node: idx,
+                    child: right,
+                });
             }
-            idx = if features[feature_idx] <= node.threshold { left } else { right };
+            idx = if features[feature_idx] <= node.threshold {
+                left
+            } else {
+                right
+            };
             depth += 1;
         }
     }
 
     fn validate_features(&self, features: &[i64]) -> Result<(), GBDTError> {
         if features.len() != self.metadata.feature_count {
-            return Err(GBDTError::FeatureSizeMismatch { expected: self.metadata.feature_count, actual: features.len() });
+            return Err(GBDTError::FeatureSizeMismatch {
+                expected: self.metadata.feature_count,
+                actual: features.len(),
+            });
         }
         for (i, &f) in features.iter().enumerate() {
-            if f < self.security_constraints.min_feature_value || f > self.security_constraints.max_feature_value {
+            if f < self.security_constraints.min_feature_value
+                || f > self.security_constraints.max_feature_value
+            {
                 if self.security_constraints.enable_security_logging {
                     warn!("Feature {} out of allowed bounds: {}", i, f);
                 }
-                return Err(GBDTError::SecurityValidationFailed { reason: format!("Feature {} out of range", i) });
+                return Err(GBDTError::SecurityValidationFailed {
+                    reason: format!("Feature {} out of range", i),
+                });
             }
         }
         Ok(())
     }
 
-    fn normalize_features(&self, features: &[i64], norm: &FeatureNormalization) -> Result<Vec<i64>, GBDTError> {
+    fn normalize_features(
+        &self,
+        features: &[i64],
+        norm: &FeatureNormalization,
+    ) -> Result<Vec<i64>, GBDTError> {
         if features.len() != norm.means.len() {
-            return Err(GBDTError::FeatureSizeMismatch { expected: norm.means.len(), actual: features.len() });
+            return Err(GBDTError::FeatureSizeMismatch {
+                expected: norm.means.len(),
+                actual: features.len(),
+            });
         }
         let mut normalized = Vec::with_capacity(features.len());
         for (i, &f) in features.iter().enumerate() {
@@ -350,7 +440,13 @@ impl GBDTModel {
     }
 
     fn calculate_confidence(&self, trees_evaluated: usize, evaluation_time: Duration) -> f64 {
-        let time_factor = if evaluation_time.as_micros() < 1000 { 1.0 } else if evaluation_time.as_micros() < 5000 { 0.8 } else { 0.6 };
+        let time_factor = if evaluation_time.as_micros() < 1000 {
+            1.0
+        } else if evaluation_time.as_micros() < 5000 {
+            0.8
+        } else {
+            0.6
+        };
         let tree_factor = trees_evaluated as f64 / self.trees.len().max(1) as f64;
         (time_factor * tree_factor).min(1.0)
     }
@@ -359,22 +455,33 @@ impl GBDTModel {
         let t = evaluation_time.as_micros() as u64;
         self.metrics.total_evaluations += 1;
         self.metrics.total_time_us += t;
-        self.metrics.avg_time_us = self.metrics.total_time_us as f64 / self.metrics.total_evaluations as f64;
+        self.metrics.avg_time_us =
+            self.metrics.total_time_us as f64 / self.metrics.total_evaluations as f64;
         self.metrics.max_time_us = self.metrics.max_time_us.max(t);
-        self.metrics.min_time_us = if self.metrics.min_time_us == 0 { t } else { self.metrics.min_time_us.min(t) };
+        self.metrics.min_time_us = if self.metrics.min_time_us == 0 {
+            t
+        } else {
+            self.metrics.min_time_us.min(t)
+        };
     }
 
     pub fn validate(&self) -> Result<(), GBDTError> {
         if self.trees.len() > self.security_constraints.max_trees {
-            return Err(GBDTError::ModelValidationFailed { reason: "Too many trees".into() });
+            return Err(GBDTError::ModelValidationFailed {
+                reason: "Too many trees".into(),
+            });
         }
         for (t_idx, t) in self.trees.iter().enumerate() {
             if t.nodes.is_empty() {
-                return Err(GBDTError::ModelValidationFailed { reason: format!("Tree {} is empty", t_idx) });
+                return Err(GBDTError::ModelValidationFailed {
+                    reason: format!("Tree {} is empty", t_idx),
+                });
             }
             for (n_idx, n) in t.nodes.iter().enumerate() {
                 if n.feature_index as usize >= self.metadata.feature_count {
-                    return Err(GBDTError::ModelValidationFailed { reason: format!("Invalid feature {} in tree {}", n_idx, t_idx) });
+                    return Err(GBDTError::ModelValidationFailed {
+                        reason: format!("Invalid feature {} in tree {}", n_idx, t_idx),
+                    });
                 }
             }
         }
@@ -413,10 +520,18 @@ impl GBDTModel {
         format!("{:x}", h.finish())
     }
 
-    pub fn get_metrics(&self) -> &GBDTMetrics { &self.metrics }
-    pub fn reset_metrics(&mut self) { self.metrics = GBDTMetrics::default(); }
-    pub fn clear_cache(&mut self) { self.evaluation_cache.clear(); }
-    pub fn is_compatible(&self, expected: &str) -> bool { self.metadata.version == expected }
+    pub fn get_metrics(&self) -> &GBDTMetrics {
+        &self.metrics
+    }
+    pub fn reset_metrics(&mut self) {
+        self.metrics = GBDTMetrics::default();
+    }
+    pub fn clear_cache(&mut self) {
+        self.evaluation_cache.clear();
+    }
+    pub fn is_compatible(&self, expected: &str) -> bool {
+        self.metadata.version == expected
+    }
 }
 
 /// Legacy evaluator (non-instrumented)
@@ -426,7 +541,9 @@ pub fn eval_gbdt(model: &GBDTModel, features: &[i64]) -> i32 {
         Ok(r) => r.value,
         Err(_) => {
             let mut sum = model.bias;
-            for t in &model.trees { sum = sum.saturating_add(eval_tree(t, features)); }
+            for t in &model.trees {
+                sum = sum.saturating_add(eval_tree(t, features));
+            }
             sum.clamp(0, model.scale)
         }
     }
@@ -436,31 +553,54 @@ pub fn eval_gbdt(model: &GBDTModel, features: &[i64]) -> i32 {
 mod tests {
     use super::*;
     fn simple_tree() -> Tree {
-        Tree { nodes: vec![
-            Node { feature_index: 0, threshold: 50, left: 1, right: 2, value: None },
-            Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(10) },
-            Node { feature_index: 0, threshold: 0, left: 0, right: 0, value: Some(20) },
-        ] }
+        Tree {
+            nodes: vec![
+                Node {
+                    feature_index: 0,
+                    threshold: 50,
+                    left: 1,
+                    right: 2,
+                    value: None,
+                },
+                Node {
+                    feature_index: 0,
+                    threshold: 0,
+                    left: 0,
+                    right: 0,
+                    value: Some(10),
+                },
+                Node {
+                    feature_index: 0,
+                    threshold: 0,
+                    left: 0,
+                    right: 0,
+                    value: Some(20),
+                },
+            ],
+        }
     }
 
     fn test_model() -> GBDTModel {
         GBDTModel::new(vec![simple_tree()], 0, 100, 1).unwrap()
     }
 
-    #[test] fn test_eval_tree() {
+    #[test]
+    fn test_eval_tree() {
         let t = simple_tree();
         assert_eq!(eval_tree(&t, &[30]), 10);
         assert_eq!(eval_tree(&t, &[60]), 20);
     }
 
-    #[test] fn test_eval_model() {
+    #[test]
+    fn test_eval_model() {
         let mut m = test_model();
         let r = m.evaluate(&[30]).unwrap();
         assert_eq!(r.value, 10);
         assert!(r.confidence > 0.0);
     }
 
-    #[test] fn test_cache() {
+    #[test]
+    fn test_cache() {
         let mut m = test_model();
         let f = vec![30];
         m.evaluate(&f).unwrap();
@@ -469,14 +609,16 @@ mod tests {
         assert_eq!(m.get_metrics().cache_hits, 1);
     }
 
-    #[test] fn test_security_validation() {
+    #[test]
+    fn test_security_validation() {
         let mut m = test_model();
         m.security_constraints.max_feature_value = 10;
         let r = m.evaluate(&[100]);
         assert!(matches!(r, Err(GBDTError::SecurityValidationFailed { .. })));
     }
 
-    #[test] fn test_legacy_eval() {
+    #[test]
+    fn test_legacy_eval() {
         let m = test_model();
         let v1 = eval_gbdt(&m, &[30]);
         let v2 = m.clone().evaluate(&[30]).unwrap().value;

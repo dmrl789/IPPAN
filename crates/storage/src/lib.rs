@@ -89,8 +89,15 @@ pub trait Storage {
     fn update_chain_state(&self, state: &ChainState) -> Result<()>;
 
     /// Validator telemetry storage for AI consensus
-    fn store_validator_telemetry(&self, validator_id: &[u8; 32], telemetry: &ValidatorTelemetry) -> Result<()>;
-    fn get_validator_telemetry(&self, validator_id: &[u8; 32]) -> Result<Option<ValidatorTelemetry>>;
+    fn store_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+        telemetry: &ValidatorTelemetry,
+    ) -> Result<()>;
+    fn get_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+    ) -> Result<Option<ValidatorTelemetry>>;
     fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>>;
 }
 
@@ -388,6 +395,42 @@ impl Storage for SledStorage {
             .insert(b"chain_state", serde_json::to_vec(s)?)?;
         Ok(())
     }
+
+    fn store_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+        telemetry: &ValidatorTelemetry,
+    ) -> Result<()> {
+        let key = &validator_id[..];
+        let value = serde_json::to_vec(telemetry)?;
+        self.validator_telemetry.insert(key, value)?;
+        Ok(())
+    }
+
+    fn get_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+    ) -> Result<Option<ValidatorTelemetry>> {
+        self.validator_telemetry
+            .get(&validator_id[..])?
+            .map(|v| serde_json::from_slice(&v))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
+        let mut map = HashMap::new();
+        for entry in self.validator_telemetry.iter() {
+            let (key, value) = entry?;
+            if key.len() == 32 {
+                let mut id = [0u8; 32];
+                id.copy_from_slice(&key);
+                let telemetry = serde_json::from_slice(&value)?;
+                map.insert(id, telemetry);
+            }
+        }
+        Ok(map)
+    }
 }
 
 /// In-memory testing backend
@@ -521,12 +564,21 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn store_validator_telemetry(&self, validator_id: &[u8; 32], telemetry: &ValidatorTelemetry) -> Result<()> {
-        self.validator_telemetry.write().insert(*validator_id, telemetry.clone());
+    fn store_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+        telemetry: &ValidatorTelemetry,
+    ) -> Result<()> {
+        self.validator_telemetry
+            .write()
+            .insert(*validator_id, telemetry.clone());
         Ok(())
     }
 
-    fn get_validator_telemetry(&self, validator_id: &[u8; 32]) -> Result<Option<ValidatorTelemetry>> {
+    fn get_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+    ) -> Result<Option<ValidatorTelemetry>> {
         Ok(self.validator_telemetry.read().get(validator_id).cloned())
     }
 

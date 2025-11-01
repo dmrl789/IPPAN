@@ -1,5 +1,5 @@
-use ippan_types::MicroIPN;
 use crate::types::RoundIndex;
+use ippan_types::MicroIPN;
 use serde::{Deserialize, Serialize};
 
 /// Static/On-chain configurable parameters controlling emission & distribution.

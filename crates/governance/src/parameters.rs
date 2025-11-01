@@ -1,8 +1,8 @@
 use anyhow::Result;
 use ippan_economics::EmissionParams;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use serde_json::json;
+use std::collections::HashMap;
 
 /// Governance and Economics parameter management
 ///
@@ -211,7 +211,12 @@ impl ParameterManager {
                 self.parameters.economics.verifier_weight_bps =
                     proposal.new_value.as_u64().unwrap() as u32;
             }
-            _ => return Err(anyhow::anyhow!("Unknown parameter: {}", proposal.parameter_name)),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unknown parameter: {}",
+                    proposal.parameter_name
+                ))
+            }
         }
         Ok(())
     }
