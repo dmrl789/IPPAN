@@ -95,61 +95,50 @@ impl AIService {
     /// Check monitoring service health
     async fn check_monitoring_health(&self) -> CheckResult {
         let start = SystemTime::now();
-        let result = {
-            // Use public API to exercise monitoring and infer health
-            #[allow(unused_mut)]
-            let mut cloned = self.clone_for_health();
-            cloned.check_monitoring_alerts().await
-        };
-
-        match result {
-            Ok(alerts) => {
-                let duration = start.elapsed().unwrap_or_default();
-                let has_warnings = !alerts.is_empty();
-                CheckResult {
-                    status: if has_warnings { CheckStatus::Warn } else { CheckStatus::Pass },
-                    message: Some(if has_warnings { "Monitoring alerts present".to_string() } else { "Monitoring healthy".to_string() }),
-                    duration_ms: duration.as_millis() as u64,
-                }
-            }
-            Err(e) => {
-                let duration = start.elapsed().unwrap_or_default();
-                CheckResult {
-                    status: CheckStatus::Fail,
-                    message: Some(format!("Monitoring service error: {}", e)),
-                    duration_ms: duration.as_millis() as u64,
-                }
-            }
+        #[cfg(feature = "analytics")]
+        {
+            let alerts = self.monitoring_alerts_snapshot();
+            let duration = start.elapsed().unwrap_or_default();
+            let has_warnings = !alerts.is_empty();
+            return CheckResult {
+                status: if has_warnings { CheckStatus::Warn } else { CheckStatus::Pass },
+                message: Some(if has_warnings { "Monitoring alerts present".to_string() } else { "Monitoring healthy".to_string() }),
+                duration_ms: duration.as_millis() as u64,
+            };
+        }
+        #[cfg(not(feature = "analytics"))]
+        {
+            let duration = start.elapsed().unwrap_or_default();
+            return CheckResult {
+                status: CheckStatus::Pass,
+                message: Some("Monitoring feature not compiled".to_string()),
+                duration_ms: duration.as_millis() as u64,
+            };
         }
     }
 
     /// Check analytics service health
     async fn check_analytics_health(&self) -> CheckResult {
         let start = SystemTime::now();
-        let result = {
-            // Use public API to exercise analytics and infer health
-            #[allow(unused_mut)]
-            let mut cloned = self.clone_for_health();
-            cloned.get_analytics_insights().await
-        };
-
-        match result {
-            Ok(_insights) => {
-                let duration = start.elapsed().unwrap_or_default();
-                CheckResult {
-                    status: CheckStatus::Pass,
-                    message: Some("Analytics healthy".to_string()),
-                    duration_ms: duration.as_millis() as u64,
-                }
-            }
-            Err(e) => {
-                let duration = start.elapsed().unwrap_or_default();
-                CheckResult {
-                    status: CheckStatus::Warn,
-                    message: Some(format!("Analytics warning: {}", e)),
-                    duration_ms: duration.as_millis() as u64,
-                }
-            }
+        #[cfg(feature = "analytics")]
+        {
+            let insights = self.analytics_insights_snapshot();
+            let has_high = insights.iter().any(|i| matches!(i.severity, crate::types::SeverityLevel::High | crate::types::SeverityLevel::Critical));
+            let duration = start.elapsed().unwrap_or_default();
+            return CheckResult {
+                status: if has_high { CheckStatus::Warn } else { CheckStatus::Pass },
+                message: Some(if has_high { "Analytics elevated severities present".to_string() } else { "Analytics healthy".to_string() }),
+                duration_ms: duration.as_millis() as u64,
+            };
+        }
+        #[cfg(not(feature = "analytics"))]
+        {
+            let duration = start.elapsed().unwrap_or_default();
+            return CheckResult {
+                status: CheckStatus::Pass,
+                message: Some("Analytics feature not compiled".to_string()),
+                duration_ms: duration.as_millis() as u64,
+            };
         }
     }
 
@@ -225,15 +214,7 @@ impl AIService {
     }
 }
 
-impl AIService {
-    // Minimal, temporary helper to obtain a mutable instance for health calls without exposing fields
-    fn clone_for_health(&self) -> AIService {
-        // Use default config for safe health probing; avoids accessing private fields across modules
-        let mut cfg = self.get_config().clone();
-        // Keep toggles; other fields are fine as-is
-        AIService::new(cfg).unwrap_or_else(|_| AIService::new(crate::AIServiceConfig::default()).unwrap())
-    }
-}
+// (no helper clones of AIService; health checks use live service state via getters)
 
 /// Determine overall health status based on individual checks
 fn determine_health_status(checks: &HashMap<String, CheckResult>) -> HealthStatus {
