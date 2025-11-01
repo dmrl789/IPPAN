@@ -15,6 +15,7 @@ use ippan_ai_core::gbdt::GBDTModel;
 
 /// Model reloader watches for model file changes and hot-reloads them
 #[cfg(feature = "ai_l1")]
+#[derive(Clone)]
 pub struct ModelReloader {
     validator_model_path: Option<PathBuf>,
     fee_model_path: Option<PathBuf>,
@@ -102,11 +103,9 @@ impl ModelReloader {
         // Check validator model
         if let Some(path) = &self.validator_model_path {
             if let Err(e) = self
-                .check_and_reload_model(
-                    path,
-                    &self.last_validator_mtime,
-                    |model| (self.reload_callback)(ModelUpdate::Validator(model)),
-                )
+                .check_and_reload_model(path, &self.last_validator_mtime, |model| {
+                    (self.reload_callback)(ModelUpdate::Validator(model))
+                })
                 .await
             {
                 error!("Failed to reload validator model: {}", e);
@@ -116,11 +115,9 @@ impl ModelReloader {
         // Check fee model
         if let Some(path) = &self.fee_model_path {
             if let Err(e) = self
-                .check_and_reload_model(
-                    path,
-                    &self.last_fee_mtime,
-                    |model| (self.reload_callback)(ModelUpdate::Fee(model)),
-                )
+                .check_and_reload_model(path, &self.last_fee_mtime, |model| {
+                    (self.reload_callback)(ModelUpdate::Fee(model))
+                })
                 .await
             {
                 error!("Failed to reload fee model: {}", e);
@@ -130,11 +127,9 @@ impl ModelReloader {
         // Check health model
         if let Some(path) = &self.health_model_path {
             if let Err(e) = self
-                .check_and_reload_model(
-                    path,
-                    &self.last_health_mtime,
-                    |model| (self.reload_callback)(ModelUpdate::Health(model)),
-                )
+                .check_and_reload_model(path, &self.last_health_mtime, |model| {
+                    (self.reload_callback)(ModelUpdate::Health(model))
+                })
                 .await
             {
                 error!("Failed to reload health model: {}", e);
@@ -144,11 +139,9 @@ impl ModelReloader {
         // Check ordering model
         if let Some(path) = &self.ordering_model_path {
             if let Err(e) = self
-                .check_and_reload_model(
-                    path,
-                    &self.last_ordering_mtime,
-                    |model| (self.reload_callback)(ModelUpdate::Ordering(model)),
-                )
+                .check_and_reload_model(path, &self.last_ordering_mtime, |model| {
+                    (self.reload_callback)(ModelUpdate::Ordering(model))
+                })
                 .await
             {
                 error!("Failed to reload ordering model: {}", e);
