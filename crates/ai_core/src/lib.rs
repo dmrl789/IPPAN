@@ -77,8 +77,8 @@ pub use model_manager::{
 
 // Deployment & production config
 pub use deployment::{
-    DeploymentMetrics, DeploymentStatus, HealthCheckResult,
-    HealthStatus as DeploymentHealthStatus, ProductionDeployment,
+    DeploymentMetrics, DeploymentStatus, HealthCheckResult, HealthStatus as DeploymentHealthStatus,
+    ProductionDeployment,
 };
 pub use production_config::{
     ConfigFormat, ConfigValidationResult, DeploymentConfig, Environment, FeatureFlags, GBDTConfig,

@@ -9,7 +9,7 @@
 //! 4. Registry alias (reserved internal identifiers)
 
 use crate::errors::*;
-use crate::types::{ResolvedValidator, ResolutionMethod, ValidatorMetadata};
+use crate::types::{ResolutionMethod, ResolvedValidator, ValidatorMetadata};
 use ippan_economics::ValidatorId;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{Handle, L2HandleRegistry, PublicKey as L2PublicKey};
@@ -104,7 +104,11 @@ impl ValidatorResolver {
     /// Direct resolution for Ed25519 public keys
     async fn resolve_direct(&self, id: &ValidatorId) -> Result<ResolvedValidator> {
         let public_key = self.parse_public_key(id.as_str())?;
-        Ok(ResolvedValidator::new(id.clone(), public_key, ResolutionMethod::Direct))
+        Ok(ResolvedValidator::new(
+            id.clone(),
+            public_key,
+            ResolutionMethod::Direct,
+        ))
     }
 
     /// Resolve handle via L2 Handle Registry
@@ -230,9 +234,8 @@ mod tests {
         let l1_anchors = Arc::new(L1HandleAnchorStorage::new());
         let resolver = ValidatorResolver::new(l2_registry, l1_anchors);
 
-        let id = ValidatorId::new(
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        );
+        let id =
+            ValidatorId::new("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         let resolved = resolver.resolve(&id).await.unwrap();
 
         assert_eq!(resolved.resolution_method, ResolutionMethod::Direct);
@@ -259,7 +262,10 @@ mod tests {
         let id = ValidatorId::new(handle);
         let resolved = resolver.resolve(&id).await.unwrap();
 
-        assert_eq!(resolved.resolution_method, ResolutionMethod::L2HandleRegistry);
+        assert_eq!(
+            resolved.resolution_method,
+            ResolutionMethod::L2HandleRegistry
+        );
         assert_eq!(resolved.public_key_bytes(), &owner);
     }
 }

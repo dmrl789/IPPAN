@@ -85,12 +85,12 @@ pub struct EmissionParams {
 impl Default for EmissionParams {
     fn default() -> Self {
         Self {
-            initial_round_reward_micro: 10_000,        // 0.0001 IPN per round
-            halving_interval_rounds: 630_000_000,      // ≈ 2 years @ 10 rps
-            max_supply_micro: 2_100_000_000_000,       // 21 M IPN
-            fee_cap_fraction: Decimal::new(1, 1),      // 0.1 = 10%
-            proposer_weight_bps: 2000,                 // 20 %
-            verifier_weight_bps: 8000,                 // 80 %
+            initial_round_reward_micro: 10_000,   // 0.0001 IPN per round
+            halving_interval_rounds: 630_000_000, // ≈ 2 years @ 10 rps
+            max_supply_micro: 2_100_000_000_000,  // 21 M IPN
+            fee_cap_fraction: Decimal::new(1, 1), // 0.1 = 10%
+            proposer_weight_bps: 2000,            // 20 %
+            verifier_weight_bps: 8000,            // 80 %
         }
     }
 }
@@ -201,10 +201,7 @@ impl RewardComposition {
 
     /// Compute total reward sum
     pub fn total(&self) -> RewardAmount {
-        self.round_emission
-            + self.transaction_fees
-            + self.ai_commissions
-            + self.network_dividend
+        self.round_emission + self.transaction_fees + self.ai_commissions + self.network_dividend
     }
 }
 

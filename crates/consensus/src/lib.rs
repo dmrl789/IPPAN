@@ -54,13 +54,13 @@ pub use emission::{
 };
 pub use emission_tracker::{EmissionStatistics, EmissionTracker};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
+pub use ippan_economics::{EmissionEngine, EmissionParams, RewardAmount, RoundIndex, RoundRewards};
 #[cfg(feature = "ai_l1")]
 pub use l1_ai_consensus::{
     FeeOptimizationResult, L1AIConfig, L1AIConsensus, NetworkHealthReport, NetworkState,
     ValidatorCandidate, ValidatorSelectionResult,
 };
 pub use ordering::order_round;
-pub use ippan_economics::{EmissionEngine, EmissionParams, RewardAmount, RoundIndex, RoundRewards};
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
     ValidationResult,
@@ -69,10 +69,10 @@ pub use reputation::{
     apply_reputation_weight, calculate_reputation, ReputationScore, ValidatorTelemetry,
     DEFAULT_REPUTATION,
 };
+use round::RoundConsensus;
 pub use round_executor::{
     create_full_participation_set, create_participation_set, RoundExecutionResult, RoundExecutor,
 };
-use round::RoundConsensus;
 
 // ---------------------------------------------------------------------
 // Errors and Configs
@@ -223,7 +223,9 @@ impl PoAConsensus {
             tx_sender,
             mempool: Arc::new(Mempool::new(10_000)),
             round_tracker: Arc::new(RwLock::new(tracker)),
-            finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
+            finalization_interval: Duration::from_millis(
+                config.finalization_interval_ms.clamp(100, 250),
+            ),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
             #[cfg(feature = "ai_l1")]
@@ -305,14 +307,28 @@ impl PoAConsensus {
 
                 let slot = *current_slot.read();
                 #[cfg(feature = "ai_l1")]
-                let maybe_proposer = Self::select_proposer(&config, &round_consensus, slot, &l1_ai_consensus, &telemetry_manager, &metrics);
+                let maybe_proposer = Self::select_proposer(
+                    &config,
+                    &round_consensus,
+                    slot,
+                    &l1_ai_consensus,
+                    &telemetry_manager,
+                    &metrics,
+                );
                 #[cfg(not(feature = "ai_l1"))]
                 let maybe_proposer = Self::select_proposer_no_ai(&config, &round_consensus, slot);
 
                 if let Some(proposer) = maybe_proposer {
                     if proposer == validator_id {
                         if let Err(e) = Self::propose_block(
-                            &storage, &mempool, &config, &round_tracker, slot, validator_id, &telemetry_manager, &metrics,
+                            &storage,
+                            &mempool,
+                            &config,
+                            &round_tracker,
+                            slot,
+                            validator_id,
+                            &telemetry_manager,
+                            &metrics,
                         )
                         .await
                         {
@@ -350,7 +366,12 @@ impl PoAConsensus {
         telemetry_manager: &Arc<telemetry::TelemetryManager>,
         metrics: &Arc<metrics::ConsensusMetrics>,
     ) -> Option<[u8; 32]> {
-        let active: Vec<_> = config.validators.iter().filter(|v| v.is_active).map(|v| v.id).collect();
+        let active: Vec<_> = config
+            .validators
+            .iter()
+            .filter(|v| v.is_active)
+            .map(|v| v.id)
+            .collect();
         if active.is_empty() {
             return None;
         }
@@ -360,21 +381,22 @@ impl PoAConsensus {
             let start = Instant::now();
 
             // Build stake map for telemetry defaults
-            let stakes: HashMap<[u8; 32], u64> = config.validators.iter()
-                .map(|v| (v.id, v.stake))
-                .collect();
+            let stakes: HashMap<[u8; 32], u64> =
+                config.validators.iter().map(|v| (v.id, v.stake)).collect();
 
             // Load real telemetry from storage (with defaults for missing validators)
             let all_telemetry = telemetry_manager.get_all_telemetry_with_defaults(&active, &stakes);
 
-            let candidates: Vec<ValidatorCandidate> = config.validators.iter()
+            let candidates: Vec<ValidatorCandidate> = config
+                .validators
+                .iter()
                 .filter(|v| v.is_active)
                 .map(|v| {
                     let telemetry = all_telemetry.get(&v.id).unwrap();
-                    
+
                     // Calculate reputation score from telemetry
                     let reputation_score = Self::calculate_reputation_from_telemetry(telemetry);
-                    
+
                     ValidatorCandidate {
                         id: v.id,
                         stake: v.stake,
@@ -387,7 +409,8 @@ impl PoAConsensus {
                 .collect();
 
             // Record reputation scores
-            let reputation_scores: HashMap<[u8; 32], i32> = candidates.iter()
+            let reputation_scores: HashMap<[u8; 32], i32> = candidates
+                .iter()
                 .map(|c| (c.id, c.reputation_score))
                 .collect();
             metrics.record_reputation_scores(&reputation_scores);
@@ -406,7 +429,7 @@ impl PoAConsensus {
                     let latency_us = start.elapsed().as_micros() as u64;
                     metrics.record_ai_selection_success(result.confidence_score, latency_us);
                     metrics.record_validator_selected(&result.selected_validator);
-                    
+
                     info!(
                         "L1 AI selected validator: {} (confidence: {:.2}, latency: {}µs)",
                         hex::encode(result.selected_validator),
@@ -442,15 +465,21 @@ impl PoAConsensus {
             5000
         };
 
-        let latency_score = ((200_000 - telemetry.avg_latency_us.min(200_000)) * 10000 / 200_000) as i32;
+        let latency_score =
+            ((200_000 - telemetry.avg_latency_us.min(200_000)) * 10000 / 200_000) as i32;
         let slash_penalty = 10000 - (telemetry.slash_count * 1000).min(10000) as i32;
         let uptime_score = (telemetry.uptime_percentage * 100.0) as i32;
         let performance_score = (telemetry.recent_performance * 10000.0) as i32;
 
         // Weighted average
-        let score = (proposal_rate * 25 + verification_rate * 20 + latency_score * 15 
-                    + slash_penalty * 20 + uptime_score * 10 + performance_score * 10) / 100;
-        
+        let score = (proposal_rate * 25
+            + verification_rate * 20
+            + latency_score * 15
+            + slash_penalty * 20
+            + uptime_score * 10
+            + performance_score * 10)
+            / 100;
+
         score.clamp(0, 10000)
     }
 
@@ -460,7 +489,12 @@ impl PoAConsensus {
         _round_consensus: &Arc<RwLock<RoundConsensus>>,
         slot: u64,
     ) -> Option<[u8; 32]> {
-        let active: Vec<_> = config.validators.iter().filter(|v| v.is_active).map(|v| v.id).collect();
+        let active: Vec<_> = config
+            .validators
+            .iter()
+            .filter(|v| v.is_active)
+            .map(|v| v.id)
+            .collect();
         if active.is_empty() {
             None
         } else {
@@ -503,7 +537,8 @@ impl PoAConsensus {
             } else if height == 0 {
                 vec![]
             } else {
-                vec![storage.get_block_by_height(height)?
+                vec![storage
+                    .get_block_by_height(height)?
                     .ok_or_else(|| anyhow::anyhow!("Previous block not found"))?
                     .hash()]
             }
@@ -524,7 +559,7 @@ impl PoAConsensus {
 
         // Record telemetry for block proposal
         let _ = telemetry_manager.record_block_proposal(&proposer);
-        
+
         // Record metrics
         metrics.record_block_proposed();
 
@@ -565,7 +600,10 @@ impl PoAConsensus {
             (id, blocks, ws, t.round_start_time)
         };
 
-        let blocks: Vec<_> = block_ids.iter().filter_map(|id| storage.get_block(id).ok().flatten()).collect();
+        let blocks: Vec<_> = block_ids
+            .iter()
+            .filter_map(|id| storage.get_block(id).ok().flatten())
+            .collect();
         if blocks.is_empty() {
             return Ok(());
         }
@@ -579,8 +617,16 @@ impl PoAConsensus {
         let ordered = order_round(
             round_id,
             &blocks,
-            |bid| map.get(bid).map(|b| b.header.parent_ids.clone()).unwrap_or_default(),
-            |bid| map.get(bid).map(|b| b.header.payload_ids.clone()).unwrap_or_default(),
+            |bid| {
+                map.get(bid)
+                    .map(|b| b.header.parent_ids.clone())
+                    .unwrap_or_default()
+            },
+            |bid| {
+                map.get(bid)
+                    .map(|b| b.header.payload_ids.clone())
+                    .unwrap_or_default()
+            },
             |_| true,
             |txid| conflicts.push(*txid),
         );
@@ -591,7 +637,10 @@ impl PoAConsensus {
             agg_sig: Self::aggregate_round_signature(round_id, &block_ids),
         };
 
-        let prev_root = storage.get_latest_round_finalization()?.map(|r| r.state_root).unwrap_or([0u8; 32]);
+        let prev_root = storage
+            .get_latest_round_finalization()?
+            .map(|r| r.state_root)
+            .unwrap_or([0u8; 32]);
 
         let mut hasher = Blake3::new();
         hasher.update(&round_id.to_be_bytes());
@@ -624,7 +673,11 @@ impl PoAConsensus {
             proof: cert.clone(),
         };
         storage.store_round_finalization(record)?;
-        info!("Finalized round {} -> state root {}", round_id, hex::encode(state_root));
+        info!(
+            "Finalized round {} -> state root {}",
+            round_id,
+            hex::encode(state_root)
+        );
 
         // DAG-Fair Emission
         if config.enable_dag_fair_emission {
@@ -647,7 +700,14 @@ impl PoAConsensus {
     pub fn get_state(&self) -> ConsensusState {
         let slot = *self.current_slot.read();
         #[cfg(feature = "ai_l1")]
-        let proposer = Self::select_proposer(&self.config, &self.round_consensus, slot, &self.l1_ai_consensus, &self.telemetry_manager, &self.metrics);
+        let proposer = Self::select_proposer(
+            &self.config,
+            &self.round_consensus,
+            slot,
+            &self.l1_ai_consensus,
+            &self.telemetry_manager,
+            &self.metrics,
+        );
         #[cfg(not(feature = "ai_l1"))]
         let proposer = Self::select_proposer_no_ai(&self.config, &self.round_consensus, slot);
 
@@ -660,7 +720,7 @@ impl PoAConsensus {
             current_round: self.round_tracker.read().current_round,
         }
     }
-    
+
     /// Get metrics in Prometheus format
     pub fn get_metrics_prometheus(&self) -> String {
         self.metrics.export_prometheus()
@@ -722,7 +782,7 @@ impl PoAConsensus {
         check_interval: Duration,
     ) -> Result<()> {
         let l1_ai = self.l1_ai_consensus.clone();
-        
+
         let reloader = Arc::new(model_reload::ModelReloader::new(move |update| {
             match update {
                 model_reload::ModelUpdate::Validator(model) => {
@@ -747,7 +807,7 @@ impl PoAConsensus {
 
         // Configure paths
         let mut reloader_mut = Arc::try_unwrap(reloader).unwrap_or_else(|arc| (*arc).clone());
-        
+
         if let Some(path) = validator_model_path {
             reloader_mut.set_validator_model_path(path);
         }
@@ -765,10 +825,13 @@ impl PoAConsensus {
 
         // Start the watcher
         reloader.clone().start_watcher(check_interval);
-        
+
         self.model_reloader = Some(reloader);
-        
-        info!("Model hot-reload enabled with check interval: {:?}", check_interval);
+
+        info!(
+            "Model hot-reload enabled with check interval: {:?}",
+            check_interval
+        );
         Ok(())
     }
 
@@ -823,7 +886,11 @@ impl ConsensusEngine for PoAConsensus {
         ))
     }
     async fn validate_block(&self, block: &Block) -> Result<bool> {
-        if block.transactions.iter().any(|tx| validate_confidential_transaction(tx).is_err()) {
+        if block
+            .transactions
+            .iter()
+            .any(|tx| validate_confidential_transaction(tx).is_err())
+        {
             return Ok(false);
         }
         Ok(true)

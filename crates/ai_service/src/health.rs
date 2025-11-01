@@ -47,11 +47,25 @@ impl AIService {
 
         // Check service status
         let service_status = self.get_status();
-        checks.insert("service_status".to_string(), CheckResult {
-            status: if service_status.is_running { CheckStatus::Pass } else { CheckStatus::Fail },
-            message: Some(format!("Service is {}", if service_status.is_running { "running" } else { "stopped" })),
-            duration_ms: 0,
-        });
+        checks.insert(
+            "service_status".to_string(),
+            CheckResult {
+                status: if service_status.is_running {
+                    CheckStatus::Pass
+                } else {
+                    CheckStatus::Fail
+                },
+                message: Some(format!(
+                    "Service is {}",
+                    if service_status.is_running {
+                        "running"
+                    } else {
+                        "stopped"
+                    }
+                )),
+                duration_ms: 0,
+            },
+        );
 
         // Check monitoring service
         if self.get_config().enable_monitoring {
@@ -83,7 +97,8 @@ impl AIService {
 
         Ok(HealthResponse {
             status,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -101,8 +116,16 @@ impl AIService {
             let duration = start.elapsed().unwrap_or_default();
             let has_warnings = !alerts.is_empty();
             return CheckResult {
-                status: if has_warnings { CheckStatus::Warn } else { CheckStatus::Pass },
-                message: Some(if has_warnings { "Monitoring alerts present".to_string() } else { "Monitoring healthy".to_string() }),
+                status: if has_warnings {
+                    CheckStatus::Warn
+                } else {
+                    CheckStatus::Pass
+                },
+                message: Some(if has_warnings {
+                    "Monitoring alerts present".to_string()
+                } else {
+                    "Monitoring healthy".to_string()
+                }),
                 duration_ms: duration.as_millis() as u64,
             };
         }
@@ -123,11 +146,24 @@ impl AIService {
         #[cfg(feature = "analytics")]
         {
             let insights = self.analytics_insights_snapshot();
-            let has_high = insights.iter().any(|i| matches!(i.severity, crate::types::SeverityLevel::High | crate::types::SeverityLevel::Critical));
+            let has_high = insights.iter().any(|i| {
+                matches!(
+                    i.severity,
+                    crate::types::SeverityLevel::High | crate::types::SeverityLevel::Critical
+                )
+            });
             let duration = start.elapsed().unwrap_or_default();
             return CheckResult {
-                status: if has_high { CheckStatus::Warn } else { CheckStatus::Pass },
-                message: Some(if has_high { "Analytics elevated severities present".to_string() } else { "Analytics healthy".to_string() }),
+                status: if has_high {
+                    CheckStatus::Warn
+                } else {
+                    CheckStatus::Pass
+                },
+                message: Some(if has_high {
+                    "Analytics elevated severities present".to_string()
+                } else {
+                    "Analytics healthy".to_string()
+                }),
                 duration_ms: duration.as_millis() as u64,
             };
         }
@@ -145,7 +181,7 @@ impl AIService {
     /// Check LLM service health
     async fn check_llm_health(&self) -> CheckResult {
         let start = SystemTime::now();
-        
+
         // Try a simple LLM request to check connectivity
         let request = crate::LLMRequest {
             prompt: "Health check".to_string(),
@@ -178,7 +214,7 @@ impl AIService {
     /// Check smart contract service health
     async fn check_smart_contract_health(&self) -> CheckResult {
         let start = SystemTime::now();
-        
+
         // Try a simple smart contract analysis
         let request = crate::SmartContractAnalysisRequest {
             code: "contract Test {}".to_string(),

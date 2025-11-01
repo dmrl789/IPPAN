@@ -77,10 +77,22 @@ fn test_reward_distribution_fairness() {
         .distribute_round_rewards(1, 10_000, participations, 1_000)
         .unwrap();
 
-    let high = distribution.validator_rewards.get(&ValidatorId::new("high_participant")).unwrap();
-    let medium = distribution.validator_rewards.get(&ValidatorId::new("medium_participant")).unwrap();
-    let low = distribution.validator_rewards.get(&ValidatorId::new("low_participant")).unwrap();
-    let observer = distribution.validator_rewards.get(&ValidatorId::new("observer")).unwrap();
+    let high = distribution
+        .validator_rewards
+        .get(&ValidatorId::new("high_participant"))
+        .unwrap();
+    let medium = distribution
+        .validator_rewards
+        .get(&ValidatorId::new("medium_participant"))
+        .unwrap();
+    let low = distribution
+        .validator_rewards
+        .get(&ValidatorId::new("low_participant"))
+        .unwrap();
+    let observer = distribution
+        .validator_rewards
+        .get(&ValidatorId::new("observer"))
+        .unwrap();
 
     assert!(high.total_reward > medium.total_reward);
     assert!(medium.total_reward > low.total_reward);
@@ -180,7 +192,10 @@ fn test_round_reward_distribution_components() {
         .distribute_round_rewards(1, 10_000, participations, 1_000)
         .unwrap();
 
-    let reward = distribution.validator_rewards.get(&ValidatorId::new("validator1")).unwrap();
+    let reward = distribution
+        .validator_rewards
+        .get(&ValidatorId::new("validator1"))
+        .unwrap();
 
     // Check that all components are present
     assert!(reward.round_emission > 0);

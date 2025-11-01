@@ -56,7 +56,10 @@ impl DeterminismManager {
 
     /// Manually set deterministic seed
     pub fn set_seed(&mut self, execution_id: &str, seed: u64) {
-        info!("Setting deterministic seed for execution {}: {}", execution_id, seed);
+        info!(
+            "Setting deterministic seed for execution {}: {}",
+            execution_id, seed
+        );
         self.seeds.insert(execution_id.to_string(), seed);
     }
 
@@ -73,7 +76,10 @@ impl DeterminismManager {
         input: &ModelInput,
         parameters: HashMap<String, String>,
     ) -> Result<DeterministicContext> {
-        info!("Creating deterministic context for execution: {}", execution_id);
+        info!(
+            "Creating deterministic context for execution: {}",
+            execution_id
+        );
 
         let seed = self
             .get_seed(execution_id)
@@ -94,8 +100,15 @@ impl DeterminismManager {
     }
 
     /// Verify deterministic execution consistency
-    pub fn verify_execution(&self, context: &DeterministicContext, output: &ModelOutput) -> Result<bool> {
-        info!("Verifying deterministic execution: {}", context.execution_id);
+    pub fn verify_execution(
+        &self,
+        context: &DeterministicContext,
+        output: &ModelOutput,
+    ) -> Result<bool> {
+        info!(
+            "Verifying deterministic execution: {}",
+            context.execution_id
+        );
 
         let expected_hash = self.compute_execution_hash(context, output)?;
         let actual_hash = output
@@ -108,14 +121,22 @@ impl DeterminismManager {
         let is_deterministic = expected_hash == actual_hash;
 
         if !is_deterministic {
-            warn!("⚠️ Non-deterministic execution detected for {}", context.execution_id);
+            warn!(
+                "⚠️ Non-deterministic execution detected for {}",
+                context.execution_id
+            );
         }
 
         Ok(is_deterministic)
     }
 
     /// Generate deterministic seed from execution identifiers
-    fn generate_deterministic_seed(&self, execution_id: &str, model_id: &ModelId, input: &ModelInput) -> u64 {
+    fn generate_deterministic_seed(
+        &self,
+        execution_id: &str,
+        model_id: &ModelId,
+        input: &ModelInput,
+    ) -> u64 {
         let mut hasher = blake3::Hasher::new();
         hasher.update(execution_id.as_bytes());
         hasher.update(model_id.name.as_bytes());
@@ -153,7 +174,11 @@ impl DeterminismManager {
     }
 
     /// Compute deterministic execution hash for verification
-    fn compute_execution_hash(&self, context: &DeterministicContext, output: &ModelOutput) -> Result<String> {
+    fn compute_execution_hash(
+        &self,
+        context: &DeterministicContext,
+        output: &ModelOutput,
+    ) -> Result<String> {
         let mut hasher = blake3::Hasher::new();
 
         hasher.update(context.execution_id.as_bytes());

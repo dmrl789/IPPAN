@@ -76,7 +76,8 @@ impl TestSuite {
         println!("Starting comprehensive test suite...");
 
         self.run_test("unit_tests", || async { Ok(()) }).await;
-        self.run_test("integration_tests", || async { Ok(()) }).await;
+        self.run_test("integration_tests", || async { Ok(()) })
+            .await;
 
         if self.config.enable_performance_tests {
             self.run_performance_tests().await?;
@@ -179,7 +180,11 @@ impl TestSuite {
 
             let health = deployment.perform_health_check().await?;
             assert!(
-                matches!(health.status, crate::deployment::HealthStatus::Healthy | crate::deployment::HealthStatus::Degraded),
+                matches!(
+                    health.status,
+                    crate::deployment::HealthStatus::Healthy
+                        | crate::deployment::HealthStatus::Degraded
+                ),
                 "Health status unexpected"
             );
 

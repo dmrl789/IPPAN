@@ -9,8 +9,11 @@
 
 #[cfg(feature = "analytics")]
 pub mod analytics;
+pub mod config;
 pub mod errors;
+pub mod health;
 pub mod llm;
+pub mod metrics;
 #[cfg(feature = "analytics")]
 pub mod monitoring;
 #[cfg(feature = "analytics")]
@@ -18,34 +21,23 @@ pub mod optimization;
 pub mod service;
 pub mod smart_contracts;
 pub mod types;
-pub mod health;
-pub mod metrics;
-pub mod config;
 
 pub use errors::AIServiceError;
 
 #[cfg(feature = "analytics")]
 pub use monitoring::{
-    ServiceMonitor,
-    MonitoringService,
-    ServiceStatus,
-    ServiceMetrics,
-    ServiceMetricsSnapshot,
-    ServiceHealthReport,
-    AlertHandler,
-    ServiceAlert,
-    AlertType,
-    AlertSeverity,
-    ConsoleAlertHandler,
-    FileAlertHandler,
-    MonitoringStatistics,
+    AlertHandler, AlertSeverity, AlertType, ConsoleAlertHandler, FileAlertHandler,
+    MonitoringService, MonitoringStatistics, ServiceAlert, ServiceHealthReport, ServiceMetrics,
+    ServiceMetricsSnapshot, ServiceMonitor, ServiceStatus,
 };
 
+pub use config::{ConfigManager, Environment};
+pub use health::{CheckResult, CheckStatus, HealthResponse, HealthStatus};
+pub use metrics::{
+    JsonExporter, MetricsCollector, MetricsExporter, MetricsSnapshot, PrometheusExporter,
+};
 pub use service::AIService;
 pub use types::*;
-pub use config::{ConfigManager, Environment};
-pub use metrics::{MetricsCollector, MetricsExporter, PrometheusExporter, JsonExporter, MetricsSnapshot};
-pub use health::{HealthResponse, HealthStatus, CheckResult, CheckStatus};
 
 /// Re-export core AI functionality
 pub use ippan_ai_core::{

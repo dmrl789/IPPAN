@@ -6,7 +6,7 @@ use crate::{
 };
 use ippan_ai_core::types::ModelId;
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use std::cell::RefCell;
 
@@ -26,7 +26,7 @@ impl RegistryStorage {
         } else {
             None
         };
-        
+
         Ok(Self {
             db,
             cache: RefCell::new(HashMap::new()),
@@ -38,7 +38,7 @@ impl RegistryStorage {
         let key = format!("model_registration:{}", registration.model_id.name);
         let data = bincode::serialize(registration)
             .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
-        
+
         if let Some(ref db) = self.db {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
@@ -46,14 +46,17 @@ impl RegistryStorage {
             // Use in-memory cache
             self.cache.borrow_mut().insert(key, data);
         }
-        
+
         Ok(())
     }
 
     /// Load model registration
-    pub async fn load_model_registration(&self, model_id: &ModelId) -> Result<Option<ModelRegistration>> {
+    pub async fn load_model_registration(
+        &self,
+        model_id: &ModelId,
+    ) -> Result<Option<ModelRegistration>> {
         let key = format!("model_registration:{}", model_id.name);
-        
+
         let data = if let Some(ref db) = self.db {
             db.get(key.as_bytes())
                 .map_err(|e| RegistryError::Database(e.to_string()))?
@@ -61,7 +64,7 @@ impl RegistryStorage {
         } else {
             self.cache.borrow().get(&key).cloned()
         };
-        
+
         if let Some(data) = data {
             let registration = bincode::deserialize(&data)
                 .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
@@ -72,16 +75,19 @@ impl RegistryStorage {
     }
 
     /// List models by status
-    pub async fn list_models_by_status(&self, status: RegistrationStatus) -> Result<Vec<ModelRegistration>> {
+    pub async fn list_models_by_status(
+        &self,
+        status: RegistrationStatus,
+    ) -> Result<Vec<ModelRegistration>> {
         // This is a simplified implementation
         // In a real implementation, this would query the database efficiently
         let mut models = Vec::new();
-        
+
         if let Some(ref db) = self.db {
             for item in db.iter() {
                 let (key, value) = item.map_err(|e| RegistryError::Database(e.to_string()))?;
                 let key_str = String::from_utf8_lossy(&key);
-                
+
                 if key_str.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(&value) {
                         if registration.status == status {
@@ -102,19 +108,22 @@ impl RegistryStorage {
                 }
             }
         }
-        
+
         Ok(models)
     }
 
     /// List models by category
-    pub async fn list_models_by_category(&self, category: ModelCategory) -> Result<Vec<ModelRegistration>> {
+    pub async fn list_models_by_category(
+        &self,
+        category: ModelCategory,
+    ) -> Result<Vec<ModelRegistration>> {
         let mut models = Vec::new();
-        
+
         if let Some(ref db) = self.db {
             for item in db.iter() {
                 let (key, value) = item.map_err(|e| RegistryError::Database(e.to_string()))?;
                 let key_str = String::from_utf8_lossy(&key);
-                
+
                 if key_str.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(&value) {
                         if registration.category == category {
@@ -135,7 +144,7 @@ impl RegistryStorage {
                 }
             }
         }
-        
+
         Ok(models)
     }
 
@@ -149,26 +158,43 @@ impl RegistryStorage {
     ) -> Result<Vec<ModelRegistration>> {
         let mut models = Vec::new();
         let query_lower = query.to_lowercase();
-        
+
         if let Some(ref db) = self.db {
             for item in db.iter() {
                 let (key, value) = item.map_err(|e| RegistryError::Database(e.to_string()))?;
                 let key_str = String::from_utf8_lossy(&key);
-                
+
                 if key_str.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(&value) {
                         // Check query match
-                        let matches_query = registration.model_id.name.to_lowercase().contains(&query_lower) ||
-                            registration.model_id.version.to_lowercase().contains(&query_lower) ||
-                            registration.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&query_lower)) ||
-                            registration.tags.iter().any(|tag| tag.to_lowercase().contains(&query_lower));
-                        
+                        let matches_query = registration
+                            .model_id
+                            .name
+                            .to_lowercase()
+                            .contains(&query_lower)
+                            || registration
+                                .model_id
+                                .version
+                                .to_lowercase()
+                                .contains(&query_lower)
+                            || registration
+                                .description
+                                .as_ref()
+                                .map_or(false, |d| d.to_lowercase().contains(&query_lower))
+                            || registration
+                                .tags
+                                .iter()
+                                .any(|tag| tag.to_lowercase().contains(&query_lower));
+
                         // Check category filter
-                        let matches_category = category.as_ref().map_or(true, |c| &registration.category == c);
-                        
+                        let matches_category = category
+                            .as_ref()
+                            .map_or(true, |c| &registration.category == c);
+
                         // Check status filter
-                        let matches_status = status.as_ref().map_or(true, |s| &registration.status == s);
-                        
+                        let matches_status =
+                            status.as_ref().map_or(true, |s| &registration.status == s);
+
                         if matches_query && matches_category && matches_status {
                             models.push(registration);
                         }
@@ -181,17 +207,34 @@ impl RegistryStorage {
                 if key.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(value) {
                         // Check query match
-                        let matches_query = registration.model_id.name.to_lowercase().contains(&query_lower) ||
-                            registration.model_id.version.to_lowercase().contains(&query_lower) ||
-                            registration.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&query_lower)) ||
-                            registration.tags.iter().any(|tag| tag.to_lowercase().contains(&query_lower));
-                        
+                        let matches_query = registration
+                            .model_id
+                            .name
+                            .to_lowercase()
+                            .contains(&query_lower)
+                            || registration
+                                .model_id
+                                .version
+                                .to_lowercase()
+                                .contains(&query_lower)
+                            || registration
+                                .description
+                                .as_ref()
+                                .map_or(false, |d| d.to_lowercase().contains(&query_lower))
+                            || registration
+                                .tags
+                                .iter()
+                                .any(|tag| tag.to_lowercase().contains(&query_lower));
+
                         // Check category filter
-                        let matches_category = category.as_ref().map_or(true, |c| &registration.category == c);
-                        
+                        let matches_category = category
+                            .as_ref()
+                            .map_or(true, |c| &registration.category == c);
+
                         // Check status filter
-                        let matches_status = status.as_ref().map_or(true, |s| &registration.status == s);
-                        
+                        let matches_status =
+                            status.as_ref().map_or(true, |s| &registration.status == s);
+
                         if matches_query && matches_category && matches_status {
                             models.push(registration);
                         }
@@ -199,12 +242,12 @@ impl RegistryStorage {
                 }
             }
         }
-        
+
         // Apply limit
         if let Some(limit) = limit {
             models.truncate(limit);
         }
-        
+
         Ok(models)
     }
 
@@ -213,21 +256,24 @@ impl RegistryStorage {
         let key = format!("governance_proposal:{}", proposal.id);
         let data = bincode::serialize(proposal)
             .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
-        
+
         if let Some(ref db) = self.db {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
             self.cache.borrow_mut().insert(key, data);
         }
-        
+
         Ok(())
     }
 
     /// Load governance proposal
-    pub async fn load_governance_proposal(&self, proposal_id: &str) -> Result<Option<GovernanceProposal>> {
+    pub async fn load_governance_proposal(
+        &self,
+        proposal_id: &str,
+    ) -> Result<Option<GovernanceProposal>> {
         let key = format!("governance_proposal:{}", proposal_id);
-        
+
         let data = if let Some(ref db) = self.db {
             db.get(key.as_bytes())
                 .map_err(|e| RegistryError::Database(e.to_string()))?
@@ -235,7 +281,7 @@ impl RegistryStorage {
         } else {
             self.cache.borrow().get(&key).cloned()
         };
-        
+
         if let Some(data) = data {
             let proposal = bincode::deserialize(&data)
                 .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
@@ -248,12 +294,12 @@ impl RegistryStorage {
     /// List active proposals
     pub async fn list_active_proposals(&self) -> Result<Vec<GovernanceProposal>> {
         let mut proposals = Vec::new();
-        
+
         if let Some(ref db) = self.db {
             for item in db.iter() {
                 let (key, value) = item.map_err(|e| RegistryError::Database(e.to_string()))?;
                 let key_str = String::from_utf8_lossy(&key);
-                
+
                 if key_str.starts_with("governance_proposal:") {
                     if let Ok(proposal) = bincode::deserialize::<GovernanceProposal>(&value) {
                         if proposal.status == ProposalStatus::Active {
@@ -274,7 +320,7 @@ impl RegistryStorage {
                 }
             }
         }
-        
+
         Ok(proposals)
     }
 
@@ -283,21 +329,24 @@ impl RegistryStorage {
         let key = format!("model_usage_stats:{}", stats.model_id.name);
         let data = bincode::serialize(stats)
             .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
-        
+
         if let Some(ref db) = self.db {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
             self.cache.borrow_mut().insert(key, data);
         }
-        
+
         Ok(())
     }
 
     /// Get model usage statistics
-    pub async fn get_model_usage_stats(&self, model_id: &ModelId) -> Result<Option<ModelUsageStats>> {
+    pub async fn get_model_usage_stats(
+        &self,
+        model_id: &ModelId,
+    ) -> Result<Option<ModelUsageStats>> {
         let key = format!("model_usage_stats:{}", model_id.name);
-        
+
         let data = if let Some(ref db) = self.db {
             db.get(key.as_bytes())
                 .map_err(|e| RegistryError::Database(e.to_string()))?
@@ -305,7 +354,7 @@ impl RegistryStorage {
         } else {
             self.cache.borrow().get(&key).cloned()
         };
-        
+
         if let Some(data) = data {
             let stats = bincode::deserialize(&data)
                 .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
@@ -324,11 +373,13 @@ impl RegistryStorage {
         amount: u64,
         metadata: Option<HashMap<String, String>>,
     ) -> Result<()> {
-        let key = format!("fee_collection:{}:{}:{}", 
-            chrono::Utc::now().timestamp(), 
-            fee_type as u8, 
-            user);
-        
+        let key = format!(
+            "fee_collection:{}:{}:{}",
+            chrono::Utc::now().timestamp(),
+            fee_type as u8,
+            user
+        );
+
         let fee_record = FeeRecord {
             fee_type,
             model_id: model_id.cloned(),
@@ -337,17 +388,17 @@ impl RegistryStorage {
             timestamp: chrono::Utc::now(),
             metadata,
         };
-        
+
         let data = bincode::serialize(&fee_record)
             .map_err(|e| RegistryError::Internal(format!("Serialization error: {}", e)))?;
-        
+
         if let Some(ref db) = self.db {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
             self.cache.borrow_mut().insert(key, data);
         }
-        
+
         Ok(())
     }
 }

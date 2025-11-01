@@ -10,7 +10,7 @@ use std::convert::TryInto;
 
 use blake3::Hasher;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use hex::{ToHex, encode as hex_encode, decode as hex_decode};
+use hex::{decode as hex_decode, encode as hex_encode, ToHex};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
@@ -70,49 +70,54 @@ impl HashTimer {
         } else {
             format!("{:0>14}", time_hex_full)
         };
-        
+
         // Use digest as 50-hex hash suffix (200 bits from first 25 bytes)
         let digest_hex = hex_encode(&self.digest());
         let hash_suffix = &digest_hex[0..50.min(digest_hex.len())];
-        
+
         format!("{time_prefix}{hash_suffix}")
     }
 
     /// Parse from hex string (64 hex characters)
     pub fn from_hex(hex_str: &str) -> Result<Self, String> {
         if hex_str.len() != 64 {
-            return Err(format!("HashTimer hex must be 64 characters, got {}", hex_str.len()));
+            return Err(format!(
+                "HashTimer hex must be 64 characters, got {}",
+                hex_str.len()
+            ));
         }
 
         // Parse time prefix (14 hex chars = 7 bytes = 56 bits)
         let time_hex = &hex_str[0..14];
-        let time_bytes = hex_decode(time_hex)
-            .map_err(|e| format!("Invalid time prefix hex: {e}"))?;
+        let time_bytes =
+            hex_decode(time_hex).map_err(|e| format!("Invalid time prefix hex: {e}"))?;
         if time_bytes.len() != 7 {
             return Err("Time prefix must be 7 bytes".to_string());
         }
         let mut time_prefix_bytes = [0u8; 8];
         time_prefix_bytes[1..8].copy_from_slice(&time_bytes);
         let time_u64 = u64::from_be_bytes(time_prefix_bytes);
-        
+
         // Parse hash suffix (50 hex chars = 25 bytes = 200 bits)
         let hash_hex = &hex_str[14..64];
-        let hash_bytes = hex_decode(hash_hex)
-            .map_err(|e| format!("Invalid hash suffix hex: {e}"))?;
+        let hash_bytes =
+            hex_decode(hash_hex).map_err(|e| format!("Invalid hash suffix hex: {e}"))?;
         if hash_bytes.len() != 25 {
             return Err("Hash suffix must be 25 bytes".to_string());
         }
-        
+
         // Reconstruct entropy from hash suffix (we'll use first 32 bytes, padding if needed)
         let mut entropy = [0u8; HASHTIMER_ENTROPY_BYTES];
-        entropy[0..hash_bytes.len().min(32)].copy_from_slice(&hash_bytes[0..hash_bytes.len().min(32)]);
+        entropy[0..hash_bytes.len().min(32)]
+            .copy_from_slice(&hash_bytes[0..hash_bytes.len().min(32)]);
         if hash_bytes.len() < 32 {
             // Fill remainder deterministically
             let mut hasher = Hasher::new();
             hasher.update(&hash_bytes);
             hasher.update(&time_prefix_bytes);
             let pad_hash = hasher.finalize();
-            entropy[hash_bytes.len()..32].copy_from_slice(&pad_hash.as_bytes()[0..(32 - hash_bytes.len())]);
+            entropy[hash_bytes.len()..32]
+                .copy_from_slice(&pad_hash.as_bytes()[0..(32 - hash_bytes.len())]);
         }
 
         Ok(HashTimer {
@@ -138,7 +143,7 @@ impl HashTimer {
         node_id: &[u8],
     ) -> Self {
         let timestamp_us = time.0 as i64;
-        
+
         // Compute deterministic entropy from inputs
         let mut hasher = Hasher::new();
         hasher.update(context.as_bytes());
@@ -147,7 +152,7 @@ impl HashTimer {
         hasher.update(payload);
         hasher.update(nonce);
         hasher.update(node_id);
-        
+
         let hash = hasher.finalize();
         let mut entropy = [0u8; HASHTIMER_ENTROPY_BYTES];
         entropy.copy_from_slice(&hash.as_bytes()[0..HASHTIMER_ENTROPY_BYTES]);

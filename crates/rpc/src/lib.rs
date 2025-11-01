@@ -4,9 +4,7 @@ pub mod server;
 pub use server::{start_server, AppState, L2Config};
 
 // Re-export types from ippan_p2p for convenience
-pub use ippan_p2p::{
-    HttpP2PNetwork, NetworkMessage, P2PConfig, P2PError, PeerInfo as P2PPeerInfo,
-};
+pub use ippan_p2p::{HttpP2PNetwork, NetworkMessage, P2PConfig, P2PError, PeerInfo as P2PPeerInfo};
 
 use serde::{Deserialize, Serialize};
 

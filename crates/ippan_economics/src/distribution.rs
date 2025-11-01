@@ -3,8 +3,8 @@
 //! Distributes round-based emissions and collected fees deterministically among validators,
 //! based on uptime, role, and contribution weight. Implements the DAG-Fair model for IPPAN.
 
-use crate::types::*;
 use crate::errors::*;
+use crate::types::*;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -41,7 +41,10 @@ impl RoundRewards {
         // Calculate total weight
         let total_weight = self.calculate_total_weight(&participations)?;
         if total_weight == Decimal::ZERO {
-            warn!("No validators with non-zero weight in round {}", round_index);
+            warn!(
+                "No validators with non-zero weight in round {}",
+                round_index
+            );
             return Ok(self.create_empty_distribution(round_index, round_reward, fees_collected));
         }
 
@@ -58,10 +61,14 @@ impl RoundRewards {
             let weight_fraction = weight / total_weight;
 
             let validator_reward = ValidatorReward {
-                round_emission: self.calculate_component_reward(composition.round_emission, weight_fraction)?,
-                transaction_fees: self.calculate_component_reward(composition.transaction_fees, weight_fraction)?,
-                ai_commissions: self.calculate_component_reward(composition.ai_commissions, weight_fraction)?,
-                network_dividend: self.calculate_component_reward(composition.network_dividend, weight_fraction)?,
+                round_emission: self
+                    .calculate_component_reward(composition.round_emission, weight_fraction)?,
+                transaction_fees: self
+                    .calculate_component_reward(composition.transaction_fees, weight_fraction)?,
+                ai_commissions: self
+                    .calculate_component_reward(composition.ai_commissions, weight_fraction)?,
+                network_dividend: self
+                    .calculate_component_reward(composition.network_dividend, weight_fraction)?,
                 total_reward: 0,
                 weight_factor: weight,
             };
@@ -77,7 +84,8 @@ impl RoundRewards {
         }
 
         // Compute totals
-        let total_distributed: RewardAmount = validator_rewards.values().map(|r| r.total_reward).sum();
+        let total_distributed: RewardAmount =
+            validator_rewards.values().map(|r| r.total_reward).sum();
         let total_available = round_reward + capped_fees;
         let excess = total_distributed.saturating_sub(total_available);
         let excess_fees = fees_collected.saturating_sub(capped_fees);
@@ -101,7 +109,10 @@ impl RoundRewards {
     }
 
     /// Calculate the weight for a single validator
-    fn calculate_validator_weight(&self, participation: &ValidatorParticipation) -> Result<Decimal, DistributionError> {
+    fn calculate_validator_weight(
+        &self,
+        participation: &ValidatorParticipation,
+    ) -> Result<Decimal, DistributionError> {
         let role_weight = participation.role.weight_multiplier();
         let uptime_factor = participation.uptime_score;
         let blocks_factor = Decimal::from(participation.blocks_contributed);
@@ -109,19 +120,24 @@ impl RoundRewards {
         let weight = role_weight
             .checked_mul(uptime_factor)
             .and_then(|w| w.checked_mul(blocks_factor))
-            .ok_or_else(|| DistributionError::CalculationFailed("Weight calculation overflow".to_string()))?;
+            .ok_or_else(|| {
+                DistributionError::CalculationFailed("Weight calculation overflow".to_string())
+            })?;
 
         Ok(weight)
     }
 
     /// Sum all validator weights
-    fn calculate_total_weight(&self, participations: &[ValidatorParticipation]) -> Result<Decimal, DistributionError> {
+    fn calculate_total_weight(
+        &self,
+        participations: &[ValidatorParticipation],
+    ) -> Result<Decimal, DistributionError> {
         let mut total = Decimal::ZERO;
         for p in participations {
             let weight = self.calculate_validator_weight(p)?;
-            total = total
-                .checked_add(weight)
-                .ok_or_else(|| DistributionError::CalculationFailed("Total weight overflow".to_string()))?;
+            total = total.checked_add(weight).ok_or_else(|| {
+                DistributionError::CalculationFailed("Total weight overflow".to_string())
+            })?;
         }
         Ok(total)
     }
@@ -134,13 +150,19 @@ impl RoundRewards {
     ) -> Result<RewardAmount, DistributionError> {
         let reward_decimal = Decimal::from(component_total)
             .checked_mul(weight_fraction)
-            .ok_or_else(|| DistributionError::CalculationFailed("Reward fraction overflow".to_string()))?;
+            .ok_or_else(|| {
+                DistributionError::CalculationFailed("Reward fraction overflow".to_string())
+            })?;
 
         Ok(reward_decimal.round_dp(0).to_u64().unwrap_or(0))
     }
 
     /// Cap excessive fee revenue
-    pub fn apply_fee_cap(&self, fees_collected: RewardAmount, round_reward: RewardAmount) -> RewardAmount {
+    pub fn apply_fee_cap(
+        &self,
+        fees_collected: RewardAmount,
+        round_reward: RewardAmount,
+    ) -> RewardAmount {
         let max_fees = (Decimal::from(round_reward) * self.params.fee_cap_fraction)
             .round_dp(0)
             .to_u64()
@@ -149,7 +171,10 @@ impl RoundRewards {
     }
 
     /// Sanity check validator participations
-    fn validate_participations(&self, participations: &[ValidatorParticipation]) -> Result<(), DistributionError> {
+    fn validate_participations(
+        &self,
+        participations: &[ValidatorParticipation],
+    ) -> Result<(), DistributionError> {
         for p in participations {
             if p.uptime_score < Decimal::ZERO || p.uptime_score > Decimal::ONE {
                 return Err(DistributionError::InvalidParticipation(format!(
@@ -192,10 +217,14 @@ impl RoundRewards {
         blocks_contributed: u32,
     ) -> RewardAmount {
         let composition = RewardComposition::new(round_reward);
-        let max_weight =
-            ValidatorRole::Proposer.weight_multiplier() * Decimal::ONE * Decimal::from(blocks_contributed);
+        let max_weight = ValidatorRole::Proposer.weight_multiplier()
+            * Decimal::ONE
+            * Decimal::from(blocks_contributed);
         let total_components = Decimal::from(composition.total());
-        (total_components * max_weight).round_dp(0).to_u64().unwrap_or(0)
+        (total_components * max_weight)
+            .round_dp(0)
+            .to_u64()
+            .unwrap_or(0)
     }
 
     pub fn params(&self) -> &EmissionParams {
@@ -213,7 +242,11 @@ impl Default for RoundRewards {
 mod tests {
     use super::*;
 
-    fn create_test_participation(id: &str, role: ValidatorRole, blocks: u32) -> ValidatorParticipation {
+    fn create_test_participation(
+        id: &str,
+        role: ValidatorRole,
+        blocks: u32,
+    ) -> ValidatorParticipation {
         ValidatorParticipation {
             validator_id: ValidatorId::new(id),
             role,
