@@ -397,6 +397,7 @@ pub struct MemoryStorage {
     accounts: Arc<RwLock<HashMap<String, Account>>>,
     chain_state: Arc<RwLock<ChainState>>,
     latest_height: Arc<RwLock<u64>>,
+    validator_telemetry: Arc<RwLock<HashMap<[u8; 32], ValidatorTelemetry>>>,
 }
 
 impl Default for MemoryStorage {
@@ -407,6 +408,7 @@ impl Default for MemoryStorage {
             accounts: Arc::new(RwLock::new(HashMap::new())),
             chain_state: Arc::new(RwLock::new(ChainState::default())),
             latest_height: Arc::new(RwLock::new(0)),
+            validator_telemetry: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -520,29 +522,15 @@ impl Storage for MemoryStorage {
     }
 
     fn store_validator_telemetry(&self, validator_id: &[u8; 32], telemetry: &ValidatorTelemetry) -> Result<()> {
-        let data = serde_json::to_vec(telemetry)?;
-        self.validator_telemetry.insert(validator_id, data)?;
+        self.validator_telemetry.write().insert(*validator_id, telemetry.clone());
         Ok(())
     }
 
     fn get_validator_telemetry(&self, validator_id: &[u8; 32]) -> Result<Option<ValidatorTelemetry>> {
-        match self.validator_telemetry.get(validator_id)? {
-            Some(data) => Ok(Some(serde_json::from_slice(&data)?)),
-            None => Ok(None),
-        }
+        Ok(self.validator_telemetry.read().get(validator_id).cloned())
     }
 
     fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
-        let mut result = HashMap::new();
-        for item in self.validator_telemetry.iter() {
-            let (key, value) = item?;
-            if key.len() == 32 {
-                let mut validator_id = [0u8; 32];
-                validator_id.copy_from_slice(&key);
-                let telemetry: ValidatorTelemetry = serde_json::from_slice(&value)?;
-                result.insert(validator_id, telemetry);
-            }
-        }
-        Ok(result)
+        Ok(self.validator_telemetry.read().clone())
     }
 }
