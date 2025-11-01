@@ -32,7 +32,6 @@ pub use monitoring::{
     ServiceMetrics,
     ServiceMetricsSnapshot,
     ServiceHealthReport,
-    MonitoringConfig,
     AlertHandler,
     ServiceAlert,
     AlertType,

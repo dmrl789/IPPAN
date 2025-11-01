@@ -95,26 +95,50 @@ impl AIService {
     /// Check monitoring service health
     async fn check_monitoring_health(&self) -> CheckResult {
         let start = SystemTime::now();
-        let duration = start.elapsed().unwrap_or_default();
-        
-        // Simple health check - monitoring service is healthy if service is running
-        CheckResult {
-            status: if self.is_running() { CheckStatus::Pass } else { CheckStatus::Warn },
-            message: Some(format!("Monitoring service: {}", if self.is_running() { "healthy" } else { "degraded" })),
-            duration_ms: duration.as_millis() as u64,
+        #[cfg(feature = "analytics")]
+        {
+            let alerts = self.monitoring_alerts_snapshot();
+            let duration = start.elapsed().unwrap_or_default();
+            let has_warnings = !alerts.is_empty();
+            return CheckResult {
+                status: if has_warnings { CheckStatus::Warn } else { CheckStatus::Pass },
+                message: Some(if has_warnings { "Monitoring alerts present".to_string() } else { "Monitoring healthy".to_string() }),
+                duration_ms: duration.as_millis() as u64,
+            };
+        }
+        #[cfg(not(feature = "analytics"))]
+        {
+            let duration = start.elapsed().unwrap_or_default();
+            return CheckResult {
+                status: CheckStatus::Pass,
+                message: Some("Monitoring feature not compiled".to_string()),
+                duration_ms: duration.as_millis() as u64,
+            };
         }
     }
 
     /// Check analytics service health
     async fn check_analytics_health(&self) -> CheckResult {
         let start = SystemTime::now();
-        let duration = start.elapsed().unwrap_or_default();
-        
-        // Simple health check - analytics service is healthy if service is running
-        CheckResult {
-            status: if self.is_running() { CheckStatus::Pass } else { CheckStatus::Warn },
-            message: Some(format!("Analytics service: {}", if self.is_running() { "healthy" } else { "degraded" })),
-            duration_ms: duration.as_millis() as u64,
+        #[cfg(feature = "analytics")]
+        {
+            let insights = self.analytics_insights_snapshot();
+            let has_high = insights.iter().any(|i| matches!(i.severity, crate::types::SeverityLevel::High | crate::types::SeverityLevel::Critical));
+            let duration = start.elapsed().unwrap_or_default();
+            return CheckResult {
+                status: if has_high { CheckStatus::Warn } else { CheckStatus::Pass },
+                message: Some(if has_high { "Analytics elevated severities present".to_string() } else { "Analytics healthy".to_string() }),
+                duration_ms: duration.as_millis() as u64,
+            };
+        }
+        #[cfg(not(feature = "analytics"))]
+        {
+            let duration = start.elapsed().unwrap_or_default();
+            return CheckResult {
+                status: CheckStatus::Pass,
+                message: Some("Analytics feature not compiled".to_string()),
+                duration_ms: duration.as_millis() as u64,
+            };
         }
     }
 
@@ -189,6 +213,8 @@ impl AIService {
         Duration::from_secs(0)
     }
 }
+
+// (no helper clones of AIService; health checks use live service state via getters)
 
 /// Determine overall health status based on individual checks
 fn determine_health_status(checks: &HashMap<String, CheckResult>) -> HealthStatus {

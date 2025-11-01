@@ -92,6 +92,17 @@ impl AIService {
         Ok(())
     }
 
+    // ---------- Introspection helpers (for health checks) ----------
+    #[cfg(feature = "analytics")]
+    pub fn monitoring_alerts_snapshot(&self) -> Vec<crate::types::MonitoringAlert> {
+        self.monitoring_service.get_alerts().to_vec()
+    }
+
+    #[cfg(feature = "analytics")]
+    pub fn analytics_insights_snapshot(&self) -> Vec<crate::types::AnalyticsInsight> {
+        self.analytics_service.get_insights().to_vec()
+    }
+
     /// Stop the AI Service
     pub async fn stop(&mut self) -> Result<(), AIServiceError> {
         if !self.is_running {

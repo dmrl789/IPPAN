@@ -142,8 +142,8 @@ impl ConfigManager {
                     .unwrap_or(4000),
                 temperature: env::var("LLM_TEMPERATURE")
                     .unwrap_or_else(|_| "0.7".to_string())
-                    .parse()
-                    .unwrap_or(0.7),
+                    .parse::<f32>()
+                    .unwrap_or(0.7f32),
                 timeout_seconds: env::var("LLM_TIMEOUT")
                     .unwrap_or_else(|_| "30".to_string())
                     .parse()
