@@ -34,11 +34,14 @@ pub mod emission;
 pub mod emission_tracker;
 pub mod fees;
 pub mod l1_ai_consensus;
+pub mod metrics;
+pub mod model_reload;
 pub mod ordering;
 pub mod parallel_dag;
 pub mod reputation;
 pub mod round;
 pub mod round_executor;
+pub mod telemetry;
 
 // ---------------------------------------------------------------------
 // Public re-exports
@@ -163,6 +166,10 @@ pub struct PoAConsensus {
     #[cfg(feature = "ai_l1")]
     pub l1_ai_consensus: Arc<RwLock<L1AIConsensus>>,
     pub emission_tracker: Arc<RwLock<EmissionTracker>>,
+    pub telemetry_manager: Arc<telemetry::TelemetryManager>,
+    #[cfg(feature = "ai_l1")]
+    pub model_reloader: Option<Arc<model_reload::ModelReloader>>,
+    pub metrics: Arc<metrics::ConsensusMetrics>,
 }
 
 impl PoAConsensus {
@@ -201,29 +208,11 @@ impl PoAConsensus {
             L1AIConsensus::new(ai_config)
         };
 
-        let round_consensus = Arc::new(RwLock::new(RoundConsensus::new()));
+        let telemetry_manager = Arc::new(telemetry::TelemetryManager::new(storage.clone()));
+        // Load existing telemetry from storage
+        let _ = telemetry_manager.load_from_storage();
 
-        // Initialize default telemetry for all validators
-        #[cfg(feature = "ai_l1")]
-        {
-            use ippan_ai_core::features::ValidatorTelemetry;
-            let mut consensus_guard = round_consensus.write();
-            for validator in &config.validators {
-                if validator.is_active {
-                    // Initialize with default telemetry so GBDT can evaluate from round 1
-                    let default_telemetry = ValidatorTelemetry {
-                        blocks_proposed: 0,
-                        blocks_verified: 0,
-                        rounds_active: 0,
-                        avg_latency_us: 0,
-                        slash_count: 0,
-                        stake: validator.stake,
-                        age_rounds: 1, // Start with 1 to avoid division by zero
-                    };
-                    consensus_guard.update_telemetry(validator.id, default_telemetry);
-                }
-            }
-        }
+        let metrics = Arc::new(metrics::ConsensusMetrics::new());
 
         Self {
             config: config.clone(),
@@ -235,11 +224,15 @@ impl PoAConsensus {
             mempool: Arc::new(Mempool::new(10_000)),
             round_tracker: Arc::new(RwLock::new(tracker)),
             finalization_interval: Duration::from_millis(config.finalization_interval_ms.clamp(100, 250)),
-            round_consensus,
+            round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
             #[cfg(feature = "ai_l1")]
             l1_ai_consensus: Arc::new(RwLock::new(l1_ai_consensus)),
             emission_tracker: Arc::new(RwLock::new(emission_tracker)),
+            telemetry_manager,
+            #[cfg(feature = "ai_l1")]
+            model_reloader: None,
+            metrics,
         }
     }
 
@@ -273,6 +266,8 @@ impl PoAConsensus {
             finalization_interval,
             validator_id,
             fee_collector,
+            telemetry_manager,
+            metrics,
         ) = (
             self.is_running.clone(),
             self.current_slot.clone(),
@@ -284,6 +279,8 @@ impl PoAConsensus {
             self.finalization_interval,
             self.validator_id,
             self.fee_collector.clone(),
+            self.telemetry_manager.clone(),
+            self.metrics.clone(),
         );
 
         #[cfg(feature = "ai_l1")]
@@ -308,14 +305,14 @@ impl PoAConsensus {
 
                 let slot = *current_slot.read();
                 #[cfg(feature = "ai_l1")]
-                let maybe_proposer = Self::select_proposer(&config, &round_consensus, slot, &l1_ai_consensus);
+                let maybe_proposer = Self::select_proposer(&config, &round_consensus, slot, &l1_ai_consensus, &telemetry_manager, &metrics);
                 #[cfg(not(feature = "ai_l1"))]
                 let maybe_proposer = Self::select_proposer_no_ai(&config, &round_consensus, slot);
 
                 if let Some(proposer) = maybe_proposer {
                     if proposer == validator_id {
                         if let Err(e) = Self::propose_block(
-                            &storage, &mempool, &config, &round_tracker, &round_consensus, slot, validator_id,
+                            &storage, &mempool, &config, &round_tracker, slot, validator_id, &telemetry_manager, &metrics,
                         )
                         .await
                         {
@@ -347,9 +344,11 @@ impl PoAConsensus {
     #[cfg(feature = "ai_l1")]
     fn select_proposer(
         config: &PoAConfig,
-        round_consensus: &Arc<RwLock<RoundConsensus>>,
+        _round_consensus: &Arc<RwLock<RoundConsensus>>,
         slot: u64,
         l1_ai: &Arc<RwLock<L1AIConsensus>>,
+        telemetry_manager: &Arc<telemetry::TelemetryManager>,
+        metrics: &Arc<metrics::ConsensusMetrics>,
     ) -> Option<[u8; 32]> {
         let active: Vec<_> = config.validators.iter().filter(|v| v.is_active).map(|v| v.id).collect();
         if active.is_empty() {
@@ -357,91 +356,67 @@ impl PoAConsensus {
         }
 
         if config.enable_ai_reputation {
-            let round_consensus_guard = round_consensus.read();
-            let total_stake: u64 = config.validators.iter().map(|v| v.stake).sum();
-            
-            // Build candidates using real telemetry and GBDT reputation scores
+            metrics.record_ai_selection_attempt();
+            let start = Instant::now();
+
+            // Build stake map for telemetry defaults
+            let stakes: HashMap<[u8; 32], u64> = config.validators.iter()
+                .map(|v| (v.id, v.stake))
+                .collect();
+
+            // Load real telemetry from storage (with defaults for missing validators)
+            let all_telemetry = telemetry_manager.get_all_telemetry_with_defaults(&active, &stakes);
+
             let candidates: Vec<ValidatorCandidate> = config.validators.iter()
                 .filter(|v| v.is_active)
-                .filter_map(|v| {
-                    // Get real telemetry from RoundConsensus
-                    let telemetry = round_consensus_guard.get_validator_telemetry().get(&v.id)?;
+                .map(|v| {
+                    let telemetry = all_telemetry.get(&v.id).unwrap();
                     
-                    // Calculate real reputation score using GBDT model from RoundConsensus
-                    let reputation_score = round_consensus_guard
-                        .calculate_reputation_score(&v.id)
-                        .unwrap_or(reputation::DEFAULT_REPUTATION);
+                    // Calculate reputation score from telemetry
+                    let reputation_score = Self::calculate_reputation_from_telemetry(telemetry);
                     
-                    // Calculate uptime percentage from rounds_active and age
-                    let uptime_percentage = if telemetry.age_rounds > 0 {
-                        (telemetry.rounds_active as f64 / telemetry.age_rounds as f64 * 100.0)
-                            .min(100.0)
-                            .max(0.0)
-                    } else {
-                        0.0
-                    };
-                    
-                    // Calculate recent performance based on proposal and verification rates
-                    let recent_performance = if telemetry.rounds_active > 0 {
-                        let proposal_rate = telemetry.blocks_proposed as f64 / telemetry.rounds_active as f64;
-                        let verification_rate = telemetry.blocks_verified as f64 / telemetry.rounds_active as f64;
-                        // Combine both rates, weighted average
-                        (proposal_rate * 0.4 + verification_rate * 0.6).min(1.0).max(0.0)
-                    } else {
-                        0.0
-                    };
-                    
-                    // Calculate network contribution based on blocks proposed/verified relative to network average
-                    // This is a simplified version - in production, you'd compare to network-wide averages
-                    let network_contribution = if total_stake > 0 {
-                        let stake_weight = v.stake as f64 / total_stake as f64;
-                        let block_contribution = (telemetry.blocks_proposed + telemetry.blocks_verified) as f64;
-                        // Normalize contribution (simplified - assumes reasonable scale)
-                        (stake_weight * 0.5 + (block_contribution / 1000.0).min(1.0) * 0.5).min(1.0)
-                    } else {
-                        0.0
-                    };
-                    
-                    Some(ValidatorCandidate {
+                    ValidatorCandidate {
                         id: v.id,
                         stake: v.stake,
                         reputation_score,
-                        uptime_percentage,
-                        recent_performance,
-                        network_contribution,
-                    })
+                        uptime_percentage: telemetry.uptime_percentage,
+                        recent_performance: telemetry.recent_performance,
+                        network_contribution: telemetry.network_contribution,
+                    }
                 })
                 .collect();
 
-            if candidates.is_empty() {
-                warn!("No candidates with telemetry available, falling back to simple selection");
-                return Self::fallback_proposer(&active, slot);
-            }
+            // Record reputation scores
+            let reputation_scores: HashMap<[u8; 32], i32> = candidates.iter()
+                .map(|c| (c.id, c.reputation_score))
+                .collect();
+            metrics.record_reputation_scores(&reputation_scores);
 
-            // Build network state (simplified - in production, calculate from actual network metrics)
             let network_state = NetworkState {
-                congestion_level: 0.3, // TODO: Calculate from mempool size / capacity
-                avg_block_time_ms: 200.0, // TODO: Calculate from recent block times
+                congestion_level: 0.3,
+                avg_block_time_ms: 200.0,
                 active_validators: active.len(),
-                total_stake,
+                total_stake: config.validators.iter().map(|v| v.stake).sum(),
                 current_round: slot,
-                recent_tx_volume: 1000, // TODO: Calculate from recent transaction volume
+                recent_tx_volume: 1000,
             };
 
             match l1_ai.read().select_validator(&candidates, &network_state) {
                 Ok(result) => {
+                    let latency_us = start.elapsed().as_micros() as u64;
+                    metrics.record_ai_selection_success(result.confidence_score, latency_us);
+                    metrics.record_validator_selected(&result.selected_validator);
+                    
                     info!(
-                        "L1 AI selected validator: {} (confidence: {:.2}, reputation: {})",
+                        "L1 AI selected validator: {} (confidence: {:.2}, latency: {}µs)",
                         hex::encode(result.selected_validator),
                         result.confidence_score,
-                        candidates.iter()
-                            .find(|c| c.id == result.selected_validator)
-                            .map(|c| c.reputation_score)
-                            .unwrap_or(0)
+                        latency_us
                     );
                     Some(result.selected_validator)
                 }
                 Err(e) => {
+                    metrics.record_ai_selection_fallback();
                     warn!("L1 AI selection failed: {e}, falling back to simple selection");
                     Self::fallback_proposer(&active, slot)
                 }
@@ -449,6 +424,34 @@ impl PoAConsensus {
         } else {
             Self::fallback_proposer(&active, slot)
         }
+    }
+
+    /// Calculate reputation score (0-10000) from telemetry data
+    #[cfg(feature = "ai_l1")]
+    fn calculate_reputation_from_telemetry(telemetry: &ippan_storage::ValidatorTelemetry) -> i32 {
+        // Calculate based on various factors
+        let proposal_rate = if telemetry.rounds_active > 0 {
+            (telemetry.blocks_proposed * 10000 / telemetry.rounds_active).min(10000) as i32
+        } else {
+            5000
+        };
+
+        let verification_rate = if telemetry.rounds_active > 0 {
+            (telemetry.blocks_verified * 1000 / telemetry.rounds_active).min(10000) as i32
+        } else {
+            5000
+        };
+
+        let latency_score = ((200_000 - telemetry.avg_latency_us.min(200_000)) * 10000 / 200_000) as i32;
+        let slash_penalty = 10000 - (telemetry.slash_count * 1000).min(10000) as i32;
+        let uptime_score = (telemetry.uptime_percentage * 100.0) as i32;
+        let performance_score = (telemetry.recent_performance * 10000.0) as i32;
+
+        // Weighted average
+        let score = (proposal_rate * 25 + verification_rate * 20 + latency_score * 15 
+                    + slash_penalty * 20 + uptime_score * 10 + performance_score * 10) / 100;
+        
+        score.clamp(0, 10000)
     }
 
     #[cfg(not(feature = "ai_l1"))]
@@ -482,9 +485,10 @@ impl PoAConsensus {
         mempool: &Arc<Mempool>,
         config: &PoAConfig,
         tracker: &Arc<RwLock<RoundTracker>>,
-        round_consensus: &Arc<RwLock<RoundConsensus>>,
         _slot: u64,
         proposer: [u8; 32],
+        telemetry_manager: &Arc<telemetry::TelemetryManager>,
+        metrics: &Arc<metrics::ConsensusMetrics>,
     ) -> Result<()> {
         let txs = mempool.get_transactions_for_block(config.max_transactions_per_block);
         if txs.is_empty() {
@@ -518,40 +522,11 @@ impl PoAConsensus {
 
         tracker.write().current_round_blocks.push(block.header.id);
 
-        // Update telemetry for the proposer
-        #[cfg(feature = "ai_l1")]
-        {
-            use ippan_ai_core::features::ValidatorTelemetry;
-            
-            let mut consensus_guard = round_consensus.write();
-            let existing_telemetry = consensus_guard.get_validator_telemetry().get(&proposer).cloned();
-            
-            let telemetry = if let Some(mut tel) = existing_telemetry {
-                // Update existing telemetry
-                tel.blocks_proposed += 1;
-                tel.rounds_active += 1;
-                tel.age_rounds += 1; // Increment age
-                // Update average latency (simplified - in production, use rolling average)
-                // For now, we'll keep the existing avg_latency_us
-                tel
-            } else {
-                // Create new telemetry for this validator
-                ValidatorTelemetry {
-                    blocks_proposed: 1,
-                    blocks_verified: 0,
-                    rounds_active: 1,
-                    avg_latency_us: 0, // Will be updated when latency data is available
-                    slash_count: 0,
-                    stake: config.validators.iter()
-                        .find(|v| v.id == proposer)
-                        .map(|v| v.stake)
-                        .unwrap_or(0),
-                    age_rounds: 1,
-                }
-            };
-            
-            consensus_guard.update_telemetry(proposer, telemetry);
-        }
+        // Record telemetry for block proposal
+        let _ = telemetry_manager.record_block_proposal(&proposer);
+        
+        // Record metrics
+        metrics.record_block_proposed();
 
         info!(
             "Proposed block {} at height {} ({} txs)",
@@ -672,7 +647,7 @@ impl PoAConsensus {
     pub fn get_state(&self) -> ConsensusState {
         let slot = *self.current_slot.read();
         #[cfg(feature = "ai_l1")]
-        let proposer = Self::select_proposer(&self.config, &self.round_consensus, slot, &self.l1_ai_consensus);
+        let proposer = Self::select_proposer(&self.config, &self.round_consensus, slot, &self.l1_ai_consensus, &self.telemetry_manager, &self.metrics);
         #[cfg(not(feature = "ai_l1"))]
         let proposer = Self::select_proposer_no_ai(&self.config, &self.round_consensus, slot);
 
@@ -684,6 +659,16 @@ impl PoAConsensus {
             latest_block_height: self.storage.get_latest_height().unwrap_or(0),
             current_round: self.round_tracker.read().current_round,
         }
+    }
+    
+    /// Get metrics in Prometheus format
+    pub fn get_metrics_prometheus(&self) -> String {
+        self.metrics.export_prometheus()
+    }
+
+    /// Get metrics object for programmatic access
+    pub fn get_metrics(&self) -> Arc<metrics::ConsensusMetrics> {
+        self.metrics.clone()
     }
 
     pub fn add_validator(&mut self, v: Validator) {
@@ -721,6 +706,82 @@ impl PoAConsensus {
     pub fn update_ai_config(&self, config: L1AIConfig) {
         self.l1_ai_consensus.write().config = config;
         info!("L1 AI consensus configuration updated");
+    }
+
+    /// Enable hot-reload for GBDT models
+    ///
+    /// Starts a background watcher that monitors model files and reloads them when changed.
+    /// Models are checked every `check_interval`.
+    #[cfg(feature = "ai_l1")]
+    pub fn enable_model_hot_reload(
+        &mut self,
+        validator_model_path: Option<std::path::PathBuf>,
+        fee_model_path: Option<std::path::PathBuf>,
+        health_model_path: Option<std::path::PathBuf>,
+        ordering_model_path: Option<std::path::PathBuf>,
+        check_interval: Duration,
+    ) -> Result<()> {
+        let l1_ai = self.l1_ai_consensus.clone();
+        
+        let reloader = Arc::new(model_reload::ModelReloader::new(move |update| {
+            match update {
+                model_reload::ModelUpdate::Validator(model) => {
+                    l1_ai.write().validator_selection_model = Some(model);
+                    info!("Hot-reloaded validator selection model");
+                }
+                model_reload::ModelUpdate::Fee(model) => {
+                    l1_ai.write().fee_optimization_model = Some(model);
+                    info!("Hot-reloaded fee optimization model");
+                }
+                model_reload::ModelUpdate::Health(model) => {
+                    l1_ai.write().network_health_model = Some(model);
+                    info!("Hot-reloaded network health model");
+                }
+                model_reload::ModelUpdate::Ordering(model) => {
+                    l1_ai.write().block_ordering_model = Some(model);
+                    info!("Hot-reloaded block ordering model");
+                }
+            }
+            Ok(())
+        }));
+
+        // Configure paths
+        let mut reloader_mut = Arc::try_unwrap(reloader).unwrap_or_else(|arc| (*arc).clone());
+        
+        if let Some(path) = validator_model_path {
+            reloader_mut.set_validator_model_path(path);
+        }
+        if let Some(path) = fee_model_path {
+            reloader_mut.set_fee_model_path(path);
+        }
+        if let Some(path) = health_model_path {
+            reloader_mut.set_health_model_path(path);
+        }
+        if let Some(path) = ordering_model_path {
+            reloader_mut.set_ordering_model_path(path);
+        }
+
+        let reloader = Arc::new(reloader_mut);
+
+        // Start the watcher
+        reloader.clone().start_watcher(check_interval);
+        
+        self.model_reloader = Some(reloader);
+        
+        info!("Model hot-reload enabled with check interval: {:?}", check_interval);
+        Ok(())
+    }
+
+    /// Manually trigger a reload of all models
+    #[cfg(feature = "ai_l1")]
+    pub async fn reload_models_now(&self) -> Result<()> {
+        if let Some(reloader) = &self.model_reloader {
+            reloader.force_reload_all().await?;
+            info!("Manually triggered model reload");
+        } else {
+            warn!("Model hot-reload is not enabled");
+        }
+        Ok(())
     }
 }
 
