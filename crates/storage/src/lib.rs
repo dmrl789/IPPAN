@@ -395,6 +395,45 @@ impl Storage for SledStorage {
             .insert(b"chain_state", serde_json::to_vec(s)?)?;
         Ok(())
     }
+
+    fn store_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+        telemetry: &ValidatorTelemetry,
+    ) -> Result<()> {
+        let data = serde_json::to_vec(telemetry)?;
+        self.validator_telemetry.insert(&validator_id[..], data)?;
+        Ok(())
+    }
+
+    fn get_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+    ) -> Result<Option<ValidatorTelemetry>> {
+        self.validator_telemetry
+            .get(&validator_id[..])?
+            .map(|value| serde_json::from_slice(&value))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
+        let mut telemetry_map = HashMap::new();
+
+        for entry in self.validator_telemetry.iter() {
+            let (key, value) = entry?;
+            if key.len() != 32 {
+                continue;
+            }
+
+            let mut validator_key = [0u8; 32];
+            validator_key.copy_from_slice(key.as_ref());
+            let telemetry: ValidatorTelemetry = serde_json::from_slice(&value)?;
+            telemetry_map.insert(validator_key, telemetry);
+        }
+
+        Ok(telemetry_map)
+    }
 }
 
 /// In-memory testing backend
@@ -548,5 +587,88 @@ impl Storage for MemoryStorage {
 
     fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
         Ok(self.validator_telemetry.read().clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn sample_validator_telemetry(id: [u8; 32]) -> ValidatorTelemetry {
+        ValidatorTelemetry {
+            validator_id: id,
+            blocks_proposed: 42,
+            blocks_verified: 128,
+            rounds_active: 64,
+            avg_latency_us: 1500,
+            slash_count: 1,
+            stake: 5_000,
+            age_rounds: 256,
+            last_active_round: 999,
+            uptime_percentage: 99.5,
+            recent_performance: 0.92,
+            network_contribution: 0.88,
+        }
+    }
+
+    #[test]
+    fn sled_storage_persists_validator_telemetry() {
+        let dir = tempdir().expect("temp dir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+
+        let validator_id = [7u8; 32];
+        let telemetry = sample_validator_telemetry(validator_id);
+
+        storage
+            .store_validator_telemetry(&validator_id, &telemetry)
+            .expect("store telemetry");
+        storage.flush().expect("flush data");
+
+        let fetched = storage
+            .get_validator_telemetry(&validator_id)
+            .expect("fetch telemetry")
+            .expect("telemetry exists");
+        assert_eq!(fetched.validator_id, validator_id);
+        assert_eq!(fetched.blocks_proposed, telemetry.blocks_proposed);
+
+        let all = storage.get_all_validator_telemetry().expect("fetch all");
+        assert_eq!(all.len(), 1);
+        assert!(all.contains_key(&validator_id));
+
+        drop(storage);
+
+        // Re-open the database to ensure persistence
+        let storage_reopened = SledStorage::new(dir.path()).expect("reopen storage");
+        let fetched_again = storage_reopened
+            .get_validator_telemetry(&validator_id)
+            .expect("fetch telemetry after reopen")
+            .expect("telemetry persisted");
+        assert_eq!(fetched_again.blocks_verified, telemetry.blocks_verified);
+    }
+
+    #[test]
+    fn memory_storage_stores_validator_telemetry() {
+        let storage = MemoryStorage::default();
+        let validator_id = [3u8; 32];
+        let telemetry = sample_validator_telemetry(validator_id);
+
+        storage
+            .store_validator_telemetry(&validator_id, &telemetry)
+            .expect("store telemetry");
+
+        let fetched = storage
+            .get_validator_telemetry(&validator_id)
+            .expect("fetch telemetry")
+            .expect("telemetry exists");
+        assert_eq!(fetched.uptime_percentage, telemetry.uptime_percentage);
+
+        let all = storage
+            .get_all_validator_telemetry()
+            .expect("fetch all telemetry");
+        assert_eq!(
+            all.get(&validator_id).unwrap().network_contribution,
+            telemetry.network_contribution
+        );
     }
 }
