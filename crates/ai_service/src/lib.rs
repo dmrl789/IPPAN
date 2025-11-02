@@ -37,7 +37,14 @@ pub use metrics::{
     JsonExporter, MetricsCollector, MetricsExporter, MetricsSnapshot, PrometheusExporter,
 };
 pub use service::AIService;
-pub use types::*;
+pub use types::{
+    AIServiceConfig, AlertStatus, AnalyticsConfig, AnalyticsInsight, ContractAnalysisMetadata,
+    ContractAnalysisType, ContractIssue, DataPoint, DifficultyLevel, InsightType, LLMConfig,
+    LLMRequest, LLMResponse, LLMUsage, MonitoringAlert, OptimizationConstraints, OptimizationGoal,
+    OptimizationSuggestion, SeverityLevel, SmartContractAnalysisRequest,
+    SmartContractAnalysisResponse, TransactionData, TransactionOptimizationRequest,
+    TransactionOptimizationResponse,
+};
 
 /// Re-export core AI functionality
 pub use ippan_ai_core::{

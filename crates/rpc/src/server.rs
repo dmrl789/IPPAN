@@ -11,7 +11,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_mempool::Mempool;
-use ippan_storage::{Account, Storage};
+use ippan_storage::{Account, MemoryStorage, Storage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
 use serde::Serialize;
@@ -516,7 +516,7 @@ mod tests {
     #[tokio::test]
     async fn test_health_endpoint() {
         let app_state = Arc::new(AppState {
-            storage: Arc::new(Storage::default()),
+            storage: Arc::new(MemoryStorage::default()),
             start_time: Instant::now(),
             peer_count: Arc::new(AtomicUsize::new(0)),
             p2p_network: None,
