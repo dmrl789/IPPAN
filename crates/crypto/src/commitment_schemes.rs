@@ -121,12 +121,31 @@ impl PedersenCommitment {
 
     /// Modular multiplication (simplified)
     fn modular_multiply(&self, a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
-        // Simplified implementation - in production, use proper modular arithmetic
-        let mut result = [0u8; 32];
-        for i in 0..32 {
-            result[i] = a[i].wrapping_add(b[i]);
-        }
-        result
+        let modulus = self.modulus_value();
+        let a_val = Self::scalar_to_u128(a);
+        let b_val = Self::scalar_to_u128(b);
+        let product = if modulus > 0 {
+            (a_val.wrapping_mul(b_val)) % modulus
+        } else {
+            a_val.wrapping_mul(b_val)
+        };
+        Self::u128_to_scalar(product)
+    }
+
+    fn modulus_value(&self) -> u128 {
+        Self::scalar_to_u128(&self.modulus).max(1)
+    }
+
+    fn scalar_to_u128(bytes: &[u8; 32]) -> u128 {
+        let mut truncated = [0u8; 16];
+        truncated.copy_from_slice(&bytes[..16]);
+        u128::from_le_bytes(truncated)
+    }
+
+    fn u128_to_scalar(value: u128) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        bytes[..16].copy_from_slice(&value.to_le_bytes());
+        bytes
     }
 }
 

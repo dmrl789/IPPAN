@@ -74,12 +74,14 @@ impl ConsensusMetrics {
 
         // Keep only last 1000 samples
         let mut scores = self.ai_confidence_scores.lock();
-        if scores.len() > 1000 {
-            scores.drain(0..scores.len() - 1000);
+        let score_len = scores.len();
+        if score_len > 1000 {
+            scores.drain(0..score_len - 1000);
         }
         let mut latencies = self.ai_selection_latency_us.lock();
-        if latencies.len() > 1000 {
-            latencies.drain(0..latencies.len() - 1000);
+        let latency_len = latencies.len();
+        if latency_len > 1000 {
+            latencies.drain(0..latency_len - 1000);
         }
     }
 

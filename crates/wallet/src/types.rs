@@ -1,11 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::SystemTime;
 use uuid::Uuid;
 
 use crate::errors::*;
-use ippan_types::{Address, Amount};
 
 /// Encrypted private key with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,8 +112,8 @@ impl WalletState {
         self.addresses.remove(address)
     }
 
-    pub fn list_addresses(&self) -> Vec<&WalletAddress> {
-        self.addresses.values().collect()
+    pub fn list_addresses(&self) -> Vec<WalletAddress> {
+        self.addresses.values().cloned().collect()
     }
 
     pub fn get_total_balance(&self) -> u64 {

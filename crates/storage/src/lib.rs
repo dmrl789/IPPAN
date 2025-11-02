@@ -401,8 +401,9 @@ impl Storage for SledStorage {
         validator_id: &[u8; 32],
         telemetry: &ValidatorTelemetry,
     ) -> Result<()> {
-        self.validator_telemetry
-            .insert(validator_id, serde_json::to_vec(telemetry)?)?;
+        let key = &validator_id[..];
+        let value = serde_json::to_vec(telemetry)?;
+        self.validator_telemetry.insert(key, value)?;
         Ok(())
     }
 
@@ -411,8 +412,8 @@ impl Storage for SledStorage {
         validator_id: &[u8; 32],
     ) -> Result<Option<ValidatorTelemetry>> {
         self.validator_telemetry
-            .get(validator_id)?
-            .map(|v| serde_json::from_slice(v.as_ref()))
+            .get(&validator_id[..])?
+            .map(|v| serde_json::from_slice(&v))
             .transpose()
             .map_err(Into::into)
     }

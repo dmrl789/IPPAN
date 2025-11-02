@@ -6,12 +6,10 @@
 //! - Integer scaling for deterministic inference
 //! - Supports reproducible transformation and normalization stats reuse
 
-use crate::gbdt::{FeatureNormalization, GBDTError, GBDTModel};
-use anyhow::{Context, Result};
+use crate::gbdt::{FeatureNormalization, GBDTError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{info, instrument, warn};
 
 /// Feature engineering configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -105,7 +105,7 @@ impl ModelValidator {
 
         let start = std::time::Instant::now();
         let mut errors = Vec::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
 
         for rule in &self.rules {
             match rule {
