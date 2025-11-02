@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, warn};
 
 /// Health status of the AI Core system
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

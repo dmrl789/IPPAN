@@ -7,7 +7,7 @@ use crate::{
     types::*,
 };
 use std::collections::HashMap;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Model execution engine
 pub struct ExecutionEngine {

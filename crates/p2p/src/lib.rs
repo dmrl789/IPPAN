@@ -4,10 +4,10 @@ pub use parallel_gossip::{
     GossipPayload, GossipTopic, ParallelGossipNetwork,
 };
 
-use anyhow::{Result, anyhow};
-use igd::PortMappingProtocol;
+use anyhow::{anyhow, Result};
 use igd::aio::search_gateway;
-use ippan_types::{Block, Transaction, ippan_time_now};
+use igd::PortMappingProtocol;
+use ippan_types::{ippan_time_now, Block, Transaction};
 use local_ip_address::local_ip;
 use parking_lot::{Mutex, RwLock};
 use reqwest::Client;
@@ -1342,10 +1342,8 @@ mod tests {
             other => panic!("Unexpected event: {other:?}"),
         }
 
-        assert!(
-            network
-                .get_peers()
-                .contains(&"http://localhost:9002".to_string())
-        );
+        assert!(network
+            .get_peers()
+            .contains(&"http://localhost:9002".to_string()));
     }
 }

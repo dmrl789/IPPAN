@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// Rate limiting configuration
@@ -24,22 +23,31 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         let mut endpoint_limits = HashMap::new();
-        
+
         // Define stricter limits for sensitive endpoints
-        endpoint_limits.insert("/tx".to_string(), EndpointLimit {
-            requests_per_second: 10,
-            burst_capacity: 20,
-        });
-        
-        endpoint_limits.insert("/account".to_string(), EndpointLimit {
-            requests_per_second: 50,
-            burst_capacity: 100,
-        });
-        
-        endpoint_limits.insert("/block".to_string(), EndpointLimit {
-            requests_per_second: 100,
-            burst_capacity: 200,
-        });
+        endpoint_limits.insert(
+            "/tx".to_string(),
+            EndpointLimit {
+                requests_per_second: 10,
+                burst_capacity: 20,
+            },
+        );
+
+        endpoint_limits.insert(
+            "/account".to_string(),
+            EndpointLimit {
+                requests_per_second: 50,
+                burst_capacity: 100,
+            },
+        );
+
+        endpoint_limits.insert(
+            "/block".to_string(),
+            EndpointLimit {
+                requests_per_second: 100,
+                burst_capacity: 200,
+            },
+        );
 
         Self {
             requests_per_second: 100,
@@ -60,9 +68,40 @@ pub struct EndpointLimit {
 /// Rate limiter implementation
 pub struct RateLimiter {
     config: RateLimitConfig,
-    ip_limiters: Arc<RwLock<HashMap<IpAddr, GovernorRateLimiter<governor::state::direct::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>>>,
-    endpoint_limiters: Arc<RwLock<HashMap<String, HashMap<IpAddr, GovernorRateLimiter<governor::state::direct::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>>>>,
-    global_limiter: Option<GovernorRateLimiter<governor::state::direct::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>,
+    ip_limiters: Arc<
+        RwLock<
+            HashMap<
+                IpAddr,
+                GovernorRateLimiter<
+                    governor::state::direct::NotKeyed,
+                    governor::state::InMemoryState,
+                    governor::clock::DefaultClock,
+                >,
+            >,
+        >,
+    >,
+    endpoint_limiters: Arc<
+        RwLock<
+            HashMap<
+                String,
+                HashMap<
+                    IpAddr,
+                    GovernorRateLimiter<
+                        governor::state::direct::NotKeyed,
+                        governor::state::InMemoryState,
+                        governor::clock::DefaultClock,
+                    >,
+                >,
+            >,
+        >,
+    >,
+    global_limiter: Option<
+        GovernorRateLimiter<
+            governor::state::direct::NotKeyed,
+            governor::state::InMemoryState,
+            governor::clock::DefaultClock,
+        >,
+    >,
     stats: Arc<RwLock<RateLimitStats>>,
 }
 
@@ -99,7 +138,9 @@ impl RateLimiter {
 
         // Check endpoint-specific rate limit
         if let Some(endpoint_limit) = self.config.endpoint_limits.get(endpoint) {
-            let allowed = self.check_endpoint_limit(ip, endpoint, endpoint_limit).await?;
+            let allowed = self
+                .check_endpoint_limit(ip, endpoint, endpoint_limit)
+                .await?;
             if !allowed {
                 stats.endpoint_rate_limited += 1;
                 return Ok(false);
@@ -119,21 +160,29 @@ impl RateLimiter {
 
     async fn check_ip_limit(&self, ip: IpAddr) -> Result<bool> {
         let mut limiters = self.ip_limiters.write().await;
-        
+
         let limiter = limiters.entry(ip).or_insert_with(|| {
-            let quota = Quota::per_second(NonZeroU32::new(self.config.requests_per_second).unwrap())
-                .allow_burst(NonZeroU32::new(self.config.burst_capacity).unwrap());
+            let quota =
+                Quota::per_second(NonZeroU32::new(self.config.requests_per_second).unwrap())
+                    .allow_burst(NonZeroU32::new(self.config.burst_capacity).unwrap());
             GovernorRateLimiter::direct(quota)
         });
 
         Ok(limiter.check().is_ok())
     }
 
-    async fn check_endpoint_limit(&self, ip: IpAddr, endpoint: &str, limit: &EndpointLimit) -> Result<bool> {
+    async fn check_endpoint_limit(
+        &self,
+        ip: IpAddr,
+        endpoint: &str,
+        limit: &EndpointLimit,
+    ) -> Result<bool> {
         let mut endpoint_limiters = self.endpoint_limiters.write().await;
-        
-        let ip_limiters = endpoint_limiters.entry(endpoint.to_string()).or_insert_with(HashMap::new);
-        
+
+        let ip_limiters = endpoint_limiters
+            .entry(endpoint.to_string())
+            .or_insert_with(HashMap::new);
+
         let limiter = ip_limiters.entry(ip).or_insert_with(|| {
             let quota = Quota::per_second(NonZeroU32::new(limit.requests_per_second).unwrap())
                 .allow_burst(NonZeroU32::new(limit.burst_capacity).unwrap());
@@ -149,19 +198,27 @@ impl RateLimiter {
         // based on last access time
         let mut ip_limiters = self.ip_limiters.write().await;
         let mut endpoint_limiters = self.endpoint_limiters.write().await;
-        
+
         // Keep only the most recent 10000 IP limiters
         if ip_limiters.len() > 10000 {
-            let keys_to_remove: Vec<_> = ip_limiters.keys().take(ip_limiters.len() - 10000).cloned().collect();
+            let keys_to_remove: Vec<_> = ip_limiters
+                .keys()
+                .take(ip_limiters.len() - 10000)
+                .cloned()
+                .collect();
             for key in keys_to_remove {
                 ip_limiters.remove(&key);
             }
         }
-        
+
         // Clean up endpoint limiters
         for (_, ip_limiters) in endpoint_limiters.iter_mut() {
             if ip_limiters.len() > 1000 {
-                let keys_to_remove: Vec<_> = ip_limiters.keys().take(ip_limiters.len() - 1000).cloned().collect();
+                let keys_to_remove: Vec<_> = ip_limiters
+                    .keys()
+                    .take(ip_limiters.len() - 1000)
+                    .cloned()
+                    .collect();
                 for key in keys_to_remove {
                     ip_limiters.remove(&key);
                 }
@@ -220,14 +277,14 @@ mod tests {
         let mut config = RateLimitConfig::default();
         config.requests_per_second = 2;
         config.burst_capacity = 2;
-        
+
         let limiter = RateLimiter::new(config).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        
+
         // First two requests should pass
         assert!(limiter.check_rate_limit(ip, "/test").await.unwrap());
         assert!(limiter.check_rate_limit(ip, "/test").await.unwrap());
-        
+
         // Third request should be rate limited
         assert!(!limiter.check_rate_limit(ip, "/test").await.unwrap());
     }
@@ -237,12 +294,12 @@ mod tests {
         let config = RateLimitConfig::default();
         let limiter = RateLimiter::new(config).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        
+
         // /tx endpoint has stricter limits (10 rps)
         for _ in 0..10 {
             assert!(limiter.check_rate_limit(ip, "/tx").await.unwrap());
         }
-        
+
         // 11th request should be rate limited
         assert!(!limiter.check_rate_limit(ip, "/tx").await.unwrap());
     }
@@ -252,15 +309,15 @@ mod tests {
         let mut config = RateLimitConfig::default();
         config.requests_per_second = 1;
         config.burst_capacity = 1;
-        
+
         let limiter = RateLimiter::new(config).unwrap();
         let ip1 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let ip2 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
-        
+
         // Each IP should have its own limit
         assert!(limiter.check_rate_limit(ip1, "/test").await.unwrap());
         assert!(limiter.check_rate_limit(ip2, "/test").await.unwrap());
-        
+
         // Both should be rate limited on second request
         assert!(!limiter.check_rate_limit(ip1, "/test").await.unwrap());
         assert!(!limiter.check_rate_limit(ip2, "/test").await.unwrap());
@@ -271,17 +328,17 @@ mod tests {
         let mut config = RateLimitConfig::default();
         config.requests_per_second = 10; // Allow recovery quickly for test
         config.burst_capacity = 1;
-        
+
         let limiter = RateLimiter::new(config).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        
+
         // Use up the burst capacity
         assert!(limiter.check_rate_limit(ip, "/test").await.unwrap());
         assert!(!limiter.check_rate_limit(ip, "/test").await.unwrap());
-        
+
         // Wait for rate limit to recover
         sleep(Duration::from_millis(200)).await;
-        
+
         // Should be able to make requests again
         assert!(limiter.check_rate_limit(ip, "/test").await.unwrap());
     }
@@ -290,13 +347,13 @@ mod tests {
     async fn test_cleanup() {
         let config = RateLimitConfig::default();
         let limiter = RateLimiter::new(config).unwrap();
-        
+
         // Add some entries
         for i in 0..100 {
             let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, i as u8));
             limiter.check_rate_limit(ip, "/test").await.unwrap();
         }
-        
+
         // Cleanup should not fail
         limiter.cleanup_old_entries().await;
     }

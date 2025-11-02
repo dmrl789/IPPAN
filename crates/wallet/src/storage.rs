@@ -11,7 +11,7 @@ use crate::types::*;
 pub struct WalletStorage {
     wallet_path: PathBuf,
     backup_path: PathBuf,
-    password_hash: Option<String>,
+    password_hash: RwLock<Option<String>>,
     wallet_state: RwLock<Option<WalletState>>,
 }
 
@@ -29,7 +29,7 @@ impl WalletStorage {
         Self {
             wallet_path,
             backup_path,
-            password_hash: None,
+            password_hash: RwLock::new(None),
             wallet_state: RwLock::new(None),
         }
     }
@@ -41,7 +41,7 @@ impl WalletStorage {
         if let Some(pwd) = password {
             let hash = hash_password(pwd)?;
             state.config.encryption_enabled = true;
-            self.password_hash = Some(hash);
+            *self.password_hash.write() = Some(hash);
         }
 
         *self.wallet_state.write() = Some(state);
@@ -58,13 +58,13 @@ impl WalletStorage {
         let data = fs::read_to_string(&self.wallet_path)
             .map_err(|e| WalletError::StorageError(format!("Failed to read wallet: {}", e)))?;
 
-        let mut state: WalletState = serde_json::from_str(&data)
+        let state: WalletState = serde_json::from_str(&data)
             .map_err(|e| WalletError::StorageError(format!("Failed to parse wallet: {}", e)))?;
 
         // Verify password if encryption is enabled
         if state.config.encryption_enabled {
             if let Some(pwd) = password {
-                if let Some(hash) = &self.password_hash {
+                if let Some(hash) = self.password_hash.read().as_ref() {
                     if !verify_password(pwd, hash)? {
                         return Err(WalletError::InvalidPassword);
                     }
@@ -108,10 +108,6 @@ impl WalletStorage {
     }
 
     /// Get mutable wallet state
-    pub fn get_wallet_state_mut(&self) -> Result<std::sync::RwLockWriteGuard<Option<WalletState>>> {
-        Ok(self.wallet_state.write())
-    }
-
     /// Update wallet state
     pub fn update_wallet_state<F>(&self, updater: F) -> Result<()>
     where
@@ -167,7 +163,7 @@ impl WalletStorage {
         // Verify password if encryption is enabled
         if backup.wallet_state.config.encryption_enabled {
             if let Some(pwd) = password {
-                if let Some(hash) = &self.password_hash {
+                if let Some(hash) = self.password_hash.read().as_ref() {
                     if !verify_password(pwd, hash)? {
                         return Err(WalletError::InvalidPassword);
                     }
@@ -235,7 +231,7 @@ impl WalletStorage {
         // Verify password if encryption is enabled
         if backup.wallet_state.config.encryption_enabled {
             if let Some(pwd) = password {
-                if let Some(hash) = &self.password_hash {
+                if let Some(hash) = self.password_hash.read().as_ref() {
                     if !verify_password(pwd, hash)? {
                         return Err(WalletError::InvalidPassword);
                     }

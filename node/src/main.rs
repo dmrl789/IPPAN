@@ -6,18 +6,18 @@ use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
 use ippan_mempool::Mempool;
 use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};
 use ippan_rpc::server::ConsensusHandle;
-use ippan_rpc::{AppState, L2Config, start_server};
+use ippan_rpc::{start_server, AppState, L2Config};
 use ippan_storage::{SledStorage, Storage};
 use ippan_types::{
-    Block, HashTimer, IppanTimeMicros, Transaction, ippan_time_init, ippan_time_now,
+    ippan_time_init, ippan_time_now, Block, HashTimer, IppanTimeMicros, Transaction,
 };
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Application configuration
 #[derive(Debug, Clone)]
