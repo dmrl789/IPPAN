@@ -8,11 +8,19 @@
 
 pub mod distribution;
 pub mod emission;
+pub mod errors;
 pub mod parameters;
 pub mod types;
 
-// Re-export commonly used types explicitly
+// Re-export distribution functions
+pub use distribution::*;
+// Re-export emission functions
+pub use emission::*;
+// Re-export error types
+pub use errors::*;
+// Re-export commonly used parameter types
 pub use parameters::{EconomicsParameterManager, EconomicsParameterProposal};
+// Re-export commonly used types
 pub use types::{
     DistributionResult, EconomicsParams, EmissionResult, MicroIPN, Participation, ParticipationSet,
     Payouts, Role, RoundId, ValidatorId, MICRO_PER_IPN,
