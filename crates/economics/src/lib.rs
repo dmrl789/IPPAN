@@ -8,11 +8,13 @@
 
 pub mod distribution;
 pub mod emission;
+pub mod errors;
 pub mod parameters;
 pub mod types;
 
 pub use distribution::*;
 pub use emission::*;
+pub use errors::*;
 pub use parameters::*;
 pub use types::*;
 

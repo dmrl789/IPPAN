@@ -19,6 +19,7 @@ members = [
   "crates/governance",       # Re-enabled: fixed dependencies on ai_registry
 
   # Economics and treasury
+  "crates/economics",
   "crates/ippan_economics",
   "crates/treasury",
   "crates/l2_fees",

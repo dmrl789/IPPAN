@@ -1,10 +1,10 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use axum::extract::{ConnectInfo, Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
@@ -15,7 +15,7 @@ use ippan_storage::{Account, Storage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
 use serde::Serialize;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{mpsc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
