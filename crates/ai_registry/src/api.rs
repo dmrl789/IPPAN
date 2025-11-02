@@ -1,11 +1,8 @@
 //! API implementation for AI Registry
 
 use crate::{
-    errors::{RegistryError, Result},
-    fees::FeeManager,
-    governance::GovernanceManager,
-    registry::ModelRegistry,
-    types::*,
+    fees::FeeManager, governance::GovernanceManager, registry::ModelRegistry, types::*,
+    FeeCalculation, FeeStats,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -14,13 +11,17 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use ippan_ai_core::types::{ModelId, ModelMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{error, info};
+
+type ApiResult<T> = std::result::Result<T, StatusCode>;
 
 /// API state
+#[derive(Clone)]
 pub struct ApiState {
     /// Model registry
     pub registry: Arc<RwLock<ModelRegistry>>,
@@ -136,24 +137,50 @@ pub fn create_router(state: ApiState) -> Router {
 async fn register_model(
     State(state): State<ApiState>,
     Json(request): Json<ModelRegistrationRequest>,
-) -> Result<Json<ApiResponse<ModelRegistration>>, StatusCode> {
-    info!("API: Registering model: {}", request.name);
+) -> ApiResult<Json<ApiResponse<ModelRegistration>>> {
+    let ModelRegistrationRequest {
+        name,
+        version,
+        hash,
+        architecture,
+        input_shape,
+        output_shape,
+        parameter_count,
+        size_bytes,
+        description,
+        license,
+        source_url,
+        category,
+        tags,
+        registrant,
+    } = request;
 
-    let model_id = ai_core::types::ModelId {
-        name: request.name.clone(),
-        version: request.version.clone(),
-        hash: request.hash.clone(),
+    info!("API: Registering model: {}", name);
+
+    let model_id = ModelId {
+        name: name.clone(),
+        version: version.clone(),
+        hash: hash.clone(),
     };
 
-    let metadata = ai_core::types::ModelMetadata {
+    let timestamp = chrono::Utc::now().timestamp() as u64;
+    let metadata = ModelMetadata {
         id: model_id.clone(),
-        architecture: request.architecture,
-        input_shape: request.input_shape,
-        output_shape: request.output_shape,
-        parameter_count: request.parameter_count,
-        size_bytes: request.size_bytes,
-        created_at: chrono::Utc::now().timestamp() as u64,
-        description: request.description,
+        name: name.clone(),
+        version: version.clone(),
+        description: description
+            .clone()
+            .unwrap_or_else(|| "No description provided".to_string()),
+        author: registrant.clone(),
+        license: license.clone().unwrap_or_else(|| "unspecified".to_string()),
+        tags: tags.clone(),
+        created_at: timestamp,
+        updated_at: timestamp,
+        architecture,
+        input_shape,
+        output_shape,
+        size_bytes,
+        parameter_count,
     };
 
     let mut registry = state.registry.write().await;
@@ -161,12 +188,12 @@ async fn register_model(
         .register_model(
             model_id,
             metadata,
-            request.registrant,
-            request.category,
-            request.description,
-            request.license,
-            request.source_url,
-            request.tags,
+            registrant,
+            category,
+            description,
+            license,
+            source_url,
+            tags,
         )
         .await
     {
@@ -193,10 +220,10 @@ async fn register_model(
 async fn get_model(
     State(state): State<ApiState>,
     Path(name): Path<String>,
-) -> Result<Json<ApiResponse<ModelRegistration>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<ModelRegistration>>> {
     info!("API: Getting model: {}", name);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ModelId {
         name,
         version: String::new(), // We'll need to handle versioning properly
         hash: String::new(),
@@ -229,7 +256,7 @@ async fn get_model(
 async fn search_models(
     State(state): State<ApiState>,
     Query(params): Query<SearchQuery>,
-) -> Result<Json<ApiResponse<Vec<ModelRegistration>>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<Vec<ModelRegistration>>>> {
     info!("API: Searching models: {}", params.q);
 
     let registry = state.registry.read().await;
@@ -258,10 +285,10 @@ async fn update_model_status(
     State(state): State<ApiState>,
     Path(name): Path<String>,
     Json(status): Json<RegistrationStatus>,
-) -> Result<Json<ApiResponse<()>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<()>>> {
     info!("API: Updating model status: {} -> {:?}", name, status);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ModelId {
         name,
         version: String::new(),
         hash: String::new(),
@@ -289,10 +316,10 @@ async fn update_model_status(
 async fn get_model_stats(
     State(state): State<ApiState>,
     Path(name): Path<String>,
-) -> Result<Json<ApiResponse<ModelUsageStats>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<ModelUsageStats>>> {
     info!("API: Getting model stats: {}", name);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ModelId {
         name,
         version: String::new(),
         hash: String::new(),
@@ -325,7 +352,7 @@ async fn get_model_stats(
 async fn create_proposal(
     State(state): State<ApiState>,
     Json(request): Json<GovernanceProposalRequest>,
-) -> Result<Json<ApiResponse<GovernanceProposal>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<GovernanceProposal>>> {
     info!("API: Creating proposal: {}", request.title);
 
     let mut governance = state.governance.write().await;
@@ -362,10 +389,10 @@ async fn create_proposal(
 async fn get_proposal(
     State(state): State<ApiState>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<GovernanceProposal>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<GovernanceProposal>>> {
     info!("API: Getting proposal: {}", id);
 
-    let mut governance = state.governance.read().await;
+    let mut governance = state.governance.write().await;
     match governance.get_proposal(&id).await {
         Ok(Some(proposal)) => Ok(Json(ApiResponse {
             success: true,
@@ -393,7 +420,7 @@ async fn vote_on_proposal(
     State(state): State<ApiState>,
     Path(id): Path<String>,
     Json(request): Json<VoteRequest>,
-) -> Result<Json<ApiResponse<()>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<()>>> {
     info!("API: Voting on proposal: {}", id);
 
     let mut governance = state.governance.write().await;
@@ -424,7 +451,7 @@ async fn vote_on_proposal(
 async fn execute_proposal(
     State(state): State<ApiState>,
     Path(id): Path<String>,
-) -> Result<Json<ApiResponse<()>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<()>>> {
     info!("API: Executing proposal: {}", id);
 
     let mut governance = state.governance.write().await;
@@ -451,7 +478,7 @@ async fn execute_proposal(
 /// List proposals
 async fn list_proposals(
     State(state): State<ApiState>,
-) -> Result<Json<ApiResponse<Vec<GovernanceProposal>>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<Vec<GovernanceProposal>>>> {
     info!("API: Listing proposals");
 
     let governance = state.governance.read().await;
@@ -476,7 +503,7 @@ async fn list_proposals(
 async fn calculate_fee(
     State(state): State<ApiState>,
     Json(request): Json<FeeCalculationRequest>,
-) -> Result<Json<ApiResponse<FeeCalculation>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<FeeCalculation>>> {
     info!("API: Calculating fee: {:?}", request.fee_type);
 
     let fees = state.fees.read().await;
@@ -503,9 +530,7 @@ async fn calculate_fee(
 }
 
 /// Get fee statistics
-async fn get_fee_stats(
-    State(state): State<ApiState>,
-) -> Result<Json<ApiResponse<FeeStats>>, StatusCode> {
+async fn get_fee_stats(State(state): State<ApiState>) -> ApiResult<Json<ApiResponse<FeeStats>>> {
     info!("API: Getting fee statistics");
 
     let fees = state.fees.read().await;
@@ -521,7 +546,7 @@ async fn get_fee_stats(
 /// Get registry statistics
 async fn get_registry_stats(
     State(state): State<ApiState>,
-) -> Result<Json<ApiResponse<RegistryStats>>, StatusCode> {
+) -> ApiResult<Json<ApiResponse<RegistryStats>>> {
     info!("API: Getting registry statistics");
 
     let mut registry = state.registry.write().await;
@@ -548,7 +573,7 @@ pub struct FeeCalculationRequest {
     /// Fee type
     pub fee_type: FeeType,
     /// Model metadata (optional)
-    pub model_metadata: Option<ai_core::types::ModelMetadata>,
+    pub model_metadata: Option<ModelMetadata>,
     /// Units (optional)
     pub units: Option<u64>,
     /// Additional data (optional)
