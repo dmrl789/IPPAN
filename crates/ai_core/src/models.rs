@@ -11,9 +11,11 @@ use crate::{
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::collections::HashMap;
 use std::fs;
-use tracing::{info, warn};
 #[cfg(not(feature = "remote_loading"))]
 use tracing::error;
+use tracing::info;
+#[cfg(feature = "remote_loading")]
+use tracing::warn;
 
 /// Optional dependency for remote loading (activated via `remote_loading` feature)
 #[cfg(feature = "remote_loading")]

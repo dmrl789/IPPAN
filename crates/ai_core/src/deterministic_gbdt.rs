@@ -241,6 +241,51 @@ pub fn compute_scores(
     scores
 }
 
+fn sample_test_model() -> DeterministicGBDT {
+    let tree = GBDTTree {
+        nodes: vec![
+            DecisionNode {
+                feature: 0,
+                threshold: 0.0,
+                left: Some(1),
+                right: Some(2),
+                value: None,
+            },
+            DecisionNode {
+                feature: 0,
+                threshold: 0.0,
+                left: None,
+                right: None,
+                value: Some(0.1),
+            },
+            DecisionNode {
+                feature: 0,
+                threshold: 0.0,
+                left: None,
+                right: None,
+                value: Some(0.2),
+            },
+        ],
+    };
+
+    DeterministicGBDT {
+        trees: vec![tree],
+        learning_rate: 0.1,
+    }
+}
+
+/// Helper for integration tests and documentation examples.
+pub fn create_test_model() -> DeterministicGBDT {
+    sample_test_model()
+}
+
+impl DeterministicGBDT {
+    /// Construct a deterministic test model useful for examples and benchmarks.
+    pub fn create_test_model() -> Self {
+        sample_test_model()
+    }
+}
+
 // ---------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------

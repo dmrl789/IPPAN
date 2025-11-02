@@ -1,10 +1,7 @@
 //! Simple test for deterministic GBDT module
 //! This test focuses only on the deterministic GBDT functionality
 
-use ippan_ai_core::deterministic_gbdt::{
-    compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
-    DeterministicGBDTError, GBDTTree, ValidatorFeatures,
-};
+use ippan_ai_core::deterministic_gbdt::{compute_scores, create_test_model, normalize_features};
 use std::collections::HashMap;
 
 #[test]
@@ -34,8 +31,14 @@ fn test_ippan_time_normalization() {
     let features = normalize_features(&telemetry, ippan_time_median);
 
     assert_eq!(features.len(), 2);
-    assert_eq!(features[0].delta_time_us, -50); // 100_000 - 100_050
-    assert_eq!(features[1].delta_time_us, 30); // 100_080 - 100_050
+
+    let by_id: HashMap<_, _> = features
+        .into_iter()
+        .map(|f| (f.node_id.clone(), f))
+        .collect();
+
+    assert_eq!(by_id["node1"].delta_time_us, -50); // 100_000 - 100_050
+    assert_eq!(by_id["node2"].delta_time_us, 30); // 100_080 - 100_050
 }
 
 #[test]
