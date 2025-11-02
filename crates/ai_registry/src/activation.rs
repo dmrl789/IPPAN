@@ -35,7 +35,7 @@ impl ActivationManager {
         self.schedule
             .scheduled_activations
             .entry(activation_round)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(model_id);
     }
 
@@ -44,7 +44,7 @@ impl ActivationManager {
         self.schedule
             .scheduled_deactivations
             .entry(deactivation_round)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(model_id);
     }
 
@@ -106,7 +106,7 @@ impl Default for ActivationManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

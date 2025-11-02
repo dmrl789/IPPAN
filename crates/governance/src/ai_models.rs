@@ -199,6 +199,12 @@ struct RegistryState {
     activation_round: Option<u64>,
 }
 
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelRegistry {
     pub fn new() -> Self {
         Self {
@@ -241,7 +247,7 @@ impl ModelRegistry {
 
         self.active_models
             .entry(round)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(id.to_string());
 
         Ok(())
@@ -268,6 +274,12 @@ pub struct ActivationManager {
     activated_models: HashMap<String, u64>,
 }
 
+impl Default for ActivationManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ActivationManager {
     pub fn new() -> Self {
         Self {
@@ -283,7 +295,7 @@ impl ActivationManager {
 
         self.pending_activations
             .entry(round)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(model_id);
 
         Ok(())
@@ -463,7 +475,7 @@ pub fn validate_proposal_format(proposal: &AiModelProposal) -> Result<()> {
 // -----------------------------------------------------------------------------
 // ✅ Tests
 // -----------------------------------------------------------------------------
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

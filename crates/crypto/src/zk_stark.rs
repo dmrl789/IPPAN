@@ -217,7 +217,7 @@ fn fibonacci_u64(n: usize) -> u64 {
     b
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

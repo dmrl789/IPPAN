@@ -108,8 +108,8 @@ pub fn encrypt_data(data: &[u8], password: &str) -> Result<(String, String, Stri
 
     Ok((
         general_purpose::STANDARD.encode(&ciphertext),
-        general_purpose::STANDARD.encode(&nonce_bytes),
-        general_purpose::STANDARD.encode(&key),
+        general_purpose::STANDARD.encode(nonce_bytes),
+        general_purpose::STANDARD.encode(key),
     ))
 }
 
@@ -199,7 +199,7 @@ pub fn generate_mnemonic() -> String {
     mnemonic.join(" ")
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

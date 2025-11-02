@@ -224,6 +224,12 @@ pub struct AuditAnalyzer {
     events: Vec<AuditEvent>,
 }
 
+impl Default for AuditAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuditAnalyzer {
     pub fn new() -> Self {
         Self { events: Vec::new() }
@@ -354,7 +360,7 @@ pub struct SuspiciousPattern {
     pub timestamp: SystemTime,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;

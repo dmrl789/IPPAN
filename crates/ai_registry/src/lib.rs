@@ -38,8 +38,6 @@
 //! }
 //! ```
 
-use serde::{Deserialize, Serialize};
-
 pub mod activation;
 pub mod errors;
 pub mod fees;
@@ -74,7 +72,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Library name
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

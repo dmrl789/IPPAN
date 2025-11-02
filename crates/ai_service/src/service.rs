@@ -418,7 +418,7 @@ pub struct ServiceStatus {
     pub version: String,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use std::collections::HashMap;

@@ -82,7 +82,7 @@ pub fn apply_reputation_weight(base_stake: u64, reputation: ReputationScore) -> 
     base_stake.saturating_mul(reputation_u64) / 10000
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

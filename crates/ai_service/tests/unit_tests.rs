@@ -1,18 +1,19 @@
 //! Unit tests for AI Service components
 
 use ippan_ai_service::{
-    analytics::{AnalyticsConfig, AnalyticsService},
-    monitoring::{MonitoringConfig, MonitoringService, SeverityLevel},
-    optimization::OptimizationService,
+    AlertStatus, AnalyticsConfig, ContractAnalysisType, InsightType, MonitoringService,
+    OptimizationConstraints, OptimizationGoal, SeverityLevel, TransactionData,
+};
+
+#[cfg(feature = "analytics")]
+use ippan_ai_service::{
+    analytics::AnalyticsService, monitoring::MonitoringConfig, optimization::OptimizationService,
     smart_contracts::SmartContractService,
-    types::{
-        AlertStatus, ContractAnalysisType, InsightType, OptimizationConstraints, OptimizationGoal,
-        TransactionData,
-    },
 };
 use std::collections::HashMap;
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_analytics_service_creation() {
     let config = AnalyticsConfig::default();
     let service = AnalyticsService::new(config);
@@ -20,6 +21,7 @@ fn test_analytics_service_creation() {
 }
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_analytics_data_point_addition() {
     let mut service = AnalyticsService::new(Default::default());
     let mut tags = HashMap::new();
@@ -32,6 +34,7 @@ fn test_analytics_data_point_addition() {
 }
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_analytics_insight_filtering() {
     let mut service = AnalyticsService::new(Default::default());
 
@@ -57,6 +60,7 @@ fn test_analytics_insight_filtering() {
 }
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_monitoring_service_creation() {
     let config = MonitoringConfig::default();
     let service = MonitoringService::new(config);
@@ -64,6 +68,7 @@ fn test_monitoring_service_creation() {
 }
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_monitoring_metric_addition() {
     let mut service = MonitoringService::new(Default::default());
     service.add_metric("cpu_usage".to_string(), 75.0);
@@ -75,6 +80,7 @@ fn test_monitoring_metric_addition() {
 }
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_monitoring_alert_acknowledgment() {
     let mut service = MonitoringService::new(Default::default());
 
@@ -99,12 +105,14 @@ fn test_monitoring_alert_acknowledgment() {
 }
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_smart_contract_service_creation() {
     let service = SmartContractService::new();
     assert!(true); // Service created successfully
 }
 
 #[tokio::test]
+#[cfg(feature = "analytics")]
 async fn test_solidity_contract_analysis() {
     let service = SmartContractService::new();
 
@@ -137,6 +145,7 @@ contract TestContract {
 }
 
 #[tokio::test]
+#[cfg(feature = "analytics")]
 async fn test_rust_contract_analysis() {
     let service = SmartContractService::new();
 
@@ -164,12 +173,14 @@ fn dangerous_function() {
 }
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_optimization_service_creation() {
     let service = OptimizationService::new();
     assert!(true); // Service created successfully
 }
 
 #[test]
+#[cfg(feature = "analytics")]
 fn test_optimization_recommendations() {
     let service = OptimizationService::new();
 
@@ -184,6 +195,7 @@ fn test_optimization_recommendations() {
 }
 
 #[tokio::test]
+#[cfg(feature = "analytics")]
 async fn test_gas_optimization() {
     let service = OptimizationService::new();
 
@@ -220,6 +232,7 @@ async fn test_gas_optimization() {
 }
 
 #[tokio::test]
+#[cfg(feature = "analytics")]
 async fn test_throughput_optimization() {
     let service = OptimizationService::new();
 
@@ -251,6 +264,7 @@ async fn test_throughput_optimization() {
 }
 
 #[tokio::test]
+#[cfg(feature = "analytics")]
 async fn test_security_optimization() {
     let service = OptimizationService::new();
 

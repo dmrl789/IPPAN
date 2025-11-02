@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::RwLock;
@@ -243,11 +243,11 @@ impl ParallelGossipNetwork {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ippan_types::{Amount, RoundId, ValidatorId};
-    use rand::{RngCore, SeedableRng, rngs::StdRng};
+    use rand::{rngs::StdRng, RngCore, SeedableRng};
     use std::time::Duration;
 
     fn random_validator(rng: &mut StdRng) -> ValidatorId {

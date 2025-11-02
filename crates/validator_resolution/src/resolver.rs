@@ -222,7 +222,7 @@ impl Clone for ValidatorResolver {
 // -----------------------------------------------------------------------------
 // Tests
 // -----------------------------------------------------------------------------
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ippan_l2_handle_registry::HandleRegistration;

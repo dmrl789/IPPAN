@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::Verifier;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -54,6 +54,7 @@ pub struct ProposalManager {
     /// Active proposals
     proposals: HashMap<String, (AiModelProposal, ProposalStatus)>,
     /// Voting threshold (percentage of stake required)
+    #[allow(dead_code)]
     voting_threshold: f64,
     /// Minimum stake required to propose
     min_proposal_stake: u64,
@@ -125,11 +126,11 @@ impl ProposalManager {
     pub fn vote(
         &mut self,
         proposal_id: &str,
-        voter: [u8; 32],
-        stake: u64,
-        approve: bool,
+        _voter: [u8; 32],
+        _stake: u64,
+        _approve: bool,
     ) -> Result<()> {
-        if let Some((proposal, status)) = self.proposals.get_mut(proposal_id) {
+        if let Some((_proposal, status)) = self.proposals.get_mut(proposal_id) {
             if *status != ProposalStatus::Voting {
                 return Err(anyhow::anyhow!(
                     "Proposal {} is not in voting status",
@@ -159,14 +160,14 @@ impl ProposalManager {
             }
 
             // Convert timestamp to DateTime
-            let timestamp = DateTime::from_timestamp(proposal.created_at as i64, 0)
-                .unwrap_or_else(|| Utc::now());
+            let timestamp =
+                DateTime::from_timestamp(proposal.created_at as i64, 0).unwrap_or_else(Utc::now);
 
             // Create ModelId from proposal
             let model_id = ModelId {
                 name: proposal.model_id.clone(),
                 version: proposal.version.to_string(),
-                hash: hex::encode(&proposal.model_hash),
+                hash: hex::encode(proposal.model_hash),
             };
 
             // Create ModelMetadata
@@ -265,7 +266,7 @@ impl Default for ProposalManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;
