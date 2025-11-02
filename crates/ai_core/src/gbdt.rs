@@ -218,51 +218,6 @@ impl Default for ModelMetadata {
 }
 
 impl GBDTModel {
-    pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
-        let path_ref = path.as_ref();
-        let contents =
-            fs::read_to_string(path_ref).map_err(|err| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to read model file {}: {}", path_ref.display(), err),
-            })?;
-
-        let mut model = match serde_json::from_str::<ModelPackage>(&contents) {
-            Ok(package) => package.model,
-            Err(_) => serde_json::from_str::<Self>(&contents).map_err(|err| {
-                GBDTError::ModelValidationFailed {
-                    reason: format!("Failed to parse model JSON {}: {}", path_ref.display(), err),
-                }
-            })?,
-        };
-
-        model.validate()?;
-        model.reset_runtime_state();
-        Ok(model)
-    }
-
-    pub fn from_binary_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
-        let path_ref = path.as_ref();
-        let bytes = fs::read(path_ref).map_err(|err| GBDTError::ModelValidationFailed {
-            reason: format!("Failed to read model file {}: {}", path_ref.display(), err),
-        })?;
-
-        let mut model = match bincode::deserialize::<ModelPackage>(&bytes) {
-            Ok(package) => package.model,
-            Err(_) => bincode::deserialize::<Self>(&bytes).map_err(|err| {
-                GBDTError::ModelValidationFailed {
-                    reason: format!(
-                        "Failed to parse model binary {}: {}",
-                        path_ref.display(),
-                        err
-                    ),
-                }
-            })?,
-        };
-
-        model.validate()?;
-        model.reset_runtime_state();
-        Ok(model)
-    }
-
     pub fn save_json<P: AsRef<Path>>(&self, path: P) -> Result<(), GBDTError> {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
