@@ -394,7 +394,7 @@ impl ProductionConfigManager {
                     reason: format!("Configuration validation failed: {:?}", validation.errors),
                 });
             }
-        }
+        } // Drop the lock before awaiting
         self.notify_watchers().await;
         Ok(())
     }

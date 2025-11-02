@@ -20,22 +20,37 @@ mod ai_consensus_tests {
 
     fn create_test_gbdt_model() -> GBDTModel {
         // Simple test model that scores based on first feature (reputation)
-        GBDTModel {
-            trees: vec![Tree {
+        GBDTModel::new(
+            vec![Tree {
                 nodes: vec![
-                    Node::Internal {
-                        feature: 0,
+                    Node {
+                        feature_index: 0,
                         threshold: 5000,
                         left: 1,
                         right: 2,
+                        value: None,
                     },
-                    Node::Leaf { value: 3000 }, // Low reputation
-                    Node::Leaf { value: 8000 }, // High reputation
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(3000), // Low reputation
+                    },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(8000), // High reputation
+                    },
                 ],
             }],
-            bias: 0,
-            scale: 10000,
-        }
+            0,
+            10000,
+            1,
+        )
+        .expect("valid test model")
     }
 
     #[test]

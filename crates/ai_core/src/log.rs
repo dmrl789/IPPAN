@@ -137,10 +137,6 @@ mod tests {
 
     fn create_test_model() -> Model {
         Model::new(
-            1,
-            3,
-            100,
-            10000,
             vec![Tree {
                 nodes: vec![
                     Node {
@@ -166,7 +162,11 @@ mod tests {
                     },
                 ],
             }],
+            100,
+            10000,
+            3,
         )
+        .expect("valid test model")
     }
 
     #[test]

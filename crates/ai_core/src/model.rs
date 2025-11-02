@@ -154,8 +154,8 @@ mod tests {
     use crate::gbdt::{GBDTModel, Node, Tree};
 
     fn create_test_model() -> GBDTModel {
-        GBDTModel {
-            trees: vec![Tree {
+        GBDTModel::new(
+            vec![Tree {
                 nodes: vec![
                     Node {
                         feature_index: 0,
@@ -180,9 +180,11 @@ mod tests {
                     },
                 ],
             }],
-            bias: 0,
-            scale: 100,
-        }
+            0,
+            100,
+            1,
+        )
+        .expect("valid test model")
     }
 
     #[test]

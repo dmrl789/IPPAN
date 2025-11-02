@@ -518,8 +518,6 @@ impl Default for ConfigManager {
 #[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::Write;
     use tempfile::tempdir;
 
     #[test]
