@@ -49,7 +49,7 @@ impl AuditLogger {
     /// Log a general audit event
     pub async fn log_audit_event(&self, event: AuditEvent) -> Result<()> {
         let log_entry = serde_json::to_string(&event)?;
-        
+
         // Log to file
         {
             let mut file = self.log_file.lock().await;
@@ -70,23 +70,28 @@ impl AuditLogger {
     /// Rotate log file if it gets too large
     pub async fn rotate_if_needed(&self, max_size_bytes: u64) -> Result<()> {
         let metadata = std::fs::metadata(&self.log_path)?;
-        
+
         if metadata.len() > max_size_bytes {
-            let backup_path = format!("{}.{}", self.log_path, 
-                SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_secs());
-            
+            let backup_path = format!(
+                "{}.{}",
+                self.log_path,
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)?
+                    .as_secs()
+            );
+
             // Close current file and rename it
             drop(self.log_file.lock().await);
             std::fs::rename(&self.log_path, backup_path)?;
-            
+
             // Create new file
             let new_file = OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&self.log_path)?;
-            
+
             *self.log_file.lock().await = new_file;
-            
+
             info!("Rotated audit log file: {}", self.log_path);
         }
 
@@ -221,15 +226,13 @@ pub struct AuditAnalyzer {
 
 impl AuditAnalyzer {
     pub fn new() -> Self {
-        Self {
-            events: Vec::new(),
-        }
+        Self { events: Vec::new() }
     }
 
     /// Add an event for analysis
     pub fn add_event(&mut self, event: AuditEvent) {
         self.events.push(event);
-        
+
         // Keep only recent events to prevent memory bloat
         if self.events.len() > 10000 {
             self.events.drain(0..1000);
@@ -242,10 +245,10 @@ impl AuditAnalyzer {
 
         // Detect brute force attempts
         patterns.extend(self.detect_brute_force_attempts());
-        
+
         // Detect distributed attacks
         patterns.extend(self.detect_distributed_attacks());
-        
+
         // Detect unusual access patterns
         patterns.extend(self.detect_unusual_access_patterns());
 
@@ -254,14 +257,17 @@ impl AuditAnalyzer {
 
     fn detect_brute_force_attempts(&self) -> Vec<SuspiciousPattern> {
         let mut patterns = Vec::new();
-        let mut ip_failures: std::collections::HashMap<IpAddr, u32> = std::collections::HashMap::new();
+        let mut ip_failures: std::collections::HashMap<IpAddr, u32> =
+            std::collections::HashMap::new();
 
         // Count failed attempts per IP in the last hour
         let one_hour_ago = SystemTime::now() - std::time::Duration::from_secs(3600);
 
         for event in &self.events {
             if event.timestamp > one_hour_ago {
-                if let Ok(security_event) = serde_json::from_value::<SecurityEvent>(event.details.clone()) {
+                if let Ok(security_event) =
+                    serde_json::from_value::<SecurityEvent>(event.details.clone())
+                {
                     if let SecurityEvent::FailedAttempt { ip, .. } = security_event {
                         *ip_failures.entry(ip).or_insert(0) += 1;
                     }
@@ -273,7 +279,10 @@ impl AuditAnalyzer {
             if count > 10 {
                 patterns.push(SuspiciousPattern {
                     pattern_type: "brute_force".to_string(),
-                    description: format!("IP {} has {} failed attempts in the last hour", ip, count),
+                    description: format!(
+                        "IP {} has {} failed attempts in the last hour",
+                        ip, count
+                    ),
                     severity: "high".to_string(),
                     ip_address: Some(ip),
                     timestamp: SystemTime::now(),
@@ -286,16 +295,23 @@ impl AuditAnalyzer {
 
     fn detect_distributed_attacks(&self) -> Vec<SuspiciousPattern> {
         let mut patterns = Vec::new();
-        let mut endpoint_failures: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut endpoint_failures: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
 
         // Count failures per endpoint in the last 10 minutes
         let ten_minutes_ago = SystemTime::now() - std::time::Duration::from_secs(600);
 
         for event in &self.events {
             if event.timestamp > ten_minutes_ago {
-                if let Ok(security_event) = serde_json::from_value::<SecurityEvent>(event.details.clone()) {
+                if let Ok(security_event) =
+                    serde_json::from_value::<SecurityEvent>(event.details.clone())
+                {
                     if let Some(endpoint) = security_event.endpoint() {
-                        if matches!(security_event, SecurityEvent::FailedAttempt { .. } | SecurityEvent::RateLimitExceeded { .. }) {
+                        if matches!(
+                            security_event,
+                            SecurityEvent::FailedAttempt { .. }
+                                | SecurityEvent::RateLimitExceeded { .. }
+                        ) {
                             *endpoint_failures.entry(endpoint.to_string()).or_insert(0) += 1;
                         }
                     }
@@ -307,7 +323,10 @@ impl AuditAnalyzer {
             if count > 100 {
                 patterns.push(SuspiciousPattern {
                     pattern_type: "distributed_attack".to_string(),
-                    description: format!("Endpoint {} has {} failures in the last 10 minutes", endpoint, count),
+                    description: format!(
+                        "Endpoint {} has {} failures in the last 10 minutes",
+                        endpoint, count
+                    ),
                     severity: "high".to_string(),
                     ip_address: None,
                     timestamp: SystemTime::now(),
@@ -388,7 +407,7 @@ mod tests {
     #[test]
     fn test_audit_analyzer() {
         let mut analyzer = AuditAnalyzer::new();
-        
+
         let event = AuditEvent {
             id: Uuid::new_v4(),
             timestamp: SystemTime::now(),
@@ -400,12 +419,13 @@ mod tests {
                 reason: "Invalid credentials".to_string(),
                 attempt_count: 1,
                 timestamp: SystemTime::now(),
-            }).unwrap(),
+            })
+            .unwrap(),
         };
 
         analyzer.add_event(event);
         let patterns = analyzer.detect_suspicious_patterns();
-        
+
         // With just one event, no patterns should be detected
         assert!(patterns.is_empty());
     }

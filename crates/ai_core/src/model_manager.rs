@@ -54,6 +54,8 @@ struct CachedModel {
     loaded_at: SystemTime,
     access_count: u64,
     last_accessed: SystemTime,
+    /// Path to the persisted model file (kept for debugging/tracking)
+    #[allow(dead_code)]
     file_path: PathBuf,
     file_size: u64,
 }
@@ -344,18 +346,9 @@ impl ModelManager {
             .min_by_key(|(_, c)| c.last_accessed)
             .map(|(k, _)| k.clone())
         {
-            if let Some(removed) = models.remove(&oldest) {
-                if self.config.enable_auto_cleanup {
-                    if let Err(e) = std::fs::remove_file(&removed.file_path) {
-                        debug!(
-                            "Failed to remove cached model file {}: {}",
-                            removed.file_path.display(),
-                            e
-                        );
-                    }
-                }
-            }
-            debug!("Evicted oldest model {}", oldest);
+            // Remove from in-memory cache only, keep persisted model file
+            models.remove(&oldest);
+            debug!("Evicted oldest model {} from cache", oldest);
         }
         Ok(())
     }
