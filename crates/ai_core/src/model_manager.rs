@@ -7,7 +7,6 @@
 
 use crate::gbdt::{GBDTError, GBDTModel};
 use crate::model::ModelPackage;
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -55,6 +54,8 @@ struct CachedModel {
     loaded_at: SystemTime,
     access_count: u64,
     last_accessed: SystemTime,
+    /// Path to the persisted model file (kept for debugging/tracking)
+    #[allow(dead_code)]
     file_path: PathBuf,
     file_size: u64,
 }
@@ -251,14 +252,19 @@ impl ModelManager {
 
     /// Internal: get cached model if valid
     fn get_cached_model(&self, id: &str) -> Option<CachedModel> {
-        let models = self.models.read().ok()?;
-        let cached = models.get(id)?;
-        if cached.loaded_at.elapsed().unwrap_or_default()
-            > Duration::from_secs(self.config.cache_ttl_seconds)
-        {
-            return None;
+        let mut models = self.models.write().ok()?;
+        if let Some(entry) = models.get_mut(id) {
+            if entry.loaded_at.elapsed().unwrap_or_default()
+                > Duration::from_secs(self.config.cache_ttl_seconds)
+            {
+                models.remove(id);
+                return None;
+            }
+            entry.access_count = entry.access_count.saturating_add(1);
+            entry.last_accessed = SystemTime::now();
+            return Some(entry.clone());
         }
-        Some(cached.clone())
+        None
     }
 
     async fn load_model_from_disk(&self, path: &Path) -> Result<GBDTModel, GBDTError> {
@@ -340,8 +346,9 @@ impl ModelManager {
             .min_by_key(|(_, c)| c.last_accessed)
             .map(|(k, _)| k.clone())
         {
+            // Remove from in-memory cache only, keep persisted model file
             models.remove(&oldest);
-            debug!("Evicted oldest model {}", oldest);
+            debug!("Evicted oldest model {} from cache", oldest);
         }
         Ok(())
     }

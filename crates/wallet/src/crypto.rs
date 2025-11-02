@@ -1,5 +1,5 @@
-use aes_gcm::aead::{Aead, NewAead};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::password_hash::{rand_core::OsRng as ArgonOsRng, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{engine::general_purpose, Engine as _};
@@ -98,7 +98,8 @@ pub fn encrypt_data(data: &[u8], password: &str) -> Result<(String, String, Stri
     let mut nonce_bytes = [0u8; 12];
     rng.fill_bytes(&mut nonce_bytes);
 
-    let cipher = Aes256Gcm::new(Key::from_slice(&key));
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| WalletError::EncryptionError(format!("Cipher init failed: {}", e)))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let ciphertext = cipher
@@ -124,7 +125,8 @@ pub fn decrypt_data(ciphertext: &str, nonce: &str, password: &str) -> Result<Vec
 
     let key = derive_encryption_key(password)?;
 
-    let cipher = Aes256Gcm::new(Key::from_slice(&key));
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| WalletError::DecryptionError(format!("Cipher init failed: {}", e)))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     cipher
@@ -147,9 +149,7 @@ fn derive_encryption_key(password: &str) -> Result<[u8; 32]> {
 
 /// Sign a message with a private key
 pub fn sign_message(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64]> {
-    let signing_key = SigningKey::from_bytes(private_key)
-        .map_err(|e| WalletError::InvalidPrivateKey(format!("Invalid private key: {}", e)))?;
-
+    let signing_key = SigningKey::from_bytes(private_key);
     let signature = signing_key.sign(message);
     Ok(signature.to_bytes())
 }
@@ -163,7 +163,7 @@ pub fn verify_signature(
     let verifying_key = VerifyingKey::from_bytes(public_key)
         .map_err(|e| WalletError::CryptoError(format!("Invalid public key: {}", e)))?;
 
-    let signature = Signature::from_bytes(signature)
+    let signature = Signature::from_slice(signature)
         .map_err(|e| WalletError::CryptoError(format!("Invalid signature: {}", e)))?;
 
     Ok(verifying_key.verify(message, &signature).is_ok())

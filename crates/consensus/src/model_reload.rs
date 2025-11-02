@@ -15,6 +15,7 @@ use ippan_ai_core::gbdt::GBDTModel;
 
 /// Model reloader watches for model file changes and hot-reloads them
 #[cfg(feature = "ai_l1")]
+#[derive(Clone)]
 pub struct ModelReloader {
     validator_model_path: Option<PathBuf>,
     fee_model_path: Option<PathBuf>,

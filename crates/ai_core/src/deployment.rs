@@ -11,9 +11,8 @@ use crate::feature_engineering::FeatureEngineeringPipeline;
 use crate::gbdt::{GBDTError, GBDTModel};
 use crate::model_manager::ModelManager;
 use crate::monitoring::MonitoringSystem;
-use crate::production_config::{Environment, ProductionConfig, ProductionConfigManager};
+use crate::production_config::ProductionConfigManager;
 use crate::security::SecuritySystem;
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -358,7 +357,7 @@ impl ProductionDeployment {
         self.security.write().await.take();
         self.feature_pipeline.write().await.take();
         if let Some(manager) = self.model_manager.write().await.take() {
-            manager.cleanup().await;
+            let _ = manager.cleanup().await;
         }
         self.gbdt_models.write().await.clear();
         Ok(())
