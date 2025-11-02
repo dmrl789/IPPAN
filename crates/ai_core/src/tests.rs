@@ -11,7 +11,6 @@ use crate::feature_engineering::{
     FeatureEngineeringConfig, FeatureEngineeringPipeline, RawFeatureData,
 };
 use crate::gbdt::{GBDTModel, Node, Tree};
-use crate::model_manager::{ModelManager, ModelManagerConfig};
 use crate::monitoring::{MonitoringConfig, MonitoringSystem};
 use crate::production_config::{Environment, ProductionConfig, ProductionConfigManager};
 use crate::security::{SecurityConfig, SecuritySeverity, SecuritySystem};
@@ -307,7 +306,7 @@ impl BenchmarkSuite {
     async fn benchmark_gbdt_evaluation(&self) -> Result<()> {
         let mut model = create_test_model();
         let features: Vec<i64> = vec![1; 10];
-        let iterations = 10_000;
+        let iterations = (self.config.concurrent_requests.max(1) * 1_000) as usize;
 
         let start = Instant::now();
         for _ in 0..iterations {
@@ -327,11 +326,16 @@ impl BenchmarkSuite {
         let config = FeatureEngineeringConfig::default();
         let mut pipeline = FeatureEngineeringPipeline::new(config);
 
+        let sample_count = self.config.test_data_size.max(1);
+        let feature_count = 10;
+
         let raw_data = RawFeatureData {
-            features: vec![vec![1.0; 10]; 1000],
-            feature_names: (0..10).map(|i| format!("feature_{}", i)).collect(),
-            sample_count: 1000,
-            feature_count: 10,
+            features: vec![vec![1.0; feature_count]; sample_count],
+            feature_names: (0..feature_count)
+                .map(|i| format!("feature_{}", i))
+                .collect(),
+            sample_count,
+            feature_count,
             metadata: HashMap::new(),
         };
 

@@ -4,8 +4,8 @@
 
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use sha3::{Digest as Sha3Digest, Keccak256 as Sha3Keccak256, Sha3_256};
+use sha2::{digest::Digest, Sha256};
+use sha3::{Keccak256 as Sha3Keccak256, Sha3_256};
 
 /// Trait for hash functions
 pub trait HashFunction {
@@ -174,7 +174,8 @@ impl HashFunction for BLAKE2b {
         let mut hasher = Sha256::new();
         hasher.update(data);
         let hash = hasher.finalize();
-        hash.as_slice()[..self.output_size].to_vec()
+        let hash_bytes = hash.to_vec();
+        hash_bytes[..self.output_size].to_vec()
     }
 
     fn hash_fixed(&self, data: &[u8]) -> [u8; 32] {
@@ -182,8 +183,9 @@ impl HashFunction for BLAKE2b {
         let mut hasher = Sha256::new();
         hasher.update(data);
         let hash = hasher.finalize();
+        let hash_bytes = hash.to_vec();
         let mut result = [0u8; 32];
-        result.copy_from_slice(&hash.as_slice()[0..32]);
+        result.copy_from_slice(&hash_bytes[0..32]);
         result
     }
 
