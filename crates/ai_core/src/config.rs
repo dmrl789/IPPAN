@@ -152,7 +152,6 @@ pub struct ValidationConfig {
     pub validate_parameters: bool,
 }
 
-
 impl Default for HealthConfig {
     fn default() -> Self {
         Self {

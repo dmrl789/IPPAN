@@ -11,8 +11,6 @@ pub mod emission;
 pub mod parameters;
 pub mod types;
 
-pub use distribution::*;
-pub use emission::*;
 pub use parameters::*;
 pub use types::*;
 

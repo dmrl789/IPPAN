@@ -141,7 +141,6 @@ pub struct FeatureNormalization {
     pub maxs: Vec<i64>,
 }
 
-
 /// Security constraints for model evaluation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SecurityConstraints {
