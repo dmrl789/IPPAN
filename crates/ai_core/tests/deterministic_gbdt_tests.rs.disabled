@@ -9,7 +9,7 @@
 
 use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
-    DeterministicGBDTError, GBDTTree, ValidatorFeatures,
+    DeterministicGBDTError, GBDTTree,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -81,15 +81,20 @@ fn test_ippan_time_normalization() {
 
     assert_eq!(features.len(), 3);
 
+    let by_id: HashMap<_, _> = features
+        .into_iter()
+        .map(|f| (f.node_id.clone(), f))
+        .collect();
+
     // Check delta time calculations
-    assert_eq!(features[0].delta_time_us, -50); // 100_000 - 100_050
-    assert_eq!(features[1].delta_time_us, 30); // 100_080 - 100_050
-    assert_eq!(features[2].delta_time_us, -100); // 99_950 - 100_050
+    assert_eq!(by_id["node1"].delta_time_us, -50); // 100_000 - 100_050
+    assert_eq!(by_id["node2"].delta_time_us, 30); // 100_080 - 100_050
+    assert_eq!(by_id["node3"].delta_time_us, -100); // 99_950 - 100_050
 
     // Check other features are preserved
-    assert_eq!(features[0].latency_ms, 1.2);
-    assert_eq!(features[0].uptime_pct, 99.9);
-    assert_eq!(features[0].peer_entropy, 0.42);
+    assert_eq!(by_id["node1"].latency_ms, 1.2);
+    assert_eq!(by_id["node1"].uptime_pct, 99.9);
+    assert_eq!(by_id["node1"].peer_entropy, 0.42);
 }
 
 /// Test validator scoring with different scenarios

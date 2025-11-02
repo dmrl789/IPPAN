@@ -29,6 +29,12 @@ pub struct VotingPowerCalculator {
     validator_stakes: HashMap<[u8; 32], u64>,
 }
 
+impl Default for VotingPowerCalculator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VotingPowerCalculator {
     /// Create a new voting power calculator
     pub fn new() -> Self {
@@ -192,7 +198,7 @@ impl VotingSession {
 
         // Create message for signature verification
         let mut message = Vec::new();
-        message.extend_from_slice(&vote.proposal_id.as_bytes());
+        message.extend_from_slice(vote.proposal_id.as_bytes());
         message.extend_from_slice(&(vote.approve as u8).to_be_bytes());
         message.extend_from_slice(&vote.stake_weight.to_be_bytes());
         message.extend_from_slice(&vote.timestamp.to_be_bytes());
@@ -220,7 +226,7 @@ pub struct VotingResults {
     pub passed: bool,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;

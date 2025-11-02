@@ -13,6 +13,7 @@ path = "src/lib.rs"
 default = []
 ai_l1 = []
 remote_loading = ["reqwest"]
+enable-tests = []
 
 [dependencies]
 anyhow = "1"

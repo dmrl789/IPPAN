@@ -13,7 +13,9 @@ use std::collections::HashMap;
 use std::fs;
 #[cfg(not(feature = "remote_loading"))]
 use tracing::error;
-use tracing::{info, warn};
+use tracing::info;
+#[cfg(feature = "remote_loading")]
+use tracing::warn;
 
 /// Optional dependency for remote loading (activated via `remote_loading` feature)
 #[cfg(feature = "remote_loading")]
@@ -56,6 +58,12 @@ pub enum SourceType {
     Remote,
     Ipfs,
     Blockchain,
+}
+
+impl Default for ModelManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ModelManager {
@@ -361,6 +369,12 @@ impl ModelManager {
         }
 
         Ok(())
+    }
+}
+
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

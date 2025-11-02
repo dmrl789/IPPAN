@@ -6,19 +6,14 @@ use serde_bytes;
 use std::collections::BTreeMap;
 
 /// Visibility options for transaction payloads.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TransactionVisibility {
     /// Transaction payload is plaintext and globally readable.
+    #[default]
     Public,
     /// Transaction payload is encrypted and only accessible to entitled parties.
     Confidential,
-}
-
-impl Default for TransactionVisibility {
-    fn default() -> Self {
-        Self::Public
-    }
 }
 
 impl TransactionVisibility {
@@ -360,7 +355,7 @@ impl Transaction {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;

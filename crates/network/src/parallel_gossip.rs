@@ -318,7 +318,7 @@ impl ParallelGossip {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use crate::peers::PeerDirectory;

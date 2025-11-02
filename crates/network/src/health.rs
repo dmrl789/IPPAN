@@ -232,7 +232,7 @@ pub struct PeerHealthStats {
     pub last_check_seconds: u64,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

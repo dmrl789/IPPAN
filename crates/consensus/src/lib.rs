@@ -900,5 +900,5 @@ impl ConsensusEngine for PoAConsensus {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests;

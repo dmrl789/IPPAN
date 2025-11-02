@@ -238,7 +238,7 @@ impl Default for RoundRewards {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

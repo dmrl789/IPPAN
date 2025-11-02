@@ -6,16 +6,14 @@ use crate::{
 };
 use ippan_ai_core::types::ModelId;
 use std::collections::HashMap;
-use tracing::{error, info, warn};
-
-use std::cell::RefCell;
+use tokio::sync::RwLock;
 
 /// Storage backend for AI Registry
 pub struct RegistryStorage {
     /// Database connection (placeholder)
     db: Option<sled::Db>,
-    /// In-memory cache (using RefCell for interior mutability)
-    cache: RefCell<HashMap<String, Vec<u8>>>,
+    /// In-memory cache protected by an async-aware lock
+    cache: RwLock<HashMap<String, Vec<u8>>>,
 }
 
 impl RegistryStorage {
@@ -29,7 +27,7 @@ impl RegistryStorage {
 
         Ok(Self {
             db,
-            cache: RefCell::new(HashMap::new()),
+            cache: RwLock::new(HashMap::new()),
         })
     }
 
@@ -44,7 +42,7 @@ impl RegistryStorage {
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
             // Use in-memory cache
-            self.cache.borrow_mut().insert(key, data);
+            self.cache.write().await.insert(key, data);
         }
 
         Ok(())
@@ -62,7 +60,7 @@ impl RegistryStorage {
                 .map_err(|e| RegistryError::Database(e.to_string()))?
                 .map(|v| v.to_vec())
         } else {
-            self.cache.borrow().get(&key).cloned()
+            self.cache.read().await.get(&key).cloned()
         };
 
         if let Some(data) = data {
@@ -98,7 +96,8 @@ impl RegistryStorage {
             }
         } else {
             // Use in-memory cache
-            for (key, value) in self.cache.borrow().iter() {
+            let cache = self.cache.read().await;
+            for (key, value) in cache.iter() {
                 if key.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(value) {
                         if registration.status == status {
@@ -134,7 +133,8 @@ impl RegistryStorage {
             }
         } else {
             // Use in-memory cache
-            for (key, value) in self.cache.borrow().iter() {
+            let cache = self.cache.read().await;
+            for (key, value) in cache.iter() {
                 if key.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(value) {
                         if registration.category == category {
@@ -180,7 +180,7 @@ impl RegistryStorage {
                             || registration
                                 .description
                                 .as_ref()
-                                .map_or(false, |d| d.to_lowercase().contains(&query_lower))
+                                .is_some_and(|d| d.to_lowercase().contains(&query_lower))
                             || registration
                                 .tags
                                 .iter()
@@ -189,11 +189,11 @@ impl RegistryStorage {
                         // Check category filter
                         let matches_category = category
                             .as_ref()
-                            .map_or(true, |c| &registration.category == c);
+                            .is_none_or(|c| &registration.category == c);
 
                         // Check status filter
                         let matches_status =
-                            status.as_ref().map_or(true, |s| &registration.status == s);
+                            status.as_ref().is_none_or(|s| &registration.status == s);
 
                         if matches_query && matches_category && matches_status {
                             models.push(registration);
@@ -203,7 +203,8 @@ impl RegistryStorage {
             }
         } else {
             // Use in-memory cache
-            for (key, value) in self.cache.borrow().iter() {
+            let cache = self.cache.read().await;
+            for (key, value) in cache.iter() {
                 if key.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(value) {
                         // Check query match
@@ -220,7 +221,7 @@ impl RegistryStorage {
                             || registration
                                 .description
                                 .as_ref()
-                                .map_or(false, |d| d.to_lowercase().contains(&query_lower))
+                                .is_some_and(|d| d.to_lowercase().contains(&query_lower))
                             || registration
                                 .tags
                                 .iter()
@@ -229,11 +230,11 @@ impl RegistryStorage {
                         // Check category filter
                         let matches_category = category
                             .as_ref()
-                            .map_or(true, |c| &registration.category == c);
+                            .is_none_or(|c| &registration.category == c);
 
                         // Check status filter
                         let matches_status =
-                            status.as_ref().map_or(true, |s| &registration.status == s);
+                            status.as_ref().is_none_or(|s| &registration.status == s);
 
                         if matches_query && matches_category && matches_status {
                             models.push(registration);
@@ -261,7 +262,7 @@ impl RegistryStorage {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
-            self.cache.borrow_mut().insert(key, data);
+            self.cache.write().await.insert(key, data);
         }
 
         Ok(())
@@ -279,7 +280,7 @@ impl RegistryStorage {
                 .map_err(|e| RegistryError::Database(e.to_string()))?
                 .map(|v| v.to_vec())
         } else {
-            self.cache.borrow().get(&key).cloned()
+            self.cache.read().await.get(&key).cloned()
         };
 
         if let Some(data) = data {
@@ -310,7 +311,8 @@ impl RegistryStorage {
             }
         } else {
             // Use in-memory cache
-            for (key, value) in self.cache.borrow().iter() {
+            let cache = self.cache.read().await;
+            for (key, value) in cache.iter() {
                 if key.starts_with("governance_proposal:") {
                     if let Ok(proposal) = bincode::deserialize::<GovernanceProposal>(value) {
                         if proposal.status == ProposalStatus::Active {
@@ -334,7 +336,7 @@ impl RegistryStorage {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
-            self.cache.borrow_mut().insert(key, data);
+            self.cache.write().await.insert(key, data);
         }
 
         Ok(())
@@ -352,7 +354,7 @@ impl RegistryStorage {
                 .map_err(|e| RegistryError::Database(e.to_string()))?
                 .map(|v| v.to_vec())
         } else {
-            self.cache.borrow().get(&key).cloned()
+            self.cache.read().await.get(&key).cloned()
         };
 
         if let Some(data) = data {
@@ -396,7 +398,7 @@ impl RegistryStorage {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
-            self.cache.borrow_mut().insert(key, data);
+            self.cache.write().await.insert(key, data);
         }
 
         Ok(())

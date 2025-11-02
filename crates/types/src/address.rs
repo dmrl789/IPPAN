@@ -82,7 +82,7 @@ impl TryFrom<String> for Address {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

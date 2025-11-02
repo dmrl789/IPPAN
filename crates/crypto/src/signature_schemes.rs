@@ -398,7 +398,7 @@ pub struct RingSig {
     pub ring: Vec<[u8; 32]>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

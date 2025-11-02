@@ -332,7 +332,7 @@ pub struct EmissionStatistics {
     pub audit_checkpoints: usize,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

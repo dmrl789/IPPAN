@@ -7,7 +7,7 @@ use crate::{
 };
 use ippan_ai_core::types::{ModelId, ModelMetadata};
 use std::collections::HashMap;
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// Fee manager for AI Registry
 pub struct FeeManager {
@@ -16,6 +16,7 @@ pub struct FeeManager {
     /// Fee structures
     fee_structures: HashMap<FeeType, FeeStructure>,
     /// Configuration
+    #[allow(dead_code)]
     config: RegistryConfig,
     /// Fee collection statistics
     stats: FeeStats,
@@ -169,7 +170,7 @@ impl FeeManager {
                 } else {
                     self.calculate_units(fee_type, model_metadata, additional_data.clone())?
                 };
-                let steps = (calculated_units + 999) / 1000; // 1000 units per step
+                let steps = calculated_units.div_ceil(1000); // 1000 units per step
                 let unit_fee = fee_structure.unit_fee * steps;
                 (fee_structure.base_fee + unit_fee, calculated_units)
             }
@@ -240,7 +241,7 @@ impl FeeManager {
 
         // Update fee structure
         self.fee_structures
-            .insert(fee_structure.fee_type.clone(), fee_structure);
+            .insert(fee_structure.fee_type, fee_structure);
 
         info!("Fee structure updated successfully");
         Ok(())

@@ -191,8 +191,14 @@ fn test_ippan_time_normalization() {
     let features = normalize_features(&telemetry, ippan_time_median);
 
     assert_eq!(features.len(), 2);
-    assert_eq!(features[0].delta_time_us, -50); // 100_000 - 100_050
-    assert_eq!(features[1].delta_time_us, 30); // 100_080 - 100_050
+    // Check features by node_id since HashMap iteration order is not deterministic
+    for feature in &features {
+        if feature.node_id == "node1" {
+            assert_eq!(feature.delta_time_us, -50); // 100_000 - 100_050
+        } else if feature.node_id == "node2" {
+            assert_eq!(feature.delta_time_us, 30); // 100_080 - 100_050
+        }
+    }
 }
 
 #[test]

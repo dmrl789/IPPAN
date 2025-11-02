@@ -25,9 +25,6 @@ analytics = ["chrono", "statistical"]
 # Smart contract AI features
 smart_contracts = ["wasmtime", "wasmtime-wasi", "ippan-consensus"]
 
-# Advanced AI models
-advanced_models = ["candle-core", "candle-nn"]
-
 [dependencies]
 ippan-ai-core = { path = "../ai_core" }
 ippan-ai-registry = { path = "../ai_registry" }
@@ -58,10 +55,6 @@ statistical = { version = "0.1", optional = true }
 # WebAssembly runtime for smart contracts
 wasmtime = { version = "15.0", optional = true }
 wasmtime-wasi = { version = "15.0", optional = true }
-
-# Advanced ML models
-candle-core = { version = "0.3", optional = true }
-candle-nn = { version = "0.3", optional = true }
 
 # Error handling
 anyhow = { workspace = true }

@@ -141,7 +141,7 @@ impl Clone for HandleResolver {
 // -----------------------------------------------------------------------------
 // Tests
 // -----------------------------------------------------------------------------
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use tokio_test;

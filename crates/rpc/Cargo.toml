@@ -14,6 +14,7 @@ ippan-storage = { path = "../storage" }
 ippan-p2p = { path = "../p2p" }
 ippan-consensus = { path = "../consensus" }
 ippan-mempool = { path = "../mempool" }
+ippan-security = { path = "../security" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

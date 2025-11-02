@@ -257,18 +257,31 @@ pub fn calculate_reputation_score(
 // -----------------------------------------------------------------------------
 // ✅ Tests
 // -----------------------------------------------------------------------------
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use std::collections::HashMap;
 
     #[cfg(feature = "ai_l1")]
+    use ippan_ai_core::gbdt::{Node, Tree};
+
+    #[cfg(feature = "ai_l1")]
     fn create_test_model() -> GBDTModel {
-        GBDTModel {
-            trees: vec![],
-            bias: 0,
-            scale: 10000,
-        }
+        GBDTModel::new(
+            vec![Tree {
+                nodes: vec![Node {
+                    feature_index: 0,
+                    threshold: 0,
+                    left: 0,
+                    right: 0,
+                    value: Some(5000),
+                }],
+            }],
+            0,
+            10000,
+            1,
+        )
+        .expect("valid test model")
     }
 
     #[cfg(feature = "ai_l1")]

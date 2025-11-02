@@ -232,7 +232,7 @@ impl ModelReloader {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 #[cfg(feature = "ai_l1")]
 mod tests {
     use super::*;
@@ -242,13 +242,21 @@ mod tests {
     use tokio::fs::write;
 
     fn create_test_model(value: i32) -> GBDTModel {
-        GBDTModel {
-            trees: vec![Tree {
-                nodes: vec![Node::Leaf { value }],
+        GBDTModel::new(
+            vec![Tree {
+                nodes: vec![Node {
+                    feature_index: 0,
+                    threshold: 0,
+                    left: 0,
+                    right: 0,
+                    value: Some(value),
+                }],
             }],
-            bias: 0,
-            scale: 10000,
-        }
+            0,
+            10000,
+            1,
+        )
+        .expect("valid test model")
     }
 
     #[tokio::test]

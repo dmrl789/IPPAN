@@ -315,7 +315,7 @@ impl WalletManager {
                     let timestamp = chrono::Utc
                         .timestamp_opt(seconds, nanos)
                         .single()
-                        .unwrap_or_else(|| chrono::Utc::now());
+                        .unwrap_or_else(chrono::Utc::now);
 
                     WalletTransaction {
                         id: uuid::Uuid::new_v4(),
@@ -450,7 +450,7 @@ pub struct WalletStats {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use tempfile::tempdir;

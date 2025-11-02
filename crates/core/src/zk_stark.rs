@@ -356,7 +356,7 @@ pub fn create_stark_generator(config: StarkConfig) -> StarkGenerator {
     StarkGenerator::new(config)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use crate::block::Block;

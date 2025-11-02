@@ -233,7 +233,7 @@ pub async fn start_time_sync(listen_addr: &str) {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

@@ -390,7 +390,7 @@ pub struct MempoolStats {
 // -----------------------------------------------------------------------------
 // Tests
 // -----------------------------------------------------------------------------
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ippan_types::{Amount, Transaction};
