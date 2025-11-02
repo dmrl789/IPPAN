@@ -8,14 +8,14 @@ use ippan_ai_core::types::ModelId;
 use std::collections::HashMap;
 use tracing::{error, info, warn};
 
-use std::cell::RefCell;
+use parking_lot::RwLock;
 
 /// Storage backend for AI Registry
 pub struct RegistryStorage {
     /// Database connection (placeholder)
     db: Option<sled::Db>,
-    /// In-memory cache (using RefCell for interior mutability)
-    cache: RefCell<HashMap<String, Vec<u8>>>,
+    /// In-memory cache (using RwLock for thread-safe interior mutability)
+    cache: RwLock<HashMap<String, Vec<u8>>>,
 }
 
 impl RegistryStorage {
@@ -29,7 +29,7 @@ impl RegistryStorage {
 
         Ok(Self {
             db,
-            cache: RefCell::new(HashMap::new()),
+            cache: RwLock::new(HashMap::new()),
         })
     }
 
@@ -44,7 +44,7 @@ impl RegistryStorage {
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
             // Use in-memory cache
-            self.cache.borrow_mut().insert(key, data);
+            self.cache.write().insert(key, data);
         }
 
         Ok(())
@@ -62,7 +62,7 @@ impl RegistryStorage {
                 .map_err(|e| RegistryError::Database(e.to_string()))?
                 .map(|v| v.to_vec())
         } else {
-            self.cache.borrow().get(&key).cloned()
+            self.cache.read().get(&key).cloned()
         };
 
         if let Some(data) = data {
@@ -98,7 +98,7 @@ impl RegistryStorage {
             }
         } else {
             // Use in-memory cache
-            for (key, value) in self.cache.borrow().iter() {
+            for (key, value) in self.cache.read().iter() {
                 if key.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(value) {
                         if registration.status == status {
@@ -134,7 +134,7 @@ impl RegistryStorage {
             }
         } else {
             // Use in-memory cache
-            for (key, value) in self.cache.borrow().iter() {
+            for (key, value) in self.cache.read().iter() {
                 if key.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(value) {
                         if registration.category == category {
@@ -203,7 +203,7 @@ impl RegistryStorage {
             }
         } else {
             // Use in-memory cache
-            for (key, value) in self.cache.borrow().iter() {
+            for (key, value) in self.cache.read().iter() {
                 if key.starts_with("model_registration:") {
                     if let Ok(registration) = bincode::deserialize::<ModelRegistration>(value) {
                         // Check query match
@@ -261,7 +261,7 @@ impl RegistryStorage {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
-            self.cache.borrow_mut().insert(key, data);
+            self.cache.write().insert(key, data);
         }
 
         Ok(())
@@ -279,7 +279,7 @@ impl RegistryStorage {
                 .map_err(|e| RegistryError::Database(e.to_string()))?
                 .map(|v| v.to_vec())
         } else {
-            self.cache.borrow().get(&key).cloned()
+            self.cache.read().get(&key).cloned()
         };
 
         if let Some(data) = data {
@@ -310,7 +310,7 @@ impl RegistryStorage {
             }
         } else {
             // Use in-memory cache
-            for (key, value) in self.cache.borrow().iter() {
+            for (key, value) in self.cache.read().iter() {
                 if key.starts_with("governance_proposal:") {
                     if let Ok(proposal) = bincode::deserialize::<GovernanceProposal>(value) {
                         if proposal.status == ProposalStatus::Active {
@@ -334,7 +334,7 @@ impl RegistryStorage {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
-            self.cache.borrow_mut().insert(key, data);
+            self.cache.write().insert(key, data);
         }
 
         Ok(())
@@ -352,7 +352,7 @@ impl RegistryStorage {
                 .map_err(|e| RegistryError::Database(e.to_string()))?
                 .map(|v| v.to_vec())
         } else {
-            self.cache.borrow().get(&key).cloned()
+            self.cache.read().get(&key).cloned()
         };
 
         if let Some(data) = data {
@@ -396,7 +396,7 @@ impl RegistryStorage {
             db.insert(key.as_bytes(), data.as_slice())
                 .map_err(|e| RegistryError::Database(e.to_string()))?;
         } else {
-            self.cache.borrow_mut().insert(key, data);
+            self.cache.write().insert(key, data);
         }
 
         Ok(())

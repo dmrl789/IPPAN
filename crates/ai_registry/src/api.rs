@@ -1,8 +1,8 @@
 //! API implementation for AI Registry
 
 use crate::{
-    errors::{RegistryError, Result},
-    fees::FeeManager,
+    errors::RegistryError,
+    fees::{FeeCalculation, FeeManager, FeeStats},
     governance::GovernanceManager,
     registry::ModelRegistry,
     types::*,
@@ -21,6 +21,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 /// API state
+#[derive(Clone)]
 pub struct ApiState {
     /// Model registry
     pub registry: Arc<RwLock<ModelRegistry>>,
@@ -139,21 +140,27 @@ async fn register_model(
 ) -> Result<Json<ApiResponse<ModelRegistration>>, StatusCode> {
     info!("API: Registering model: {}", request.name);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ippan_ai_core::types::ModelId {
         name: request.name.clone(),
         version: request.version.clone(),
         hash: request.hash.clone(),
     };
 
-    let metadata = ai_core::types::ModelMetadata {
+    let metadata = ippan_ai_core::types::ModelMetadata {
         id: model_id.clone(),
+        name: request.name.clone(),
+        version: request.version.clone(),
+        description: request.description.clone().unwrap_or_default(),
+        author: request.registrant.clone(),
+        license: request.license.clone().unwrap_or_else(|| "Unknown".to_string()),
+        tags: vec![],
+        created_at: chrono::Utc::now().timestamp() as u64,
+        updated_at: chrono::Utc::now().timestamp() as u64,
         architecture: request.architecture,
         input_shape: request.input_shape,
         output_shape: request.output_shape,
-        parameter_count: request.parameter_count,
         size_bytes: request.size_bytes,
-        created_at: chrono::Utc::now().timestamp() as u64,
-        description: request.description,
+        parameter_count: request.parameter_count,
     };
 
     let mut registry = state.registry.write().await;
@@ -196,7 +203,7 @@ async fn get_model(
 ) -> Result<Json<ApiResponse<ModelRegistration>>, StatusCode> {
     info!("API: Getting model: {}", name);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ippan_ai_core::types::ModelId {
         name,
         version: String::new(), // We'll need to handle versioning properly
         hash: String::new(),
@@ -261,7 +268,7 @@ async fn update_model_status(
 ) -> Result<Json<ApiResponse<()>>, StatusCode> {
     info!("API: Updating model status: {} -> {:?}", name, status);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ippan_ai_core::types::ModelId {
         name,
         version: String::new(),
         hash: String::new(),
@@ -292,7 +299,7 @@ async fn get_model_stats(
 ) -> Result<Json<ApiResponse<ModelUsageStats>>, StatusCode> {
     info!("API: Getting model stats: {}", name);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ippan_ai_core::types::ModelId {
         name,
         version: String::new(),
         hash: String::new(),
@@ -365,7 +372,7 @@ async fn get_proposal(
 ) -> Result<Json<ApiResponse<GovernanceProposal>>, StatusCode> {
     info!("API: Getting proposal: {}", id);
 
-    let mut governance = state.governance.read().await;
+    let mut governance = state.governance.write().await;
     match governance.get_proposal(&id).await {
         Ok(Some(proposal)) => Ok(Json(ApiResponse {
             success: true,
@@ -548,7 +555,7 @@ pub struct FeeCalculationRequest {
     /// Fee type
     pub fee_type: FeeType,
     /// Model metadata (optional)
-    pub model_metadata: Option<ai_core::types::ModelMetadata>,
+    pub model_metadata: Option<ippan_ai_core::types::ModelMetadata>,
     /// Units (optional)
     pub units: Option<u64>,
     /// Additional data (optional)
