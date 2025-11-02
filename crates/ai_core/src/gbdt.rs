@@ -34,6 +34,12 @@ pub enum GBDTError {
     #[error("Model validation failed: {reason}")]
     ModelValidationFailed { reason: String },
 
+    #[error("Model IO error: {0}")]
+    ModelIoError(String),
+
+    #[error("Model serialization error: {0}")]
+    ModelSerializationError(String),
+
     #[error("Feature vector size mismatch: expected {expected}, got {actual}")]
     FeatureSizeMismatch { expected: usize, actual: usize },
 
@@ -257,6 +263,20 @@ impl GBDTModel {
         Ok(model)
     }
 
+    pub fn save_json<P: AsRef<Path>>(&self, path: P) -> Result<(), GBDTError> {
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        fs::write(path, json).map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn save_binary<P: AsRef<Path>>(&self, path: P) -> Result<(), GBDTError> {
+        let data = bincode::serialize(self)
+            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        fs::write(path, data).map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn new(
         trees: Vec<Tree>,
         bias: i32,
@@ -316,7 +336,7 @@ impl GBDTModel {
         }
 
         debug!(
-            "GBDT evaluation completed in {}μs, value: {}, confidence: {:.3}",
+            "GBDT evaluation completed in {}?s, value: {}, confidence: {:.3}",
             result.evaluation_time_us, result.value, result.confidence
         );
 
