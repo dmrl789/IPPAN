@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::Verifier;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -54,7 +54,7 @@ pub struct ProposalManager {
     /// Active proposals
     proposals: HashMap<String, (AiModelProposal, ProposalStatus)>,
     /// Voting threshold (percentage of stake required)
-    voting_threshold: f64,
+    _voting_threshold: f64,
     /// Minimum stake required to propose
     min_proposal_stake: u64,
 }
@@ -64,7 +64,7 @@ impl ProposalManager {
     pub fn new(voting_threshold: f64, min_proposal_stake: u64) -> Self {
         Self {
             proposals: HashMap::new(),
-            voting_threshold,
+            _voting_threshold: voting_threshold,
             min_proposal_stake,
         }
     }
@@ -125,11 +125,11 @@ impl ProposalManager {
     pub fn vote(
         &mut self,
         proposal_id: &str,
-        voter: [u8; 32],
-        stake: u64,
-        approve: bool,
+        _voter: [u8; 32],
+        _stake: u64,
+        _approve: bool,
     ) -> Result<()> {
-        if let Some((proposal, status)) = self.proposals.get_mut(proposal_id) {
+        if let Some((_, status)) = self.proposals.get_mut(proposal_id) {
             if *status != ProposalStatus::Voting {
                 return Err(anyhow::anyhow!(
                     "Proposal {} is not in voting status",

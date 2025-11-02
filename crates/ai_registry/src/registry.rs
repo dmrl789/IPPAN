@@ -10,9 +10,8 @@ use crate::{
     storage::RegistryStorage,
     types::*,
 };
-use ippan_ai_core::types::{ModelId, ModelMetadata};
 use std::collections::HashMap;
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// Deterministic in-memory AI model registry
 ///

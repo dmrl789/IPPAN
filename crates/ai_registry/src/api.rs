@@ -1,11 +1,8 @@
 //! API implementation for AI Registry
 
 use crate::{
-    errors::{RegistryError, Result},
-    fees::FeeManager,
-    governance::GovernanceManager,
-    registry::ModelRegistry,
-    types::*,
+    fees::FeeManager, governance::GovernanceManager, registry::ModelRegistry, types::*,
+    FeeCalculation, FeeStats,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -18,9 +15,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 /// API state
+#[derive(Clone)]
 pub struct ApiState {
     /// Model registry
     pub registry: Arc<RwLock<ModelRegistry>>,
@@ -114,7 +112,7 @@ pub struct SearchQuery {
 }
 
 /// Create API router
-pub fn create_router(state: ApiState) -> Router {
+pub fn create_router(state: ApiState) -> Router<ApiState> {
     Router::new()
         .route("/models", post(register_model))
         .route("/models/:name", get(get_model))
@@ -139,21 +137,29 @@ async fn register_model(
 ) -> Result<Json<ApiResponse<ModelRegistration>>, StatusCode> {
     info!("API: Registering model: {}", request.name);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ModelId {
         name: request.name.clone(),
         version: request.version.clone(),
         hash: request.hash.clone(),
     };
 
-    let metadata = ai_core::types::ModelMetadata {
+    let timestamp = chrono::Utc::now().timestamp() as u64;
+
+    let metadata = ModelMetadata {
         id: model_id.clone(),
-        architecture: request.architecture,
-        input_shape: request.input_shape,
-        output_shape: request.output_shape,
+        name: request.name.clone(),
+        version: request.version.clone(),
+        description: request.description.clone().unwrap_or_default(),
+        author: request.registrant.clone(),
+        license: request.license.clone().unwrap_or_default(),
+        tags: request.tags.clone(),
+        created_at: timestamp,
+        updated_at: timestamp,
+        architecture: request.architecture.clone(),
+        input_shape: request.input_shape.clone(),
+        output_shape: request.output_shape.clone(),
         parameter_count: request.parameter_count,
         size_bytes: request.size_bytes,
-        created_at: chrono::Utc::now().timestamp() as u64,
-        description: request.description,
     };
 
     let mut registry = state.registry.write().await;
@@ -196,7 +202,7 @@ async fn get_model(
 ) -> Result<Json<ApiResponse<ModelRegistration>>, StatusCode> {
     info!("API: Getting model: {}", name);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ModelId {
         name,
         version: String::new(), // We'll need to handle versioning properly
         hash: String::new(),
@@ -261,7 +267,7 @@ async fn update_model_status(
 ) -> Result<Json<ApiResponse<()>>, StatusCode> {
     info!("API: Updating model status: {} -> {:?}", name, status);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ModelId {
         name,
         version: String::new(),
         hash: String::new(),
@@ -292,7 +298,7 @@ async fn get_model_stats(
 ) -> Result<Json<ApiResponse<ModelUsageStats>>, StatusCode> {
     info!("API: Getting model stats: {}", name);
 
-    let model_id = ai_core::types::ModelId {
+    let model_id = ModelId {
         name,
         version: String::new(),
         hash: String::new(),
@@ -365,7 +371,7 @@ async fn get_proposal(
 ) -> Result<Json<ApiResponse<GovernanceProposal>>, StatusCode> {
     info!("API: Getting proposal: {}", id);
 
-    let mut governance = state.governance.read().await;
+    let mut governance = state.governance.write().await;
     match governance.get_proposal(&id).await {
         Ok(Some(proposal)) => Ok(Json(ApiResponse {
             success: true,
@@ -548,7 +554,7 @@ pub struct FeeCalculationRequest {
     /// Fee type
     pub fee_type: FeeType,
     /// Model metadata (optional)
-    pub model_metadata: Option<ai_core::types::ModelMetadata>,
+    pub model_metadata: Option<ModelMetadata>,
     /// Units (optional)
     pub units: Option<u64>,
     /// Additional data (optional)

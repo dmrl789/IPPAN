@@ -5,9 +5,8 @@ use crate::{
     storage::RegistryStorage,
     types::*,
 };
-use ippan_ai_core::types::{ModelId, ModelMetadata};
 use std::collections::HashMap;
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// Fee manager for AI Registry
 pub struct FeeManager {
@@ -16,7 +15,7 @@ pub struct FeeManager {
     /// Fee structures
     fee_structures: HashMap<FeeType, FeeStructure>,
     /// Configuration
-    config: RegistryConfig,
+    _config: RegistryConfig,
     /// Fee collection statistics
     stats: FeeStats,
 }
@@ -120,7 +119,7 @@ impl FeeManager {
         Self {
             storage,
             fee_structures,
-            config,
+            _config: config,
             stats: FeeStats::default(),
         }
     }

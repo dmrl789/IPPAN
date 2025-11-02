@@ -1,9 +1,9 @@
 //! Type definitions for the AI Registry module
 
 use chrono::{DateTime, Utc};
-use ippan_ai_core::types::{ModelId, ModelMetadata};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
+pub use ippan_ai_core::types::{ModelId, ModelMetadata};
 
 /// Model registration status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
