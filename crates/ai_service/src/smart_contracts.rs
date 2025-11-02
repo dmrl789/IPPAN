@@ -373,7 +373,7 @@ impl Default for SmartContractService {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

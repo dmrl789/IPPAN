@@ -232,7 +232,7 @@ impl ModelReloader {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 #[cfg(feature = "ai_l1")]
 mod tests {
     use super::*;

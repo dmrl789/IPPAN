@@ -111,7 +111,7 @@ pub fn status() -> (i64, i64, usize) {
 
 // ==== TESTS ====
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

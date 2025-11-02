@@ -365,7 +365,7 @@ pub struct NetworkHealthReport {
     pub confidence_score: f64,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};

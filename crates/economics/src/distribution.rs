@@ -5,7 +5,7 @@
 
 // TODO: Implement reward distribution functions
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     // Tests temporarily disabled - awaiting implementation of distribution functions
     // use super::*;

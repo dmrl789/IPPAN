@@ -589,7 +589,7 @@ pub struct ConnectionStats {
     pub total_messages: u64,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;

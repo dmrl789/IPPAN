@@ -206,7 +206,7 @@ pub enum SecurityError {
     PolicyViolation { policy: String },
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

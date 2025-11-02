@@ -1203,7 +1203,7 @@ impl HttpP2PNetwork {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

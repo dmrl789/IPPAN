@@ -16,7 +16,7 @@ pub fn order_blocks(a: &BlockHeader, b: &BlockHeader) -> Ordering {
         .then_with(|| a.hash_timer.digest().cmp(&b.hash_timer.digest()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;

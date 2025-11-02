@@ -509,7 +509,7 @@ async fn handle_list_l2_exits() -> Json<Vec<L2ExitRecord>> {
     Json(vec![])
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

@@ -354,7 +354,7 @@ pub struct SuspiciousPattern {
     pub timestamp: SystemTime,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;

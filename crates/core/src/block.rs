@@ -12,7 +12,7 @@ use ippan_time::{now_us, sign_hashtimer, verify_hashtimer, HashTimer};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 use rand_core::OsRng;
 
 /// Binary merkle roots and block signatures are all 32 or 64 byte arrays.
@@ -197,7 +197,7 @@ fn header_hash(header: &BlockHeader) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

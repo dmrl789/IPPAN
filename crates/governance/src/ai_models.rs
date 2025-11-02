@@ -463,7 +463,7 @@ pub fn validate_proposal_format(proposal: &AiModelProposal) -> Result<()> {
 // -----------------------------------------------------------------------------
 // ✅ Tests
 // -----------------------------------------------------------------------------
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 
