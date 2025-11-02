@@ -27,7 +27,7 @@ impl Handle {
 
     /// Get the TLD (top-level domain) of the handle
     pub fn tld(&self) -> Option<&str> {
-        self.0.split('.').last()
+        self.0.split('.').next_back()
     }
 
     /// Check if this is a premium TLD

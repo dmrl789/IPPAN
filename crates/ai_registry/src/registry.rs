@@ -12,7 +12,7 @@ use crate::{
 };
 use ippan_ai_core::types::{ModelId, ModelMetadata};
 use std::collections::HashMap;
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// Deterministic in-memory AI model registry
 ///
@@ -41,6 +41,7 @@ impl ModelRegistry {
     }
 
     /// Register a model
+    #[allow(clippy::too_many_arguments)]
     pub async fn register_model(
         &mut self,
         model_id: ModelId,

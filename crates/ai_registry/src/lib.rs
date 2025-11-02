@@ -38,8 +38,6 @@
 //! }
 //! ```
 
-use serde::{Deserialize, Serialize};
-
 pub mod activation;
 pub mod errors;
 pub mod fees;

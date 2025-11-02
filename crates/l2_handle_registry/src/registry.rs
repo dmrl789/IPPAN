@@ -73,7 +73,7 @@ impl L2HandleRegistry {
         {
             let mut map = self.owner_to_handles.write();
             map.entry(registration.owner)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(registration.handle);
         }
 
@@ -157,7 +157,7 @@ impl L2HandleRegistry {
                 list.retain(|h| h != &transfer.handle);
             }
             map.entry(transfer.to_owner)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(transfer.handle);
         }
 

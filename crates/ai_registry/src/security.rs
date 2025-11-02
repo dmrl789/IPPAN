@@ -69,10 +69,7 @@ impl RateLimiter {
         let cutoff = now - self.window;
 
         // Get user's request history
-        let user_requests = self
-            .requests
-            .entry(user_id.to_string())
-            .or_insert_with(Vec::new);
+        let user_requests = self.requests.entry(user_id.to_string()).or_default();
 
         // Remove old requests
         user_requests.retain(|&time| time > cutoff);

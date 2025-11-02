@@ -8,7 +8,7 @@ use crate::{
 use chrono::{Duration, Utc};
 use ippan_ai_core::types::ModelId;
 use std::collections::HashMap;
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// Governance manager for AI Registry
 pub struct GovernanceManager {
