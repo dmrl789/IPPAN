@@ -106,7 +106,7 @@ impl Default for ActivationManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

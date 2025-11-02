@@ -5,8 +5,8 @@
 
 use ippan_ai_service::{
     AIService, AIServiceConfig, AnalyticsConfig, ContractAnalysisType, LLMConfig, LLMRequest,
-    MonitoringConfig, OptimizationConstraints, OptimizationGoal, SmartContractAnalysisRequest,
-    TransactionData, TransactionOptimizationRequest,
+    OptimizationConstraints, OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
+    TransactionOptimizationRequest,
 };
 use std::collections::HashMap;
 use tracing::{error, info, warn};
@@ -93,18 +93,6 @@ fn create_production_config() -> AIServiceConfig {
             retention_days: 30,
             analysis_interval: 60,
             enable_predictive: true,
-        },
-        monitoring_config: MonitoringConfig {
-            enable_anomaly_detection: true,
-            alert_thresholds: {
-                let mut thresholds = HashMap::new();
-                thresholds.insert("memory_usage".to_string(), 80.0);
-                thresholds.insert("cpu_usage".to_string(), 90.0);
-                thresholds.insert("error_rate".to_string(), 5.0);
-                thresholds
-            },
-            monitoring_interval: 30,
-            enable_auto_remediation: false,
         },
     }
 }

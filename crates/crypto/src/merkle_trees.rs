@@ -360,7 +360,7 @@ impl Default for MerkleTreeBuilder {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

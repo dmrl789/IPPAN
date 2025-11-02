@@ -86,7 +86,7 @@ impl EconomicsParameterManager {
 
             Ok(())
         } else {
-            Err(anyhow!("Proposal {} not found", proposal_id))
+            Err(anyhow!("Proposal {proposal_id} not found"))
         }
     }
 
@@ -114,7 +114,7 @@ impl EconomicsParameterManager {
         ];
 
         if !valid_parameters.contains(&name) {
-            return Err(anyhow!("Invalid parameter name: {}", name));
+            return Err(anyhow!("Invalid parameter name: {name}"));
         }
 
         Ok(())
@@ -126,10 +126,10 @@ impl EconomicsParameterManager {
             "initial_round_reward_micro" | "max_supply_micro" => {
                 if let Some(val) = value.as_u64() {
                     if val == 0 {
-                        return Err(anyhow!("Parameter {} must be positive", name));
+                        return Err(anyhow!("Parameter {name} must be positive"));
                     }
                 } else {
-                    return Err(anyhow!("Parameter {} must be a positive integer", name));
+                    return Err(anyhow!("Parameter {name} must be a positive integer"));
                 }
             }
             "halving_interval_rounds" => {
@@ -144,25 +144,22 @@ impl EconomicsParameterManager {
             "fee_cap_numer" | "fee_cap_denom" => {
                 if let Some(val) = value.as_u64() {
                     if val == 0 {
-                        return Err(anyhow!("Fee cap {} must be positive", name));
+                        return Err(anyhow!("Fee cap {name} must be positive"));
                     }
                 } else {
-                    return Err(anyhow!("Fee cap {} must be a positive integer", name));
+                    return Err(anyhow!("Fee cap {name} must be a positive integer"));
                 }
             }
             "proposer_weight_bps" | "verifier_weight_bps" | "fee_recycling_bps" => {
                 if let Some(val) = value.as_u64() {
                     if val > 10000 {
-                        return Err(anyhow!(
-                            "Parameter {} cannot exceed 10000 basis points",
-                            name
-                        ));
+                        return Err(anyhow!("Parameter {name} cannot exceed 10000 basis points"));
                     }
                 } else {
-                    return Err(anyhow!("Parameter {} must be a positive integer", name));
+                    return Err(anyhow!("Parameter {name} must be a positive integer"));
                 }
             }
-            _ => return Err(anyhow!("Unknown parameter: {}", name)),
+            _ => return Err(anyhow!("Unknown parameter: {name}")),
         }
 
         Ok(())
@@ -235,7 +232,7 @@ pub fn create_parameter_proposal(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

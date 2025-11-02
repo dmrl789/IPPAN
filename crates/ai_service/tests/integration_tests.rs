@@ -2,7 +2,7 @@
 
 use ippan_ai_service::{
     AIService, AIServiceConfig, AnalyticsConfig, ContractAnalysisType, LLMConfig, LLMRequest,
-    MonitoringConfig, OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
+    OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
     TransactionOptimizationRequest,
 };
 use std::collections::HashMap;

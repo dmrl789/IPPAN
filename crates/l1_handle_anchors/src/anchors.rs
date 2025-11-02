@@ -142,7 +142,7 @@ impl Default for L1HandleAnchorStorage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

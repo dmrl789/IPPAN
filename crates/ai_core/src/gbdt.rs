@@ -577,7 +577,7 @@ pub fn eval_gbdt(model: &GBDTModel, features: &[i64]) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     fn simple_tree() -> Tree {

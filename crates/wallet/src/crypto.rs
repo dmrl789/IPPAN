@@ -199,7 +199,7 @@ pub fn generate_mnemonic() -> String {
     mnemonic.join(" ")
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

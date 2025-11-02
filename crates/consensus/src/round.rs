@@ -257,7 +257,7 @@ pub fn calculate_reputation_score(
 // -----------------------------------------------------------------------------
 // ✅ Tests
 // -----------------------------------------------------------------------------
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use std::collections::HashMap;

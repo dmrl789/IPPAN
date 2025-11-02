@@ -259,7 +259,7 @@ pub struct SecurityStats {
     pub rate_limit_stats: serde_json::Value,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;

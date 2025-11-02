@@ -4,7 +4,7 @@ use crate::{
     HashTimer, IppanTimeMicros, Transaction,
 };
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

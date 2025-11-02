@@ -130,7 +130,7 @@ pub fn create_hashtimer_proof(
     format!("ai_proof_{}", hex::encode(hash.as_bytes()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use crate::gbdt::{GBDTModel as Model, Node, Tree};

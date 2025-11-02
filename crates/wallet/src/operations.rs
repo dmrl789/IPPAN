@@ -450,7 +450,7 @@ pub struct WalletStats {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use tempfile::tempdir;

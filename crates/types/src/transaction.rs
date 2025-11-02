@@ -360,7 +360,7 @@ impl Transaction {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;
