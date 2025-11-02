@@ -34,19 +34,10 @@ pub struct Account {
 }
 
 /// Chain state (economic + round metadata)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChainState {
     pub total_issued_micro: u128,
     pub last_updated_round: u64,
-}
-
-impl Default for ChainState {
-    fn default() -> Self {
-        Self {
-            total_issued_micro: 0,
-            last_updated_round: 0,
-        }
-    }
 }
 
 impl ChainState {

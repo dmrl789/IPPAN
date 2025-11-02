@@ -19,6 +19,12 @@ pub trait HashFunction {
 #[derive(Debug, Clone)]
 pub struct Blake3;
 
+impl Default for Blake3 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Blake3 {
     pub fn new() -> Self {
         Self
@@ -55,6 +61,12 @@ impl HashFunction for Blake3 {
 #[derive(Debug, Clone)]
 pub struct SHA256;
 
+impl Default for SHA256 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SHA256 {
     pub fn new() -> Self {
         Self
@@ -90,6 +102,12 @@ impl HashFunction for SHA256 {
 #[derive(Debug, Clone)]
 pub struct Keccak256;
 
+impl Default for Keccak256 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Keccak256 {
     pub fn new() -> Self {
         Self
@@ -124,6 +142,12 @@ impl HashFunction for Keccak256 {
 /// SHA3-256 hash function
 #[derive(Debug, Clone)]
 pub struct SHA3_256;
+
+impl Default for SHA3_256 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SHA3_256 {
     pub fn new() -> Self {

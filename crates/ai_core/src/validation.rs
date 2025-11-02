@@ -80,6 +80,12 @@ pub struct ValidationMetadata {
     pub model_version: String,
 }
 
+impl Default for ModelValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelValidator {
     /// Create a new model validator
     pub fn new() -> Self {

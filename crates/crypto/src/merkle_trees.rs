@@ -117,7 +117,7 @@ impl MerkleTree {
         let mut level_start = 0;
 
         while level_size > 1 {
-            let sibling_index = if current_index % 2 == 0 {
+            let sibling_index = if current_index.is_multiple_of(2) {
                 current_index + 1
             } else {
                 current_index - 1
@@ -130,7 +130,7 @@ impl MerkleTree {
 
             current_index /= 2;
             level_start += level_size;
-            level_size = (level_size + 1) / 2;
+            level_size = level_size.div_ceil(2);
         }
 
         Ok(proof)
@@ -146,7 +146,7 @@ impl MerkleTree {
         let mut current_index = proof.leaf_index;
 
         for sibling_hash in &proof.path {
-            let combined = if current_index % 2 == 0 {
+            let combined = if current_index.is_multiple_of(2) {
                 [current_hash.as_slice(), sibling_hash.as_slice()].concat()
             } else {
                 [sibling_hash.as_slice(), current_hash.as_slice()].concat()
