@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 use thiserror::Error;
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, instrument, warn};
 
 /// GBDT evaluation errors
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -133,23 +133,12 @@ impl PartialEq for GBDTModel {
 }
 
 /// Feature normalization parameters
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct FeatureNormalization {
     pub means: Vec<i64>,
     pub std_devs: Vec<i64>,
     pub mins: Vec<i64>,
     pub maxs: Vec<i64>,
-}
-
-impl Default for FeatureNormalization {
-    fn default() -> Self {
-        Self {
-            means: Vec::new(),
-            std_devs: Vec::new(),
-            mins: Vec::new(),
-            maxs: Vec::new(),
-        }
-    }
 }
 
 /// Security constraints for model evaluation

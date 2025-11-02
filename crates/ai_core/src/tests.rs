@@ -306,7 +306,7 @@ impl BenchmarkSuite {
     async fn benchmark_gbdt_evaluation(&self) -> Result<()> {
         let mut model = create_test_model();
         let features: Vec<i64> = vec![1; 10];
-        let iterations = (self.config.concurrent_requests.max(1) * 1_000) as usize;
+        let iterations = self.config.concurrent_requests.max(1) * 1_000;
 
         let start = Instant::now();
         for _ in 0..iterations {

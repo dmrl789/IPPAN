@@ -9,7 +9,7 @@
 
 use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
-    DeterministicGBDTError, GBDTTree, ValidatorFeatures,
+    DeterministicGBDTError, GBDTTree,
 };
 use std::collections::HashMap;
 use std::fs;

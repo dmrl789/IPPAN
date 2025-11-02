@@ -60,6 +60,12 @@ pub enum SourceType {
     Blockchain,
 }
 
+impl Default for ModelManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelManager {
     /// Create a new model manager
     pub fn new() -> Self {
@@ -363,6 +369,12 @@ impl ModelManager {
         }
 
         Ok(())
+    }
+}
+
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
