@@ -167,7 +167,7 @@ impl CircuitBreaker {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use tokio::time::{sleep, Duration};

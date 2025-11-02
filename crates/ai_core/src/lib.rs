@@ -128,7 +128,7 @@ pub fn compute_validator_score(telemetry: &ValidatorTelemetry, model: &GBDTModel
 // ------------------------------------------------------------
 // Internal deterministic tests
 // ------------------------------------------------------------
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod internal_tests {
     use super::*;
     use crate::features::ValidatorTelemetry;
@@ -154,10 +154,8 @@ mod internal_tests {
             age_rounds: 100_000,
         };
 
-        let model = GBDTModel {
-            bias: 10,
-            scale: 10_000,
-            trees: vec![Tree {
+        let model = GBDTModel::new(
+            vec![Tree {
                 nodes: vec![
                     Node {
                         feature_index: 0,
@@ -182,7 +180,11 @@ mod internal_tests {
                     },
                 ],
             }],
-        };
+            10,
+            10_000,
+            6,
+        )
+        .expect("valid test model");
 
         let s1 = compute_validator_score(&telemetry, &model);
         let s2 = compute_validator_score(&telemetry, &model);

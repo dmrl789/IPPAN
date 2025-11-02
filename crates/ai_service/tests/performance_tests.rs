@@ -2,7 +2,7 @@
 
 use ippan_ai_service::{
     AIService, AIServiceConfig, AnalyticsConfig, ContractAnalysisType, LLMConfig, LLMRequest,
-    MonitoringConfig, OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
+    OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
     TransactionOptimizationRequest,
 };
 use std::collections::HashMap;
@@ -214,7 +214,7 @@ async fn test_error_recovery() {
 #[tokio::test]
 async fn test_startup_time() {
     let config = create_test_config();
-    let service = AIService::new(config).expect("Failed to create service");
+    let mut service = AIService::new(config).expect("Failed to create service");
 
     let start = Instant::now();
     service.start().await.expect("Failed to start service");
@@ -265,18 +265,6 @@ fn create_test_config() -> AIServiceConfig {
             retention_days: 7,
             analysis_interval: 60,
             enable_predictive: true,
-        },
-        monitoring_config: MonitoringConfig {
-            enable_anomaly_detection: true,
-            alert_thresholds: {
-                let mut thresholds = HashMap::new();
-                thresholds.insert("memory_usage".to_string(), 80.0);
-                thresholds.insert("cpu_usage".to_string(), 90.0);
-                thresholds.insert("error_rate".to_string(), 5.0);
-                thresholds
-            },
-            monitoring_interval: 30,
-            enable_auto_remediation: false,
         },
     }
 }

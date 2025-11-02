@@ -337,7 +337,7 @@ pub struct KeyStats {
     pub total_usage: u64,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

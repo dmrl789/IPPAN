@@ -3,8 +3,6 @@
 use chrono::{DateTime, Utc};
 use ippan_ai_core::types::{ModelId, ModelMetadata};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
 /// Model registration status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RegistrationStatus {

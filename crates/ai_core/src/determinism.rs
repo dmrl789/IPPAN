@@ -41,6 +41,12 @@ pub struct DeterministicContext {
     pub parameters: HashMap<String, String>,
 }
 
+impl Default for DeterminismManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeterminismManager {
     /// Create new deterministic manager
     pub fn new() -> Self {

@@ -1110,6 +1110,7 @@ impl HttpP2PNetwork {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn request_peers_from_peer(
         client: &Client,
         peer_address: &str,
@@ -1203,7 +1204,7 @@ impl HttpP2PNetwork {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

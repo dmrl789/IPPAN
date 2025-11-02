@@ -3,7 +3,7 @@
 //! Ensures identical inference results across nodes using
 //! the same IPPAN Time median and HashTimer anchor.
 
-use ai_core::deterministic_gbdt::{
+use ippan_ai_core::deterministic_gbdt::{
     compute_scores, normalize_features, DecisionNode, DeterministicGBDT, GBDTTree,
 };
 use std::collections::HashMap;

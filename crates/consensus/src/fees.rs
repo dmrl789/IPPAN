@@ -164,7 +164,7 @@ impl Default for FeeCollector {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

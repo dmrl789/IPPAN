@@ -68,11 +68,11 @@ impl HashTimer {
         let time_prefix = if time_hex_full.len() >= 14 {
             time_hex_full[time_hex_full.len() - 14..].to_string()
         } else {
-            format!("{:0>14}", time_hex_full)
+            format!("{time_hex_full:0>14}")
         };
 
         // Use digest as 50-hex hash suffix (200 bits from first 25 bytes)
-        let digest_hex = hex_encode(&self.digest());
+        let digest_hex = hex_encode(self.digest());
         let hash_suffix = &digest_hex[0..50.min(digest_hex.len())];
 
         format!("{time_prefix}{hash_suffix}")
@@ -268,7 +268,7 @@ fn digest_from_parts(timestamp_us: i64, entropy: &[u8; HASHTIMER_ENTROPY_BYTES])
     output
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

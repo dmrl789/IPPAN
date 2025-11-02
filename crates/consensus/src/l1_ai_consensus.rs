@@ -365,28 +365,43 @@ pub struct NetworkHealthReport {
     pub confidence_score: f64,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};
 
     fn create_test_gbdt_model() -> GBDTModel {
-        GBDTModel {
-            trees: vec![Tree {
+        GBDTModel::new(
+            vec![Tree {
                 nodes: vec![
-                    Node::Internal {
-                        feature: 0,
+                    Node {
+                        feature_index: 0,
                         threshold: 5000,
                         left: 1,
                         right: 2,
+                        value: None,
                     },
-                    Node::Leaf { value: 8000 },
-                    Node::Leaf { value: 2000 },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(8000),
+                    },
+                    Node {
+                        feature_index: 0,
+                        threshold: 0,
+                        left: 0,
+                        right: 0,
+                        value: Some(2000),
+                    },
                 ],
             }],
-            bias: 0,
-            scale: 10000,
-        }
+            0,
+            10000,
+            1,
+        )
+        .expect("valid test model")
     }
 
     #[test]

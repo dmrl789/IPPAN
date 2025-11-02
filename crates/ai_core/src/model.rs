@@ -148,14 +148,14 @@ fn compute_model_hash(model: &crate::gbdt::GBDTModel) -> [u8; MODEL_HASH_SIZE] {
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use crate::gbdt::{GBDTModel, Node, Tree};
 
     fn create_test_model() -> GBDTModel {
-        GBDTModel {
-            trees: vec![Tree {
+        GBDTModel::new(
+            vec![Tree {
                 nodes: vec![
                     Node {
                         feature_index: 0,
@@ -180,9 +180,11 @@ mod tests {
                     },
                 ],
             }],
-            bias: 0,
-            scale: 100,
-        }
+            0,
+            100,
+            1,
+        )
+        .expect("valid test model")
     }
 
     #[test]

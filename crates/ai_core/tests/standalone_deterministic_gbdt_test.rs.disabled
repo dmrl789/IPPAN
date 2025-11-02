@@ -8,7 +8,7 @@ mod deterministic_gbdt {
     use serde::{Deserialize, Serialize};
     use sha3::{Digest, Sha3_256};
     use std::{collections::HashMap, fs, path::Path};
-    use tracing::{error, info, warn};
+    use tracing::{info, warn};
 
     /// Fixed-point arithmetic precision (1e-6)
     const FP_PRECISION: f64 = 1_000_000.0;
@@ -48,6 +48,7 @@ mod deterministic_gbdt {
 
     /// Error types for deterministic GBDT operations
     #[derive(Debug, thiserror::Error)]
+    #[allow(dead_code)]
     pub enum DeterministicGBDTError {
         #[error("Failed to load model from file: {0}")]
         ModelLoadError(String),
@@ -67,6 +68,7 @@ mod deterministic_gbdt {
 
     impl DeterministicGBDT {
         /// Load model from JSON file (shared by all validators)
+        #[allow(dead_code)]
         pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, DeterministicGBDTError> {
             let path = path.as_ref();
             let data = fs::read_to_string(path).map_err(|e| {
@@ -136,6 +138,7 @@ mod deterministic_gbdt {
         }
 
         /// Validate model structure
+        #[allow(dead_code)]
         fn validate(&self) -> Result<(), DeterministicGBDTError> {
             if self.trees.is_empty() {
                 return Err(DeterministicGBDTError::InvalidModelStructure(
@@ -285,8 +288,14 @@ fn test_ippan_time_normalization() {
     let features = deterministic_gbdt::normalize_features(&telemetry, ippan_time_median);
 
     assert_eq!(features.len(), 2);
-    assert_eq!(features[0].delta_time_us, -50); // 100_000 - 100_050
-    assert_eq!(features[1].delta_time_us, 30); // 100_080 - 100_050
+    // Check features by node_id since HashMap iteration order is not deterministic
+    for feature in &features {
+        if feature.node_id == "node1" {
+            assert_eq!(feature.delta_time_us, -50); // 100_000 - 100_050
+        } else if feature.node_id == "node2" {
+            assert_eq!(feature.delta_time_us, 30); // 100_080 - 100_050
+        }
+    }
 }
 
 #[test]

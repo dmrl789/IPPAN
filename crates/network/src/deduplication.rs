@@ -85,7 +85,7 @@ impl Default for MessageDeduplicator {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

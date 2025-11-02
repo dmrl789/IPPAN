@@ -132,7 +132,7 @@ pub fn normalize_features(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 

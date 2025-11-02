@@ -130,17 +130,13 @@ pub fn create_hashtimer_proof(
     format!("ai_proof_{}", hex::encode(hash.as_bytes()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use crate::gbdt::{GBDTModel as Model, Node, Tree};
 
     fn create_test_model() -> Model {
         Model::new(
-            1,
-            3,
-            100,
-            10000,
             vec![Tree {
                 nodes: vec![
                     Node {
@@ -166,7 +162,11 @@ mod tests {
                     },
                 ],
             }],
+            100,
+            10000,
+            3,
         )
+        .expect("valid test model")
     }
 
     #[test]

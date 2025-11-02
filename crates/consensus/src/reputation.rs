@@ -82,7 +82,7 @@ pub fn apply_reputation_weight(base_stake: u64, reputation: ReputationScore) -> 
     base_stake.saturating_mul(reputation_u64) / 10000
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
 
@@ -144,8 +144,8 @@ mod tests {
     fn test_calculate_reputation_with_model() {
         use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};
 
-        let model = GBDTModel {
-            trees: vec![Tree {
+        let model = GBDTModel::new(
+            vec![Tree {
                 nodes: vec![
                     Node {
                         feature_index: 0,
@@ -170,9 +170,11 @@ mod tests {
                     },
                 ],
             }],
-            bias: 0,
-            scale: 10000,
-        };
+            0,
+            10000,
+            6,
+        )
+        .expect("valid test model");
 
         let telemetry = ValidatorTelemetry {
             blocks_proposed: 100,

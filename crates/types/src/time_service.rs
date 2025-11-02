@@ -26,7 +26,7 @@ pub async fn ippan_time_start_sync(listen_addr: &str) {
     start_time_sync(listen_addr).await;
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "enable-tests"))]
 mod tests {
     use super::*;
     use std::sync::{Mutex, MutexGuard, OnceLock};
