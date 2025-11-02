@@ -11,11 +11,14 @@
 //! - Security hardening against adversarial inputs
 //! - Comprehensive logging and observability
 
+use crate::model::ModelPackage;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    fs,
+    path::Path,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 use tracing::{debug, error, info, instrument, warn};
 
@@ -216,20 +219,45 @@ impl Default for ModelMetadata {
 
 impl GBDTModel {
     pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
-        let data = fs::read_to_string(path.as_ref())
-            .map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
-        let mut model: Self = serde_json::from_str(&data)
-            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        let path_ref = path.as_ref();
+        let contents =
+            fs::read_to_string(path_ref).map_err(|err| GBDTError::ModelValidationFailed {
+                reason: format!("Failed to read model file {}: {}", path_ref.display(), err),
+            })?;
+
+        let mut model = match serde_json::from_str::<ModelPackage>(&contents) {
+            Ok(package) => package.model,
+            Err(_) => serde_json::from_str::<Self>(&contents).map_err(|err| {
+                GBDTError::ModelValidationFailed {
+                    reason: format!("Failed to parse model JSON {}: {}", path_ref.display(), err),
+                }
+            })?,
+        };
+
         model.validate()?;
         model.reset_runtime_state();
         Ok(model)
     }
 
     pub fn from_binary_file<P: AsRef<Path>>(path: P) -> Result<Self, GBDTError> {
-        let data = fs::read(path.as_ref())
-            .map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
-        let mut model: Self = bincode::deserialize(&data)
-            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        let path_ref = path.as_ref();
+        let bytes = fs::read(path_ref).map_err(|err| GBDTError::ModelValidationFailed {
+            reason: format!("Failed to read model file {}: {}", path_ref.display(), err),
+        })?;
+
+        let mut model = match bincode::deserialize::<ModelPackage>(&bytes) {
+            Ok(package) => package.model,
+            Err(_) => bincode::deserialize::<Self>(&bytes).map_err(|err| {
+                GBDTError::ModelValidationFailed {
+                    reason: format!(
+                        "Failed to parse model binary {}: {}",
+                        path_ref.display(),
+                        err
+                    ),
+                }
+            })?,
+        };
+
         model.validate()?;
         model.reset_runtime_state();
         Ok(model)
@@ -308,7 +336,7 @@ impl GBDTModel {
         }
 
         debug!(
-            "GBDT evaluation completed in {}μs, value: {}, confidence: {:.3}",
+            "GBDT evaluation completed in {}?s, value: {}, confidence: {:.3}",
             result.evaluation_time_us, result.value, result.confidence
         );
 
@@ -529,8 +557,8 @@ impl GBDTModel {
     }
 
     fn reset_runtime_state(&mut self) {
-        self.metrics = GBDTMetrics::default();
-        self.evaluation_cache.clear();
+        self.reset_metrics();
+        self.clear_cache();
     }
 }
 

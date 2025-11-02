@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::errors::*;
 use crate::operations::*;
 use crate::storage::WalletStorage;
+use crate::WalletBackup;
 
 /// IPPAN Multi-Address Wallet CLI
 #[derive(Parser)]
@@ -111,7 +112,7 @@ pub enum Commands {
 pub struct CliApp {
     wallet_manager: Option<WalletManager>,
     wallet_dir: PathBuf,
-    verbose: bool,
+    _verbose: bool,
 }
 
 impl CliApp {
@@ -119,7 +120,7 @@ impl CliApp {
         Self {
             wallet_manager: None,
             wallet_dir,
-            verbose,
+            _verbose: verbose,
         }
     }
 
@@ -212,11 +213,11 @@ impl CliApp {
             .prompt_password_optional("Enter wallet password (or press Enter for no password): ")?;
 
         if count == 1 {
-            let address = wallet.generate_address(label, password.as_deref())?;
+            let address = wallet.generate_address(label.clone(), password.as_deref())?;
             println!("✅ Generated new address:");
             println!("   Address: {}", address);
-            if let Some(label) = label {
-                println!("   Label: {}", label);
+            if let Some(label_value) = label.as_ref() {
+                println!("   Label: {}", label_value);
             }
         } else {
             let label_prefix = label.unwrap_or_else(|| "Address".to_string());
@@ -484,6 +485,6 @@ impl CliApp {
 /// Main CLI entry point
 pub async fn run_cli() -> Result<()> {
     let cli = Cli::parse();
-    let mut app = CliApp::new(cli.wallet_dir, cli.verbose);
+    let mut app = CliApp::new(cli.wallet_dir.clone(), cli.verbose);
     app.run(cli).await
 }

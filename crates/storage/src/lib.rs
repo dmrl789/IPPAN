@@ -401,9 +401,9 @@ impl Storage for SledStorage {
         validator_id: &[u8; 32],
         telemetry: &ValidatorTelemetry,
     ) -> Result<()> {
-        let data = serde_json::to_vec(telemetry)?;
-        self.validator_telemetry
-            .insert(&validator_id[..], data)?;
+        let key = &validator_id[..];
+        let value = serde_json::to_vec(telemetry)?;
+        self.validator_telemetry.insert(key, value)?;
         Ok(())
     }
 
@@ -419,17 +419,15 @@ impl Storage for SledStorage {
     }
 
     fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
-        let mut telemetry_map = HashMap::new();
-        for entry in self.validator_telemetry.iter() {
-            let (key, value) = entry?;
-            if key.len() == 32 {
-                let mut validator_id = [0u8; 32];
-                validator_id.copy_from_slice(key.as_ref());
-                let telemetry: ValidatorTelemetry = serde_json::from_slice(value.as_ref())?;
-                telemetry_map.insert(validator_id, telemetry);
-            }
+        let mut telemetry = HashMap::new();
+        for record in self.validator_telemetry.iter() {
+            let (key, value) = record?;
+            let mut validator_id = [0u8; 32];
+            validator_id.copy_from_slice(&key);
+            let telemetry_record: ValidatorTelemetry = serde_json::from_slice(&value)?;
+            telemetry.insert(validator_id, telemetry_record);
         }
-        Ok(telemetry_map)
+        Ok(telemetry)
     }
 }
 

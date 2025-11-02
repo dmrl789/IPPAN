@@ -7,17 +7,10 @@ use crate::crypto::*;
 use crate::errors::*;
 use crate::storage::WalletStorage;
 use crate::types::*;
-use ippan_types::transaction::TransactionVisibility;
-use ippan_types::{Address, Amount, Transaction};
-
-/// Calculate transaction fee based on amount and data size  
-/// Base fee: 0.01% of amount (1 basis point)  
-/// Data fee: 1 atomic unit per byte
-fn calculate_transaction_fee(amount: u64, data_size: usize) -> u64 {
-    let base_fee = amount / 10_000; // 0.01% of amount
-    let data_fee = data_size as u64; // 1 atomic unit per byte
-    base_fee.saturating_add(data_fee).max(1) // Minimum fee of 1
-}
+use chrono::TimeZone;
+use ippan_types::address::{decode_address, encode_address};
+use ippan_types::{Amount, Transaction};
+use std::convert::TryFrom;
 
 /// Main wallet operations manager
 pub struct WalletManager {
@@ -114,7 +107,7 @@ impl WalletManager {
     }
 
     /// Get all addresses
-    pub fn list_addresses(&self) -> Result<Vec<&WalletAddress>> {
+    pub fn list_addresses(&self) -> Result<Vec<WalletAddress>> {
         let state = self.storage.get_wallet_state()?;
         Ok(state.list_addresses())
     }
@@ -220,14 +213,23 @@ impl WalletManager {
             wallet_address.nonce
         };
 
-        let from_bytes = decode_address(from_address)?;
-        let to_bytes = decode_address(to_address)?;
-        let mut transaction =
-            Transaction::new(from_bytes, to_bytes, Amount::from_atomic(amount), nonce);
+        let from_bytes = decode_address(from_address)
+            .map_err(|e| WalletError::InvalidAddress(format!("Invalid from address: {}", e)))?;
+        let to_bytes = decode_address(to_address)
+            .map_err(|e| WalletError::InvalidAddress(format!("Invalid to address: {}", e)))?;
+        let mut transaction = Transaction::new(
+            from_bytes,
+            to_bytes,
+            Amount::from_atomic(amount as u128),
+            nonce,
+        );
+
+        transaction
+            .sign(&private_key_bytes)
+            .map_err(WalletError::TransactionError)?;
 
         // Deterministic, mempool-aligned fee
         let estimated_fee = self.estimate_fee(&transaction);
-        transaction.sign(&private_key_bytes)?;
 
         let tx_hash = if let Some(ref rpc) = self.rpc_client {
             rpc.send_transaction(&transaction)?
@@ -304,19 +306,25 @@ impl WalletManager {
             let wallet_transactions = transactions
                 .into_iter()
                 .map(|tx| {
-                    let fee = calculate_transaction_fee(tx.amount.atomic(), tx.data.len());
+                    let fee = self.estimate_fee(&tx);
+                    let amount_atomic = tx.amount.atomic();
+                    let amount = u64::try_from(amount_atomic).unwrap_or(u64::MAX);
+                    let micros = tx.timestamp.0;
+                    let seconds = (micros / 1_000_000) as i64;
+                    let nanos = ((micros % 1_000_000) * 1_000) as u32;
+                    let timestamp = chrono::Utc
+                        .timestamp_opt(seconds, nanos)
+                        .single()
+                        .unwrap_or_else(|| chrono::Utc::now());
+
                     WalletTransaction {
                         id: uuid::Uuid::new_v4(),
                         tx_hash: hex::encode(tx.hash()),
                         from_address: Some(encode_address(&tx.from)),
                         to_address: Some(encode_address(&tx.to)),
-                        amount: tx.amount.atomic(),
+                        amount,
                         fee,
-                        timestamp: chrono::DateTime::from_timestamp(
-                            tx.timestamp.0 as i64 / 1_000_000,
-                            0,
-                        )
-                        .unwrap_or_else(|| chrono::Utc::now()),
+                        timestamp,
                         status: TransactionStatus::Confirmed,
                         label: None,
                     }
