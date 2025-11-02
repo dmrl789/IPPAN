@@ -310,13 +310,19 @@ mod tests {
     fn create_test_metadata() -> ModelMetadata {
         ModelMetadata {
             id: create_test_model_id(),
+            name: "Test Model".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Test model".to_string(),
+            author: "Test Author".to_string(),
+            license: "MIT".to_string(),
+            tags: vec!["test".to_string()],
+            created_at: 1234567890,
+            updated_at: 1234567890,
             architecture: "GBDT".to_string(),
             input_shape: vec![10],
             output_shape: vec![1],
-            parameter_count: 1000,
             size_bytes: 10000,
-            created_at: 1234567890,
-            description: Some("Test model".to_string()),
+            parameter_count: 1000,
         }
     }
 
