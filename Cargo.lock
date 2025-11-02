@@ -2876,6 +2876,7 @@ dependencies = [
  "ippan-consensus",
  "ippan-mempool",
  "ippan-p2p",
+ "ippan-security",
  "ippan-storage",
  "ippan-types",
  "local-ip-address",

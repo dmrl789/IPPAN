@@ -162,7 +162,10 @@ impl SecurityManager {
     /// Record a successful request
     pub async fn record_success(&self, ip: IpAddr, endpoint: &str) -> Result<()> {
         // Reset failed attempts on success
-        self.failed_attempts.write().remove(&ip);
+        {
+            let mut attempts = self.failed_attempts.write();
+            attempts.remove(&ip);
+        }
 
         self.circuit_breaker.record_success().await;
 
