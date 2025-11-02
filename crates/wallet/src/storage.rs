@@ -102,9 +102,7 @@ impl WalletStorage {
     /// Get wallet state (read-only)
     pub fn get_wallet_state(&self) -> Result<WalletState> {
         let state = self.wallet_state.read();
-        state
-            .clone()
-            .ok_or_else(|| WalletError::WalletNotInitialized)
+        state.clone().ok_or(WalletError::WalletNotInitialized)
     }
 
     /// Get mutable wallet state

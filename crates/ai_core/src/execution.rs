@@ -27,6 +27,12 @@ pub struct ExecutionStats {
     pub total_memory_usage: u64,
 }
 
+impl Default for ExecutionEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExecutionEngine {
     /// Create new execution engine
     pub fn new() -> Self {

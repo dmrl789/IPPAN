@@ -38,6 +38,12 @@ pub struct PedersenCommitment {
     modulus: [u8; 32],
 }
 
+impl Default for PedersenCommitment {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PedersenCommitment {
     /// Create a new Pedersen commitment scheme
     pub fn new() -> Self {
@@ -151,6 +157,12 @@ impl PedersenCommitment {
 
 /// Hash commitment implementation
 pub struct HashCommitment;
+
+impl Default for HashCommitment {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl HashCommitment {
     /// Create a new hash commitment scheme

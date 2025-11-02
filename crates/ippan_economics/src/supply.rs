@@ -112,11 +112,7 @@ impl SupplyTracker {
         expected_supply: RewardAmount,
         tolerance: RewardAmount,
     ) -> Result<(), SupplyError> {
-        let diff = if self.total_supply > expected_supply {
-            self.total_supply - expected_supply
-        } else {
-            expected_supply - self.total_supply
-        };
+        let diff = self.total_supply.abs_diff(expected_supply);
 
         if diff > tolerance {
             error!(

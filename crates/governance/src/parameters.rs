@@ -1,7 +1,6 @@
 use anyhow::Result;
 use ippan_economics::EmissionParams;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::HashMap;
 
 /// Governance and Economics parameter management

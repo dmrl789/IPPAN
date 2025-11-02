@@ -15,6 +15,7 @@ pub struct L1HandleAnchorStorage {
     /// Handle hash to ownership anchor mapping
     anchors: Arc<RwLock<HashMap<[u8; 32], HandleOwnershipAnchor>>>,
     /// Owner to handle hashes mapping (for reverse lookup)
+    #[allow(clippy::type_complexity)]
     owner_to_handles: Arc<RwLock<HashMap<[u8; 32], Vec<[u8; 32]>>>>,
 }
 
@@ -45,7 +46,7 @@ impl L1HandleAnchorStorage {
             let mut owner_map = self.owner_to_handles.write();
             owner_map
                 .entry(anchor.owner)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(anchor.handle_hash);
         }
 
