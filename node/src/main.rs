@@ -1,19 +1,23 @@
 use anyhow::Result;
 use clap::{Arg, ArgAction, Command};
 use config::Config;
+use hex::encode as hex_encode;
 use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
-use ippan_p2p::{HttpP2PNetwork, P2PConfig};
+use ippan_mempool::Mempool;
+use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};
 use ippan_rpc::server::ConsensusHandle;
 use ippan_rpc::{start_server, AppState, L2Config};
-use ippan_storage::SledStorage;
-use ippan_types::{ippan_time_init, ippan_time_now, HashTimer, IppanTimeMicros};
+use ippan_storage::{SledStorage, Storage};
+use ippan_types::{
+    Block, HashTimer, IppanTimeMicros, Transaction, ippan_time_init, ippan_time_now,
+};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Application configuration
 #[derive(Debug, Clone)]
@@ -335,6 +339,8 @@ async fn main() -> Result<()> {
         config.p2p_host, config.p2p_port
     );
 
+    let mut incoming_events = p2p_network.take_incoming_events();
+
     // Get peer ID before moving p2p_network
     let peer_id = p2p_network.get_local_peer_id();
 
@@ -350,6 +356,29 @@ async fn main() -> Result<()> {
     let p2p_network_for_shutdown = p2p_network_arc.clone();
     let consensus_for_shutdown = consensus.clone();
     peer_count.store(p2p_network_arc.get_peer_count(), Ordering::Relaxed);
+
+    let consensus_for_events = consensus_handle.clone();
+    if let Some(mut events) = incoming_events.take() {
+        let network_for_events = p2p_network_arc.clone();
+        let storage_for_events: Arc<dyn Storage + Send + Sync> = storage.clone();
+        let mempool_for_events = mempool.clone();
+
+        tokio::spawn(async move {
+            while let Some(event) = events.recv().await {
+                if let Err(err) = handle_p2p_event(
+                    event,
+                    storage_for_events.clone(),
+                    mempool_for_events.clone(),
+                    Some(consensus_for_events.clone()),
+                    network_for_events.clone(),
+                )
+                .await
+                {
+                    warn!("Failed to handle inbound P2P event: {}", err);
+                }
+            }
+        });
+    }
 
     let l2_config = L2Config {
         max_commit_size: config.l2_max_commit_size,
@@ -455,6 +484,85 @@ async fn main() -> Result<()> {
     storage.flush()?;
 
     info!("IPPAN node shutdown complete");
+    Ok(())
+}
+
+async fn handle_p2p_event(
+    event: NetworkEvent,
+    storage: Arc<dyn Storage + Send + Sync>,
+    mempool: Arc<Mempool>,
+    consensus: Option<ConsensusHandle>,
+    network: Arc<HttpP2PNetwork>,
+) -> Result<()> {
+    match event {
+        NetworkEvent::Block { block, .. } | NetworkEvent::BlockResponse { block, .. } => {
+            persist_block_from_peer(&storage, &mempool, &block)?;
+        }
+        NetworkEvent::Transaction { transaction, .. } => {
+            persist_transaction_from_peer(&storage, &mempool, consensus, &transaction)?;
+        }
+        NetworkEvent::PeerDiscovery { peers, .. } => {
+            for peer in peers {
+                if let Err(err) = network.add_peer(peer.clone()).await {
+                    warn!("Failed to add discovered peer {}: {}", peer, err);
+                }
+            }
+        }
+        NetworkEvent::PeerInfo { .. } | NetworkEvent::BlockRequest { .. } => {
+            // Already handled internally by HttpP2PNetwork; nothing extra to do here.
+        }
+    }
+
+    Ok(())
+}
+
+fn persist_block_from_peer(
+    storage: &Arc<dyn Storage + Send + Sync>,
+    mempool: &Arc<Mempool>,
+    block: &Block,
+) -> Result<()> {
+    storage.store_block(block.clone())?;
+
+    for tx in &block.transactions {
+        let hash_hex = hex_encode(tx.hash());
+        if let Err(err) = mempool.remove_transaction(&hash_hex) {
+            debug!(
+                "Failed to prune transaction {} after importing block: {}",
+                hash_hex, err
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn persist_transaction_from_peer(
+    storage: &Arc<dyn Storage + Send + Sync>,
+    mempool: &Arc<Mempool>,
+    consensus: Option<ConsensusHandle>,
+    tx: &Transaction,
+) -> Result<()> {
+    storage.store_transaction(tx.clone())?;
+
+    match mempool.add_transaction(tx.clone()) {
+        Ok(true) => {}
+        Ok(false) => debug!(
+            "Duplicate transaction from peer ignored: {}",
+            hex_encode(tx.hash())
+        ),
+        Err(err) => return Err(err),
+    }
+
+    if let Some(handle) = consensus {
+        if let Err(err) = handle.submit_transaction(tx.clone()) {
+            warn!(
+                "Consensus rejected inbound transaction {}: {}",
+                hex_encode(tx.hash()),
+                err
+            );
+        }
+    }
+
     Ok(())
 }
 

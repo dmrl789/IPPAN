@@ -57,11 +57,11 @@ impl InputValidator {
         let mut patterns = Vec::new();
         // Common XSS vectors
         patterns.push(Regex::new(r"(?i)<script").unwrap());
-        patterns.push(Regex::new(r"(?i)onerror\\s*=").unwrap());
+        patterns.push(Regex::new(r"(?i)onerror\s*=").unwrap());
         // Common SQL injection fragments
-        patterns.push(Regex::new(r"(?i)union\\s+select").unwrap());
-        patterns.push(Regex::new(r"(?i)drop\\s+table").unwrap());
-        patterns.push(Regex::new(r"(?i)--\\s").unwrap());
+        patterns.push(Regex::new(r"(?i)union\s+select").unwrap());
+        patterns.push(Regex::new(r"(?i)drop\s+table").unwrap());
+        patterns.push(Regex::new(r"(?i)--\s").unwrap());
 
         Self {
             blocklist_patterns: patterns,
