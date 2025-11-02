@@ -11,10 +11,12 @@ pub mod emission;
 pub mod parameters;
 pub mod types;
 
-pub use distribution::*;
-pub use emission::*;
-pub use parameters::*;
-pub use types::*;
+// Re-export commonly used types explicitly
+pub use parameters::{EconomicsParameterManager, EconomicsParameterProposal};
+pub use types::{
+    DistributionResult, EconomicsParams, EmissionResult, MicroIPN, Participation, ParticipationSet,
+    Payouts, Role, RoundId, ValidatorId, MICRO_PER_IPN,
+};
 
 /// Module version for API introspection
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
