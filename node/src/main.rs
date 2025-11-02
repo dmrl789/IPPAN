@@ -7,6 +7,7 @@ use ippan_mempool::Mempool;
 use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};
 use ippan_rpc::server::ConsensusHandle;
 use ippan_rpc::{start_server, AppState, L2Config};
+use ippan_security::{SecurityConfig as RpcSecurityConfig, SecurityManager as RpcSecurityManager};
 use ippan_storage::{SledStorage, Storage};
 use ippan_types::{
     ippan_time_init, ippan_time_now, Block, HashTimer, IppanTimeMicros, Transaction,
@@ -60,6 +61,9 @@ struct AppConfig {
 
     // Unified UI
     unified_ui_dist_dir: Option<PathBuf>,
+
+    // Security
+    enable_security: bool,
 
     // Logging
     log_level: String,
@@ -210,6 +214,7 @@ impl AppConfig {
             p2p_enable_upnp: config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false),
             p2p_external_ip_services: external_ip_services,
             unified_ui_dist_dir,
+            enable_security: config.get_bool("ENABLE_SECURITY").unwrap_or(true),
             log_level: config
                 .get_string("LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
@@ -388,6 +393,22 @@ async fn main() -> Result<()> {
         max_l2_count: config.l2_max_l2_count,
     };
 
+    let security = if config.enable_security {
+        match RpcSecurityManager::new(RpcSecurityConfig::default()) {
+            Ok(manager) => {
+                info!("RPC security manager enabled");
+                Some(Arc::new(manager))
+            }
+            Err(err) => {
+                warn!("Failed to initialise RPC security manager: {}", err);
+                None
+            }
+        }
+    } else {
+        info!("RPC security manager disabled by configuration");
+        None
+    };
+
     let app_state = AppState {
         storage: storage.clone(),
         start_time,
@@ -400,6 +421,7 @@ async fn main() -> Result<()> {
         mempool: mempool.clone(),
         unified_ui_dist: config.unified_ui_dist_dir.clone(),
         req_count: Arc::new(AtomicUsize::new(0)),
+        security,
     };
 
     let rpc_host = &config.rpc_host;

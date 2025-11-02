@@ -11,6 +11,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::{ConsensusState, PoAConsensus};
 use ippan_mempool::Mempool;
+use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, MemoryStorage, Storage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
@@ -49,6 +50,7 @@ pub struct AppState {
     pub mempool: Arc<Mempool>,
     pub unified_ui_dist: Option<PathBuf>,
     pub req_count: Arc<AtomicUsize>,
+    pub security: Option<Arc<SecurityManager>>,
 }
 
 /// Consensus handle abstraction
@@ -167,6 +169,86 @@ fn build_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+async fn guard_request(
+    state: &Arc<AppState>,
+    addr: &SocketAddr,
+    endpoint: &str,
+) -> Result<(), SecurityError> {
+    if let Some(security) = &state.security {
+        security.check_request(addr.ip(), endpoint).await?;
+    }
+
+    Ok(())
+}
+
+async fn record_security_success(state: &Arc<AppState>, addr: &SocketAddr, endpoint: &str) {
+    if let Some(security) = &state.security {
+        if let Err(err) = security.record_success(addr.ip(), endpoint).await {
+            warn!(
+                "Failed to record security success for {} from {}: {}",
+                endpoint, addr, err
+            );
+        }
+    }
+}
+
+async fn record_security_failure(
+    state: &Arc<AppState>,
+    addr: &SocketAddr,
+    endpoint: &str,
+    reason: &str,
+) {
+    if let Some(security) = &state.security {
+        if let Err(err) = security
+            .record_failed_attempt(addr.ip(), endpoint, reason)
+            .await
+        {
+            warn!(
+                "Failed to record security failed attempt for {} from {}: {}",
+                endpoint, addr, err
+            );
+        }
+
+        if let Err(err) = security.record_failure(addr.ip(), endpoint, reason).await {
+            warn!(
+                "Failed to record security failure for {} from {}: {}",
+                endpoint, addr, err
+            );
+        }
+    }
+}
+
+fn map_security_error(err: &SecurityError) -> (StatusCode, &'static str) {
+    match err {
+        SecurityError::IpBlocked => (StatusCode::FORBIDDEN, "IP address blocked"),
+        SecurityError::IpNotWhitelisted => (StatusCode::FORBIDDEN, "IP address not permitted"),
+        SecurityError::RateLimitExceeded => (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded"),
+        SecurityError::CircuitBreakerOpen => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Service temporarily unavailable",
+        ),
+        SecurityError::ValidationFailed(_) => (StatusCode::BAD_REQUEST, "Invalid request payload"),
+        SecurityError::AuditFailed(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "Security audit failure")
+        }
+    }
+}
+
+async fn deny_request(
+    state: &Arc<AppState>,
+    addr: &SocketAddr,
+    endpoint: &str,
+    err: SecurityError,
+) -> (StatusCode, &'static str) {
+    let reason = err.to_string();
+    warn!(
+        "Security rejected request {} from {}: {}",
+        endpoint, addr, reason
+    );
+    record_security_failure(state, addr, endpoint, &reason).await;
+    map_security_error(&err)
+}
+
 // -----------------------------------------------------------------------------
 // Handlers
 // -----------------------------------------------------------------------------
@@ -203,28 +285,63 @@ async fn handle_metrics() -> (StatusCode, &'static str) {
 
 async fn handle_submit_tx(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(tx): Json<Transaction>,
 ) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/tx").await {
+        return deny_request(&state, &addr, "/tx", err).await;
+    }
+
     if let Some(consensus) = &state.consensus {
         if let Err(e) = consensus.submit_transaction(tx.clone()) {
             warn!("Failed to enqueue transaction: {}", e);
+            record_security_failure(&state, &addr, "/tx", &e.to_string()).await;
             return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to submit tx");
         }
+        record_security_success(&state, &addr, "/tx").await;
         (StatusCode::OK, "Transaction accepted")
     } else {
+        record_security_failure(&state, &addr, "/tx", "Consensus not active").await;
         (StatusCode::SERVICE_UNAVAILABLE, "Consensus not active")
     }
 }
 
-async fn handle_get_transaction(AxumPath(_hash): AxumPath<String>) -> (StatusCode, &'static str) {
+async fn handle_get_transaction(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(_hash): AxumPath<String>,
+) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/tx/:hash").await {
+        return deny_request(&state, &addr, "/tx/:hash", err).await;
+    }
+
+    record_security_success(&state, &addr, "/tx/:hash").await;
     (StatusCode::NOT_FOUND, "Transaction not found")
 }
 
-async fn handle_get_block(AxumPath(_id): AxumPath<String>) -> (StatusCode, &'static str) {
+async fn handle_get_block(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(_id): AxumPath<String>,
+) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/block/:id").await {
+        return deny_request(&state, &addr, "/block/:id", err).await;
+    }
+
+    record_security_success(&state, &addr, "/block/:id").await;
     (StatusCode::NOT_FOUND, "Block not found")
 }
 
-async fn handle_get_account(AxumPath(_addr): AxumPath<String>) -> (StatusCode, &'static str) {
+async fn handle_get_account(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(_addr): AxumPath<String>,
+) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/account/:address").await {
+        return deny_request(&state, &addr, "/account/:address", err).await;
+    }
+
+    record_security_success(&state, &addr, "/account/:address").await;
     (StatusCode::NOT_FOUND, "Account not found")
 }
 
@@ -249,14 +366,22 @@ async fn handle_p2p_blocks(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(message): Json<NetworkMessage>,
 ) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/p2p/blocks").await {
+        return deny_request(&state, &addr, "/p2p/blocks", err).await;
+    }
+
     let from = resolve_peer_address(&state, &addr, &message);
     forward_to_network(&state, &from, message.clone()).await;
 
     match message {
         NetworkMessage::Block(block) => match ingest_block_from_peer(&state, &block) {
-            Ok(()) => (StatusCode::OK, "Block accepted"),
+            Ok(()) => {
+                record_security_success(&state, &addr, "/p2p/blocks").await;
+                (StatusCode::OK, "Block accepted")
+            }
             Err(err) => {
                 error!("Failed to persist block from {}: {}", from, err);
+                record_security_failure(&state, &addr, "/p2p/blocks", &err.to_string()).await;
                 (StatusCode::INTERNAL_SERVER_ERROR, "Failed to persist block")
             }
         },
@@ -265,6 +390,8 @@ async fn handle_p2p_blocks(
                 "Unexpected payload on /p2p/blocks from {}: {:?}",
                 from, other
             );
+            let reason = format!("Unexpected payload: {:?}", other);
+            record_security_failure(&state, &addr, "/p2p/blocks", &reason).await;
             (StatusCode::BAD_REQUEST, "Expected block message")
         }
     }
@@ -275,14 +402,23 @@ async fn handle_p2p_block_response(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(message): Json<NetworkMessage>,
 ) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/p2p/block-response").await {
+        return deny_request(&state, &addr, "/p2p/block-response", err).await;
+    }
+
     let from = resolve_peer_address(&state, &addr, &message);
     forward_to_network(&state, &from, message.clone()).await;
 
     match message {
         NetworkMessage::BlockResponse(block) => match ingest_block_from_peer(&state, &block) {
-            Ok(()) => (StatusCode::OK, "Block response accepted"),
+            Ok(()) => {
+                record_security_success(&state, &addr, "/p2p/block-response").await;
+                (StatusCode::OK, "Block response accepted")
+            }
             Err(err) => {
                 error!("Failed to handle block response from {}: {}", from, err);
+                record_security_failure(&state, &addr, "/p2p/block-response", &err.to_string())
+                    .await;
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to handle block response",
@@ -294,6 +430,8 @@ async fn handle_p2p_block_response(
                 "Unexpected payload on /p2p/block-response from {}: {:?}",
                 from, other
             );
+            let reason = format!("Unexpected payload: {:?}", other);
+            record_security_failure(&state, &addr, "/p2p/block-response", &reason).await;
             (StatusCode::BAD_REQUEST, "Expected block response message")
         }
     }
@@ -304,14 +442,22 @@ async fn handle_p2p_transactions(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(message): Json<NetworkMessage>,
 ) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/p2p/transactions").await {
+        return deny_request(&state, &addr, "/p2p/transactions", err).await;
+    }
+
     let from = resolve_peer_address(&state, &addr, &message);
     forward_to_network(&state, &from, message.clone()).await;
 
     match message {
         NetworkMessage::Transaction(tx) => match ingest_transaction_from_peer(&state, &tx) {
-            Ok(()) => (StatusCode::OK, "Transaction accepted"),
+            Ok(()) => {
+                record_security_success(&state, &addr, "/p2p/transactions").await;
+                (StatusCode::OK, "Transaction accepted")
+            }
             Err(err) => {
                 error!("Failed to ingest transaction from {}: {}", from, err);
+                record_security_failure(&state, &addr, "/p2p/transactions", &err.to_string()).await;
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to ingest transaction",
@@ -323,6 +469,8 @@ async fn handle_p2p_transactions(
                 "Unexpected payload on /p2p/transactions from {}: {:?}",
                 from, other
             );
+            let reason = format!("Unexpected payload: {:?}", other);
+            record_security_failure(&state, &addr, "/p2p/transactions", &reason).await;
             (StatusCode::BAD_REQUEST, "Expected transaction message")
         }
     }
@@ -333,16 +481,25 @@ async fn handle_p2p_peer_info(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(message): Json<NetworkMessage>,
 ) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/p2p/peer-info").await {
+        return deny_request(&state, &addr, "/p2p/peer-info", err).await;
+    }
+
     let from = resolve_peer_address(&state, &addr, &message);
     forward_to_network(&state, &from, message.clone()).await;
 
     match message {
-        NetworkMessage::PeerInfo { .. } => (StatusCode::OK, "Peer info accepted"),
+        NetworkMessage::PeerInfo { .. } => {
+            record_security_success(&state, &addr, "/p2p/peer-info").await;
+            (StatusCode::OK, "Peer info accepted")
+        }
         other => {
             warn!(
                 "Unexpected payload on /p2p/peer-info from {}: {:?}",
                 from, other
             );
+            let reason = format!("Unexpected payload: {:?}", other);
+            record_security_failure(&state, &addr, "/p2p/peer-info", &reason).await;
             (StatusCode::BAD_REQUEST, "Expected peer info message")
         }
     }
@@ -353,16 +510,25 @@ async fn handle_p2p_peer_discovery(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(message): Json<NetworkMessage>,
 ) -> (StatusCode, &'static str) {
+    if let Err(err) = guard_request(&state, &addr, "/p2p/peer-discovery").await {
+        return deny_request(&state, &addr, "/p2p/peer-discovery", err).await;
+    }
+
     let from = resolve_peer_address(&state, &addr, &message);
     forward_to_network(&state, &from, message.clone()).await;
 
     match message {
-        NetworkMessage::PeerDiscovery { .. } => (StatusCode::OK, "Peer discovery accepted"),
+        NetworkMessage::PeerDiscovery { .. } => {
+            record_security_success(&state, &addr, "/p2p/peer-discovery").await;
+            (StatusCode::OK, "Peer discovery accepted")
+        }
         other => {
             warn!(
                 "Unexpected payload on /p2p/peer-discovery from {}: {:?}",
                 from, other
             );
+            let reason = format!("Unexpected payload: {:?}", other);
+            record_security_failure(&state, &addr, "/p2p/peer-discovery", &reason).await;
             (StatusCode::BAD_REQUEST, "Expected peer discovery message")
         }
     }
@@ -373,22 +539,33 @@ async fn handle_p2p_block_request(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(message): Json<NetworkMessage>,
 ) -> Result<Json<NetworkMessage>, StatusCode> {
+    if let Err(err) = guard_request(&state, &addr, "/p2p/block-request").await {
+        let (status, _) = deny_request(&state, &addr, "/p2p/block-request", err).await;
+        return Err(status);
+    }
+
     let from = resolve_peer_address(&state, &addr, &message);
     forward_to_network(&state, &from, message.clone()).await;
 
     match message {
         NetworkMessage::BlockRequest { hash } => match state.storage.get_block(&hash) {
-            Ok(Some(block)) => Ok(Json(NetworkMessage::BlockResponse(block))),
+            Ok(Some(block)) => {
+                record_security_success(&state, &addr, "/p2p/block-request").await;
+                Ok(Json(NetworkMessage::BlockResponse(block)))
+            }
             Ok(None) => {
                 debug!(
                     "Block request from {} not found: {}",
                     from,
                     hex_encode(hash)
                 );
+                record_security_success(&state, &addr, "/p2p/block-request").await;
                 Err(StatusCode::NOT_FOUND)
             }
             Err(err) => {
                 error!("Failed to serve block request from {}: {}", from, err);
+                record_security_failure(&state, &addr, "/p2p/block-request", &err.to_string())
+                    .await;
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
             }
         },
@@ -397,6 +574,8 @@ async fn handle_p2p_block_request(
                 "Unexpected payload on /p2p/block-request from {}: {:?}",
                 from, other
             );
+            let reason = format!("Unexpected payload: {:?}", other);
+            record_security_failure(&state, &addr, "/p2p/block-request", &reason).await;
             Err(StatusCode::BAD_REQUEST)
         }
     }
@@ -533,6 +712,7 @@ mod tests {
             mempool: Arc::new(Mempool::new(1000)),
             unified_ui_dist: None,
             req_count: Arc::new(AtomicUsize::new(0)),
+            security: None,
         });
 
         let response = handle_health(State(app_state)).await;
