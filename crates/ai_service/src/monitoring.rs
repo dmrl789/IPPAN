@@ -457,7 +457,7 @@ impl MonitoringService {
             .entry(metric_name.clone())
             .or_insert_with(Vec::new)
             .push(value);
-        
+
         // Also record in the underlying monitor
         if metric_name == "memory_usage" {
             self.monitor.record_memory_usage(value as u64);
@@ -521,17 +521,27 @@ impl MonitoringService {
             alert.status = AlertStatus::Acknowledged;
             Ok(())
         } else {
-            Err(AIServiceError::ValidationError(format!("Alert {} not found", alert_id)))
+            Err(AIServiceError::ValidationError(format!(
+                "Alert {} not found",
+                alert_id
+            )))
         }
     }
 
-    pub fn resolve_alert(&mut self, alert_id: &str, resolution: String) -> Result<(), AIServiceError> {
+    pub fn resolve_alert(
+        &mut self,
+        alert_id: &str,
+        resolution: String,
+    ) -> Result<(), AIServiceError> {
         if let Some(alert) = self.alerts.iter_mut().find(|a| a.alert_id == alert_id) {
             alert.status = AlertStatus::Resolved;
             alert.actions_taken.push(resolution);
             Ok(())
         } else {
-            Err(AIServiceError::ValidationError(format!("Alert {} not found", alert_id)))
+            Err(AIServiceError::ValidationError(format!(
+                "Alert {} not found",
+                alert_id
+            )))
         }
     }
 
@@ -540,8 +550,16 @@ impl MonitoringService {
         MonitoringStatistics {
             metrics_count: self.metrics_store.len(),
             total_data_points: total_metrics,
-            active_alerts: self.alerts.iter().filter(|a| a.status == AlertStatus::Active).count(),
-            resolved_alerts: self.alerts.iter().filter(|a| a.status == AlertStatus::Resolved).count(),
+            active_alerts: self
+                .alerts
+                .iter()
+                .filter(|a| a.status == AlertStatus::Active)
+                .count(),
+            resolved_alerts: self
+                .alerts
+                .iter()
+                .filter(|a| a.status == AlertStatus::Resolved)
+                .count(),
         }
     }
 }

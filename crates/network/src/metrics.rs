@@ -78,7 +78,8 @@ impl NetworkMetrics {
 
     pub fn record_message_received(&self, bytes: usize) {
         self.messages_received.fetch_add(1, Ordering::Relaxed);
-        self.bytes_received.fetch_add(bytes as u64, Ordering::Relaxed);
+        self.bytes_received
+            .fetch_add(bytes as u64, Ordering::Relaxed);
     }
 
     pub fn record_message_failed(&self) {

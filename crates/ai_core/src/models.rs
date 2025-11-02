@@ -182,11 +182,14 @@ impl ModelManager {
             let client = Client::builder()
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("HTTP client init failed: {}", e)))?;
+                .map_err(|e| {
+                    AiCoreError::ExecutionFailed(format!("HTTP client init failed: {}", e))
+                })?;
 
-            let response = client.get(url).send().await.map_err(|e| {
-                AiCoreError::ExecutionFailed(format!("HTTP request failed: {}", e))
-            })?;
+            let response =
+                client.get(url).send().await.map_err(|e| {
+                    AiCoreError::ExecutionFailed(format!("HTTP request failed: {}", e))
+                })?;
 
             if !response.status().is_success() {
                 return Err(AiCoreError::ExecutionFailed(format!(
@@ -242,7 +245,9 @@ impl ModelManager {
             let client = Client::builder()
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("HTTP client init failed: {}", e)))?;
+                .map_err(|e| {
+                    AiCoreError::ExecutionFailed(format!("HTTP client init failed: {}", e))
+                })?;
 
             for gateway_url in &gateways {
                 info!("Trying IPFS gateway: {}", gateway_url);
@@ -288,7 +293,9 @@ impl ModelManager {
         }
 
         if storage_key.is_empty() {
-            return Err(AiCoreError::InvalidParameters("Empty storage key".to_string()));
+            return Err(AiCoreError::InvalidParameters(
+                "Empty storage key".to_string(),
+            ));
         }
 
         if let Ok(base) = std::env::var("IPPAN_GATEWAY_URL") {

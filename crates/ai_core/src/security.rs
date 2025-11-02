@@ -177,7 +177,12 @@ impl SecuritySystem {
     pub fn get_violations(&self) -> Vec<&AuditEntry> {
         self.audit_log
             .iter()
-            .filter(|entry| matches!(entry.severity, SecuritySeverity::High | SecuritySeverity::Critical))
+            .filter(|entry| {
+                matches!(
+                    entry.severity,
+                    SecuritySeverity::High | SecuritySeverity::Critical
+                )
+            })
             .collect()
     }
 }

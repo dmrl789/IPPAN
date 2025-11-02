@@ -42,7 +42,11 @@ impl SupplyTracker {
     }
 
     /// Record emission for a round
-    pub fn record_emission(&mut self, round: RoundIndex, amount: RewardAmount) -> Result<(), SupplyError> {
+    pub fn record_emission(
+        &mut self,
+        round: RoundIndex,
+        amount: RewardAmount,
+    ) -> Result<(), SupplyError> {
         if round <= self.current_round {
             return Err(SupplyError::InvalidSupplyData(format!(
                 "Cannot record emission for past round: {} <= {}",
@@ -63,10 +67,12 @@ impl SupplyTracker {
 
             info!("Capped emission for round {} to {}", round, capped_amount);
         } else {
-            self.total_supply = self
-                .total_supply
-                .checked_add(amount)
-                .ok_or(SupplyError::SupplyCapViolation("Overflow adding supply".into()))?;
+            self.total_supply =
+                self.total_supply
+                    .checked_add(amount)
+                    .ok_or(SupplyError::SupplyCapViolation(
+                        "Overflow adding supply".into(),
+                    ))?;
             self.emission_history.insert(round, amount);
         }
 
@@ -76,7 +82,11 @@ impl SupplyTracker {
     }
 
     /// Record burn for a round (excess fees, rounding errors, etc.)
-    pub fn record_burn(&mut self, round: RoundIndex, amount: RewardAmount) -> Result<(), SupplyError> {
+    pub fn record_burn(
+        &mut self,
+        round: RoundIndex,
+        amount: RewardAmount,
+    ) -> Result<(), SupplyError> {
         if amount > self.total_supply {
             return Err(SupplyError::InvalidSupplyData(format!(
                 "Cannot burn more than total supply: {} > {}",
@@ -84,10 +94,12 @@ impl SupplyTracker {
             )));
         }
 
-        self.total_supply = self
-            .total_supply
-            .checked_sub(amount)
-            .ok_or(SupplyError::SupplyCapViolation("Underflow subtracting supply".into()))?;
+        self.total_supply =
+            self.total_supply
+                .checked_sub(amount)
+                .ok_or(SupplyError::SupplyCapViolation(
+                    "Underflow subtracting supply".into(),
+                ))?;
 
         self.burn_history.insert(round, amount);
         debug!("Recorded burn for round {}: {}", round, amount);
@@ -95,7 +107,11 @@ impl SupplyTracker {
     }
 
     /// Verify supply integrity against expected schedule
-    pub fn verify_supply_integrity(&self, expected_supply: RewardAmount, tolerance: RewardAmount) -> Result<(), SupplyError> {
+    pub fn verify_supply_integrity(
+        &self,
+        expected_supply: RewardAmount,
+        tolerance: RewardAmount,
+    ) -> Result<(), SupplyError> {
         let diff = if self.total_supply > expected_supply {
             self.total_supply - expected_supply
         } else {
@@ -143,7 +159,11 @@ impl SupplyTracker {
     }
 
     /// Emission history within range
-    pub fn get_emission_history(&self, start: RoundIndex, end: RoundIndex) -> HashMap<RoundIndex, RewardAmount> {
+    pub fn get_emission_history(
+        &self,
+        start: RoundIndex,
+        end: RoundIndex,
+    ) -> HashMap<RoundIndex, RewardAmount> {
         self.emission_history
             .iter()
             .filter(|(r, _)| **r >= start && **r <= end)
@@ -152,7 +172,11 @@ impl SupplyTracker {
     }
 
     /// Burn history within range
-    pub fn get_burn_history(&self, start: RoundIndex, end: RoundIndex) -> HashMap<RoundIndex, RewardAmount> {
+    pub fn get_burn_history(
+        &self,
+        start: RoundIndex,
+        end: RoundIndex,
+    ) -> HashMap<RoundIndex, RewardAmount> {
         self.burn_history
             .iter()
             .filter(|(r, _)| **r >= start && **r <= end)
@@ -186,7 +210,9 @@ impl SupplyTracker {
             warnings.push("Zero supply with non-zero rounds".into());
         }
 
-        let expected_rounds = self.current_round.saturating_sub(self.last_verification_round);
+        let expected_rounds = self
+            .current_round
+            .saturating_sub(self.last_verification_round);
         if expected_rounds > 0 && self.emission_history.len() < expected_rounds as usize {
             warnings.push(format!(
                 "Missing emission history: expected {} rounds, found {}",

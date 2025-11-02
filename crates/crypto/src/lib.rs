@@ -22,7 +22,7 @@ pub mod merkle_trees;
 pub mod validators;
 
 pub use commitment_schemes::{Commitment, CommitmentError, PedersenCommitment};
-pub use hash_functions::{Blake3, HashFunction, Keccak256, SHA256, SHA3_256, BLAKE2b};
+pub use hash_functions::{BLAKE2b, Blake3, HashFunction, Keccak256, SHA256, SHA3_256};
 pub use merkle_trees::{MerkleError, MerkleProof, MerkleTree};
 pub use validators::{validate_confidential_block, validate_confidential_transaction};
 

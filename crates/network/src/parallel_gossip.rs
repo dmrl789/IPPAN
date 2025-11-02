@@ -5,18 +5,18 @@ use futures::{future::join_all, stream, StreamExt};
 use ippan_types::{Block, IppanTimeMicros};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::{debug, warn};
-use sha2::{Sha256, Digest};
 
-use crate::peers::PeerDirectory;
 use crate::deduplication::MessageDeduplicator;
-use crate::reputation::ReputationManager;
-use crate::metrics::NetworkMetrics;
 use crate::health::HealthMonitor;
+use crate::metrics::NetworkMetrics;
+use crate::peers::PeerDirectory;
+use crate::reputation::ReputationManager;
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_millis(200);
 
@@ -30,7 +30,7 @@ pub enum GossipMessage {
 
 /// Parallel gossip relay for block and transaction propagation.
 /// Each broadcast batch is sent concurrently to all connected peers.
-/// 
+///
 /// Production features:
 /// - Message deduplication to prevent rebroadcasting
 /// - Peer reputation tracking
@@ -115,17 +115,18 @@ impl ParallelGossip {
             .for_each_concurrent(None, |block| {
                 let peers_snapshot = peers_snapshot.clone();
                 async move {
-                    let payload = match serde_json::to_vec(&GossipMessage::Block(Box::new(block.clone()))) {
-                        Ok(bytes) => Arc::<[u8]>::from(bytes),
-                        Err(err) => {
-                            warn!(
-                                target = "parallel_gossip",
-                                error = %err,
-                                "failed to serialize block gossip message",
-                            );
-                            return;
-                        }
-                    };
+                    let payload =
+                        match serde_json::to_vec(&GossipMessage::Block(Box::new(block.clone()))) {
+                            Ok(bytes) => Arc::<[u8]>::from(bytes),
+                            Err(err) => {
+                                warn!(
+                                    target = "parallel_gossip",
+                                    error = %err,
+                                    "failed to serialize block gossip message",
+                                );
+                                return;
+                            }
+                        };
 
                     // Check for duplicate message
                     let message_hash = Self::compute_message_hash(&payload);

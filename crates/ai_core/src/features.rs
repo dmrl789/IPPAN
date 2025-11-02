@@ -47,9 +47,9 @@ impl Default for FeatureConfig {
         Self {
             scale: 10000,
             max_blocks_proposed: 100_000,
-            max_latency_us: 1_000_000,       // 1 second
-            max_stake: 100_000_000_000_000,  // 1M IPN (with 8 decimals)
-            max_age_rounds: 10_000_000,      // ~231 days at 200ms/round
+            max_latency_us: 1_000_000,      // 1 second
+            max_stake: 100_000_000_000_000, // 1M IPN (with 8 decimals)
+            max_age_rounds: 10_000_000,     // ~231 days at 200ms/round
         }
     }
 }
@@ -94,12 +94,12 @@ pub fn extract_features(telemetry: &ValidatorTelemetry, config: &FeatureConfig) 
     let slash_penalty = (scale - (telemetry.slash_count as i64 * 1000)).max(0);
 
     // 4. Stake weight
-    let stake_weight = ((telemetry.stake * scale as u64) / config.max_stake)
-        .min(scale as u64) as i64;
+    let stake_weight =
+        ((telemetry.stake * scale as u64) / config.max_stake).min(scale as u64) as i64;
 
     // 5. Longevity
-    let longevity = ((telemetry.age_rounds * scale as u64) / config.max_age_rounds)
-        .min(scale as u64) as i64;
+    let longevity =
+        ((telemetry.age_rounds * scale as u64) / config.max_age_rounds).min(scale as u64) as i64;
 
     vec![
         proposal_rate,
