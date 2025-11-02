@@ -72,7 +72,7 @@ impl HashTimer {
         };
 
         // Use digest as 50-hex hash suffix (200 bits from first 25 bytes)
-        let digest_hex = hex_encode(&self.digest());
+        let digest_hex = hex_encode(self.digest());
         let hash_suffix = &digest_hex[0..50.min(digest_hex.len())];
 
         format!("{time_prefix}{hash_suffix}")

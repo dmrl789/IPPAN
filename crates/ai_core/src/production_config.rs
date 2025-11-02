@@ -385,13 +385,15 @@ impl ProductionConfigManager {
     where
         F: FnOnce(&mut ProductionConfig),
     {
-        let mut config = self.config.write().unwrap();
-        updater(&mut config);
-        let validation = config.validate();
-        if !validation.is_valid {
-            return Err(GBDTError::ModelValidationFailed {
-                reason: format!("Configuration validation failed: {:?}", validation.errors),
-            });
+        {
+            let mut config = self.config.write().unwrap();
+            updater(&mut config);
+            let validation = config.validate();
+            if !validation.is_valid {
+                return Err(GBDTError::ModelValidationFailed {
+                    reason: format!("Configuration validation failed: {:?}", validation.errors),
+                });
+            }
         }
         self.notify_watchers().await;
         Ok(())

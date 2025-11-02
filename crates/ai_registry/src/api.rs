@@ -162,20 +162,19 @@ async fn register_model(
         size_bytes: request.size_bytes,
     };
 
+    let registry_request = crate::registry::RegistryModelRequest {
+        model_id: model_id.clone(),
+        metadata,
+        registrant: request.registrant,
+        category: request.category,
+        description: request.description,
+        license: request.license,
+        source_url: request.source_url,
+        tags: request.tags,
+    };
+
     let mut registry = state.registry.write().await;
-    match registry
-        .register_model(
-            model_id,
-            metadata,
-            request.registrant,
-            request.category,
-            request.description,
-            request.license,
-            request.source_url,
-            request.tags,
-        )
-        .await
-    {
+    match registry.register_model(registry_request).await {
         Ok(registration) => {
             info!("API: Model registered successfully");
             Ok(Json(ApiResponse {

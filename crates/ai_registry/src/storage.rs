@@ -179,7 +179,7 @@ impl RegistryStorage {
                             || registration
                                 .description
                                 .as_ref()
-                                .map_or(false, |d| d.to_lowercase().contains(&query_lower))
+                                .is_some_and(|d| d.to_lowercase().contains(&query_lower))
                             || registration
                                 .tags
                                 .iter()
@@ -188,11 +188,11 @@ impl RegistryStorage {
                         // Check category filter
                         let matches_category = category
                             .as_ref()
-                            .map_or(true, |c| &registration.category == c);
+                            .is_none_or(|c| &registration.category == c);
 
                         // Check status filter
                         let matches_status =
-                            status.as_ref().map_or(true, |s| &registration.status == s);
+                            status.as_ref().is_none_or(|s| &registration.status == s);
 
                         if matches_query && matches_category && matches_status {
                             models.push(registration);
@@ -220,7 +220,7 @@ impl RegistryStorage {
                             || registration
                                 .description
                                 .as_ref()
-                                .map_or(false, |d| d.to_lowercase().contains(&query_lower))
+                                .is_some_and(|d| d.to_lowercase().contains(&query_lower))
                             || registration
                                 .tags
                                 .iter()
@@ -229,11 +229,11 @@ impl RegistryStorage {
                         // Check category filter
                         let matches_category = category
                             .as_ref()
-                            .map_or(true, |c| &registration.category == c);
+                            .is_none_or(|c| &registration.category == c);
 
                         // Check status filter
                         let matches_status =
-                            status.as_ref().map_or(true, |s| &registration.status == s);
+                            status.as_ref().is_none_or(|s| &registration.status == s);
 
                         if matches_query && matches_category && matches_status {
                             models.push(registration);

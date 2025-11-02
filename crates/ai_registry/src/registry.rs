@@ -13,6 +13,18 @@ use crate::{
 use std::collections::HashMap;
 use tracing::info;
 
+/// Request to register a new model in the registry
+pub struct RegistryModelRequest {
+    pub model_id: ModelId,
+    pub metadata: ModelMetadata,
+    pub registrant: String,
+    pub category: ModelCategory,
+    pub description: Option<String>,
+    pub license: Option<String>,
+    pub source_url: Option<String>,
+    pub tags: Vec<String>,
+}
+
 /// Deterministic in-memory AI model registry
 ///
 /// This struct can be serialized and verified on-chain,
@@ -42,61 +54,54 @@ impl ModelRegistry {
     /// Register a model
     pub async fn register_model(
         &mut self,
-        model_id: ModelId,
-        metadata: ModelMetadata,
-        registrant: String,
-        category: ModelCategory,
-        description: Option<String>,
-        license: Option<String>,
-        source_url: Option<String>,
-        tags: Vec<String>,
+        request: RegistryModelRequest,
     ) -> Result<ModelRegistration> {
-        info!("Registering model: {:?}", model_id);
+        info!("Registering model: {:?}", request.model_id);
 
         // Validate model size
-        if metadata.size_bytes > self.config.max_model_size {
+        if request.metadata.size_bytes > self.config.max_model_size {
             return Err(RegistryError::InvalidRegistration(format!(
                 "Model size {} exceeds maximum {}",
-                metadata.size_bytes, self.config.max_model_size
+                request.metadata.size_bytes, self.config.max_model_size
             )));
         }
 
         // Validate parameter count
-        if metadata.parameter_count > self.config.max_parameter_count {
+        if request.metadata.parameter_count > self.config.max_parameter_count {
             return Err(RegistryError::InvalidRegistration(format!(
                 "Parameter count {} exceeds maximum {}",
-                metadata.parameter_count, self.config.max_parameter_count
+                request.metadata.parameter_count, self.config.max_parameter_count
             )));
         }
 
         // Check if model already exists
         if self
             .storage
-            .load_model_registration(&model_id)
+            .load_model_registration(&request.model_id)
             .await?
             .is_some()
         {
             return Err(RegistryError::ModelAlreadyExists(format!(
                 "Model {} already exists",
-                model_id.name
+                request.model_id.name
             )));
         }
 
         let now = chrono::Utc::now();
 
         let registration = ModelRegistration {
-            model_id: model_id.clone(),
-            metadata,
+            model_id: request.model_id.clone(),
+            metadata: request.metadata,
             status: RegistrationStatus::Pending,
-            registrant,
+            registrant: request.registrant,
             registered_at: now,
             updated_at: now,
             registration_fee: self.config.min_registration_fee,
-            category,
-            tags,
-            description,
-            license,
-            source_url,
+            category: request.category,
+            tags: request.tags,
+            description: request.description,
+            license: request.license,
+            source_url: request.source_url,
         };
 
         // Store registration
@@ -104,9 +109,9 @@ impl ModelRegistry {
 
         // Update cache
         self.cache
-            .insert(model_id.name.clone(), registration.clone());
+            .insert(request.model_id.name.clone(), registration.clone());
 
-        info!("Model registered successfully: {:?}", model_id);
+        info!("Model registered successfully: {:?}", request.model_id);
         Ok(registration)
     }
 
@@ -309,13 +314,19 @@ mod tests {
     fn create_test_metadata() -> ModelMetadata {
         ModelMetadata {
             id: create_test_model_id(),
+            name: "Test Model".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Test model".to_string(),
+            author: "Test Author".to_string(),
+            license: "MIT".to_string(),
+            tags: vec!["test".to_string()],
+            created_at: 1234567890,
+            updated_at: 1234567890,
             architecture: "GBDT".to_string(),
             input_shape: vec![10],
             output_shape: vec![1],
-            parameter_count: 1000,
             size_bytes: 10000,
-            created_at: 1234567890,
-            description: Some("Test model".to_string()),
+            parameter_count: 1000,
         }
     }
 
@@ -339,19 +350,18 @@ mod tests {
         let model_id = create_test_model_id();
         let metadata = create_test_metadata();
 
-        let registration = registry
-            .register_model(
-                model_id.clone(),
-                metadata,
-                "test_user".to_string(),
-                ModelCategory::Other,
-                Some("Test description".to_string()),
-                Some("MIT".to_string()),
-                Some("https://example.com".to_string()),
-                vec!["test".to_string()],
-            )
-            .await
-            .unwrap();
+        let request = RegistryModelRequest {
+            model_id: model_id.clone(),
+            metadata,
+            registrant: "test_user".to_string(),
+            category: ModelCategory::Other,
+            description: Some("Test description".to_string()),
+            license: Some("MIT".to_string()),
+            source_url: Some("https://example.com".to_string()),
+            tags: vec!["test".to_string()],
+        };
+
+        let registration = registry.register_model(request).await.unwrap();
 
         assert_eq!(registration.status, RegistrationStatus::Pending);
         assert_eq!(registration.model_id.name, "test_model");
@@ -377,19 +387,18 @@ mod tests {
         let model_id = create_test_model_id();
         let metadata = create_test_metadata();
 
-        registry
-            .register_model(
-                model_id.clone(),
-                metadata,
-                "test_user".to_string(),
-                ModelCategory::Other,
-                None,
-                None,
-                None,
-                vec![],
-            )
-            .await
-            .unwrap();
+        let request = RegistryModelRequest {
+            model_id: model_id.clone(),
+            metadata,
+            registrant: "test_user".to_string(),
+            category: ModelCategory::Other,
+            description: None,
+            license: None,
+            source_url: None,
+            tags: vec![],
+        };
+
+        registry.register_model(request).await.unwrap();
 
         registry
             .update_model_status(&model_id, RegistrationStatus::Approved)

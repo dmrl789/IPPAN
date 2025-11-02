@@ -26,18 +26,13 @@ pub struct L2Network {
 }
 
 /// Status flag for an L2 network.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum L2NetworkStatus {
+    #[default]
     Active,
     Inactive,
     Challenged,
-}
-
-impl Default for L2NetworkStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 /// Record describing a single L2 state commitment posted to IPPAN.
@@ -66,19 +61,14 @@ pub struct L2Commit {
 }
 
 /// Status of an exit request that originated on an L2.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum L2ExitStatus {
+    #[default]
     Pending,
     Finalized,
     Rejected,
     ChallengeWindow,
-}
-
-impl Default for L2ExitStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 /// Exit request originating from an L2 network that is tracked on IPPAN.

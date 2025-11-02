@@ -260,7 +260,7 @@ impl FeatureEngineeringPipeline {
             values.sort_by(|a, b| a.partial_cmp(b).unwrap());
             if !values.is_empty() {
                 let len = values.len();
-                medians[i] = if len % 2 == 0 {
+                medians[i] = if len.is_multiple_of(2) {
                     (values[len / 2 - 1] + values[len / 2]) / 2.0
                 } else {
                     values[len / 2]

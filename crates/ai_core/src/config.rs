@@ -9,7 +9,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 /// AI Core configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AiCoreConfig {
     /// Health monitoring configuration
     pub health: HealthConfig,
@@ -152,19 +152,6 @@ pub struct ValidationConfig {
     pub validate_parameters: bool,
 }
 
-impl Default for AiCoreConfig {
-    fn default() -> Self {
-        Self {
-            health: HealthConfig::default(),
-            execution: ExecutionConfig::default(),
-            logging: LoggingConfig::default(),
-            security: SecurityConfig::default(),
-            performance: PerformanceConfig::default(),
-            features: FeatureConfig::default(),
-            validation: ValidationConfig::default(),
-        }
-    }
-}
 
 impl Default for HealthConfig {
     fn default() -> Self {

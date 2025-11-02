@@ -159,14 +159,14 @@ impl ProposalManager {
             }
 
             // Convert timestamp to DateTime
-            let timestamp = DateTime::from_timestamp(proposal.created_at as i64, 0)
-                .unwrap_or_else(|| Utc::now());
+            let timestamp =
+                DateTime::from_timestamp(proposal.created_at as i64, 0).unwrap_or_else(Utc::now);
 
             // Create ModelId from proposal
             let model_id = ModelId {
                 name: proposal.model_id.clone(),
                 version: proposal.version.to_string(),
-                hash: hex::encode(&proposal.model_hash),
+                hash: hex::encode(proposal.model_hash),
             };
 
             // Create ModelMetadata
@@ -268,7 +268,7 @@ impl Default for ProposalManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::SigningKey;
+    use ed25519_dalek::{Signer, SigningKey};
 
     fn create_test_proposal() -> AiModelProposal {
         let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
