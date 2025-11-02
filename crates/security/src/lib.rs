@@ -138,7 +138,7 @@ impl SecurityManager {
     ) -> Result<()> {
         let attempt_count = {
             let mut attempts = self.failed_attempts.write();
-            let (count, _timestamp) = attempts.entry(ip).or_insert((0, SystemTime::now()));
+            let (count, _) = attempts.entry(ip).or_insert((0, SystemTime::now()));
             *count += 1;
             *count
         };
