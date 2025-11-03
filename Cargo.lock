@@ -2684,6 +2684,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ippan-consensus-dlc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "blake3",
+ "chrono",
+ "ed25519-dalek",
+ "ippan-crypto",
+ "ippan-types",
+ "log",
+ "num-bigint",
+ "num-traits",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "ippan-core"
 version = "0.1.0"
 dependencies = [

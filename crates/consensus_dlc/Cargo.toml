@@ -1,18 +1,45 @@
- [package]
- name = "consensus_dlc"
- version = "0.1.0"
- edition = "2021"
- description = "Deterministic Learning Consensus (DLC) engine for IPPAN"
- license = "MIT"
+[package]
+name = "ippan-consensus-dlc"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic Learning Consensus (DLC) engine for IPPAN"
+license = "Apache-2.0"
+authors = ["IPPAN Contributors"]
 
- [dependencies]
- serde = { version = "1", features = ["derive"] }
- serde_json = "1"
- ed25519-dalek = "1"
- rand = "0.8"
- blake3 = "1"
- chrono = { version = "0.4", features = ["serde"] }
- tokio = { version = "1", features = ["full"] }
- log = "0.4"
- thiserror = "1"
- rust_decimal = "1"
+[dependencies]
+# Core dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Cryptography
+blake3 = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = "0.8"
+rand_core = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+time = { workspace = true }
+
+# Math
+rust_decimal = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+
+# Logging
+log = { workspace = true }
+tracing = { workspace = true }
+
+# IPPAN crates
+ippan-types = { path = "../types" }
+ippan-crypto = { path = "../crypto" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = { workspace = true }
