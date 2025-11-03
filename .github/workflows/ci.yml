@@ -17,6 +17,7 @@ jobs:
     env:
       RUST_BACKTRACE: 1
       CARGO_TERM_COLOR: always
+      CONSENSUS_MODE: DLC
       toolchain: stable
 
     steps:
@@ -68,6 +69,11 @@ jobs:
       - name: AI Core determinism tests
         run: |
           cargo test -p ippan-ai-core -- --nocapture
+
+      - name: DLC consensus tests
+        run: |
+          cargo test -p ippan-consensus --test dlc_integration_tests -- --nocapture
+          cargo test -p ippan-consensus -- dlc --nocapture
 
   gateway:
     name: Gateway Checks

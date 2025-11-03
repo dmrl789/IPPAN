@@ -1,8 +1,12 @@
-//! IPPAN Consensus Engine — Parallel PoA + DAG-Fair Emission
+//! IPPAN Consensus Engine — Deterministic Learning Consensus (DLC)
 //!
-//! Implements Proof-of-Authority + AI Reputation-weighted consensus
-//! for the IPPAN L1. Integrates deterministic BlockDAG ordering,
-//! fee capping, emission schedules, and round-level finalization.
+//! Implements DLC: time-anchored, AI-driven, voting-free consensus using:
+//! - HashTimer™ for deterministic temporal finality (100-250ms windows)
+//! - BlockDAG for parallel block processing and ordering
+//! - D-GBDT for AI-driven fairness and validator selection
+//! - Shadow verifiers (3-5) for redundant validation
+//! - 10 IPN validator bonding mechanism
+//! - No BFT, no voting, no quorums — pure deterministic consensus
 
 use anyhow::Result;
 use blake3::Hasher as Blake3;
@@ -30,23 +34,52 @@ use tracing::{error, info, warn};
 // Submodules
 // ---------------------------------------------------------------------
 
+// Core DLC modules
+pub mod dlc;
+pub mod dgbdt;
+pub mod shadow_verifier;
+pub mod bonding;
+pub mod hashtimer_integration;
+pub mod dlc_integration;
+
+// Economic and emission modules
 pub mod emission;
 pub mod emission_tracker;
 pub mod fees;
+
+// AI and selection modules
 pub mod l1_ai_consensus;
+
+// Telemetry and metrics
 pub mod metrics;
 pub mod model_reload;
+pub mod telemetry;
+pub mod reputation;
+
+// DAG and ordering
 pub mod ordering;
 pub mod parallel_dag;
-pub mod reputation;
+
+// Round management
 pub mod round;
 pub mod round_executor;
-pub mod telemetry;
 
 // ---------------------------------------------------------------------
 // Public re-exports
 // ---------------------------------------------------------------------
 
+// DLC Core
+pub use dlc::{DLCConfig, DLCConsensus, DLCRoundState};
+pub use dgbdt::{DGBDTEngine, ValidatorMetrics, VerifierSelection};
+pub use shadow_verifier::{ShadowVerifier, ShadowVerifierSet, VerificationResult};
+pub use bonding::{BondingManager, ValidatorBond, VALIDATOR_BOND_AMOUNT, MIN_BOND_AMOUNT};
+pub use hashtimer_integration::{
+    generate_round_hashtimer, generate_block_hashtimer, verify_temporal_ordering,
+    should_close_round, derive_selection_seed,
+};
+pub use dlc_integration::{DLCIntegratedConsensus, dlc_config_from_poa};
+
+// Emissions and fees
 pub use emission::{
     calculate_fee_recycling, calculate_round_emission, calculate_round_reward,
     distribute_dag_fair_rewards, DAGEmissionParams, FeeRecyclingParams, RoundEmission,
