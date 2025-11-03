@@ -33,6 +33,9 @@ members = [
 
   # Node orchestration
   "node",                    # Re-enabled: fixed dependencies
+  
+  # DLC Consensus
+  "crates/consensus_dlc",    # Deterministic Learning Consensus
 ]
 
 resolver = "2"
