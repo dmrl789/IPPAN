@@ -322,19 +322,32 @@ mod tests {
         stake_weights.insert([2u8; 32], 2000);
         stake_weights.insert([3u8; 32], 1500);
 
-        for validator in &validators {
+        for (idx, validator) in validators.iter().enumerate() {
+            #[cfg(feature = "ai_l1")]
+            let telemetry = ValidatorTelemetry {
+                blocks_proposed: 10 + idx as u64,
+                blocks_verified: 20 + idx as u64,
+                rounds_active: 100 + idx as u64,
+                avg_latency_us: 150_000 + (idx as u64 * 1_000),
+                slash_count: idx as u32,
+                stake: 1_000_000 + (idx as u64 * 50_000),
+                age_rounds: 1_000 + (idx as u64 * 100),
+            };
+
+            #[cfg(not(feature = "ai_l1"))]
             let telemetry = ValidatorTelemetry {
                 validator_id: *validator,
-                block_production_rate: 1.0,
-                avg_block_size: 2.0,
-                uptime: 99.9,
-                network_latency: 0.2,
-                validation_accuracy: 0.98,
-                stake: 1000,
-                slashing_events: 0,
-                last_activity: 123456,
+                block_production_rate: 1.0 + idx as f64,
+                avg_block_size: 2.0 + idx as f64,
+                uptime: 99.0 - idx as f64,
+                network_latency: 0.2 + idx as f64 * 0.01,
+                validation_accuracy: 0.95,
+                stake: 1_000 + idx as u64 * 500,
+                slashing_events: idx as u32,
+                last_activity: 123_456 + idx as u64,
                 custom_metrics: HashMap::new(),
             };
+
             consensus.update_telemetry(*validator, telemetry);
         }
 

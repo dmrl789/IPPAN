@@ -269,6 +269,7 @@ impl Default for ProposalManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::Signer;
     use ed25519_dalek::SigningKey;
 
     fn create_test_proposal() -> AiModelProposal {

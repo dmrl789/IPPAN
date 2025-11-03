@@ -4,7 +4,9 @@
 //! and provides audit records for governance and transparency.
 
 use blake3::Hasher;
-use ippan_economics::{EmissionParams, RoundRewardDistribution};
+use ippan_economics::{EmissionParams, RoundRewardDistribution, ValidatorId, ValidatorReward};
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -95,6 +97,24 @@ impl EmissionTracker {
         }
     }
 
+    fn compute_base_reward(&self, round: u64) -> u64 {
+        if round == 0 {
+            return 0;
+        }
+
+        let halving_interval = self.params.halving_interval_rounds.max(1);
+        let halving_count = (round.saturating_sub(1)) / halving_interval;
+
+        if halving_count >= 64 {
+            return 0;
+        }
+
+        self.params
+            .initial_round_reward_micro
+            .checked_shr(halving_count as u32)
+            .unwrap_or(0)
+    }
+
     /// Process a completed round and update emission state
     pub fn process_round(
         &mut self,
@@ -117,16 +137,124 @@ impl EmissionTracker {
             self.empty_rounds += 1;
         }
 
-        // Calculate reward distribution
-        // Note: distribute_round_reward function needs to be implemented
-        // For now, create a placeholder distribution
+        let base_reward = self.compute_base_reward(round);
+        let fee_fraction = self
+            .params
+            .fee_cap_fraction
+            .to_f64()
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let transaction_fees_capped = transaction_fees.min(u64::MAX as u128) as u64;
+        let fee_cap_limit = (base_reward as f64 * fee_fraction) as u64;
+        let capped_fees = transaction_fees_capped.min(fee_cap_limit);
+        let excess_burned = transaction_fees_capped.saturating_sub(capped_fees);
+
+        let ai_commissions_capped = ai_commissions.min(u64::MAX as u128) as u64;
+
+        let mut validator_rewards = HashMap::new();
+        let mut weight_map: Vec<([u8; 32], u128)> = Vec::new();
+        let mut total_weight: u128 = 0;
+
+        for contribution in contributions {
+            let mut weight = (contribution.blocks_proposed as u128 * 5)
+                + (contribution.blocks_verified as u128 * 3)
+                + contribution.reputation_score.round() as u128;
+            if weight == 0 {
+                weight = 1;
+            }
+            total_weight = total_weight.saturating_add(weight);
+            weight_map.push((contribution.validator_id, weight));
+        }
+
+        let mut emission_allocated: u128 = 0;
+        let mut fee_allocated: u128 = 0;
+        let mut ai_allocated: u128 = 0;
+
+        let total_reward = base_reward
+            .saturating_add(capped_fees)
+            .saturating_add(ai_commissions_capped);
+
+        if !weight_map.is_empty() {
+            let validators_count = weight_map.len();
+            for (idx, (validator_raw, weight)) in weight_map.iter().enumerate() {
+                let is_last = idx == validators_count - 1;
+
+                let emission_share = if total_weight > 0 {
+                    if is_last {
+                        (base_reward as u128)
+                            .saturating_sub(emission_allocated.min(base_reward as u128))
+                    } else {
+                        ((base_reward as u128) * *weight) / total_weight
+                    }
+                } else if is_last {
+                    (base_reward as u128)
+                        .saturating_sub(emission_allocated.min(base_reward as u128))
+                } else {
+                    (base_reward as u128) / validators_count as u128
+                };
+                emission_allocated = emission_allocated.saturating_add(emission_share);
+
+                let fee_share = if total_weight > 0 {
+                    if is_last {
+                        (capped_fees as u128).saturating_sub(fee_allocated.min(capped_fees as u128))
+                    } else {
+                        ((capped_fees as u128) * *weight) / total_weight
+                    }
+                } else if is_last {
+                    (capped_fees as u128).saturating_sub(fee_allocated.min(capped_fees as u128))
+                } else {
+                    (capped_fees as u128) / validators_count as u128
+                };
+                fee_allocated = fee_allocated.saturating_add(fee_share);
+
+                let ai_share = if total_weight > 0 {
+                    if is_last {
+                        (ai_commissions_capped as u128)
+                            .saturating_sub(ai_allocated.min(ai_commissions_capped as u128))
+                    } else {
+                        ((ai_commissions_capped as u128) * *weight) / total_weight
+                    }
+                } else if is_last {
+                    (ai_commissions_capped as u128)
+                        .saturating_sub(ai_allocated.min(ai_commissions_capped as u128))
+                } else {
+                    (ai_commissions_capped as u128) / validators_count as u128
+                };
+                ai_allocated = ai_allocated.saturating_add(ai_share);
+
+                let total_share = emission_share
+                    .saturating_add(fee_share)
+                    .saturating_add(ai_share);
+
+                let validator_id = ValidatorId::new(hex::encode(validator_raw));
+                let weight_ratio = if total_weight > 0 {
+                    Decimal::from_f64((*weight as f64) / (total_weight as f64))
+                        .unwrap_or(Decimal::ZERO)
+                } else {
+                    Decimal::from_f64(1.0 / validators_count as f64).unwrap_or(Decimal::ZERO)
+                };
+
+                validator_rewards.insert(
+                    validator_id,
+                    ValidatorReward {
+                        round_emission: emission_share.min(u64::MAX as u128) as u64,
+                        transaction_fees: fee_share.min(u64::MAX as u128) as u64,
+                        ai_commissions: ai_share.min(u64::MAX as u128) as u64,
+                        network_dividend: 0,
+                        total_reward: total_share.min(u64::MAX as u128) as u64,
+                        weight_factor: weight_ratio,
+                    },
+                );
+            }
+        }
+
         let distribution = RoundRewardDistribution {
             round_index: round,
-            total_reward: 0,
+            total_reward,
             blocks_in_round: contributions.len() as u32,
-            validator_rewards: std::collections::HashMap::new(),
-            fees_collected: transaction_fees as u64,
-            excess_burned: 0,
+            validator_rewards,
+            fees_collected: capped_fees,
+            excess_burned,
         };
 
         // Validate distribution
@@ -138,7 +266,7 @@ impl EmissionTracker {
             .saturating_add(distribution.total_reward as u128);
 
         // Check supply cap
-        if self.cumulative_supply > self.params.max_supply_micro as u128 {
+        if self.cumulative_supply >= self.params.max_supply_micro as u128 {
             return Err(format!(
                 "Supply cap exceeded: {} > {}",
                 self.cumulative_supply, self.params.max_supply_micro as u128
@@ -153,8 +281,8 @@ impl EmissionTracker {
         // Update network pool (add new dividends, subtract distributed)
         self.network_pool_balance = self
             .network_pool_balance
-            .saturating_add(transaction_fees / 20); // 5% of fees go to pool
-                                                    // .saturating_sub(distribution.network_dividend); // Field doesn't exist
+            .saturating_add((capped_fees as u128) / 20); // 5% of fees go to pool
+                                                         // .saturating_sub(distribution.network_dividend); // Field doesn't exist
 
         // Track total network dividends distributed
         // Note: network_dividend field doesn't exist in RoundRewardDistribution
@@ -164,16 +292,13 @@ impl EmissionTracker {
 
         // Update validator earnings
         for (validator_id, reward) in &distribution.validator_rewards {
-            // Convert ValidatorId to [u8; 32] for HashMap key
-            let id_bytes = validator_id.0.as_bytes();
-            if id_bytes.len() >= 32 {
-                let mut key = [0u8; 32];
-                key.copy_from_slice(&id_bytes[..32]);
-                *self.validator_earnings.entry(key).or_insert(0) = self
-                    .validator_earnings
-                    .get(&key)
-                    .unwrap_or(&0)
-                    .saturating_add(reward.total_reward as u128);
+            if let Ok(decoded) = hex::decode(validator_id.as_str()) {
+                if decoded.len() == 32 {
+                    let mut key = [0u8; 32];
+                    key.copy_from_slice(&decoded);
+                    let entry = self.validator_earnings.entry(key).or_insert(0);
+                    *entry = entry.saturating_add(reward.total_reward as u128);
+                }
             }
         }
 
@@ -355,16 +480,16 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 5,
             blocks_verified: 10,
-            reputation_score: 10000,
-            uptime_factor: 10000,
+            reputation_score: 10_000.0,
         }];
 
         let result = tracker.process_round(1, &contributions, 1000, 500);
         assert!(result.is_ok());
 
         let dist = result.unwrap();
-        assert_eq!(dist.round, 1);
-        assert!(dist.total_distributed > 0);
+        assert_eq!(dist.round_index, 1);
+        assert_eq!(dist.blocks_in_round, contributions.len() as u32);
+        assert!(dist.total_reward > 0);
         assert_eq!(tracker.last_round, 1);
         assert!(tracker.cumulative_supply > 0);
     }
@@ -378,8 +503,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10000,
-            uptime_factor: 10000,
+            reputation_score: 10_000.0,
         }];
 
         // Process 10 rounds
@@ -402,8 +526,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10000,
-            uptime_factor: 10000,
+            reputation_score: 10_000.0,
         }];
 
         // Process round 1
@@ -437,8 +560,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10000,
-            uptime_factor: 10000,
+            reputation_score: 10_000.0,
         }];
 
         // Process 100 rounds
@@ -461,8 +583,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10000,
-            uptime_factor: 10000,
+            reputation_score: 10_000.0,
         }];
 
         // Process 20 rounds (should create 2 checkpoints)
@@ -485,15 +606,13 @@ mod tests {
                 validator_id: [1u8; 32],
                 blocks_proposed: 5,
                 blocks_verified: 10,
-                reputation_score: 10000,
-                uptime_factor: 10000,
+                reputation_score: 10_000.0,
             },
             ValidatorContribution {
                 validator_id: [2u8; 32],
                 blocks_proposed: 3,
                 blocks_verified: 8,
-                reputation_score: 9000,
-                uptime_factor: 10000,
+                reputation_score: 9_000.0,
             },
         ];
 
@@ -521,22 +640,19 @@ mod tests {
                 validator_id: [1u8; 32],
                 blocks_proposed: 10,
                 blocks_verified: 5,
-                reputation_score: 10000,
-                uptime_factor: 10000,
+                reputation_score: 10_000.0,
             },
             ValidatorContribution {
                 validator_id: [2u8; 32],
                 blocks_proposed: 3,
                 blocks_verified: 8,
-                reputation_score: 9000,
-                uptime_factor: 10000,
+                reputation_score: 9_000.0,
             },
             ValidatorContribution {
                 validator_id: [3u8; 32],
                 blocks_proposed: 1,
                 blocks_verified: 2,
-                reputation_score: 8000,
-                uptime_factor: 10000,
+                reputation_score: 8_000.0,
             },
         ];
 
@@ -556,9 +672,9 @@ mod tests {
     #[test]
     fn test_supply_cap_enforcement() {
         let params = EmissionParams {
-            r0: 1_000_000,
-            halving_rounds: 10,
-            supply_cap: 1_500_000,
+            initial_round_reward_micro: 1_000_000,
+            halving_interval_rounds: 10,
+            max_supply_micro: 1_500_000,
             ..Default::default()
         };
 
@@ -568,15 +684,14 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 100,
             blocks_verified: 100,
-            reputation_score: 10000,
-            uptime_factor: 10000,
+            reputation_score: 10_000.0,
         }];
 
         // Process rounds until we hit the cap
         for round in 1..=100 {
             let result = tracker.process_round(round, &contributions, 0, 0);
 
-            if tracker.cumulative_supply >= params.supply_cap {
+            if tracker.cumulative_supply >= params.max_supply_micro as u128 {
                 // Should reject rounds after cap
                 assert!(result.is_err());
                 break;

@@ -485,11 +485,13 @@ mod tests {
         };
 
         let telemetry = vec![ValidatorTelemetry {
-            validator_id: [1u8; 32],
-            reputation_score: 8000,
-            uptime_percentage: 99.0,
             blocks_proposed: 100,
             blocks_verified: 200,
+            rounds_active: 500,
+            avg_latency_us: 150_000,
+            slash_count: 0,
+            stake: 1_000_000,
+            age_rounds: 10_000,
         }];
 
         let report = ai_consensus
