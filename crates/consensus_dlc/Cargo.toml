@@ -1,0 +1,18 @@
+ [package]
+ name = "consensus_dlc"
+ version = "0.1.0"
+ edition = "2021"
+ description = "Deterministic Learning Consensus (DLC) engine for IPPAN"
+ license = "MIT"
+
+ [dependencies]
+ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+ ed25519-dalek = "1"
+ rand = "0.8"
+ blake3 = "1"
+ chrono = { version = "0.4", features = ["serde"] }
+ tokio = { version = "1", features = ["full"] }
+ log = "0.4"
+ thiserror = "1"
+ rust_decimal = "1"
