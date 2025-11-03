@@ -260,7 +260,7 @@ impl L2FeeCalculation {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

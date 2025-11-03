@@ -122,10 +122,10 @@ async fn test_wallet_backup_restore() {
     wallet
         .create_wallet("Test Wallet".to_string(), Some("password123"))
         .unwrap();
-    let address1 = wallet
+    let _address1 = wallet
         .generate_address(Some("Address 1".to_string()), Some("password123"))
         .unwrap();
-    let address2 = wallet
+    let _address2 = wallet
         .generate_address(Some("Address 2".to_string()), Some("password123"))
         .unwrap();
 
@@ -235,13 +235,13 @@ async fn test_transaction_history() {
         .unwrap();
 
     // Send transaction
-    let tx_hash = wallet
+    let _tx_hash = wallet
         .send_transaction(&address1, &address2, 100, Some("password123"))
         .unwrap();
 
     // Check transaction history
-    let history1 = wallet.get_address_transactions(&address1).unwrap();
-    let history2 = wallet.get_address_transactions(&address2).unwrap();
+    let _history1 = wallet.get_address_transactions(&address1).unwrap();
+    let _history2 = wallet.get_address_transactions(&address2).unwrap();
 
     // Note: Mock RPC returns empty history, but we should have cached transaction
     let all_history = wallet.get_all_transactions().unwrap();

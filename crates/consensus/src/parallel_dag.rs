@@ -630,7 +630,7 @@ impl ParallelDagEngine {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use ippan_types::{Block, RoundId, Transaction, ValidatorId};

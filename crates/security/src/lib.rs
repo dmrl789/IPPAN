@@ -268,7 +268,7 @@ pub struct SecurityStats {
     pub rate_limit_stats: serde_json::Value,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
@@ -292,8 +292,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_failed_attempts_blocking() {
-        let mut config = SecurityConfig::default();
-        config.max_failed_attempts = 2;
+        let config = SecurityConfig {
+            max_failed_attempts: 2,
+            ..Default::default()
+        };
 
         let manager = SecurityManager::new(config).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
@@ -315,9 +317,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_ip_whitelist() {
-        let mut config = SecurityConfig::default();
-        config.enable_ip_whitelist = true;
-        config.whitelisted_ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))];
+        let config = SecurityConfig {
+            enable_ip_whitelist: true,
+            whitelisted_ips: vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))],
+            ..Default::default()
+        };
 
         let manager = SecurityManager::new(config).unwrap();
 

@@ -274,7 +274,7 @@ impl Argon2 {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

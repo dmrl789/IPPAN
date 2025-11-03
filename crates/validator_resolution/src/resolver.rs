@@ -12,7 +12,7 @@ use crate::errors::*;
 use crate::types::{ResolutionMethod, ResolvedValidator, ValidatorMetadata};
 use ippan_economics::ValidatorId;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
-use ippan_l2_handle_registry::{Handle, L2HandleRegistry, PublicKey as L2PublicKey};
+use ippan_l2_handle_registry::{Handle, L2HandleRegistry};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -222,10 +222,10 @@ impl Clone for ValidatorResolver {
 // -----------------------------------------------------------------------------
 // Tests
 // -----------------------------------------------------------------------------
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_l2_handle_registry::HandleRegistration;
+    use ippan_l2_handle_registry::{HandleRegistration, PublicKey};
     use std::collections::HashMap;
 
     #[tokio::test]
@@ -252,7 +252,7 @@ mod tests {
         let owner = [1u8; 32];
         let registration = HandleRegistration {
             handle: Handle::new(handle),
-            owner: L2PublicKey::new(owner),
+            owner: PublicKey::new(owner),
             signature: vec![1, 2, 3],
             metadata: HashMap::new(),
             expires_at: None,

@@ -5,7 +5,6 @@ use crate::types::{
     ContractAnalysisMetadata, ContractAnalysisType, ContractIssue, SeverityLevel,
     SmartContractAnalysisRequest, SmartContractAnalysisResponse,
 };
-use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Smart contract analysis service
@@ -373,7 +372,7 @@ impl Default for SmartContractService {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

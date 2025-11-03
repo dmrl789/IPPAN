@@ -4,11 +4,10 @@
 //! directly into the L1 consensus mechanism. L1 has NO smart contracts—only
 //! deterministic consensus with AI-driven optimization.
 
-use crate::reputation::{ReputationScore, ValidatorTelemetry};
+use crate::reputation::ValidatorTelemetry;
 use ippan_ai_core::{eval_gbdt, gbdt::GBDTModel};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tracing::{info, warn};
+use tracing::info;
 
 /// L1 AI-Integrated Consensus Engine
 ///
@@ -231,7 +230,6 @@ impl L1AIConsensus {
     }
 
     /// --- Feature Extraction Helpers ---
-
     fn extract_validator_features(
         &self,
         candidate: &ValidatorCandidate,
@@ -365,7 +363,7 @@ pub struct NetworkHealthReport {
     pub confidence_score: f64,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};

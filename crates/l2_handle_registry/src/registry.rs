@@ -224,7 +224,7 @@ impl Default for L2HandleRegistry {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

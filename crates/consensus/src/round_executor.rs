@@ -6,14 +6,14 @@
 use crate::fees::FeeCollector;
 use anyhow::Result;
 use ippan_economics::{
-    EmissionEngine, EmissionParams, Payouts, RewardAmount, RoundIndex, RoundRewards, ValidatorId,
-    ValidatorParticipation, ValidatorRole,
+    EmissionEngine, EmissionParams, Payouts, RoundRewards, ValidatorId, ValidatorParticipation,
+    ValidatorRole,
 };
 use ippan_treasury::{AccountLedger, RewardSink};
 use ippan_types::{ChainState, MicroIPN, RoundId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::info;
 
 /// Participation data for a validator in a round
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +73,7 @@ impl RoundExecutor {
             .collect(ippan_types::Amount::from_micro_ipn(fees_micro as u64));
 
         // Calculate emission for this round (enforcing supply cap)
-        let issued = chain_state.total_issued_micro();
+        let _issued = chain_state.total_issued_micro();
         let emission_micro = self.emission_engine.calculate_round_reward(round)?;
 
         // Convert participants to ValidatorParticipation format
@@ -269,7 +269,7 @@ impl RoundExecutor {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use ippan_treasury::MockAccountLedger;
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_round_execution() {
-        let params = EconomicsParams::default();
+        let params = EmissionParams::default();
         let ledger = Box::new(MockAccountLedger::new());
         let mut executor = RoundExecutor::new(params, ledger);
         let mut state = ChainState::new();

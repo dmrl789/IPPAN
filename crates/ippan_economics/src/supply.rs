@@ -272,7 +272,7 @@ impl Default for SupplyTracker {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

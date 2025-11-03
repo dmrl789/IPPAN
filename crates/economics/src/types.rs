@@ -108,7 +108,7 @@ pub struct DistributionResult {
     pub verifier_rewards_micro: MicroIPN,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

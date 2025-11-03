@@ -2,7 +2,6 @@
 ///
 /// This module integrates deterministic GBDT evaluation into the consensus
 /// validator selection process when the ai_l1 feature is enabled.
-
 #[cfg(feature = "ai_l1")]
 use ippan_ai_core::{
     eval_gbdt,
@@ -82,7 +81,7 @@ pub fn apply_reputation_weight(base_stake: u64, reputation: ReputationScore) -> 
     base_stake.saturating_mul(reputation_u64) / 10000
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

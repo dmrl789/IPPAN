@@ -7,7 +7,6 @@
 use anyhow::Result;
 use ippan_types::{Amount, SUPPLY_CAP};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Core emission parameters.
 #[derive(Debug, Clone, Serialize, Deserialize)]

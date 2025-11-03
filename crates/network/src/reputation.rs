@@ -217,7 +217,7 @@ pub struct PeerReputationStats {
     pub last_seen_seconds: u64,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

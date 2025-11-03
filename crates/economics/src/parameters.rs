@@ -232,7 +232,7 @@ pub fn create_parameter_proposal(
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

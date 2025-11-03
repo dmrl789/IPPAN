@@ -24,6 +24,7 @@ ippan-consensus = { path = "../crates/consensus" }
 ippan-p2p = { path = "../crates/p2p" }
 ippan-crypto = { path = "../crates/crypto" }
 ippan-mempool = { path = "../crates/mempool" }
+ippan-security = { path = "../crates/security" }
 
 anyhow = { workspace = true }
 thiserror = { workspace = true }

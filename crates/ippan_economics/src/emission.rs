@@ -190,7 +190,7 @@ impl Default for EmissionEngine {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -208,9 +208,11 @@ mod tests {
 
     #[test]
     fn test_supply_cap_enforcement() {
-        let mut params = EmissionParams::default();
-        params.max_supply_micro = 100_000; // Very low cap for testing
-        params.initial_round_reward_micro = 50_000; // Higher than cap
+        let params = EmissionParams {
+            max_supply_micro: 100_000,          // Very low cap for testing
+            initial_round_reward_micro: 50_000, // Higher than cap
+            ..Default::default()
+        };
 
         let mut engine = EmissionEngine::with_params(params);
 

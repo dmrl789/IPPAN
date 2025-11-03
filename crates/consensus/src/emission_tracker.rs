@@ -4,7 +4,7 @@
 //! and provides audit records for governance and transparency.
 
 use blake3::Hasher;
-use ippan_economics::{EmissionParams, RoundRewardDistribution, ValidatorParticipation};
+use ippan_economics::{EmissionParams, RoundRewardDistribution};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -192,13 +192,13 @@ impl EmissionTracker {
         let start_round = self.last_audit_round.max(1);
 
         // Calculate totals for the audit period
-        let mut total_base_emission = 0u128;
+        let total_base_emission = 0u128;
         let total_distributed = 0u128;
 
         // Sum up emissions for the period
-        for r in start_round..=round {
+        for _r in start_round..=round {
             // Note: round_reward function needs to be implemented or replaced
-            // total_base_emission = total_base_emission.saturating_add(super::emission::round_reward(r, &self.params));
+            // total_base_emission = total_base_emission.saturating_add(super::emission::round_reward(_r, &self.params));
         }
 
         // Create distribution hash
@@ -332,7 +332,7 @@ pub struct EmissionStatistics {
     pub audit_checkpoints: usize,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

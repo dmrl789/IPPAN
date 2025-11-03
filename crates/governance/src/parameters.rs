@@ -230,9 +230,10 @@ impl Default for ParameterManager {
 // -----------------------------------------------------------------------------
 // ✅ Tests
 // -----------------------------------------------------------------------------
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_default_governance_params() {

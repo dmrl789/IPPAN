@@ -243,7 +243,7 @@ impl ParallelGossipNetwork {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use ippan_types::{Amount, RoundId, ValidatorId};

@@ -148,7 +148,7 @@ fn compute_model_hash(model: &crate::gbdt::GBDTModel) -> [u8; MODEL_HASH_SIZE] {
     result
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::gbdt::{GBDTModel, Node, Tree};

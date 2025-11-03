@@ -16,7 +16,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use tokio::time::{interval, Duration};
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// Main AI Service that coordinates all AI functionality
 #[derive(Clone)]
@@ -418,7 +418,7 @@ pub struct ServiceStatus {
     pub version: String,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;

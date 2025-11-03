@@ -190,7 +190,7 @@ pub trait ChainStateManager {
         F: FnOnce(&mut ChainState) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

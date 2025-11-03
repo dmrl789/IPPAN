@@ -71,7 +71,7 @@ where
     ordered
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use ippan_types::{HashTimer, IppanTimeMicros, Transaction};

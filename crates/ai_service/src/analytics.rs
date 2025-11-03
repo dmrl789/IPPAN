@@ -367,7 +367,7 @@ impl AnalyticsService {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
