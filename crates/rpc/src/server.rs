@@ -692,6 +692,9 @@ async fn handle_list_l2_exits() -> Json<Vec<L2ExitRecord>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ippan_storage::MemoryStorage;
+    use std::sync::atomic::AtomicUsize;
+    use std::time::Instant;
 
     #[tokio::test]
     async fn test_health_endpoint() {

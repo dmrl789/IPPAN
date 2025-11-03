@@ -20,7 +20,7 @@ default = ["llm", "analytics", "smart_contracts"]
 llm = ["reqwest"]
 
 # Analytics and insights
-analytics = ["chrono", "statistical"]
+analytics = ["chrono"]
 
 # Smart contract AI features
 smart_contracts = ["wasmtime", "wasmtime-wasi", "ippan-consensus"]
@@ -49,12 +49,9 @@ reqwest = { version = "0.11", default-features = false, features = ["json", "rus
 # Time handling (optional, behind analytics feature)
 chrono = { version = "0.4", features = ["serde"], optional = true }
 
-# Statistical analysis
-statistical = { version = "0.1", optional = true }
-
 # WebAssembly runtime for smart contracts
-wasmtime = { version = "15.0", optional = true }
-wasmtime-wasi = { version = "15.0", optional = true }
+wasmtime = { version = "24.0", optional = true }
+wasmtime-wasi = { version = "24.0", optional = true }
 
 # Error handling
 anyhow = { workspace = true }

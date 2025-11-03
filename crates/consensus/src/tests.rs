@@ -39,7 +39,7 @@ mod tests {
     #[tokio::test]
     async fn test_consensus_creation() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = PoAConsensus::new(config.clone(), storage, validator_id);
@@ -52,7 +52,7 @@ mod tests {
     #[tokio::test]
     async fn test_consensus_start_stop() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let mut consensus = PoAConsensus::new(config, storage, validator_id);
@@ -67,7 +67,7 @@ mod tests {
     #[tokio::test]
     async fn test_proposer_selection() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = PoAConsensus::new(config, storage, validator_id);
@@ -80,17 +80,17 @@ mod tests {
     #[tokio::test]
     async fn test_block_proposal() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = PoAConsensus::new(config, storage.clone(), validator_id);
 
         // Add a transaction to mempool
-        let tx = Transaction::new([3u8; 32], [4u8; 32], 1000, 1);
+        let tx = Transaction::new([3u8; 32], [4u8; 32], ippan_types::Amount::from_micro_ipn(1000), 1);
         consensus.mempool().add_transaction(tx).unwrap();
 
         // Propose a block
-        let transactions = vec![Transaction::new([5u8; 32], [6u8; 32], 2000, 1)];
+        let transactions = vec![Transaction::new([5u8; 32], [6u8; 32], ippan_types::Amount::from_micro_ipn(2000), 1)];
         let result = consensus.propose_block(transactions).await;
 
         assert!(result.is_ok());
@@ -101,13 +101,13 @@ mod tests {
     #[tokio::test]
     async fn test_block_validation() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = PoAConsensus::new(config, storage, validator_id);
 
         // Create a valid block
-        let tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
+        let tx = Transaction::new([1u8; 32], [2u8; 32], ippan_types::Amount::from_micro_ipn(1000), 1);
         let block = Block::new(vec![], vec![tx], 1, validator_id);
 
         let result = consensus.validate_block(&block).await;
@@ -118,7 +118,7 @@ mod tests {
     #[tokio::test]
     async fn test_validator_management() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let mut consensus = PoAConsensus::new(config, storage, validator_id);
@@ -144,15 +144,15 @@ mod tests {
     #[tokio::test]
     async fn test_mempool_integration() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = PoAConsensus::new(config, storage, validator_id);
         let mempool = consensus.mempool();
 
         // Add transactions
-        let tx1 = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
-        let tx2 = Transaction::new([3u8; 32], [4u8; 32], 2000, 1);
+        let tx1 = Transaction::new([1u8; 32], [2u8; 32], ippan_types::Amount::from_micro_ipn(1000), 1);
+        let tx2 = Transaction::new([3u8; 32], [4u8; 32], ippan_types::Amount::from_micro_ipn(2000), 1);
 
         assert!(mempool.add_transaction(tx1).is_ok());
         assert!(mempool.add_transaction(tx2).is_ok());
@@ -168,7 +168,7 @@ mod tests {
         let mut config = create_test_config();
         config.enable_ai_reputation = true;
 
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = PoAConsensus::new(config, storage, validator_id);
@@ -181,13 +181,13 @@ mod tests {
     #[tokio::test]
     async fn test_fee_validation() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = PoAConsensus::new(config, storage, validator_id);
 
         // Test transaction with reasonable fee
-        let tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
+        let tx = Transaction::new([1u8; 32], [2u8; 32], ippan_types::Amount::from_micro_ipn(1000), 1);
         let result = consensus
             .validate_block(&Block::new(vec![], vec![tx], 1, validator_id))
             .await;
@@ -197,7 +197,7 @@ mod tests {
     #[tokio::test]
     async fn test_round_finalization() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let mut consensus = PoAConsensus::new(config, storage.clone(), validator_id);
@@ -206,7 +206,7 @@ mod tests {
         consensus.start().await.unwrap();
 
         // Add some transactions
-        let tx = Transaction::new([1u8; 32], [2u8; 32], 1000, 1);
+        let tx = Transaction::new([1u8; 32], [2u8; 32], ippan_types::Amount::from_micro_ipn(1000), 1);
         consensus.mempool().add_transaction(tx).unwrap();
 
         // Wait for some processing
@@ -224,7 +224,7 @@ mod tests {
     #[tokio::test]
     async fn test_consensus_state_consistency() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = PoAConsensus::new(config, storage, validator_id);
@@ -240,7 +240,7 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_operations() {
         let config = create_test_config();
-        let storage = Arc::new(MemoryStorage::new());
+        let storage = Arc::new(MemoryStorage::default());
         let validator_id = [1u8; 32];
 
         let consensus = Arc::new(PoAConsensus::new(config, storage, validator_id));
