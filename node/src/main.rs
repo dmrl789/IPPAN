@@ -3,8 +3,8 @@ use clap::{Arg, ArgAction, Command};
 use config::Config;
 use hex::encode as hex_encode;
 use ippan_consensus::{
-    PoAConfig, PoAConsensus, Validator, DLCConfig, DLCConsensus, DLCIntegratedConsensus,
-    dlc_config_from_poa, VALIDATOR_BOND_AMOUNT,
+    PoAConfig, PoAConsensus, Validator, DLCConfig, DLCIntegratedConsensus,
+    VALIDATOR_BOND_AMOUNT,
 };
 use ippan_mempool::Mempool;
 use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};

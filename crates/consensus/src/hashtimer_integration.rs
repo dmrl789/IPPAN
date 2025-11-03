@@ -62,7 +62,7 @@ pub fn verify_temporal_ordering(
     round_start_time: IppanTimeMicros,
     round_duration_ms: u64,
 ) -> bool {
-    let block_time = block_hashtimer.timestamp_us();
+    let block_time = block_hashtimer.time();
     let round_end_time = IppanTimeMicros(
         round_start_time.0 + (round_duration_ms * 1000)
     );
@@ -87,7 +87,7 @@ pub fn should_close_round(
 pub fn derive_selection_seed(hashtimer: &HashTimer) -> [u8; 32] {
     let mut hasher = Blake3::new();
     hasher.update(b"DLC_VERIFIER_SELECTION_SEED");
-    hasher.update(&hashtimer.to_bytes());
+    hasher.update(&hashtimer.digest());
     
     let hash = hasher.finalize();
     let mut seed = [0u8; 32];

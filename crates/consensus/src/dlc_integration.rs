@@ -7,8 +7,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use crate::{
-    DLCConfig, DLCConsensus, DGBDTEngine, ShadowVerifierSet, BondingManager,
-    ValidatorMetrics, PoAConsensus,
+    DLCConfig, DLCConsensus, ValidatorMetrics, PoAConsensus,
 };
 use ippan_types::ValidatorId;
 
