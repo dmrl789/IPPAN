@@ -1,8 +1,8 @@
 //! Production-ready main entry point for AI Service
 
 use ippan_ai_service::{
-    AIService, ConfigManager, Environment, JsonExporter,
-    MetricsCollector, MetricsExporter, PrometheusExporter,
+    AIService, ConfigManager, Environment, JsonExporter, MetricsCollector, MetricsExporter,
+    PrometheusExporter,
 };
 use std::sync::Arc;
 use std::time::Duration;

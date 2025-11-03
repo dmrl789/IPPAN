@@ -311,13 +311,17 @@ mod tests {
     fn create_test_metadata() -> ModelMetadata {
         ModelMetadata {
             id: create_test_model_id(),
-            architecture: "GBDT".to_string(),
-            input_shape: vec![10],
-            output_shape: vec![1],
-            parameter_count: 1000,
-            size_bytes: 10000,
+            name: "test_model".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Test model".to_string(),
+            author: "test_author".to_string(),
+            license: "MIT".to_string(),
+            tags: vec![],
             created_at: 1234567890,
-            description: Some("Test model".to_string()),
+            model_family: ippan_ai_core::ModelFamily::Tabular,
+            features_count: 10,
+            trees_count: 100,
+            max_depth: 10,
         }
     }
 

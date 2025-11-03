@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_supply_cap_enforcement() {
         let params = EmissionParams {
-            max_supply_micro: 100_000, // Very low cap for testing
+            max_supply_micro: 100_000,          // Very low cap for testing
             initial_round_reward_micro: 50_000, // Higher than cap
             ..Default::default()
         };

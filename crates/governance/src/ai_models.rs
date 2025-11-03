@@ -483,11 +483,9 @@ mod tests {
     fn create_test_proposal(model_id: &str) -> AiModelProposal {
         AiModelProposal {
             model_id: model_id.to_string(),
-            model_hash: "test_hash".to_string(),
-            version: "1.0.0".to_string(),
+            model_hash: [0u8; 32],
+            version: 1,
             activation_round: 100,
-            signature_foundation: "test_sig".to_string(),
-            proposer_pubkey: "test_pubkey".to_string(),
             threshold_bps: 6600,
             rationale: "Test proposal".to_string(),
             model_url: "https://example.com/model".to_string(),

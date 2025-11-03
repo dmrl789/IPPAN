@@ -6,8 +6,8 @@
 use crate::fees::FeeCollector;
 use anyhow::Result;
 use ippan_economics::{
-    EmissionEngine, EmissionParams, Payouts, RoundRewards, ValidatorId,
-    ValidatorParticipation, ValidatorRole,
+    EmissionEngine, EmissionParams, Payouts, RoundRewards, ValidatorId, ValidatorParticipation,
+    ValidatorRole,
 };
 use ippan_treasury::{AccountLedger, RewardSink};
 use ippan_types::{ChainState, MicroIPN, RoundId};
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_round_execution() {
-        let params = EconomicsParams::default();
+        let params = EmissionParams::default();
         let ledger = Box::new(MockAccountLedger::new());
         let mut executor = RoundExecutor::new(params, ledger);
         let mut state = ChainState::new();
