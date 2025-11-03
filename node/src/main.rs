@@ -2,7 +2,10 @@ use anyhow::Result;
 use clap::{Arg, ArgAction, Command};
 use config::Config;
 use hex::encode as hex_encode;
-use ippan_consensus::{PoAConfig, PoAConsensus, Validator};
+use ippan_consensus::{
+    PoAConfig, PoAConsensus, Validator, DLCConfig, DLCConsensus, DLCIntegratedConsensus,
+    dlc_config_from_poa, VALIDATOR_BOND_AMOUNT,
+};
 use ippan_mempool::Mempool;
 use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};
 use ippan_rpc::server::ConsensusHandle;
@@ -38,10 +41,20 @@ struct AppConfig {
     db_path: String,
 
     // Consensus
+    consensus_mode: String,
     slot_duration_ms: u64,
     max_transactions_per_block: usize,
     block_reward: u64,
     finalization_interval_ms: u64,
+    
+    // DLC Configuration
+    enable_dlc: bool,
+    temporal_finality_ms: u64,
+    shadow_verifier_count: usize,
+    min_reputation_score: i32,
+    enable_dgbdt_fairness: bool,
+    enable_shadow_verifiers: bool,
+    require_validator_bond: bool,
 
     // L2 interoperability
     l2_max_commit_size: usize,
@@ -132,6 +145,34 @@ impl AppConfig {
                 .get_string("NODE_ID")
                 .unwrap_or_else(|_| "ippan_node".to_string()),
             validator_id,
+            consensus_mode: config
+                .get_string("CONSENSUS_MODE")
+                .unwrap_or_else(|_| "POA".to_string()),
+            enable_dlc: config
+                .get_string("ENABLE_DLC")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse()?,
+            temporal_finality_ms: config
+                .get_string("TEMPORAL_FINALITY_MS")
+                .unwrap_or_else(|_| "250".to_string())
+                .parse()?,
+            shadow_verifier_count: config
+                .get_string("SHADOW_VERIFIER_COUNT")
+                .unwrap_or_else(|_| "3".to_string())
+                .parse()?,
+            min_reputation_score: config
+                .get_string("MIN_REPUTATION_SCORE")
+                .unwrap_or_else(|_| "5000".to_string())
+                .parse()?,
+            enable_dgbdt_fairness: config
+                .get_bool("ENABLE_DGBDT_FAIRNESS")
+                .unwrap_or(true),
+            enable_shadow_verifiers: config
+                .get_bool("ENABLE_SHADOW_VERIFIERS")
+                .unwrap_or(true),
+            require_validator_bond: config
+                .get_bool("REQUIRE_VALIDATOR_BOND")
+                .unwrap_or(true),
             rpc_host: config
                 .get_string("RPC_HOST")
                 .unwrap_or_else(|_| "0.0.0.0".to_string()),
@@ -309,16 +350,75 @@ async fn main() -> Result<()> {
         enable_dag_fair_emission: true,
     };
 
-    let consensus_instance =
-        PoAConsensus::new(consensus_config, storage.clone(), config.validator_id);
-    let tx_sender = consensus_instance.get_tx_sender();
-    let mempool = consensus_instance.mempool();
-    let consensus = Arc::new(Mutex::new(consensus_instance));
-    {
-        let mut consensus_guard = consensus.lock().await;
-        consensus_guard.start().await?;
+    // Initialize consensus based on mode
+    let (tx_sender, mempool, consensus);
+    
+    if config.consensus_mode.to_uppercase() == "DLC" || config.enable_dlc {
+        info!("Starting DLC consensus mode");
+        
+        // Create base PoA consensus
+        let poa_instance = PoAConsensus::new(
+            consensus_config.clone(),
+            storage.clone(),
+            config.validator_id,
+        );
+        
+        // Create DLC configuration
+        let dlc_config = DLCConfig {
+            temporal_finality_ms: config.temporal_finality_ms,
+            hashtimer_precision_us: 1,
+            shadow_verifier_count: config.shadow_verifier_count,
+            min_reputation_score: config.min_reputation_score,
+            max_transactions_per_block: config.max_transactions_per_block,
+            enable_dgbdt_fairness: config.enable_dgbdt_fairness,
+            enable_shadow_verifiers: config.enable_shadow_verifiers,
+            require_validator_bond: config.require_validator_bond,
+            dag_config: Default::default(),
+        };
+        
+        // Create integrated DLC consensus
+        let mut dlc_integrated = DLCIntegratedConsensus::new(
+            poa_instance,
+            dlc_config,
+            config.validator_id,
+        );
+        
+        tx_sender = dlc_integrated.poa.get_tx_sender();
+        mempool = dlc_integrated.poa.mempool();
+        
+        // Add validator bond if required
+        if config.require_validator_bond {
+            info!("Adding validator bond of {} micro-IPN (10 IPN)", VALIDATOR_BOND_AMOUNT);
+            if let Err(e) = dlc_integrated.add_validator_bond(
+                config.validator_id,
+                VALIDATOR_BOND_AMOUNT,
+            ) {
+                warn!("Failed to add validator bond: {}", e);
+            }
+        }
+        
+        // Start DLC consensus
+        dlc_integrated.start().await?;
+        consensus = Arc::new(Mutex::new(dlc_integrated.poa));
+        
+        info!("DLC consensus engine started");
+        info!("  - Temporal finality: {}ms", config.temporal_finality_ms);
+        info!("  - Shadow verifiers: {}", config.shadow_verifier_count);
+        info!("  - D-GBDT fairness: {}", config.enable_dgbdt_fairness);
+        info!("  - Validator bonding: {}", config.require_validator_bond);
+    } else {
+        info!("Starting PoA consensus mode");
+        let consensus_instance =
+            PoAConsensus::new(consensus_config, storage.clone(), config.validator_id);
+        tx_sender = consensus_instance.get_tx_sender();
+        mempool = consensus_instance.mempool();
+        consensus = Arc::new(Mutex::new(consensus_instance));
+        {
+            let mut consensus_guard = consensus.lock().await;
+            consensus_guard.start().await?;
+        }
+        info!("PoA consensus engine started");
     }
-    info!("Consensus engine started");
 
     // Initialize P2P network
     let p2p_host = &config.p2p_host;
