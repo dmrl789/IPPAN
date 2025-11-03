@@ -106,8 +106,8 @@ impl RoundConsensus {
                 Some(m) => m,
                 None => return Ok(5000),
             };
-            let score = compute_validator_score(telemetry, model) as i32;
-            return Ok(score);
+            let score = compute_validator_score(telemetry, model);
+            Ok(score)
         }
 
         #[cfg(not(feature = "ai_l1"))]
@@ -257,7 +257,7 @@ pub fn calculate_reputation_score(
 // -----------------------------------------------------------------------------
 // ✅ Tests
 // -----------------------------------------------------------------------------
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;

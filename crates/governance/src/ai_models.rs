@@ -57,6 +57,7 @@ struct ProposalState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Vote {
     stake: u64,
     approve: bool,
@@ -475,7 +476,7 @@ pub fn validate_proposal_format(proposal: &AiModelProposal) -> Result<()> {
 // -----------------------------------------------------------------------------
 // ✅ Tests
 // -----------------------------------------------------------------------------
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

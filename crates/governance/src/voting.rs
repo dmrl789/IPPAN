@@ -226,7 +226,7 @@ pub struct VotingResults {
     pub passed: bool,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;

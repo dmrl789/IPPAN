@@ -2829,6 +2829,7 @@ dependencies = [
  "ippan-mempool",
  "ippan-p2p",
  "ippan-rpc",
+ "ippan-security",
  "ippan-storage",
  "ippan-types",
  "reqwest",

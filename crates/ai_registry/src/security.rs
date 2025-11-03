@@ -346,7 +346,7 @@ pub struct SecurityStats {
     pub ip_whitelist_enabled: bool,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;

@@ -260,7 +260,7 @@ impl WalletStorage {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;

@@ -268,7 +268,7 @@ fn digest_from_parts(timestamp_us: i64, entropy: &[u8; HASHTIMER_ENTROPY_BYTES])
     output
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

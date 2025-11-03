@@ -423,7 +423,7 @@ pub async fn start_dag_sync(listen_addr: &str, signing_key: SigningKey, dag: Blo
     });
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

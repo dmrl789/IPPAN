@@ -3,17 +3,17 @@
 //! Provides robust connection handling, reconnection logic, and connection pooling
 //! for the IPPAN P2P network.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tokio::time::{interval, sleep, timeout};
+use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};
 
 use crate::peers::Peer;
@@ -385,7 +385,7 @@ impl ConnectionManager {
 
         // Attempt connection with timeout
         match timeout(config.connection_timeout, TcpStream::connect(addr)).await {
-            Ok(Ok(mut stream)) => {
+            Ok(Ok(stream)) => {
                 info!("Connected to peer {} at {}", peer_id, address);
 
                 // Update connection state
@@ -589,7 +589,7 @@ pub struct ConnectionStats {
     pub total_messages: u64,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;

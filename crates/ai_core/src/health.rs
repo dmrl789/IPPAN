@@ -386,7 +386,7 @@ fn get_load_average() -> Result<f64> {
     Ok(0.5)
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

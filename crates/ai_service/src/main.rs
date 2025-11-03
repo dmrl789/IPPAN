@@ -1,7 +1,7 @@
 //! Production-ready main entry point for AI Service
 
 use ippan_ai_service::{
-    AIService, ConfigManager, Environment, HealthResponse, HealthStatus, JsonExporter,
+    AIService, ConfigManager, Environment, JsonExporter,
     MetricsCollector, MetricsExporter, PrometheusExporter,
 };
 use std::sync::Arc;
@@ -126,7 +126,7 @@ fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Start health check HTTP server
-async fn start_health_server(mut service: AIService) {
+async fn start_health_server(service: AIService) {
     use warp::Filter;
 
     let health_route = warp::path("health").and(warp::get()).map(move || {

@@ -2,16 +2,15 @@
 //!
 //! Handles automatic peer discovery, peer exchange, and network topology management.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
-use tokio::time::{interval, sleep, timeout};
-use tracing::{debug, error, info, warn};
+use tokio::time::interval;
+use tracing::{debug, info, warn};
 
 use crate::peers::Peer;
 
@@ -418,7 +417,7 @@ impl PeerDiscovery {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

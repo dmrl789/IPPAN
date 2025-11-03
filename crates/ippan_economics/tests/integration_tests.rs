@@ -28,8 +28,10 @@ fn test_complete_emission_cycle() {
 
 #[test]
 fn test_halving_schedule() {
-    let mut params = EmissionParams::default();
-    params.halving_interval_rounds = 10; // small interval for test
+    let params = EmissionParams {
+        halving_interval_rounds: 10, // small interval for test
+        ..Default::default()
+    };
     let emission_engine = EmissionEngine::with_params(params);
 
     let before_halving = emission_engine.calculate_round_reward(10).unwrap();
@@ -112,8 +114,10 @@ fn test_supply_cap_enforcement() {
 
 #[test]
 fn test_fee_cap_enforcement() {
-    let mut params = EmissionParams::default();
-    params.fee_cap_fraction = Decimal::new(1, 1); // 10%
+    let params = EmissionParams {
+        fee_cap_fraction: Decimal::new(1, 1), // 10%
+        ..Default::default()
+    };
 
     let round_rewards = RoundRewards::new(params);
     let capped_high = round_rewards.apply_fee_cap(5_000, 10_000);
@@ -164,7 +168,7 @@ fn test_mathematical_precision() {
 
 #[test]
 fn test_overflow_protection() {
-    let mut emission_engine = EmissionEngine::new();
+    let emission_engine = EmissionEngine::new();
 
     let large_round = u64::MAX;
     let result = emission_engine.calculate_round_reward(large_round);

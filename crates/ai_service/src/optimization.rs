@@ -153,7 +153,7 @@ impl OptimizationService {
         &self,
         transaction: &TransactionData,
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
-        let mut optimized = transaction.clone();
+        let optimized = transaction.clone();
         let mut suggestions = Vec::new();
         let mut improvement: f64 = 0.0;
 
@@ -236,7 +236,7 @@ impl OptimizationService {
         &self,
         transaction: &TransactionData,
     ) -> Result<(TransactionData, Vec<OptimizationSuggestion>, f64), AIServiceError> {
-        let mut optimized = transaction.clone();
+        let optimized = transaction.clone();
         let mut suggestions = Vec::new();
         let mut improvement: f64 = 0.0;
 
@@ -391,7 +391,7 @@ impl Default for OptimizationService {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

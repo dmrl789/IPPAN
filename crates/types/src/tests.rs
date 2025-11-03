@@ -1,11 +1,10 @@
-use super::*;
 use crate::{
     AccessKey, Amount, Block, ConfidentialEnvelope, ConfidentialProof, ConfidentialProofType,
     HashTimer, IppanTimeMicros, Transaction,
 };
 
-#[cfg(all(test, feature = "enable-tests"))]
-mod tests {
+#[cfg(test)]
+mod type_tests {
     use super::*;
 
     #[test]

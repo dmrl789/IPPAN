@@ -284,7 +284,7 @@ impl MetricsCollector for NetworkMetrics {
 // ------------------------------------------------------------
 // ✅ Tests
 // ------------------------------------------------------------
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -170,7 +170,7 @@ impl DAGOperations {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::block::Block;

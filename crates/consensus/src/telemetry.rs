@@ -217,7 +217,7 @@ impl TelemetryManager {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use ippan_storage::SledStorage;

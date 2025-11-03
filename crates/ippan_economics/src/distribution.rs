@@ -238,7 +238,7 @@ impl Default for RoundRewards {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -285,8 +285,10 @@ mod tests {
 
     #[test]
     fn test_fee_cap() {
-        let mut params = EmissionParams::default();
-        params.fee_cap_fraction = Decimal::new(1, 1); // 10%
+        let params = EmissionParams {
+            fee_cap_fraction: Decimal::new(1, 1), // 10%
+            ..Default::default()
+        };
 
         let rewards = RoundRewards::new(params);
         let capped = rewards.apply_fee_cap(5_000, 10_000);

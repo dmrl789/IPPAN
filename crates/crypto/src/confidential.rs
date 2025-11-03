@@ -189,7 +189,7 @@ fn receiver_commitment(tx: &Transaction) -> [u8; 32] {
 // -----------------------------------------------------------------------------
 // Tests (safe with and without feature flag)
 // -----------------------------------------------------------------------------
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use ippan_types::{

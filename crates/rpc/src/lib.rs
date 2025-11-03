@@ -1,4 +1,3 @@
-use anyhow::Result;
 
 pub mod server;
 pub use server::{start_server, AppState, L2Config};
@@ -17,7 +16,7 @@ pub struct PeerInfo {
     pub is_connected: bool,
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

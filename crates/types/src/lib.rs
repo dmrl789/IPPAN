@@ -26,5 +26,5 @@ pub use time_service::{
 };
 pub use transaction::*;
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests;

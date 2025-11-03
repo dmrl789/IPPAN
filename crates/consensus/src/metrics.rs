@@ -413,7 +413,7 @@ impl Default for ConsensusMetrics {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

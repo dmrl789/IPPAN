@@ -546,6 +546,7 @@ impl GBDTModel {
         self.metadata.version == expected
     }
 
+    #[allow(dead_code)]
     fn reset_runtime_state(&mut self) {
         self.reset_metrics();
         self.clear_cache();
@@ -567,7 +568,7 @@ pub fn eval_gbdt(model: &GBDTModel, features: &[i64]) -> i32 {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     fn simple_tree() -> Tree {

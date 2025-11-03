@@ -413,7 +413,7 @@ impl MessageHandler for PingHandler {
     }
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

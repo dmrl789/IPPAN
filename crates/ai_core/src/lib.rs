@@ -128,7 +128,7 @@ pub fn compute_validator_score(telemetry: &ValidatorTelemetry, model: &GBDTModel
 // ------------------------------------------------------------
 // Internal deterministic tests
 // ------------------------------------------------------------
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod internal_tests {
     use super::*;
     use crate::features::ValidatorTelemetry;

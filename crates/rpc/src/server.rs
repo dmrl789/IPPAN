@@ -9,10 +9,10 @@ use axum::extract::{ConnectInfo, Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use ippan_consensus::{ConsensusState, PoAConsensus};
+use ippan_consensus::PoAConsensus;
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
-use ippan_storage::{Account, MemoryStorage, Storage};
+use ippan_storage::Storage;
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
 use serde::Serialize;
@@ -76,7 +76,17 @@ impl ConsensusHandle {
 
     pub async fn snapshot(&self) -> Result<ConsensusStateView> {
         let guard = self.consensus.lock().await;
-        Ok(ConsensusStateView::from(guard.get_state()))
+        let state = guard.get_state();
+        let validators: Vec<String> = guard
+            .config
+            .validators
+            .iter()
+            .map(|v| hex::encode(v.id))
+            .collect();
+        Ok(ConsensusStateView {
+            round: state.current_round,
+            validators,
+        })
     }
 
     pub fn submit_transaction(&self, tx: Transaction) -> Result<()> {
@@ -91,15 +101,6 @@ impl ConsensusHandle {
 pub struct ConsensusStateView {
     pub round: u64,
     pub validators: Vec<String>,
-}
-
-impl From<ConsensusState> for ConsensusStateView {
-    fn from(state: ConsensusState) -> Self {
-        Self {
-            round: state.current_round,
-            validators: vec![], // TODO: get validators from consensus
-        }
-    }
 }
 
 /// Start the RPC server
@@ -688,7 +689,7 @@ async fn handle_list_l2_exits() -> Json<Vec<L2ExitRecord>> {
     Json(vec![])
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

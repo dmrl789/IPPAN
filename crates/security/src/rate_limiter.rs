@@ -259,7 +259,7 @@ pub enum RateLimitError {
     ConfigError(String),
 }
 
-#[cfg(all(test, feature = "enable-tests"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
@@ -274,9 +274,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_basic_rate_limiting() {
-        let mut config = RateLimitConfig::default();
-        config.requests_per_second = 2;
-        config.burst_capacity = 2;
+        let config = RateLimitConfig {
+            requests_per_second: 2,
+            burst_capacity: 2,
+            ..Default::default()
+        };
 
         let limiter = RateLimiter::new(config).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
@@ -306,9 +308,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_different_ips() {
-        let mut config = RateLimitConfig::default();
-        config.requests_per_second = 1;
-        config.burst_capacity = 1;
+        let config = RateLimitConfig {
+            requests_per_second: 1,
+            burst_capacity: 1,
+            ..Default::default()
+        };
 
         let limiter = RateLimiter::new(config).unwrap();
         let ip1 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
@@ -325,9 +329,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limit_recovery() {
-        let mut config = RateLimitConfig::default();
-        config.requests_per_second = 10; // Allow recovery quickly for test
-        config.burst_capacity = 1;
+        let config = RateLimitConfig {
+            requests_per_second: 10, // Allow recovery quickly for test
+            burst_capacity: 1,
+            ..Default::default()
+        };
 
         let limiter = RateLimiter::new(config).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));

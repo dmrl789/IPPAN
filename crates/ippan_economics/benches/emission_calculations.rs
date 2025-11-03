@@ -106,10 +106,12 @@ fn bench_cumulative_supply_calculation(c: &mut Criterion) {
 }
 
 fn bench_emission_parameters_validation(c: &mut Criterion) {
-    let governance = EconomicsParams::default();
+    let _governance = EconomicsParams::default();
 
-    let mut params = EmissionParams::default();
-    params.initial_round_reward_micro = 15_000;
+    let params = EmissionParams {
+        initial_round_reward_micro: 15_000,
+        ..Default::default()
+    };
 
     c.bench_function("validate_emission_params", |b| {
         b.iter(|| {
