@@ -14,12 +14,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
-use ippan_types::{Block, BlockId, IppanTimeMicros, RoundId, Transaction, ValidatorId};
+use ippan_types::{Block, BlockId, IppanTimeMicros, RoundId, ValidatorId};
 
 use crate::parallel_dag::{ParallelDag, ParallelDagConfig};
 use crate::dgbdt::{DGBDTEngine, ValidatorMetrics};
-use crate::shadow_verifier::{ShadowVerifier, ShadowVerifierSet, VerificationResult};
-use crate::bonding::{BondingManager, ValidatorBond};
+use crate::shadow_verifier::ShadowVerifierSet;
+use crate::bonding::BondingManager;
 
 /// DLC Consensus configuration
 #[derive(Debug, Clone)]
