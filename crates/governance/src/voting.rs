@@ -229,7 +229,7 @@ pub struct VotingResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::SigningKey;
+    use ed25519_dalek::{Signer, SigningKey};
 
     fn create_test_vote(proposal_id: &str, approve: bool) -> Vote {
         let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);

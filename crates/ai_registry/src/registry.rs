@@ -316,12 +316,14 @@ mod tests {
             description: "Test model".to_string(),
             author: "test_author".to_string(),
             license: "MIT".to_string(),
-            tags: vec![],
-            created_at: 1234567890,
-            model_family: ippan_ai_core::ModelFamily::Tabular,
-            features_count: 10,
-            trees_count: 100,
-            max_depth: 10,
+            tags: vec!["gbdt".to_string()],
+            created_at: 1_234_567_890,
+            updated_at: 1_234_567_890,
+            architecture: "gbdt".to_string(),
+            input_shape: vec![10],
+            output_shape: vec![1],
+            size_bytes: 1_024,
+            parameter_count: 2_048,
         }
     }
 

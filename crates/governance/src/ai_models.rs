@@ -424,27 +424,129 @@ impl Default for AiModelGovernance {
 // 📜 Templates & Parsers
 // -----------------------------------------------------------------------------
 pub const AI_MODEL_PROPOSAL_TEMPLATE: &str = r#"{
+  "proposal_id": "proposal-001",
   "model_id": "model_identifier",
   "version": 1,
   "model_url": "https://example.com/model.json",
-  "model_hash": "sha256_hash_here",
-  "signature_foundation": "ed25519_signature_here",
-  "proposer_pubkey": "ed25519_public_key_here",
+  "model_hash": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "signer_pubkey": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   "activation_round": 1000,
-  "rationale": "Description of the model and its purpose",
-  "threshold_bps": 8000
+  "description": "Description of the model and its purpose",
+  "proposer": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "created_at": 1700000000,
+  "metadata": {}
 }"#;
 
 pub const AI_MODEL_PROPOSAL_YAML_TEMPLATE: &str = r#"---
+proposal_id: "proposal-001"
 model_id: "model_identifier"
 version: 1
 model_url: "https://example.com/model.json"
-model_hash: "sha256_hash_here"
-signature_foundation: "ed25519_signature_here"
-proposer_pubkey: "ed25519_public_key_here"
+model_hash:
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+signature: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+signer_pubkey:
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
 activation_round: 1000
-rationale: "Description of the model and its purpose"
-threshold_bps: 8000
+description: "Description of the model and its purpose"
+proposer:
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+created_at: 1700000000
+metadata: {}
 "#;
 
 pub fn parse_json_proposal(json: &str) -> Result<AiModelProposal> {
@@ -482,13 +584,18 @@ mod tests {
 
     fn create_test_proposal(model_id: &str) -> AiModelProposal {
         AiModelProposal {
+            proposal_id: format!("proposal-{}", model_id),
             model_id: model_id.to_string(),
-            model_hash: [0u8; 32],
             version: 1,
-            activation_round: 100,
-            threshold_bps: 6600,
-            rationale: "Test proposal".to_string(),
             model_url: "https://example.com/model".to_string(),
+            model_hash: [0u8; 32],
+            signature: [0u8; 64],
+            signer_pubkey: [1u8; 32],
+            activation_round: 100,
+            description: "Test proposal".to_string(),
+            proposer: [2u8; 32],
+            created_at: 1_234_567_890,
+            metadata: HashMap::new(),
         }
     }
 
