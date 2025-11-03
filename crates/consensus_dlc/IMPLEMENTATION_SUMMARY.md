@@ -90,7 +90,8 @@ The `consensus_dlc` crate has been **fully implemented** and enabled in the IPPA
 - Reputation-based participation
 
 #### 6. Emission & Rewards
-- Controlled token emission
+- **21 million IPN hard cap** (Bitcoin-inspired scarcity model)
+- Starts from 0 supply (fair genesis launch)
 - Inflation reduction schedule (5% → 1%)
 - Block rewards: Proposer (50%), Verifiers (40%), Treasury (10%)
 - Pending rewards tracking

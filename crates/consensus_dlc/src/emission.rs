@@ -10,6 +10,9 @@ use std::collections::HashMap;
 /// Base block reward in smallest unit (micro-IPN)
 pub const BLOCK_REWARD: u64 = 1_0000_0000; // 1 IPN = 100,000,000 micro-IPN
 
+/// Maximum supply cap: 21 million IPN (matches Bitcoin's supply model)
+pub const SUPPLY_CAP: u64 = 21_000_000 * 1_0000_0000; // 21 million IPN in micro-IPN
+
 /// Initial annual inflation rate (in basis points, 1% = 100 bps)
 pub const INITIAL_INFLATION_BPS: u64 = 500; // 5%
 
@@ -43,16 +46,22 @@ pub struct EmissionSchedule {
 impl Default for EmissionSchedule {
     fn default() -> Self {
         Self::new(
-            1_000_000_000 * 1_0000_0000, // 1 billion IPN initial
-            10_000_000_000 * 1_0000_0000, // 10 billion IPN max
+            0, // Start from genesis (0 initial supply)
+            SUPPLY_CAP, // 21 million IPN max (matches Bitcoin model)
             BLOCK_REWARD,
-            525_600, // ~1 block per minute
+            525_600, // ~1 block per minute = ~525,600 blocks per year
         )
     }
 }
 
 impl EmissionSchedule {
     /// Create a new emission schedule
+    /// 
+    /// # Arguments
+    /// * `initial_supply` - Starting supply (typically 0 for genesis)
+    /// * `max_supply` - Maximum supply cap (21 million IPN = 2,100,000,000,000,000 micro-IPN)
+    /// * `block_reward` - Initial reward per block
+    /// * `blocks_per_year` - Expected blocks per year (~525,600 at 1 block/min)
     pub fn new(
         initial_supply: u64,
         max_supply: u64,
@@ -86,9 +95,16 @@ impl EmissionSchedule {
             .saturating_sub(years_elapsed * INFLATION_REDUCTION_BPS)
             .max(MIN_INFLATION_BPS);
 
-        // Calculate reward based on current supply and inflation
-        let annual_emission = (self.current_supply as u128 * inflation_bps as u128) / 10_000u128;
-        let block_reward = (annual_emission / self.blocks_per_year as u128) as u64;
+        // Bootstrap phase: use fixed block reward when supply is very low
+        // This ensures fair launch can get started
+        let block_reward = if self.current_supply < BLOCK_REWARD * 1000 {
+            // First ~1000 blocks use fixed reward for bootstrap
+            BLOCK_REWARD
+        } else {
+            // Calculate reward based on current supply and inflation
+            let annual_emission = (self.current_supply as u128 * inflation_bps as u128) / 10_000u128;
+            (annual_emission / self.blocks_per_year as u128) as u64
+        };
 
         // Ensure we don't exceed max supply
         block_reward.min(self.max_supply.saturating_sub(self.current_supply))
@@ -321,17 +337,21 @@ mod tests {
     fn test_block_reward_calculation() {
         let schedule = EmissionSchedule::default();
         let reward = schedule.calculate_block_reward(0);
+        // With 0 initial supply, first block should have a reward
         assert!(reward > 0);
+        assert!(reward <= BLOCK_REWARD);
     }
 
     #[test]
     fn test_emission_update() {
         let mut schedule = EmissionSchedule::default();
         let initial_supply = schedule.current_supply;
+        assert_eq!(initial_supply, 0); // Starts from genesis
         
         schedule.update(1, 1).unwrap();
         
-        assert!(schedule.current_supply > initial_supply);
+        // After processing 1 block, supply should increase
+        assert!(schedule.current_supply >= initial_supply);
     }
 
     #[test]

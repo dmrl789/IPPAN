@@ -281,13 +281,22 @@ cargo test -p ippan-consensus-dlc test_full_consensus_cycle
 
 ## Economic Model
 
-### Emission Schedule
+### Emission Schedule - 21 Million Token Cap
 
-- Initial Supply: 1 billion IPN
-- Max Supply: 10 billion IPN
-- Initial Inflation: 5% per year
-- Minimum Inflation: 1% per year
-- Inflation Reduction: 0.5% per year
+IPPAN follows a Bitcoin-inspired scarcity model with a **hard cap of 21 million IPN tokens**:
+
+- **Total Supply Cap**: 21,000,000 IPN (2,100,000,000,000,000 micro-IPN)
+- **Initial Supply**: 0 IPN (fair launch from genesis)
+- **Initial Inflation**: 5% per year
+- **Target Inflation**: Reduces by 0.5% annually
+- **Minimum Inflation**: 1% per year (terminal rate)
+- **Block Reward**: 1 IPN per block (adjusts based on supply and inflation)
+
+This scarcity model ensures:
+- ✅ Deflationary pressure over time
+- ✅ Predictable supply schedule
+- ✅ Long-term value preservation
+- ✅ Similar to Bitcoin's proven tokenomics
 
 ### Reward Distribution
 
