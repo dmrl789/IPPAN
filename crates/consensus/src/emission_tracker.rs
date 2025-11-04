@@ -47,8 +47,11 @@ pub struct EmissionTracker {
     /// Emission parameters
     pub params: EmissionParams,
 
-    /// Current cumulative supply (µIPN)
+    /// Current cumulative supply including fees and commissions (µIPN)
     pub cumulative_supply: u128,
+
+    /// Cumulative base emission only (for consistency checks)
+    pub cumulative_base_emission: u128,
 
     /// Last finalized round
     pub last_round: u64,
@@ -87,6 +90,7 @@ impl EmissionTracker {
         Self {
             params,
             cumulative_supply: 0,
+            cumulative_base_emission: 0,
             last_round: 0,
             total_fees_collected: 0,
             total_ai_commissions: 0,
@@ -249,16 +253,21 @@ impl EmissionTracker {
         // Validate distribution
         // distribution.validate()?;
 
-        // Update cumulative supply
+        // Update cumulative supply (includes fees and commissions)
         self.cumulative_supply = self
             .cumulative_supply
             .saturating_add(distribution.total_reward as u128);
 
-        // Check supply cap
-        if self.cumulative_supply >= self.params.max_supply_micro as u128 {
+        // Update cumulative base emission (for consistency checks)
+        self.cumulative_base_emission = self
+            .cumulative_base_emission
+            .saturating_add(base_reward as u128);
+
+        // Check supply cap (base emission only)
+        if self.cumulative_base_emission >= self.params.max_supply_micro as u128 {
             return Err(format!(
                 "Supply cap exceeded: {} > {}",
-                self.cumulative_supply, self.params.max_supply_micro as u128
+                self.cumulative_base_emission, self.params.max_supply_micro as u128
             ));
         }
 
@@ -357,30 +366,25 @@ impl EmissionTracker {
     }
 
     /// Verify emission consistency against expected schedule
+    /// 
+    /// This only verifies base emission, not fees or commissions which are external to the schedule
     pub fn verify_consistency(&self) -> Result<(), String> {
-        let expected_supply = projected_supply(self.last_round, &self.params);
+        let expected_supply = super::emission::projected_supply(self.last_round, &self.params);
 
         // Allow minor rounding discrepancies (due to integer division) proportional to rounds.
         let tolerance = (self.last_round as u128).saturating_add(10);
 
-        if self
-            .cumulative_supply
-            .saturating_sub(expected_supply)
-            > tolerance
-        {
+        if self.cumulative_base_emission > expected_supply + tolerance {
             return Err(format!(
-                "Cumulative supply {} exceeds expected {} (round {}, tolerance {})",
-                self.cumulative_supply, expected_supply, self.last_round, tolerance
+                "Cumulative base emission {} exceeds expected {} (round {})",
+                self.cumulative_base_emission, expected_supply, self.last_round
             ));
         }
 
-        if expected_supply
-            .saturating_sub(self.cumulative_supply)
-            > tolerance
-        {
+        if self.cumulative_base_emission + tolerance < expected_supply {
             return Err(format!(
-                "Cumulative supply {} below expected {} (round {}, tolerance {})",
-                self.cumulative_supply, expected_supply, self.last_round, tolerance
+                "Cumulative base emission {} below expected {} (round {})",
+                self.cumulative_base_emission, expected_supply, self.last_round
             ));
         }
 
@@ -425,6 +429,7 @@ impl EmissionTracker {
     #[cfg(test)]
     pub fn reset(&mut self) {
         self.cumulative_supply = 0;
+        self.cumulative_base_emission = 0;
         self.last_round = 0;
         self.total_fees_collected = 0;
         self.total_ai_commissions = 0;
