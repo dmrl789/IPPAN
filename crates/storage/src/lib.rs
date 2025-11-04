@@ -460,11 +460,18 @@ impl Default for MemoryStorage {
     }
 }
 
+impl MemoryStorage {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 impl Storage for MemoryStorage {
     fn store_block(&self, b: Block) -> Result<()> {
+        let round = b.header.round;
         let h = hex::encode(b.hash());
         self.blocks.write().insert(h, b);
-        *self.latest_height.write() += 1;
+        *self.latest_height.write() = round;
         Ok(())
     }
 
