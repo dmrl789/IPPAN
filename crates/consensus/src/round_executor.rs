@@ -273,7 +273,6 @@ impl RoundExecutor {
 mod tests {
     use super::*;
     use ippan_treasury::MockAccountLedger;
-    use ippan_types::ValidatorId;
 
     #[test]
     fn test_round_executor_creation() {
