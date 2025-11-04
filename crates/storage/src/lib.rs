@@ -6,7 +6,7 @@ use ippan_types::{
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -433,11 +433,11 @@ pub struct MemoryStorage {
     chain_state: Arc<RwLock<ChainState>>,
     latest_height: Arc<RwLock<u64>>,
     validator_telemetry: Arc<RwLock<HashMap<[u8; 32], ValidatorTelemetry>>>,
-    l2_networks: Arc<RwLock<HashMap<String, L2Network>>>,
-    l2_commits: Arc<RwLock<HashMap<String, L2Commit>>>,
-    l2_exits: Arc<RwLock<HashMap<String, L2ExitRecord>>>,
-    round_certificates: Arc<RwLock<HashMap<RoundId, RoundCertificate>>>,
-    round_finalizations: Arc<RwLock<HashMap<RoundId, RoundFinalizationRecord>>>,
+    l2_networks: Arc<RwLock<BTreeMap<String, L2Network>>>,
+    l2_commits: Arc<RwLock<BTreeMap<String, L2Commit>>>,
+    l2_exits: Arc<RwLock<BTreeMap<String, L2ExitRecord>>>,
+    round_certificates: Arc<RwLock<BTreeMap<RoundId, RoundCertificate>>>,
+    round_finalizations: Arc<RwLock<BTreeMap<RoundId, RoundFinalizationRecord>>>,
     latest_finalized_round: Arc<RwLock<Option<RoundId>>>,
 }
 
@@ -450,11 +450,11 @@ impl Default for MemoryStorage {
             chain_state: Arc::new(RwLock::new(ChainState::default())),
             latest_height: Arc::new(RwLock::new(0)),
             validator_telemetry: Arc::new(RwLock::new(HashMap::new())),
-            l2_networks: Arc::new(RwLock::new(HashMap::new())),
-            l2_commits: Arc::new(RwLock::new(HashMap::new())),
-            l2_exits: Arc::new(RwLock::new(HashMap::new())),
-            round_certificates: Arc::new(RwLock::new(HashMap::new())),
-            round_finalizations: Arc::new(RwLock::new(HashMap::new())),
+            l2_networks: Arc::new(RwLock::new(BTreeMap::new())),
+            l2_commits: Arc::new(RwLock::new(BTreeMap::new())),
+            l2_exits: Arc::new(RwLock::new(BTreeMap::new())),
+            round_certificates: Arc::new(RwLock::new(BTreeMap::new())),
+            round_finalizations: Arc::new(RwLock::new(BTreeMap::new())),
             latest_finalized_round: Arc::new(RwLock::new(None)),
         }
     }
@@ -529,52 +529,40 @@ impl Storage for MemoryStorage {
     }
 
     fn put_l2_network(&self, n: L2Network) -> Result<()> {
-        self.l2_networks
-            .write()
-            .insert(n.id.clone(), n);
+        self.l2_networks.write().insert(n.id.clone(), n);
         Ok(())
     }
     fn get_l2_network(&self, id: &str) -> Result<Option<L2Network>> {
         Ok(self.l2_networks.read().get(id).cloned())
     }
     fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
-        let mut networks: Vec<L2Network> = self.l2_networks.read().values().cloned().collect();
-        networks.sort_by(|a, b| a.id.cmp(&b.id));
-        Ok(networks)
+        Ok(self.l2_networks.read().values().cloned().collect())
     }
     fn store_l2_commit(&self, c: L2Commit) -> Result<()> {
-        self.l2_commits
-            .write()
-            .insert(c.id.clone(), c);
+        self.l2_commits.write().insert(c.id.clone(), c);
         Ok(())
     }
     fn list_l2_commits(&self, filter: Option<&str>) -> Result<Vec<L2Commit>> {
-        let mut commits: Vec<L2Commit> = self
+        Ok(self
             .l2_commits
             .read()
             .values()
             .filter(|commit| filter.map(|id| id == commit.l2_id.as_str()).unwrap_or(true))
             .cloned()
-            .collect();
-        commits.sort_by(|a, b| a.id.cmp(&b.id));
-        Ok(commits)
+            .collect())
     }
     fn store_l2_exit(&self, exit: L2ExitRecord) -> Result<()> {
-        self.l2_exits
-            .write()
-            .insert(exit.id.clone(), exit);
+        self.l2_exits.write().insert(exit.id.clone(), exit);
         Ok(())
     }
     fn list_l2_exits(&self, filter: Option<&str>) -> Result<Vec<L2ExitRecord>> {
-        let mut exits: Vec<L2ExitRecord> = self
+        Ok(self
             .l2_exits
             .read()
             .values()
             .filter(|exit| filter.map(|id| id == exit.l2_id.as_str()).unwrap_or(true))
             .cloned()
-            .collect();
-        exits.sort_by(|a, b| a.id.cmp(&b.id));
-        Ok(exits)
+            .collect())
     }
     fn store_round_certificate(&self, certificate: RoundCertificate) -> Result<()> {
         self.round_certificates
