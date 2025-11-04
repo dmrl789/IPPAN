@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use ippan_types::{Block, BlockId, IppanTimeMicros, RoundId, ValidatorId};
 
@@ -197,13 +197,22 @@ impl DLCConsensus {
         let dgbdt = self.dgbdt_engine.read();
         let metrics = self.validator_metrics.read();
         
+        if metrics.is_empty() {
+            return Ok((self.validator_id, Vec::new()));
+        }
+
         // Use D-GBDT to select based on reputation and fairness
-        let selection = dgbdt.select_verifiers(
+        let selection = match dgbdt.select_verifiers(
             round_seed,
             &metrics,
             self.config.shadow_verifier_count,
             self.config.min_reputation_score,
-        )?;
+        ) {
+            Ok(selection) => selection,
+            Err(_) => {
+                return Ok((self.validator_id, Vec::new()));
+            }
+        };
         
         Ok((selection.primary, selection.shadows))
     }
