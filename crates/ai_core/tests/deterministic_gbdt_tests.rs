@@ -9,7 +9,7 @@
 
 use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
-    DeterministicGBDTError, GBDTTree,
+    DeterministicGBDTError, GBDTTree, ValidatorFeatures,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -95,6 +95,38 @@ fn test_ippan_time_normalization() {
     assert_eq!(by_id["node1"].latency_ms, 1.2);
     assert_eq!(by_id["node1"].uptime_pct, 99.9);
     assert_eq!(by_id["node1"].peer_entropy, 0.42);
+}
+
+/// Normalization should depend on relative (not absolute) IPPAN time
+#[test]
+fn test_normalize_features_clock_offset_invariance() {
+    let telemetry_a: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
+        ("nodeA".into(), (100_000, 1.2, 99.9, 0.42)),
+        ("nodeB".into(), (100_080, 0.9, 99.8, 0.38)),
+        ("nodeC".into(), (100_030, 2.1, 98.9, 0.45)),
+    ]);
+    let telemetry_b: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
+        ("nodeA".into(), (105_000, 1.2, 99.9, 0.42)),
+        ("nodeB".into(), (105_080, 0.9, 99.8, 0.38)),
+        ("nodeC".into(), (105_030, 2.1, 98.9, 0.45)),
+    ]);
+
+    let features_a = normalize_features(&telemetry_a, 100_050);
+    let features_b = normalize_features(&telemetry_b, 105_050);
+
+    let map = |features: Vec<ValidatorFeatures>| -> HashMap<String, (i64, f64, f64, f64)> {
+        features
+            .into_iter()
+            .map(|f| {
+                (
+                    f.node_id,
+                    (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy),
+                )
+            })
+            .collect()
+    };
+
+    assert_eq!(map(features_a), map(features_b));
 }
 
 /// Test validator scoring with different scenarios
