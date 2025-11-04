@@ -123,8 +123,8 @@ async fn test_hashtimer_deterministic_ordering() {
     let hashtimer2 = generate_round_hashtimer(round_id, &previous_hash, &validator_id);
     
     // Should be deterministic for same inputs (within same microsecond)
-    assert!(hashtimer1.timestamp_us().0 > 0);
-    assert!(hashtimer2.timestamp_us().0 > 0);
+    assert!(hashtimer1.timestamp_us > 0);
+    assert!(hashtimer2.timestamp_us > 0);
 }
 
 #[tokio::test]

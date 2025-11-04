@@ -296,4 +296,58 @@ mod tests {
         timer.timestamp_us += 1;
         assert!(!verify_hashtimer(&timer));
     }
+
+    #[test]
+    fn derive_is_deterministic_for_identical_inputs() {
+        let time = IppanTimeMicros(123_456);
+        let domain = b"domain";
+        let payload = b"payload";
+        let nonce = b"nonce";
+        let node_id = b"node-id";
+
+        let timer_a = HashTimer::derive("ctx", time, domain, payload, nonce, node_id);
+        let timer_b = HashTimer::derive("ctx", time, domain, payload, nonce, node_id);
+
+        assert_eq!(timer_a.timestamp_us, timer_b.timestamp_us);
+        assert_eq!(timer_a.entropy, timer_b.entropy);
+        assert_eq!(timer_a.digest(), timer_b.digest());
+    }
+
+    #[test]
+    fn derive_changes_when_payload_differs() {
+        let time = IppanTimeMicros(987_654);
+        let base = HashTimer::derive("ctx", time, b"domain", b"payload-a", b"nonce", b"node");
+        let different = HashTimer::derive("ctx", time, b"domain", b"payload-b", b"nonce", b"node");
+
+        assert_ne!(base.entropy, different.entropy);
+        assert_ne!(base.digest(), different.digest());
+    }
+
+    #[test]
+    fn hex_round_trip_preserves_timestamp_and_digest() {
+        let time = IppanTimeMicros(321_000);
+        let timer = HashTimer::derive("ctx", time, b"domain", b"payload", b"nonce", b"node");
+        let encoded = timer.to_hex();
+        let decoded = HashTimer::from_hex(&encoded).expect("decode from hex");
+
+        assert_eq!(decoded.timestamp_us, timer.timestamp_us);
+        assert_eq!(decoded.to_hex().len(), encoded.len());
+        assert_eq!(&decoded.to_hex()[..14], &encoded[..14]);
+        assert_ne!(decoded.digest(), [0u8; 32]);
+        assert!(decoded.signature.is_empty());
+        assert!(decoded.public_key.is_empty());
+    }
+
+    #[test]
+    fn signed_variant_preserves_digest_and_verifies() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let base = HashTimer::derive("ctx", IppanTimeMicros(111), b"domain", b"payload", b"nonce", b"node");
+        let signed = base.signed(&signing_key);
+
+        assert_eq!(base.digest(), signed.digest());
+        assert_eq!(base.timestamp_us, signed.timestamp_us);
+        assert!(!signed.signature.is_empty());
+        assert!(!signed.public_key.is_empty());
+        assert!(signed.verify());
+    }
 }

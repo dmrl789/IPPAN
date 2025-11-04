@@ -633,7 +633,18 @@ impl ParallelDagEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{Block, RoundId, Transaction, ValidatorId};
+    use ed25519_dalek::SigningKey;
+    use ippan_storage::MemoryStorage;
+    use ippan_types::{
+        AccessKey,
+        Block,
+        ConfidentialEnvelope,
+        ConfidentialProof,
+        ConfidentialProofType,
+        RoundId,
+        Transaction,
+        ValidatorId,
+    };
     use rand::{rngs::StdRng, RngCore, SeedableRng};
     use std::sync::Arc;
     use std::thread;
@@ -652,6 +663,27 @@ mod tests {
         }
         let mut tx = Transaction::new(from, to, ippan_types::Amount::from_atomic(1), nonce);
         tx.id = tx.hash();
+        tx
+    }
+
+    fn signed_confidential_transaction(
+        signing_key: &SigningKey,
+        envelope: ConfidentialEnvelope,
+    ) -> Transaction {
+        let mut tx = Transaction::new(
+            signing_key.verifying_key().to_bytes(),
+            [8u8; 32],
+            ippan_types::Amount::from_micro_ipn(5_000),
+            42,
+        );
+        tx.set_confidential_envelope(envelope);
+        tx.set_confidential_proof(ConfidentialProof {
+            proof_type: ConfidentialProofType::Stark,
+            proof: "proof-bytes".into(),
+            public_inputs: Default::default(),
+        });
+        let signing_bytes = signing_key.to_bytes();
+        tx.sign(&signing_bytes).expect("sign transaction");
         tx
     }
 
@@ -742,5 +774,56 @@ mod tests {
         assert_eq!(snapshot.metrics.duplicates, 1);
         assert_eq!(snapshot.vertices, 1);
         assert_eq!(snapshot.ready, 1);
+    }
+
+    #[test]
+    fn validate_block_parallel_rejects_invalid_confidential_tx() {
+        let storage = Arc::new(MemoryStorage::default());
+        let engine = ParallelDagEngine::new(storage);
+
+        let signing_key = SigningKey::from_bytes(&[21u8; 32]);
+        let invalid_tx = signed_confidential_transaction(
+            &signing_key,
+            ConfidentialEnvelope {
+                enc_algo: String::new(),
+                iv: "iv".into(),
+                ciphertext: "cipher".into(),
+                access_keys: vec![AccessKey {
+                    recipient_pub: "alice".into(),
+                    enc_key: "ak".into(),
+                }],
+            },
+        );
+        let block = Block::new(vec![], vec![invalid_tx], 1, [3u8; 32]);
+
+        match engine.validate_block_parallel(&block) {
+            ValidationResult::Invalid(errors) => {
+                assert!(errors.iter().any(|e| e.contains("confidential")));
+            }
+            ValidationResult::Valid => panic!("expected confidential validation failure"),
+        }
+    }
+
+    #[test]
+    fn validate_block_parallel_accepts_valid_confidential_tx() {
+        let storage = Arc::new(MemoryStorage::default());
+        let engine = ParallelDagEngine::new(storage);
+
+        let signing_key = SigningKey::from_bytes(&[22u8; 32]);
+        let valid_tx = signed_confidential_transaction(
+            &signing_key,
+            ConfidentialEnvelope {
+                enc_algo: "AES-256-GCM".into(),
+                iv: "iv".into(),
+                ciphertext: "cipher".into(),
+                access_keys: vec![AccessKey {
+                    recipient_pub: "bob".into(),
+                    enc_key: "bk".into(),
+                }],
+            },
+        );
+        let block = Block::new(vec![], vec![valid_tx], 1, [4u8; 32]);
+
+        assert_eq!(engine.validate_block_parallel(&block), ValidationResult::Valid);
     }
 }

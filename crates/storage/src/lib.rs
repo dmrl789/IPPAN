@@ -631,3 +631,83 @@ impl Storage for MemoryStorage {
         Ok(self.validator_telemetry.read().clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ippan_types::{Amount, Transaction};
+    use tempfile::tempdir;
+
+    #[test]
+    fn initialize_creates_genesis_block_and_account() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("initialize");
+
+        let latest_height = storage.get_latest_height().expect("height");
+        assert_eq!(latest_height, 0, "genesis block should set height to 0");
+
+        let genesis_block = storage
+            .get_block_by_height(0)
+            .expect("fetch genesis block");
+        assert!(genesis_block.is_some(), "genesis block present after init");
+
+        let genesis_account = storage
+            .get_account(&[0u8; 32])
+            .expect("fetch genesis account");
+        let account = genesis_account.expect("account exists");
+        assert_eq!(account.balance, 1_000_000);
+        assert_eq!(account.nonce, 0);
+    }
+
+    #[test]
+    fn transaction_round_trip() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("initialize");
+
+        let tx = Transaction::new(
+            [1u8; 32],
+            [2u8; 32],
+            Amount::from_micro_ipn(42),
+            7,
+        );
+        let tx_hash = tx.hash();
+        storage
+            .store_transaction(tx.clone())
+            .expect("store transaction");
+
+        let fetched = storage
+            .get_transaction(&tx_hash)
+            .expect("fetch transaction")
+            .expect("transaction present");
+        assert_eq!(fetched.hash(), tx_hash);
+        assert_eq!(fetched.from, tx.from);
+        assert_eq!(fetched.to, tx.to);
+        assert_eq!(fetched.amount, tx.amount);
+        assert_eq!(fetched.nonce, tx.nonce);
+        assert_eq!(storage.get_transaction_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn chain_state_updates_persist() {
+        let dir = tempdir().expect("tempdir");
+        {
+            let storage = SledStorage::new(dir.path()).expect("sled storage");
+            storage.initialize().expect("initialize");
+
+            let mut state = storage.get_chain_state().expect("initial state");
+            state.add_issued_micro(500);
+            state.update_round(5);
+            storage
+                .update_chain_state(&state)
+                .expect("update chain state");
+            storage.flush().expect("flush");
+        }
+
+        let storage = SledStorage::new(dir.path()).expect("reopen storage");
+        let persisted = storage.get_chain_state().expect("persisted state");
+        assert_eq!(persisted.total_issued_micro, 500);
+        assert_eq!(persisted.last_updated_round, 5);
+    }
+}
