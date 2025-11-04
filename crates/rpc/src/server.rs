@@ -310,40 +310,125 @@ async fn handle_submit_tx(
 async fn handle_get_transaction(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    AxumPath(_hash): AxumPath<String>,
-) -> (StatusCode, &'static str) {
+    AxumPath(hash): AxumPath<String>,
+) -> Result<Json<Transaction>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/tx/:hash").await {
-        return deny_request(&state, &addr, "/tx/:hash", err).await;
+        return Err(deny_request(&state, &addr, "/tx/:hash", err).await);
     }
 
-    record_security_success(&state, &addr, "/tx/:hash").await;
-    (StatusCode::NOT_FOUND, "Transaction not found")
+    // Decode hex hash to byte array
+    let hash_bytes = match hex::decode(&hash) {
+        Ok(bytes) if bytes.len() == 32 => {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            arr
+        }
+        _ => {
+            record_security_failure(&state, &addr, "/tx/:hash", "Invalid hash format").await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid hash format"));
+        }
+    };
+
+    // Query storage
+    match state.storage.get_transaction(&hash_bytes) {
+        Ok(Some(tx)) => {
+            record_security_success(&state, &addr, "/tx/:hash").await;
+            Ok(Json(tx))
+        }
+        Ok(None) => {
+            record_security_success(&state, &addr, "/tx/:hash").await;
+            Err((StatusCode::NOT_FOUND, "Transaction not found"))
+        }
+        Err(e) => {
+            error!("Failed to query transaction {}: {}", hash, e);
+            record_security_failure(&state, &addr, "/tx/:hash", &e.to_string()).await;
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Storage error"))
+        }
+    }
 }
 
 async fn handle_get_block(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    AxumPath(_id): AxumPath<String>,
-) -> (StatusCode, &'static str) {
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Block>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/block/:id").await {
-        return deny_request(&state, &addr, "/block/:id", err).await;
+        return Err(deny_request(&state, &addr, "/block/:id", err).await);
     }
 
-    record_security_success(&state, &addr, "/block/:id").await;
-    (StatusCode::NOT_FOUND, "Block not found")
+    // Try parsing as height first, then as hash
+    let block_result = if let Ok(height) = id.parse::<u64>() {
+        state.storage.get_block_by_height(height)
+    } else {
+        // Decode hex hash to byte array
+        match hex::decode(&id) {
+            Ok(bytes) if bytes.len() == 32 => {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                state.storage.get_block(&arr)
+            }
+            _ => {
+                record_security_failure(&state, &addr, "/block/:id", "Invalid block identifier").await;
+                return Err((StatusCode::BAD_REQUEST, "Invalid block identifier"));
+            }
+        }
+    };
+
+    match block_result {
+        Ok(Some(block)) => {
+            record_security_success(&state, &addr, "/block/:id").await;
+            Ok(Json(block))
+        }
+        Ok(None) => {
+            record_security_success(&state, &addr, "/block/:id").await;
+            Err((StatusCode::NOT_FOUND, "Block not found"))
+        }
+        Err(e) => {
+            error!("Failed to query block {}: {}", id, e);
+            record_security_failure(&state, &addr, "/block/:id", &e.to_string()).await;
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Storage error"))
+        }
+    }
 }
 
 async fn handle_get_account(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    AxumPath(_addr): AxumPath<String>,
-) -> (StatusCode, &'static str) {
+    AxumPath(account_addr): AxumPath<String>,
+) -> Result<Json<ippan_storage::Account>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/account/:address").await {
-        return deny_request(&state, &addr, "/account/:address", err).await;
+        return Err(deny_request(&state, &addr, "/account/:address", err).await);
     }
 
-    record_security_success(&state, &addr, "/account/:address").await;
-    (StatusCode::NOT_FOUND, "Account not found")
+    // Decode hex address to byte array
+    let addr_bytes = match hex::decode(&account_addr) {
+        Ok(bytes) if bytes.len() == 32 => {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            arr
+        }
+        _ => {
+            record_security_failure(&state, &addr, "/account/:address", "Invalid address format").await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid address format"));
+        }
+    };
+
+    // Query storage
+    match state.storage.get_account(&addr_bytes) {
+        Ok(Some(account)) => {
+            record_security_success(&state, &addr, "/account/:address").await;
+            Ok(Json(account))
+        }
+        Ok(None) => {
+            record_security_success(&state, &addr, "/account/:address").await;
+            Err((StatusCode::NOT_FOUND, "Account not found"))
+        }
+        Err(e) => {
+            error!("Failed to query account {}: {}", account_addr, e);
+            record_security_failure(&state, &addr, "/account/:address", &e.to_string()).await;
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Storage error"))
+        }
+    }
 }
 
 async fn handle_get_peers(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
@@ -677,16 +762,40 @@ async fn handle_get_l2_config(State(state): State<Arc<AppState>>) -> Json<L2Conf
     Json(state.l2_config.clone())
 }
 
-async fn handle_list_l2_networks() -> Json<Vec<L2Network>> {
-    Json(vec![])
+async fn handle_list_l2_networks(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<L2Network>>, (StatusCode, &'static str)> {
+    match state.storage.list_l2_networks() {
+        Ok(networks) => Ok(Json(networks)),
+        Err(e) => {
+            error!("Failed to list L2 networks: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Storage error"))
+        }
+    }
 }
 
-async fn handle_list_l2_commits() -> Json<Vec<L2Commit>> {
-    Json(vec![])
+async fn handle_list_l2_commits(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<L2Commit>>, (StatusCode, &'static str)> {
+    match state.storage.list_l2_commits(None) {
+        Ok(commits) => Ok(Json(commits)),
+        Err(e) => {
+            error!("Failed to list L2 commits: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Storage error"))
+        }
+    }
 }
 
-async fn handle_list_l2_exits() -> Json<Vec<L2ExitRecord>> {
-    Json(vec![])
+async fn handle_list_l2_exits(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<L2ExitRecord>>, (StatusCode, &'static str)> {
+    match state.storage.list_l2_exits(None) {
+        Ok(exits) => Ok(Json(exits)),
+        Err(e) => {
+            error!("Failed to list L2 exits: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Storage error"))
+        }
+    }
 }
 
 #[cfg(test)]
