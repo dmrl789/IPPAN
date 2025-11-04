@@ -332,8 +332,9 @@ impl ValidatorContribution {
         let proposer_weight = params.proposer_weight_bps as u128;
         let verifier_weight = params.verifier_weight_bps as u128;
         
-        let block_score = (self.blocks_proposed as u128 * proposer_weight / 10000)
-            + (self.blocks_verified as u128 * verifier_weight / 10000);
+        // Calculate block score with better precision (multiply before divide)
+        let block_score = (self.blocks_proposed as u128 * proposer_weight 
+            + self.blocks_verified as u128 * verifier_weight) / 10000;
         
         // Apply reputation and uptime factors
         let reputation_factor = self.reputation_score as u128;

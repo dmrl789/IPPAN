@@ -89,8 +89,8 @@ impl Default for EmissionParams {
             halving_interval_rounds: 630_000_000,        // ≈ 2 years @ 10 rps
             max_supply_micro: 21_000_000_000_000_000,    // 21 M IPN (21M * 1M µIPN)
             fee_cap_fraction: Decimal::new(1, 1),        // 0.1 = 10%
-            proposer_weight_bps: 2000,                   // 20 %
-            verifier_weight_bps: 8000,                   // 80 %
+            proposer_weight_bps: 5455,                   // ~54.5% (1.2× bonus)
+            verifier_weight_bps: 4545,                   // ~45.5% (1.0× baseline)
         }
     }
 }
