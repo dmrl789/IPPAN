@@ -4,15 +4,20 @@ on:
   push:
     paths:
       - 'crates/consensus/**'
+      - 'crates/consensus_dlc/**'
       - 'crates/types/**'
       - 'crates/crypto/**'
       - 'config/dlc.toml'
   pull_request:
     paths:
       - 'crates/consensus/**'
+      - 'crates/consensus_dlc/**'
       - 'crates/types/**'
       - 'crates/crypto/**'
       - 'config/dlc.toml'
+
+permissions:
+  contents: read
 
 env:
   CONSENSUS_MODE: DLC
@@ -47,6 +52,7 @@ jobs:
           cargo test -p ippan-consensus -- dgbdt --nocapture
           cargo test -p ippan-consensus -- shadow_verifier --nocapture
           cargo test -p ippan-consensus -- bonding --nocapture
+          cargo test -p ippan-consensus-dlc --all-features -- --nocapture
 
       - name: Run DLC integration tests
         run: |
@@ -74,6 +80,9 @@ jobs:
           ! grep -r "use.*bft::" crates/consensus/src/ || (echo "ERROR: BFT imports found!" && exit 1)
           ! grep -r "use.*pbft::" crates/consensus/src/ || (echo "ERROR: PBFT imports found!" && exit 1)
           ! grep -r "use.*tendermint::" crates/consensus/src/ || (echo "ERROR: Tendermint imports found!" && exit 1)
+          ! grep -r "use.*bft::" crates/consensus_dlc/src/ || (echo "ERROR: BFT imports found in DLC crate!" && exit 1)
+          ! grep -r "use.*pbft::" crates/consensus_dlc/src/ || (echo "ERROR: PBFT imports found in DLC crate!" && exit 1)
+          ! grep -r "use.*tendermint::" crates/consensus_dlc/src/ || (echo "ERROR: Tendermint imports found in DLC crate!" && exit 1)
           echo "✅ No BFT imports found - DLC migration complete"
 
       - name: Check DLC configuration
