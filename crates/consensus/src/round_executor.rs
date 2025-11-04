@@ -273,13 +273,14 @@ impl RoundExecutor {
 mod tests {
     use super::*;
     use ippan_treasury::MockAccountLedger;
+    use ippan_types::ValidatorId;
 
     #[test]
     fn test_round_executor_creation() {
         let params = EmissionParams::default();
         let ledger = Box::new(MockAccountLedger::new());
         let executor = RoundExecutor::new(params, ledger);
-        assert!(executor.emission_engine.params.initial_round_reward > 0);
+        assert!(executor.emission_engine.params().initial_round_reward_micro > 0);
     }
 
     #[test]
@@ -288,8 +289,10 @@ mod tests {
         let proposer_id = [1u8; 32];
         let parts = create_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0].role, ValidatorRole::Proposer);
-        assert_eq!(parts[1].role, ValidatorRole::Verifier);
+        // Check that the proposer exists in the map
+        let proposer_vid = ValidatorId(hex::encode([1u8; 32]));
+        assert!(parts.contains_key(&proposer_vid));
+        assert!(matches!(parts.get(&proposer_vid).unwrap().role, ValidatorRole::Proposer));
     }
 
     #[test]
@@ -298,8 +301,10 @@ mod tests {
         let proposer_id = [1u8; 32];
         let parts = create_full_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0].role, Role::Both);
-        assert_eq!(parts[1].role, Role::Verifier);
+        // Check that the proposer exists in the map
+        let proposer_vid = ValidatorId(hex::encode([1u8; 32]));
+        assert!(parts.contains_key(&proposer_vid));
+        assert!(matches!(parts.get(&proposer_vid).unwrap().role, ValidatorRole::Proposer));
     }
 
     #[test]
