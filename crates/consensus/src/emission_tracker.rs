@@ -368,9 +368,7 @@ impl EmissionTracker {
 
     /// Verify emission consistency against expected schedule
     pub fn verify_consistency(&self) -> Result<(), String> {
-        // Note: projected_supply function needs to be implemented
-        // let expected_supply = projected_supply(self.last_round, &self.params);
-        let expected_supply = 0u128; // Placeholder
+        let expected_supply = super::emission::projected_supply(self.last_round, &self.params);
 
         // Allow small rounding error (up to number of rounds in µIPN)
         let tolerance = self.last_round as u128;
