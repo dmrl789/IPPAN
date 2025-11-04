@@ -1,3 +1,8 @@
+//! IPPAN security toolkit - runtime hardening primitives for nodes and APIs.
+//! Coordinates rate limiting, circuit breaking, input validation, and audit
+//! logging so network services can enforce deterministic safety policies and
+//! produce governance-grade evidence of enforcement.
+//!
 #![allow(clippy::type_complexity)]
 #![allow(clippy::vec_init_then_push)]
 #![allow(clippy::collapsible_match)]
