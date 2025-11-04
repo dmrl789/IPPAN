@@ -1,3 +1,7 @@
+//! IPPAN RPC entry point - exposes the HTTP/JSON interface that wraps node
+//! state, networking (`ippan_p2p`), and L2 configuration. Provides the `start_server`
+//! helper plus shared types for peer snapshots consumed by explorers and tooling.
+//!
 pub mod server;
 pub use server::{start_server, AppState, L2Config};
 

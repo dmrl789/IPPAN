@@ -1,3 +1,8 @@
+//! IPPAN persistent storage abstraction layer. Defines the `Storage` trait,
+//! Sled-backed node database, and in-memory test backend used across consensus,
+//! mempool, and AI telemetry pipelines. Handles blocks, accounts, L2 anchors,
+//! and validator telemetry with deterministic serialization.
+//!
 use anyhow::Result;
 use ippan_types::{
     Block, L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord, RoundId,
