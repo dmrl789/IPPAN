@@ -21,6 +21,7 @@ thiserror = { workspace = true }
 # Cryptographic and hashing
 blake3 = { workspace = true }
 sha2 = { workspace = true }
+ed25519-dalek = { workspace = true }
 
 # Async / traits / serialization
 async-trait = { workspace = true }

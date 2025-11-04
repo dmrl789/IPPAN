@@ -78,13 +78,72 @@ impl L1HandleAnchorStorage {
 
     /// Create ownership proof for a handle
     pub fn create_ownership_proof(&self, handle: &str) -> Result<HandleOwnershipProof> {
+        use ippan_crypto::MerkleTree;
+        use sha2::{Digest, Sha256};
+
         let anchor = self.get_anchor_by_handle(handle)?;
-
-        // In production, this would create a real merkle proof
-        // For now, just return a placeholder
-        let merkle_proof = vec![];
-        let state_root = [0u8; 32];
-
+        
+        // Build merkle tree from all anchors
+        let all_anchors = self.get_all_anchors();
+        if all_anchors.is_empty() {
+            return Err(HandleAnchorError::AnchorNotFound {
+                handle_hash: hex::encode(anchor.handle_hash),
+            });
+        }
+        
+        // Create leaves: hash of each anchor's critical fields
+        let leaves: Vec<Vec<u8>> = all_anchors
+            .iter()
+            .map(|a| {
+                let mut hasher = Sha256::new();
+                hasher.update(&a.handle_hash);
+                hasher.update(&a.owner);
+                hasher.update(&a.l2_location);
+                hasher.update(&a.timestamp.to_le_bytes());
+                hasher.finalize().as_slice().to_vec()
+            })
+            .collect();
+        
+        // Create merkle tree
+        let tree = MerkleTree::new(leaves.clone())
+            .map_err(|e| HandleAnchorError::StorageError(anyhow::anyhow!("Failed to build merkle tree: {}", e)))?;
+        
+        let state_root_vec = tree.root()
+            .ok_or_else(|| HandleAnchorError::StorageError(anyhow::anyhow!("Merkle tree has no root")))?;
+        let mut state_root = [0u8; 32];
+        state_root.copy_from_slice(state_root_vec.as_slice());
+        
+        // Find index of our anchor's leaf
+        let target_leaf = {
+            let mut hasher = Sha256::new();
+            hasher.update(&anchor.handle_hash);
+            hasher.update(&anchor.owner);
+            hasher.update(&anchor.l2_location);
+            hasher.update(&anchor.timestamp.to_le_bytes());
+            hasher.finalize().as_slice().to_vec()
+        };
+        
+        let index = leaves
+            .iter()
+            .position(|l| l == &target_leaf)
+            .ok_or_else(|| HandleAnchorError::AnchorNotFound {
+                handle_hash: hex::encode(anchor.handle_hash),
+            })?;
+        
+        // Generate merkle proof
+        let proof = tree.generate_proof(index)
+            .map_err(|e| HandleAnchorError::StorageError(anyhow::anyhow!("Failed to generate proof: {}", e)))?;
+        
+        // Convert proof path to fixed-size arrays
+        let merkle_proof: Vec<[u8; 32]> = proof.path
+            .iter()
+            .map(|v| {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(v.as_slice());
+                arr
+            })
+            .collect();
+        
         Ok(HandleOwnershipProof {
             anchor,
             merkle_proof,

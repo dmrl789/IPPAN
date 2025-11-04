@@ -94,7 +94,44 @@ pub struct HandleOwnershipProof {
 impl HandleOwnershipProof {
     /// Verify the ownership proof
     pub fn verify(&self) -> bool {
-        self.anchor.verify_signature() && !self.anchor.is_expired()
+        use ippan_crypto::MerkleTree;
+        use sha2::{Digest, Sha256};
+        
+        // Check signature and expiration
+        if !self.anchor.verify_signature() || self.anchor.is_expired() {
+            return false;
+        }
+        
+        // If no merkle proof provided, only check signature
+        if self.merkle_proof.is_empty() {
+            return true;
+        }
+        
+        // Compute leaf hash
+        let mut hasher = Sha256::new();
+        hasher.update(&self.anchor.handle_hash);
+        hasher.update(&self.anchor.owner);
+        hasher.update(&self.anchor.l2_location);
+        hasher.update(&self.anchor.timestamp.to_le_bytes());
+        let leaf_hash: [u8; 32] = hasher.finalize().into();
+        
+        // Verify merkle proof
+        let mut current_hash = leaf_hash;
+        for sibling_hash in &self.merkle_proof {
+            let mut hasher = Sha256::new();
+            // Combine in deterministic order
+            if current_hash <= *sibling_hash {
+                hasher.update(&current_hash);
+                hasher.update(sibling_hash);
+            } else {
+                hasher.update(sibling_hash);
+                hasher.update(&current_hash);
+            }
+            current_hash = hasher.finalize().into();
+        }
+        
+        // Final hash should equal state root
+        current_hash == self.state_root
     }
 
     /// Get the handle hash
