@@ -528,6 +528,7 @@ impl Storage for MemoryStorage {
         Ok(self.txs.read().len() as u64)
     }
 
+    // L2 network operations
     fn put_l2_network(&self, n: L2Network) -> Result<()> {
         self.l2_networks.write().insert(n.id.clone(), n);
         Ok(())
@@ -535,9 +536,11 @@ impl Storage for MemoryStorage {
     fn get_l2_network(&self, id: &str) -> Result<Option<L2Network>> {
         Ok(self.l2_networks.read().get(id).cloned())
     }
+
     fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
         Ok(self.l2_networks.read().values().cloned().collect())
     }
+    // L2 commit operations
     fn store_l2_commit(&self, c: L2Commit) -> Result<()> {
         self.l2_commits.write().insert(c.id.clone(), c);
         Ok(())
@@ -588,9 +591,10 @@ impl Storage for MemoryStorage {
     fn get_round_finalization(&self, round: RoundId) -> Result<Option<RoundFinalizationRecord>> {
         Ok(self.round_finalizations.read().get(&round).cloned())
     }
+
     fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>> {
         if let Some(round) = *self.latest_finalized_round.read() {
-            Ok(self.round_finalizations.read().get(&round).cloned())
+            self.get_round_finalization(round)
         } else {
             Ok(None)
         }

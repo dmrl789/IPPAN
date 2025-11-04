@@ -4,7 +4,10 @@
 //! and provides audit records for governance and transparency.
 
 use blake3::Hasher;
-use ippan_economics::{EmissionParams, RoundRewardDistribution, ValidatorId, ValidatorReward};
+use ippan_economics::{
+    projected_supply, scheduled_round_reward, EmissionParams, RoundRewardDistribution, ValidatorId,
+    ValidatorReward,
+};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -44,8 +47,11 @@ pub struct EmissionTracker {
     /// Emission parameters
     pub params: EmissionParams,
 
-    /// Current cumulative supply (µIPN)
+    /// Current cumulative supply including fees and commissions (µIPN)
     pub cumulative_supply: u128,
+
+    /// Cumulative base emission only (for consistency checks)
+    pub cumulative_base_emission: u128,
 
     /// Last finalized round
     pub last_round: u64,
@@ -84,6 +90,7 @@ impl EmissionTracker {
         Self {
             params,
             cumulative_supply: 0,
+            cumulative_base_emission: 0,
             last_round: 0,
             total_fees_collected: 0,
             total_ai_commissions: 0,
@@ -98,21 +105,7 @@ impl EmissionTracker {
     }
 
     fn compute_base_reward(&self, round: u64) -> u64 {
-        if round == 0 {
-            return 0;
-        }
-
-        let halving_interval = self.params.halving_interval_rounds.max(1);
-        let halving_count = (round.saturating_sub(1)) / halving_interval;
-
-        if halving_count >= 64 {
-            return 0;
-        }
-
-        self.params
-            .initial_round_reward_micro
-            .checked_shr(halving_count as u32)
-            .unwrap_or(0)
+        scheduled_round_reward(round, &self.params)
     }
 
     /// Process a completed round and update emission state
@@ -260,16 +253,21 @@ impl EmissionTracker {
         // Validate distribution
         // distribution.validate()?;
 
-        // Update cumulative supply
+        // Update cumulative supply (includes fees and commissions)
         self.cumulative_supply = self
             .cumulative_supply
             .saturating_add(distribution.total_reward as u128);
 
-        // Check supply cap
-        if self.cumulative_supply >= self.params.max_supply_micro as u128 {
+        // Update cumulative base emission (for consistency checks)
+        self.cumulative_base_emission = self
+            .cumulative_base_emission
+            .saturating_add(base_reward as u128);
+
+        // Check supply cap (base emission only)
+        if self.cumulative_base_emission >= self.params.max_supply_micro as u128 {
             return Err(format!(
                 "Supply cap exceeded: {} > {}",
-                self.cumulative_supply, self.params.max_supply_micro as u128
+                self.cumulative_base_emission, self.params.max_supply_micro as u128
             ));
         }
 
@@ -317,14 +315,15 @@ impl EmissionTracker {
         let start_round = self.last_audit_round.max(1);
 
         // Calculate totals for the audit period
-        let total_base_emission = 0u128;
-        let total_distributed = 0u128;
-
-        // Sum up emissions for the period
-        for _r in start_round..=round {
-            // Note: round_reward function needs to be implemented or replaced
-            // total_base_emission = total_base_emission.saturating_add(super::emission::round_reward(_r, &self.params));
+        let mut total_base_emission = 0u128;
+        for r in start_round..=round {
+            total_base_emission = total_base_emission.saturating_add(
+                scheduled_round_reward(r, &self.params) as u128,
+            );
         }
+
+        let round_emission = scheduled_round_reward(round, &self.params) as u128;
+        let total_distributed = self.cumulative_supply;
 
         // Create distribution hash
         let mut hasher = Hasher::new();
@@ -345,7 +344,7 @@ impl EmissionTracker {
             start_round,
             end_round: round,
             cumulative_supply: self.cumulative_supply,
-            round_emission: 0, // Placeholder
+            round_emission,
             total_base_emission,
             fees_collected: 0, // Placeholder
             total_fees_collected: self.total_fees_collected,
@@ -367,25 +366,25 @@ impl EmissionTracker {
     }
 
     /// Verify emission consistency against expected schedule
+    /// 
+    /// This only verifies base emission, not fees or commissions which are external to the schedule
     pub fn verify_consistency(&self) -> Result<(), String> {
-        // Note: projected_supply function needs to be implemented
-        // let expected_supply = projected_supply(self.last_round, &self.params);
-        let expected_supply = 0u128; // Placeholder
+        let expected_supply = super::emission::projected_supply(self.last_round, &self.params);
 
-        // Allow small rounding error (up to number of rounds in µIPN)
-        let tolerance = self.last_round as u128;
+        // Allow minor rounding discrepancies (due to integer division) proportional to rounds.
+        let tolerance = (self.last_round as u128).saturating_add(10);
 
-        if self.cumulative_supply > expected_supply + tolerance {
+        if self.cumulative_base_emission > expected_supply + tolerance {
             return Err(format!(
-                "Cumulative supply {} exceeds expected {} (round {})",
-                self.cumulative_supply, expected_supply, self.last_round
+                "Cumulative base emission {} exceeds expected {} (round {})",
+                self.cumulative_base_emission, expected_supply, self.last_round
             ));
         }
 
-        if self.cumulative_supply + tolerance < expected_supply {
+        if self.cumulative_base_emission + tolerance < expected_supply {
             return Err(format!(
-                "Cumulative supply {} below expected {} (round {})",
-                self.cumulative_supply, expected_supply, self.last_round
+                "Cumulative base emission {} below expected {} (round {})",
+                self.cumulative_base_emission, expected_supply, self.last_round
             ));
         }
 
@@ -430,6 +429,7 @@ impl EmissionTracker {
     #[cfg(test)]
     pub fn reset(&mut self) {
         self.cumulative_supply = 0;
+        self.cumulative_base_emission = 0;
         self.last_round = 0;
         self.total_fees_collected = 0;
         self.total_ai_commissions = 0;

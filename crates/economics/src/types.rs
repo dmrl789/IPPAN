@@ -73,9 +73,9 @@ impl Default for EconomicsParams {
             // 10% fee cap
             fee_cap_numer: 1,
             fee_cap_denom: 10,
-            // 20% proposer, 80% verifier
-            proposer_weight_bps: 2000,
-            verifier_weight_bps: 8000,
+            // Proposer gets 1.2× bonus (54.5%), verifier baseline (45.5%)
+            proposer_weight_bps: 5455,
+            verifier_weight_bps: 4545,
             // 100% fee recycling
             fee_recycling_bps: 10000,
         }
@@ -120,8 +120,8 @@ mod tests {
         assert_eq!(params.max_supply_micro, 2_100_000_000_000_000);
         assert_eq!(params.fee_cap_numer, 1);
         assert_eq!(params.fee_cap_denom, 10);
-        assert_eq!(params.proposer_weight_bps, 2000);
-        assert_eq!(params.verifier_weight_bps, 8000);
+        assert_eq!(params.proposer_weight_bps, 5455);
+        assert_eq!(params.verifier_weight_bps, 4545);
         assert_eq!(params.fee_recycling_bps, 10000);
     }
 

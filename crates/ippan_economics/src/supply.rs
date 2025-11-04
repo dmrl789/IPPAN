@@ -9,6 +9,7 @@ use crate::types::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use tracing::{debug, error, info, warn};
 
 /// Supply tracking and verification system
@@ -255,6 +256,88 @@ impl SupplyTracker {
     }
 }
 
+/// Deterministic reward for a specific round based on emission parameters.
+pub fn scheduled_round_reward(round: RoundIndex, params: &EmissionParams) -> RewardAmount {
+    if round == 0 {
+        return 0;
+    }
+
+    let halving_interval = params.halving_interval_rounds.max(1);
+    let halving_epoch = (round - 1) / halving_interval;
+
+    if halving_epoch >= 64 {
+        return 0;
+    }
+
+    params
+        .initial_round_reward_micro
+        .checked_shr(halving_epoch as u32)
+        .unwrap_or(0)
+}
+
+/// Projected cumulative supply after a number of rounds following the halving schedule.
+pub fn projected_supply(rounds: RoundIndex, params: &EmissionParams) -> u128 {
+    if rounds == 0 {
+        return 0;
+    }
+
+    let halving_interval = params.halving_interval_rounds.max(1);
+    let mut remaining_rounds = rounds;
+    let mut reward: u128 = params.initial_round_reward_micro as u128;
+    let mut total: u128 = 0;
+    let mut epoch: u32 = 0;
+
+    while remaining_rounds > 0 && reward > 0 && epoch < 64 {
+        let rounds_this_epoch = remaining_rounds.min(halving_interval);
+        let epoch_emission = reward.saturating_mul(rounds_this_epoch as u128);
+        total = total.saturating_add(epoch_emission);
+
+        if total >= params.max_supply_micro as u128 {
+            return params.max_supply_micro as u128;
+        }
+
+        remaining_rounds -= rounds_this_epoch;
+        reward >>= 1;
+        epoch += 1;
+    }
+
+    total.min(params.max_supply_micro as u128)
+}
+
+/// Compute the theoretical round at which the supply cap would be reached, if achievable.
+pub fn rounds_until_supply_cap(params: &EmissionParams) -> Option<RoundIndex> {
+    if params.initial_round_reward_micro == 0 {
+        return None;
+    }
+
+    let halving_interval = params.halving_interval_rounds.max(1) as u128;
+    let mut reward: u128 = params.initial_round_reward_micro as u128;
+    let mut emitted: u128 = 0;
+    let mut rounds_accumulated: u128 = 0;
+
+    for _epoch in 0..64 {
+        if reward == 0 {
+            break;
+        }
+
+        let epoch_capacity = reward.saturating_mul(halving_interval);
+        let cap = params.max_supply_micro as u128;
+
+        if emitted.saturating_add(epoch_capacity) >= cap {
+            let remaining = cap.saturating_sub(emitted);
+            let rounds_needed = (remaining + reward - 1) / reward; // ceil division
+            let total_rounds = rounds_accumulated.saturating_add(rounds_needed.min(halving_interval));
+            return total_rounds.try_into().ok();
+        }
+
+        emitted = emitted.saturating_add(epoch_capacity);
+        rounds_accumulated = rounds_accumulated.saturating_add(halving_interval);
+        reward >>= 1;
+    }
+
+    None
+}
+
 /// Result of a supply audit
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SupplyAuditResult {
@@ -302,5 +385,39 @@ mod tests {
         let tracker = SupplyTracker::new(1_000_000);
         tracker.verify_supply_integrity(0, 1_000).unwrap();
         assert!(tracker.verify_supply_integrity(100_000, 0).is_err());
+    }
+
+    #[test]
+    fn test_scheduled_round_reward_halving() {
+        let params = EmissionParams::default();
+        assert_eq!(scheduled_round_reward(1, &params), params.initial_round_reward_micro);
+
+        let halving_round = params.halving_interval_rounds + 1;
+        assert_eq!(scheduled_round_reward(halving_round, &params), params.initial_round_reward_micro / 2);
+    }
+
+    #[test]
+    fn test_projected_supply_monotonic_and_capped() {
+        let params = EmissionParams::default();
+        let year_rounds = 315_360_000; // ~1 year @ 10 rounds/sec
+        let supply_year1 = projected_supply(year_rounds, &params);
+        let supply_year2 = projected_supply(year_rounds * 2, &params);
+        assert!(supply_year2 > supply_year1);
+        assert!(supply_year2 <= params.max_supply_micro as u128);
+    }
+
+    #[test]
+    fn test_rounds_until_supply_cap_for_custom_params() {
+        let params = EmissionParams {
+            initial_round_reward_micro: 100_000,
+            halving_interval_rounds: 10_000,
+            max_supply_micro: 1_500_000_000,
+            fee_cap_fraction: Decimal::new(1, 1),
+            proposer_weight_bps: 2000,
+            verifier_weight_bps: 8000,
+        };
+
+        let rounds = rounds_until_supply_cap(&params);
+        assert!(rounds.is_some());
     }
 }

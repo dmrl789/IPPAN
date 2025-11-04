@@ -143,3 +143,8 @@ tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 # --------------------------
 sled = "0.34"
 base64 = "0.21"
+
+# --------------------------
+# IPPAN internal crates
+# --------------------------
+ippan-consensus-dlc = { path = "crates/consensus_dlc" }

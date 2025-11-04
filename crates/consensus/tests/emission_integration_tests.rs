@@ -9,7 +9,7 @@
 
 use ippan_consensus::{
     distribute_round_reward, projected_supply, round_reward, rounds_until_cap, EmissionParams,
-    EmissionTracker, ValidatorContribution,
+    EmissionTracker, ValidatorContribution, TrackerValidatorContribution,
 };
 
 #[test]
@@ -21,14 +21,14 @@ fn test_emission_schedule_accuracy() {
     assert_eq!(r1, 10_000, "Initial reward should be 10,000 µIPN");
 
     // Test first halving (at ~2 years, 630M rounds)
-    let first_halving = params.halving_rounds;
+    let first_halving = params.halving_interval_rounds;
     let r_before = round_reward(first_halving - 1, &params);
     let r_after = round_reward(first_halving, &params);
     assert_eq!(r_before, 10_000);
     assert_eq!(r_after, 5_000, "Reward should halve at halving_rounds");
 
     // Test second halving
-    let second_halving = params.halving_rounds * 2;
+    let second_halving = params.halving_interval_rounds * 2;
     let r2_after = round_reward(second_halving, &params);
     assert_eq!(r2_after, 2_500, "Reward should halve again");
 }
@@ -51,7 +51,7 @@ fn test_supply_convergence() {
     assert!(s2 < s10);
 
     // Verify convergence toward cap
-    assert!(s10 < params.supply_cap);
+    assert!(s10 < params.max_supply_micro as u128);
 
     // Year 1 should emit roughly 31,536 IPN
     let expected_year1 = 31_536_00000000u128;
@@ -79,10 +79,10 @@ fn test_supply_cap_never_exceeded() {
     for rounds in extreme_rounds {
         let supply = projected_supply(rounds, &params);
         assert!(
-            supply <= params.supply_cap,
+            supply <= params.max_supply_micro as u128,
             "Supply {} exceeds cap {} at round {}",
             supply,
-            params.supply_cap,
+            params.max_supply_micro as u128,
             rounds
         );
     }
@@ -249,19 +249,17 @@ fn test_emission_tracker_integration() {
     // Simulate 1000 rounds of operation
     for round in 1..=1000 {
         let contributions = vec![
-            ValidatorContribution {
+            TrackerValidatorContribution {
                 validator_id: [1u8; 32],
                 blocks_proposed: 5,
                 blocks_verified: 10,
-                reputation_score: 10000,
-                uptime_factor: 10000,
+                reputation_score: 10000.0,
             },
-            ValidatorContribution {
+            TrackerValidatorContribution {
                 validator_id: [2u8; 32],
                 blocks_proposed: 3,
                 blocks_verified: 8,
-                reputation_score: 9000,
-                uptime_factor: 9500,
+                reputation_score: 9000.0,
             },
         ];
 
@@ -278,7 +276,7 @@ fn test_emission_tracker_integration() {
     let stats = tracker.get_statistics();
     assert_eq!(stats.current_round, 1000);
     assert_eq!(stats.active_validators, 2);
-    assert!(stats.cumulative_supply < params.supply_cap);
+    assert!(stats.cumulative_supply < params.max_supply_micro as u128);
 }
 
 #[test]
@@ -291,36 +289,32 @@ fn test_emission_with_varying_participation() {
         let contributions = if round % 3 == 0 {
             // High participation round
             vec![
-                ValidatorContribution {
+                TrackerValidatorContribution {
                     validator_id: [1u8; 32],
                     blocks_proposed: 10,
                     blocks_verified: 20,
-                    reputation_score: 10000,
-                    uptime_factor: 10000,
+                    reputation_score: 10000.0,
                 },
-                ValidatorContribution {
+                TrackerValidatorContribution {
                     validator_id: [2u8; 32],
                     blocks_proposed: 8,
                     blocks_verified: 15,
-                    reputation_score: 9500,
-                    uptime_factor: 10000,
+                    reputation_score: 9500.0,
                 },
-                ValidatorContribution {
+                TrackerValidatorContribution {
                     validator_id: [3u8; 32],
                     blocks_proposed: 5,
                     blocks_verified: 12,
-                    reputation_score: 9000,
-                    uptime_factor: 9800,
+                    reputation_score: 9000.0,
                 },
             ]
         } else if round % 2 == 0 {
             // Medium participation
-            vec![ValidatorContribution {
+            vec![TrackerValidatorContribution {
                 validator_id: [1u8; 32],
                 blocks_proposed: 5,
                 blocks_verified: 10,
-                reputation_score: 10000,
-                uptime_factor: 10000,
+                reputation_score: 10000.0,
             }]
         } else {
             // Low/no participation
@@ -357,7 +351,7 @@ fn test_long_term_emission_projection() {
     // Year 9-10: 625 × 630M = 393.75B µIPN
     // Total ~10 years: ~12.2T µIPN = 122 IPN (very small relative to 21M cap)
     assert!(supply > 0, "Should have emitted some supply");
-    assert!(supply < params.supply_cap, "Should not exceed cap");
+    assert!(supply < params.max_supply_micro as u128, "Should not exceed cap");
 
     // Calculate emission rate decay
     let year1 = projected_supply(rounds_per_year, &params);
@@ -381,9 +375,9 @@ fn test_rounds_to_supply_cap() {
     // With r0=100_000, halving_rounds=10_000: max = 2B
     // So use cap = 1.5B (75% of theoretical max)
     let params = EmissionParams {
-        r0: 100_000,
-        halving_rounds: 10_000,
-        supply_cap: 1_500_000_000, // 1.5B µIPN (achievable)
+        initial_round_reward_micro: 100_000,
+        halving_interval_rounds: 10_000,
+        max_supply_micro: 1_500_000_000, // 1.5B µIPN (achievable)
         ..Default::default()
     };
 
@@ -396,18 +390,18 @@ fn test_rounds_to_supply_cap() {
 
     // Should be at or above cap (within one round's reward)
     assert!(
-        supply_at_cap >= params.supply_cap || (params.supply_cap - supply_at_cap) <= params.r0,
+        supply_at_cap >= params.max_supply_micro as u128 || (params.max_supply_micro as u128 - supply_at_cap) <= params.initial_round_reward_micro as u128,
         "Supply at cap round {} should be >= cap {}",
         supply_at_cap,
-        params.supply_cap
+        params.max_supply_micro
     );
 
     // Previous round should be below cap
     assert!(
-        supply_before < params.supply_cap,
+        supply_before < params.max_supply_micro as u128,
         "Supply before cap {} should be < cap {}",
         supply_before,
-        params.supply_cap
+        params.max_supply_micro
     );
 }
 
@@ -445,13 +439,13 @@ fn test_component_distribution() {
 #[test]
 fn test_zero_reward_after_many_halvings() {
     let params = EmissionParams {
-        r0: 1000,
-        halving_rounds: 10,
+        initial_round_reward_micro: 1000,
+        halving_interval_rounds: 10,
         ..Default::default()
     };
 
     // After 64 halvings, reward should be 0
-    let far_future = 65 * params.halving_rounds;
+    let far_future = 65 * params.halving_interval_rounds;
     let reward = round_reward(far_future, &params);
 
     assert_eq!(reward, 0, "Reward should be 0 after 64+ halvings");
@@ -499,12 +493,11 @@ fn test_audit_trail_creation() {
     let params = EmissionParams::default();
     let mut tracker = EmissionTracker::new(params.clone(), 100); // Audit every 100 rounds
 
-    let contributions = vec![ValidatorContribution {
+    let contributions = vec![TrackerValidatorContribution {
         validator_id: [1u8; 32],
         blocks_proposed: 5,
         blocks_verified: 10,
-        reputation_score: 10000,
-        uptime_factor: 10000,
+        reputation_score: 10000.0,
     }];
 
     // Process 250 rounds (should create 2 audit checkpoints)
@@ -533,22 +526,12 @@ fn test_audit_trail_creation() {
 #[test]
 fn test_emission_params_validation() {
     let valid_params = EmissionParams::default();
-    assert!(valid_params.validate().is_ok());
+    // Note: EmissionParams from ippan_economics doesn't have a validate() method
+    // so we check basic invariants manually
+    assert!(valid_params.initial_round_reward_micro > 0);
+    assert!(valid_params.halving_interval_rounds > 0);
+    assert!(valid_params.max_supply_micro > 0);
 
-    // Invalid: shares don't sum to 100%
-    let invalid_params = EmissionParams {
-        base_emission_bps: 5000,
-        fee_share_bps: 2000,
-        ai_commission_bps: 1000,
-        network_pool_bps: 1000, // Total = 9000, not 10000
-        ..Default::default()
-    };
-    assert!(invalid_params.validate().is_err());
-
-    // Invalid: zero initial reward
-    let zero_reward = EmissionParams {
-        r0: 0,
-        ..Default::default()
-    };
-    assert!(zero_reward.validate().is_err());
+    // Test that proposer and verifier weights sum to 10000
+    assert_eq!(valid_params.proposer_weight_bps + valid_params.verifier_weight_bps, 10000);
 }

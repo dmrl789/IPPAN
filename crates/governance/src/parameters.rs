@@ -239,7 +239,7 @@ mod tests {
     fn test_default_governance_params() {
         let g = GovernanceParameters::default();
         assert_eq!(g.voting_threshold, 0.67);
-        assert_eq!(g.economics.proposer_weight_bps, 2000);
+        assert_eq!(g.economics.proposer_weight_bps, 5455);
     }
 
     #[test]
