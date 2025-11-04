@@ -106,7 +106,7 @@ mod tests {
         let validator_id = [1u8; 32];
         
         let hashtimer = generate_round_hashtimer(round_id, &previous_hash, &validator_id);
-        assert!(hashtimer.timestamp_us().0 > 0);
+        assert!(hashtimer.timestamp_us > 0);
     }
 
     #[test]
