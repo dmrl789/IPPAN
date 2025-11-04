@@ -36,8 +36,8 @@ impl Default for DAGEmissionParams {
             network_pool_bps: 500,
             base_emission_bps: 6000,
             tx_fee_bps: 2500,
-            proposer_bps: 2000,
-            verifier_bps: 8000,
+            proposer_bps: 5455,
+            verifier_bps: 4545,
         }
     }
 }
