@@ -9,6 +9,9 @@ use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+const FINALIZATION_LAG_ROUNDS: u64 = 2;
+const FINALIZATION_DEPTH: u64 = 2;
+
 /// A block in the DAG
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Block {
@@ -224,42 +227,65 @@ impl BlockDAG {
             .collect()
     }
 
-    /// Finalize blocks up to a certain round
-    pub fn finalize_round(&mut self, time: HashTimer) {
+    /// Finalize blocks that are a deterministic distance behind all tips
+    pub fn finalize_round(&mut self, time: HashTimer) -> Vec<String> {
         self.current_round = time.round;
-        
-        // Find blocks to finalize (older than current round - finalization_lag)
-        let finalization_lag = 2; // Finalize blocks from 2 rounds ago
-        
-        if self.current_round <= finalization_lag {
-            return;
+
+        if self.current_round <= FINALIZATION_LAG_ROUNDS {
+            return Vec::new();
         }
-        
-        let finalize_round = self.current_round - finalization_lag;
-        
-        let to_finalize: Vec<String> = self.pending_ids
-            .iter()
-            .filter(|id| {
-                if let Some(block) = self.blocks.get(*id) {
-                    block.timestamp.round <= finalize_round
-                } else {
-                    false
+
+        if self.tips.is_empty() {
+            return Vec::new();
+        }
+
+        let round_cutoff = self.current_round - FINALIZATION_LAG_ROUNDS;
+        let candidate_ids = self.common_ancestors_beyond_depth(FINALIZATION_DEPTH);
+
+        if candidate_ids.is_empty() {
+            return Vec::new();
+        }
+
+        let mut finalized_this_round: Vec<(u64, String)> = Vec::new();
+
+        for block_id in candidate_ids {
+            if self.finalized.contains(&block_id) {
+                continue;
+            }
+
+            if let Some(block) = self.blocks.get(&block_id) {
+                if block.is_genesis() {
+                    continue;
                 }
-            })
-            .cloned()
-            .collect();
-        
-        for block_id in to_finalize {
-            self.finalized.insert(block_id.clone());
-            self.pending_ids.remove(&block_id);
+
+                if block.timestamp.round > round_cutoff {
+                    continue;
+                }
+
+                if self.finalized.insert(block_id.clone()) {
+                    self.pending_ids.remove(&block_id);
+                    finalized_this_round.push((block.height, block_id));
+                }
+            }
         }
-        
-        tracing::debug!(
-            "Finalized {} blocks in round {}, {} pending",
-            self.finalized.len(),
-            self.current_round,
-            self.pending_ids.len()
-        );
+
+        finalized_this_round.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let finalized_ids = finalized_this_round
+            .into_iter()
+            .map(|(_, id)| id)
+            .collect::<Vec<_>>();
+
+        if !finalized_ids.is_empty() {
+            tracing::debug!(
+                "Finalized {} blocks in round {}, {} pending",
+                finalized_ids.len(),
+                self.current_round,
+                self.pending_ids.len()
+            );
+        }
+
+        finalized_ids
     }
 
     /// Get a block by ID
@@ -278,6 +304,55 @@ impl BlockDAG {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn common_ancestors_beyond_depth(&self, depth: u64) -> HashSet<String> {
+        let mut tips = self.tips.iter();
+        let first_tip = match tips.next() {
+            Some(tip) => tip,
+            None => return HashSet::new(),
+        };
+
+        let mut intersection = self.ancestors_beyond_depth(first_tip, depth);
+
+        for tip in tips {
+            let ancestors = self.ancestors_beyond_depth(tip, depth);
+            let new_intersection: HashSet<String> = intersection
+                .intersection(&ancestors)
+                .cloned()
+                .collect();
+
+            intersection = new_intersection;
+
+            if intersection.is_empty() {
+                break;
+            }
+        }
+
+        intersection
+    }
+
+    fn ancestors_beyond_depth(&self, tip_id: &str, depth: u64) -> HashSet<String> {
+        let mut ancestors = HashSet::new();
+
+        let tip_block = match self.blocks.get(tip_id) {
+            Some(block) => block,
+            None => return ancestors,
+        };
+
+        let tip_height = tip_block.height;
+        let path = self.get_path_to_genesis(tip_id);
+
+        for block_id in path {
+            if let Some(block) = self.blocks.get(&block_id) {
+                let distance = tip_height.saturating_sub(block.height);
+                if distance >= depth {
+                    ancestors.insert(block_id.clone());
+                }
+            }
+        }
+
+        ancestors
     }
 
     /// Get path from block to genesis (for chain analysis)
@@ -440,9 +515,67 @@ mod tests {
     #[test]
     fn test_dag_finalization() {
         let mut dag = BlockDAG::new();
+        let genesis_id = dag.genesis_id.clone().unwrap();
         
-        dag.finalize_round(HashTimer::for_round(5));
+        let mut previous = genesis_id.clone();
+        let mut first_block_id = String::new();
+
+        for round in 1..=3 {
+            let mut block = Block::new(
+                vec![previous.clone()],
+                HashTimer::for_round(round),
+                vec![],
+                format!("validator{}", round),
+            );
+            block.sign(vec![0u8; 64]);
+            if round == 1 {
+                first_block_id = block.id.clone();
+            }
+            previous = block.id.clone();
+            dag.insert(block).unwrap();
+        }
+
+        let finalized = dag.finalize_round(HashTimer::for_round(5));
         
         assert_eq!(dag.current_round, 5);
+        assert!(finalized.contains(&first_block_id));
+        assert!(!finalized.iter().any(|id| id == &previous));
+    }
+
+    #[test]
+    fn test_dag_finalization_requires_common_prefix() {
+        let mut dag = BlockDAG::new();
+        let genesis_id = dag.genesis_id.clone().unwrap();
+
+        let mut branch_a_parent = genesis_id.clone();
+        let mut branch_b_parent = genesis_id.clone();
+
+        for round in 1..=2 {
+            let mut block_a = Block::new(
+                vec![branch_a_parent.clone()],
+                HashTimer::for_round(round),
+                vec![],
+                format!("validator_a{}", round),
+            );
+            block_a.sign(vec![0u8; 64]);
+            branch_a_parent = block_a.id.clone();
+            dag.insert(block_a).unwrap();
+
+            let mut block_b = Block::new(
+                vec![branch_b_parent.clone()],
+                HashTimer::for_round(round),
+                vec![],
+                format!("validator_b{}", round),
+            );
+            block_b.sign(vec![0u8; 64]);
+            branch_b_parent = block_b.id.clone();
+            dag.insert(block_b).unwrap();
+        }
+
+        let finalized = dag.finalize_round(HashTimer::for_round(5));
+
+        assert!(finalized.is_empty());
+        assert!(!dag.finalized.contains(&branch_a_parent));
+        assert!(!dag.finalized.contains(&branch_b_parent));
     }
 }
