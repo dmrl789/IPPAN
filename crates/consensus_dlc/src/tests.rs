@@ -89,8 +89,8 @@ async fn test_verifier_selection_determinism() {
     }
     
     // Same seed should produce same selection
-    let set1 = VerifierSet::select(&model, &validators, "test_seed", 1).unwrap();
-    let set2 = VerifierSet::select(&model, &validators, "test_seed", 1).unwrap();
+    let set1 = VerifierSet::select(&model, &validators, "test_seed", 1, validators.len()).unwrap();
+    let set2 = VerifierSet::select(&model, &validators, "test_seed", 1, validators.len()).unwrap();
     
     assert_eq!(set1.primary, set2.primary);
     assert_eq!(set1.shadows, set2.shadows);
@@ -254,7 +254,7 @@ async fn test_block_validation_invalid_proposer() {
         ValidatorMetrics::default(),
     );
     
-    let verifier_set = VerifierSet::select(&model, &validators, "seed", 1).unwrap();
+    let verifier_set = VerifierSet::select(&model, &validators, "seed", 1, validators.len()).unwrap();
     
     // Create block with invalid proposer
     let mut block = Block::new(
