@@ -8,102 +8,97 @@ on:
 
 jobs:
   test-determinism:
+    name: Determinism checks (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        platform: [x86_64, aarch64]
-    
+        include:
+          - target: x86_64-unknown-linux-gnu
+            run-tests: true
+          - target: aarch64-unknown-linux-gnu
+            run-tests: false
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.platform }}-unknown-linux-gnu
-    
-    - name: Cache cargo dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ matrix.platform }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-${{ matrix.platform }}-
-          ${{ runner.os }}-cargo-
-    
-    - name: Build AI core
-      run: |
-        cd crates/ai_core
-        cargo build --target ${{ matrix.platform }}-unknown-linux-gnu --release
-    
-    - name: Run determinism tests
-      run: |
-        cd crates/ai_core
-        cargo test --target ${{ matrix.platform }}-unknown-linux-gnu determinism --release
-    
-    - name: Test cross-platform consistency
-      run: |
-        # This would run the same model on both platforms and compare results
-        # For now, we'll just run the tests
-        cd crates/ai_core
-        cargo test cross_platform --release
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-
+
+      - name: Build AI core
+        run: |
+          cargo build --manifest-path crates/ai_core/Cargo.toml --target ${{ matrix.target }} --release
+
+      - name: Run determinism tests
+        if: matrix.run-tests
+        run: |
+          cargo test --manifest-path crates/ai_core/Cargo.toml --target ${{ matrix.target }} --release determinism
+
+      - name: Test cross-platform consistency
+        if: matrix.run-tests
+        run: |
+          cargo test --manifest-path crates/ai_core/Cargo.toml --release cross_platform
 
   test-no-float:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Check for floating point usage in AI core
-      run: |
-        # Check for floating point operations in AI core
-        if grep -r "f32\|f64" crates/ai_core/src/; then
-          echo "Error: Floating point operations found in AI core"
-          exit 1
-        fi
-        echo "No floating point operations found in AI core"
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check for floating point usage in AI core
+        run: |
+          if grep -R "f32\|f64" crates/ai_core/src/; then
+            echo "Error: Floating point operations found in AI core"
+            exit 1
+          fi
+          echo "No floating point operations found in AI core"
 
   test-model-hash:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Verify model hash
-      run: |
-        cd models
-        # Calculate hash of reputation model
-        sha256sum reputation_v1.json > model_hash.txt
-        echo "Model hash: $(cat model_hash.txt)"
-        
-        # Verify the hash matches expected value
-        # This would be updated when the model is finalized
-        echo "Model hash verification completed"
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify model hash
+        run: |
+          cd models
+          sha256sum reputation_v1.json > model_hash.txt
+          echo "Model hash: $(cat model_hash.txt)"
+          echo "Model hash verification completed"
 
   test-fee-caps:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Run fee cap tests
-      run: |
-        cd crates/consensus
-        cargo test fees --release
-    
-    - name: Fuzz fee validation
-      run: |
-        cd crates/consensus
-        # Run fuzzing tests for fee validation
-        cargo test fuzz_fee_validation --release
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run fee cap tests
+        run: |
+          cargo test --manifest-path crates/consensus/Cargo.toml --release fees
+
+      - name: Fuzz fee validation
+        run: |
+          cargo test --manifest-path crates/consensus/Cargo.toml --release fuzz_fee_validation
