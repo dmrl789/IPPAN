@@ -238,4 +238,186 @@ mod tests {
         block.header.signature[0] ^= 0xFF;
         assert!(!block.verify());
     }
+
+    // =====================================================================
+    // Deterministic Block Validation Tests - Critical Path Coverage
+    // =====================================================================
+
+    #[test]
+    fn block_with_invalid_hashtimer_signature_rejected() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let parent_hashes = vec![[1u8; 32]];
+        let transactions = vec![b"tx".to_vec()];
+        
+        let mut block = Block::new(&signing_key, parent_hashes, transactions);
+        
+        // Tamper with HashTimer signature
+        if !block.header.hash_timer.signature.is_empty() {
+            block.header.hash_timer.signature[0] ^= 0xFF;
+        }
+        
+        assert!(!block.verify(), "Block with invalid HashTimer should be rejected");
+    }
+
+    #[test]
+    fn block_with_tampered_merkle_root_rejected() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let transactions = vec![b"tx1".to_vec(), b"tx2".to_vec()];
+        let mut block = Block::new(&signing_key, vec![], transactions);
+        
+        // Tamper with merkle_root
+        block.header.merkle_root[0] ^= 0xFF;
+        
+        assert!(!block.verify(), "Block with invalid merkle_root should be rejected");
+    }
+
+    #[test]
+    fn block_validation_deterministic_across_runs() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let transactions = vec![b"deterministic-tx".to_vec()];
+        let block = Block::new(&signing_key, vec![[9u8; 32]], transactions);
+        
+        // Validate multiple times - must always return same result
+        let first_result = block.verify();
+        for _ in 0..100 {
+            assert_eq!(block.verify(), first_result, "Block validation must be deterministic");
+        }
+    }
+
+    #[test]
+    fn block_with_empty_transactions_valid() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let block = Block::new(&signing_key, vec![], vec![]);
+        
+        assert!(block.verify(), "Empty block should be valid");
+        assert_eq!(block.header.merkle_root, [0u8; 32], "Empty block has zero merkle root");
+    }
+
+    #[test]
+    fn block_header_hash_collision_resistance() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        
+        let block1 = Block::new(&signing_key, vec![[1u8; 32]], vec![b"tx1".to_vec()]);
+        let block2 = Block::new(&signing_key, vec![[2u8; 32]], vec![b"tx2".to_vec()]);
+        
+        assert_ne!(block1.hash(), block2.hash(), "Different blocks must have different hashes");
+    }
+
+    #[test]
+    fn block_with_single_parent_valid() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let parent = [42u8; 32];
+        let block = Block::new(&signing_key, vec![parent], vec![]);
+        
+        assert!(block.verify());
+        assert_eq!(block.header.parent_hashes.len(), 1);
+        assert_eq!(block.header.parent_hashes[0], parent);
+    }
+
+    #[test]
+    fn block_with_multiple_parents_valid() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let parents = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
+        let block = Block::new(&signing_key, parents.clone(), vec![]);
+        
+        assert!(block.verify());
+        assert_eq!(block.header.parent_hashes.len(), 3);
+        assert_eq!(block.header.parent_hashes, parents);
+    }
+
+    #[test]
+    fn block_hash_deterministic_for_same_content() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let block = Block::new(&signing_key, vec![[1u8; 32]], vec![b"tx".to_vec()]);
+        
+        let hash1 = block.hash();
+        let hash2 = block.hash();
+        
+        assert_eq!(hash1, hash2, "Block hash must be deterministic");
+    }
+
+    #[test]
+    fn block_with_tampered_creator_rejected() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let mut block = Block::new(&signing_key, vec![], vec![]);
+        
+        // Tamper with creator public key
+        block.header.creator[0] ^= 0xFF;
+        
+        assert!(!block.verify(), "Block with tampered creator should be rejected");
+    }
+
+    #[test]
+    fn merkle_root_empty_transactions() {
+        let root = compute_merkle_root(&[]);
+        assert_eq!(root, [0u8; 32], "Empty transaction list should have zero merkle root");
+    }
+
+    #[test]
+    fn merkle_root_single_transaction() {
+        let tx = b"single-tx".to_vec();
+        let root = compute_merkle_root(&[tx.clone()]);
+        
+        // Should equal hash of the single transaction
+        let expected: [u8; 32] = Sha256::digest(&tx).into();
+        assert_eq!(root, expected);
+    }
+
+    #[test]
+    fn merkle_root_deterministic() {
+        let txs = vec![
+            b"tx1".to_vec(),
+            b"tx2".to_vec(),
+            b"tx3".to_vec(),
+        ];
+        
+        let root1 = compute_merkle_root(&txs);
+        let root2 = compute_merkle_root(&txs);
+        
+        assert_eq!(root1, root2, "Merkle root computation must be deterministic");
+    }
+
+    #[test]
+    fn merkle_root_changes_with_order() {
+        let txs1 = vec![b"tx1".to_vec(), b"tx2".to_vec()];
+        let txs2 = vec![b"tx2".to_vec(), b"tx1".to_vec()];
+        
+        let root1 = compute_merkle_root(&txs1);
+        let root2 = compute_merkle_root(&txs2);
+        
+        assert_ne!(root1, root2, "Merkle root must change with transaction order");
+    }
+
+    #[test]
+    fn block_version_field_included_in_signature() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let mut block = Block::new(&signing_key, vec![], vec![]);
+        
+        // Change version after signing
+        block.header.version = 2;
+        
+        assert!(!block.verify(), "Block with modified version should be rejected");
+    }
+
+    #[test]
+    fn block_median_time_included_in_signature() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let mut block = Block::new(&signing_key, vec![], vec![]);
+        
+        // Change median_time after signing
+        block.header.median_time_us += 1000000;
+        
+        assert!(!block.verify(), "Block with modified time should be rejected");
+    }
 }
