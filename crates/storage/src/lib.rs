@@ -6,7 +6,7 @@ use ippan_types::{
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -433,6 +433,12 @@ pub struct MemoryStorage {
     chain_state: Arc<RwLock<ChainState>>,
     latest_height: Arc<RwLock<u64>>,
     validator_telemetry: Arc<RwLock<HashMap<[u8; 32], ValidatorTelemetry>>>,
+    l2_networks: Arc<RwLock<BTreeMap<String, L2Network>>>,
+    l2_commits: Arc<RwLock<BTreeMap<String, L2Commit>>>,
+    l2_exits: Arc<RwLock<BTreeMap<String, L2ExitRecord>>>,
+    round_certificates: Arc<RwLock<BTreeMap<RoundId, RoundCertificate>>>,
+    round_finalizations: Arc<RwLock<BTreeMap<RoundId, RoundFinalizationRecord>>>,
+    latest_finalized_round: Arc<RwLock<Option<RoundId>>>,
 }
 
 impl Default for MemoryStorage {
@@ -444,15 +450,28 @@ impl Default for MemoryStorage {
             chain_state: Arc::new(RwLock::new(ChainState::default())),
             latest_height: Arc::new(RwLock::new(0)),
             validator_telemetry: Arc::new(RwLock::new(HashMap::new())),
+            l2_networks: Arc::new(RwLock::new(BTreeMap::new())),
+            l2_commits: Arc::new(RwLock::new(BTreeMap::new())),
+            l2_exits: Arc::new(RwLock::new(BTreeMap::new())),
+            round_certificates: Arc::new(RwLock::new(BTreeMap::new())),
+            round_finalizations: Arc::new(RwLock::new(BTreeMap::new())),
+            latest_finalized_round: Arc::new(RwLock::new(None)),
         }
+    }
+}
+
+impl MemoryStorage {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
 impl Storage for MemoryStorage {
     fn store_block(&self, b: Block) -> Result<()> {
+        let round = b.header.round;
         let h = hex::encode(b.hash());
         self.blocks.write().insert(h, b);
-        *self.latest_height.write() += 1;
+        *self.latest_height.write() = round;
         Ok(())
     }
 
@@ -509,42 +528,76 @@ impl Storage for MemoryStorage {
         Ok(self.txs.read().len() as u64)
     }
 
-    // The rest of L2 and round methods are no-ops in memory mode for brevity
-    fn put_l2_network(&self, _n: L2Network) -> Result<()> {
+    // L2 network operations
+    fn put_l2_network(&self, n: L2Network) -> Result<()> {
+        self.l2_networks.write().insert(n.id.clone(), n);
         Ok(())
     }
-    fn get_l2_network(&self, _id: &str) -> Result<Option<L2Network>> {
-        Ok(None)
+    fn get_l2_network(&self, id: &str) -> Result<Option<L2Network>> {
+        Ok(self.l2_networks.read().get(id).cloned())
     }
+
     fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
-        Ok(vec![])
+        Ok(self.l2_networks.read().values().cloned().collect())
     }
-    fn store_l2_commit(&self, _c: L2Commit) -> Result<()> {
+    // L2 commit operations
+    fn store_l2_commit(&self, c: L2Commit) -> Result<()> {
+        self.l2_commits.write().insert(c.id.clone(), c);
         Ok(())
     }
-    fn list_l2_commits(&self, _f: Option<&str>) -> Result<Vec<L2Commit>> {
-        Ok(vec![])
+    fn list_l2_commits(&self, filter: Option<&str>) -> Result<Vec<L2Commit>> {
+        Ok(self
+            .l2_commits
+            .read()
+            .values()
+            .filter(|commit| filter.map(|id| id == commit.l2_id.as_str()).unwrap_or(true))
+            .cloned()
+            .collect())
     }
-    fn store_l2_exit(&self, _x: L2ExitRecord) -> Result<()> {
+    fn store_l2_exit(&self, exit: L2ExitRecord) -> Result<()> {
+        self.l2_exits.write().insert(exit.id.clone(), exit);
         Ok(())
     }
-    fn list_l2_exits(&self, _f: Option<&str>) -> Result<Vec<L2ExitRecord>> {
-        Ok(vec![])
+    fn list_l2_exits(&self, filter: Option<&str>) -> Result<Vec<L2ExitRecord>> {
+        Ok(self
+            .l2_exits
+            .read()
+            .values()
+            .filter(|exit| filter.map(|id| id == exit.l2_id.as_str()).unwrap_or(true))
+            .cloned()
+            .collect())
     }
-    fn store_round_certificate(&self, _c: RoundCertificate) -> Result<()> {
+    fn store_round_certificate(&self, certificate: RoundCertificate) -> Result<()> {
+        self.round_certificates
+            .write()
+            .insert(certificate.round, certificate);
         Ok(())
     }
-    fn get_round_certificate(&self, _r: RoundId) -> Result<Option<RoundCertificate>> {
-        Ok(None)
+    fn get_round_certificate(&self, round: RoundId) -> Result<Option<RoundCertificate>> {
+        Ok(self.round_certificates.read().get(&round).cloned())
     }
-    fn store_round_finalization(&self, _r: RoundFinalizationRecord) -> Result<()> {
+    fn store_round_finalization(&self, record: RoundFinalizationRecord) -> Result<()> {
+        let round = record.round;
+        {
+            let mut finalizations = self.round_finalizations.write();
+            finalizations.insert(round, record);
+        }
+        let mut latest = self.latest_finalized_round.write();
+        if latest.map_or(true, |current| round >= current) {
+            *latest = Some(round);
+        }
         Ok(())
     }
-    fn get_round_finalization(&self, _r: RoundId) -> Result<Option<RoundFinalizationRecord>> {
-        Ok(None)
+    fn get_round_finalization(&self, round: RoundId) -> Result<Option<RoundFinalizationRecord>> {
+        Ok(self.round_finalizations.read().get(&round).cloned())
     }
+
     fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>> {
-        Ok(None)
+        if let Some(round) = *self.latest_finalized_round.read() {
+            self.get_round_finalization(round)
+        } else {
+            Ok(None)
+        }
     }
 
     fn get_chain_state(&self) -> Result<ChainState> {

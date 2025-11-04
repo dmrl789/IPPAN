@@ -82,10 +82,14 @@ pub use dlc_integration::{DLCIntegratedConsensus, dlc_config_from_poa};
 // Emissions and fees
 pub use emission::{
     calculate_fee_recycling, calculate_round_emission, calculate_round_reward,
-    distribute_dag_fair_rewards, DAGEmissionParams, FeeRecyclingParams, RoundEmission,
-    ValidatorParticipation, ValidatorReward, ValidatorRole,
+    distribute_dag_fair_rewards, distribute_round_reward, projected_supply, round_reward,
+    rounds_until_cap, DAGEmissionParams, FeeRecyclingParams, RoundDistribution, RoundEmission,
+    ValidatorContribution, ValidatorParticipation, ValidatorReward, ValidatorRole,
 };
-pub use emission_tracker::{EmissionStatistics, EmissionTracker};
+pub use emission_tracker::{
+    EmissionStatistics, EmissionTracker,
+    ValidatorContribution as TrackerValidatorContribution,
+};
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ippan_economics::{EmissionEngine, EmissionParams, RewardAmount, RoundIndex, RoundRewards};
 #[cfg(feature = "ai_l1")]

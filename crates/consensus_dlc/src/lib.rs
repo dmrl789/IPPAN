@@ -126,7 +126,7 @@ impl DlcConsensus {
         
         Self {
             dag: BlockDAG::new(),
-            validators: ValidatorSetManager::new(model),
+            validators: ValidatorSetManager::new(model, config.validators_per_round),
             reputation: ReputationDB::default(),
             bonds: BondManager::new(config.unstaking_lock_rounds),
             emission: EmissionSchedule::default(),
@@ -204,7 +204,7 @@ impl DlcConsensus {
         }
         
         // Finalize blocks
-        self.dag.finalize_round(round_time.clone());
+        let finalized_ids = self.dag.finalize_round(round_time.clone());
         
         // Calculate and distribute rewards
         let block_reward = self.emission.calculate_block_reward(self.current_round);
@@ -237,7 +237,7 @@ impl DlcConsensus {
         Ok(RoundResult {
             round: self.current_round,
             blocks_processed: verified_blocks.len(),
-            blocks_finalized: self.dag.finalized.len(),
+            blocks_finalized: finalized_ids.len(),
             verifiers: verifier_set.size(),
             block_reward,
         })
@@ -297,6 +297,7 @@ pub async fn process_round(
         &validators,
         round_time.hash.clone(),
         round,
+        validators.len(),
     )?;
     
     let pending = dag.pending();
@@ -310,14 +311,14 @@ pub async fn process_round(
         }
     }
     
-    dag.finalize_round(round_time);
+    let finalized_ids = dag.finalize_round(round_time);
     
     tracing::info!("DLC round {} finalized", round);
     
     Ok(RoundResult {
         round,
         blocks_processed: processed,
-        blocks_finalized: dag.finalized.len(),
+        blocks_finalized: finalized_ids.len(),
         verifiers: verifier_set.size(),
         block_reward: emission::BLOCK_REWARD,
     })

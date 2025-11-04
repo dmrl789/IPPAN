@@ -28,7 +28,7 @@ pub use distribution::RoundRewards;
 pub use emission::EmissionEngine;
 pub use errors::*;
 pub use params::EconomicsParams;
-pub use supply::SupplyTracker;
+pub use supply::{projected_supply, rounds_until_supply_cap, scheduled_round_reward, SupplyTracker};
 pub use types::*;
 
 /// Re-export commonly used types for convenience

@@ -5,17 +5,17 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
-use axum::extract::{ConnectInfo, Path as AxumPath, State};
+use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::PoAConsensus;
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
-use ippan_storage::Storage;
+use ippan_storage::{Account, Storage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
@@ -101,6 +101,29 @@ impl ConsensusHandle {
 pub struct ConsensusStateView {
     pub round: u64,
     pub validators: Vec<String>,
+}
+
+/// Transaction lookup response payload used by JSON responses.
+#[derive(Debug, Serialize)]
+struct TransactionEnvelope {
+    hash: String,
+    transaction: Transaction,
+}
+
+/// Account lookup response payload with recent transaction history.
+#[derive(Debug, Serialize)]
+struct AccountResponse {
+    address: String,
+    balance: u64,
+    nonce: u64,
+    transactions: Vec<TransactionEnvelope>,
+}
+
+/// Optional filter parameters for L2 endpoints.
+#[derive(Debug, Default, Deserialize)]
+struct L2Filter {
+    #[serde(default)]
+    l2_id: Option<String>,
 }
 
 /// Start the RPC server
@@ -310,40 +333,141 @@ async fn handle_submit_tx(
 async fn handle_get_transaction(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    AxumPath(_hash): AxumPath<String>,
-) -> (StatusCode, &'static str) {
+    AxumPath(hash): AxumPath<String>,
+) -> Result<Json<TransactionEnvelope>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/tx/:hash").await {
-        return deny_request(&state, &addr, "/tx/:hash", err).await;
+        return Err(deny_request(&state, &addr, "/tx/:hash", err).await);
     }
 
-    record_security_success(&state, &addr, "/tx/:hash").await;
-    (StatusCode::NOT_FOUND, "Transaction not found")
+    let hash_bytes = match parse_hex_32(&hash) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("Invalid transaction hash from {}: {} ({})", addr, hash, err);
+            record_security_failure(&state, &addr, "/tx/:hash", "Invalid transaction hash").await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid transaction hash"));
+        }
+    };
+
+    match state.storage.get_transaction(&hash_bytes) {
+        Ok(Some(tx)) => {
+            let envelope = TransactionEnvelope {
+                hash: hex_encode(tx.hash()),
+                transaction: tx,
+            };
+            record_security_success(&state, &addr, "/tx/:hash").await;
+            Ok(Json(envelope))
+        }
+        Ok(None) => {
+            record_security_success(&state, &addr, "/tx/:hash").await;
+            Err((StatusCode::NOT_FOUND, "Transaction not found"))
+        }
+        Err(err) => {
+            error!("Failed fetching transaction {} for {}: {}", hash, addr, err);
+            record_security_failure(&state, &addr, "/tx/:hash", &err.to_string()).await;
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load transaction",
+            ))
+        }
+    }
 }
 
 async fn handle_get_block(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    AxumPath(_id): AxumPath<String>,
-) -> (StatusCode, &'static str) {
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Block>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/block/:id").await {
-        return deny_request(&state, &addr, "/block/:id", err).await;
+        return Err(deny_request(&state, &addr, "/block/:id", err).await);
     }
 
-    record_security_success(&state, &addr, "/block/:id").await;
-    (StatusCode::NOT_FOUND, "Block not found")
+    let identifier = match parse_block_identifier(&id) {
+        Some(identifier) => identifier,
+        None => {
+            warn!("Invalid block identifier from {}: {}", addr, id);
+            record_security_failure(&state, &addr, "/block/:id", "Invalid block identifier").await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid block identifier"));
+        }
+    };
+
+    let block_result = match identifier {
+        BlockIdentifier::Hash(hash) => state.storage.get_block(&hash),
+        BlockIdentifier::Height(height) => state.storage.get_block_by_height(height),
+    };
+
+    match block_result {
+        Ok(Some(block)) => {
+            record_security_success(&state, &addr, "/block/:id").await;
+            Ok(Json(block))
+        }
+        Ok(None) => {
+            record_security_success(&state, &addr, "/block/:id").await;
+            Err((StatusCode::NOT_FOUND, "Block not found"))
+        }
+        Err(err) => {
+            error!("Failed fetching block {} for {}: {}", id, addr, err);
+            record_security_failure(&state, &addr, "/block/:id", &err.to_string()).await;
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load block"))
+        }
+    }
 }
 
 async fn handle_get_account(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    AxumPath(_addr): AxumPath<String>,
-) -> (StatusCode, &'static str) {
+    AxumPath(address): AxumPath<String>,
+) -> Result<Json<AccountResponse>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/account/:address").await {
-        return deny_request(&state, &addr, "/account/:address", err).await;
+        return Err(deny_request(&state, &addr, "/account/:address", err).await);
     }
 
-    record_security_success(&state, &addr, "/account/:address").await;
-    (StatusCode::NOT_FOUND, "Account not found")
+    let address_bytes = match parse_hex_32(&address) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!(
+                "Invalid account address from {}: {} ({})",
+                addr, address, err
+            );
+            record_security_failure(
+                &state,
+                &addr,
+                "/account/:address",
+                "Invalid account address",
+            )
+            .await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid account address"));
+        }
+    };
+
+    match state.storage.get_account(&address_bytes) {
+        Ok(Some(account)) => match state.storage.get_transactions_by_address(&address_bytes) {
+            Ok(transactions) => {
+                let response = account_to_response(account, transactions);
+                record_security_success(&state, &addr, "/account/:address").await;
+                Ok(Json(response))
+            }
+            Err(err) => {
+                error!(
+                    "Failed fetching transactions for account {} ({}): {}",
+                    address, addr, err
+                );
+                record_security_failure(&state, &addr, "/account/:address", &err.to_string()).await;
+                Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to load account transactions",
+                ))
+            }
+        },
+        Ok(None) => {
+            record_security_success(&state, &addr, "/account/:address").await;
+            Err((StatusCode::NOT_FOUND, "Account not found"))
+        }
+        Err(err) => {
+            error!("Failed fetching account {} for {}: {}", address, addr, err);
+            record_security_failure(&state, &addr, "/account/:address", &err.to_string()).await;
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load account"))
+        }
+    }
 }
 
 async fn handle_get_peers(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
@@ -677,16 +801,92 @@ async fn handle_get_l2_config(State(state): State<Arc<AppState>>) -> Json<L2Conf
     Json(state.l2_config.clone())
 }
 
-async fn handle_list_l2_networks() -> Json<Vec<L2Network>> {
-    Json(vec![])
+async fn handle_list_l2_networks(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<L2Network>>, (StatusCode, &'static str)> {
+    match state.storage.list_l2_networks() {
+        Ok(networks) => Ok(Json(networks)),
+        Err(err) => {
+            error!("Failed to list L2 networks: {}", err);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to list L2 networks",
+            ))
+        }
+    }
 }
 
-async fn handle_list_l2_commits() -> Json<Vec<L2Commit>> {
-    Json(vec![])
+async fn handle_list_l2_commits(
+    State(state): State<Arc<AppState>>,
+    Query(filter): Query<L2Filter>,
+) -> Result<Json<Vec<L2Commit>>, (StatusCode, &'static str)> {
+    match state.storage.list_l2_commits(filter.l2_id.as_deref()) {
+        Ok(commits) => Ok(Json(commits)),
+        Err(err) => {
+            error!("Failed to list L2 commits: {}", err);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to list L2 commits",
+            ))
+        }
+    }
 }
 
-async fn handle_list_l2_exits() -> Json<Vec<L2ExitRecord>> {
-    Json(vec![])
+async fn handle_list_l2_exits(
+    State(state): State<Arc<AppState>>,
+    Query(filter): Query<L2Filter>,
+) -> Result<Json<Vec<L2ExitRecord>>, (StatusCode, &'static str)> {
+    match state.storage.list_l2_exits(filter.l2_id.as_deref()) {
+        Ok(exits) => Ok(Json(exits)),
+        Err(err) => {
+            error!("Failed to list L2 exits: {}", err);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to list L2 exits"))
+        }
+    }
+}
+
+fn parse_hex_32(input: &str) -> std::result::Result<[u8; 32], hex::FromHexError> {
+    let trimmed = input.trim();
+    let normalized = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    let mut bytes = [0u8; 32];
+    hex::decode_to_slice(normalized, &mut bytes)?;
+    Ok(bytes)
+}
+
+enum BlockIdentifier {
+    Hash([u8; 32]),
+    Height(u64),
+}
+
+fn parse_block_identifier(input: &str) -> Option<BlockIdentifier> {
+    let trimmed = input.trim();
+    if trimmed.len() <= 20 && trimmed.chars().all(|c| c.is_ascii_digit()) {
+        if let Ok(height) = trimmed.parse::<u64>() {
+            return Some(BlockIdentifier::Height(height));
+        }
+    }
+
+    parse_hex_32(trimmed).ok().map(BlockIdentifier::Hash)
+}
+
+fn account_to_response(account: Account, transactions: Vec<Transaction>) -> AccountResponse {
+    let transactions = transactions
+        .into_iter()
+        .map(|tx| TransactionEnvelope {
+            hash: hex_encode(tx.hash()),
+            transaction: tx,
+        })
+        .collect();
+
+    AccountResponse {
+        address: hex_encode(account.address),
+        balance: account.balance,
+        nonce: account.nonce,
+        transactions,
+    }
 }
 
 #[cfg(test)]
