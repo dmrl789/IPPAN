@@ -614,7 +614,7 @@ impl PoAConsensus {
         tracker: &Arc<RwLock<RoundTracker>>,
         interval: Duration,
         config: &PoAConfig,
-        fee_collector: &Arc<RwLock<FeeCollector>>,
+        _fee_collector: &Arc<RwLock<FeeCollector>>,
     ) -> Result<()> {
         let (round_id, block_ids, start, end) = {
             let mut t = tracker.write();

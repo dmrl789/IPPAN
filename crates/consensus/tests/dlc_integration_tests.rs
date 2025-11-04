@@ -1,8 +1,7 @@
 //! Integration tests for DLC consensus
 
 use ippan_consensus::*;
-use ippan_storage::{SledStorage, Storage};
-use ippan_types::{Block, Transaction, ValidatorId};
+use ippan_storage::SledStorage;
 use std::sync::Arc;
 use tempfile::tempdir;
 
@@ -10,7 +9,7 @@ use tempfile::tempdir;
 async fn test_dlc_consensus_initialization() {
     let config = DLCConfig::default();
     let validator_id = [1u8; 32];
-    let mut dlc = DLCConsensus::new(config, validator_id);
+    let dlc = DLCConsensus::new(config, validator_id);
     
     let state = dlc.get_state();
     assert_eq!(state.round_id, 1);
@@ -138,7 +137,7 @@ async fn test_dlc_integrated_consensus() {
     let poa = PoAConsensus::new(poa_config, storage, validator_id);
     
     let dlc_config = dlc_config_from_poa(true, 250);
-    let mut integrated = DLCIntegratedConsensus::new(poa, dlc_config, validator_id);
+    let integrated = DLCIntegratedConsensus::new(poa, dlc_config, validator_id);
     
     assert!(integrated.dlc_enabled);
     
