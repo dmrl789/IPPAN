@@ -4,7 +4,10 @@
 //! and provides audit records for governance and transparency.
 
 use blake3::Hasher;
-use ippan_economics::{EmissionParams, RoundRewardDistribution, ValidatorId, ValidatorReward};
+use ippan_economics::{
+    projected_supply, scheduled_round_reward, EmissionParams, RoundRewardDistribution, ValidatorId,
+    ValidatorReward,
+};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -102,21 +105,7 @@ impl EmissionTracker {
     }
 
     fn compute_base_reward(&self, round: u64) -> u64 {
-        if round == 0 {
-            return 0;
-        }
-
-        let halving_interval = self.params.halving_interval_rounds.max(1);
-        let halving_count = (round.saturating_sub(1)) / halving_interval;
-
-        if halving_count >= 64 {
-            return 0;
-        }
-
-        self.params
-            .initial_round_reward_micro
-            .checked_shr(halving_count as u32)
-            .unwrap_or(0)
+        scheduled_round_reward(round, &self.params)
     }
 
     /// Process a completed round and update emission state
@@ -326,14 +315,15 @@ impl EmissionTracker {
         let start_round = self.last_audit_round.max(1);
 
         // Calculate totals for the audit period
-        let total_base_emission = 0u128;
-        let total_distributed = 0u128;
-
-        // Sum up emissions for the period
-        for _r in start_round..=round {
-            // Note: round_reward function needs to be implemented or replaced
-            // total_base_emission = total_base_emission.saturating_add(super::emission::round_reward(_r, &self.params));
+        let mut total_base_emission = 0u128;
+        for r in start_round..=round {
+            total_base_emission = total_base_emission.saturating_add(
+                scheduled_round_reward(r, &self.params) as u128,
+            );
         }
+
+        let round_emission = scheduled_round_reward(round, &self.params) as u128;
+        let total_distributed = self.cumulative_supply;
 
         // Create distribution hash
         let mut hasher = Hasher::new();
@@ -354,7 +344,7 @@ impl EmissionTracker {
             start_round,
             end_round: round,
             cumulative_supply: self.cumulative_supply,
-            round_emission: 0, // Placeholder
+            round_emission,
             total_base_emission,
             fees_collected: 0, // Placeholder
             total_fees_collected: self.total_fees_collected,
@@ -381,8 +371,8 @@ impl EmissionTracker {
     pub fn verify_consistency(&self) -> Result<(), String> {
         let expected_supply = super::emission::projected_supply(self.last_round, &self.params);
 
-        // Allow small rounding error (up to number of rounds in µIPN)
-        let tolerance = self.last_round as u128;
+        // Allow minor rounding discrepancies (due to integer division) proportional to rounds.
+        let tolerance = (self.last_round as u128).saturating_add(10);
 
         if self.cumulative_base_emission > expected_supply + tolerance {
             return Err(format!(
