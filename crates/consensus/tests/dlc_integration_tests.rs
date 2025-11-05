@@ -1,8 +1,8 @@
 //! Integration tests for DLC consensus
 
 use ippan_consensus::*;
-use ippan_storage::{SledStorage, Storage};
-use ippan_types::{Block, Transaction, ValidatorId};
+use ippan_storage::SledStorage;
+use ippan_types::Block;
 use std::sync::Arc;
 use tempfile::tempdir;
 
@@ -123,8 +123,8 @@ async fn test_hashtimer_deterministic_ordering() {
     let hashtimer2 = generate_round_hashtimer(round_id, &previous_hash, &validator_id);
     
     // Should be deterministic for same inputs (within same microsecond)
-    assert!(hashtimer1.timestamp_us().0 > 0);
-    assert!(hashtimer2.timestamp_us().0 > 0);
+    assert!(hashtimer1.timestamp_us > 0);
+    assert!(hashtimer2.timestamp_us > 0);
 }
 
 #[tokio::test]
@@ -138,7 +138,7 @@ async fn test_dlc_integrated_consensus() {
     let poa = PoAConsensus::new(poa_config, storage, validator_id);
     
     let dlc_config = dlc_config_from_poa(true, 250);
-    let mut integrated = DLCIntegratedConsensus::new(poa, dlc_config, validator_id);
+    let integrated = DLCIntegratedConsensus::new(poa, dlc_config, validator_id);
     
     assert!(integrated.dlc_enabled);
     
