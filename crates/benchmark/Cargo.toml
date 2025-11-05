@@ -1,0 +1,42 @@
+[package]
+name = "ippan-benchmark"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "IPPAN Performance Benchmarking Tool"
+
+[[bin]]
+name = "ippan-benchmark"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# HTTP client
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+
+# Time
+chrono = "0.4"
+
+# Utilities
+hex = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Statistics
+statistical = "1.0"
