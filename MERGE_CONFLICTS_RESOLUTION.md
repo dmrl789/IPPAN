@@ -3,13 +3,35 @@
 **PR**: Find and stub unimplemented code  
 **Target Branch**: main  
 **Source Branch**: cursor/find-and-stub-unimplemented-code-d391  
-**Status**: ✅ Conflicts Identified and Resolved
+**Status**: ✅ Conflicts Resolved and Merged  
+**Commit**: 0114a22  
+**Pushed**: Yes ✅
 
 ---
 
-## Conflicts Found
+## Conflicts Found and Resolved
 
-### 1. `crates/ai_service/Cargo.toml`
+### 1. `crates/ai_core/Cargo.toml` (NEW)
+
+**Conflict Location**: Lines 18-73 (Dependencies section)
+
+**Resolution**:
+```toml
+# Use all workspace versions
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+# ... (all other workspace deps)
+sysinfo = "0.29"  # NEW: for memory monitoring
+# ... rest of workspace deps
+```
+
+**Reason**:
+- Main branch standardized all deps to workspace versions
+- Keep `sysinfo = "0.29"` - new dependency for Task #8 (real memory monitoring)
+
+---
+
+### 2. `crates/ai_service/Cargo.toml`
 
 **Conflict Location**: Lines 70-77 (Production dependencies)
 
@@ -35,9 +57,34 @@ sysinfo = "0.29"
 
 ---
 
-### 2. `crates/l2_handle_registry/Cargo.toml`
+**Conflict Details**:
+```toml
+<<<<<<< HEAD
+toml = "0.8"
+warp = "0.3"
+sysinfo = "0.29"
+=======
+toml = { workspace = true }
+warp = { workspace = true }
+>>>>>>> origin/main
+```
 
-**Conflict Location**: Lines 7-29 (Dependencies section)
+**Resolution**:
+```toml
+toml = { workspace = true }  ← Use main's workspace version
+warp = { workspace = true }  ← Use main's workspace version
+sysinfo = "0.29"             ← Keep our addition for memory monitoring
+```
+
+**Reason**: 
+- Use workspace versions for consistency
+- Keep `sysinfo = "0.29"` for real memory monitoring (Task #8)
+
+---
+
+### 3. `crates/l2_handle_registry/Cargo.toml`
+
+**Conflict Location**: Lines 9-31 (Dependencies section)
 
 **Conflict Details**:
 ```toml
@@ -105,9 +152,13 @@ cargo test -p ippan-l1-handle-anchors --lib   # 4/4 passed
 
 ## Summary of Changes
 
+### Conflicts Resolved: 3 Files
+
+All conflicts were due to main branch standardizing dependencies to use workspace versions, while our branch added new security-critical dependencies.
+
 ### New Dependencies Added (that caused conflicts)
 
-1. **`sysinfo = "0.29"`** in `ippan-ai-service`
+1. **`sysinfo = "0.29"`** in `ippan-ai-core` and `ippan-ai-service`
    - Purpose: Real memory usage monitoring
    - Task: #8 - Implement real memory usage monitoring
    - Files affected: `crates/ai_service/src/monitoring.rs`, `crates/ai_core/src/health.rs`
