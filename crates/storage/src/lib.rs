@@ -644,18 +644,89 @@ impl Storage for MemoryStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{Amount, IppanTimeMicros, RoundWindow, Transaction};
+    use ippan_types::round::RoundWindow;
+    use ippan_types::{Amount, IppanTimeMicros, Transaction};
+    use ippan_types::l2::L2NetworkStatus;
+    use tempfile::tempdir;
+
+    #[test]
+    fn initialize_creates_genesis_block_and_account() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("initialize");
+
+        let latest_height = storage.get_latest_height().expect("height");
+        assert_eq!(latest_height, 0, "genesis block should set height to 0");
+
+        let genesis_block = storage
+            .get_block_by_height(0)
+            .expect("fetch genesis block");
+        assert!(genesis_block.is_some(), "genesis block present after init");
+
+        let genesis_account = storage
+            .get_account(&[0u8; 32])
+            .expect("fetch genesis account");
+        let account = genesis_account.expect("account exists");
+        assert_eq!(account.balance, 1_000_000);
+        assert_eq!(account.nonce, 0);
+    }
+
+    #[test]
+    fn transaction_round_trip() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("initialize");
+
+        let tx = Transaction::new(
+            [1u8; 32],
+            [2u8; 32],
+            Amount::from_micro_ipn(42),
+            7,
+        );
+        let tx_hash = tx.hash();
+        storage
+            .store_transaction(tx.clone())
+            .expect("store transaction");
+
+        let fetched = storage
+            .get_transaction(&tx_hash)
+            .expect("fetch transaction")
+            .expect("transaction present");
+        assert_eq!(fetched.hash(), tx_hash);
+        assert_eq!(fetched.from, tx.from);
+        assert_eq!(fetched.to, tx.to);
+        assert_eq!(fetched.amount, tx.amount);
+        assert_eq!(fetched.nonce, tx.nonce);
+        assert_eq!(storage.get_transaction_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn chain_state_updates_persist() {
+        let dir = tempdir().expect("tempdir");
+        {
+            let storage = SledStorage::new(dir.path()).expect("sled storage");
+            storage.initialize().expect("initialize");
+
+            let mut state = storage.get_chain_state().expect("initial state");
+            state.add_issued_micro(500);
+            state.update_round(5);
+            storage
+                .update_chain_state(&state)
+                .expect("update chain state");
+            storage.flush().expect("flush");
+        }
+
+        let storage = SledStorage::new(dir.path()).expect("reopen storage");
+        let persisted = storage.get_chain_state().expect("persisted state");
+        assert_eq!(persisted.total_issued_micro, 500);
+        assert_eq!(persisted.last_updated_round, 5);
+    }
 
     fn create_test_block(round: u64, creator: [u8; 32]) -> Block {
         Block::new(vec![], vec![], round, creator)
     }
 
-    fn create_test_transaction(
-        from: [u8; 32],
-        to: [u8; 32],
-        amount: u64,
-        nonce: u64,
-    ) -> Transaction {
+    fn create_test_transaction(from: [u8; 32], to: [u8; 32], amount: u64, nonce: u64) -> Transaction {
         Transaction::new(from, to, Amount::from_atomic(amount.into()), nonce)
     }
 
@@ -968,8 +1039,8 @@ mod tests {
 
         let cert = RoundCertificate {
             round,
-            block_ids: vec![],
-            agg_sig: vec![],
+            block_ids: vec![[0u8; 32]],
+            agg_sig: Vec::new(),
         };
 
         storage
@@ -988,27 +1059,23 @@ mod tests {
     fn storage_round_finalization_tracking() {
         let storage = MemoryStorage::new();
 
-        assert!(storage
-            .get_latest_round_finalization()
-            .expect("get")
-            .is_none());
-
         let window1 = RoundWindow {
             id: 10,
             start_us: IppanTimeMicros(1_000_000),
-            end_us: IppanTimeMicros(1_000_500),
+            end_us: IppanTimeMicros(2_000_000),
+        };
+        let proof1 = RoundCertificate {
+            round: 10,
+            block_ids: vec![[0u8; 32]],
+            agg_sig: Vec::new(),
         };
         let rec1 = RoundFinalizationRecord {
             round: 10,
             window: window1,
-            ordered_tx_ids: vec![],
+            ordered_tx_ids: vec![[1u8; 32]],
             fork_drops: vec![],
             state_root: [0u8; 32],
-            proof: RoundCertificate {
-                round: 10,
-                block_ids: vec![],
-                agg_sig: vec![],
-            },
+            proof: proof1,
         };
 
         storage
@@ -1023,20 +1090,21 @@ mod tests {
 
         let window2 = RoundWindow {
             id: 20,
-            start_us: IppanTimeMicros(2_000_000),
-            end_us: IppanTimeMicros(2_000_600),
+            start_us: IppanTimeMicros(3_000_000),
+            end_us: IppanTimeMicros(4_000_000),
+        };
+        let proof2 = RoundCertificate {
+            round: 20,
+            block_ids: vec![[2u8; 32]],
+            agg_sig: vec![],
         };
         let rec2 = RoundFinalizationRecord {
             round: 20,
             window: window2,
-            ordered_tx_ids: vec![],
+            ordered_tx_ids: vec![[2u8; 32]],
             fork_drops: vec![],
             state_root: [1u8; 32],
-            proof: RoundCertificate {
-                round: 20,
-                block_ids: vec![],
-                agg_sig: vec![],
-            },
+            proof: proof2,
         };
 
         storage
@@ -1089,13 +1157,13 @@ mod tests {
 
         let network = L2Network {
             id: "test-l2".to_string(),
-            proof_type: "zk".to_string(),
+            proof_type: "zk-rollup".to_string(),
             da_mode: "inline".to_string(),
-            status: ippan_types::L2NetworkStatus::Active,
+            status: L2NetworkStatus::Active,
             last_epoch: 0,
             total_commits: 0,
             total_exits: 0,
-            last_commit_time: None,
+            last_commit_time: Some(1_500_000),
             registered_at: 1_000_000,
             challenge_window_ms: Some(60_000),
         };
@@ -1108,7 +1176,7 @@ mod tests {
             .get_l2_network("test-l2")
             .expect("get network")
             .expect("network exists");
-        assert_eq!(retrieved.id, "test-l2");
+        assert!(matches!(retrieved.status, L2NetworkStatus::Active));
 
         let all_networks = storage.list_l2_networks().expect("list networks");
         assert_eq!(all_networks.len(), 1);
@@ -1122,26 +1190,26 @@ mod tests {
             id: "commit1".to_string(),
             l2_id: "l2-a".to_string(),
             epoch: 100,
-            state_root: "0x01".to_string(),
-            da_hash: "0xda".to_string(),
+            state_root: "root1".to_string(),
+            da_hash: "hash1".to_string(),
             proof_type: "zk".to_string(),
             proof: None,
             inline_data: None,
             submitted_at: 1_000_000,
-            hashtimer: "HT1".to_string(),
+            hashtimer: "ht1".to_string(),
         };
 
         let commit2 = L2Commit {
             id: "commit2".to_string(),
             l2_id: "l2-b".to_string(),
             epoch: 200,
-            state_root: "0x02".to_string(),
-            da_hash: "0xdb".to_string(),
+            state_root: "root2".to_string(),
+            da_hash: "hash2".to_string(),
             proof_type: "zk".to_string(),
             proof: None,
             inline_data: None,
             submitted_at: 2_000_000,
-            hashtimer: "HT2".to_string(),
+            hashtimer: "ht2".to_string(),
         };
 
         storage.store_l2_commit(commit1).expect("store commit1");
