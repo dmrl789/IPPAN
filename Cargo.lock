@@ -2879,7 +2879,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
+ "blake2",
  "blake3",
+ "criterion",
  "ed25519-dalek",
  "hex",
  "ippan-types",
@@ -3082,17 +3084,22 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "bincode",
+ "blake3",
  "ed25519-dalek",
  "futures",
  "hex",
+ "igd",
  "ippan-consensus",
  "ippan-mempool",
  "ippan-p2p",
  "ippan-security",
  "ippan-storage",
  "ippan-types",
+ "local-ip-address",
  "parking_lot 0.12.5",
  "rand 0.8.5",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
@@ -3102,6 +3109,7 @@ dependencies = [
  "tower 0.4.13",
  "tower-http",
  "tracing",
+ "url",
 ]
 
 [[package]]
