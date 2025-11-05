@@ -34,15 +34,16 @@ impl DLCIntegratedConsensus {
     }
 
     /// Start the integrated consensus engine
+    #[allow(clippy::await_holding_lock)]
     pub async fn start(&mut self) -> Result<()> {
         // Start base PoA consensus
         self.poa.start().await?;
 
         // Start DLC consensus if enabled
+        // Note: We intentionally hold the lock during the async operation
+        // as we need exclusive access to start the DLC consensus
         if self.dlc_enabled {
-            // Create a scope to ensure lock is dropped before await
-            let dlc_clone = self.dlc.clone();
-            let mut dlc = dlc_clone.write();
+            let mut dlc = self.dlc.write();
             dlc.start().await?;
         }
 

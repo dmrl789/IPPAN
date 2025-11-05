@@ -59,6 +59,7 @@ pub struct DGBDTEngine {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SelectionHistory {
     round: RoundId,
     selected: ValidatorId,
@@ -278,7 +279,7 @@ mod tests {
         };
 
         let score = engine.calculate_reputation(&metrics);
-        assert!(score >= 0 && score <= 10000);
+        assert!((0..=10000).contains(&score));
         assert!(score > 8000); // Should be high for good metrics
     }
 

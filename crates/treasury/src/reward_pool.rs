@@ -267,7 +267,7 @@ mod tests {
 
         let mut payouts1: Payouts = HashMap::new();
         payouts1.insert(vid1, 1000);
-        payouts1.insert(vid2.clone(), 2000);
+        payouts1.insert(vid2, 2000);
         sink.credit_round_payouts(1, &payouts1).unwrap();
 
         let mut payouts2: Payouts = HashMap::new();

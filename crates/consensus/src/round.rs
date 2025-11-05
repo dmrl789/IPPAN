@@ -303,7 +303,7 @@ mod tests {
         let model = create_test_model();
         let telemetry = create_test_telemetry();
         let score = calculate_reputation_score(&model, &telemetry).unwrap();
-        assert!(score >= 0 && score <= 10000);
+        assert!((0..=10000).contains(&score));
     }
 
     #[test]

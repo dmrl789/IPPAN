@@ -602,7 +602,7 @@ mod tests {
                 .unwrap();
         }
 
-        assert!(tracker.audit_history.len() >= 1);
+        assert!(!tracker.audit_history.is_empty());
     }
 
     #[test]

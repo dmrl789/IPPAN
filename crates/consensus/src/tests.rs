@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(all(test, feature = "integration-tests"))]
+#[allow(clippy::module_inception)]
 mod tests {
     use super::*;
 
@@ -250,9 +251,8 @@ mod tests {
         consensus.stop().await.unwrap();
 
         // Check if any blocks were created
-        let latest_height = storage.get_latest_height().unwrap();
-        // Genesis block should exist at minimum
-        assert!(latest_height >= 0);
+        let _latest_height = storage.get_latest_height().unwrap();
+        // Genesis block should exist at minimum (height is always >= 0 for u64)
     }
 
     #[tokio::test]

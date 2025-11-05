@@ -126,7 +126,7 @@ fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Start health check HTTP server
-async fn start_health_server(service: AIService) {
+async fn start_health_server(_service: AIService) {
     use warp::Filter;
 
     let health_route = warp::path("health").and(warp::get()).map(move || {
