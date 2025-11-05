@@ -231,7 +231,12 @@ impl Storage for SledStorage {
         Ok(self
             .metadata
             .get(b"latest_height")?
-            .map(|v| u64::from_be_bytes(v.as_ref().try_into().unwrap()))
+            .and_then(|v| {
+                v.as_ref()
+                    .try_into()
+                    .ok()
+                    .map(u64::from_be_bytes)
+            })
             .unwrap_or(0))
     }
 
@@ -583,7 +588,7 @@ impl Storage for MemoryStorage {
             finalizations.insert(round, record);
         }
         let mut latest = self.latest_finalized_round.write();
-        if latest.map_or(true, |current| round >= current) {
+        if latest.is_none_or(|current| round >= current) {
             *latest = Some(round);
         }
         Ok(())

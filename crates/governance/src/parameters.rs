@@ -168,47 +168,54 @@ impl ParameterManager {
         match proposal.parameter_name.as_str() {
             // Governance
             "min_proposal_stake" => {
-                self.parameters.min_proposal_stake = proposal.new_value.as_u64().unwrap();
+                self.parameters.min_proposal_stake = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for min_proposal_stake"))?;
             }
             "voting_threshold" => {
-                self.parameters.voting_threshold = proposal.new_value.as_f64().unwrap();
+                self.parameters.voting_threshold = proposal.new_value.as_f64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for voting_threshold"))?;
             }
             "voting_duration" => {
-                self.parameters.voting_duration = proposal.new_value.as_u64().unwrap();
+                self.parameters.voting_duration = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for voting_duration"))?;
             }
             "max_active_proposals" => {
-                self.parameters.max_active_proposals =
-                    proposal.new_value.as_u64().unwrap() as usize;
+                self.parameters.max_active_proposals = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for max_active_proposals"))? as usize;
             }
             "min_proposal_interval" => {
-                self.parameters.min_proposal_interval = proposal.new_value.as_u64().unwrap();
+                self.parameters.min_proposal_interval = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for min_proposal_interval"))?;
             }
             "proposal_fee" => {
-                self.parameters.proposal_fee = proposal.new_value.as_u64().unwrap();
+                self.parameters.proposal_fee = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for proposal_fee"))?;
             }
             "voting_fee" => {
-                self.parameters.voting_fee = proposal.new_value.as_u64().unwrap();
+                self.parameters.voting_fee = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for voting_fee"))?;
             }
 
             // Economics
             "economics.initial_round_reward_micro" => {
-                self.parameters.economics.initial_round_reward_micro =
-                    proposal.new_value.as_u64().unwrap();
+                self.parameters.economics.initial_round_reward_micro = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for initial_round_reward_micro"))?;
             }
             "economics.halving_interval_rounds" => {
-                self.parameters.economics.halving_interval_rounds =
-                    proposal.new_value.as_u64().unwrap();
+                self.parameters.economics.halving_interval_rounds = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for halving_interval_rounds"))?;
             }
             "economics.max_supply_micro" => {
-                self.parameters.economics.max_supply_micro = proposal.new_value.as_u64().unwrap();
+                self.parameters.economics.max_supply_micro = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for max_supply_micro"))?;
             }
             "economics.proposer_weight_bps" => {
-                self.parameters.economics.proposer_weight_bps =
-                    proposal.new_value.as_u64().unwrap() as u32;
+                self.parameters.economics.proposer_weight_bps = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for proposer_weight_bps"))? as u32;
             }
             "economics.verifier_weight_bps" => {
-                self.parameters.economics.verifier_weight_bps =
-                    proposal.new_value.as_u64().unwrap() as u32;
+                self.parameters.economics.verifier_weight_bps = proposal.new_value.as_u64()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for verifier_weight_bps"))? as u32;
             }
             _ => {
                 return Err(anyhow::anyhow!(
