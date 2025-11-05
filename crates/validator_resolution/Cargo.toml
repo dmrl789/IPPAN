@@ -1,7 +1,9 @@
 [package]
 name = "ippan-validator-resolution"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "Validator ID resolution service with L2 handle registry integration"
 
 [dependencies]
@@ -20,4 +22,4 @@ ippan-l2-handle-registry = { path = "../l2_handle_registry" }
 ippan-l1-handle-anchors = { path = "../l1_handle_anchors" }
 
 [dev-dependencies]
-tokio-test = "0.4"
+tokio-test = { workspace = true }

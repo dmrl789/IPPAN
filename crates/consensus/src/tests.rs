@@ -4,7 +4,6 @@ use ippan_storage::MemoryStorage;
 use ippan_types::{Block, Transaction};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::timeout;
 
 #[cfg(all(test, feature = "integration-tests"))]
 mod tests {
@@ -105,7 +104,7 @@ mod tests {
 
         assert!(result.is_ok());
         let block = result.unwrap();
-        assert_eq!(block.header.proposer, validator_id);
+        assert_eq!(block.header.creator, validator_id);
     }
 
     #[tokio::test]

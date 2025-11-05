@@ -1,9 +1,9 @@
 [package]
 name = "ippan-ai-core"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
-authors = ["IPPAN Contributors"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "Core AI utilities and deterministic evaluation helpers for IPPAN L1."
 
 [lib]
@@ -20,23 +20,23 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_bytes = "0.11"
+serde_bytes = { workspace = true }
 hex = { workspace = true }
 blake3 = { workspace = true }
-sha2 = "0.10"
-sha3 = "0.10"
+sha2 = { workspace = true }
+sha3 = { workspace = true }
 ed25519-dalek = { workspace = true }
 base64 = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
-num_cpus = "1.0"
-toml = "0.8"
+num_cpus = { workspace = true }
+toml = { workspace = true }
 tempfile = { workspace = true }
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 bincode = { workspace = true }
-rand = "0.8"
-serde_yaml = "0.9"
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false, optional = true }
+rand = { workspace = true }
+serde_yaml = { workspace = true }
+reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

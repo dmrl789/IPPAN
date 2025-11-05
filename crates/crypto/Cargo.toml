@@ -1,10 +1,10 @@
 [package]
 name = "ippan-crypto"
-version = "0.1.0"
-edition = "2021"
-authors = ["IPPAN Team"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 description = "Cryptographic primitives for the IPPAN blockchain"
-license = "MIT"
+license.workspace = true
 repository = "https://github.com/ippan/ippan"
 keywords = ["blockchain", "cryptography", "rust"]
 categories = ["cryptography", "algorithms"]
@@ -21,11 +21,12 @@ serde = { workspace = true }
 
 # Hashing and cryptography
 ed25519-dalek = { workspace = true }
-rand = "0.8"
+rand = { workspace = true }
 rand_core = { workspace = true }
-sha2 = "0.10"
-sha3 = "0.10"
+sha2 = { workspace = true }
+sha3 = { workspace = true }
 blake3 = { workspace = true }
+blake2 = { workspace = true }
 hex = { workspace = true }
 base64 = { workspace = true }
 
@@ -34,3 +35,6 @@ ippan-types = { path = "../types" }
 
 # Optional: STARK proof verification (Winterfell)
 winterfell = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }

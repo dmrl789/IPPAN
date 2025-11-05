@@ -1,7 +1,9 @@
 [package]
 name = "ippan-l2-handle-registry"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "L2 handle registry for human-readable ID management and resolution"
 
 [dependencies]
@@ -20,4 +22,4 @@ ippan-types = { path = "../types" }
 ippan-crypto = { path = "../crypto" }
 
 [dev-dependencies]
-tokio-test = "0.4"
+tokio-test = { workspace = true }

@@ -1,7 +1,9 @@
 [package]
 name = "ippan-l1-handle-anchors"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "L1 handle ownership anchors - minimal storage for handle ownership proofs"
 
 [dependencies]
@@ -19,4 +21,4 @@ ippan-crypto = { path = "../crypto" }
 ippan-l2-handle-registry = { path = "../l2_handle_registry" }
 
 [dev-dependencies]
-tokio-test = "0.4"
+tokio-test = { workspace = true }
