@@ -84,12 +84,15 @@ impl L1HandleAnchorStorage {
         let anchor = self.get_anchor_by_handle(handle)?;
         
         // Build merkle tree from all anchors
-        let all_anchors = self.get_all_anchors();
+        let mut all_anchors = self.get_all_anchors();
         if all_anchors.is_empty() {
             return Err(HandleAnchorError::AnchorNotFound {
                 handle_hash: hex::encode(anchor.handle_hash),
             });
         }
+        
+        // Sort anchors by handle_hash for deterministic ordering
+        all_anchors.sort_by(|a, b| a.handle_hash.cmp(&b.handle_hash));
         
         // Create leaves: hash of each anchor's critical fields
         let leaves: Vec<Vec<u8>> = all_anchors
@@ -146,6 +149,7 @@ impl L1HandleAnchorStorage {
         
         Ok(HandleOwnershipProof {
             anchor,
+            leaf_index: proof.leaf_index,
             merkle_proof,
             state_root,
         })
@@ -234,5 +238,88 @@ mod tests {
 
         let proof = storage.create_ownership_proof(handle).unwrap();
         assert!(storage.verify_ownership_proof(&proof));
+    }
+
+    #[test]
+    fn test_merkle_proof_with_multiple_anchors() {
+        let storage = L1HandleAnchorStorage::new();
+        
+        // Create multiple anchors to test different tree positions
+        let handles = vec![
+            "@alice.ipn",
+            "@bob.ipn",
+            "@charlie.ipn",
+            "@david.ipn",
+        ];
+        
+        let owner = [1u8; 32];
+        let l2_location = [2u8; 32];
+        
+        // Store all anchors with slightly different timestamps to ensure uniqueness
+        for (i, handle) in handles.iter().enumerate() {
+            let mut anchor = HandleOwnershipAnchor::new(
+                handle,
+                owner,
+                l2_location,
+                100 + i as u64,  // Different block heights
+                50 + i as u64,   // Different rounds
+                vec![1, 2, 3, 4],
+            );
+            storage.store_anchor(anchor).unwrap();
+        }
+        
+        // Verify proof for each anchor (tests different leaf indices)
+        for (i, handle) in handles.iter().enumerate() {
+            let proof = storage.create_ownership_proof(handle).unwrap();
+            
+            // Debug output
+            eprintln!("Handle {}: {}, leaf_index: {}, proof_len: {}", 
+                i, handle, proof.leaf_index, proof.merkle_proof.len());
+            
+            // Verify proof is valid
+            assert!(
+                storage.verify_ownership_proof(&proof),
+                "Proof verification failed for handle: {} (index {}, proof_len {})",
+                handle, proof.leaf_index, proof.merkle_proof.len()
+            );
+            
+            // Verify proof contains correct data
+            assert_eq!(proof.anchor.owner, owner);
+            assert!(!proof.merkle_proof.is_empty());
+            assert_ne!(proof.state_root, [0u8; 32]);
+        }
+    }
+
+    #[test]
+    fn test_merkle_proof_invalid_modification() {
+        let storage = L1HandleAnchorStorage::new();
+        
+        let handle = "@test.ipn";
+        let owner = [1u8; 32];
+        let l2_location = [2u8; 32];
+        
+        // Store anchor
+        let anchor = HandleOwnershipAnchor::new(
+            handle,
+            owner,
+            l2_location,
+            100,
+            50,
+            vec![1, 2, 3, 4],
+        );
+        storage.store_anchor(anchor.clone()).unwrap();
+        
+        // Create valid proof
+        let mut proof = storage.create_ownership_proof(handle).unwrap();
+        assert!(storage.verify_ownership_proof(&proof));
+        
+        // Modify state root - should fail verification
+        proof.state_root = [99u8; 32];
+        assert!(!storage.verify_ownership_proof(&proof));
+        
+        // Restore state root, modify anchor owner - should fail
+        let mut proof2 = storage.create_ownership_proof(handle).unwrap();
+        proof2.anchor.owner = [99u8; 32];
+        assert!(!storage.verify_ownership_proof(&proof2));
     }
 }

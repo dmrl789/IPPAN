@@ -85,6 +85,8 @@ impl HandleOwnershipAnchor {
 pub struct HandleOwnershipProof {
     /// The ownership anchor
     pub anchor: HandleOwnershipAnchor,
+    /// Leaf index in the Merkle tree (needed for correct proof verification)
+    pub leaf_index: usize,
     /// Merkle proof of inclusion in L1 state
     pub merkle_proof: Vec<[u8; 32]>,
     /// Root hash of the state tree
@@ -102,11 +104,6 @@ impl HandleOwnershipProof {
             return false;
         }
         
-        // If no merkle proof provided, only check signature
-        if self.merkle_proof.is_empty() {
-            return true;
-        }
-        
         // Compute leaf hash
         let mut hasher = Sha256::new();
         hasher.update(&self.anchor.handle_hash);
@@ -115,19 +112,31 @@ impl HandleOwnershipProof {
         hasher.update(&self.anchor.timestamp.to_le_bytes());
         let leaf_hash: [u8; 32] = hasher.finalize().into();
         
-        // Verify merkle proof
+        // If no merkle proof path (single leaf tree), leaf hash IS the root
+        if self.merkle_proof.is_empty() {
+            return leaf_hash == self.state_root;
+        }
+        
+        // Verify merkle proof using correct left/right ordering
         let mut current_hash = leaf_hash;
+        let mut current_index = self.leaf_index;
+        
         for sibling_hash in &self.merkle_proof {
             let mut hasher = Sha256::new();
-            // Combine in deterministic order
-            if current_hash <= *sibling_hash {
+            
+            // Use same ordering as MerkleTree:
+            // - If index is even: current_hash (LEFT) + sibling_hash (RIGHT)
+            // - If index is odd: sibling_hash (LEFT) + current_hash (RIGHT)
+            if current_index % 2 == 0 {
                 hasher.update(&current_hash);
                 hasher.update(sibling_hash);
             } else {
                 hasher.update(sibling_hash);
                 hasher.update(&current_hash);
             }
+            
             current_hash = hasher.finalize().into();
+            current_index /= 2; // Move up to parent level
         }
         
         // Final hash should equal state root
