@@ -9,7 +9,7 @@
 
 use ippan_consensus::{
     distribute_round_reward, projected_supply, round_reward, rounds_until_cap, EmissionParams,
-    EmissionTracker, ValidatorContribution, TrackerValidatorContribution,
+    EmissionTracker, TrackerValidatorContribution, ValidatorContribution,
 };
 
 #[test]
@@ -351,7 +351,10 @@ fn test_long_term_emission_projection() {
     // Year 9-10: 625 × 630M = 393.75B µIPN
     // Total ~10 years: ~12.2T µIPN = 122 IPN (very small relative to 21M cap)
     assert!(supply > 0, "Should have emitted some supply");
-    assert!(supply < params.max_supply_micro as u128, "Should not exceed cap");
+    assert!(
+        supply < params.max_supply_micro as u128,
+        "Should not exceed cap"
+    );
 
     // Calculate emission rate decay
     let year1 = projected_supply(rounds_per_year, &params);
@@ -390,7 +393,9 @@ fn test_rounds_to_supply_cap() {
 
     // Should be at or above cap (within one round's reward)
     assert!(
-        supply_at_cap >= params.max_supply_micro as u128 || (params.max_supply_micro as u128 - supply_at_cap) <= params.initial_round_reward_micro as u128,
+        supply_at_cap >= params.max_supply_micro as u128
+            || (params.max_supply_micro as u128 - supply_at_cap)
+                <= params.initial_round_reward_micro as u128,
         "Supply at cap round {} should be >= cap {}",
         supply_at_cap,
         params.max_supply_micro
@@ -533,5 +538,8 @@ fn test_emission_params_validation() {
     assert!(valid_params.max_supply_micro > 0);
 
     // Test that proposer and verifier weights sum to 10000
-    assert_eq!(valid_params.proposer_weight_bps + valid_params.verifier_weight_bps, 10000);
+    assert_eq!(
+        valid_params.proposer_weight_bps + valid_params.verifier_weight_bps,
+        10000
+    );
 }

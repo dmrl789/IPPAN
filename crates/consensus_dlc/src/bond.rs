@@ -1,5 +1,5 @@
 //! Validator bonding and slashing for DLC consensus
-//! 
+//!
 //! This module handles validator bonds (stake deposits), slashing
 //! for malicious behavior, and bond management.
 
@@ -63,7 +63,7 @@ impl ValidatorBond {
     /// Create a new validator bond
     pub fn new(owner: impl Into<String>, amount: u64) -> Result<Self> {
         let owner = owner.into();
-        
+
         if amount < MIN_VALIDATOR_BOND {
             return Err(DlcError::InvalidBond(format!(
                 "Bond amount {} is below minimum {}",
@@ -108,7 +108,7 @@ impl ValidatorBond {
         }
 
         let new_amount = self.amount.saturating_add(additional);
-        
+
         if new_amount > MAX_VALIDATOR_BOND {
             return Err(DlcError::InvalidBond(format!(
                 "Total bond {} would exceed maximum {}",
@@ -166,7 +166,11 @@ impl ValidatorBond {
                 self.status = BondStatus::Withdrawn;
                 self.updated_at = chrono::Utc::now();
 
-                tracing::info!("Completed unstaking for {}, withdrew {}", self.owner, amount);
+                tracing::info!(
+                    "Completed unstaking for {}, withdrew {}",
+                    self.owner,
+                    amount
+                );
 
                 Ok(amount)
             }
@@ -179,7 +183,9 @@ impl ValidatorBond {
     /// Slash the bond for malicious behavior
     pub fn slash(&mut self, reason: String, percentage_bps: u64, round: u64) -> Result<u64> {
         if self.amount == 0 {
-            return Err(DlcError::InvalidBond("Bond has no funds to slash".to_string()));
+            return Err(DlcError::InvalidBond(
+                "Bond has no funds to slash".to_string(),
+            ));
         }
 
         // Calculate slash amount
@@ -220,10 +226,14 @@ impl ValidatorBond {
     /// Freeze the bond (temporarily disable)
     pub fn freeze(&mut self, reason: String) -> Result<()> {
         if !self.is_active() {
-            return Err(DlcError::InvalidBond("Bond must be active to freeze".to_string()));
+            return Err(DlcError::InvalidBond(
+                "Bond must be active to freeze".to_string(),
+            ));
         }
 
-        self.status = BondStatus::Frozen { reason: reason.clone() };
+        self.status = BondStatus::Frozen {
+            reason: reason.clone(),
+        };
         self.updated_at = chrono::Utc::now();
 
         tracing::warn!("Froze bond for {}: {}", self.owner, reason);
@@ -234,7 +244,9 @@ impl ValidatorBond {
     /// Unfreeze the bond
     pub fn unfreeze(&mut self) -> Result<()> {
         if !matches!(self.status, BondStatus::Frozen { .. }) {
-            return Err(DlcError::InvalidBond("Bond must be frozen to unfreeze".to_string()));
+            return Err(DlcError::InvalidBond(
+                "Bond must be frozen to unfreeze".to_string(),
+            ));
         }
 
         self.status = BondStatus::Active;
@@ -381,10 +393,7 @@ impl BondManager {
 
     /// Get total voting power of all active validators
     pub fn total_voting_power(&self) -> u64 {
-        self.bonds
-            .values()
-            .map(|bond| bond.voting_weight())
-            .sum()
+        self.bonds.values().map(|bond| bond.voting_weight()).sum()
     }
 
     /// Get bond statistics
@@ -445,7 +454,7 @@ mod tests {
     fn test_slashing() {
         let mut bond = ValidatorBond::new("validator1", VALIDATOR_BOND).unwrap();
         let slashed = bond.slash("test violation".to_string(), 1000, 1).unwrap();
-        
+
         // 10% slash
         assert_eq!(slashed, VALIDATOR_BOND / 10);
         assert_eq!(bond.amount, VALIDATOR_BOND - slashed);
@@ -455,9 +464,9 @@ mod tests {
     #[test]
     fn test_unstaking() {
         let mut bond = ValidatorBond::new("validator1", VALIDATOR_BOND).unwrap();
-        
+
         bond.initiate_unstaking(100, 50).unwrap();
-        
+
         match bond.status {
             BondStatus::Unstaking { unlock_round } => {
                 assert_eq!(unlock_round, 150);
@@ -469,10 +478,10 @@ mod tests {
     #[test]
     fn test_complete_unstaking() {
         let mut bond = ValidatorBond::new("validator1", VALIDATOR_BOND).unwrap();
-        
+
         bond.initiate_unstaking(100, 50).unwrap();
         let withdrawn = bond.complete_unstaking(150).unwrap();
-        
+
         assert_eq!(withdrawn, VALIDATOR_BOND);
         assert_eq!(bond.amount, 0);
     }
@@ -480,20 +489,20 @@ mod tests {
     #[test]
     fn test_early_withdrawal_fails() {
         let mut bond = ValidatorBond::new("validator1", VALIDATOR_BOND).unwrap();
-        
+
         bond.initiate_unstaking(100, 50).unwrap();
         let result = bond.complete_unstaking(140);
-        
+
         assert!(result.is_err());
     }
 
     #[test]
     fn test_freeze_unfreeze() {
         let mut bond = ValidatorBond::new("validator1", VALIDATOR_BOND).unwrap();
-        
+
         bond.freeze("test reason".to_string()).unwrap();
         assert!(!bond.can_participate());
-        
+
         bond.unfreeze().unwrap();
         assert!(bond.can_participate());
     }
@@ -501,10 +510,14 @@ mod tests {
     #[test]
     fn test_bond_manager() {
         let mut manager = BondManager::new(100);
-        
-        manager.create_bond("val1".to_string(), VALIDATOR_BOND).unwrap();
-        manager.create_bond("val2".to_string(), VALIDATOR_BOND * 2).unwrap();
-        
+
+        manager
+            .create_bond("val1".to_string(), VALIDATOR_BOND)
+            .unwrap();
+        manager
+            .create_bond("val2".to_string(), VALIDATOR_BOND * 2)
+            .unwrap();
+
         assert_eq!(manager.total_bonded, VALIDATOR_BOND * 3);
         assert_eq!(manager.active_validators().len(), 2);
     }
@@ -513,7 +526,7 @@ mod tests {
     fn test_voting_weight() {
         let active_bond = ValidatorBond::new("val1", VALIDATOR_BOND).unwrap();
         assert_eq!(active_bond.voting_weight(), VALIDATOR_BOND);
-        
+
         let mut slashed_bond = ValidatorBond::new("val2", VALIDATOR_BOND).unwrap();
         slashed_bond.slash("test".to_string(), 10000, 1).unwrap();
         assert_eq!(slashed_bond.voting_weight(), 0);
@@ -522,10 +535,14 @@ mod tests {
     #[test]
     fn test_bond_stats() {
         let mut manager = BondManager::new(100);
-        
-        manager.create_bond("val1".to_string(), VALIDATOR_BOND).unwrap();
-        manager.create_bond("val2".to_string(), VALIDATOR_BOND).unwrap();
-        
+
+        manager
+            .create_bond("val1".to_string(), VALIDATOR_BOND)
+            .unwrap();
+        manager
+            .create_bond("val2".to_string(), VALIDATOR_BOND)
+            .unwrap();
+
         let stats = manager.stats();
         assert_eq!(stats.total_validators, 2);
         assert_eq!(stats.active_validators, 2);

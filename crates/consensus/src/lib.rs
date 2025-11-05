@@ -35,12 +35,12 @@ use tracing::{error, info, warn};
 // ---------------------------------------------------------------------
 
 // Core DLC modules
-pub mod dlc;
-pub mod dgbdt;
-pub mod shadow_verifier;
 pub mod bonding;
-pub mod hashtimer_integration;
+pub mod dgbdt;
+pub mod dlc;
 pub mod dlc_integration;
+pub mod hashtimer_integration;
+pub mod shadow_verifier;
 
 // Economic and emission modules
 pub mod emission;
@@ -53,8 +53,8 @@ pub mod l1_ai_consensus;
 // Telemetry and metrics
 pub mod metrics;
 pub mod model_reload;
-pub mod telemetry;
 pub mod reputation;
+pub mod telemetry;
 
 // DAG and ordering
 pub mod ordering;
@@ -69,26 +69,25 @@ pub mod round_executor;
 // ---------------------------------------------------------------------
 
 // DLC Core
-pub use dlc::{DLCConfig, DLCConsensus, DLCRoundState};
+pub use bonding::{BondingManager, ValidatorBond, MIN_BOND_AMOUNT, VALIDATOR_BOND_AMOUNT};
 pub use dgbdt::{DGBDTEngine, ValidatorMetrics, VerifierSelection};
-pub use shadow_verifier::{ShadowVerifier, ShadowVerifierSet, VerificationResult};
-pub use bonding::{BondingManager, ValidatorBond, VALIDATOR_BOND_AMOUNT, MIN_BOND_AMOUNT};
+pub use dlc::{DLCConfig, DLCConsensus, DLCRoundState};
+pub use dlc_integration::{dlc_config_from_poa, DLCIntegratedConsensus};
 pub use hashtimer_integration::{
-    generate_round_hashtimer, generate_block_hashtimer, verify_temporal_ordering,
-    should_close_round, derive_selection_seed,
+    derive_selection_seed, generate_block_hashtimer, generate_round_hashtimer, should_close_round,
+    verify_temporal_ordering,
 };
-pub use dlc_integration::{DLCIntegratedConsensus, dlc_config_from_poa};
+pub use shadow_verifier::{ShadowVerifier, ShadowVerifierSet, VerificationResult};
 
 // Emissions and fees
 pub use emission::{
     calculate_fee_recycling, calculate_round_emission, calculate_round_reward,
-    distribute_dag_fair_rewards, distribute_round_reward, projected_supply, round_reward,
+    distribute_dag_fair_rewards, distribute_round_reward, round_reward,
     rounds_until_cap, DAGEmissionParams, FeeRecyclingParams, RoundDistribution, RoundEmission,
     ValidatorContribution, ValidatorParticipation, ValidatorReward, ValidatorRole,
 };
 pub use emission_tracker::{
-    EmissionStatistics, EmissionTracker,
-    ValidatorContribution as TrackerValidatorContribution,
+    EmissionStatistics, EmissionTracker, ValidatorContribution as TrackerValidatorContribution,
 };
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ippan_economics::{EmissionEngine, EmissionParams, RewardAmount, RoundIndex, RoundRewards};
@@ -614,7 +613,7 @@ impl PoAConsensus {
         tracker: &Arc<RwLock<RoundTracker>>,
         interval: Duration,
         config: &PoAConfig,
-        fee_collector: &Arc<RwLock<FeeCollector>>,
+        _fee_collector: &Arc<RwLock<FeeCollector>>,
     ) -> Result<()> {
         let (round_id, block_ids, start, end) = {
             let mut t = tracker.write();

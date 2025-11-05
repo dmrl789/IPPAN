@@ -1,5 +1,5 @@
 //! Token emission and reward distribution for DLC consensus
-//! 
+//!
 //! This module handles block rewards, validator incentives, and
 //! token emission schedules.
 
@@ -46,7 +46,7 @@ pub struct EmissionSchedule {
 impl Default for EmissionSchedule {
     fn default() -> Self {
         Self::new(
-            0, // Start from genesis (0 initial supply)
+            0,          // Start from genesis (0 initial supply)
             SUPPLY_CAP, // 21 million IPN max (matches Bitcoin model)
             BLOCK_REWARD,
             525_600, // ~1 block per minute = ~525,600 blocks per year
@@ -56,7 +56,7 @@ impl Default for EmissionSchedule {
 
 impl EmissionSchedule {
     /// Create a new emission schedule
-    /// 
+    ///
     /// # Arguments
     /// * `initial_supply` - Starting supply (typically 0 for genesis)
     /// * `max_supply` - Maximum supply cap (21 million IPN = 2,100,000,000,000,000 micro-IPN)
@@ -89,7 +89,7 @@ impl EmissionSchedule {
 
         // Calculate years elapsed
         let years_elapsed = round / self.blocks_per_year;
-        
+
         // Reduce inflation over time
         let inflation_bps = INITIAL_INFLATION_BPS
             .saturating_sub(years_elapsed * INFLATION_REDUCTION_BPS)
@@ -102,7 +102,8 @@ impl EmissionSchedule {
             BLOCK_REWARD
         } else {
             // Calculate reward based on current supply and inflation
-            let annual_emission = (self.current_supply as u128 * inflation_bps as u128) / 10_000u128;
+            let annual_emission =
+                (self.current_supply as u128 * inflation_bps as u128) / 10_000u128;
             (annual_emission / self.blocks_per_year as u128) as u64
         };
 
@@ -116,7 +117,8 @@ impl EmissionSchedule {
         let total_reward = reward_per_block.saturating_mul(blocks_produced);
 
         // Update supply
-        self.current_supply = self.current_supply
+        self.current_supply = self
+            .current_supply
             .saturating_add(total_reward)
             .min(self.max_supply);
 
@@ -163,7 +165,7 @@ pub struct EmissionStats {
 }
 
 /// Reward distribution manager
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RewardDistributor {
     /// Pending rewards for validators
     pending_rewards: HashMap<String, u64>,
@@ -187,19 +189,9 @@ pub struct RewardSplits {
 impl Default for RewardSplits {
     fn default() -> Self {
         Self {
-            proposer_bps: 5000, // 50%
+            proposer_bps: 5000,  // 50%
             verifiers_bps: 4000, // 40%
             treasury_bps: 1000,  // 10%
-        }
-    }
-}
-
-impl Default for RewardDistributor {
-    fn default() -> Self {
-        Self {
-            pending_rewards: HashMap::new(),
-            distributed_total: 0,
-            splits: RewardSplits::default(),
         }
     }
 }
@@ -222,7 +214,9 @@ impl RewardDistributor {
         verifiers: &[String],
     ) -> Result<DistributionResult> {
         if block_reward == 0 {
-            return Err(DlcError::EmissionCalculation("Zero block reward".to_string()));
+            return Err(DlcError::EmissionCalculation(
+                "Zero block reward".to_string(),
+            ));
         }
 
         // Calculate splits
@@ -233,7 +227,10 @@ impl RewardDistributor {
             .saturating_sub(verifiers_reward);
 
         // Distribute to proposer
-        *self.pending_rewards.entry(proposer.to_string()).or_insert(0) += proposer_reward;
+        *self
+            .pending_rewards
+            .entry(proposer.to_string())
+            .or_insert(0) += proposer_reward;
 
         // Distribute to verifiers
         let reward_per_verifier = if !verifiers.is_empty() {
@@ -263,7 +260,7 @@ impl RewardDistributor {
     /// Claim rewards for a validator
     pub fn claim_rewards(&mut self, validator_id: &str) -> Result<u64> {
         let amount = self.pending_rewards.remove(validator_id).unwrap_or(0);
-        
+
         if amount == 0 {
             return Err(DlcError::EmissionCalculation(
                 "No pending rewards".to_string(),
@@ -272,11 +269,7 @@ impl RewardDistributor {
 
         self.distributed_total = self.distributed_total.saturating_add(amount);
 
-        tracing::debug!(
-            "Validator {} claimed {} micro-IPN",
-            validator_id,
-            amount
-        );
+        tracing::debug!("Validator {} claimed {} micro-IPN", validator_id, amount);
 
         Ok(amount)
     }
@@ -347,38 +340,35 @@ mod tests {
         let mut schedule = EmissionSchedule::default();
         let initial_supply = schedule.current_supply;
         assert_eq!(initial_supply, 0); // Starts from genesis
-        
+
         schedule.update(1, 1).unwrap();
-        
+
         // After processing 1 block, supply should increase
         assert!(schedule.current_supply >= initial_supply);
     }
 
     #[test]
     fn test_max_supply_cap() {
-        let mut schedule = EmissionSchedule::new(
-            1000,
-            1100,
-            50,
-            100,
-        );
-        
+        let mut schedule = EmissionSchedule::new(1000, 1100, 50, 100);
+
         // Emit beyond max supply
         schedule.update(100, 10).unwrap();
-        
+
         assert!(schedule.current_supply <= schedule.max_supply);
     }
 
     #[test]
     fn test_reward_distribution() {
         let mut distributor = RewardDistributor::default();
-        
-        let result = distributor.distribute_block_reward(
-            BLOCK_REWARD,
-            "proposer1",
-            &vec!["v1".to_string(), "v2".to_string()],
-        ).unwrap();
-        
+
+        let result = distributor
+            .distribute_block_reward(
+                BLOCK_REWARD,
+                "proposer1",
+                &vec!["v1".to_string(), "v2".to_string()],
+            )
+            .unwrap();
+
         assert_eq!(result.total_distributed, BLOCK_REWARD);
         assert!(result.proposer_reward > 0);
         assert!(result.verifier_reward > 0);
@@ -387,13 +377,11 @@ mod tests {
     #[test]
     fn test_pending_rewards() {
         let mut distributor = RewardDistributor::default();
-        
-        distributor.distribute_block_reward(
-            BLOCK_REWARD,
-            "proposer1",
-            &vec!["v1".to_string()],
-        ).unwrap();
-        
+
+        distributor
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &vec!["v1".to_string()])
+            .unwrap();
+
         assert!(distributor.get_pending("proposer1") > 0);
         assert!(distributor.get_pending("v1") > 0);
     }
@@ -401,16 +389,14 @@ mod tests {
     #[test]
     fn test_claim_rewards() {
         let mut distributor = RewardDistributor::default();
-        
-        distributor.distribute_block_reward(
-            BLOCK_REWARD,
-            "proposer1",
-            &vec![],
-        ).unwrap();
-        
+
+        distributor
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &vec![])
+            .unwrap();
+
         let pending = distributor.get_pending("proposer1");
         let claimed = distributor.claim_rewards("proposer1").unwrap();
-        
+
         assert_eq!(pending, claimed);
         assert_eq!(distributor.get_pending("proposer1"), 0);
     }
@@ -422,15 +408,13 @@ mod tests {
             verifiers_bps: 3000,
             treasury_bps: 1000,
         };
-        
+
         let mut distributor = RewardDistributor::new(splits);
-        
-        let result = distributor.distribute_block_reward(
-            10_000,
-            "proposer",
-            &vec!["v1".to_string()],
-        ).unwrap();
-        
+
+        let result = distributor
+            .distribute_block_reward(10_000, "proposer", &vec!["v1".to_string()])
+            .unwrap();
+
         assert_eq!(result.proposer_reward, 6000);
         assert_eq!(result.verifier_reward, 3000);
     }
@@ -439,7 +423,7 @@ mod tests {
     fn test_emission_stats() {
         let schedule = EmissionSchedule::default();
         let stats = schedule.stats();
-        
+
         assert!(stats.emission_progress >= 0.0);
         assert!(stats.remaining_supply > 0);
     }
@@ -447,13 +431,11 @@ mod tests {
     #[test]
     fn test_distributor_stats() {
         let mut distributor = RewardDistributor::default();
-        
-        distributor.distribute_block_reward(
-            BLOCK_REWARD,
-            "proposer1",
-            &vec!["v1".to_string()],
-        ).unwrap();
-        
+
+        distributor
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &vec!["v1".to_string()])
+            .unwrap();
+
         let stats = distributor.stats();
         assert!(stats.total_pending > 0);
         assert_eq!(stats.pending_validator_count, 2);
@@ -463,10 +445,10 @@ mod tests {
     fn test_inflation_reduction() {
         let mut schedule = EmissionSchedule::default();
         let initial_inflation = schedule.current_inflation_bps;
-        
+
         // Simulate one year
         schedule.update(schedule.blocks_per_year, 1).unwrap();
-        
+
         assert!(schedule.current_inflation_bps < initial_inflation);
     }
 }

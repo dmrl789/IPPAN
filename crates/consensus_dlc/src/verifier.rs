@@ -1,5 +1,5 @@
 //! Verifier set selection and block validation for DLC consensus
-//! 
+//!
 //! This module handles selecting verifiers for each consensus round
 //! and validating blocks produced by the primary verifier.
 
@@ -49,14 +49,12 @@ impl VerifierSet {
             .map(|(id, metrics)| (id.clone(), model.score(metrics)))
             .collect();
 
-        scored.sort_by(|a, b| {
-            match b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal) {
-                Ordering::Equal => {
-                    Self::compare_with_entropy(&seed_string, round, &a.0, &b.0)
-                }
+        scored.sort_by(
+            |a, b| match b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal) {
+                Ordering::Equal => Self::compare_with_entropy(&seed_string, round, &a.0, &b.0),
                 other => other,
-            }
-        });
+            },
+        );
 
         let selection_count = max_set_size.max(1).min(scored.len());
 
@@ -65,11 +63,7 @@ impl VerifierSet {
             .map(|(id, _)| id.clone())
             .ok_or_else(|| DlcError::InvalidVerifierSet("No primary validator".to_string()))?;
 
-        let rest: Vec<String> = scored
-            .iter()
-            .skip(1)
-            .map(|(id, _)| id.clone())
-            .collect();
+        let rest: Vec<String> = scored.iter().skip(1).map(|(id, _)| id.clone()).collect();
 
         let mut shadows = Vec::new();
         if selection_count > 1 && !rest.is_empty() {
@@ -95,9 +89,7 @@ impl VerifierSet {
         let entropy_a = Self::id_entropy(seed, round, a);
         let entropy_b = Self::id_entropy(seed, round, b);
 
-        entropy_b
-            .cmp(&entropy_a)
-            .then_with(|| a.cmp(b))
+        entropy_b.cmp(&entropy_a).then_with(|| a.cmp(b))
     }
 
     fn selection_offset(seed: &str, round: u64, len: usize) -> usize {
@@ -291,11 +283,9 @@ impl ValidatorSetManager {
 
     /// Remove a validator
     pub fn remove_validator(&mut self, validator_id: &str) -> Result<()> {
-        self.validators
-            .remove(validator_id)
-            .ok_or_else(|| {
-                DlcError::ValidatorNotFound(format!("Validator {} not found", validator_id))
-            })?;
+        self.validators.remove(validator_id).ok_or_else(|| {
+            DlcError::ValidatorNotFound(format!("Validator {} not found", validator_id))
+        })?;
         Ok(())
     }
 
@@ -314,7 +304,7 @@ impl ValidatorSetManager {
             self.max_set_size,
         )?;
         self.current_verifiers = Some(verifier_set);
-        
+
         Ok(self.current_verifiers.as_ref().unwrap())
     }
 
@@ -351,7 +341,7 @@ mod tests {
 
     fn create_test_validators() -> HashMap<String, ValidatorMetrics> {
         let mut validators = HashMap::new();
-        
+
         validators.insert(
             "val1".to_string(),
             ValidatorMetrics::new(0.99, 0.05, 1.0, 100, 500, 10_000_000, 100),
@@ -364,7 +354,7 @@ mod tests {
             "val3".to_string(),
             ValidatorMetrics::new(0.97, 0.10, 0.99, 90, 450, 8_000_000, 100),
         );
-        
+
         validators
     }
 
@@ -372,9 +362,10 @@ mod tests {
     fn test_verifier_set_selection() {
         let model = FairnessModel::new_production();
         let validators = create_test_validators();
-        
-        let verifier_set = VerifierSet::select(&model, &validators, "test_seed", 1, validators.len()).unwrap();
-        
+
+        let verifier_set =
+            VerifierSet::select(&model, &validators, "test_seed", 1, validators.len()).unwrap();
+
         assert!(!verifier_set.primary.is_empty());
         assert!(verifier_set.size() <= 3);
     }
@@ -383,10 +374,12 @@ mod tests {
     fn test_deterministic_selection() {
         let model = FairnessModel::new_production();
         let validators = create_test_validators();
-        
-        let set1 = VerifierSet::select(&model, &validators, "seed123", 1, validators.len()).unwrap();
-        let set2 = VerifierSet::select(&model, &validators, "seed123", 1, validators.len()).unwrap();
-        
+
+        let set1 =
+            VerifierSet::select(&model, &validators, "seed123", 1, validators.len()).unwrap();
+        let set2 =
+            VerifierSet::select(&model, &validators, "seed123", 1, validators.len()).unwrap();
+
         // Same seed and round should produce same selection
         assert_eq!(set1.primary, set2.primary);
         assert_eq!(set1.shadows, set2.shadows);
@@ -396,8 +389,9 @@ mod tests {
     fn test_block_validation() {
         let model = FairnessModel::new_production();
         let validators = create_test_validators();
-        let verifier_set = VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
-        
+        let verifier_set =
+            VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
+
         let mut block = Block::new(
             vec![],
             HashTimer::for_round(1),
@@ -405,7 +399,7 @@ mod tests {
             verifier_set.primary.clone(),
         );
         block.sign(vec![0u8; 64]);
-        
+
         assert!(verifier_set.validate(&block).is_ok());
     }
 
@@ -413,8 +407,9 @@ mod tests {
     fn test_invalid_proposer() {
         let model = FairnessModel::new_production();
         let validators = create_test_validators();
-        let verifier_set = VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
-        
+        let verifier_set =
+            VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
+
         let mut block = Block::new(
             vec![],
             HashTimer::for_round(1),
@@ -422,21 +417,16 @@ mod tests {
             "invalid_proposer".to_string(),
         );
         block.sign(vec![0u8; 64]);
-        
+
         assert!(verifier_set.validate(&block).is_err());
     }
 
     #[test]
     fn test_verified_block() {
-        let block = Block::new(
-            vec![],
-            HashTimer::now(),
-            vec![],
-            "test".to_string(),
-        );
-        
+        let block = Block::new(vec![], HashTimer::now(), vec![], "test".to_string());
+
         let verified = VerifiedBlock::new(block, vec!["val1".to_string(), "val2".to_string()]);
-        
+
         assert!(verified.has_quorum(2));
         assert!(verified.verified_by_validator("val1"));
     }
@@ -445,9 +435,11 @@ mod tests {
     fn test_validator_set_manager() {
         let model = FairnessModel::new_production();
         let mut manager = ValidatorSetManager::new(model, 3);
-        
+
         let metrics = ValidatorMetrics::default();
-        assert!(manager.register_validator("val1".to_string(), metrics).is_ok());
+        assert!(manager
+            .register_validator("val1".to_string(), metrics)
+            .is_ok());
         assert_eq!(manager.validator_count(), 1);
     }
 
@@ -455,8 +447,9 @@ mod tests {
     fn test_verifier_set_contains() {
         let model = FairnessModel::new_production();
         let validators = create_test_validators();
-        let verifier_set = VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
-        
+        let verifier_set =
+            VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
+
         assert!(verifier_set.contains(&verifier_set.primary));
     }
 }
