@@ -70,6 +70,10 @@ jobs:
         run: |
           cargo test -p ippan-ai-core -- --nocapture
 
+      - name: DLC crate tests
+        run: |
+          cargo test -p ippan-consensus-dlc --all-features -- --nocapture
+
       - name: DLC consensus tests
         run: |
           cargo test -p ippan-consensus --test dlc_integration_tests -- --nocapture
@@ -110,3 +114,38 @@ jobs:
       - name: Security audit
         run: npm audit --audit-level=moderate
         continue-on-error: true
+
+    unified-ui:
+      name: Unified UI Checks
+      runs-on: ubuntu-latest
+      defaults:
+        run:
+          working-directory: apps/unified-ui
+
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+
+        - name: Setup Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: 20
+            cache: npm
+            cache-dependency-path: apps/unified-ui/package-lock.json
+
+        - name: Install dependencies
+          run: |
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
+
+        - name: Lint
+          run: npm run lint
+
+        - name: Type check
+          run: npm run type-check
+
+        - name: Build
+          run: npm run build

@@ -81,6 +81,9 @@ pub struct EmissionTracker {
 
     /// Historical audit records
     pub audit_history: Vec<EmissionAuditRecord>,
+
+    /// Fees collected since last audit checkpoint
+    audit_period_fees: u128,
 }
 
 impl EmissionTracker {
@@ -100,6 +103,7 @@ impl EmissionTracker {
             audit_interval,
             last_audit_round: 0,
             audit_history: Vec::new(),
+            audit_period_fees: 0,
         }
     }
 
@@ -272,6 +276,9 @@ impl EmissionTracker {
 
         // Update fee and commission totals
         self.total_fees_collected = self.total_fees_collected.saturating_add(transaction_fees);
+        
+        // Track fees for current audit period
+        self.audit_period_fees = self.audit_period_fees.saturating_add(transaction_fees);
 
         self.total_ai_commissions = self.total_ai_commissions.saturating_add(ai_commissions);
 
@@ -344,7 +351,7 @@ impl EmissionTracker {
             cumulative_supply: self.cumulative_supply,
             round_emission,
             total_base_emission,
-            fees_collected: 0, // Placeholder
+            fees_collected: self.audit_period_fees,
             total_fees_collected: self.total_fees_collected,
             total_ai_commissions: self.total_ai_commissions,
             total_network_dividends: self.total_network_dividends,
@@ -359,6 +366,9 @@ impl EmissionTracker {
 
         self.audit_history.push(audit_record);
         self.last_audit_round = round;
+        
+        // Reset audit period fee counter
+        self.audit_period_fees = 0;
 
         Ok(())
     }
@@ -437,6 +447,7 @@ impl EmissionTracker {
         self.empty_rounds = 0;
         self.last_audit_round = 0;
         self.audit_history.clear();
+        self.audit_period_fees = 0;
     }
 }
 

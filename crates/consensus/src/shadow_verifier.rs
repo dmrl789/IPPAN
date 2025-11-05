@@ -244,7 +244,7 @@ impl ShadowVerifierSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{Block, Transaction};
+    use ippan_types::Block;
 
     fn create_test_block() -> Block {
         let transactions = vec![];

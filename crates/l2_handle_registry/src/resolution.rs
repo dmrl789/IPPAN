@@ -148,16 +148,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_resolution() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
         let registry = Arc::new(L2HandleRegistry::new());
         let resolver = HandleResolver::new(registry.clone());
 
         let handle = Handle::new("@test.ipn");
-        let owner = PublicKey::new([1u8; 32]);
+        
+        // Generate proper signature
+        let signing_key = SigningKey::from_bytes(&[42u8; 32]);
+        let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
+
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        message.extend_from_slice(handle.as_str().as_bytes());
+        message.extend_from_slice(owner.as_bytes());
+        let message_hash = Sha256::digest(&message);
+        let signature = signing_key.sign(&message_hash);
 
         let reg = HandleRegistration {
             handle: handle.clone(),
             owner: owner.clone(),
-            signature: vec![1, 2, 3],
+            signature: signature.to_bytes().to_vec(),
             metadata: HashMap::new(),
             expires_at: None,
         };
@@ -170,6 +183,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_resolution() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
         let registry = Arc::new(L2HandleRegistry::new());
         let resolver = HandleResolver::new(registry.clone());
 
@@ -180,11 +196,23 @@ mod tests {
         ];
 
         for (i, handle) in handles.iter().enumerate() {
-            let owner = PublicKey::new([i as u8; 32]);
+            // Generate proper key and signature for each handle
+            let mut key_bytes = [42u8; 32];
+            key_bytes[0] = i as u8; // Make each key unique
+            let signing_key = SigningKey::from_bytes(&key_bytes);
+            let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
+
+            let mut message = Vec::new();
+            message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+            message.extend_from_slice(handle.as_str().as_bytes());
+            message.extend_from_slice(owner.as_bytes());
+            let message_hash = Sha256::digest(&message);
+            let signature = signing_key.sign(&message_hash);
+
             let reg = HandleRegistration {
                 handle: handle.clone(),
                 owner,
-                signature: vec![1, 2, 3],
+                signature: signature.to_bytes().to_vec(),
                 metadata: HashMap::new(),
                 expires_at: None,
             };

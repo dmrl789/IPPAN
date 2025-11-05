@@ -148,9 +148,7 @@ impl RoundExecutor {
 
     /// Get current economics parameters.
     pub fn get_economics_params(&self) -> EmissionParams {
-        // Note: params field is private, so we return a copy
-        // This should be fixed by making params public or adding a getter method
-        EmissionParams::default() // Placeholder
+        self.emission_engine.params().clone()
     }
 
     /// Update parameters via governance.
