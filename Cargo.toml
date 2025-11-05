@@ -36,6 +36,12 @@ members = [
   
   # DLC Consensus
   "crates/consensus_dlc",    # Deterministic Learning Consensus
+  
+  # Command-line tools
+  "crates/cli",              # Unified CLI interface
+  "crates/keygen",           # Key generation tool
+  "crates/benchmark",        # Performance benchmarking tool
+  "crates/explorer",         # Block explorer API gateway
 ]
 
 resolver = "2"
