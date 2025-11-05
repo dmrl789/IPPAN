@@ -48,6 +48,31 @@ pub enum MessageType {
     Error,
 }
 
+impl MessageType {
+    /// Convert message type to byte representation for signing
+    fn to_byte(&self) -> u8 {
+        match self {
+            MessageType::Handshake => 0,
+            MessageType::HandshakeAck => 1,
+            MessageType::BlockAnnouncement => 2,
+            MessageType::BlockRequest => 3,
+            MessageType::BlockResponse => 4,
+            MessageType::TransactionAnnouncement => 5,
+            MessageType::TransactionRequest => 6,
+            MessageType::TransactionResponse => 7,
+            MessageType::PeerInfo => 8,
+            MessageType::PeerList => 9,
+            MessageType::PeerDiscovery => 10,
+            MessageType::ConsensusMessage => 11,
+            MessageType::RoundProposal => 12,
+            MessageType::RoundVote => 13,
+            MessageType::Ping => 14,
+            MessageType::Pong => 15,
+            MessageType::Error => 255,
+        }
+    }
+}
+
 /// Network message structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkMessage {
@@ -94,17 +119,79 @@ impl NetworkMessage {
 
     /// Sign the message
     pub fn sign(&mut self, private_key: &[u8]) -> Result<()> {
-        // In a real implementation, this would use proper cryptographic signing
-        // For now, we'll just create a placeholder signature
-        self.signature = Some(vec![0u8; 64]); // Placeholder for Ed25519 signature
+        use ed25519_dalek::{Signer, SigningKey};
+        
+        if private_key.len() != 32 {
+            return Err(anyhow!("Invalid private key length: expected 32 bytes, got {}", private_key.len()));
+        }
+        
+        let signing_key = SigningKey::from_bytes(
+            private_key.try_into()
+                .map_err(|_| anyhow!("Failed to parse private key"))?
+        );
+        
+        // Create deterministic message digest for signing
+        let message_digest = self.compute_message_digest();
+        
+        // Sign the message digest
+        let signature = signing_key.sign(&message_digest);
+        self.signature = Some(signature.to_bytes().to_vec());
+        
         Ok(())
     }
 
     /// Verify the message signature
     pub fn verify_signature(&self, public_key: &[u8]) -> bool {
-        // In a real implementation, this would verify the Ed25519 signature
-        // For now, we'll just return true for testing
-        self.signature.is_some()
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        
+        // Check signature exists
+        let Some(ref sig_bytes) = self.signature else {
+            return false;
+        };
+        
+        // Check lengths
+        if sig_bytes.len() != 64 || public_key.len() != 32 {
+            return false;
+        }
+        
+        // Parse public key
+        let Ok(verifying_key) = VerifyingKey::from_bytes(
+            public_key.try_into().unwrap_or(&[0u8; 32])
+        ) else {
+            return false;
+        };
+        
+        // Parse signature
+        let Ok(signature) = Signature::from_slice(sig_bytes) else {
+            return false;
+        };
+        
+        // Compute message digest
+        let message_digest = self.compute_message_digest();
+        
+        // Verify signature
+        verifying_key.verify(&message_digest, &signature).is_ok()
+    }
+    
+    /// Compute deterministic message digest for signing/verification
+    fn compute_message_digest(&self) -> Vec<u8> {
+        let mut message_bytes = Vec::new();
+        
+        // Include all message fields except signature
+        message_bytes.extend_from_slice(&self.version.to_le_bytes());
+        message_bytes.push(self.message_type.to_byte());
+        message_bytes.extend_from_slice(self.sender_id.as_bytes());
+        
+        if let Some(ref recipient) = self.recipient_id {
+            message_bytes.extend_from_slice(recipient.as_bytes());
+        }
+        
+        message_bytes.extend_from_slice(&self.timestamp.to_le_bytes());
+        message_bytes.extend_from_slice(&self.payload);
+        
+        // Hash the message for compact signing
+        let hash = blake3::hash(&message_bytes);
+        hash.as_bytes().to_vec()
     }
 
     /// Serialize the message
@@ -456,5 +543,71 @@ mod tests {
 
         assert!(protocol.start().await.is_ok());
         assert!(protocol.stop().await.is_ok());
+    }
+
+    #[test]
+    fn test_message_signing_and_verification() {
+        use ed25519_dalek::SigningKey;
+        use rand::rngs::OsRng;
+
+        // Generate a key pair
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+
+        // Create a message
+        let mut message = NetworkMessage::new(
+            MessageType::Ping,
+            "test-sender".to_string(),
+            vec![1, 2, 3, 4, 5],
+        );
+
+        // Sign the message
+        assert!(message.sign(&signing_key.to_bytes()).is_ok());
+        assert!(message.signature.is_some());
+
+        // Verify with correct key
+        assert!(message.verify_signature(&verifying_key.to_bytes()));
+
+        // Verify with incorrect key (should fail)
+        let wrong_key = SigningKey::generate(&mut OsRng);
+        assert!(!message.verify_signature(&wrong_key.verifying_key().to_bytes()));
+    }
+
+    #[test]
+    fn test_message_signing_determinism() {
+        use ed25519_dalek::SigningKey;
+
+        // Fixed key for determinism
+        let key_bytes = [42u8; 32];
+        let signing_key = SigningKey::from_bytes(&key_bytes);
+
+        // Create two identical messages
+        let mut msg1 = NetworkMessage::new(
+            MessageType::BlockAnnouncement,
+            "node-1".to_string(),
+            vec![10, 20, 30],
+        );
+        msg1.timestamp = 1234567890; // Fixed timestamp
+
+        let mut msg2 = NetworkMessage::new(
+            MessageType::BlockAnnouncement,
+            "node-1".to_string(),
+            vec![10, 20, 30],
+        );
+        msg2.timestamp = 1234567890; // Same timestamp
+
+        // Sign both
+        msg1.sign(&key_bytes).unwrap();
+        msg2.sign(&key_bytes).unwrap();
+
+        // Signatures should be identical (deterministic)
+        assert_eq!(msg1.signature, msg2.signature);
+    }
+
+    #[test]
+    fn test_message_type_conversion() {
+        assert_eq!(MessageType::Handshake.to_byte(), 0);
+        assert_eq!(MessageType::Ping.to_byte(), 14);
+        assert_eq!(MessageType::Error.to_byte(), 255);
     }
 }

@@ -30,6 +30,7 @@ base64 = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 num_cpus = { workspace = true }
+sysinfo = "0.29"
 toml = { workspace = true }
 tempfile = { workspace = true }
 chrono = { workspace = true }

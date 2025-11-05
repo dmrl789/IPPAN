@@ -365,7 +365,37 @@ pub struct ServiceHealthReport {
 }
 
 fn get_memory_usage() -> Result<u64, AIServiceError> {
-    Ok(100_000_000) // placeholder 100MB
+    #[cfg(target_os = "linux")]
+    {
+        // Read from /proc/self/status for most accurate RSS measurement
+        use std::fs;
+        if let Ok(status) = fs::read_to_string("/proc/self/status") {
+            for line in status.lines() {
+                if line.starts_with("VmRSS:") {
+                    // Format: "VmRSS:      123456 kB"
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Ok(kb) = parts[1].parse::<u64>() {
+                            return Ok(kb * 1024); // Convert KB to bytes
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback: use sysinfo crate
+    use sysinfo::{ProcessExt, ProcessRefreshKind, System, SystemExt};
+    let mut sys = System::new();
+    if let Ok(pid) = sysinfo::get_current_pid() {
+        sys.refresh_process_specifics(pid, ProcessRefreshKind::new());
+        if let Some(process) = sys.process(pid) {
+            return Ok(process.memory());
+        }
+    }
+    
+    // Ultimate fallback
+    Ok(100_000_000)
 }
 
 async fn export_metrics(metrics: &ServiceMetrics, endpoint: &str) -> Result<(), AIServiceError> {

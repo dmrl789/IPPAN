@@ -16,6 +16,7 @@ parking_lot = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 futures = { workspace = true }
+ed25519-dalek = { workspace = true }
 
 # IPPAN crates
 ippan-types = { path = "../types" }

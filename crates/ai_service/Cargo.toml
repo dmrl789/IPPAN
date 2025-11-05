@@ -70,6 +70,7 @@ blake3 = { workspace = true }
 # Production dependencies
 toml = { workspace = true }
 warp = { workspace = true }
+sysinfo = "0.29"
 
 [dev-dependencies]
 tokio = { workspace = true }
