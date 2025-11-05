@@ -383,7 +383,7 @@ fn get_memory_usage() -> Result<u64, AIServiceError> {
             }
         }
     }
-    
+
     // Fallback: use sysinfo crate
     use sysinfo::{ProcessExt, ProcessRefreshKind, System, SystemExt};
     let mut sys = System::new();
@@ -393,7 +393,7 @@ fn get_memory_usage() -> Result<u64, AIServiceError> {
             return Ok(process.memory());
         }
     }
-    
+
     // Ultimate fallback
     Ok(100_000_000)
 }

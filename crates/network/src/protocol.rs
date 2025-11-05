@@ -120,75 +120,79 @@ impl NetworkMessage {
     /// Sign the message
     pub fn sign(&mut self, private_key: &[u8]) -> Result<()> {
         use ed25519_dalek::{Signer, SigningKey};
-        
+
         if private_key.len() != 32 {
-            return Err(anyhow!("Invalid private key length: expected 32 bytes, got {}", private_key.len()));
+            return Err(anyhow!(
+                "Invalid private key length: expected 32 bytes, got {}",
+                private_key.len()
+            ));
         }
-        
+
         let signing_key = SigningKey::from_bytes(
-            private_key.try_into()
-                .map_err(|_| anyhow!("Failed to parse private key"))?
+            private_key
+                .try_into()
+                .map_err(|_| anyhow!("Failed to parse private key"))?,
         );
-        
+
         // Create deterministic message digest for signing
         let message_digest = self.compute_message_digest();
-        
+
         // Sign the message digest
         let signature = signing_key.sign(&message_digest);
         self.signature = Some(signature.to_bytes().to_vec());
-        
+
         Ok(())
     }
 
     /// Verify the message signature
     pub fn verify_signature(&self, public_key: &[u8]) -> bool {
         use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-        
+
         // Check signature exists
         let Some(ref sig_bytes) = self.signature else {
             return false;
         };
-        
+
         // Check lengths
         if sig_bytes.len() != 64 || public_key.len() != 32 {
             return false;
         }
-        
+
         // Parse public key
-        let Ok(verifying_key) = VerifyingKey::from_bytes(
-            public_key.try_into().unwrap_or(&[0u8; 32])
-        ) else {
+        let Ok(verifying_key) =
+            VerifyingKey::from_bytes(public_key.try_into().unwrap_or(&[0u8; 32]))
+        else {
             return false;
         };
-        
+
         // Parse signature
         let Ok(signature) = Signature::from_slice(sig_bytes) else {
             return false;
         };
-        
+
         // Compute message digest
         let message_digest = self.compute_message_digest();
-        
+
         // Verify signature
         verifying_key.verify(&message_digest, &signature).is_ok()
     }
-    
+
     /// Compute deterministic message digest for signing/verification
     fn compute_message_digest(&self) -> Vec<u8> {
         let mut message_bytes = Vec::new();
-        
+
         // Include all message fields except signature
         message_bytes.extend_from_slice(&self.version.to_le_bytes());
         message_bytes.push(self.message_type.to_byte());
         message_bytes.extend_from_slice(self.sender_id.as_bytes());
-        
+
         if let Some(ref recipient) = self.recipient_id {
             message_bytes.extend_from_slice(recipient.as_bytes());
         }
-        
+
         message_bytes.extend_from_slice(&self.timestamp.to_le_bytes());
         message_bytes.extend_from_slice(&self.payload);
-        
+
         // Hash the message for compact signing
         let hash = blake3::hash(&message_bytes);
         hash.as_bytes().to_vec()

@@ -98,12 +98,12 @@ impl HandleOwnershipProof {
     pub fn verify(&self) -> bool {
         use ippan_crypto::MerkleTree;
         use sha2::{Digest, Sha256};
-        
+
         // Check signature and expiration
         if !self.anchor.verify_signature() || self.anchor.is_expired() {
             return false;
         }
-        
+
         // Compute leaf hash
         let mut hasher = Sha256::new();
         hasher.update(&self.anchor.handle_hash);
@@ -111,19 +111,19 @@ impl HandleOwnershipProof {
         hasher.update(&self.anchor.l2_location);
         hasher.update(&self.anchor.timestamp.to_le_bytes());
         let leaf_hash: [u8; 32] = hasher.finalize().into();
-        
+
         // If no merkle proof path (single leaf tree), leaf hash IS the root
         if self.merkle_proof.is_empty() {
             return leaf_hash == self.state_root;
         }
-        
+
         // Verify merkle proof using correct left/right ordering
         let mut current_hash = leaf_hash;
         let mut current_index = self.leaf_index;
-        
+
         for sibling_hash in &self.merkle_proof {
             let mut hasher = Sha256::new();
-            
+
             // Use same ordering as MerkleTree:
             // - If index is even: current_hash (LEFT) + sibling_hash (RIGHT)
             // - If index is odd: sibling_hash (LEFT) + current_hash (RIGHT)
@@ -134,11 +134,11 @@ impl HandleOwnershipProof {
                 hasher.update(sibling_hash);
                 hasher.update(&current_hash);
             }
-            
+
             current_hash = hasher.finalize().into();
             current_index /= 2; // Move up to parent level
         }
-        
+
         // Final hash should equal state root
         current_hash == self.state_root
     }

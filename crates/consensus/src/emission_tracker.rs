@@ -276,7 +276,7 @@ impl EmissionTracker {
 
         // Update fee and commission totals
         self.total_fees_collected = self.total_fees_collected.saturating_add(transaction_fees);
-        
+
         // Track fees for current audit period
         self.audit_period_fees = self.audit_period_fees.saturating_add(transaction_fees);
 
@@ -366,7 +366,7 @@ impl EmissionTracker {
 
         self.audit_history.push(audit_record);
         self.last_audit_round = round;
-        
+
         // Reset audit period fee counter
         self.audit_period_fees = 0;
 
