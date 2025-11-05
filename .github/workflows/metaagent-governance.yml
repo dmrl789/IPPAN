@@ -104,12 +104,7 @@ jobs:
                     '.agents[$agent].active_tasks += 1 | .agents[$agent].last_assigned = $issue' \
                     $META_AGENT_LOG_DIR/agent-registry.json > tmp.json && mv tmp.json $META_AGENT_LOG_DIR/agent-registry.json
                   echo "$(date -u): Assigned issue #$issue_number to $agent_name" >> $META_AGENT_LOG_DIR/assignments.log
-                  gh issue comment $issue_number --body "🤖 **MetaAgent Assignment**
-
-**Agent:** @$agent_name  
-**Issue:** #$issue_number  
-**Reviewer:** @ugo-giuliani  
-**ETA:** 6h"
+                  gh issue comment $issue_number --body "🤖 MetaAgent Assignment - Agent: $agent_name, Issue: #$issue_number, Reviewer: ugo-giuliani, ETA: 6h"
                   gh issue add-labels $issue_number "assigned:$agent_name"
                   break
                 fi

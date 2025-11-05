@@ -2,6 +2,7 @@
 
 use ippan_consensus::*;
 use ippan_storage::SledStorage;
+use ippan_types::Block;
 use std::sync::Arc;
 use tempfile::tempdir;
 

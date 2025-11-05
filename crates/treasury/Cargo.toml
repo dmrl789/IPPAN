@@ -9,7 +9,7 @@ description = "IPPAN Treasury Module — Reward distribution, emission tracking,
 [dependencies]
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
@@ -20,4 +20,4 @@ ippan-types = { path = "../types" }
 [dev-dependencies]
 tokio = { workspace = true }
 blake3 = { workspace = true }
-criterion = "0.5"
+criterion = { workspace = true }

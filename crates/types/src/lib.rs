@@ -1,3 +1,7 @@
+//! Canonical IPPAN data types re-export. Aggregates address, block, transaction,
+//! round, and time primitives so applications use a single crate for DAG
+//! structures, HashTimer utilities, L2 records, and currency denominations.
+//!
 pub mod address;
 pub mod block;
 pub mod chain_state;

@@ -60,10 +60,7 @@ async fn test_consensus_start_stop() {
 
     let mut consensus = PoAConsensus::new(config, storage, validator_id);
 
-    // Test start
     assert!(consensus.start().await.is_ok());
-
-    // Test stop
     assert!(consensus.stop().await.is_ok());
 }
 
@@ -76,7 +73,6 @@ async fn test_proposer_selection() {
     let consensus = PoAConsensus::new(config, storage, validator_id);
     let state = consensus.get_state();
 
-    // Should have a proposer selected
     assert!(state.current_proposer.is_some());
 }
 
@@ -88,7 +84,6 @@ async fn test_block_proposal() {
 
     let consensus = PoAConsensus::new(config, storage.clone(), validator_id);
 
-    // Add a transaction to mempool
     let tx = Transaction::new(
         [3u8; 32],
         [4u8; 32],
@@ -97,7 +92,6 @@ async fn test_block_proposal() {
     );
     consensus.mempool().add_transaction(tx).unwrap();
 
-    // Propose a block
     let transactions = vec![Transaction::new(
         [5u8; 32],
         [6u8; 32],
@@ -119,7 +113,6 @@ async fn test_block_validation() {
 
     let consensus = PoAConsensus::new(config, storage, validator_id);
 
-    // Create a valid block
     let tx = Transaction::new(
         [1u8; 32],
         [2u8; 32],
@@ -185,7 +178,6 @@ async fn test_validator_management() {
 
     let initial_count = consensus.get_state().validator_count;
 
-    // Add a new validator
     let new_validator = Validator {
         id: [3u8; 32],
         address: [3u8; 32],
@@ -196,7 +188,6 @@ async fn test_validator_management() {
     consensus.add_validator(new_validator);
     assert_eq!(consensus.get_state().validator_count, initial_count + 1);
 
-    // Remove a validator
     consensus.remove_validator(&[3u8; 32]);
     assert_eq!(consensus.get_state().validator_count, initial_count);
 }
@@ -210,7 +201,6 @@ async fn test_mempool_integration() {
     let consensus = PoAConsensus::new(config, storage, validator_id);
     let mempool = consensus.mempool();
 
-    // Add transactions
     let tx1 = Transaction::new(
         [1u8; 32],
         [2u8; 32],
@@ -228,7 +218,6 @@ async fn test_mempool_integration() {
     assert!(mempool.add_transaction(tx2).is_ok());
     assert_eq!(mempool.size(), 2);
 
-    // Get transactions for block
     let block_txs = mempool.get_transactions_for_block(10);
     assert_eq!(block_txs.len(), 2);
 }
@@ -243,7 +232,6 @@ async fn test_consensus_with_ai_reputation() {
 
     let consensus = PoAConsensus::new(config, storage, validator_id);
 
-    // Should still work with AI reputation enabled
     let state = consensus.get_state();
     assert_eq!(state.validator_count, 2);
 }
@@ -256,7 +244,6 @@ async fn test_fee_validation() {
 
     let consensus = PoAConsensus::new(config, storage, validator_id);
 
-    // Test transaction with reasonable fee
     let tx = Transaction::new(
         [1u8; 32],
         [2u8; 32],
@@ -277,10 +264,8 @@ async fn test_round_finalization() {
 
     let mut consensus = PoAConsensus::new(config, storage.clone(), validator_id);
 
-    // Start consensus
     consensus.start().await.unwrap();
 
-    // Add some transactions
     let tx = Transaction::new(
         [1u8; 32],
         [2u8; 32],
@@ -289,15 +274,11 @@ async fn test_round_finalization() {
     );
     consensus.mempool().add_transaction(tx).unwrap();
 
-    // Wait for some processing
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // Stop consensus
     consensus.stop().await.unwrap();
 
-    // Check if any blocks were created
     let latest_height = storage.get_latest_height().unwrap();
-    // Genesis block should exist at minimum
     assert!(latest_height >= 0);
 }
 
@@ -312,7 +293,6 @@ async fn test_consensus_state_consistency() {
     let state1 = consensus.get_state();
     let state2 = consensus.get_state();
 
-    // States should be consistent
     assert_eq!(state1.validator_count, state2.validator_count);
     assert_eq!(state1.latest_block_height, state2.latest_block_height);
 }
@@ -325,9 +305,7 @@ async fn test_concurrent_operations() {
 
     let consensus = Arc::new(PoAConsensus::new(config, storage, validator_id));
 
-    // Spawn multiple tasks that interact with consensus
     let mut handles = vec![];
-
     for i in 0..10 {
         let consensus_clone = consensus.clone();
         let handle = tokio::spawn(async move {
@@ -342,11 +320,9 @@ async fn test_concurrent_operations() {
         handles.push(handle);
     }
 
-    // Wait for all tasks to complete
     for handle in handles {
         assert!(handle.await.is_ok());
     }
 
-    // Check that all transactions were added
     assert_eq!(consensus.mempool().size(), 10);
 }

@@ -58,6 +58,10 @@ pub struct ProposalManager {
     voting_threshold: f64,
     /// Minimum stake required to propose
     min_proposal_stake: u64,
+    /// Base registration fee (in micro-IPN)
+    base_registration_fee: u64,
+    /// Fee per MB of model size (in micro-IPN)
+    fee_per_mb: u64,
 }
 
 impl ProposalManager {
@@ -67,6 +71,24 @@ impl ProposalManager {
             proposals: HashMap::new(),
             voting_threshold,
             min_proposal_stake,
+            base_registration_fee: 1_000_000, // 1 IPN base fee
+            fee_per_mb: 100_000, // 0.1 IPN per MB
+        }
+    }
+    
+    /// Create with custom fee parameters
+    pub fn with_fees(
+        voting_threshold: f64,
+        min_proposal_stake: u64,
+        base_registration_fee: u64,
+        fee_per_mb: u64,
+    ) -> Self {
+        Self {
+            proposals: HashMap::new(),
+            voting_threshold,
+            min_proposal_stake,
+            base_registration_fee,
+            fee_per_mb,
         }
     }
 
@@ -154,61 +176,78 @@ impl ProposalManager {
         use chrono::{DateTime, Utc};
         use ippan_ai_core::types::{ModelId, ModelMetadata};
 
-        if let Some((proposal, status)) = self.proposals.get_mut(proposal_id) {
-            if *status != ProposalStatus::Approved {
-                return Err(anyhow::anyhow!("Proposal {} is not approved", proposal_id));
+        // First, check status and clone needed data
+        let (proposal_data, model_size) = {
+            if let Some((proposal, status)) = self.proposals.get(proposal_id) {
+                if *status != ProposalStatus::Approved {
+                    return Err(anyhow::anyhow!("Proposal {} is not approved", proposal_id));
+                }
+                
+                // Clone proposal data we need
+                let data = (
+                    proposal.clone(),
+                    0u64, // size_bytes - will be calculated from model data in production
+                );
+                (data.0, data.1)
+            } else {
+                return Err(anyhow::anyhow!("Proposal {} not found", proposal_id));
             }
+        };
 
-            // Convert timestamp to DateTime
-            let timestamp =
-                DateTime::from_timestamp(proposal.created_at as i64, 0).unwrap_or_else(Utc::now);
+        // Calculate fee (no borrow conflict now)
+        let registration_fee = self.calculate_registration_fee(model_size);
 
-            // Create ModelId from proposal
-            let model_id = ModelId {
-                name: proposal.model_id.clone(),
-                version: proposal.version.to_string(),
-                hash: hex::encode(proposal.model_hash),
-            };
+        // Convert timestamp to DateTime
+        let timestamp = DateTime::from_timestamp(proposal_data.created_at as i64, 0)
+            .unwrap_or_else(Utc::now);
 
-            // Create ModelMetadata
-            let metadata = ModelMetadata {
-                id: model_id.clone(),
-                name: proposal.model_id.clone(),
-                version: proposal.version.to_string(),
-                description: proposal.description.clone(),
-                author: String::new(),
-                license: String::new(),
-                tags: Vec::new(),
-                created_at: timestamp.timestamp() as u64,
-                updated_at: timestamp.timestamp() as u64,
-                architecture: String::from("gbdt"),
-                input_shape: Vec::new(),
-                output_shape: Vec::new(),
-                size_bytes: 0,
-                parameter_count: 0,
-            };
+        // Create ModelId from proposal
+        let model_id = ModelId {
+            name: proposal_data.model_id.clone(),
+            version: proposal_data.version.to_string(),
+            hash: hex::encode(proposal_data.model_hash),
+        };
 
-            // Create registry entry
-            let entry = crate::types::ModelRegistration {
-                model_id,
-                metadata,
-                status: crate::types::RegistrationStatus::Pending,
-                registrant: hex::encode(proposal.proposer),
-                registered_at: timestamp,
-                updated_at: timestamp,
-                registration_fee: 0, // Placeholder - should be set by caller
-                category: crate::types::ModelCategory::default(),
-                tags: Vec::new(),
-                description: Some(proposal.description.clone()),
-                license: None,
-                source_url: Some(proposal.model_url.clone()),
-            };
+        // Create ModelMetadata
+        let metadata = ModelMetadata {
+            id: model_id.clone(),
+            name: proposal_data.model_id.clone(),
+            version: proposal_data.version.to_string(),
+            description: proposal_data.description.clone(),
+            author: String::new(),
+            license: String::new(),
+            tags: Vec::new(),
+            created_at: timestamp.timestamp() as u64,
+            updated_at: timestamp.timestamp() as u64,
+            architecture: String::from("gbdt"),
+            input_shape: Vec::new(),
+            output_shape: Vec::new(),
+            size_bytes: model_size,
+            parameter_count: 0,
+        };
 
+        // Create registry entry
+        let entry = crate::types::ModelRegistration {
+            model_id,
+            metadata,
+            status: crate::types::RegistrationStatus::Pending,
+            registrant: hex::encode(proposal_data.proposer),
+            registered_at: timestamp,
+            updated_at: timestamp,
+            registration_fee,
+            category: crate::types::ModelCategory::default(),
+            tags: Vec::new(),
+            description: Some(proposal_data.description.clone()),
+            license: None,
+            source_url: Some(proposal_data.model_url.clone()),
+        };
+
+        // Update status
+        if let Some((_, status)) = self.proposals.get_mut(proposal_id) {
             *status = ProposalStatus::Executed;
-            Ok(entry)
-        } else {
-            Err(anyhow::anyhow!("Proposal {} not found", proposal_id))
         }
+
+        Ok(entry)
     }
 
     /// Get a proposal by ID
@@ -262,7 +301,18 @@ impl ProposalManager {
 
 impl Default for ProposalManager {
     fn default() -> Self {
-        Self::new(0.67, 1000000) // 67% threshold, 1M minimum stake
+        Self::new(0.67, 1_000_000) // 67% threshold, 1M minimum stake
+    }
+}
+
+impl ProposalManager {
+    /// Calculate registration fee based on model size
+    fn calculate_registration_fee(&self, model_size_bytes: u64) -> u64 {
+        // Base fee + size-based fee
+        let size_mb = (model_size_bytes + 999_999) / 1_000_000; // Round up to nearest MB
+        let size_fee = size_mb * self.fee_per_mb;
+        
+        self.base_registration_fee.saturating_add(size_fee)
     }
 }
 
@@ -327,5 +377,32 @@ mod tests {
 
         manager.submit_proposal(proposal1, 2000000).unwrap();
         assert!(manager.submit_proposal(proposal2, 2000000).is_err());
+    }
+
+    #[test]
+    fn test_registration_fee_calculation() {
+        // Test with default fees: base=1M µIPN (1 IPN), per_mb=100K µIPN (0.1 IPN)
+        let manager = ProposalManager::default();
+        
+        // Small model (< 1MB): should be base fee only
+        assert_eq!(manager.calculate_registration_fee(500_000), 1_000_000 + 100_000);
+        
+        // 1MB model: base + 1MB
+        assert_eq!(manager.calculate_registration_fee(1_000_000), 1_000_000 + 100_000);
+        
+        // 10MB model: base + 10MB
+        assert_eq!(manager.calculate_registration_fee(10_000_000), 1_000_000 + 1_000_000);
+        
+        // 100MB model: base + 100MB
+        assert_eq!(manager.calculate_registration_fee(100_000_000), 1_000_000 + 10_000_000);
+    }
+
+    #[test]
+    fn test_custom_fee_parameters() {
+        // Custom fees: base=2M, per_mb=200K
+        let manager = ProposalManager::with_fees(0.67, 1_000_000, 2_000_000, 200_000);
+        
+        assert_eq!(manager.calculate_registration_fee(1_000_000), 2_000_000 + 200_000);
+        assert_eq!(manager.calculate_registration_fee(10_000_000), 2_000_000 + 2_000_000);
     }
 }

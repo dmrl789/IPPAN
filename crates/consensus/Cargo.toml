@@ -34,10 +34,10 @@ futures = { workspace = true }
 parking_lot = { workspace = true }
 blake3 = { workspace = true }
 rayon = { workspace = true }
-rand = "0.8"
-rust_decimal = "1.32"
+rand = { workspace = true }
+rust_decimal = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
 tempfile = { workspace = true }
-rand = { version = "0.8", features = ["std", "std_rng"] }
+rand = { workspace = true, features = ["std", "std_rng"] }

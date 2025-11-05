@@ -376,14 +376,61 @@ impl HealthChecker for ModelExecutionChecker {
     }
 }
 
-/// Get current memory usage (placeholder)
+/// Get current memory usage in bytes
 fn get_memory_usage() -> Result<u64> {
-    Ok(100_000_000) // 100 MB placeholder
+    #[cfg(target_os = "linux")]
+    {
+        // Read from /proc/self/status for accurate RSS measurement
+        use std::fs;
+        if let Ok(status) = fs::read_to_string("/proc/self/status") {
+            for line in status.lines() {
+                if line.starts_with("VmRSS:") {
+                    // Format: "VmRSS:      123456 kB"
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Ok(kb) = parts[1].parse::<u64>() {
+                            return Ok(kb * 1024); // Convert KB to bytes
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback: use sysinfo crate
+    use sysinfo::{ProcessExt, ProcessRefreshKind, System, SystemExt};
+    let mut sys = System::new();
+    if let Ok(pid) = sysinfo::get_current_pid() {
+        sys.refresh_process_specifics(pid, ProcessRefreshKind::new());
+        if let Some(process) = sys.process(pid) {
+            return Ok(process.memory());
+        }
+    }
+    
+    // Ultimate fallback
+    Ok(100_000_000)
 }
 
-/// Get system load average (placeholder)
+/// Get system load average (1-minute average)
 fn get_load_average() -> Result<f64> {
-    Ok(0.5)
+    #[cfg(target_os = "linux")]
+    {
+        use std::fs;
+        if let Ok(loadavg) = fs::read_to_string("/proc/loadavg") {
+            // Format: "0.52 0.58 0.59 1/467 12345"
+            if let Some(first) = loadavg.split_whitespace().next() {
+                if let Ok(load) = first.parse::<f64>() {
+                    return Ok(load);
+                }
+            }
+        }
+    }
+    
+    // Fallback: use sysinfo crate
+    use sysinfo::{System, SystemExt};
+    let sys = System::new();
+    let load = sys.load_average();
+    Ok(load.one)
 }
 
 #[cfg(test)]

@@ -1,10 +1,10 @@
 [package]
 name = "ippan-consensus-dlc"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Deterministic Learning Consensus (DLC) engine for IPPAN"
-license = "Apache-2.0"
-authors = ["IPPAN Contributors"]
+license.workspace = true
+authors.workspace = true
 
 [dependencies]
 # Core dependencies
@@ -23,7 +23,7 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 
 # Time
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 time = { workspace = true }
 
 # Math
