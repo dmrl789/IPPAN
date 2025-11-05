@@ -141,7 +141,7 @@ async fn test_dlc_integrated_consensus() {
 
     let dlc_config = dlc_config_from_poa(true, 250);
     let integrated = DLCIntegratedConsensus::new(poa, dlc_config, validator_id);
-    
+
     assert!(integrated.dlc_enabled);
 
     // Test bonding

@@ -213,27 +213,24 @@ impl L2HandleRegistry {
     }
 
     /// Verify signature for handle registration
-    fn verify_registration_signature(
-        &self,
-        registration: &HandleRegistration,
-    ) -> bool {
+    fn verify_registration_signature(&self, registration: &HandleRegistration) -> bool {
         use ed25519_dalek::{Signature, Verifier, VerifyingKey};
         use sha2::{Digest, Sha256};
-        
+
         if registration.signature.len() != 64 {
             return false;
         }
-        
+
         // Parse public key
         let Ok(verifying_key) = VerifyingKey::from_bytes(registration.owner.as_bytes()) else {
             return false;
         };
-        
+
         // Parse signature
         let Ok(signature) = Signature::from_slice(&registration.signature) else {
             return false;
         };
-        
+
         // Construct the message that should have been signed
         let mut message = Vec::new();
         message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
@@ -242,65 +239,65 @@ impl L2HandleRegistry {
         if let Some(expires) = registration.expires_at {
             message.extend_from_slice(&expires.to_le_bytes());
         }
-        
+
         // Hash the message
         let message_hash = Sha256::digest(&message);
-        
+
         // Verify signature
         verifying_key.verify(&message_hash, &signature).is_ok()
     }
-    
+
     /// Verify signature for handle update
     fn verify_update_signature(&self, update: &HandleUpdate) -> bool {
         use ed25519_dalek::{Signature, Verifier, VerifyingKey};
         use sha2::{Digest, Sha256};
-        
+
         if update.signature.len() != 64 {
             return false;
         }
-        
+
         let Ok(verifying_key) = VerifyingKey::from_bytes(update.owner.as_bytes()) else {
             return false;
         };
-        
+
         let Ok(signature) = Signature::from_slice(&update.signature) else {
             return false;
         };
-        
+
         // Construct the message
         let mut message = Vec::new();
         message.extend_from_slice(b"IPPAN_HANDLE_UPDATE");
         message.extend_from_slice(update.handle.as_str().as_bytes());
         message.extend_from_slice(update.owner.as_bytes());
-        
+
         let message_hash = Sha256::digest(&message);
         verifying_key.verify(&message_hash, &signature).is_ok()
     }
-    
+
     /// Verify signature for handle transfer
     fn verify_transfer_signature(&self, transfer: &HandleTransfer) -> bool {
         use ed25519_dalek::{Signature, Verifier, VerifyingKey};
         use sha2::{Digest, Sha256};
-        
+
         if transfer.signature.len() != 64 {
             return false;
         }
-        
+
         let Ok(verifying_key) = VerifyingKey::from_bytes(transfer.from_owner.as_bytes()) else {
             return false;
         };
-        
+
         let Ok(signature) = Signature::from_slice(&transfer.signature) else {
             return false;
         };
-        
+
         // Construct the message
         let mut message = Vec::new();
         message.extend_from_slice(b"IPPAN_HANDLE_TRANSFER");
         message.extend_from_slice(transfer.handle.as_str().as_bytes());
         message.extend_from_slice(transfer.from_owner.as_bytes());
         message.extend_from_slice(transfer.to_owner.as_bytes());
-        
+
         let message_hash = Sha256::digest(&message);
         verifying_key.verify(&message_hash, &signature).is_ok()
     }
@@ -323,7 +320,7 @@ mod tests {
 
         let registry = L2HandleRegistry::new();
         let handle = Handle::new("@test.ipn");
-        
+
         // Generate a proper key pair
         let signing_key = SigningKey::from_bytes(&[42u8; 32]);
         let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
@@ -371,7 +368,7 @@ mod tests {
 
         let registry = L2HandleRegistry::new();
         let handle = Handle::new("@test.ipn");
-        
+
         // Sign with one key
         let signing_key1 = SigningKey::from_bytes(&[42u8; 32]);
         let mut message = Vec::new();
@@ -422,7 +419,7 @@ mod tests {
 
         let registry = L2HandleRegistry::new();
         let handle = Handle::new("@test.ipn");
-        
+
         // Register handle with first owner
         let signing_key1 = SigningKey::from_bytes(&[42u8; 32]);
         let owner1 = PublicKey::new(signing_key1.verifying_key().to_bytes());

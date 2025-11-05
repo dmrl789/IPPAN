@@ -82,7 +82,7 @@ pub use shadow_verifier::{ShadowVerifier, ShadowVerifierSet, VerificationResult}
 // Emissions and fees
 pub use emission::{
     calculate_fee_recycling, calculate_round_emission, calculate_round_reward,
-    distribute_dag_fair_rewards, distribute_round_reward, round_reward,
+    distribute_dag_fair_rewards, distribute_round_reward, projected_supply, round_reward,
     rounds_until_cap, DAGEmissionParams, FeeRecyclingParams, RoundDistribution, RoundEmission,
     ValidatorContribution, ValidatorParticipation, ValidatorReward, ValidatorRole,
 };

@@ -396,7 +396,7 @@ fn get_memory_usage() -> Result<u64> {
             }
         }
     }
-    
+
     // Fallback: use sysinfo crate
     use sysinfo::{ProcessExt, ProcessRefreshKind, System, SystemExt};
     let mut sys = System::new();
@@ -406,7 +406,7 @@ fn get_memory_usage() -> Result<u64> {
             return Ok(process.memory());
         }
     }
-    
+
     // Ultimate fallback
     Ok(100_000_000)
 }
@@ -425,7 +425,7 @@ fn get_load_average() -> Result<f64> {
             }
         }
     }
-    
+
     // Fallback: use sysinfo crate
     use sysinfo::{System, SystemExt};
     let sys = System::new();

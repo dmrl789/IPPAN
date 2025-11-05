@@ -236,12 +236,7 @@ impl Storage for SledStorage {
         Ok(self
             .metadata
             .get(b"latest_height")?
-            .and_then(|v| {
-                v.as_ref()
-                    .try_into()
-                    .ok()
-                    .map(u64::from_be_bytes)
-            })
+            .and_then(|v| v.as_ref().try_into().ok().map(u64::from_be_bytes))
             .unwrap_or(0))
     }
 
@@ -649,14 +644,19 @@ impl Storage for MemoryStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{Amount, Transaction};
+    use ippan_types::{Amount, IppanTimeMicros, RoundWindow, Transaction};
 
     fn create_test_block(round: u64, creator: [u8; 32]) -> Block {
         Block::new(vec![], vec![], round, creator)
     }
 
-    fn create_test_transaction(from: [u8; 32], to: [u8; 32], amount: u64, nonce: u64) -> Transaction {
-        Transaction::new(from, to, Amount::from_atomic(amount), nonce)
+    fn create_test_transaction(
+        from: [u8; 32],
+        to: [u8; 32],
+        amount: u64,
+        nonce: u64,
+    ) -> Transaction {
+        Transaction::new(from, to, Amount::from_atomic(amount.into()), nonce)
     }
 
     fn create_test_account(address: [u8; 32], balance: u64, nonce: u64) -> Account {
@@ -675,7 +675,10 @@ mod tests {
         let hash = block.hash();
 
         storage.store_block(block.clone()).expect("store block");
-        let retrieved = storage.get_block(&hash).expect("get block").expect("block exists");
+        let retrieved = storage
+            .get_block(&hash)
+            .expect("get block")
+            .expect("block exists");
 
         assert_eq!(retrieved.header.round, block.header.round);
         assert_eq!(retrieved.header.creator, block.header.creator);
@@ -690,7 +693,10 @@ mod tests {
         let hash = tx.hash();
 
         storage.store_transaction(tx.clone()).expect("store tx");
-        let retrieved = storage.get_transaction(&hash).expect("get tx").expect("tx exists");
+        let retrieved = storage
+            .get_transaction(&hash)
+            .expect("get tx")
+            .expect("tx exists");
 
         assert_eq!(retrieved.from, tx.from);
         assert_eq!(retrieved.to, tx.to);
@@ -703,8 +709,13 @@ mod tests {
         let address = [3u8; 32];
         let account = create_test_account(address, 5000, 0);
 
-        storage.update_account(account.clone()).expect("update account");
-        let retrieved = storage.get_account(&address).expect("get account").expect("account exists");
+        storage
+            .update_account(account.clone())
+            .expect("update account");
+        let retrieved = storage
+            .get_account(&address)
+            .expect("get account")
+            .expect("account exists");
 
         assert_eq!(retrieved.balance, 5000);
         assert_eq!(retrieved.nonce, 0);
@@ -714,14 +725,17 @@ mod tests {
     fn storage_account_balance_update() {
         let storage = MemoryStorage::new();
         let address = [4u8; 32];
-        
+
         let account1 = create_test_account(address, 1000, 0);
         storage.update_account(account1).expect("initial update");
 
         let account2 = create_test_account(address, 2000, 1);
         storage.update_account(account2).expect("balance update");
 
-        let retrieved = storage.get_account(&address).expect("get account").expect("account exists");
+        let retrieved = storage
+            .get_account(&address)
+            .expect("get account")
+            .expect("account exists");
         assert_eq!(retrieved.balance, 2000);
         assert_eq!(retrieved.nonce, 1);
     }
@@ -729,7 +743,7 @@ mod tests {
     #[test]
     fn storage_latest_height_tracking() {
         let storage = MemoryStorage::new();
-        
+
         assert_eq!(storage.get_latest_height().expect("height"), 0);
 
         let block1 = create_test_block(1, [1u8; 32]);
@@ -746,10 +760,13 @@ mod tests {
         let storage = MemoryStorage::new();
         let creator = [5u8; 32];
         let block3 = create_test_block(3, creator);
-        
+
         storage.store_block(block3.clone()).expect("store block");
-        
-        let retrieved = storage.get_block_by_height(3).expect("get by height").expect("block exists");
+
+        let retrieved = storage
+            .get_block_by_height(3)
+            .expect("get by height")
+            .expect("block exists");
         assert_eq!(retrieved.header.round, 3);
         assert_eq!(retrieved.header.creator, creator);
     }
@@ -758,7 +775,7 @@ mod tests {
     fn storage_get_nonexistent_block() {
         let storage = MemoryStorage::new();
         let hash = [99u8; 32];
-        
+
         let result = storage.get_block(&hash).expect("query should succeed");
         assert!(result.is_none(), "Nonexistent block should return None");
     }
@@ -767,16 +784,21 @@ mod tests {
     fn storage_get_nonexistent_transaction() {
         let storage = MemoryStorage::new();
         let hash = [88u8; 32];
-        
-        let result = storage.get_transaction(&hash).expect("query should succeed");
-        assert!(result.is_none(), "Nonexistent transaction should return None");
+
+        let result = storage
+            .get_transaction(&hash)
+            .expect("query should succeed");
+        assert!(
+            result.is_none(),
+            "Nonexistent transaction should return None"
+        );
     }
 
     #[test]
     fn storage_get_nonexistent_account() {
         let storage = MemoryStorage::new();
         let address = [77u8; 32];
-        
+
         let result = storage.get_account(&address).expect("query should succeed");
         assert!(result.is_none(), "Nonexistent account should return None");
     }
@@ -784,7 +806,7 @@ mod tests {
     #[test]
     fn storage_transaction_count() {
         let storage = MemoryStorage::new();
-        
+
         assert_eq!(storage.get_transaction_count().expect("count"), 0);
 
         let tx1 = create_test_transaction([1u8; 32], [2u8; 32], 100, 1);
@@ -811,20 +833,26 @@ mod tests {
         storage.store_transaction(tx2).expect("store tx2");
         storage.store_transaction(tx3).expect("store tx3");
 
-        let addr1_txs = storage.get_transactions_by_address(&addr1).expect("get txs");
+        let addr1_txs = storage
+            .get_transactions_by_address(&addr1)
+            .expect("get txs");
         assert_eq!(addr1_txs.len(), 2, "addr1 should have 2 transactions");
 
-        let addr2_txs = storage.get_transactions_by_address(&addr2).expect("get txs");
+        let addr2_txs = storage
+            .get_transactions_by_address(&addr2)
+            .expect("get txs");
         assert_eq!(addr2_txs.len(), 2, "addr2 should have 2 transactions");
 
-        let addr3_txs = storage.get_transactions_by_address(&addr3).expect("get txs");
+        let addr3_txs = storage
+            .get_transactions_by_address(&addr3)
+            .expect("get txs");
         assert_eq!(addr3_txs.len(), 2, "addr3 should have 2 transactions");
     }
 
     #[test]
     fn storage_get_all_accounts() {
         let storage = MemoryStorage::new();
-        
+
         let acc1 = create_test_account([1u8; 32], 1000, 0);
         let acc2 = create_test_account([2u8; 32], 2000, 0);
         let acc3 = create_test_account([3u8; 32], 3000, 0);
@@ -840,7 +868,7 @@ mod tests {
     #[test]
     fn storage_chain_state_persistence() {
         let storage = MemoryStorage::new();
-        
+
         let state = storage.get_chain_state().expect("get state");
         assert_eq!(state.total_issued_micro, 0);
         assert_eq!(state.last_updated_round, 0);
@@ -849,7 +877,9 @@ mod tests {
         new_state.add_issued_micro(1_000_000);
         new_state.update_round(10);
 
-        storage.update_chain_state(&new_state).expect("update state");
+        storage
+            .update_chain_state(&new_state)
+            .expect("update state");
 
         let retrieved = storage.get_chain_state().expect("get state");
         assert_eq!(retrieved.total_issued_micro, 1_000_000);
@@ -861,15 +891,19 @@ mod tests {
         let mut state = ChainState::default();
         state.add_issued_micro(u128::MAX - 100);
         state.add_issued_micro(200);
-        
-        assert_eq!(state.total_issued_micro, u128::MAX, "Should saturate at MAX");
+
+        assert_eq!(
+            state.total_issued_micro,
+            u128::MAX,
+            "Should saturate at MAX"
+        );
     }
 
     #[test]
     fn storage_validator_telemetry_round_trip() {
         let storage = MemoryStorage::new();
         let validator_id = [42u8; 32];
-        
+
         let telemetry = ValidatorTelemetry {
             validator_id,
             blocks_proposed: 10,
@@ -885,12 +919,15 @@ mod tests {
             network_contribution: 0.8,
         };
 
-        storage.store_validator_telemetry(&validator_id, &telemetry).expect("store telemetry");
-        
-        let retrieved = storage.get_validator_telemetry(&validator_id)
+        storage
+            .store_validator_telemetry(&validator_id, &telemetry)
+            .expect("store telemetry");
+
+        let retrieved = storage
+            .get_validator_telemetry(&validator_id)
             .expect("get telemetry")
             .expect("telemetry exists");
-        
+
         assert_eq!(retrieved.blocks_proposed, 10);
         assert_eq!(retrieved.uptime_percentage, 99.5);
     }
@@ -898,7 +935,7 @@ mod tests {
     #[test]
     fn storage_multiple_validators_telemetry() {
         let storage = MemoryStorage::new();
-        
+
         for i in 0..5u8 {
             let validator_id = [i; 32];
             let telemetry = ValidatorTelemetry {
@@ -915,7 +952,9 @@ mod tests {
                 recent_performance: 1.0,
                 network_contribution: 0.5,
             };
-            storage.store_validator_telemetry(&validator_id, &telemetry).expect("store");
+            storage
+                .store_validator_telemetry(&validator_id, &telemetry)
+                .expect("store");
         }
 
         let all_telemetry = storage.get_all_validator_telemetry().expect("get all");
@@ -926,59 +965,86 @@ mod tests {
     fn storage_round_certificate_operations() {
         let storage = MemoryStorage::new();
         let round = 42u64;
-        
+
         let cert = RoundCertificate {
             round,
-            validator_signatures: vec![],
-            timestamp_us: 1000000,
-            finalized_block_hashes: vec![],
+            block_ids: vec![],
+            agg_sig: vec![],
         };
 
-        storage.store_round_certificate(cert.clone()).expect("store cert");
-        
-        let retrieved = storage.get_round_certificate(round)
+        storage
+            .store_round_certificate(cert.clone())
+            .expect("store cert");
+
+        let retrieved = storage
+            .get_round_certificate(round)
             .expect("get cert")
             .expect("cert exists");
-        
+
         assert_eq!(retrieved.round, round);
     }
 
     #[test]
     fn storage_round_finalization_tracking() {
         let storage = MemoryStorage::new();
-        
-        assert!(storage.get_latest_round_finalization().expect("get").is_none());
 
+        assert!(storage
+            .get_latest_round_finalization()
+            .expect("get")
+            .is_none());
+
+        let window1 = RoundWindow {
+            id: 10,
+            start_us: IppanTimeMicros(1_000_000),
+            end_us: IppanTimeMicros(1_000_500),
+        };
         let rec1 = RoundFinalizationRecord {
             round: 10,
-            finalized_at_us: 1000000,
-            total_validators: 5,
-            participating_validators: 5,
-            total_blocks: 10,
-            total_transactions: 100,
-            emission_micro: 1000000,
+            window: window1,
+            ordered_tx_ids: vec![],
+            fork_drops: vec![],
+            state_root: [0u8; 32],
+            proof: RoundCertificate {
+                round: 10,
+                block_ids: vec![],
+                agg_sig: vec![],
+            },
         };
 
-        storage.store_round_finalization(rec1.clone()).expect("store rec1");
-        
-        let latest = storage.get_latest_round_finalization()
+        storage
+            .store_round_finalization(rec1.clone())
+            .expect("store rec1");
+
+        let latest = storage
+            .get_latest_round_finalization()
             .expect("get latest")
             .expect("latest exists");
         assert_eq!(latest.round, 10);
 
+        let window2 = RoundWindow {
+            id: 20,
+            start_us: IppanTimeMicros(2_000_000),
+            end_us: IppanTimeMicros(2_000_600),
+        };
         let rec2 = RoundFinalizationRecord {
             round: 20,
-            finalized_at_us: 2000000,
-            total_validators: 5,
-            participating_validators: 5,
-            total_blocks: 10,
-            total_transactions: 100,
-            emission_micro: 1000000,
+            window: window2,
+            ordered_tx_ids: vec![],
+            fork_drops: vec![],
+            state_root: [1u8; 32],
+            proof: RoundCertificate {
+                round: 20,
+                block_ids: vec![],
+                agg_sig: vec![],
+            },
         };
 
-        storage.store_round_finalization(rec2.clone()).expect("store rec2");
-        
-        let latest = storage.get_latest_round_finalization()
+        storage
+            .store_round_finalization(rec2.clone())
+            .expect("store rec2");
+
+        let latest = storage
+            .get_latest_round_finalization()
             .expect("get latest")
             .expect("latest exists");
         assert_eq!(latest.round, 20, "Latest should update to round 20");
@@ -991,7 +1057,7 @@ mod tests {
 
         let storage = Arc::new(MemoryStorage::new());
         let address = [99u8; 32];
-        
+
         let account = create_test_account(address, 1000, 0);
         storage.update_account(account).expect("initial account");
 
@@ -1009,32 +1075,40 @@ mod tests {
             handle.join().expect("thread join");
         }
 
-        let final_account = storage.get_account(&address)
+        let final_account = storage
+            .get_account(&address)
             .expect("get account")
             .expect("account exists");
-        
+
         assert!(final_account.balance >= 1000, "Balance should be updated");
     }
 
     #[test]
     fn storage_l2_network_operations() {
         let storage = MemoryStorage::new();
-        
+
         let network = L2Network {
             id: "test-l2".to_string(),
-            name: "Test L2".to_string(),
-            operator: [1u8; 32],
-            stake: 1000000,
-            active: true,
-            created_at: 1000000,
+            proof_type: "zk".to_string(),
+            da_mode: "inline".to_string(),
+            status: ippan_types::L2NetworkStatus::Active,
+            last_epoch: 0,
+            total_commits: 0,
+            total_exits: 0,
+            last_commit_time: None,
+            registered_at: 1_000_000,
+            challenge_window_ms: Some(60_000),
         };
 
-        storage.put_l2_network(network.clone()).expect("put network");
-        
-        let retrieved = storage.get_l2_network("test-l2")
+        storage
+            .put_l2_network(network.clone())
+            .expect("put network");
+
+        let retrieved = storage
+            .get_l2_network("test-l2")
             .expect("get network")
             .expect("network exists");
-        assert_eq!(retrieved.name, "Test L2");
+        assert_eq!(retrieved.id, "test-l2");
 
         let all_networks = storage.list_l2_networks().expect("list networks");
         assert_eq!(all_networks.len(), 1);
@@ -1043,21 +1117,31 @@ mod tests {
     #[test]
     fn storage_l2_commit_filtering() {
         let storage = MemoryStorage::new();
-        
+
         let commit1 = L2Commit {
             id: "commit1".to_string(),
             l2_id: "l2-a".to_string(),
-            block_height: 100,
-            state_root: [1u8; 32],
-            timestamp_us: 1000000,
+            epoch: 100,
+            state_root: "0x01".to_string(),
+            da_hash: "0xda".to_string(),
+            proof_type: "zk".to_string(),
+            proof: None,
+            inline_data: None,
+            submitted_at: 1_000_000,
+            hashtimer: "HT1".to_string(),
         };
 
         let commit2 = L2Commit {
             id: "commit2".to_string(),
             l2_id: "l2-b".to_string(),
-            block_height: 200,
-            state_root: [2u8; 32],
-            timestamp_us: 2000000,
+            epoch: 200,
+            state_root: "0x02".to_string(),
+            da_hash: "0xdb".to_string(),
+            proof_type: "zk".to_string(),
+            proof: None,
+            inline_data: None,
+            submitted_at: 2_000_000,
+            hashtimer: "HT2".to_string(),
         };
 
         storage.store_l2_commit(commit1).expect("store commit1");
