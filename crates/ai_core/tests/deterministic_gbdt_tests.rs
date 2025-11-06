@@ -11,9 +11,14 @@ use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
     DeterministicGBDTError, GBDTTree, ValidatorFeatures,
 };
+use ippan_ai_core::FixedPoint;
 use std::collections::HashMap;
 use std::fs;
 use tempfile::TempDir;
+
+fn fp(value: f64) -> FixedPoint {
+    FixedPoint::from_f64(value)
+}
 
 /// Test model loading from JSON file
 #[test]
@@ -53,10 +58,15 @@ fn test_model_loading_from_binary() {
 #[test]
 fn test_deterministic_prediction_consistency() {
     let model = create_test_model();
-    let features = vec![1.0, 2.0, 3.0, 4.0];
+    let features = vec![
+        FixedPoint::from_integer(1),
+        FixedPoint::from_integer(2),
+        FixedPoint::from_integer(3),
+        FixedPoint::from_integer(4),
+    ];
 
     // Run prediction multiple times
-    let predictions: Vec<f64> = (0..100).map(|_| model.predict(&features)).collect();
+    let predictions: Vec<FixedPoint> = (0..100).map(|_| model.predict(&features)).collect();
 
     // All predictions should be identical
     for i in 1..predictions.len() {
@@ -92,9 +102,9 @@ fn test_ippan_time_normalization() {
     assert_eq!(by_id["node3"].delta_time_us, -100); // 99_950 - 100_050
 
     // Check other features are preserved
-    assert_eq!(by_id["node1"].latency_ms, 1.2);
-    assert_eq!(by_id["node1"].uptime_pct, 99.9);
-    assert_eq!(by_id["node1"].peer_entropy, 0.42);
+    assert_eq!(by_id["node1"].latency_ms, fp(1.2));
+    assert_eq!(by_id["node1"].uptime_pct, fp(99.9));
+    assert_eq!(by_id["node1"].peer_entropy, fp(0.42));
 }
 
 /// Normalization should depend on relative (not absolute) IPPAN time
@@ -114,7 +124,7 @@ fn test_normalize_features_clock_offset_invariance() {
     let features_a = normalize_features(&telemetry_a, 100_050);
     let features_b = normalize_features(&telemetry_b, 105_050);
 
-    let map = |features: Vec<ValidatorFeatures>| -> HashMap<String, (i64, f64, f64, f64)> {
+    let map = |features: Vec<ValidatorFeatures>| -> HashMap<String, (i64, FixedPoint, FixedPoint, FixedPoint)> {
         features
             .into_iter()
             .map(|f| {
@@ -148,8 +158,8 @@ fn test_validator_scoring_scenarios() {
     let features_good = normalize_features(&telemetry_good, ippan_time_median);
     let features_poor = normalize_features(&telemetry_poor, ippan_time_median);
 
-    let scores_good = compute_scores(&model, &features_good, round_hash);
-    let scores_poor = compute_scores(&model, &features_poor, round_hash);
+    let scores_good = compute_scores(&model, &features_good, round_hash).unwrap();
+    let scores_poor = compute_scores(&model, &features_poor, round_hash).unwrap();
 
     assert_eq!(scores_good.len(), 1);
     assert_eq!(scores_poor.len(), 1);
@@ -166,7 +176,9 @@ fn test_model_hash_consistency() {
     let round_hash = "consistent_round_hash";
 
     // Generate hash multiple times
-    let hashes: Vec<String> = (0..10).map(|_| model.model_hash(round_hash)).collect();
+    let hashes: Vec<String> = (0..10)
+        .map(|_| model.model_hash(round_hash).unwrap())
+        .collect();
 
     // All hashes should be identical
     for i in 1..hashes.len() {
@@ -174,7 +186,7 @@ fn test_model_hash_consistency() {
     }
 
     // Different round hashes should produce different model hashes
-    let different_hash = model.model_hash("different_round_hash");
+    let different_hash = model.model_hash("different_round_hash").unwrap();
     assert_ne!(hashes[0], different_hash);
 }
 
@@ -184,7 +196,7 @@ fn test_model_validation_invalid_structures() {
     // Test empty trees
     let empty_model = DeterministicGBDT {
         trees: vec![],
-        learning_rate: 0.1,
+        learning_rate: fp(0.1),
     };
     assert!(empty_model.validate().is_err());
 
@@ -193,24 +205,24 @@ fn test_model_validation_invalid_structures() {
         nodes: vec![
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: Some(5), // Invalid reference
                 right: Some(2),
                 value: None,
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.1),
+                value: Some(fp(0.1)),
             },
         ],
     };
 
     let invalid_model = DeterministicGBDT {
         trees: vec![invalid_tree],
-        learning_rate: 0.1,
+        learning_rate: fp(0.1),
     };
     assert!(invalid_model.validate().is_err());
 }
@@ -221,21 +233,28 @@ fn test_feature_vector_size_validation() {
     let model = create_test_model();
 
     // Test with correct feature size
-    let correct_features = vec![1.0, 2.0, 3.0, 4.0];
+    let correct_features = vec![
+        FixedPoint::from_integer(1),
+        FixedPoint::from_integer(2),
+        FixedPoint::from_integer(3),
+        FixedPoint::from_integer(4),
+    ];
     let result = model.predict(&correct_features);
-    assert!(result.is_finite());
+    let repeat = model.predict(&correct_features);
+    assert_eq!(result, repeat);
 
     // Test with incorrect feature size (should not panic, but may warn)
-    let incorrect_features = vec![1.0, 2.0]; // Too few features
+    let incorrect_features = vec![FixedPoint::from_integer(1), FixedPoint::from_integer(2)];
     let result = model.predict(&incorrect_features);
-    assert!(result.is_finite());
+    let repeat = model.predict(&incorrect_features);
+    assert_eq!(result, repeat);
 }
 
 /// Test cross-platform determinism simulation
 #[test]
 fn test_cross_platform_determinism_simulation() {
     let model = create_test_model();
-    let features = vec![1.5, 2.5, 3.5, 4.5];
+    let features = vec![fp(1.5), fp(2.5), fp(3.5), fp(4.5)];
     let round_hash = "deterministic_round";
 
     // Simulate different "nodes" computing the same prediction
@@ -248,8 +267,8 @@ fn test_cross_platform_determinism_simulation() {
     assert_eq!(node2_result, node3_result);
 
     // Hash should also be identical
-    let hash1 = model.model_hash(round_hash);
-    let hash2 = model.model_hash(round_hash);
+    let hash1 = model.model_hash(round_hash).unwrap();
+    let hash2 = model.model_hash(round_hash).unwrap();
     assert_eq!(hash1, hash2);
 }
 
@@ -259,19 +278,27 @@ fn test_prediction_edge_cases() {
     let model = create_test_model();
 
     // Test with zero features
-    let zero_features = vec![0.0, 0.0, 0.0, 0.0];
+    let zero_features = vec![FixedPoint::zero(); 4];
     let result = model.predict(&zero_features);
-    assert!(result.is_finite());
+    let repeat = model.predict(&zero_features);
+    assert_eq!(result, repeat);
 
     // Test with negative features
-    let negative_features = vec![-1.0, -2.0, -3.0, -4.0];
+    let negative_features = vec![fp(-1.0), fp(-2.0), fp(-3.0), fp(-4.0)];
     let result = model.predict(&negative_features);
-    assert!(result.is_finite());
+    let repeat = model.predict(&negative_features);
+    assert_eq!(result, repeat);
 
     // Test with very large features
-    let large_features = vec![1e6, 2e6, 3e6, 4e6];
+    let large_features = vec![
+        FixedPoint::from_integer(1_000_000),
+        FixedPoint::from_integer(2_000_000),
+        FixedPoint::from_integer(3_000_000),
+        FixedPoint::from_integer(4_000_000),
+    ];
     let result = model.predict(&large_features);
-    assert!(result.is_finite());
+    let repeat = model.predict(&large_features);
+    assert_eq!(result, repeat);
 }
 
 /// Test model serialization round-trip
@@ -287,7 +314,12 @@ fn test_model_serialization_round_trip() {
     let loaded_model = DeterministicGBDT::from_json_file(&json_path).unwrap();
 
     // Test that predictions are identical
-    let features = vec![1.0, 2.0, 3.0, 4.0];
+    let features = vec![
+        FixedPoint::from_integer(1),
+        FixedPoint::from_integer(2),
+        FixedPoint::from_integer(3),
+        FixedPoint::from_integer(4),
+    ];
     let original_prediction = original_model.predict(&features);
     let loaded_prediction = loaded_model.predict(&features);
 
@@ -310,24 +342,24 @@ fn test_complex_multi_tree_model() {
         nodes: vec![
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: Some(1),
                 right: Some(2),
                 value: None,
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.1),
+                value: Some(fp(0.1)),
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.2),
+                value: Some(fp(0.2)),
             },
         ],
     };
@@ -336,38 +368,37 @@ fn test_complex_multi_tree_model() {
         nodes: vec![
             DecisionNode {
                 feature: 1,
-                threshold: 1.0,
+                threshold: FixedPoint::from_integer(1),
                 left: Some(1),
                 right: Some(2),
                 value: None,
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.05),
+                value: Some(fp(0.05)),
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.15),
+                value: Some(fp(0.15)),
             },
         ],
     };
 
     let model = DeterministicGBDT {
         trees: vec![tree1, tree2],
-        learning_rate: 0.1,
+        learning_rate: fp(0.1),
     };
 
-    let features = vec![0.5, 1.5, 2.5, 3.5];
+    let features = vec![fp(0.5), fp(1.5), fp(2.5), fp(3.5)];
     let prediction = model.predict(&features);
 
-    assert!(prediction.is_finite());
-    assert!(prediction > 0.0);
+    assert!(prediction.raw() > 0);
 }
 
 /// Test error handling for file operations
@@ -411,7 +442,7 @@ fn test_performance_large_feature_sets() {
     let round_hash = "performance_test_round";
 
     let start = std::time::Instant::now();
-    let scores = compute_scores(&model, &features, round_hash);
+    let scores = compute_scores(&model, &features, round_hash).unwrap();
     let duration = start.elapsed();
 
     assert_eq!(scores.len(), 1000);
@@ -424,8 +455,8 @@ fn test_floating_point_precision_consistency() {
     let model = create_test_model();
 
     // Test with values that might cause floating point precision issues
-    let features1 = vec![0.1, 0.2, 0.3, 0.4];
-    let features2 = vec![0.1, 0.2, 0.3, 0.4];
+    let features1 = vec![fp(0.1), fp(0.2), fp(0.3), fp(0.4)];
+    let features2 = vec![fp(0.1), fp(0.2), fp(0.3), fp(0.4)];
 
     let prediction1 = model.predict(&features1);
     let prediction2 = model.predict(&features2);

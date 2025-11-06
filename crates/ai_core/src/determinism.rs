@@ -3,7 +3,7 @@
 //! Ensures reproducible, verifiable GBDT inference across nodes by
 //! enforcing seed control, input hashing, and deterministic context state.
 
-use crate::{errors::Result, types::*};
+use crate::{errors::Result, fixed_point::FixedPoint, types::*};
 use std::collections::HashMap;
 use tracing::{info, warn};
 
@@ -264,8 +264,15 @@ impl DeterministicRng {
         self.next_u64() % max
     }
 
+    pub fn next_fixed(&mut self) -> FixedPoint {
+        let raw = self.next_u64();
+        let scaled = (i128::from(raw) * i128::from(FixedPoint::SCALE - 1)) / i128::from(u64::MAX);
+        FixedPoint::from_raw(scaled as i64)
+    }
+
+    /// Temporary float helper for legacy callers. Prefer `next_fixed`.
     pub fn next_f64(&mut self) -> f64 {
-        (self.next_u64() as f64) / (u64::MAX as f64)
+        self.next_fixed().to_f64()
     }
 
     pub fn reset(&mut self) {

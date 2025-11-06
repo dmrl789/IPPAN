@@ -16,3 +16,8 @@
 - Consume `compute_validator_score` from `lib.rs` for consensus scoring.
 - Ship models through `ModelManager` to enforce hash verification and versioning.
 - Use the provided `tests` suite as reference when onboarding new model artifacts.
+
+## Cross-Compiling (aarch64)
+- Install [`cross`](https://github.com/cross-rs/cross) and ensure either Docker or Podman is available.
+- Run `cross test -p ippan-ai-core --target aarch64-unknown-linux-gnu` to exercise the deterministic suite under aarch64.
+- Without a container engine, the command will fail; install Docker/Podman or run on a host where one is available.

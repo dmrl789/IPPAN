@@ -3,35 +3,33 @@
 //!
 //! Ensures identical predictions, rankings, and hashes across all validator nodes.
 
+use crate::fixed_point::FixedPoint;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{collections::HashMap, fs, path::Path};
 use tracing::{info, warn};
-
-/// Fixed-point arithmetic precision (1 µ = 1e-6)
-const FP_PRECISION: f64 = 1_000_000.0;
 
 /// Normalized validator telemetry (anchored to IPPAN Time)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorFeatures {
     pub node_id: String,
     pub delta_time_us: i64, // deviation from IPPAN Time median (µs)
-    pub latency_ms: f64,
-    pub uptime_pct: f64,
-    pub peer_entropy: f64,
-    pub cpu_usage: Option<f64>,
-    pub memory_usage: Option<f64>,
-    pub network_reliability: Option<f64>,
+    pub latency_ms: FixedPoint,
+    pub uptime_pct: FixedPoint,
+    pub peer_entropy: FixedPoint,
+    pub cpu_usage: Option<FixedPoint>,
+    pub memory_usage: Option<FixedPoint>,
+    pub network_reliability: Option<FixedPoint>,
 }
 
 /// Decision node in a GBDT tree
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DecisionNode {
     pub feature: usize,
-    pub threshold: f64,
+    pub threshold: FixedPoint,
     pub left: Option<usize>,
     pub right: Option<usize>,
-    pub value: Option<f64>,
+    pub value: Option<FixedPoint>,
 }
 
 /// One decision tree
@@ -44,7 +42,7 @@ pub struct GBDTTree {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DeterministicGBDT {
     pub trees: Vec<GBDTTree>,
-    pub learning_rate: f64,
+    pub learning_rate: FixedPoint,
 }
 
 /// Error types for deterministic GBDT operations
@@ -104,8 +102,8 @@ impl DeterministicGBDT {
     // ---------------------------------------------------------------------
 
     /// Deterministic prediction using fixed-point arithmetic
-    pub fn predict(&self, features: &[f64]) -> f64 {
-        let mut score_fp: i64 = 0;
+    pub fn predict(&self, features: &[FixedPoint]) -> FixedPoint {
+        let mut score = FixedPoint::zero();
 
         for tree in &self.trees {
             let mut node_idx = 0usize;
@@ -117,7 +115,7 @@ impl DeterministicGBDT {
                 let node = &tree.nodes[node_idx];
 
                 if let Some(value) = node.value {
-                    score_fp += (value * FP_PRECISION) as i64;
+                    score = score + value;
                     break;
                 }
 
@@ -139,16 +137,17 @@ impl DeterministicGBDT {
             }
         }
 
-        (score_fp as f64 / FP_PRECISION) * self.learning_rate
+        score * self.learning_rate
     }
 
     /// Deterministic model certificate hash (anchors to HashTimer)
-    pub fn model_hash(&self, round_hash_timer: &str) -> String {
-        let serialized = serde_json::to_string(self).unwrap();
+    pub fn model_hash(&self, round_hash_timer: &str) -> Result<String, DeterministicGBDTError> {
+        let serialized = serde_json::to_vec(self)
+            .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
         let mut hasher = Sha3_256::new();
-        hasher.update(serialized.as_bytes());
+        hasher.update(&serialized);
         hasher.update(round_hash_timer.as_bytes());
-        format!("{:x}", hasher.finalize())
+        Ok(format!("{:x}", hasher.finalize()))
     }
 
     /// Validate structural correctness
@@ -206,9 +205,9 @@ pub fn normalize_features(
             ValidatorFeatures {
                 node_id: node_id.clone(),
                 delta_time_us,
-                latency_ms: *latency,
-                uptime_pct: *uptime,
-                peer_entropy: *entropy,
+                latency_ms: FixedPoint::from_f64(*latency),
+                uptime_pct: FixedPoint::from_f64(*uptime),
+                peer_entropy: FixedPoint::from_f64(*entropy),
                 cpu_usage: None,
                 memory_usage: None,
                 network_reliability: None,
@@ -222,12 +221,12 @@ pub fn compute_scores(
     model: &DeterministicGBDT,
     features: &[ValidatorFeatures],
     round_hash_timer: &str,
-) -> HashMap<String, f64> {
+) -> Result<HashMap<String, FixedPoint>, DeterministicGBDTError> {
     let mut scores = HashMap::new();
 
     for v in features {
-        let feature_vector = vec![
-            v.delta_time_us as f64,
+        let feature_vector = [
+            FixedPoint::from_integer(v.delta_time_us),
             v.latency_ms,
             v.uptime_pct,
             v.peer_entropy,
@@ -236,9 +235,9 @@ pub fn compute_scores(
         scores.insert(v.node_id.clone(), score);
     }
 
-    let cert = model.model_hash(round_hash_timer);
+    let cert = model.model_hash(round_hash_timer)?;
     info!("Deterministic GBDT certificate: {}", cert);
-    scores
+    Ok(scores)
 }
 
 fn sample_test_model() -> DeterministicGBDT {
@@ -246,31 +245,31 @@ fn sample_test_model() -> DeterministicGBDT {
         nodes: vec![
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: Some(1),
                 right: Some(2),
                 value: None,
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.1),
+                value: Some(FixedPoint::from_ratio(1, 10)),
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.2),
+                value: Some(FixedPoint::from_ratio(2, 10)),
             },
         ],
     };
 
     DeterministicGBDT {
         trees: vec![tree],
-        learning_rate: 0.1,
+        learning_rate: FixedPoint::from_ratio(1, 10),
     }
 }
 
@@ -300,37 +299,42 @@ mod tests {
             nodes: vec![
                 DecisionNode {
                     feature: 0,
-                    threshold: 0.0,
+                    threshold: FixedPoint::zero(),
                     left: Some(1),
                     right: Some(2),
                     value: None,
                 },
                 DecisionNode {
                     feature: 0,
-                    threshold: 0.0,
+                    threshold: FixedPoint::zero(),
                     left: None,
                     right: None,
-                    value: Some(0.1),
+                    value: Some(FixedPoint::from_ratio(1, 10)),
                 },
                 DecisionNode {
                     feature: 0,
-                    threshold: 0.0,
+                    threshold: FixedPoint::zero(),
                     left: None,
                     right: None,
-                    value: Some(0.2),
+                    value: Some(FixedPoint::from_ratio(2, 10)),
                 },
             ],
         };
         DeterministicGBDT {
             trees: vec![tree],
-            learning_rate: 0.1,
+            learning_rate: FixedPoint::from_ratio(1, 10),
         }
     }
 
     #[test]
     fn test_prediction_determinism() {
         let model = create_test_model();
-        let features = vec![1.0, 2.0, 3.0, 4.0];
+        let features = [
+            FixedPoint::from_integer(1),
+            FixedPoint::from_integer(2),
+            FixedPoint::from_integer(3),
+            FixedPoint::from_integer(4),
+        ];
         let r1 = model.predict(&features);
         let r2 = model.predict(&features);
         assert_eq!(r1, r2);
@@ -339,8 +343,8 @@ mod tests {
     #[test]
     fn test_model_hash_consistency() {
         let model = create_test_model();
-        let h1 = model.model_hash("round1");
-        let h2 = model.model_hash("round1");
+        let h1 = model.model_hash("round1").unwrap();
+        let h2 = model.model_hash("round1").unwrap();
         assert_eq!(h1, h2);
     }
 
@@ -352,7 +356,7 @@ mod tests {
         let median = 100_050;
         let features = normalize_features(&telemetry, median);
         let model = create_test_model();
-        let scores = compute_scores(&model, &features, "round_hash");
+        let scores = compute_scores(&model, &features, "round_hash").unwrap();
         assert_eq!(scores.len(), 2);
         assert!(scores.contains_key("node1"));
     }
@@ -363,7 +367,7 @@ mod tests {
         assert!(valid.validate().is_ok());
         let invalid = DeterministicGBDT {
             trees: vec![],
-            learning_rate: 0.1,
+            learning_rate: FixedPoint::from_ratio(1, 10),
         };
         assert!(invalid.validate().is_err());
     }
