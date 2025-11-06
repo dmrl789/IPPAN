@@ -8,6 +8,7 @@
 //! - `gbdt`: Integer-only Gradient Boosted Decision Tree evaluator
 //! - `determinism`: Deterministic context and RNG utilities
 //! - `execution`: Deterministic model execution engine
+//! - `fixed`: Deterministic fixed-point arithmetic with micro (1e-6) precision
 //! - `model`: Model packaging and verification utilities
 //! - `model_manager`: Model registry and lifecycle management
 //! - `feature_engineering`: Feature preprocessing and statistics
@@ -37,6 +38,7 @@ pub mod models;
 pub mod monitoring;
 pub mod production_config;
 pub mod security;
+pub mod serialization;
 pub mod tests;
 pub mod types;
 pub mod validation;
