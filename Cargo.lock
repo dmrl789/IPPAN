@@ -3280,6 +3280,7 @@ name = "ippan-validator-resolution"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ed25519-dalek",
  "futures",
  "hex",
  "ippan-l1-handle-anchors",
@@ -3288,6 +3289,7 @@ dependencies = [
  "ippan_economics",
  "parking_lot 0.12.5",
  "serde",
+ "sha2",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",

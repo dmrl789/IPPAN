@@ -206,6 +206,11 @@ impl ValidatorResolver {
     pub fn clear_cache(&self) {
         self.cache.write().clear();
     }
+
+    #[cfg(test)]
+    pub fn set_cache_ttl(&mut self, ttl: Duration) {
+        self.cache_ttl = ttl;
+    }
 }
 
 impl Clone for ValidatorResolver {
@@ -225,8 +230,12 @@ impl Clone for ValidatorResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_l2_handle_registry::{HandleRegistration, PublicKey};
+    use ed25519_dalek::{Signer, SigningKey};
+    use ippan_l1_handle_anchors::HandleOwnershipAnchor;
+    use ippan_l2_handle_registry::{Handle, HandleRegistration, HandleUpdate, PublicKey};
+    use sha2::{Digest, Sha256};
     use std::collections::HashMap;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_direct_resolution() {
@@ -242,6 +251,30 @@ mod tests {
         assert_eq!(resolved.public_key_bytes()[0], 0x01);
     }
 
+    fn signing_key(seed: u8) -> SigningKey {
+        SigningKey::from_bytes(&[seed; 32])
+    }
+
+    fn signed_registration(handle: &str, signing_key: &SigningKey) -> HandleRegistration {
+        let handle = Handle::new(handle);
+        let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
+
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        message.extend_from_slice(handle.as_str().as_bytes());
+        message.extend_from_slice(owner.as_bytes());
+        let message_hash = Sha256::digest(&message);
+        let signature = signing_key.sign(&message_hash);
+
+        HandleRegistration {
+            handle,
+            owner,
+            signature: signature.to_bytes().to_vec(),
+            metadata: HashMap::new(),
+            expires_at: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_handle_resolution() {
         let l2_registry = Arc::new(L2HandleRegistry::new());
@@ -249,14 +282,8 @@ mod tests {
         let resolver = ValidatorResolver::new(l2_registry.clone(), l1_anchors);
 
         let handle = "@test.ipn";
-        let owner = [1u8; 32];
-        let registration = HandleRegistration {
-            handle: Handle::new(handle),
-            owner: PublicKey::new(owner),
-            signature: vec![1, 2, 3],
-            metadata: HashMap::new(),
-            expires_at: None,
-        };
+        let registration = signed_registration(handle, &signing_key(42));
+        let expected_owner = registration.owner.clone();
         l2_registry.register(registration).unwrap();
 
         let id = ValidatorId::new(handle);
@@ -266,6 +293,129 @@ mod tests {
             resolved.resolution_method,
             ResolutionMethod::L2HandleRegistry
         );
+        assert_eq!(resolved.public_key_bytes(), expected_owner.as_bytes());
+        let metadata = resolved.metadata.expect("metadata present");
+        assert_eq!(metadata.handle.as_deref(), Some(handle));
+        assert_eq!(metadata.status.as_deref(), Some("Active"));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_alias_error_and_cache() {
+        let l2_registry = Arc::new(L2HandleRegistry::new());
+        let l1_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let mut resolver = ValidatorResolver::new(l2_registry, l1_anchors);
+
+        resolver.set_cache_ttl(Duration::from_secs(10));
+
+        let alias = ValidatorId::new("validator-alias");
+        let err = resolver.resolve(&alias).await.unwrap_err();
+        assert!(matches!(
+            err,
+            ValidatorResolutionError::InvalidFormat { id } if id == "validator-alias"
+        ));
+
+        let pk_id =
+            ValidatorId::new("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789");
+        let first = resolver.resolve(&pk_id).await.unwrap();
+        let second = resolver.resolve(&pk_id).await.unwrap();
+        assert_eq!(first.public_key, second.public_key);
+    }
+
+    #[tokio::test]
+    async fn test_l1_anchor_resolution_path() {
+        let l2_registry = Arc::new(L2HandleRegistry::new());
+        let l1_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let resolver = ValidatorResolver::new(l2_registry, l1_anchors.clone());
+
+        let handle = "@anchor.ipn";
+        let owner = [7u8; 32];
+        let anchor = HandleOwnershipAnchor::new(handle, owner, [9u8; 32], 10, 5, vec![1]);
+        l1_anchors.store_anchor(anchor.clone()).unwrap();
+
+        let id = ValidatorId::new(handle);
+        let resolved = resolver
+            .resolve_via_l1_anchor(&id)
+            .await
+            .expect("resolved via l1");
         assert_eq!(resolved.public_key_bytes(), &owner);
+        assert_eq!(
+            resolved.resolution_method,
+            ResolutionMethod::L1OwnershipAnchor
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_batch_mixed_results() {
+        let l2_registry = Arc::new(L2HandleRegistry::new());
+        let l1_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let resolver = ValidatorResolver::new(l2_registry.clone(), l1_anchors);
+
+        // Register one handle with metadata update to exercise metadata path.
+        let handle = "@batch.ipn";
+        let signing_key = signing_key(5);
+        let registration = signed_registration(handle, &signing_key);
+        let owner = registration.owner.clone();
+        l2_registry.register(registration).unwrap();
+
+        let mut update_metadata = HashMap::new();
+        update_metadata.insert("role".to_string(), "validator".to_string());
+        let mut update_message = Vec::new();
+        update_message.extend_from_slice(b"IPPAN_HANDLE_UPDATE");
+        update_message.extend_from_slice(handle.as_bytes());
+        update_message.extend_from_slice(owner.as_bytes());
+        let update_hash = Sha256::digest(&update_message);
+        let update_signature = signing_key.sign(&update_hash);
+        l2_registry
+            .update(HandleUpdate {
+                handle: Handle::new(handle),
+                owner: owner.clone(),
+                signature: update_signature.to_bytes().to_vec(),
+                updates: update_metadata,
+            })
+            .unwrap();
+
+        let ids = vec![
+            ValidatorId::new(handle),
+            ValidatorId::new("zz"),
+            ValidatorId::new("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd"),
+        ];
+
+        let results = resolver.resolve_batch(&ids).await;
+        assert_eq!(results.len(), 3);
+        let handle_result = results.get(&ValidatorId::new(handle)).unwrap();
+        let resolved = handle_result.as_ref().unwrap();
+        assert_eq!(resolved.public_key_bytes(), owner.as_bytes());
+        assert!(resolved
+            .metadata
+            .as_ref()
+            .unwrap()
+            .custom
+            .contains_key("role"));
+
+        let alias_result = results
+            .get(&ValidatorId::new("zz"))
+            .unwrap()
+            .as_ref()
+            .unwrap_err();
+        assert!(matches!(
+            alias_result,
+            ValidatorResolutionError::InvalidFormat { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_parse_public_key_validation() {
+        let l2_registry = Arc::new(L2HandleRegistry::new());
+        let l1_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let resolver = ValidatorResolver::new(l2_registry, l1_anchors);
+
+        assert!(resolver
+            .parse_public_key("abcd")
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid public key"));
+        assert!(resolver
+            .parse_public_key("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcg")
+            .is_err());
     }
 }

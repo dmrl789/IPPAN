@@ -892,9 +892,26 @@ fn account_to_response(account: Account, transactions: Vec<Transaction>) -> Acco
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_storage::MemoryStorage;
+    use crate::P2PConfig;
+    use anyhow::anyhow;
+    use axum::extract::{ConnectInfo, Path as AxumPath, Query};
+    use axum::Json;
+    use ippan_consensus::{PoAConfig, Validator};
+    use ippan_p2p::NetworkEvent;
+    use ippan_security::{SecurityConfig, SecurityManager};
+    use ippan_storage::{ChainState, MemoryStorage, ValidatorTelemetry};
+    use ippan_types::{
+        Amount, L2ExitStatus, L2NetworkStatus, RoundCertificate, RoundFinalizationRecord, RoundId,
+    };
+    use std::collections::{HashMap, HashSet};
+    use std::fs;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::path::PathBuf;
     use std::sync::atomic::AtomicUsize;
+    use std::sync::Arc;
     use std::time::Instant;
+    use tempfile::tempdir;
+    use tokio::time::{sleep, Duration};
 
     #[tokio::test]
     async fn test_health_endpoint() {
@@ -922,5 +939,1220 @@ mod tests {
         let response = handle_health(State(app_state)).await;
         let json = response.0;
         assert_eq!(json.get("status").unwrap(), "healthy");
+    }
+
+    fn build_app_state(
+        security: Option<Arc<SecurityManager>>,
+        unified_ui_dist: Option<PathBuf>,
+    ) -> Arc<AppState> {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        Arc::new(AppState {
+            storage,
+            start_time: Instant::now(),
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            p2p_network: None,
+            tx_sender: None,
+            node_id: "test-node".into(),
+            consensus: None,
+            l2_config: L2Config {
+                max_commit_size: 512,
+                min_epoch_gap_ms: 1_000,
+                challenge_window_ms: 2_000,
+                da_mode: "test".into(),
+                max_l2_count: 1,
+            },
+            mempool: Arc::new(Mempool::new(1_000)),
+            unified_ui_dist,
+            req_count: Arc::new(AtomicUsize::new(0)),
+            security,
+        })
+    }
+
+    fn make_app_state() -> Arc<AppState> {
+        build_app_state(None, None)
+    }
+
+    fn sample_transaction(from: [u8; 32], to: [u8; 32], nonce: u64) -> Transaction {
+        Transaction::new(from, to, Amount::from_micro_ipn(10 + nonce), nonce)
+    }
+
+    struct FailingStorage {
+        inner: MemoryStorage,
+        failures: HashSet<String>,
+    }
+
+    impl FailingStorage {
+        fn new(failures: &[&str]) -> Self {
+            Self {
+                inner: MemoryStorage::default(),
+                failures: failures.iter().map(|s| s.to_string()).collect(),
+            }
+        }
+
+        fn should_fail(&self, op: &str) -> bool {
+            self.failures.contains(op)
+        }
+
+        fn inner(&self) -> &MemoryStorage {
+            &self.inner
+        }
+    }
+
+    impl Storage for FailingStorage {
+        fn store_block(&self, block: Block) -> Result<()> {
+            if self.should_fail("store_block") {
+                Err(anyhow!("forced failure: store_block"))
+            } else {
+                self.inner.store_block(block)
+            }
+        }
+
+        fn get_block(&self, hash: &[u8; 32]) -> Result<Option<Block>> {
+            if self.should_fail("get_block") {
+                Err(anyhow!("forced failure: get_block"))
+            } else {
+                self.inner.get_block(hash)
+            }
+        }
+
+        fn get_block_by_height(&self, height: u64) -> Result<Option<Block>> {
+            if self.should_fail("get_block_by_height") {
+                Err(anyhow!("forced failure: get_block_by_height"))
+            } else {
+                self.inner.get_block_by_height(height)
+            }
+        }
+
+        fn store_transaction(&self, tx: Transaction) -> Result<()> {
+            if self.should_fail("store_transaction") {
+                Err(anyhow!("forced failure: store_transaction"))
+            } else {
+                self.inner.store_transaction(tx)
+            }
+        }
+
+        fn get_transaction(&self, hash: &[u8; 32]) -> Result<Option<Transaction>> {
+            if self.should_fail("get_transaction") {
+                Err(anyhow!("forced failure: get_transaction"))
+            } else {
+                self.inner.get_transaction(hash)
+            }
+        }
+
+        fn get_latest_height(&self) -> Result<u64> {
+            if self.should_fail("get_latest_height") {
+                Err(anyhow!("forced failure: get_latest_height"))
+            } else {
+                self.inner.get_latest_height()
+            }
+        }
+
+        fn get_account(&self, address: &[u8; 32]) -> Result<Option<Account>> {
+            if self.should_fail("get_account") {
+                Err(anyhow!("forced failure: get_account"))
+            } else {
+                self.inner.get_account(address)
+            }
+        }
+
+        fn update_account(&self, account: Account) -> Result<()> {
+            if self.should_fail("update_account") {
+                Err(anyhow!("forced failure: update_account"))
+            } else {
+                self.inner.update_account(account)
+            }
+        }
+
+        fn get_all_accounts(&self) -> Result<Vec<Account>> {
+            if self.should_fail("get_all_accounts") {
+                Err(anyhow!("forced failure: get_all_accounts"))
+            } else {
+                self.inner.get_all_accounts()
+            }
+        }
+
+        fn get_transactions_by_address(&self, address: &[u8; 32]) -> Result<Vec<Transaction>> {
+            if self.should_fail("get_transactions_by_address") {
+                Err(anyhow!("forced failure: get_transactions_by_address"))
+            } else {
+                self.inner.get_transactions_by_address(address)
+            }
+        }
+
+        fn get_transaction_count(&self) -> Result<u64> {
+            if self.should_fail("get_transaction_count") {
+                Err(anyhow!("forced failure: get_transaction_count"))
+            } else {
+                self.inner.get_transaction_count()
+            }
+        }
+
+        fn put_l2_network(&self, network: L2Network) -> Result<()> {
+            if self.should_fail("put_l2_network") {
+                Err(anyhow!("forced failure: put_l2_network"))
+            } else {
+                self.inner.put_l2_network(network)
+            }
+        }
+
+        fn get_l2_network(&self, id: &str) -> Result<Option<L2Network>> {
+            if self.should_fail("get_l2_network") {
+                Err(anyhow!("forced failure: get_l2_network"))
+            } else {
+                self.inner.get_l2_network(id)
+            }
+        }
+
+        fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
+            if self.should_fail("list_l2_networks") {
+                Err(anyhow!("forced failure: list_l2_networks"))
+            } else {
+                self.inner.list_l2_networks()
+            }
+        }
+
+        fn store_l2_commit(&self, commit: L2Commit) -> Result<()> {
+            if self.should_fail("store_l2_commit") {
+                Err(anyhow!("forced failure: store_l2_commit"))
+            } else {
+                self.inner.store_l2_commit(commit)
+            }
+        }
+
+        fn list_l2_commits(&self, l2_id: Option<&str>) -> Result<Vec<L2Commit>> {
+            if self.should_fail("list_l2_commits") {
+                Err(anyhow!("forced failure: list_l2_commits"))
+            } else {
+                self.inner.list_l2_commits(l2_id)
+            }
+        }
+
+        fn store_l2_exit(&self, exit: L2ExitRecord) -> Result<()> {
+            if self.should_fail("store_l2_exit") {
+                Err(anyhow!("forced failure: store_l2_exit"))
+            } else {
+                self.inner.store_l2_exit(exit)
+            }
+        }
+
+        fn list_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2ExitRecord>> {
+            if self.should_fail("list_l2_exits") {
+                Err(anyhow!("forced failure: list_l2_exits"))
+            } else {
+                self.inner.list_l2_exits(l2_id)
+            }
+        }
+
+        fn store_round_certificate(&self, certificate: RoundCertificate) -> Result<()> {
+            if self.should_fail("store_round_certificate") {
+                Err(anyhow!("forced failure: store_round_certificate"))
+            } else {
+                self.inner.store_round_certificate(certificate)
+            }
+        }
+
+        fn get_round_certificate(&self, round: RoundId) -> Result<Option<RoundCertificate>> {
+            if self.should_fail("get_round_certificate") {
+                Err(anyhow!("forced failure: get_round_certificate"))
+            } else {
+                self.inner.get_round_certificate(round)
+            }
+        }
+
+        fn store_round_finalization(&self, record: RoundFinalizationRecord) -> Result<()> {
+            if self.should_fail("store_round_finalization") {
+                Err(anyhow!("forced failure: store_round_finalization"))
+            } else {
+                self.inner.store_round_finalization(record)
+            }
+        }
+
+        fn get_round_finalization(
+            &self,
+            round: RoundId,
+        ) -> Result<Option<RoundFinalizationRecord>> {
+            if self.should_fail("get_round_finalization") {
+                Err(anyhow!("forced failure: get_round_finalization"))
+            } else {
+                self.inner.get_round_finalization(round)
+            }
+        }
+
+        fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>> {
+            if self.should_fail("get_latest_round_finalization") {
+                Err(anyhow!("forced failure: get_latest_round_finalization"))
+            } else {
+                self.inner.get_latest_round_finalization()
+            }
+        }
+
+        fn get_chain_state(&self) -> Result<ChainState> {
+            if self.should_fail("get_chain_state") {
+                Err(anyhow!("forced failure: get_chain_state"))
+            } else {
+                self.inner.get_chain_state()
+            }
+        }
+
+        fn update_chain_state(&self, state: &ChainState) -> Result<()> {
+            if self.should_fail("update_chain_state") {
+                Err(anyhow!("forced failure: update_chain_state"))
+            } else {
+                self.inner.update_chain_state(state)
+            }
+        }
+
+        fn store_validator_telemetry(
+            &self,
+            validator_id: &[u8; 32],
+            telemetry: &ValidatorTelemetry,
+        ) -> Result<()> {
+            if self.should_fail("store_validator_telemetry") {
+                Err(anyhow!("forced failure: store_validator_telemetry"))
+            } else {
+                self.inner
+                    .store_validator_telemetry(validator_id, telemetry)
+            }
+        }
+
+        fn get_validator_telemetry(
+            &self,
+            validator_id: &[u8; 32],
+        ) -> Result<Option<ValidatorTelemetry>> {
+            if self.should_fail("get_validator_telemetry") {
+                Err(anyhow!("forced failure: get_validator_telemetry"))
+            } else {
+                self.inner.get_validator_telemetry(validator_id)
+            }
+        }
+
+        fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
+            if self.should_fail("get_all_validator_telemetry") {
+                Err(anyhow!("forced failure: get_all_validator_telemetry"))
+            } else {
+                self.inner.get_all_validator_telemetry()
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_hex_32_success_and_failure() {
+        let bytes = parse_hex_32(&"AA".repeat(32)).expect("parse 32 bytes");
+        assert_eq!(bytes[0], 0xAA);
+        assert!(parse_hex_32("short").is_err());
+        assert!(parse_hex_32(&"0G".repeat(32)).is_err());
+    }
+
+    #[test]
+    fn test_parse_block_identifier_variants() {
+        if let Some(BlockIdentifier::Height(h)) = parse_block_identifier("42") {
+            assert_eq!(h, 42);
+        } else {
+            panic!("unexpected identifier variant");
+        }
+
+        let hash_input = "ab".repeat(32);
+        if let Some(BlockIdentifier::Hash(bytes)) = parse_block_identifier(&hash_input) {
+            assert_eq!(bytes.len(), 32);
+            assert_eq!(bytes[0], 0xAB);
+        } else {
+            panic!("expected hash identifier");
+        }
+
+        assert!(parse_block_identifier("invalid-hash").is_none());
+    }
+
+    #[test]
+    fn test_account_to_response_serializes() {
+        let account = Account {
+            address: [1u8; 32],
+            balance: 1_000,
+            nonce: 2,
+        };
+        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+        let response = account_to_response(account, vec![tx.clone()]);
+        assert_eq!(response.address, hex::encode([1u8; 32]));
+        assert_eq!(response.transactions.len(), 1);
+        assert_eq!(response.transactions[0].hash.len(), 64);
+        assert_eq!(response.transactions[0].transaction.hash(), tx.hash());
+    }
+
+    #[test]
+    fn test_map_security_error_variants() {
+        let (status, msg) = map_security_error(&SecurityError::IpBlocked);
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(msg.contains("blocked"));
+
+        let (status, msg) = map_security_error(&SecurityError::RateLimitExceeded);
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert!(msg.contains("Rate limit"));
+
+        let validation_error = SecurityError::ValidationFailed(
+            ippan_security::ValidationError::MissingField("field".into()),
+        );
+        let (status, msg) = map_security_error(&validation_error);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(msg.contains("Invalid"));
+
+        let audit_error = SecurityError::AuditFailed(anyhow::anyhow!("boom"));
+        let (status, _) = map_security_error(&audit_error);
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn test_guard_request_without_security() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        guard_request(&state, &addr, "/health")
+            .await
+            .expect("request allowed");
+    }
+
+    #[test]
+    fn test_message_announced_address_prefers_routable() {
+        let message = NetworkMessage::PeerInfo {
+            peer_id: "peer".into(),
+            addresses: vec![
+                "".into(),
+                "http://0.0.0.0:9000".into(),
+                "http://192.168.1.5:9000".into(),
+            ],
+            time_us: None,
+        };
+        let addr = message_announced_address(&message).expect("address");
+        assert_eq!(addr, "http://192.168.1.5:9000");
+    }
+
+    #[test]
+    fn test_resolve_peer_address_fallback() {
+        let state = make_app_state();
+        let socket: SocketAddr = "10.0.0.5:7000".parse().unwrap();
+        let message = NetworkMessage::PeerDiscovery { peers: vec![] };
+        let resolved = resolve_peer_address(&state, &socket, &message);
+        assert_eq!(resolved, "http://10.0.0.5:7000");
+    }
+
+    #[tokio::test]
+    async fn test_ingest_block_from_peer_updates_state() {
+        let state = make_app_state();
+        let tx = sample_transaction([1u8; 32], [2u8; 32], 1);
+        let tx_hash_hex = hex::encode(tx.hash());
+        state
+            .mempool
+            .add_transaction(tx.clone())
+            .expect("add tx to mempool");
+        let block = Block::new(vec![], vec![tx.clone()], 1, [9u8; 32]);
+        let block_hash = block.hash();
+
+        ingest_block_from_peer(&state, &block).expect("ingest block");
+
+        let stored = state
+            .storage
+            .get_block(&block_hash)
+            .expect("query block")
+            .expect("block stored");
+        assert_eq!(stored.header.round, 1);
+        assert!(state.mempool.get_transaction(&tx_hash_hex).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ingest_transaction_from_peer_persists() {
+        let state = make_app_state();
+        let tx = sample_transaction([5u8; 32], [6u8; 32], 2);
+        let tx_hash = tx.hash();
+
+        ingest_transaction_from_peer(&state, &tx).expect("ingest tx");
+
+        let stored = state
+            .storage
+            .get_transaction(&tx_hash)
+            .expect("query tx")
+            .expect("tx stored");
+        assert_eq!(stored.hash(), tx_hash);
+        assert!(state
+            .mempool
+            .get_transaction(&hex::encode(tx_hash))
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_transaction_paths() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let tx = sample_transaction([8u8; 32], [9u8; 32], 4);
+        let tx_hash = tx.hash();
+        state
+            .storage
+            .store_transaction(tx.clone())
+            .expect("store tx");
+
+        let ok = handle_get_transaction(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(tx_hash)),
+        )
+        .await
+        .expect("success");
+        assert_eq!(ok.0.hash, hex::encode(tx.hash()));
+
+        let missing = handle_get_transaction(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode([7u8; 32])),
+        )
+        .await
+        .expect_err("not found");
+        assert_eq!(missing.0, StatusCode::NOT_FOUND);
+
+        let bad = handle_get_transaction(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("xyz".to_string()),
+        )
+        .await
+        .expect_err("bad request");
+        assert_eq!(bad.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_transaction_with_security() {
+        let dir = tempdir().expect("tempdir");
+        let mut config = SecurityConfig::default();
+        config.audit_log_path = dir.path().join("audit.log").to_string_lossy().to_string();
+        let manager = SecurityManager::new(config).expect("manager");
+        let state = build_app_state(Some(Arc::new(manager)), None);
+        let addr: SocketAddr = "10.0.0.10:8080".parse().unwrap();
+        let tx = sample_transaction([11u8; 32], [12u8; 32], 5);
+        let tx_hash = tx.hash();
+        state.storage.store_transaction(tx).expect("store tx");
+
+        let _ = handle_get_transaction(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(tx_hash)),
+        )
+        .await
+        .expect("security success");
+
+        let mut deny_config = SecurityConfig::default();
+        deny_config.enable_ip_whitelist = true;
+        deny_config.whitelisted_ips = vec![];
+        deny_config.audit_log_path = dir.path().join("blocked.log").to_string_lossy().to_string();
+        let deny_state = build_app_state(
+            Some(Arc::new(SecurityManager::new(deny_config).unwrap())),
+            None,
+        );
+        let err = handle_get_transaction(
+            State(deny_state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(tx_hash)),
+        )
+        .await
+        .expect_err("denied");
+        assert_eq!(err.0, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_block_variants() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let block = Block::new(vec![], vec![], 5, [3u8; 32]);
+        let block_hash = block.hash();
+        state
+            .storage
+            .store_block(block.clone())
+            .expect("store block");
+
+        let by_hash = handle_get_block(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(block_hash)),
+        )
+        .await
+        .expect("block by hash");
+        assert_eq!(by_hash.0.header.round, 5);
+
+        let by_height = handle_get_block(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("5".to_string()),
+        )
+        .await
+        .expect("block by height");
+        assert_eq!(by_height.0.header.round, 5);
+
+        let bad = handle_get_block(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("not-a-block".to_string()),
+        )
+        .await
+        .expect_err("bad identifier");
+        assert_eq!(bad.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_account_branches() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let account = Account {
+            address: [4u8; 32],
+            balance: 500,
+            nonce: 7,
+        };
+        state
+            .storage
+            .update_account(account.clone())
+            .expect("account");
+        let tx = sample_transaction([4u8; 32], [5u8; 32], 1);
+        state.storage.store_transaction(tx.clone()).expect("tx1");
+        state
+            .storage
+            .store_transaction(sample_transaction([6u8; 32], [4u8; 32], 2))
+            .expect("tx2");
+
+        let ok = handle_get_account(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account.address)),
+        )
+        .await
+        .expect("account ok");
+        assert_eq!(ok.0.balance, 500);
+        assert_eq!(ok.0.transactions.len(), 2);
+
+        let missing = handle_get_account(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode([9u8; 32])),
+        )
+        .await
+        .expect_err("missing");
+        assert_eq!(missing.0, StatusCode::NOT_FOUND);
+
+        let bad = handle_get_account(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("badhex".to_string()),
+        )
+        .await
+        .expect_err("bad request");
+        assert_eq!(bad.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_l2_endpoints() {
+        let state = make_app_state();
+        let network = L2Network {
+            id: "demo-l2".to_string(),
+            proof_type: "zk".to_string(),
+            da_mode: "inline".to_string(),
+            status: L2NetworkStatus::Active,
+            last_epoch: 1,
+            total_commits: 1,
+            total_exits: 0,
+            last_commit_time: Some(10),
+            registered_at: 1,
+            challenge_window_ms: Some(60_000),
+        };
+        state.storage.put_l2_network(network).expect("network");
+        state
+            .storage
+            .store_l2_commit(L2Commit {
+                id: "commit-demo".into(),
+                l2_id: "demo-l2".into(),
+                epoch: 1,
+                state_root: "root".into(),
+                da_hash: "hash".into(),
+                proof_type: "zk".into(),
+                proof: None,
+                inline_data: None,
+                submitted_at: 2,
+                hashtimer: "ht".into(),
+            })
+            .expect("commit");
+        state
+            .storage
+            .store_l2_exit(L2ExitRecord {
+                id: "exit-demo".into(),
+                l2_id: "demo-l2".into(),
+                epoch: 1,
+                account: "acct".into(),
+                amount: 1.0,
+                nonce: Some(1),
+                proof_of_inclusion: "proof".into(),
+                status: L2ExitStatus::Pending,
+                submitted_at: 3,
+                finalized_at: None,
+                rejection_reason: None,
+                challenge_window_ends_at: None,
+            })
+            .expect("exit");
+
+        let networks = handle_list_l2_networks(State(state.clone()))
+            .await
+            .expect("networks");
+        assert_eq!(networks.0.len(), 1);
+
+        let commits = handle_list_l2_commits(
+            State(state.clone()),
+            Query(L2Filter {
+                l2_id: Some("demo-l2".into()),
+            }),
+        )
+        .await
+        .expect("commits");
+        assert_eq!(commits.0.len(), 1);
+
+        let exits = handle_list_l2_exits(
+            State(state.clone()),
+            Query(L2Filter {
+                l2_id: Some("demo-l2".into()),
+            }),
+        )
+        .await
+        .expect("exits");
+        assert_eq!(exits.0.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_l2_config_and_submit_tx_failure() {
+        let state = make_app_state();
+        let config = handle_get_l2_config(State(state.clone())).await;
+        assert_eq!(config.0.max_l2_count, 1);
+
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let tx = sample_transaction([2u8; 32], [3u8; 32], 9);
+        let response = handle_submit_tx(State(state.clone()), ConnectInfo(addr), Json(tx)).await;
+        assert_eq!(response.0, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn test_handle_submit_tx_with_consensus_success_and_failure() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = PoAConfig::default();
+        config.validators.push(Validator {
+            id: [3u8; 32],
+            address: [4u8; 32],
+            stake: 1_000,
+            is_active: true,
+        });
+
+        let poa = PoAConsensus::new(config, storage.clone(), [9u8; 32]);
+        let mempool = poa.mempool();
+        let consensus = Arc::new(Mutex::new(poa));
+
+        let (tx_sender_ok, mut rx_ok) = mpsc::unbounded_channel();
+        let handle_ok =
+            ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
+
+        let mut ok_state = (*build_app_state(None, None)).clone();
+        ok_state.storage = storage.clone();
+        ok_state.consensus = Some(handle_ok.clone());
+        ok_state.tx_sender = Some(tx_sender_ok);
+        ok_state.mempool = mempool.clone();
+        let ok_state = Arc::new(ok_state);
+
+        let addr: SocketAddr = "127.0.0.1:9101".parse().unwrap();
+        let tx = sample_transaction([5u8; 32], [6u8; 32], 11);
+        let accepted =
+            handle_submit_tx(State(ok_state.clone()), ConnectInfo(addr), Json(tx.clone())).await;
+        assert_eq!(accepted.0, StatusCode::OK);
+        let received = rx_ok.recv().await.expect("consensus dispatch");
+        assert_eq!(received.hash(), tx.hash());
+
+        let (tx_sender_fail, rx_fail) = mpsc::unbounded_channel::<Transaction>();
+        drop(rx_fail);
+        let handle_fail =
+            ConsensusHandle::new(consensus.clone(), tx_sender_fail.clone(), mempool.clone());
+
+        let mut fail_state = (*build_app_state(None, None)).clone();
+        fail_state.storage = storage.clone();
+        fail_state.consensus = Some(handle_fail);
+        fail_state.tx_sender = Some(tx_sender_fail);
+        fail_state.mempool = mempool.clone();
+        let fail_state = Arc::new(fail_state);
+
+        let rejected = handle_submit_tx(
+            State(fail_state),
+            ConnectInfo(addr),
+            Json(sample_transaction([7u8; 32], [8u8; 32], 12)),
+        )
+        .await;
+        assert_eq!(rejected.0, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn test_handle_p2p_blocks_and_transactions() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9100".parse().unwrap();
+        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+        let block = Block::new(vec![], vec![tx.clone()], 2, [7u8; 32]);
+        let block_message = NetworkMessage::Block(block.clone());
+
+        let block_result =
+            handle_p2p_blocks(State(state.clone()), ConnectInfo(addr), Json(block_message)).await;
+        assert_eq!(block_result.0, StatusCode::OK);
+
+        let tx_message = NetworkMessage::Transaction(tx.clone());
+        let tx_result =
+            handle_p2p_transactions(State(state.clone()), ConnectInfo(addr), Json(tx_message))
+                .await;
+        assert_eq!(tx_result.0, StatusCode::OK);
+
+        let unexpected = handle_p2p_blocks(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::PeerInfo {
+                peer_id: "peer".into(),
+                addresses: vec![],
+                time_us: None,
+            }),
+        )
+        .await;
+        assert_eq!(unexpected.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_p2p_peer_info_and_discovery() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:7000".parse().unwrap();
+
+        let info = handle_p2p_peer_info(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::PeerInfo {
+                peer_id: "peer-1".into(),
+                addresses: vec!["http://example.com".into()],
+                time_us: Some(1),
+            }),
+        )
+        .await;
+        assert_eq!(info.0, StatusCode::OK);
+
+        let discovery = handle_p2p_peer_discovery(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::PeerDiscovery {
+                peers: vec!["http://peer".into()],
+            }),
+        )
+        .await;
+        assert_eq!(discovery.0, StatusCode::OK);
+
+        let unexpected = handle_p2p_peer_info(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::Transaction(sample_transaction(
+                [0u8; 32], [1u8; 32], 1,
+            ))),
+        )
+        .await;
+        assert_eq!(unexpected.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_forward_to_network_delivers_message() {
+        let mut config = P2PConfig::default();
+        config.message_timeout = Duration::from_millis(5);
+        let network =
+            Arc::new(HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network"));
+        let mut events = network.take_incoming_events().expect("event receiver");
+
+        let mut state = (*build_app_state(None, None)).clone();
+        state.p2p_network = Some(network.clone());
+        let state = Arc::new(state);
+
+        let peers = vec!["http://198.51.100.1:9000".into()];
+        forward_to_network(
+            &state,
+            "http://198.51.100.2:9001",
+            NetworkMessage::PeerDiscovery {
+                peers: peers.clone(),
+            },
+        )
+        .await;
+
+        match events.recv().await.expect("network event") {
+            NetworkEvent::PeerDiscovery {
+                peers: observed, ..
+            } => assert_eq!(observed, peers),
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_p2p_block_request() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:7050".parse().unwrap();
+        let block = Block::new(vec![], vec![], 9, [4u8; 32]);
+        let block_hash = block.hash();
+        state
+            .storage
+            .store_block(block.clone())
+            .expect("store block");
+
+        let ok = handle_p2p_block_request(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::BlockRequest { hash: block_hash }),
+        )
+        .await
+        .expect("block response");
+        assert!(matches!(ok.0, NetworkMessage::BlockResponse(_)));
+
+        let missing = handle_p2p_block_request(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::BlockRequest { hash: [1u8; 32] }),
+        )
+        .await
+        .expect_err("missing");
+        assert_eq!(missing, StatusCode::NOT_FOUND);
+
+        let bad = handle_p2p_block_request(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::PeerDiscovery { peers: vec![] }),
+        )
+        .await
+        .expect_err("bad request");
+        assert_eq!(bad, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_peers_endpoints() {
+        let state = make_app_state();
+        let peers = handle_get_peers(State(state.clone())).await;
+        assert!(peers.0.is_empty());
+
+        let p2p_peers = handle_get_p2p_peers(State(state)).await;
+        assert!(p2p_peers.0.is_empty());
+
+        let mut config = P2PConfig::default();
+        config.message_timeout = Duration::from_millis(5);
+        let network =
+            Arc::new(HttpP2PNetwork::new(config, "http://127.0.0.1:9800".into()).expect("network"));
+        network
+            .add_peer("http://203.0.113.1:9001".into())
+            .await
+            .expect("add peer");
+
+        let mut with_net = (*build_app_state(None, None)).clone();
+        with_net.p2p_network = Some(network);
+        let with_net = Arc::new(with_net);
+        let peers = handle_get_peers(State(with_net.clone())).await;
+        assert_eq!(peers.0.len(), 1);
+
+        let p2p_peers = handle_get_p2p_peers(State(with_net)).await;
+        assert_eq!(p2p_peers.0.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_transaction_storage_error() {
+        let storage: Arc<dyn Storage + Send + Sync> =
+            Arc::new(FailingStorage::new(&["get_transaction"]));
+        let mut state = (*build_app_state(None, None)).clone();
+        state.storage = storage;
+        let state = Arc::new(state);
+
+        let addr: SocketAddr = "127.0.0.1:8100".parse().unwrap();
+        let hex = "11".repeat(32);
+        let err = handle_get_transaction(State(state), ConnectInfo(addr), AxumPath(hex))
+            .await
+            .expect_err("storage error");
+        assert_eq!(err.0, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_block_storage_errors() {
+        let storage: Arc<dyn Storage + Send + Sync> =
+            Arc::new(FailingStorage::new(&["get_block", "get_block_by_height"]));
+        let mut state = (*build_app_state(None, None)).clone();
+        state.storage = storage;
+        let state = Arc::new(state);
+
+        let addr: SocketAddr = "127.0.0.1:8101".parse().unwrap();
+        let hash_err = handle_get_block(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("22".repeat(32)),
+        )
+        .await
+        .expect_err("hash failure");
+        assert_eq!(hash_err.0, StatusCode::INTERNAL_SERVER_ERROR);
+
+        let height_err = handle_get_block(State(state), ConnectInfo(addr), AxumPath("42".into()))
+            .await
+            .expect_err("height failure");
+        assert_eq!(height_err.0, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_account_error_paths() {
+        let failing = FailingStorage::new(&["get_transactions_by_address"]);
+        let account = Account {
+            address: [3u8; 32],
+            balance: 5_000,
+            nonce: 1,
+        };
+        failing
+            .inner()
+            .update_account(account.clone())
+            .expect("account");
+        let storage_with_tx_error: Arc<dyn Storage + Send + Sync> = Arc::new(failing);
+
+        let mut state = (*build_app_state(None, None)).clone();
+        state.storage = storage_with_tx_error.clone();
+        let state = Arc::new(state);
+        let addr: SocketAddr = "127.0.0.1:8102".parse().unwrap();
+        let address_hex = hex::encode(account.address);
+        let tx_err = handle_get_account(
+            State(state),
+            ConnectInfo(addr),
+            AxumPath(address_hex.clone()),
+        )
+        .await
+        .expect_err("tx lookup failure");
+        assert_eq!(tx_err.0, StatusCode::INTERNAL_SERVER_ERROR);
+
+        let storage_fail_account: Arc<dyn Storage + Send + Sync> =
+            Arc::new(FailingStorage::new(&["get_account"]));
+        let mut state = (*build_app_state(None, None)).clone();
+        state.storage = storage_fail_account;
+        let state = Arc::new(state);
+        let load_err = handle_get_account(State(state), ConnectInfo(addr), AxumPath(address_hex))
+            .await
+            .expect_err("account load failure");
+        assert_eq!(load_err.0, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_l2_endpoints_failures() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(FailingStorage::new(&[
+            "list_l2_networks",
+            "list_l2_commits",
+            "list_l2_exits",
+        ]));
+        let mut state = (*build_app_state(None, None)).clone();
+        state.storage = storage;
+        let state = Arc::new(state);
+
+        let networks = handle_list_l2_networks(State(state.clone())).await;
+        assert!(matches!(
+            networks,
+            Err((StatusCode::INTERNAL_SERVER_ERROR, _))
+        ));
+
+        let commits =
+            handle_list_l2_commits(State(state.clone()), Query(L2Filter::default())).await;
+        assert!(matches!(
+            commits,
+            Err((StatusCode::INTERNAL_SERVER_ERROR, _))
+        ));
+
+        let exits = handle_list_l2_exits(State(state), Query(L2Filter::default())).await;
+        assert!(matches!(exits, Err((StatusCode::INTERNAL_SERVER_ERROR, _))));
+    }
+
+    #[tokio::test]
+    async fn test_p2p_handlers_security_denied() {
+        let dir = tempdir().expect("tempdir");
+        let mut config = SecurityConfig::default();
+        config.enable_ip_whitelist = true;
+        config.whitelisted_ips = vec![];
+        config.audit_log_path = dir.path().join("audit.log").to_string_lossy().to_string();
+        let manager = SecurityManager::new(config).expect("manager");
+        let state = build_app_state(Some(Arc::new(manager)), None);
+
+        let addr: SocketAddr = "127.0.0.1:8300".parse().unwrap();
+        let block = Block::new(vec![], vec![], 1, [9u8; 32]);
+        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+
+        let blocked = handle_p2p_blocks(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::Block(block.clone())),
+        )
+        .await;
+        assert_eq!(blocked.0, StatusCode::FORBIDDEN);
+
+        let blocked_resp = handle_p2p_block_response(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::BlockResponse(block.clone())),
+        )
+        .await;
+        assert_eq!(blocked_resp.0, StatusCode::FORBIDDEN);
+
+        let blocked_tx = handle_p2p_transactions(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::Transaction(tx.clone())),
+        )
+        .await;
+        assert_eq!(blocked_tx.0, StatusCode::FORBIDDEN);
+
+        let blocked_info = handle_p2p_peer_info(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::PeerInfo {
+                peer_id: "peer".into(),
+                addresses: vec!["http://peer".into()],
+                time_us: Some(1),
+            }),
+        )
+        .await;
+        assert_eq!(blocked_info.0, StatusCode::FORBIDDEN);
+
+        let blocked_discovery = handle_p2p_peer_discovery(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Json(NetworkMessage::PeerDiscovery {
+                peers: vec!["http://peer".into()],
+            }),
+        )
+        .await;
+        assert_eq!(blocked_discovery.0, StatusCode::FORBIDDEN);
+
+        let blocked_request = handle_p2p_block_request(
+            State(state),
+            ConnectInfo(addr),
+            Json(NetworkMessage::BlockRequest { hash: [0u8; 32] }),
+        )
+        .await
+        .expect_err("blocked request");
+        assert_eq!(blocked_request, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_misc_endpoints() {
+        let time = handle_time().await;
+        assert!(time.0.get("timestamp").is_some());
+        let version = handle_version().await;
+        assert_eq!(
+            version.0.get("version"),
+            Some(&serde_json::json!(env!("CARGO_PKG_VERSION")))
+        );
+        let metrics = handle_metrics().await;
+        assert_eq!(metrics.0, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_guard_request_with_security_failure() {
+        let dir = tempdir().expect("tempdir");
+        let mut config = SecurityConfig::default();
+        config.enable_ip_whitelist = true;
+        config.whitelisted_ips = vec![];
+        config.audit_log_path = dir.path().join("audit.log").to_string_lossy().to_string();
+        let manager = SecurityManager::new(config).expect("manager");
+        let state = build_app_state(Some(Arc::new(manager)), None);
+
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let result = guard_request(&state, &addr, "/health").await;
+        assert!(matches!(result, Err(SecurityError::IpNotWhitelisted)));
+    }
+
+    #[tokio::test]
+    async fn test_build_router_static_dir_branches() {
+        let dir = tempdir().expect("tempdir");
+        let existing = dir.path().join("dist");
+        fs::create_dir_all(&existing).expect("create dist dir");
+
+        let state_with_ui = build_app_state(None, Some(existing.clone()));
+        let _router = build_router(state_with_ui);
+
+        let missing = dir.path().join("missing");
+        let state_missing = build_app_state(None, Some(missing));
+        let _router_missing = build_router(state_missing);
+    }
+
+    #[tokio::test]
+    async fn test_start_server_launch_and_abort() {
+        let base = build_app_state(None, None);
+        let addr = "127.0.0.1:0";
+        let server = tokio::spawn(start_server((*base).clone(), addr));
+
+        sleep(Duration::from_millis(25)).await;
+        server.abort();
+        let result = server.await.expect_err("server aborted");
+        assert!(result.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn test_bind_listener_ephemeral() {
+        let listener = bind_listener("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        assert_eq!(addr.ip(), IpAddr::from(Ipv4Addr::LOCALHOST));
+    }
+
+    #[tokio::test]
+    async fn test_consensus_handle_snapshot_and_submit() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = PoAConfig::default();
+        config.validators.push(Validator {
+            id: [42u8; 32],
+            address: [42u8; 32],
+            stake: 1_000,
+            is_active: true,
+        });
+
+        let poa = PoAConsensus::new(config, storage, [42u8; 32]);
+        let mempool = poa.mempool();
+        let consensus = Arc::new(Mutex::new(poa));
+        let (tx_sender, mut rx) = mpsc::unbounded_channel();
+        let handle = ConsensusHandle::new(consensus.clone(), tx_sender, mempool);
+
+        let snapshot = handle.snapshot().await.expect("snapshot");
+        assert_eq!(snapshot.validators.len(), 1);
+
+        let tx = sample_transaction([1u8; 32], [2u8; 32], 1);
+        handle.submit_transaction(tx.clone()).expect("submit");
+        let received = rx.recv().await.expect("recv");
+        assert_eq!(received.hash(), tx.hash());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_peer_address_with_metadata() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = P2PConfig::default();
+        config.message_timeout = std::time::Duration::from_millis(5);
+        let network =
+            Arc::new(HttpP2PNetwork::new(config, "http://127.0.0.1:9550".into()).expect("network"));
+
+        network
+            .add_peer("http://203.0.113.10:9001".into())
+            .await
+            .expect("add peer");
+
+        let state = Arc::new(AppState {
+            storage,
+            start_time: Instant::now(),
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            p2p_network: Some(network),
+            tx_sender: None,
+            node_id: "test-node".into(),
+            consensus: None,
+            l2_config: L2Config {
+                max_commit_size: 512,
+                min_epoch_gap_ms: 1_000,
+                challenge_window_ms: 2_000,
+                da_mode: "test".into(),
+                max_l2_count: 1,
+            },
+            mempool: Arc::new(Mempool::new(10)),
+            unified_ui_dist: None,
+            req_count: Arc::new(AtomicUsize::new(0)),
+            security: None,
+        });
+
+        let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();
+        let resolved = resolve_peer_address(
+            &state,
+            &socket,
+            &NetworkMessage::PeerDiscovery { peers: vec![] },
+        );
+
+        assert!(resolved.contains("203.0.113.10"));
     }
 }
