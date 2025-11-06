@@ -36,6 +36,7 @@ pub mod models;
 pub mod monitoring;
 pub mod production_config;
 pub mod security;
+pub mod serialization;
 pub mod tests;
 pub mod types;
 pub mod validation;

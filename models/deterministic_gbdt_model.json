@@ -1,54 +1,55 @@
 {
+  "learning_rate": 0.1,
   "trees": [
     {
       "nodes": [
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": 1,
           "right": 2,
+          "threshold": 0.0,
           "value": null
         },
         {
           "feature": 1,
-          "threshold": 1.0,
           "left": 3,
           "right": 4,
+          "threshold": 1.0,
           "value": null
         },
         {
           "feature": 2,
-          "threshold": 50.0,
           "left": 5,
           "right": 6,
+          "threshold": 50.0,
           "value": null
         },
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": null,
           "right": null,
+          "threshold": 0.0,
           "value": 0.1
         },
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": null,
           "right": null,
+          "threshold": 0.0,
           "value": 0.2
         },
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": null,
           "right": null,
+          "threshold": 0.0,
           "value": 0.15
         },
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": null,
           "right": null,
+          "threshold": 0.0,
           "value": 0.25
         }
       ]
@@ -57,23 +58,23 @@
       "nodes": [
         {
           "feature": 3,
-          "threshold": 0.5,
           "left": 1,
           "right": 2,
+          "threshold": 0.5,
           "value": null
         },
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": null,
           "right": null,
+          "threshold": 0.0,
           "value": 0.05
         },
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": null,
           "right": null,
+          "threshold": 0.0,
           "value": 0.1
         }
       ]
@@ -82,27 +83,26 @@
       "nodes": [
         {
           "feature": 0,
-          "threshold": -100.0,
           "left": 1,
           "right": 2,
+          "threshold": -100.0,
           "value": null
         },
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": null,
           "right": null,
+          "threshold": 0.0,
           "value": 0.3
         },
         {
           "feature": 0,
-          "threshold": 0.0,
           "left": null,
           "right": null,
+          "threshold": 0.0,
           "value": 0.05
         }
       ]
     }
-  ],
-  "learning_rate": 0.1
+  ]
 }

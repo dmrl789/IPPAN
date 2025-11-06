@@ -11,8 +11,10 @@ use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
     DeterministicGBDTError, GBDTTree, ValidatorFeatures,
 };
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Test model loading from JSON file
@@ -432,4 +434,92 @@ fn test_floating_point_precision_consistency() {
 
     // Should be identical due to fixed-point arithmetic
     assert_eq!(prediction1, prediction2);
+}
+
+/// Ensure repository model hash matches the golden reference on x86_64.
+#[test]
+fn test_deterministic_golden_model_hash_matches_reference_on_x86_64() {
+    if std::env::consts::ARCH != "x86_64" {
+        println!(
+            "Skipping golden hash comparison on architecture {}",
+            std::env::consts::ARCH
+        );
+        return;
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let model_path = manifest_dir.join("../../models/deterministic_gbdt_model.json");
+    let golden_path = manifest_dir.join("../../models/deterministic_gbdt_model.x86_64.sha256");
+
+    let model = DeterministicGBDT::from_json_file(&model_path)
+        .expect("failed to load deterministic model JSON");
+    let canonical_json = model
+        .to_canonical_json()
+        .expect("failed to serialize deterministic model");
+
+    let computed_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(canonical_json.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+
+    // Ensure save_json produces the same canonical bytes.
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+    let temp_path = temp_dir.path().join("model.json");
+    model
+        .save_json(&temp_path)
+        .expect("failed to persist deterministic model");
+    let saved_bytes = fs::read(&temp_path).expect("failed to read persisted model");
+    let saved_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(&saved_bytes);
+        format!("{:x}", hasher.finalize())
+    };
+
+    assert_eq!(
+        saved_hash, computed_hash,
+        "Deterministic save produced different bytes than canonical serialization"
+    );
+
+    let original_bytes = fs::read(&model_path).expect("failed to read repository model");
+    let original_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(&original_bytes);
+        format!("{:x}", hasher.finalize())
+    };
+
+    let golden_hash = fs::read_to_string(&golden_path)
+        .expect("missing golden hash file")
+        .trim()
+        .to_string();
+
+    println!(
+        "Computed deterministic model hash (sha256): {}",
+        computed_hash
+    );
+    println!("Golden deterministic model hash  (sha256): {}", golden_hash);
+    println!(
+        "Repository model hash            (sha256): {}",
+        original_hash
+    );
+
+    if original_hash != computed_hash {
+        println!("Canonical JSON produced by serializer:\n{}", canonical_json);
+        panic!(
+            "Repository model JSON is not canonical. Re-run serialization tooling before updating the golden hash."
+        );
+    }
+
+    if computed_hash != golden_hash {
+        if std::env::var("IPPAN_UPDATE_GOLDEN_HASH").as_deref() == Ok("1") {
+            fs::write(&golden_path, format!("{}\n", computed_hash))
+                .expect("failed to update golden hash file");
+            println!("Updated golden hash at {}", golden_path.display());
+        } else {
+            panic!(
+                "Deterministic model hash mismatch. Expected {} but computed {}. If this is intentional, re-run the test with IPPAN_UPDATE_GOLDEN_HASH=1 to refresh the golden reference.",
+                golden_hash, computed_hash
+            );
+        }
+    }
 }

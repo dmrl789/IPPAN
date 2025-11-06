@@ -11,7 +11,7 @@
 //! - Security hardening against adversarial inputs
 //! - Comprehensive logging and observability
 
-use crate::model::ModelPackage;
+use crate::{model::ModelPackage, serialization::canonical_json_string};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -208,7 +208,7 @@ impl Default for ModelMetadata {
 
 impl GBDTModel {
     pub fn save_json<P: AsRef<Path>>(&self, path: P) -> Result<(), GBDTError> {
-        let json = serde_json::to_string_pretty(self)
+        let json = canonical_json_string(self)
             .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
         fs::write(path, json).map_err(|e| GBDTError::ModelIoError(e.to_string()))?;
         Ok(())
