@@ -2,15 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  AlertTriangle, 
-  CheckCircle, 
-  Clock, 
-  Server, 
-  Database, 
+import {
+  AlertTriangle,
+  CheckCircle,
+  Clock,
   Network,
   Cpu,
-  Memory,
+  MemoryStick,
   HardDrive
 } from 'lucide-react';
 
@@ -100,80 +98,80 @@ export function MonitoringCenter() {
           Monitoring Center
         </h2>
 
-        {/* System Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <Cpu className="w-5 h-5 text-blue-500" />
-                <span className="font-medium text-gray-900 dark:text-white">CPU Usage</span>
+          {/* System Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <Cpu className="w-5 h-5 text-blue-500" />
+                  <span className="font-medium text-gray-900 dark:text-white">CPU Usage</span>
+                </div>
+                <span className={`text-2xl font-bold ${getMetricColor(systemMetrics.cpu)}`}>
+                  {Math.round(systemMetrics.cpu)}%
+                </span>
               </div>
-              <span className={`text-2xl font-bold ${getMetricColor(systemMetrics.cpu)}`}>
-                {Math.round(systemMetrics.cpu)}%
-              </span>
+              <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                <div
+                  className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${systemMetrics.cpu}%` }}
+                />
+              </div>
             </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-              <div 
-                className="bg-blue-500 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${systemMetrics.cpu}%` }}
-              />
-            </div>
-          </div>
 
-          <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <Memory className="w-5 h-5 text-green-500" />
-                <span className="font-medium text-gray-900 dark:text-white">Memory</span>
+            <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <MemoryStick className="w-5 h-5 text-green-500" />
+                  <span className="font-medium text-gray-900 dark:text-white">Memory</span>
+                </div>
+                <span className={`text-2xl font-bold ${getMetricColor(systemMetrics.memory)}`}>
+                  {Math.round(systemMetrics.memory)}%
+                </span>
               </div>
-              <span className={`text-2xl font-bold ${getMetricColor(systemMetrics.memory)}`}>
-                {Math.round(systemMetrics.memory)}%
-              </span>
+              <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                <div
+                  className="bg-green-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${systemMetrics.memory}%` }}
+                />
+              </div>
             </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-              <div 
-                className="bg-green-500 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${systemMetrics.memory}%` }}
-              />
-            </div>
-          </div>
 
-          <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <HardDrive className="w-5 h-5 text-purple-500" />
-                <span className="font-medium text-gray-900 dark:text-white">Disk</span>
+            <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <HardDrive className="w-5 h-5 text-purple-500" />
+                  <span className="font-medium text-gray-900 dark:text-white">Disk</span>
+                </div>
+                <span className={`text-2xl font-bold ${getMetricColor(systemMetrics.disk)}`}>
+                  {Math.round(systemMetrics.disk)}%
+                </span>
               </div>
-              <span className={`text-2xl font-bold ${getMetricColor(systemMetrics.disk)}`}>
-                {Math.round(systemMetrics.disk)}%
-              </span>
+              <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                <div
+                  className="bg-purple-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${systemMetrics.disk}%` }}
+                />
+              </div>
             </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-              <div 
-                className="bg-purple-500 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${systemMetrics.disk}%` }}
-              />
-            </div>
-          </div>
 
-          <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <Network className="w-5 h-5 text-orange-500" />
-                <span className="font-medium text-gray-900 dark:text-white">Network</span>
+            <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <Network className="w-5 h-5 text-orange-500" />
+                  <span className="font-medium text-gray-900 dark:text-white">Network</span>
+                </div>
+                <span className="text-2xl font-bold text-orange-500">
+                  {Math.round(systemMetrics.network)} MB/s
+                </span>
               </div>
-              <span className="text-2xl font-bold text-orange-500">
-                {Math.round(systemMetrics.network)} MB/s
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-              <div 
-                className="bg-orange-500 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(systemMetrics.network / 200, 1) * 100}%` }}
-              />
+              <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                <div
+                  className="bg-orange-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(systemMetrics.network / 200, 1) * 100}%` }}
+                />
+              </div>
             </div>
           </div>
-        </div>
 
         {/* Alerts */}
         <div className="space-y-4">
