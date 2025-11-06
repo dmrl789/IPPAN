@@ -2,7 +2,7 @@
 
 use ippan_ai_service::{
     AIService, ConfigManager, Environment, JsonExporter, MetricsCollector, MetricsExporter,
-    PrometheusExporter,
+    PrometheusExporter, VERSION,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
     init_logging()?;
 
-    info!("Starting IPPAN AI Service v{}", env!("CARGO_PKG_VERSION"));
+    info!("Starting IPPAN AI Service v{}", VERSION);
 
     // Load configuration
     let config_manager = ConfigManager::new().map_err(|e| {
@@ -133,7 +133,7 @@ async fn start_health_server(_service: AIService) {
         // Simple health check response
         warp::reply::json(&serde_json::json!({
             "status": "healthy",
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": VERSION,
         }))
     });
 

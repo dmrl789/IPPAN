@@ -6,6 +6,19 @@
 use blake3::Hasher as Blake3;
 use ippan_types::{HashTimer, IppanTimeMicros};
 
+fn derive_nonce(domain: &str, time: IppanTimeMicros, parts: &[&[u8]]) -> [u8; 32] {
+    let mut hasher = Blake3::new();
+    hasher.update(domain.as_bytes());
+    hasher.update(&time.0.to_be_bytes());
+    for part in parts {
+        hasher.update(part);
+    }
+    let hash = hasher.finalize();
+    let mut nonce = [0u8; 32];
+    nonce.copy_from_slice(hash.as_bytes());
+    nonce
+}
+
 /// Generate a round HashTimer for deterministic temporal ordering
 pub fn generate_round_hashtimer(
     round_id: u64,
@@ -13,17 +26,36 @@ pub fn generate_round_hashtimer(
     validator_id: &[u8; 32],
 ) -> HashTimer {
     let current_time = IppanTimeMicros::now();
+    generate_round_hashtimer_at(round_id, previous_hash, validator_id, current_time)
+}
+
+/// Generate a round HashTimer using an explicit time (useful for tests)
+pub fn generate_round_hashtimer_at(
+    round_id: u64,
+    previous_hash: &[u8; 32],
+    validator_id: &[u8; 32],
+    time: IppanTimeMicros,
+) -> HashTimer {
     let domain = "dlc_round";
 
     let mut payload = Vec::new();
-    payload.extend_from_slice(&round_id.to_be_bytes());
+    let round_bytes = round_id.to_be_bytes();
+    payload.extend_from_slice(&round_bytes);
     payload.extend_from_slice(previous_hash);
 
-    let nonce = ippan_types::random_nonce();
+    let nonce = derive_nonce(
+        domain,
+        time,
+        &[
+            round_bytes.as_ref(),
+            previous_hash.as_ref(),
+            validator_id.as_ref(),
+        ],
+    );
 
     HashTimer::derive(
         domain,
-        current_time,
+        time,
         domain.as_bytes(),
         &payload,
         &nonce,
@@ -38,17 +70,36 @@ pub fn generate_block_hashtimer(
     proposer_id: &[u8; 32],
 ) -> HashTimer {
     let current_time = IppanTimeMicros::now();
+    generate_block_hashtimer_at(block_id, round_id, proposer_id, current_time)
+}
+
+/// Generate a block proposal HashTimer using an explicit time (useful for tests)
+pub fn generate_block_hashtimer_at(
+    block_id: &[u8; 32],
+    round_id: u64,
+    proposer_id: &[u8; 32],
+    time: IppanTimeMicros,
+) -> HashTimer {
     let domain = "dlc_block_proposal";
 
     let mut payload = Vec::new();
+    let round_bytes = round_id.to_be_bytes();
     payload.extend_from_slice(block_id);
-    payload.extend_from_slice(&round_id.to_be_bytes());
+    payload.extend_from_slice(&round_bytes);
 
-    let nonce = ippan_types::random_nonce();
+    let nonce = derive_nonce(
+        domain,
+        time,
+        &[
+            block_id.as_ref(),
+            round_bytes.as_ref(),
+            proposer_id.as_ref(),
+        ],
+    );
 
     HashTimer::derive(
         domain,
-        current_time,
+        time,
         domain.as_bytes(),
         &payload,
         &nonce,

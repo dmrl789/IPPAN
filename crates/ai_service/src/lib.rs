@@ -54,5 +54,5 @@ pub use ippan_ai_core::{
 /// Re-export registry functionality
 pub use ippan_ai_registry::AiModelProposal;
 
-/// AI Service version
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// AI Service version sourced from workspace metadata
+pub const VERSION: &str = env!("IPPAN_VERSION");

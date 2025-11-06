@@ -301,7 +301,7 @@ impl ServiceMonitor {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: crate::VERSION.to_string(),
         }
     }
 

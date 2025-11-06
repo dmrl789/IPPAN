@@ -636,14 +636,8 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use ippan_storage::MemoryStorage;
     use ippan_types::{
-        AccessKey,
-        Block,
-        ConfidentialEnvelope,
-        ConfidentialProof,
-        ConfidentialProofType,
-        RoundId,
-        Transaction,
-        ValidatorId,
+        AccessKey, Block, ConfidentialEnvelope, ConfidentialProof, ConfidentialProofType, RoundId,
+        Transaction, ValidatorId,
     };
     use rand::{rngs::StdRng, RngCore, SeedableRng};
     use std::sync::Arc;
@@ -824,6 +818,9 @@ mod tests {
         );
         let block = Block::new(vec![], vec![valid_tx], 1, [4u8; 32]);
 
-        assert_eq!(engine.validate_block_parallel(&block), ValidationResult::Valid);
+        assert_eq!(
+            engine.validate_block_parallel(&block),
+            ValidationResult::Valid
+        );
     }
 }

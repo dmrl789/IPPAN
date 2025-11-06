@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "High-level AI service layer with LLM integration for IPPAN blockchain"
+build = "build.rs"
 
 [lib]
 path = "src/lib.rs"
@@ -75,3 +76,6 @@ sysinfo = "0.29"
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }
+
+[build-dependencies]
+toml = { workspace = true }

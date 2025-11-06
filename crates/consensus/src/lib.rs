@@ -74,7 +74,8 @@ pub use dgbdt::{DGBDTEngine, ValidatorMetrics, VerifierSelection};
 pub use dlc::{DLCConfig, DLCConsensus, DLCRoundState};
 pub use dlc_integration::{dlc_config_from_poa, DLCIntegratedConsensus};
 pub use hashtimer_integration::{
-    derive_selection_seed, generate_block_hashtimer, generate_round_hashtimer, should_close_round,
+    derive_selection_seed, generate_block_hashtimer, generate_block_hashtimer_at,
+    generate_round_hashtimer, generate_round_hashtimer_at, should_close_round,
     verify_temporal_ordering,
 };
 pub use shadow_verifier::{ShadowVerifier, ShadowVerifierSet, VerificationResult};

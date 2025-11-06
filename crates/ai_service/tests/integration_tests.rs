@@ -1,9 +1,8 @@
 //! Integration tests for AI Service
 
 use ippan_ai_service::{
-    AIService, AIServiceConfig, ContractAnalysisType, LLMConfig, LLMRequest,
-    OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
-    TransactionOptimizationRequest,
+    AIService, AIServiceConfig, ContractAnalysisType, LLMConfig, LLMRequest, OptimizationGoal,
+    SmartContractAnalysisRequest, TransactionData, TransactionOptimizationRequest,
 };
 use std::collections::HashMap;
 
@@ -163,7 +162,7 @@ async fn test_service_status() {
     let service = AIService::new(config).unwrap();
 
     let status = service.get_status();
-    assert_eq!(status.version, "1.0.0");
+    assert_eq!(status.version, ippan_ai_service::VERSION);
     assert!(!status.is_running);
 }
 

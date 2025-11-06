@@ -220,7 +220,8 @@ impl DGBDTEngine {
         let target = (selection_value % total_score as u64) as i64;
         let mut cumulative = 0i64;
 
-        let mut ordered: Vec<(ValidatorId, i32)> = scores.iter().map(|(id, score)| (*id, *score)).collect();
+        let mut ordered: Vec<(ValidatorId, i32)> =
+            scores.iter().map(|(id, score)| (*id, *score)).collect();
         ordered.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         for (validator_id, score) in &ordered {

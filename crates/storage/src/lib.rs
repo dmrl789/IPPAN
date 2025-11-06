@@ -644,9 +644,9 @@ impl Storage for MemoryStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ippan_types::l2::L2NetworkStatus;
     use ippan_types::round::RoundWindow;
     use ippan_types::{Amount, IppanTimeMicros, Transaction};
-    use ippan_types::l2::L2NetworkStatus;
     use tempfile::tempdir;
 
     #[test]
@@ -658,9 +658,7 @@ mod tests {
         let latest_height = storage.get_latest_height().expect("height");
         assert_eq!(latest_height, 0, "genesis block should set height to 0");
 
-        let genesis_block = storage
-            .get_block_by_height(0)
-            .expect("fetch genesis block");
+        let genesis_block = storage.get_block_by_height(0).expect("fetch genesis block");
         assert!(genesis_block.is_some(), "genesis block present after init");
 
         let genesis_account = storage
@@ -677,12 +675,7 @@ mod tests {
         let storage = SledStorage::new(dir.path()).expect("sled storage");
         storage.initialize().expect("initialize");
 
-        let tx = Transaction::new(
-            [1u8; 32],
-            [2u8; 32],
-            Amount::from_micro_ipn(42),
-            7,
-        );
+        let tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_micro_ipn(42), 7);
         let tx_hash = tx.hash();
         storage
             .store_transaction(tx.clone())
@@ -726,7 +719,12 @@ mod tests {
         Block::new(vec![], vec![], round, creator)
     }
 
-    fn create_test_transaction(from: [u8; 32], to: [u8; 32], amount: u64, nonce: u64) -> Transaction {
+    fn create_test_transaction(
+        from: [u8; 32],
+        to: [u8; 32],
+        amount: u64,
+        nonce: u64,
+    ) -> Transaction {
         Transaction::new(from, to, Amount::from_atomic(amount.into()), nonce)
     }
 

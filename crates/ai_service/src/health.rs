@@ -101,7 +101,7 @@ impl AIService {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: crate::VERSION.to_string(),
             uptime: self.get_uptime(),
             checks,
         })

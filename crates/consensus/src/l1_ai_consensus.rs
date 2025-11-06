@@ -223,7 +223,8 @@ impl L1AIConsensus {
             Ok(NetworkHealthReport {
                 overall_health: health_level,
                 congestion_level: network_state.congestion_level,
-                validator_performance: self.calculate_avg_validator_performance(validator_telemetry),
+                validator_performance: self
+                    .calculate_avg_validator_performance(validator_telemetry),
                 recommendations: self.generate_health_recommendations(health_level, network_state),
                 confidence_score: health_level,
             })

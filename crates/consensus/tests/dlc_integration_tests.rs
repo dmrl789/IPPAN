@@ -2,7 +2,7 @@
 
 use ippan_consensus::*;
 use ippan_storage::SledStorage;
-use ippan_types::Block;
+use ippan_types::{Block, IppanTimeMicros};
 use std::sync::Arc;
 use tempfile::tempdir;
 
@@ -121,8 +121,11 @@ async fn test_hashtimer_deterministic_ordering() {
     let previous_hash = [0u8; 32];
     let validator_id = [1u8; 32];
 
-    let hashtimer1 = generate_round_hashtimer(round_id, &previous_hash, &validator_id);
-    let hashtimer2 = generate_round_hashtimer(round_id, &previous_hash, &validator_id);
+    let fixed_time = IppanTimeMicros(1_234_567_890);
+    let hashtimer1 =
+        generate_round_hashtimer_at(round_id, &previous_hash, &validator_id, fixed_time);
+    let hashtimer2 =
+        generate_round_hashtimer_at(round_id, &previous_hash, &validator_id, fixed_time);
 
     // Should be deterministic for same inputs (within same microsecond)
     assert!(hashtimer1.timestamp_us > 0);
@@ -237,7 +240,5 @@ fn test_selection_determinism() {
 
     // Different round should produce different selection
     let result3 = engine.select_verifiers(43, &metrics, 3, 0).unwrap();
-    assert!(
-        result3.primary != result1.primary || result3.shadows != result1.shadows
-    );
+    assert!(result3.primary != result1.primary || result3.shadows != result1.shadows);
 }

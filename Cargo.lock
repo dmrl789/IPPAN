@@ -2677,7 +2677,7 @@ checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
 
 [[package]]
 name = "ippan-ai-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2705,7 +2705,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-ai-registry"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2730,7 +2730,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-ai-service"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2762,7 +2762,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-benchmark"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2780,7 +2780,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2796,7 +2796,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-consensus"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2826,7 +2826,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-consensus-dlc"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2851,7 +2851,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2877,7 +2877,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-crypto"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2898,7 +2898,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-explorer"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2916,7 +2916,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-governance"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2939,7 +2939,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-keygen"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2954,7 +2954,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-l1-handle-anchors"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -2971,7 +2971,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-l2-fees"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2984,7 +2984,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-l2-handle-registry"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "ed25519-dalek",
@@ -3003,7 +3003,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-mempool"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -3014,7 +3014,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-network"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3037,7 +3037,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-node"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-p2p"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -3084,7 +3084,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-rpc"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3118,7 +3118,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-security"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3140,7 +3140,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-storage"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -3156,7 +3156,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-time"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3174,7 +3174,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-treasury"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -3192,7 +3192,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-types"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "blake3",
  "ed25519-dalek",
@@ -3208,7 +3208,7 @@ dependencies = [
 
 [[package]]
 name = "ippan-validator-resolution"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -3226,7 +3226,7 @@ dependencies = [
 
 [[package]]
 name = "ippan_economics"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -3255,7 +3255,7 @@ dependencies = [
 
 [[package]]
 name = "ippan_economics_core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3268,7 +3268,7 @@ dependencies = [
 
 [[package]]
 name = "ippan_wallet"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aes-gcm",
  "anyhow",

@@ -1,9 +1,9 @@
 //! Production-ready integration tests for AI Service
 
 use ippan_ai_service::{
-    AIService, AIServiceConfig, AnalyticsConfig, ConfigManager, ContractAnalysisType,
-    HealthStatus, LLMConfig, LLMRequest, OptimizationGoal, SmartContractAnalysisRequest,
-    TransactionData, TransactionOptimizationRequest,
+    AIService, AIServiceConfig, AnalyticsConfig, ConfigManager, ContractAnalysisType, HealthStatus,
+    LLMConfig, LLMRequest, OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
+    TransactionOptimizationRequest,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -163,11 +163,12 @@ async fn test_analytics_data_collection() {
     let mut tags = HashMap::new();
     tags.insert("test".to_string(), "true".to_string());
 
-    for i in 0..5 {
+    let sample_values = [0.12, 0.18, 0.22, 0.19, 0.25];
+    for value in sample_values {
         service.add_analytics_data(
-            "test_metric".to_string(),
-            i as f64 * 10.0,
-            "count".to_string(),
+            "error_rate".to_string(),
+            value,
+            "ratio".to_string(),
             tags.clone(),
         );
     }

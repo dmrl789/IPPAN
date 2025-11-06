@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn test_sparse_merkle_tree() {
-        let mut tree = SparseMerkleTree::new(256);
+        let mut tree = SparseMerkleTree::new(32);
 
         tree.set_leaf(vec![1, 2, 3, 4], b"value1".to_vec()).unwrap();
         tree.set_leaf(vec![5, 6, 7, 8], b"value2".to_vec()).unwrap();

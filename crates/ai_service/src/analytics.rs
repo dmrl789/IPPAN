@@ -40,10 +40,7 @@ impl AnalyticsService {
             tags,
         };
 
-        self.data_store
-            .entry(metric)
-            .or_default()
-            .push(data_point);
+        self.data_store.entry(metric).or_default().push(data_point);
     }
 
     /// Analyze data and generate insights
