@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use rand_core::OsRng;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "ippan-keygen")]
@@ -87,7 +87,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn generate_keypair(output: &PathBuf, name: &str, stdout: bool) -> Result<()> {
+fn generate_keypair(output: &Path, name: &str, stdout: bool) -> Result<()> {
     println!("🔐 Generating new Ed25519 keypair...");
 
     let signing_key = SigningKey::generate(&mut OsRng);

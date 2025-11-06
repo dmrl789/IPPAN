@@ -1,7 +1,7 @@
 //! Integration tests for AI Service
 
 use ippan_ai_service::{
-    AIService, AIServiceConfig, AnalyticsConfig, ContractAnalysisType, LLMConfig, LLMRequest,
+    AIService, AIServiceConfig, ContractAnalysisType, LLMConfig, LLMRequest,
     OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
     TransactionOptimizationRequest,
 };
@@ -57,7 +57,7 @@ async fn test_llm_generation() {
 
     // Note: This test would fail in CI without a real API key
     // In a real test environment, you'd mock the HTTP client
-    let result = service.generate_text(request).await;
+    let _result = service.generate_text(request).await;
     // assert!(result.is_ok());
 }
 

@@ -99,11 +99,11 @@ impl L1HandleAnchorStorage {
             .iter()
             .map(|a| {
                 let mut hasher = Sha256::new();
-                hasher.update(&a.handle_hash);
-                hasher.update(&a.owner);
-                hasher.update(&a.l2_location);
-                hasher.update(&a.timestamp.to_le_bytes());
-                hasher.finalize().as_slice().to_vec()
+                hasher.update(a.handle_hash);
+                hasher.update(a.owner);
+                hasher.update(a.l2_location);
+                hasher.update(a.timestamp.to_le_bytes());
+                hasher.finalize().to_vec()
             })
             .collect();
 
@@ -121,11 +121,11 @@ impl L1HandleAnchorStorage {
         // Find index of our anchor's leaf
         let target_leaf = {
             let mut hasher = Sha256::new();
-            hasher.update(&anchor.handle_hash);
-            hasher.update(&anchor.owner);
-            hasher.update(&anchor.l2_location);
-            hasher.update(&anchor.timestamp.to_le_bytes());
-            hasher.finalize().as_slice().to_vec()
+            hasher.update(anchor.handle_hash);
+            hasher.update(anchor.owner);
+            hasher.update(anchor.l2_location);
+            hasher.update(anchor.timestamp.to_le_bytes());
+            hasher.finalize().to_vec()
         };
 
         let index = leaves
@@ -249,14 +249,14 @@ mod tests {
         let storage = L1HandleAnchorStorage::new();
 
         // Create multiple anchors to test different tree positions
-        let handles = vec!["@alice.ipn", "@bob.ipn", "@charlie.ipn", "@david.ipn"];
+        let handles = ["@alice.ipn", "@bob.ipn", "@charlie.ipn", "@david.ipn"];
 
         let owner = [1u8; 32];
         let l2_location = [2u8; 32];
 
         // Store all anchors with slightly different timestamps to ensure uniqueness
         for (i, handle) in handles.iter().enumerate() {
-            let mut anchor = HandleOwnershipAnchor::new(
+            let anchor = HandleOwnershipAnchor::new(
                 handle,
                 owner,
                 l2_location,

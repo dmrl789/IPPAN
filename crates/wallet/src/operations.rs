@@ -455,6 +455,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    #[allow(dead_code)]
     struct MockRpcClient;
 
     impl RpcClient for MockRpcClient {

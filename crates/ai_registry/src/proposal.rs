@@ -309,7 +309,7 @@ impl ProposalManager {
     /// Calculate registration fee based on model size
     fn calculate_registration_fee(&self, model_size_bytes: u64) -> u64 {
         // Base fee + size-based fee
-        let size_mb = (model_size_bytes + 999_999) / 1_000_000; // Round up to nearest MB
+        let size_mb = model_size_bytes.div_ceil(1_000_000); // Round up to nearest MB
         let size_fee = size_mb * self.fee_per_mb;
 
         self.base_registration_fee.saturating_add(size_fee)

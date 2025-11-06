@@ -192,8 +192,8 @@ fn test_model_hash_certificate_generation() {
     assert_eq!(hash_1, hash_1_again);
 
     // Hashes should be valid hex strings
-    assert!(hash_1.len() > 0);
-    assert!(hash_2.len() > 0);
+    assert!(!hash_1.is_empty());
+    assert!(!hash_2.is_empty());
 
     println!("Model hash for round {}: {}", round_hash_1, hash_1);
     println!("Model hash for round {}: {}", round_hash_2, hash_2);

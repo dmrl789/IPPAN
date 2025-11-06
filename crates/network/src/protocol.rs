@@ -261,6 +261,12 @@ pub struct NetworkProtocol {
     is_running: Arc<std::sync::atomic::AtomicBool>,
 }
 
+impl Default for NetworkProtocol {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetworkProtocol {
     /// Create a new network protocol
     pub fn new() -> Self {
@@ -337,15 +343,14 @@ impl NetworkProtocol {
 }
 
 /// Default message handlers
-
 /// Handshake handler
 pub struct HandshakeHandler {
-    node_id: String,
+    _node_id: String,
 }
 
 impl HandshakeHandler {
     pub fn new(node_id: String) -> Self {
-        Self { node_id }
+        Self { _node_id: node_id }
     }
 }
 
@@ -378,7 +383,7 @@ impl MessageHandler for HandshakeHandler {
 
 /// Block handler
 pub struct BlockHandler {
-    block_storage: Arc<dyn BlockStorage>,
+    _block_storage: Arc<dyn BlockStorage>,
 }
 
 #[async_trait::async_trait]
@@ -389,7 +394,7 @@ pub trait BlockStorage: Send + Sync {
 
 impl BlockHandler {
     pub fn new(block_storage: Arc<dyn BlockStorage>) -> Self {
-        Self { block_storage }
+        Self { _block_storage: block_storage }
     }
 }
 
@@ -427,7 +432,7 @@ impl MessageHandler for BlockHandler {
 
 /// Transaction handler
 pub struct TransactionHandler {
-    mempool: Arc<dyn MempoolStorage>,
+    _mempool: Arc<dyn MempoolStorage>,
 }
 
 #[async_trait::async_trait]
@@ -438,7 +443,7 @@ pub trait MempoolStorage: Send + Sync {
 
 impl TransactionHandler {
     pub fn new(mempool: Arc<dyn MempoolStorage>) -> Self {
-        Self { mempool }
+        Self { _mempool: mempool }
     }
 }
 
@@ -583,7 +588,7 @@ mod tests {
 
         // Fixed key for determinism
         let key_bytes = [42u8; 32];
-        let signing_key = SigningKey::from_bytes(&key_bytes);
+        let _signing_key = SigningKey::from_bytes(&key_bytes);
 
         // Create two identical messages
         let mut msg1 = NetworkMessage::new(

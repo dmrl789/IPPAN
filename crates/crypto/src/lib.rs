@@ -137,9 +137,9 @@ impl CryptoUtils {
         }
 
         // Check each commitment is a valid (non-zero) point
-        for i in 0..num_commitments {
+        for _i in 0..num_commitments {
             let commitment = &transaction_data[offset..offset + 32];
-            if commitment == &[0u8; 32] {
+            if commitment == [0u8; 32] {
                 // All-zero commitment is invalid
                 return Ok(false);
             }
@@ -176,7 +176,7 @@ impl CryptoUtils {
 
         let signature = &transaction_data[offset..offset + 64];
         // Check signature is not all zeros
-        if signature == &[0u8; 64] {
+        if signature == [0u8; 64] {
             return Ok(false);
         }
 

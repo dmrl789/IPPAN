@@ -54,7 +54,7 @@ fn test_supply_convergence() {
     assert!(s10 < params.max_supply_micro as u128);
 
     // Year 1 should emit roughly 31,536 IPN
-    let expected_year1 = 31_536_00000000u128;
+    let expected_year1 = 3_153_600_000_000_u128;
     let tolerance = expected_year1 / 100; // 1% tolerance
     assert!(
         s1 > expected_year1 - tolerance && s1 < expected_year1 + tolerance,

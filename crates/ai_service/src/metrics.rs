@@ -34,6 +34,12 @@ pub struct MetricsCollector {
     start_time: SystemTime,
 }
 
+impl Default for MetricsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetricsCollector {
     /// Create a new metrics collector
     pub fn new() -> Self {
@@ -189,12 +195,12 @@ pub trait MetricsExporter {
 
 /// Prometheus metrics exporter
 pub struct PrometheusExporter {
-    endpoint: String,
+    _endpoint: String,
 }
 
 impl PrometheusExporter {
     pub fn new(endpoint: String) -> Self {
-        Self { endpoint }
+        Self { _endpoint: endpoint }
     }
 }
 
@@ -209,12 +215,12 @@ impl MetricsExporter for PrometheusExporter {
 
 /// JSON metrics exporter
 pub struct JsonExporter {
-    endpoint: String,
+    _endpoint: String,
 }
 
 impl JsonExporter {
     pub fn new(endpoint: String) -> Self {
-        Self { endpoint }
+        Self { _endpoint: endpoint }
     }
 }
 

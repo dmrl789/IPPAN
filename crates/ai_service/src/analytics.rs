@@ -42,7 +42,7 @@ impl AnalyticsService {
 
         self.data_store
             .entry(metric)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(data_point);
     }
 

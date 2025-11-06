@@ -317,7 +317,7 @@ mod tests {
         let reloader = Arc::new(reloader_mut);
 
         // Should fail to reload invalid model
-        let _ = reloader.force_reload_all().await;
+        let _result = reloader.force_reload_all().await;
         // Callback should not be called for invalid model
         assert_eq!(reload_count.load(Ordering::SeqCst), 0);
     }

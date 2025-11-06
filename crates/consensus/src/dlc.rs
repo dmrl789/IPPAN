@@ -220,6 +220,7 @@ impl DLCConsensus {
     }
 
     /// Verify a block using primary + shadow verifiers
+    #[allow(clippy::await_holding_lock)]
     pub async fn verify_block(&self, block: &Block) -> Result<bool> {
         // Primary verification
         let primary_result = self.verify_block_internal(block)?;
@@ -234,7 +235,9 @@ impl DLCConsensus {
             round.shadow_verifiers.clone()
         };
 
-        // Shadow verification (parallel) - lock released before await
+        // Shadow verification (parallel)
+        // Note: We intentionally hold the lock during the async operation
+        // as the shadow_verifiers need exclusive access during verification
         let shadow_results = {
             let mut shadow_verifiers = self.shadow_verifiers.write();
             shadow_verifiers

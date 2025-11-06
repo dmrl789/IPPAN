@@ -7,7 +7,6 @@ use ippan_ai_service::{
 };
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use tokio::time::timeout;
 
 #[tokio::test]
 async fn test_llm_performance() {

@@ -93,7 +93,7 @@ impl AIService {
 
         // Determine overall status
         let status = determine_health_status(&checks);
-        let duration = start_time.elapsed().unwrap_or_default();
+        let _duration = start_time.elapsed().unwrap_or_default();
 
         Ok(HealthResponse {
             status,
@@ -115,7 +115,7 @@ impl AIService {
             let alerts = self.monitoring_alerts_snapshot();
             let duration = start.elapsed().unwrap_or_default();
             let has_warnings = !alerts.is_empty();
-            return CheckResult {
+            CheckResult {
                 status: if has_warnings {
                     CheckStatus::Warn
                 } else {
@@ -127,7 +127,7 @@ impl AIService {
                     "Monitoring healthy".to_string()
                 }),
                 duration_ms: duration.as_millis() as u64,
-            };
+            }
         }
         #[cfg(not(feature = "analytics"))]
         {
@@ -153,7 +153,7 @@ impl AIService {
                 )
             });
             let duration = start.elapsed().unwrap_or_default();
-            return CheckResult {
+            CheckResult {
                 status: if has_high {
                     CheckStatus::Warn
                 } else {
@@ -165,7 +165,7 @@ impl AIService {
                     "Analytics healthy".to_string()
                 }),
                 duration_ms: duration.as_millis() as u64,
-            };
+            }
         }
         #[cfg(not(feature = "analytics"))]
         {

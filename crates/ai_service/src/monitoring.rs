@@ -398,7 +398,7 @@ fn get_memory_usage() -> Result<u64, AIServiceError> {
     Ok(100_000_000)
 }
 
-async fn export_metrics(metrics: &ServiceMetrics, endpoint: &str) -> Result<(), AIServiceError> {
+async fn export_metrics(_metrics: &ServiceMetrics, endpoint: &str) -> Result<(), AIServiceError> {
     debug!("Exporting metrics to {}", endpoint);
     Ok(())
 }
@@ -485,7 +485,7 @@ impl MonitoringService {
     pub fn add_metric(&mut self, metric_name: String, value: f64) {
         self.metrics_store
             .entry(metric_name.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(value);
 
         // Also record in the underlying monitor
@@ -495,7 +495,7 @@ impl MonitoringService {
     }
 
     pub async fn check_alerts(&mut self) -> Result<Vec<MonitoringAlert>, AIServiceError> {
-        let status = self.monitor.check_health().await;
+        let _status = self.monitor.check_health().await;
         let mut new_alerts = Vec::new();
 
         // Check for high memory usage

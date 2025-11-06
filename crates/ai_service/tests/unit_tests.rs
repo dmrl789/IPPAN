@@ -30,7 +30,7 @@ fn test_analytics_data_point_addition() {
     service.add_data_point("cpu_usage".to_string(), 75.0, "percent".to_string(), tags);
 
     // In a real test, you'd verify the data was added
-    assert!(true);
+    // (Service creation and method call verified by no panic)
 }
 
 #[test]
@@ -56,7 +56,8 @@ fn test_analytics_insight_filtering() {
     let insights = rt.block_on(service.analyze()).unwrap();
 
     // Should generate some insights with enough data
-    assert!(insights.len() >= 0);
+    // (insights.len() is always >= 0, verified by successful call)
+    let _ = insights;
 }
 
 #[test]
@@ -85,7 +86,7 @@ fn test_monitoring_alert_acknowledgment() {
     let mut service = MonitoringService::new(Default::default());
 
     // Create a test alert
-    let alert = ippan_ai_service::types::MonitoringAlert {
+    let _alert = ippan_ai_service::types::MonitoringAlert {
         alert_id: "test_alert".to_string(),
         alert_type: "test".to_string(),
         severity: SeverityLevel::Medium,
@@ -107,8 +108,8 @@ fn test_monitoring_alert_acknowledgment() {
 #[test]
 #[cfg(feature = "analytics")]
 fn test_smart_contract_service_creation() {
-    let service = SmartContractService::new();
-    assert!(true); // Service created successfully
+    let _service = SmartContractService::new();
+    // Service created successfully (verified by no panic)
 }
 
 #[tokio::test]
@@ -175,8 +176,8 @@ fn dangerous_function() {
 #[test]
 #[cfg(feature = "analytics")]
 fn test_optimization_service_creation() {
-    let service = OptimizationService::new();
-    assert!(true); // Service created successfully
+    let _service = OptimizationService::new();
+    // Service created successfully (verified by no panic)
 }
 
 #[test]

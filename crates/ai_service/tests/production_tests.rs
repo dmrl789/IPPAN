@@ -1,7 +1,7 @@
 //! Production-ready integration tests for AI Service
 
 use ippan_ai_service::{
-    AIService, AIServiceConfig, AnalyticsConfig, ConfigManager, ContractAnalysisType, Environment,
+    AIService, AIServiceConfig, AnalyticsConfig, ConfigManager, ContractAnalysisType,
     HealthStatus, LLMConfig, LLMRequest, OptimizationGoal, SmartContractAnalysisRequest,
     TransactionData, TransactionOptimizationRequest,
 };
@@ -56,7 +56,7 @@ async fn test_health_check_endpoints() {
         health.status,
         HealthStatus::Healthy | HealthStatus::Degraded
     ));
-    assert!(health.uptime.as_secs() >= 0);
+    // uptime is always >= 0 for u64, no need to check
     assert!(!health.checks.is_empty());
 
     service.stop().await.expect("Failed to stop service");

@@ -28,7 +28,6 @@ impl OptimizationService {
         let mut optimized_transaction = request.transaction.clone();
         let mut suggestions = Vec::new();
         let mut expected_improvements = HashMap::new();
-        let mut confidence: f32 = 0.8;
 
         for goal in &request.goals {
             match goal {
@@ -66,7 +65,7 @@ impl OptimizationService {
             }
         }
 
-        confidence = match suggestions.len() {
+        let confidence = match suggestions.len() {
             n if n > 5 => 0.9,
             n if n > 2 => 0.8,
             _ => 0.7,
@@ -76,7 +75,7 @@ impl OptimizationService {
             optimized_transaction,
             suggestions,
             expected_improvements,
-            confidence: confidence as f64,
+            confidence,
         })
     }
 

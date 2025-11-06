@@ -471,6 +471,6 @@ mod tests {
 
         let health = monitor.run_health_checks().await;
         assert_eq!(health.checks.len(), 2);
-        assert!(health.uptime_seconds >= 0);
+        // uptime_seconds is always >= 0 for u64, no need to check
     }
 }

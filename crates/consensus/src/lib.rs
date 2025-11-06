@@ -175,7 +175,7 @@ pub struct ConsensusState {
 }
 
 #[derive(Debug)]
-struct RoundTracker {
+pub struct RoundTracker {
     current_round: RoundId,
     round_start: Instant,
     round_start_time: IppanTimeMicros,
@@ -550,6 +550,7 @@ impl PoAConsensus {
     // Core round logic
     // -----------------------------------------------------------------
 
+    #[allow(clippy::too_many_arguments)]
     async fn propose_block(
         storage: &Arc<dyn Storage + Send + Sync>,
         mempool: &Arc<Mempool>,
