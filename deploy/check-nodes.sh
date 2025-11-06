@@ -2,24 +2,28 @@
 set -euo pipefail
 
 # Usage:
-#   HOST="188.245.97.41" UI_URL="http://188.245.97.41:3001" API_BASE="http://188.245.97.41:7080" ./deploy/check-nodes.sh
+#   HOST="188.245.97.41" UI_URL="http://188.245.97.41:3001" API_BASE="http://188.245.97.41:8080" ./deploy/check-nodes.sh
 # or pass via env; defaults try common ports.
 
 HOST="${HOST:-}"
-UI_URL="${UI_URL:-}"
-API_BASE="${API_BASE:-http://188.245.97.41:7080}"
-LB_HEALTH="${LB_HEALTH:-http://127.0.0.1:3000/lb-health}"
-HTTP_HEALTH="${HTTP_HEALTH:-$API_BASE/health}"
-HTTP_STATUS="${HTTP_STATUS:-$API_BASE/status}"
-HTTP_PEERS="${HTTP_PEERS:-$API_BASE/peers}"
-P2P_PORTS="${P2P_PORTS:-4001,7000,8080,3000}"
-SYSTEMD_SVC="${SYSTEMD_SVC:-ippan-node}"
-DOCKER_COMPOSE_DIR="${DOCKER_COMPOSE_DIR:-/opt/ippan}"
 
 if [[ -z "$HOST" ]]; then
   echo "HOST env is required" >&2
   exit 2
 fi
+
+default_api_base="http://$HOST:8080"
+API_BASE="${API_BASE:-$default_api_base}"
+UI_URL="${UI_URL:-http://$HOST:3001}"
+LB_HEALTH="${LB_HEALTH:-http://$HOST:3000/lb-health}"
+HTTP_HEALTH="${HTTP_HEALTH:-$API_BASE/health}"
+HTTP_STATUS="${HTTP_STATUS:-$API_BASE/status}"
+HTTP_PEERS="${HTTP_PEERS:-$API_BASE/peers}"
+STATUS_FALLBACK="${STATUS_FALLBACK:-$API_BASE/version}"
+PEERS_FALLBACK="${PEERS_FALLBACK:-$API_BASE/p2p/peers}"
+P2P_PORTS="${P2P_PORTS:-4001,7000,7080,8080,8081,3000}"
+SYSTEMD_SVC="${SYSTEMD_SVC:-ippan-node}"
+DOCKER_COMPOSE_DIR="${DOCKER_COMPOSE_DIR:-/opt/ippan}"
 
 # Helper
 json_escape() {
@@ -87,17 +91,48 @@ fi
 http_code() {
   curl -sS -o /dev/null -w "%{http_code}" "$1" || echo "000"
 }
+
+select_endpoint() {
+  local primary="$1"
+  local fallback="${2:-}"
+  local primary_code
+  primary_code="$(http_code "$primary")"
+
+  if [[ "$primary_code" == "200" ]] || [[ -z "$fallback" ]] || [[ "$fallback" == "$primary" ]]; then
+    printf '%s\n%s\nprimary\n' "$primary" "$primary_code"
+    return
+  fi
+
+  local fallback_code
+  fallback_code="$(http_code "$fallback")"
+
+  if [[ "$fallback_code" == "200" ]]; then
+    printf '%s\n%s\nfallback\n' "$fallback" "$fallback_code"
+  else
+    printf '%s\n%s\nprimary\n' "$primary" "$primary_code"
+  fi
+}
+
 hc_api="$(http_code "$HTTP_HEALTH")"
-hc_status="$(http_code "$HTTP_STATUS")"
-hc_peers="$(http_code "$HTTP_PEERS")"
+
+readarray -t status_sel < <(select_endpoint "$HTTP_STATUS" "$STATUS_FALLBACK")
+status_url="${status_sel[0]:-$HTTP_STATUS}"
+hc_status="${status_sel[1]:-000}"
+status_source="${status_sel[2]:-primary}"
+
+readarray -t peers_sel < <(select_endpoint "$HTTP_PEERS" "$PEERS_FALLBACK")
+peers_url="${peers_sel[0]:-$HTTP_PEERS}"
+hc_peers="${peers_sel[1]:-000}"
+peers_source="${peers_sel[2]:-primary}"
+
 hc_lb="$(http_code "$LB_HEALTH")"
 
 # 5) Fetch details (don’t fail pipeline if endpoints absent)
 get_json() {
   curl -sS --max-time 5 "$1" || echo "{}"
 }
-status_json="$(get_json "$HTTP_STATUS")"
-peers_json="$(get_json "$HTTP_PEERS")"
+status_json="$(get_json "$status_url")"
+peers_json="$(get_json "$peers_url")"
 
 extract_version() {
   STATUS_JSON="$1" python3 - <<'PY'
@@ -160,10 +195,17 @@ summary="$(cat <<EOF
   "docker_ps": $(json_escape "$DOCKER_PS"),
   "open_ports": $open_ports_json,
   "endpoints": {
+    "health_url": $(json_escape "$HTTP_HEALTH"),
     "health_code": $(json_escape "$hc_api"),
+    "status_url": $(json_escape "$status_url"),
+    "status_source": $(json_escape "$status_source"),
     "status_code": $(json_escape "$hc_status"),
+    "peers_url": $(json_escape "$peers_url"),
+    "peers_source": $(json_escape "$peers_source"),
     "peers_code": $(json_escape "$hc_peers"),
+    "lb_url": $(json_escape "$LB_HEALTH"),
     "lb_code": $(json_escape "$hc_lb"),
+    "ui_url": $(json_escape "$UI_URL"),
     "ui_code": $(json_escape "$ui_code")
   },
   "version": $(json_escape "$version"),

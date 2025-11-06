@@ -159,6 +159,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         .allow_headers(Any);
     let mut router = Router::new()
         .route("/health", get(handle_health))
+        .route("/status", get(handle_status))
         .route("/time", get(handle_time))
         .route("/version", get(handle_version))
         .route("/metrics", get(handle_metrics))
@@ -285,6 +286,39 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Json<serde_json::V
         "version": env!("CARGO_PKG_VERSION"),
         "peer_count": state.peer_count.load(Ordering::Relaxed),
         "chain_id": state.l2_config.max_l2_count
+    }))
+}
+
+async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let uptime_seconds = state.start_time.elapsed().as_secs();
+    let peer_count = state.peer_count.load(Ordering::Relaxed);
+    let requests_served = state.req_count.load(Ordering::Relaxed);
+
+    let consensus_view = if let Some(consensus) = &state.consensus {
+        match consensus.snapshot().await {
+            Ok(view) => Some(serde_json::json!({
+                "round": view.round,
+                "validator_count": view.validators.len(),
+                "validators": view.validators,
+            })),
+            Err(err) => {
+                warn!("Failed to snapshot consensus state: {}", err);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "node_id": state.node_id.clone(),
+        "version": env!("CARGO_PKG_VERSION"),
+        "peer_count": peer_count,
+        "uptime_seconds": uptime_seconds,
+        "requests_served": requests_served,
+        "network_active": state.p2p_network.is_some(),
+        "consensus": consensus_view
     }))
 }
 
