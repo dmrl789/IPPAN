@@ -11,7 +11,6 @@ async fn test_dlc_consensus_initialization() {
     let config = DLCConfig::default();
     let validator_id = [1u8; 32];
     let dlc = DLCConsensus::new(config, validator_id);
-
     let state = dlc.get_state();
     assert_eq!(state.round_id, 1);
     assert_eq!(state.primary_verifier, validator_id);
