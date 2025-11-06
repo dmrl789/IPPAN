@@ -1,6 +1,6 @@
 use crate::dag::BlockDAG;
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -152,9 +152,30 @@ impl DAGOperations {
 
     /// Calculate depth of a block in the DAG
     fn calculate_depth(&self, dag: &BlockDAG, block_hash: [u8; 32]) -> Result<usize> {
-        // Simplified depth calculation
-        // In practice, you'd traverse the DAG to find the actual depth
-        Ok(1)
+        let mut depth = 0usize;
+        let mut current_hash = block_hash;
+        let mut visited = HashSet::new();
+
+        let mut current_block = match dag.get_block(&current_hash)? {
+            Some(block) => block,
+            None => return Ok(0),
+        };
+
+        while let Some(parent_hash) = current_block.header.parent_hashes.first() {
+            if !visited.insert(current_hash) {
+                break;
+            }
+
+            depth += 1;
+            current_hash = *parent_hash;
+
+            match dag.get_block(&current_hash)? {
+                Some(parent_block) => current_block = parent_block,
+                None => break,
+            }
+        }
+
+        Ok(depth)
     }
 
     /// Optimize the DAG structure
@@ -247,6 +268,6 @@ mod tests {
         let _ = ops.analyze_dag().await;
 
         let stats = ops.get_statistics().unwrap();
-        assert!(stats.total_blocks >= 0);
+        assert_eq!(stats.total_blocks, 0);
     }
 }

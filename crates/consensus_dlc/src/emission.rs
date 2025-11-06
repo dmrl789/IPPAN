@@ -365,7 +365,7 @@ mod tests {
             .distribute_block_reward(
                 BLOCK_REWARD,
                 "proposer1",
-                &vec!["v1".to_string(), "v2".to_string()],
+                &["v1".to_string(), "v2".to_string()],
             )
             .unwrap();
 
@@ -379,7 +379,7 @@ mod tests {
         let mut distributor = RewardDistributor::default();
 
         distributor
-            .distribute_block_reward(BLOCK_REWARD, "proposer1", &vec!["v1".to_string()])
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &["v1".to_string()])
             .unwrap();
 
         assert!(distributor.get_pending("proposer1") > 0);
@@ -391,7 +391,7 @@ mod tests {
         let mut distributor = RewardDistributor::default();
 
         distributor
-            .distribute_block_reward(BLOCK_REWARD, "proposer1", &vec![])
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &[])
             .unwrap();
 
         let pending = distributor.get_pending("proposer1");
@@ -412,7 +412,7 @@ mod tests {
         let mut distributor = RewardDistributor::new(splits);
 
         let result = distributor
-            .distribute_block_reward(10_000, "proposer", &vec!["v1".to_string()])
+            .distribute_block_reward(10_000, "proposer", &["v1".to_string()])
             .unwrap();
 
         assert_eq!(result.proposer_reward, 6000);
@@ -433,7 +433,7 @@ mod tests {
         let mut distributor = RewardDistributor::default();
 
         distributor
-            .distribute_block_reward(BLOCK_REWARD, "proposer1", &vec!["v1".to_string()])
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &["v1".to_string()])
             .unwrap();
 
         let stats = distributor.stats();

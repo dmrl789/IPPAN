@@ -341,7 +341,14 @@ mod tests {
     #[test]
     fn signed_variant_preserves_digest_and_verifies() {
         let signing_key = SigningKey::from_bytes(&[7u8; 32]);
-        let base = HashTimer::derive("ctx", IppanTimeMicros(111), b"domain", b"payload", b"nonce", b"node");
+        let base = HashTimer::derive(
+            "ctx",
+            IppanTimeMicros(111),
+            b"domain",
+            b"payload",
+            b"nonce",
+            b"node",
+        );
         let signed = base.signed(&signing_key);
 
         assert_eq!(base.digest(), signed.digest());
@@ -349,7 +356,6 @@ mod tests {
         assert!(!signed.signature.is_empty());
         assert!(!signed.public_key.is_empty());
         assert!(signed.verify());
-
     }
 
     // =====================================================================
@@ -402,7 +408,7 @@ mod tests {
 
         // Digest should be reproducible from time prefix
         let original_digest = original.digest();
-        assert_eq!(hex[14..64], hex::encode(&original_digest)[0..50]);
+        assert_eq!(hex[14..64], hex::encode(original_digest)[0..50]);
     }
 
     #[test]

@@ -19,6 +19,7 @@ jobs:
       CARGO_TERM_COLOR: always
       CONSENSUS_MODE: DLC
       toolchain: stable
+      RUSTFLAGS: "-D warnings"
 
     steps:
       - name: Checkout

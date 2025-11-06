@@ -98,7 +98,7 @@ impl HashTimer {
 
 impl PartialOrd for HashTimer {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(Self::order(self, other))
+        Some(self.cmp(other))
     }
 }
 

@@ -158,7 +158,7 @@ async fn test_reward_distribution() {
     let result = rewards.distribute_block_reward(
         emission::BLOCK_REWARD,
         "proposer",
-        &vec!["v1".to_string(), "v2".to_string(), "v3".to_string()],
+        &["v1".to_string(), "v2".to_string(), "v3".to_string()],
     );
 
     assert!(result.is_ok());
@@ -390,6 +390,6 @@ fn test_process_round_simple() {
 
         // Should succeed even with no pending blocks
         assert!(result.is_ok());
-        assert!(dag.blocks.len() >= 1); // At least genesis
+        assert!(!dag.blocks.is_empty()); // At least genesis
     });
 }

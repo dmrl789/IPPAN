@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn merkle_root_single_transaction() {
         let tx = b"single-tx".to_vec();
-        let root = compute_merkle_root(&[tx.clone()]);
+        let root = compute_merkle_root(std::slice::from_ref(&tx));
 
         // Should equal hash of the single transaction
         let expected: [u8; 32] = Sha256::digest(&tx).into();

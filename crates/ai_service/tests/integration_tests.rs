@@ -1,9 +1,8 @@
 //! Integration tests for AI Service
 
 use ippan_ai_service::{
-    AIService, AIServiceConfig, ContractAnalysisType, LLMConfig, LLMRequest,
-    OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
-    TransactionOptimizationRequest,
+    AIService, AIServiceConfig, ContractAnalysisType, LLMConfig, LLMRequest, OptimizationGoal,
+    SmartContractAnalysisRequest, TransactionData, TransactionOptimizationRequest,
 };
 use std::collections::HashMap;
 
