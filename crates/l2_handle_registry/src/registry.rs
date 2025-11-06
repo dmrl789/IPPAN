@@ -49,7 +49,7 @@ impl L2HandleRegistry {
             }
         }
 
-        if !self.verify_signature(&registration.owner, &registration.signature) {
+        if !self.verify_registration_signature(&registration) {
             return Err(HandleRegistryError::Unauthorized {
                 handle: registration.handle.as_str().to_string(),
             });
@@ -97,7 +97,7 @@ impl L2HandleRegistry {
             }
         }
 
-        if !self.verify_signature(&update.owner, &update.signature) {
+        if !self.verify_update_signature(&update) {
             return Err(HandleRegistryError::Unauthorized {
                 handle: update.handle.as_str().to_string(),
             });
@@ -134,7 +134,7 @@ impl L2HandleRegistry {
             }
         }
 
-        if !self.verify_signature(&transfer.from_owner, &transfer.signature) {
+        if !self.verify_transfer_signature(&transfer) {
             return Err(HandleRegistryError::Unauthorized {
                 handle: transfer.handle.as_str().to_string(),
             });
@@ -212,9 +212,94 @@ impl L2HandleRegistry {
         h.finalize().into()
     }
 
-    /// Dummy signature verification placeholder
-    fn verify_signature(&self, _owner: &PublicKey, _sig: &[u8]) -> bool {
-        true
+    /// Verify signature for handle registration
+    fn verify_registration_signature(&self, registration: &HandleRegistration) -> bool {
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        use sha2::{Digest, Sha256};
+
+        if registration.signature.len() != 64 {
+            return false;
+        }
+
+        // Parse public key
+        let Ok(verifying_key) = VerifyingKey::from_bytes(registration.owner.as_bytes()) else {
+            return false;
+        };
+
+        // Parse signature
+        let Ok(signature) = Signature::from_slice(&registration.signature) else {
+            return false;
+        };
+
+        // Construct the message that should have been signed
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        message.extend_from_slice(registration.handle.as_str().as_bytes());
+        message.extend_from_slice(registration.owner.as_bytes());
+        if let Some(expires) = registration.expires_at {
+            message.extend_from_slice(&expires.to_le_bytes());
+        }
+
+        // Hash the message
+        let message_hash = Sha256::digest(&message);
+
+        // Verify signature
+        verifying_key.verify(&message_hash, &signature).is_ok()
+    }
+
+    /// Verify signature for handle update
+    fn verify_update_signature(&self, update: &HandleUpdate) -> bool {
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        use sha2::{Digest, Sha256};
+
+        if update.signature.len() != 64 {
+            return false;
+        }
+
+        let Ok(verifying_key) = VerifyingKey::from_bytes(update.owner.as_bytes()) else {
+            return false;
+        };
+
+        let Ok(signature) = Signature::from_slice(&update.signature) else {
+            return false;
+        };
+
+        // Construct the message
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_UPDATE");
+        message.extend_from_slice(update.handle.as_str().as_bytes());
+        message.extend_from_slice(update.owner.as_bytes());
+
+        let message_hash = Sha256::digest(&message);
+        verifying_key.verify(&message_hash, &signature).is_ok()
+    }
+
+    /// Verify signature for handle transfer
+    fn verify_transfer_signature(&self, transfer: &HandleTransfer) -> bool {
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        use sha2::{Digest, Sha256};
+
+        if transfer.signature.len() != 64 {
+            return false;
+        }
+
+        let Ok(verifying_key) = VerifyingKey::from_bytes(transfer.from_owner.as_bytes()) else {
+            return false;
+        };
+
+        let Ok(signature) = Signature::from_slice(&transfer.signature) else {
+            return false;
+        };
+
+        // Construct the message
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_TRANSFER");
+        message.extend_from_slice(transfer.handle.as_str().as_bytes());
+        message.extend_from_slice(transfer.from_owner.as_bytes());
+        message.extend_from_slice(transfer.to_owner.as_bytes());
+
+        let message_hash = Sha256::digest(&message);
+        verifying_key.verify(&message_hash, &signature).is_ok()
     }
 }
 
@@ -230,14 +315,28 @@ mod tests {
 
     #[test]
     fn test_handle_registration_and_resolution() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
         let registry = L2HandleRegistry::new();
         let handle = Handle::new("@test.ipn");
-        let owner = PublicKey::new([1u8; 32]);
+
+        // Generate a proper key pair
+        let signing_key = SigningKey::from_bytes(&[42u8; 32]);
+        let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
+
+        // Create proper signature
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        message.extend_from_slice(handle.as_str().as_bytes());
+        message.extend_from_slice(owner.as_bytes());
+        let message_hash = Sha256::digest(&message);
+        let signature = signing_key.sign(&message_hash);
 
         let reg = HandleRegistration {
             handle: handle.clone(),
             owner: owner.clone(),
-            signature: vec![1, 2, 3],
+            signature: signature.to_bytes().to_vec(),
             metadata: HashMap::new(),
             expires_at: None,
         };
@@ -260,5 +359,108 @@ mod tests {
         assert!(Handle::new("@premium.cyborg").is_valid());
         assert!(!Handle::new("invalid").is_valid());
         assert!(!Handle::new("@").is_valid());
+    }
+
+    #[test]
+    fn test_signature_verification_fails_with_wrong_key() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
+        let registry = L2HandleRegistry::new();
+        let handle = Handle::new("@test.ipn");
+
+        // Sign with one key
+        let signing_key1 = SigningKey::from_bytes(&[42u8; 32]);
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        message.extend_from_slice(handle.as_str().as_bytes());
+        message.extend_from_slice(&signing_key1.verifying_key().to_bytes());
+        let message_hash = Sha256::digest(&message);
+        let signature = signing_key1.sign(&message_hash);
+
+        // But claim a different owner
+        let signing_key2 = SigningKey::from_bytes(&[99u8; 32]);
+        let wrong_owner = PublicKey::new(signing_key2.verifying_key().to_bytes());
+
+        let reg = HandleRegistration {
+            handle: handle.clone(),
+            owner: wrong_owner,
+            signature: signature.to_bytes().to_vec(),
+            metadata: HashMap::new(),
+            expires_at: None,
+        };
+
+        // Should fail due to signature mismatch
+        assert!(registry.register(reg).is_err());
+    }
+
+    #[test]
+    fn test_signature_verification_fails_with_invalid_signature() {
+        let registry = L2HandleRegistry::new();
+        let handle = Handle::new("@test.ipn");
+        let owner = PublicKey::new([1u8; 32]);
+
+        let reg = HandleRegistration {
+            handle: handle.clone(),
+            owner: owner.clone(),
+            signature: vec![1, 2, 3], // Invalid signature
+            metadata: HashMap::new(),
+            expires_at: None,
+        };
+
+        // Should fail due to invalid signature format
+        assert!(registry.register(reg).is_err());
+    }
+
+    #[test]
+    fn test_handle_transfer_with_proper_signature() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
+        let registry = L2HandleRegistry::new();
+        let handle = Handle::new("@test.ipn");
+
+        // Register handle with first owner
+        let signing_key1 = SigningKey::from_bytes(&[42u8; 32]);
+        let owner1 = PublicKey::new(signing_key1.verifying_key().to_bytes());
+
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        message.extend_from_slice(handle.as_str().as_bytes());
+        message.extend_from_slice(owner1.as_bytes());
+        let message_hash = Sha256::digest(&message);
+        let signature = signing_key1.sign(&message_hash);
+
+        let reg = HandleRegistration {
+            handle: handle.clone(),
+            owner: owner1.clone(),
+            signature: signature.to_bytes().to_vec(),
+            metadata: HashMap::new(),
+            expires_at: None,
+        };
+
+        registry.register(reg).unwrap();
+
+        // Transfer to second owner
+        let signing_key2 = SigningKey::from_bytes(&[99u8; 32]);
+        let owner2 = PublicKey::new(signing_key2.verifying_key().to_bytes());
+
+        let mut transfer_message = Vec::new();
+        transfer_message.extend_from_slice(b"IPPAN_HANDLE_TRANSFER");
+        transfer_message.extend_from_slice(handle.as_str().as_bytes());
+        transfer_message.extend_from_slice(owner1.as_bytes());
+        transfer_message.extend_from_slice(owner2.as_bytes());
+        let transfer_hash = Sha256::digest(&transfer_message);
+        let transfer_sig = signing_key1.sign(&transfer_hash);
+
+        let transfer = HandleTransfer {
+            handle: handle.clone(),
+            from_owner: owner1.clone(),
+            to_owner: owner2.clone(),
+            signature: transfer_sig.to_bytes().to_vec(),
+        };
+
+        assert!(registry.transfer(transfer).is_ok());
+        assert_eq!(registry.resolve(&handle).unwrap(), owner2);
     }
 }

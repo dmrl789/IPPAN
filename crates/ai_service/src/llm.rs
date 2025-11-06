@@ -40,7 +40,7 @@ impl LLMService {
 
         let response = self
             .client
-            .post(&format!("{}/chat/completions", self.config.api_endpoint))
+            .post(format!("{}/chat/completions", self.config.api_endpoint))
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .header("Content-Type", "application/json")
             .json(&payload)

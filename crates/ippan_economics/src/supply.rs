@@ -325,8 +325,9 @@ pub fn rounds_until_supply_cap(params: &EmissionParams) -> Option<RoundIndex> {
 
         if emitted.saturating_add(epoch_capacity) >= cap {
             let remaining = cap.saturating_sub(emitted);
-            let rounds_needed = (remaining + reward - 1) / reward; // ceil division
-            let total_rounds = rounds_accumulated.saturating_add(rounds_needed.min(halving_interval));
+            let rounds_needed = remaining.div_ceil(reward); // ceil division
+            let total_rounds =
+                rounds_accumulated.saturating_add(rounds_needed.min(halving_interval));
             return total_rounds.try_into().ok();
         }
 
@@ -390,10 +391,16 @@ mod tests {
     #[test]
     fn test_scheduled_round_reward_halving() {
         let params = EmissionParams::default();
-        assert_eq!(scheduled_round_reward(1, &params), params.initial_round_reward_micro);
+        assert_eq!(
+            scheduled_round_reward(1, &params),
+            params.initial_round_reward_micro
+        );
 
         let halving_round = params.halving_interval_rounds + 1;
-        assert_eq!(scheduled_round_reward(halving_round, &params), params.initial_round_reward_micro / 2);
+        assert_eq!(
+            scheduled_round_reward(halving_round, &params),
+            params.initial_round_reward_micro / 2
+        );
     }
 
     #[test]

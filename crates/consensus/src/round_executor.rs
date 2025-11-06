@@ -148,9 +148,7 @@ impl RoundExecutor {
 
     /// Get current economics parameters.
     pub fn get_economics_params(&self) -> EmissionParams {
-        // Note: params field is private, so we return a copy
-        // This should be fixed by making params public or adding a getter method
-        EmissionParams::default() // Placeholder
+        self.emission_engine.params().clone()
     }
 
     /// Update parameters via governance.
@@ -288,11 +286,11 @@ mod tests {
         let proposer_id = [1u8; 32];
         let parts = create_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
-        
+
         // Check that validator 1 is the proposer
         let v1_id = ValidatorId(hex::encode([1u8; 32]));
         assert_eq!(parts[&v1_id].role, ValidatorRole::Proposer);
-        
+
         // Check that validator 2 is a verifier
         let v2_id = ValidatorId(hex::encode([2u8; 32]));
         assert_eq!(parts[&v2_id].role, ValidatorRole::Verifier);
@@ -304,11 +302,11 @@ mod tests {
         let proposer_id = [1u8; 32];
         let parts = create_full_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
-        
+
         // Check that validator 1 is the proposer
         let v1_id = ValidatorId(hex::encode([1u8; 32]));
         assert_eq!(parts[&v1_id].role, ValidatorRole::Proposer);
-        
+
         // Check that validator 2 is a verifier
         let v2_id = ValidatorId(hex::encode([2u8; 32]));
         assert_eq!(parts[&v2_id].role, ValidatorRole::Verifier);

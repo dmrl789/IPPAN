@@ -126,7 +126,7 @@ mod tests {
             rounds_active: 1000,
             avg_latency_us: 100_000,
             slash_count: 0,
-            stake: 100_000_00000000,
+            stake: 10_000_000_000_000,
             age_rounds: 10_000,
         };
 
@@ -181,7 +181,7 @@ mod tests {
             rounds_active: 1000,
             avg_latency_us: 100_000,
             slash_count: 0,
-            stake: 100_000_00000000,
+            stake: 10_000_000_000_000,
             age_rounds: 10_000,
         };
 

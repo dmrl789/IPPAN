@@ -79,22 +79,32 @@ impl ShadowVerifier {
 
         // Validate confidential block
         if let Err(e) = validate_confidential_block(&block.transactions) {
-            warn!("Shadow verifier {} found confidential block invalid: {}", 
-                  hex::encode(self.validator_id), e);
+            warn!(
+                "Shadow verifier {} found confidential block invalid: {}",
+                hex::encode(self.validator_id),
+                e
+            );
             return Ok(false);
         }
 
         // Validate each transaction
         for (idx, tx) in block.transactions.iter().enumerate() {
             if !tx.is_valid() {
-                warn!("Shadow verifier {} found transaction #{} invalid", 
-                      hex::encode(self.validator_id), idx);
+                warn!(
+                    "Shadow verifier {} found transaction #{} invalid",
+                    hex::encode(self.validator_id),
+                    idx
+                );
                 return Ok(false);
             }
 
             if let Err(e) = validate_confidential_transaction(tx) {
-                warn!("Shadow verifier {} found transaction #{} confidential validation failed: {}", 
-                      hex::encode(self.validator_id), idx, e);
+                warn!(
+                    "Shadow verifier {} found transaction #{} confidential validation failed: {}",
+                    hex::encode(self.validator_id),
+                    idx,
+                    e
+                );
                 return Ok(false);
             }
         }
@@ -150,11 +160,11 @@ impl ShadowVerifierSet {
     pub fn update_set(&self, new_verifiers: &[ValidatorId]) {
         let mut verifiers = self.verifiers.write();
         verifiers.clear();
-        
+
         for &validator_id in new_verifiers.iter().take(self.max_verifiers) {
             verifiers.insert(validator_id, Arc::new(ShadowVerifier::new(validator_id)));
         }
-        
+
         info!("Updated shadow verifier set: {} verifiers", verifiers.len());
     }
 
@@ -167,22 +177,25 @@ impl ShadowVerifierSet {
         // Update verifier set if needed
         self.update_set(expected_verifiers);
 
-        let verifiers = self.verifiers.read();
-        if verifiers.is_empty() {
-            return Ok(Vec::new());
-        }
+        // Clone verifiers before spawning tasks to avoid holding lock across await
+        let verifier_clones: Vec<Arc<ShadowVerifier>> = {
+            let verifiers = self.verifiers.read();
+            if verifiers.is_empty() {
+                return Ok(Vec::new());
+            }
+            verifiers.values().map(Arc::clone).collect()
+        };
 
         // Spawn parallel verification tasks
         let mut handles: Vec<JoinHandle<VerificationResult>> = Vec::new();
-        
-        for verifier in verifiers.values() {
-            let verifier_clone = Arc::clone(verifier);
+
+        for verifier in verifier_clones {
+            let verifier_clone = Arc::clone(&verifier);
             let block_clone = block.clone();
-            
-            let handle = tokio::spawn(async move {
-                verifier_clone.verify_block(&block_clone).await
-            });
-            
+
+            let handle =
+                tokio::spawn(async move { verifier_clone.verify_block(&block_clone).await });
+
             handles.push(handle);
         }
 
@@ -205,9 +218,10 @@ impl ShadowVerifierSet {
                         hex::encode(result.block_id),
                         hex::encode(result.verifier_id)
                     );
-                    
-                    // Record inconsistency
-                    if let Some(verifier) = verifiers.get(&result.verifier_id) {
+
+                    // Record inconsistency - reacquire lock
+                    let verifiers_lock = self.verifiers.read();
+                    if let Some(verifier) = verifiers_lock.get(&result.verifier_id) {
                         verifier.record_inconsistency();
                     }
                 }
@@ -230,7 +244,7 @@ impl ShadowVerifierSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{Block, Transaction};
+    use ippan_types::Block;
 
     fn create_test_block() -> Block {
         let transactions = vec![];
@@ -241,7 +255,7 @@ mod tests {
     async fn test_shadow_verifier_creation() {
         let validator_id = [1u8; 32];
         let verifier = ShadowVerifier::new(validator_id);
-        
+
         assert_eq!(verifier.validator_id, validator_id);
         let (count, inconsistencies) = verifier.get_stats();
         assert_eq!(count, 0);
@@ -251,15 +265,15 @@ mod tests {
     #[tokio::test]
     async fn test_shadow_verifier_set() {
         let set = ShadowVerifierSet::new(3);
-        
+
         let validator1 = [1u8; 32];
         let validator2 = [2u8; 32];
         let validator3 = [3u8; 32];
-        
+
         set.add_verifier(validator1);
         set.add_verifier(validator2);
         set.add_verifier(validator3);
-        
+
         let stats = set.get_stats();
         assert_eq!(stats.len(), 3);
     }
@@ -268,10 +282,10 @@ mod tests {
     async fn test_parallel_verification() {
         let mut set = ShadowVerifierSet::new(3);
         let validators = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
-        
+
         let block = create_test_block();
         let results = set.verify_block(&block, &validators).await.unwrap();
-        
+
         assert_eq!(results.len(), 3);
         for result in results {
             assert!(result.verification_time_us > 0);

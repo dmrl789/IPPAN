@@ -5,8 +5,7 @@
 
 use blake3::Hasher;
 use ippan_economics::{
-    projected_supply, scheduled_round_reward, EmissionParams, RoundRewardDistribution, ValidatorId,
-    ValidatorReward,
+    scheduled_round_reward, EmissionParams, RoundRewardDistribution, ValidatorId, ValidatorReward,
 };
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
@@ -82,6 +81,9 @@ pub struct EmissionTracker {
 
     /// Historical audit records
     pub audit_history: Vec<EmissionAuditRecord>,
+
+    /// Fees collected since last audit checkpoint
+    audit_period_fees: u128,
 }
 
 impl EmissionTracker {
@@ -101,6 +103,7 @@ impl EmissionTracker {
             audit_interval,
             last_audit_round: 0,
             audit_history: Vec::new(),
+            audit_period_fees: 0,
         }
     }
 
@@ -274,6 +277,9 @@ impl EmissionTracker {
         // Update fee and commission totals
         self.total_fees_collected = self.total_fees_collected.saturating_add(transaction_fees);
 
+        // Track fees for current audit period
+        self.audit_period_fees = self.audit_period_fees.saturating_add(transaction_fees);
+
         self.total_ai_commissions = self.total_ai_commissions.saturating_add(ai_commissions);
 
         // Update network pool (add new dividends, subtract distributed)
@@ -317,9 +323,8 @@ impl EmissionTracker {
         // Calculate totals for the audit period
         let mut total_base_emission = 0u128;
         for r in start_round..=round {
-            total_base_emission = total_base_emission.saturating_add(
-                scheduled_round_reward(r, &self.params) as u128,
-            );
+            total_base_emission =
+                total_base_emission.saturating_add(scheduled_round_reward(r, &self.params) as u128);
         }
 
         let round_emission = scheduled_round_reward(round, &self.params) as u128;
@@ -346,7 +351,7 @@ impl EmissionTracker {
             cumulative_supply: self.cumulative_supply,
             round_emission,
             total_base_emission,
-            fees_collected: 0, // Placeholder
+            fees_collected: self.audit_period_fees,
             total_fees_collected: self.total_fees_collected,
             total_ai_commissions: self.total_ai_commissions,
             total_network_dividends: self.total_network_dividends,
@@ -362,11 +367,14 @@ impl EmissionTracker {
         self.audit_history.push(audit_record);
         self.last_audit_round = round;
 
+        // Reset audit period fee counter
+        self.audit_period_fees = 0;
+
         Ok(())
     }
 
     /// Verify emission consistency against expected schedule
-    /// 
+    ///
     /// This only verifies base emission, not fees or commissions which are external to the schedule
     pub fn verify_consistency(&self) -> Result<(), String> {
         let expected_supply = super::emission::projected_supply(self.last_round, &self.params);
@@ -439,6 +447,7 @@ impl EmissionTracker {
         self.empty_rounds = 0;
         self.last_audit_round = 0;
         self.audit_history.clear();
+        self.audit_period_fees = 0;
     }
 }
 
@@ -593,7 +602,7 @@ mod tests {
                 .unwrap();
         }
 
-        assert!(tracker.audit_history.len() >= 1);
+        assert!(!tracker.audit_history.is_empty());
     }
 
     #[test]

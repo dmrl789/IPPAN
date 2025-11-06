@@ -100,10 +100,10 @@ pub fn encrypt_data(data: &[u8], password: &str) -> Result<(String, String, Stri
 
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|e| WalletError::EncryptionError(format!("Cipher init failed: {}", e)))?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::from(nonce_bytes);
 
     let ciphertext = cipher
-        .encrypt(nonce, data)
+        .encrypt(&nonce, data)
         .map_err(|e| WalletError::EncryptionError(format!("Encryption failed: {}", e)))?;
 
     Ok((
@@ -127,10 +127,12 @@ pub fn decrypt_data(ciphertext: &str, nonce: &str, password: &str) -> Result<Vec
 
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|e| WalletError::DecryptionError(format!("Cipher init failed: {}", e)))?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce_array: [u8; 12] = nonce_bytes.as_slice().try_into()
+        .map_err(|_| WalletError::DecryptionError("Invalid nonce length".to_string()))?;
+    let nonce = Nonce::from(nonce_array);
 
     cipher
-        .decrypt(nonce, ciphertext_bytes.as_ref())
+        .decrypt(&nonce, ciphertext_bytes.as_ref())
         .map_err(|e| WalletError::DecryptionError(format!("Decryption failed: {}", e)))
 }
 

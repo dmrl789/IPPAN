@@ -1,5 +1,5 @@
 //! Reputation tracking and management for validators
-//! 
+//!
 //! This module tracks validator reputation based on their behavior
 //! and performance in the consensus process.
 
@@ -45,13 +45,13 @@ impl ReputationScore {
     /// Apply a reputation delta
     pub fn apply_delta(&mut self, delta: i64) {
         self.total = (self.total + delta).max(0).min(100_000); // Clamp between 0 and 100k
-        
+
         if delta > 0 {
             self.positive_actions += 1;
         } else if delta < 0 {
             self.negative_actions += 1;
         }
-        
+
         self.last_updated = chrono::Utc::now();
     }
 
@@ -71,7 +71,7 @@ impl ReputationScore {
         if total_actions == 0 {
             return 0.0;
         }
-        
+
         (self.positive_actions as f64) / (total_actions as f64)
     }
 }
@@ -147,10 +147,7 @@ impl ReputationDB {
 
     /// Get reputation score for a validator
     pub fn score(&self, validator_id: &str) -> i64 {
-        self.scores
-            .get(validator_id)
-            .map(|s| s.total)
-            .unwrap_or(0)
+        self.scores.get(validator_id).map(|s| s.total).unwrap_or(0)
     }
 
     /// Get full reputation info for a validator
@@ -167,8 +164,7 @@ impl ReputationDB {
             )));
         }
 
-        self.scores
-            .insert(validator_id, ReputationScore::default());
+        self.scores.insert(validator_id, ReputationScore::default());
         Ok(())
     }
 
@@ -180,10 +176,7 @@ impl ReputationDB {
         reason: String,
         round: u64,
     ) -> Result<()> {
-        let score = self
-            .scores
-            .entry(validator_id.to_string())
-            .or_insert_with(ReputationScore::default);
+        let score = self.scores.entry(validator_id.to_string()).or_default();
 
         score.apply_delta(delta);
 
@@ -283,28 +276,23 @@ impl ReputationDB {
 
     /// Get recent reputation changes
     pub fn recent_changes(&self, limit: usize) -> Vec<ReputationEvent> {
-        self.history
-            .iter()
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect()
+        self.history.iter().rev().take(limit).cloned().collect()
     }
 
     /// Get reputation statistics
     pub fn stats(&self) -> ReputationStats {
         let scores: Vec<i64> = self.scores.values().map(|s| s.total).collect();
-        
+
         let total = scores.len();
         let avg = if total > 0 {
             scores.iter().sum::<i64>() / total as i64
         } else {
             0
         };
-        
+
         let min = scores.iter().min().copied().unwrap_or(0);
         let max = scores.iter().max().copied().unwrap_or(0);
-        
+
         let active = self.get_active_validators().len();
 
         ReputationStats {
@@ -325,8 +313,11 @@ impl ReputationDB {
 
         let cutoff_round = current_round - keep_rounds;
         self.history.retain(|event| event.round > cutoff_round);
-        
-        tracing::debug!("Pruned reputation history, kept {} events", self.history.len());
+
+        tracing::debug!(
+            "Pruned reputation history, kept {} events",
+            self.history.len()
+        );
     }
 
     /// Reset reputation for a validator (admin function)
@@ -381,7 +372,7 @@ mod tests {
     #[test]
     fn test_reputation_db() {
         let mut db = ReputationDB::default();
-        
+
         db.initialize_validator("val1".to_string()).unwrap();
         assert_eq!(db.score("val1"), 10000);
 
@@ -416,10 +407,10 @@ mod tests {
     #[test]
     fn test_active_validators() {
         let mut db = ReputationDB::default();
-        
+
         db.initialize_validator("val1".to_string()).unwrap();
         db.initialize_validator("val2".to_string()).unwrap();
-        
+
         db.update("val2", -6000, "Test".to_string(), 1).unwrap();
 
         let active = db.get_active_validators();
@@ -442,7 +433,7 @@ mod tests {
     #[test]
     fn test_reputation_stats() {
         let mut db = ReputationDB::default();
-        
+
         db.initialize_validator("val1".to_string()).unwrap();
         db.initialize_validator("val2".to_string()).unwrap();
         db.update("val1", 500, "Test".to_string(), 1).unwrap();

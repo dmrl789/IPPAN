@@ -3,22 +3,20 @@
 //! Bridges the existing PoAConsensus with DLC components
 
 use anyhow::Result;
-use std::sync::Arc;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
-use crate::{
-    DLCConfig, DLCConsensus, ValidatorMetrics, PoAConsensus,
-};
+use crate::{DLCConfig, DLCConsensus, PoAConsensus, ValidatorMetrics};
 use ippan_types::ValidatorId;
 
 /// Extended PoA consensus with DLC capabilities
 pub struct DLCIntegratedConsensus {
     /// Base PoA consensus engine
     pub poa: PoAConsensus,
-    
+
     /// DLC consensus engine
     pub dlc: Arc<RwLock<DLCConsensus>>,
-    
+
     /// Whether DLC mode is enabled
     pub dlc_enabled: bool,
 }
@@ -27,7 +25,7 @@ impl DLCIntegratedConsensus {
     /// Create a new DLC-integrated consensus engine
     pub fn new(poa: PoAConsensus, dlc_config: DLCConfig, validator_id: ValidatorId) -> Self {
         let dlc = DLCConsensus::new(dlc_config, validator_id);
-        
+
         Self {
             poa,
             dlc: Arc::new(RwLock::new(dlc)),
@@ -36,16 +34,19 @@ impl DLCIntegratedConsensus {
     }
 
     /// Start the integrated consensus engine
+    #[allow(clippy::await_holding_lock)]
     pub async fn start(&mut self) -> Result<()> {
         // Start base PoA consensus
         self.poa.start().await?;
-        
+
         // Start DLC consensus if enabled
+        // Note: We intentionally hold the lock during the async operation
+        // as we need exclusive access to start the DLC consensus
         if self.dlc_enabled {
             let mut dlc = self.dlc.write();
             dlc.start().await?;
         }
-        
+
         Ok(())
     }
 
@@ -105,14 +106,14 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let storage = Arc::new(SledStorage::new(temp_dir.path().to_str().unwrap()).unwrap());
         storage.initialize().unwrap();
-        
+
         let validator_id = [1u8; 32];
         let poa_config = PoAConfig::default();
         let poa = PoAConsensus::new(poa_config, storage, validator_id);
-        
+
         let dlc_config = dlc_config_from_poa(true, 250);
         let integrated = DLCIntegratedConsensus::new(poa, dlc_config, validator_id);
-        
+
         assert!(integrated.dlc_enabled);
     }
 }

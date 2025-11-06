@@ -1,9 +1,9 @@
 [package]
 name = "ippan-time"
-version = "0.3.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Deterministic IPPAN Time service with libp2p synchronization and HashTimer emission."
-license = "MIT"
+license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
@@ -12,7 +12,6 @@ blake3 = { workspace = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true }
 libp2p = { workspace = true }
-libp2p-tcp = { version = "0.41", features = ["tokio"] }
 log = { workspace = true }
 once_cell = { workspace = true }
 rand_core = { workspace = true }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rand::Rng;
+use blake3::Hasher as Blake3;
 use std::collections::HashMap;
 
 #[cfg(feature = "ai_l1")]
@@ -138,7 +138,7 @@ impl RoundConsensus {
             selection_weights.insert(*validator, combined_weight);
         }
 
-        let proposer = self.weighted_random_selection(validators, &selection_weights)?;
+        let proposer = self.deterministic_weighted_selection(validators, &selection_weights, 0)?;
         let verifier_candidates: Vec<[u8; 32]> = validators
             .iter()
             .filter(|&&v| v != proposer)
@@ -161,30 +161,57 @@ impl RoundConsensus {
         })
     }
 
-    fn weighted_random_selection(
+    fn deterministic_weighted_selection(
         &self,
         candidates: &[[u8; 32]],
         weights: &HashMap<[u8; 32], f64>,
+        salt: u64,
     ) -> Result<[u8; 32]> {
-        let total_weight: f64 = weights.values().sum();
+        if candidates.is_empty() {
+            return Err(anyhow::anyhow!("No candidates available"));
+        }
+
+        let mut ordered: Vec<[u8; 32]> = candidates.to_vec();
+        ordered.sort();
+
+        let total_weight: f64 = ordered
+            .iter()
+            .map(|id| *weights.get(id).unwrap_or(&0.0))
+            .filter(|w| *w > 0.0)
+            .sum();
         if total_weight <= 0.0 {
             return Err(anyhow::anyhow!("Total weight must be positive"));
         }
 
-        let mut rng = rand::thread_rng();
-        let random_value: f64 = rng.gen_range(0.0..total_weight);
+        let mut hasher = Blake3::new();
+        hasher.update(b"ROUND_CONSENSUS_SELECTION");
+        hasher.update(&self.current_round.to_be_bytes());
+        hasher.update(&salt.to_be_bytes());
+        for id in &ordered {
+            hasher.update(id);
+            hasher.update(&weights.get(id).unwrap_or(&0.0).to_be_bytes());
+        }
+        let selection_hash = hasher.finalize();
 
-        let mut cumulative_weight = 0.0;
-        for candidate in candidates {
-            if let Some(&weight) = weights.get(candidate) {
-                cumulative_weight += weight;
-                if random_value <= cumulative_weight {
-                    return Ok(*candidate);
-                }
+        let mut selection_bytes = [0u8; 8];
+        selection_bytes.copy_from_slice(&selection_hash.as_bytes()[..8]);
+        let mut target = (u64::from_be_bytes(selection_bytes) as f64) % total_weight;
+
+        for candidate in ordered.iter() {
+            let weight = *weights.get(candidate).unwrap_or(&0.0);
+            if weight <= 0.0 {
+                continue;
             }
+            if target < weight {
+                return Ok(*candidate);
+            }
+            target -= weight;
         }
 
-        Ok(*candidates.last().unwrap())
+        ordered
+            .into_iter()
+            .find(|id| *weights.get(id).unwrap_or(&0.0) > 0.0)
+            .ok_or_else(|| anyhow::anyhow!("No candidates with positive weight"))
     }
 
     fn select_multiple_weighted(
@@ -197,13 +224,16 @@ impl RoundConsensus {
         let mut remaining_candidates = candidates.to_vec();
         let mut remaining_weights = weights.clone();
 
-        for _ in 0..count.min(candidates.len()) {
+        for idx in 0..count.min(candidates.len()) {
             if remaining_candidates.is_empty() {
                 break;
             }
 
-            let selected_item =
-                self.weighted_random_selection(&remaining_candidates, &remaining_weights)?;
+            let selected_item = self.deterministic_weighted_selection(
+                &remaining_candidates,
+                &remaining_weights,
+                (idx as u64) + 1,
+            )?;
             selected.push(selected_item);
             remaining_candidates.retain(|&x| x != selected_item);
             remaining_weights.remove(&selected_item);
@@ -303,7 +333,7 @@ mod tests {
         let model = create_test_model();
         let telemetry = create_test_telemetry();
         let score = calculate_reputation_score(&model, &telemetry).unwrap();
-        assert!(score >= 0 && score <= 10000);
+        assert!((0..=10000).contains(&score));
     }
 
     #[test]
@@ -355,7 +385,8 @@ mod tests {
             .select_validators(&validators, &stake_weights)
             .unwrap();
         assert!(validators.contains(&selection.proposer));
-        assert_eq!(selection.verifiers.len(), 3);
+        let expected_verifiers = validators.len().saturating_sub(1).min(3);
+        assert_eq!(selection.verifiers.len(), expected_verifiers);
         assert!(!selection.verifiers.contains(&selection.proposer));
     }
 

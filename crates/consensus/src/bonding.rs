@@ -13,8 +13,8 @@ use ippan_types::ValidatorId;
 /// Required validator bond amount (10 IPN in micro-IPN)
 pub const VALIDATOR_BOND_AMOUNT: u64 = 10 * 100_000_000; // 10 IPN
 
-/// Minimum bond to remain active
-pub const MIN_BOND_AMOUNT: u64 = VALIDATOR_BOND_AMOUNT;
+/// Minimum bond to remain active (allow up to 50% slashing before deactivation)
+pub const MIN_BOND_AMOUNT: u64 = VALIDATOR_BOND_AMOUNT / 2;
 
 /// Validator bond record
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,7 +94,7 @@ impl BondingManager {
 
         let bond = ValidatorBond::new(validator_id, amount);
         self.bonds.insert(validator_id, bond);
-        
+
         Ok(())
     }
 
@@ -113,23 +113,25 @@ impl BondingManager {
 
     /// Slash a validator's bond
     pub fn slash_bond(&mut self, validator_id: &ValidatorId, amount: u64) -> Result<()> {
-        let bond = self.bonds
+        let bond = self
+            .bonds
             .get_mut(validator_id)
             .ok_or_else(|| anyhow::anyhow!("Validator bond not found"))?;
 
         bond.slash(amount);
-        
+
         Ok(())
     }
 
     /// Update validator activity
     pub fn update_activity(&mut self, validator_id: &ValidatorId) -> Result<()> {
-        let bond = self.bonds
+        let bond = self
+            .bonds
             .get_mut(validator_id)
             .ok_or_else(|| anyhow::anyhow!("Validator bond not found"))?;
 
         bond.update_activity();
-        
+
         Ok(())
     }
 
@@ -144,10 +146,7 @@ impl BondingManager {
 
     /// Get total bonded amount across all validators
     pub fn total_bonded(&self) -> u64 {
-        self.bonds
-            .values()
-            .map(|bond| bond.effective_bond())
-            .sum()
+        self.bonds.values().map(|bond| bond.effective_bond()).sum()
     }
 
     /// Remove a bond (for withdrawals)
@@ -172,7 +171,7 @@ mod tests {
     fn test_bond_creation() {
         let validator_id = [1u8; 32];
         let bond = ValidatorBond::new(validator_id, VALIDATOR_BOND_AMOUNT);
-        
+
         assert_eq!(bond.validator_id, validator_id);
         assert_eq!(bond.bonded_amount, VALIDATOR_BOND_AMOUNT);
         assert!(bond.is_valid());
@@ -183,11 +182,11 @@ mod tests {
     fn test_bond_slashing() {
         let validator_id = [1u8; 32];
         let mut bond = ValidatorBond::new(validator_id, VALIDATOR_BOND_AMOUNT);
-        
+
         bond.slash(100_000_000); // Slash 1 IPN
         assert_eq!(bond.effective_bond(), VALIDATOR_BOND_AMOUNT - 100_000_000);
         assert!(bond.is_valid()); // Still above minimum
-        
+
         bond.slash(900_000_000); // Slash 9 more IPN (total 10 IPN slashed)
         assert_eq!(bond.effective_bond(), 0);
         assert!(!bond.is_valid()); // Below minimum
@@ -197,11 +196,13 @@ mod tests {
     fn test_bonding_manager() {
         let mut manager = BondingManager::new();
         let validator_id = [1u8; 32];
-        
+
         // Add bond
-        assert!(manager.add_bond(validator_id, VALIDATOR_BOND_AMOUNT).is_ok());
+        assert!(manager
+            .add_bond(validator_id, VALIDATOR_BOND_AMOUNT)
+            .is_ok());
         assert!(manager.has_valid_bond(&validator_id));
-        
+
         // Check active validators
         let active = manager.get_active_validators();
         assert_eq!(active.len(), 1);
@@ -212,22 +213,28 @@ mod tests {
     fn test_minimum_bond_requirement() {
         let mut manager = BondingManager::new();
         let validator_id = [1u8; 32];
-        
+
         // Try to bond less than minimum
-        assert!(manager.add_bond(validator_id, VALIDATOR_BOND_AMOUNT - 1).is_err());
-        
+        assert!(manager
+            .add_bond(validator_id, VALIDATOR_BOND_AMOUNT - 1)
+            .is_err());
+
         // Bond exactly minimum
-        assert!(manager.add_bond(validator_id, VALIDATOR_BOND_AMOUNT).is_ok());
+        assert!(manager
+            .add_bond(validator_id, VALIDATOR_BOND_AMOUNT)
+            .is_ok());
     }
 
     #[test]
     fn test_total_bonded() {
         let mut manager = BondingManager::new();
-        
+
         manager.add_bond([1u8; 32], VALIDATOR_BOND_AMOUNT).unwrap();
         manager.add_bond([2u8; 32], VALIDATOR_BOND_AMOUNT).unwrap();
-        manager.add_bond([3u8; 32], VALIDATOR_BOND_AMOUNT * 2).unwrap();
-        
+        manager
+            .add_bond([3u8; 32], VALIDATOR_BOND_AMOUNT * 2)
+            .unwrap();
+
         assert_eq!(manager.total_bonded(), VALIDATOR_BOND_AMOUNT * 4);
     }
 }

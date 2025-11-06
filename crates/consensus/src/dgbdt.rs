@@ -53,12 +53,13 @@ pub struct VerifierSelection {
 pub struct DGBDTEngine {
     /// Model weights for different factors
     weights: HashMap<String, f64>,
-    
+
     /// Historical performance data
     history: Vec<SelectionHistory>,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SelectionHistory {
     round: RoundId,
     selected: ValidatorId,
@@ -69,7 +70,7 @@ impl DGBDTEngine {
     /// Create a new D-GBDT engine with default weights
     pub fn new() -> Self {
         let mut weights = HashMap::new();
-        
+
         // Initialize weights for fairness model
         weights.insert("blocks_proposed".to_string(), 0.25);
         weights.insert("blocks_verified".to_string(), 0.20);
@@ -78,7 +79,7 @@ impl DGBDTEngine {
         weights.insert("slash_penalty".to_string(), 0.10);
         weights.insert("performance".to_string(), 0.10);
         weights.insert("stake".to_string(), 0.05);
-        
+
         Self {
             weights,
             history: Vec::new(),
@@ -94,13 +95,13 @@ impl DGBDTEngine {
         };
 
         let verification_score = if metrics.rounds_active > 0 {
-            ((metrics.blocks_verified * 1000 / metrics.rounds_active).min(10000)) as f64
+            ((metrics.blocks_verified * 10000 / metrics.rounds_active).min(10000)) as f64
         } else {
             5000.0
         };
 
         let uptime_score = (metrics.uptime_percentage * 10000.0).min(10000.0);
-        
+
         let latency_score = {
             let normalized = (200_000.0 - metrics.avg_latency_us.min(200_000) as f64) / 200_000.0;
             (normalized * 10000.0).max(0.0)
@@ -108,21 +109,20 @@ impl DGBDTEngine {
 
         let slash_penalty = 10000.0 - (metrics.slash_count as f64 * 1000.0).min(10000.0);
         let performance_score = (metrics.recent_performance * 10000.0).min(10000.0);
-        
+
         let stake_score = {
             let normalized = (metrics.stake_amount as f64 / 100_000_000.0).min(1.0);
             normalized * 10000.0
         };
 
         // Weighted sum
-        let weighted_score = 
-            proposal_score * self.weights.get("blocks_proposed").unwrap_or(&0.25) +
-            verification_score * self.weights.get("blocks_verified").unwrap_or(&0.20) +
-            uptime_score * self.weights.get("uptime").unwrap_or(&0.15) +
-            latency_score * self.weights.get("latency").unwrap_or(&0.15) +
-            slash_penalty * self.weights.get("slash_penalty").unwrap_or(&0.10) +
-            performance_score * self.weights.get("performance").unwrap_or(&0.10) +
-            stake_score * self.weights.get("stake").unwrap_or(&0.05);
+        let weighted_score = proposal_score * self.weights.get("blocks_proposed").unwrap_or(&0.25)
+            + verification_score * self.weights.get("blocks_verified").unwrap_or(&0.20)
+            + uptime_score * self.weights.get("uptime").unwrap_or(&0.15)
+            + latency_score * self.weights.get("latency").unwrap_or(&0.15)
+            + slash_penalty * self.weights.get("slash_penalty").unwrap_or(&0.10)
+            + performance_score * self.weights.get("performance").unwrap_or(&0.10)
+            + stake_score * self.weights.get("stake").unwrap_or(&0.05);
 
         (weighted_score as i32).clamp(0, 10000)
     }
@@ -159,7 +159,7 @@ impl DGBDTEngine {
         // Select shadow verifiers
         scores.remove(&primary); // Don't select same validator twice
         let mut shadows = Vec::new();
-        
+
         for i in 0..shadow_count.min(scores.len()) {
             let shadow = self.weighted_deterministic_selection(&scores, &selection_seed, i + 1)?;
             shadows.push(shadow);
@@ -179,7 +179,7 @@ impl DGBDTEngine {
         let mut hasher = Blake3::new();
         hasher.update(b"DLC_VERIFIER_SELECTION");
         hasher.update(&round.to_be_bytes());
-        
+
         let hash = hasher.finalize();
         let mut seed = [0u8; 32];
         seed.copy_from_slice(hash.as_bytes());
@@ -210,7 +210,7 @@ impl DGBDTEngine {
 
         // Calculate total weighted score
         let total_score: i64 = scores.values().map(|&s| s as i64).sum();
-        
+
         if total_score == 0 {
             // Fallback to first validator if all scores are 0
             return Ok(*scores.keys().next().unwrap());
@@ -220,15 +220,21 @@ impl DGBDTEngine {
         let target = (selection_value % total_score as u64) as i64;
         let mut cumulative = 0i64;
 
-        for (&validator_id, &score) in scores.iter() {
-            cumulative += score as i64;
+        let mut ordered: Vec<(ValidatorId, i32)> = scores.iter().map(|(id, score)| (*id, *score)).collect();
+        ordered.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        for (validator_id, score) in &ordered {
+            cumulative += *score as i64;
             if target < cumulative {
-                return Ok(validator_id);
+                return Ok(*validator_id);
             }
         }
 
         // Fallback (shouldn't reach here)
-        Ok(*scores.keys().next().unwrap())
+        Ok(ordered
+            .last()
+            .map(|(id, _)| *id)
+            .unwrap_or_else(|| scores.keys().next().copied().unwrap()))
     }
 
     /// Record selection in history for learning
@@ -279,7 +285,7 @@ mod tests {
         };
 
         let score = engine.calculate_reputation(&metrics);
-        assert!(score >= 0 && score <= 10000);
+        assert!((0..=10000).contains(&score));
         assert!(score > 8000); // Should be high for good metrics
     }
 
@@ -287,7 +293,7 @@ mod tests {
     fn test_deterministic_selection() {
         let engine = DGBDTEngine::new();
         let mut metrics = HashMap::new();
-        
+
         for i in 0..5 {
             let mut id = [0u8; 32];
             id[0] = i;
@@ -296,7 +302,7 @@ mod tests {
 
         let result1 = engine.select_verifiers(1, &metrics, 3, 0).unwrap();
         let result2 = engine.select_verifiers(1, &metrics, 3, 0).unwrap();
-        
+
         // Same round should give same result (deterministic)
         assert_eq!(result1.primary, result2.primary);
         assert_eq!(result1.shadows, result2.shadows);
@@ -308,7 +314,7 @@ mod tests {
         let seed1 = engine.generate_selection_seed(1);
         let seed2 = engine.generate_selection_seed(1);
         let seed3 = engine.generate_selection_seed(2);
-        
+
         assert_eq!(seed1, seed2); // Same round = same seed
         assert_ne!(seed1, seed3); // Different round = different seed
     }

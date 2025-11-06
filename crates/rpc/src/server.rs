@@ -58,6 +58,7 @@ pub struct AppState {
 pub struct ConsensusHandle {
     consensus: Arc<Mutex<PoAConsensus>>,
     tx_sender: mpsc::UnboundedSender<Transaction>,
+    #[allow(dead_code)]
     mempool: Arc<Mempool>,
 }
 
@@ -721,9 +722,8 @@ fn message_announced_address(message: &NetworkMessage) -> Option<String> {
     match message {
         NetworkMessage::PeerInfo { addresses, .. } => addresses
             .iter()
-            .filter(|addr| !addr.is_empty() && !addr.contains("0.0.0.0"))
+            .find(|addr| !addr.is_empty() && !addr.contains("0.0.0.0"))
             .cloned()
-            .next()
             .or_else(|| addresses.first().cloned()),
         _ => None,
     }

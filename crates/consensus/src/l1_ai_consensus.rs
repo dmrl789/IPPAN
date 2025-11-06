@@ -211,22 +211,25 @@ impl L1AIConsensus {
         network_state: &NetworkState,
         validator_telemetry: &[ValidatorTelemetry],
     ) -> Result<NetworkHealthReport, String> {
-        if !self.config.enable_health_ai || self.network_health_model.is_none() {
-            return Ok(NetworkHealthReport::default());
+        if !self.config.enable_health_ai {
+            return Ok(self.build_heuristic_health_report(network_state, validator_telemetry));
         }
 
-        let model = self.network_health_model.as_ref().unwrap();
-        let features = self.extract_health_features(network_state, validator_telemetry);
-        let health_score = eval_gbdt(model, &features);
-        let health_level = (health_score as f64) / 10000.0;
+        if let Some(model) = self.network_health_model.as_ref() {
+            let features = self.extract_health_features(network_state, validator_telemetry);
+            let health_score = eval_gbdt(model, &features);
+            let health_level = (health_score as f64) / 10000.0;
 
-        Ok(NetworkHealthReport {
-            overall_health: health_level,
-            congestion_level: network_state.congestion_level,
-            validator_performance: self.calculate_avg_validator_performance(validator_telemetry),
-            recommendations: self.generate_health_recommendations(health_level, network_state),
-            confidence_score: health_level,
-        })
+            Ok(NetworkHealthReport {
+                overall_health: health_level,
+                congestion_level: network_state.congestion_level,
+                validator_performance: self.calculate_avg_validator_performance(validator_telemetry),
+                recommendations: self.generate_health_recommendations(health_level, network_state),
+                confidence_score: health_level,
+            })
+        } else {
+            Ok(self.build_heuristic_health_report(network_state, validator_telemetry))
+        }
     }
 
     /// --- Feature Extraction Helpers ---
@@ -286,6 +289,37 @@ impl L1AIConsensus {
             (avg_performance * 10000.0) as i64,
             network_state.current_round as i64,
         ]
+    }
+
+    fn build_heuristic_health_report(
+        &self,
+        network_state: &NetworkState,
+        validator_telemetry: &[ValidatorTelemetry],
+    ) -> NetworkHealthReport {
+        let validator_performance = self.calculate_avg_validator_performance(validator_telemetry);
+
+        let mut health_level = 1.0;
+        health_level -= (network_state.congestion_level * 0.5).clamp(0.0, 0.5);
+
+        let block_time_factor = (network_state.avg_block_time_ms / 500.0).clamp(0.0, 1.0);
+        health_level -= block_time_factor * 0.3;
+
+        let validator_factor = if network_state.active_validators >= 20 {
+            0.0
+        } else {
+            ((20 - network_state.active_validators) as f64 / 20.0).clamp(0.0, 1.0)
+        };
+        health_level -= validator_factor * 0.2;
+
+        health_level = health_level.clamp(0.0, 1.0);
+
+        NetworkHealthReport {
+            overall_health: health_level,
+            congestion_level: network_state.congestion_level,
+            validator_performance,
+            recommendations: self.generate_health_recommendations(health_level, network_state),
+            confidence_score: 0.5,
+        }
     }
 
     fn calculate_avg_validator_performance(&self, telemetry: &[ValidatorTelemetry]) -> f64 {
@@ -368,6 +402,7 @@ mod tests {
     use super::*;
     use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};
 
+    #[allow(dead_code)]
     fn create_test_gbdt_model() -> GBDTModel {
         GBDTModel::new(
             vec![Tree {

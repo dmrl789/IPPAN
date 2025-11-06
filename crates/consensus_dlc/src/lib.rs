@@ -1,11 +1,11 @@
 //! Deterministic Learning Consensus (DLC)
-//! 
+//!
 //! A production-ready consensus engine combining HashTimer™, BlockDAG,
 //! and Deterministic Gradient-Boosted Decision Trees (D-GBDT) for fair
 //! and verifiable validator selection.
-//! 
+//!
 //! # Overview
-//! 
+//!
 //! DLC provides a comprehensive consensus mechanism with:
 //! - **HashTimer**: Deterministic time-based ordering
 //! - **BlockDAG**: Parallel block production with DAG structure
@@ -13,12 +13,12 @@
 //! - **Reputation**: Validator behavior tracking and scoring
 //! - **Bonding**: Stake-based security with slashing
 //! - **Emission**: Controlled token distribution and rewards
-//! 
+//!
 //! # Example
-//! 
+//!
 //! ```no_run
 //! use ippan_consensus_dlc::*;
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Initialize consensus components
@@ -37,26 +37,26 @@
 //! }
 //! ```
 
-pub mod error;
-pub mod hashtimer;
+pub mod bond;
 pub mod dag;
 pub mod dgbdt;
-pub mod verifier;
-pub mod reputation;
 pub mod emission;
-pub mod bond;
+pub mod error;
+pub mod hashtimer;
+pub mod reputation;
+pub mod verifier;
 
 #[cfg(test)]
 mod tests;
 
-use error::Result;
-use hashtimer::HashTimer;
+use bond::BondManager;
 use dag::BlockDAG;
 use dgbdt::FairnessModel;
-use verifier::{VerifierSet, VerifiedBlock, ValidatorSetManager};
-use reputation::ReputationDB;
 use emission::{EmissionSchedule, RewardDistributor};
-use bond::BondManager;
+use error::Result;
+use hashtimer::HashTimer;
+use reputation::ReputationDB;
+use verifier::{ValidatorSetManager, VerifiedBlock, VerifierSet};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -123,7 +123,7 @@ impl DlcConsensus {
     /// Create a new DLC consensus instance
     pub fn new(config: DlcConfig) -> Self {
         let model = FairnessModel::new_production();
-        
+
         Self {
             dag: BlockDAG::new(),
             validators: ValidatorSetManager::new(model, config.validators_per_round),
@@ -145,15 +145,16 @@ impl DlcConsensus {
     ) -> Result<()> {
         // Create bond
         self.bonds.create_bond(validator_id.clone(), stake)?;
-        
+
         // Register in validator set
-        self.validators.register_validator(validator_id.clone(), metrics)?;
-        
+        self.validators
+            .register_validator(validator_id.clone(), metrics)?;
+
         // Initialize reputation
         self.reputation.initialize_validator(validator_id.clone())?;
-        
+
         tracing::info!("Registered validator {} with stake {}", validator_id, stake);
-        
+
         Ok(())
     }
 
@@ -161,32 +162,29 @@ impl DlcConsensus {
     pub async fn process_round(&mut self) -> Result<RoundResult> {
         self.current_round += 1;
         let round_time = HashTimer::for_round(self.current_round);
-        
+
         // Select verifiers for this round
         let seed = round_time.hash.clone();
         let verifier_set = self.validators.select_for_round(seed, self.current_round)?;
-        
+
         tracing::debug!(
             "Round {}: Selected {} verifiers, primary: {}",
             self.current_round,
             verifier_set.size(),
             verifier_set.primary
         );
-        
+
         // Collect and verify blocks
         let pending = self.dag.pending();
         let blocks_to_process = verifier_set.collect_blocks(pending);
-        
+
         let mut verified_blocks = Vec::new();
         for block in blocks_to_process {
             match verifier_set.validate(&block) {
                 Ok(()) => {
-                    let verified = VerifiedBlock::new(
-                        block.clone(),
-                        verifier_set.all_verifiers(),
-                    );
+                    let verified = VerifiedBlock::new(block.clone(), verifier_set.all_verifiers());
                     verified_blocks.push(verified);
-                    
+
                     // Insert into DAG
                     self.dag.insert(block)?;
                 }
@@ -194,21 +192,20 @@ impl DlcConsensus {
                     tracing::warn!("Block validation failed: {}", e);
                     // Penalize proposer
                     if self.config.enable_slashing {
-                        let _ = self.reputation.penalize_invalid_proposal(
-                            &block.proposer,
-                            self.current_round,
-                        );
+                        let _ = self
+                            .reputation
+                            .penalize_invalid_proposal(&block.proposer, self.current_round);
                     }
                 }
             }
         }
-        
+
         // Finalize blocks
         let finalized_ids = self.dag.finalize_round(round_time.clone());
-        
+
         // Calculate and distribute rewards
         let block_reward = self.emission.calculate_block_reward(self.current_round);
-        
+
         if !verified_blocks.is_empty() && block_reward > 0 {
             for verified in &verified_blocks {
                 let distribution = self.rewards.distribute_block_reward(
@@ -216,24 +213,26 @@ impl DlcConsensus {
                     &verified.block.proposer,
                     &verified.verified_by,
                 )?;
-                
+
                 // Update reputation for participants
-                let _ = self.reputation.reward_proposal(
-                    &verified.block.proposer,
-                    self.current_round,
-                );
-                
+                let _ = self
+                    .reputation
+                    .reward_proposal(&verified.block.proposer, self.current_round);
+
                 for verifier in &verified.verified_by {
-                    let _ = self.reputation.reward_verification(verifier, self.current_round);
+                    let _ = self
+                        .reputation
+                        .reward_verification(verifier, self.current_round);
                 }
-                
+
                 tracing::debug!("Distributed rewards: {:?}", distribution);
             }
         }
-        
+
         // Update emission schedule
-        self.emission.update(self.current_round, verified_blocks.len() as u64)?;
-        
+        self.emission
+            .update(self.current_round, verified_blocks.len() as u64)?;
+
         Ok(RoundResult {
             round: self.current_round,
             blocks_processed: verified_blocks.len(),
@@ -284,14 +283,11 @@ pub async fn process_round(
     round: u64,
 ) -> Result<RoundResult> {
     let round_time = HashTimer::for_round(round);
-    
+
     // Create a minimal validator set for demonstration
     let mut validators = HashMap::new();
-    validators.insert(
-        "validator1".to_string(),
-        dgbdt::ValidatorMetrics::default(),
-    );
-    
+    validators.insert("validator1".to_string(), dgbdt::ValidatorMetrics::default());
+
     let verifier_set = VerifierSet::select(
         fairness,
         &validators,
@@ -299,10 +295,10 @@ pub async fn process_round(
         round,
         validators.len(),
     )?;
-    
+
     let pending = dag.pending();
     let blocks = verifier_set.collect_blocks(pending);
-    
+
     let mut processed = 0;
     for block in blocks {
         if verifier_set.validate(&block).is_ok() {
@@ -310,11 +306,11 @@ pub async fn process_round(
             processed += 1;
         }
     }
-    
+
     let finalized_ids = dag.finalize_round(round_time);
-    
+
     tracing::info!("DLC round {} finalized", round);
-    
+
     Ok(RoundResult {
         round,
         blocks_processed: processed,

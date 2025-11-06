@@ -1,5 +1,5 @@
 //! Block DAG (Directed Acyclic Graph) implementation for DLC consensus
-//! 
+//!
 //! This module provides a DAG-based blockchain structure that allows
 //! parallel block production and deterministic ordering.
 
@@ -43,7 +43,7 @@ impl Block {
     ) -> Self {
         let merkle_root = Self::compute_merkle_root(&data);
         let id = Self::compute_id(&parents, &timestamp, &merkle_root, &proposer);
-        
+
         Self {
             id,
             parents,
@@ -57,7 +57,12 @@ impl Block {
     }
 
     /// Compute block ID from components
-    fn compute_id(parents: &[String], timestamp: &HashTimer, merkle_root: &str, proposer: &str) -> String {
+    fn compute_id(
+        parents: &[String],
+        timestamp: &HashTimer,
+        merkle_root: &str,
+        proposer: &str,
+    ) -> String {
         let mut hasher = Hasher::new();
         for parent in parents {
             hasher.update(parent.as_bytes());
@@ -115,7 +120,7 @@ impl BlockDAG {
     /// Create a new BlockDAG with genesis block
     pub fn new() -> Self {
         let mut dag = Self::default();
-        
+
         // Create genesis block
         let genesis = Block::new(
             vec![],
@@ -123,13 +128,13 @@ impl BlockDAG {
             vec![],
             "genesis".to_string(),
         );
-        
+
         let genesis_id = genesis.id.clone();
         dag.genesis_id = Some(genesis_id.clone());
         dag.blocks.insert(genesis_id.clone(), genesis);
         dag.tips.insert(genesis_id.clone());
         dag.finalized.insert(genesis_id);
-        
+
         dag
     }
 
@@ -137,32 +142,32 @@ impl BlockDAG {
     pub fn insert(&mut self, mut block: Block) -> Result<()> {
         // Validate block
         self.validate_block(&block)?;
-        
+
         // Calculate height
         block.height = self.calculate_height(&block);
-        
+
         let block_id = block.id.clone();
-        
+
         // Update parent-child relationships
         for parent_id in &block.parents {
             self.children
                 .entry(parent_id.clone())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(block_id.clone());
-            
+
             // Parent is no longer a tip
             self.tips.remove(parent_id);
         }
-        
+
         // Add block to tips
         self.tips.insert(block_id.clone());
-        
+
         // Add to pending
         self.pending_ids.insert(block_id.clone());
-        
+
         // Insert block
         self.blocks.insert(block_id, block);
-        
+
         Ok(())
     }
 
@@ -170,29 +175,31 @@ impl BlockDAG {
     fn validate_block(&self, block: &Block) -> Result<()> {
         // Check if block already exists
         if self.blocks.contains_key(&block.id) {
-            return Err(DlcError::BlockValidation(
-                format!("Block {} already exists", block.id)
-            ));
+            return Err(DlcError::BlockValidation(format!(
+                "Block {} already exists",
+                block.id
+            )));
         }
-        
+
         // Validate parents exist (except for genesis)
         if !block.is_genesis() {
             for parent_id in &block.parents {
                 if !self.blocks.contains_key(parent_id) {
-                    return Err(DlcError::BlockValidation(
-                        format!("Parent block {} not found", parent_id)
-                    ));
+                    return Err(DlcError::BlockValidation(format!(
+                        "Parent block {} not found",
+                        parent_id
+                    )));
                 }
             }
         }
-        
+
         // Validate signature
         if !block.verify_signature() && !block.is_genesis() {
             return Err(DlcError::BlockValidation(
-                "Block signature verification failed".to_string()
+                "Block signature verification failed".to_string(),
             ));
         }
-        
+
         Ok(())
     }
 
@@ -201,8 +208,9 @@ impl BlockDAG {
         if block.is_genesis() {
             return 0;
         }
-        
-        block.parents
+
+        block
+            .parents
             .iter()
             .filter_map(|parent_id| self.blocks.get(parent_id))
             .map(|parent| parent.height + 1)
@@ -317,10 +325,8 @@ impl BlockDAG {
 
         for tip in tips {
             let ancestors = self.ancestors_beyond_depth(tip, depth);
-            let new_intersection: HashSet<String> = intersection
-                .intersection(&ancestors)
-                .cloned()
-                .collect();
+            let new_intersection: HashSet<String> =
+                intersection.intersection(&ancestors).cloned().collect();
 
             intersection = new_intersection;
 
@@ -359,12 +365,12 @@ impl BlockDAG {
     pub fn get_path_to_genesis(&self, block_id: &str) -> Vec<String> {
         let mut path = vec![block_id.to_string()];
         let mut current_id = block_id.to_string();
-        
+
         while let Some(block) = self.blocks.get(&current_id) {
             if block.is_genesis() {
                 break;
             }
-            
+
             // Follow first parent (can be extended for DAG analysis)
             if let Some(parent_id) = block.parents.first() {
                 path.push(parent_id.clone());
@@ -373,7 +379,7 @@ impl BlockDAG {
                 break;
             }
         }
-        
+
         path
     }
 
@@ -382,17 +388,12 @@ impl BlockDAG {
         let mut sorted = Vec::new();
         let mut visited = HashSet::new();
         let mut in_progress = HashSet::new();
-        
+
         // Start from tips and work backwards
         for tip_id in &self.tips {
-            self.dfs_topological(
-                tip_id,
-                &mut visited,
-                &mut in_progress,
-                &mut sorted,
-            );
+            self.dfs_topological(tip_id, &mut visited, &mut in_progress, &mut sorted);
         }
-        
+
         sorted.reverse();
         sorted
     }
@@ -407,20 +408,20 @@ impl BlockDAG {
         if visited.contains(node_id) {
             return;
         }
-        
+
         if in_progress.contains(node_id) {
             // Cycle detected (shouldn't happen in DAG)
             return;
         }
-        
+
         in_progress.insert(node_id.to_string());
-        
+
         if let Some(block) = self.blocks.get(node_id) {
             for parent_id in &block.parents {
                 self.dfs_topological(parent_id, visited, in_progress, sorted);
             }
         }
-        
+
         in_progress.remove(node_id);
         visited.insert(node_id.to_string());
         sorted.push(node_id.to_string());
@@ -456,13 +457,8 @@ mod tests {
 
     #[test]
     fn test_block_creation() {
-        let block = Block::new(
-            vec![],
-            HashTimer::now(),
-            vec![1, 2, 3],
-            "test".to_string(),
-        );
-        
+        let block = Block::new(vec![], HashTimer::now(), vec![1, 2, 3], "test".to_string());
+
         assert!(!block.id.is_empty());
         assert!(block.is_genesis());
     }
@@ -478,7 +474,7 @@ mod tests {
     fn test_dag_insertion() {
         let mut dag = BlockDAG::new();
         let genesis_id = dag.genesis_id.clone().unwrap();
-        
+
         let mut block = Block::new(
             vec![genesis_id.clone()],
             HashTimer::for_round(1),
@@ -486,7 +482,7 @@ mod tests {
             "proposer1".to_string(),
         );
         block.sign(vec![0u8; 64]); // Mock signature
-        
+
         let result = dag.insert(block);
         assert!(result.is_ok());
         assert_eq!(dag.blocks.len(), 2);
@@ -496,7 +492,7 @@ mod tests {
     fn test_dag_tips() {
         let mut dag = BlockDAG::new();
         let genesis_id = dag.genesis_id.clone().unwrap();
-        
+
         let mut block = Block::new(
             vec![genesis_id.clone()],
             HashTimer::for_round(1),
@@ -504,9 +500,9 @@ mod tests {
             "proposer1".to_string(),
         );
         block.sign(vec![0u8; 64]);
-        
+
         dag.insert(block.clone()).unwrap();
-        
+
         let tips = dag.get_tips();
         assert_eq!(tips.len(), 1);
         assert_eq!(tips[0].id, block.id);
@@ -516,7 +512,7 @@ mod tests {
     fn test_dag_finalization() {
         let mut dag = BlockDAG::new();
         let genesis_id = dag.genesis_id.clone().unwrap();
-        
+
         let mut previous = genesis_id.clone();
         let mut first_block_id = String::new();
 
@@ -536,7 +532,7 @@ mod tests {
         }
 
         let finalized = dag.finalize_round(HashTimer::for_round(5));
-        
+
         assert_eq!(dag.current_round, 5);
         assert!(finalized.contains(&first_block_id));
         assert!(!finalized.iter().any(|id| id == &previous));

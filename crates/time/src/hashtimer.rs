@@ -296,4 +296,374 @@ mod tests {
         timer.timestamp_us += 1;
         assert!(!verify_hashtimer(&timer));
     }
+
+    #[test]
+    fn derive_is_deterministic_for_identical_inputs() {
+        let time = IppanTimeMicros(123_456);
+        let domain = b"domain";
+        let payload = b"payload";
+        let nonce = b"nonce";
+        let node_id = b"node-id";
+
+        let timer_a = HashTimer::derive("ctx", time, domain, payload, nonce, node_id);
+        let timer_b = HashTimer::derive("ctx", time, domain, payload, nonce, node_id);
+
+        assert_eq!(timer_a.timestamp_us, timer_b.timestamp_us);
+        assert_eq!(timer_a.entropy, timer_b.entropy);
+        assert_eq!(timer_a.digest(), timer_b.digest());
+    }
+
+    #[test]
+    fn derive_changes_when_payload_differs() {
+        let time = IppanTimeMicros(987_654);
+        let base = HashTimer::derive("ctx", time, b"domain", b"payload-a", b"nonce", b"node");
+        let different = HashTimer::derive("ctx", time, b"domain", b"payload-b", b"nonce", b"node");
+
+        assert_ne!(base.entropy, different.entropy);
+        assert_ne!(base.digest(), different.digest());
+    }
+
+    #[test]
+    fn hex_round_trip_preserves_timestamp_and_digest() {
+        let time = IppanTimeMicros(321_000);
+        let timer = HashTimer::derive("ctx", time, b"domain", b"payload", b"nonce", b"node");
+        let encoded = timer.to_hex();
+        let decoded = HashTimer::from_hex(&encoded).expect("decode from hex");
+
+        assert_eq!(decoded.timestamp_us, timer.timestamp_us);
+        assert_eq!(decoded.to_hex().len(), encoded.len());
+        assert_eq!(&decoded.to_hex()[..14], &encoded[..14]);
+        assert_ne!(decoded.digest(), [0u8; 32]);
+        assert!(decoded.signature.is_empty());
+        assert!(decoded.public_key.is_empty());
+    }
+
+    #[test]
+    fn signed_variant_preserves_digest_and_verifies() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let base = HashTimer::derive("ctx", IppanTimeMicros(111), b"domain", b"payload", b"nonce", b"node");
+        let signed = base.signed(&signing_key);
+
+        assert_eq!(base.digest(), signed.digest());
+        assert_eq!(base.timestamp_us, signed.timestamp_us);
+        assert!(!signed.signature.is_empty());
+        assert!(!signed.public_key.is_empty());
+        assert!(signed.verify());
+
+    }
+
+    // =====================================================================
+    // Deterministic HashTimer Tests - Critical Path Coverage
+    // =====================================================================
+
+    #[test]
+    fn hashtimer_entropy_never_repeats() {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        for _ in 0..1000 {
+            let entropy = generate_entropy();
+            assert!(seen.insert(entropy), "Entropy collision detected");
+        }
+    }
+
+    #[test]
+    fn hashtimer_derive_is_deterministic() {
+        let time = IppanTimeMicros(1000000);
+        let domain = b"test-domain";
+        let payload = b"test-payload";
+        let nonce = [42u8; 32];
+        let node_id = [7u8; 32];
+
+        let ht1 = HashTimer::derive("tx", time, domain, payload, &nonce, &node_id);
+        let ht2 = HashTimer::derive("tx", time, domain, payload, &nonce, &node_id);
+
+        assert_eq!(ht1.entropy, ht2.entropy, "Derivation must be deterministic");
+        assert_eq!(ht1.digest(), ht2.digest(), "Digest must be deterministic");
+        assert_eq!(
+            ht1.timestamp_us, ht2.timestamp_us,
+            "Timestamp must be preserved"
+        );
+    }
+
+    #[test]
+    fn hashtimer_hex_round_trip() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let original = sign_hashtimer(&signing_key);
+
+        let hex = original.to_hex();
+        assert_eq!(hex.len(), 64, "Hex must be 64 characters");
+
+        let decoded = HashTimer::from_hex(&hex).expect("decode");
+        assert_eq!(
+            original.timestamp_us, decoded.timestamp_us,
+            "Timestamp preserved"
+        );
+
+        // Digest should be reproducible from time prefix
+        let original_digest = original.digest();
+        assert_eq!(hex[14..64], hex::encode(&original_digest)[0..50]);
+    }
+
+    #[test]
+    fn hashtimer_hex_encoding_invalid_length_rejected() {
+        let result = HashTimer::from_hex("abc123");
+        assert!(result.is_err(), "Invalid length hex should be rejected");
+
+        let result = HashTimer::from_hex(&"0".repeat(63));
+        assert!(result.is_err(), "63-char hex should be rejected");
+
+        let result = HashTimer::from_hex(&"0".repeat(65));
+        assert!(result.is_err(), "65-char hex should be rejected");
+    }
+
+    #[test]
+    fn hashtimer_signature_verification_wrong_key() {
+        let mut rng = OsRng;
+        let signing_key1 = SigningKey::generate(&mut rng);
+        let signing_key2 = SigningKey::generate(&mut rng);
+
+        let mut timer = sign_hashtimer(&signing_key1);
+        // Replace public key with wrong one
+        timer.public_key = signing_key2.verifying_key().to_bytes().to_vec();
+
+        assert!(
+            !verify_hashtimer(&timer),
+            "Wrong public key should fail verification"
+        );
+        assert!(!timer.verify(), "verify() method should also fail");
+    }
+
+    #[test]
+    fn hashtimer_unsigned_is_valid() {
+        let time = IppanTimeMicros(1000000);
+        let timer = HashTimer::derive("tx", time, b"domain", b"payload", &[0u8; 32], &[0u8; 32]);
+
+        assert!(timer.verify(), "Unsigned HashTimer should be valid");
+        assert!(timer.signature.is_empty());
+        assert!(timer.public_key.is_empty());
+    }
+
+    #[test]
+    fn hashtimer_ordering_by_timestamp() {
+        let time1 = IppanTimeMicros(1000);
+        let time2 = IppanTimeMicros(2000);
+
+        let ht1 = HashTimer::derive("tx", time1, b"d", b"p", &[1u8; 32], &[1u8; 32]);
+        let ht2 = HashTimer::derive("tx", time2, b"d", b"p", &[2u8; 32], &[2u8; 32]);
+
+        assert!(
+            ht1.timestamp_us < ht2.timestamp_us,
+            "HashTimers must order by time"
+        );
+        assert!(ht1.time() < ht2.time(), "IppanTimeMicros must be ordered");
+    }
+
+    #[test]
+    fn hashtimer_nonce_changes_digest() {
+        let time = IppanTimeMicros(1000000);
+        let nonce1 = [1u8; 32];
+        let nonce2 = [2u8; 32];
+
+        let ht1 = HashTimer::derive("tx", time, b"d", b"p", &nonce1, &[0u8; 32]);
+        let ht2 = HashTimer::derive("tx", time, b"d", b"p", &nonce2, &[0u8; 32]);
+
+        assert_ne!(
+            ht1.digest(),
+            ht2.digest(),
+            "Different nonces must produce different digests"
+        );
+        assert_ne!(
+            ht1.entropy, ht2.entropy,
+            "Different nonces must produce different entropy"
+        );
+    }
+
+    #[test]
+    fn hashtimer_context_isolation() {
+        let time = IppanTimeMicros(1000000);
+        let common_args = (b"domain", b"payload", [0u8; 32], [0u8; 32]);
+
+        let ht_tx = HashTimer::derive(
+            "tx",
+            time,
+            common_args.0,
+            common_args.1,
+            &common_args.2,
+            &common_args.3,
+        );
+        let ht_block = HashTimer::derive(
+            "block",
+            time,
+            common_args.0,
+            common_args.1,
+            &common_args.2,
+            &common_args.3,
+        );
+        let ht_round = HashTimer::derive(
+            "round",
+            time,
+            common_args.0,
+            common_args.1,
+            &common_args.2,
+            &common_args.3,
+        );
+
+        assert_ne!(
+            ht_tx.entropy, ht_block.entropy,
+            "tx/block contexts must be isolated"
+        );
+        assert_ne!(
+            ht_block.entropy, ht_round.entropy,
+            "block/round contexts must be isolated"
+        );
+        assert_ne!(
+            ht_tx.entropy, ht_round.entropy,
+            "tx/round contexts must be isolated"
+        );
+    }
+
+    #[test]
+    fn hashtimer_digest_deterministic() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let timer = sign_hashtimer(&signing_key);
+
+        let digest1 = timer.digest();
+        let digest2 = timer.hash();
+        let digest3 = timer.digest();
+
+        assert_eq!(
+            digest1, digest2,
+            "digest() and hash() must return same value"
+        );
+        assert_eq!(digest1, digest3, "digest() must be deterministic");
+    }
+
+    #[test]
+    fn hashtimer_id_hex_is_lowercase() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let timer = sign_hashtimer(&signing_key);
+
+        let id_hex = timer.id_hex();
+        assert_eq!(id_hex.len(), 64, "ID hex must be 64 characters");
+        assert_eq!(id_hex, id_hex.to_lowercase(), "ID hex must be lowercase");
+    }
+
+    #[test]
+    fn hashtimer_sign_with_mutates_timer() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let time = IppanTimeMicros(1000000);
+
+        let mut timer = HashTimer::derive("tx", time, b"d", b"p", &[0u8; 32], &[0u8; 32]);
+        assert!(timer.signature.is_empty(), "Should start unsigned");
+
+        timer.sign_with(&signing_key);
+
+        assert!(!timer.signature.is_empty(), "Should be signed");
+        assert!(!timer.public_key.is_empty(), "Public key should be set");
+        assert!(timer.verify(), "Signed timer should verify");
+    }
+
+    #[test]
+    fn hashtimer_signed_creates_new_copy() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let time = IppanTimeMicros(1000000);
+
+        let original = HashTimer::derive("tx", time, b"d", b"p", &[0u8; 32], &[0u8; 32]);
+        let signed = original.signed(&signing_key);
+
+        assert!(
+            original.signature.is_empty(),
+            "Original should remain unsigned"
+        );
+        assert!(!signed.signature.is_empty(), "Copy should be signed");
+        assert_eq!(
+            original.timestamp_us, signed.timestamp_us,
+            "Timestamp should match"
+        );
+        assert_eq!(original.entropy, signed.entropy, "Entropy should match");
+    }
+
+    #[test]
+    fn hashtimer_now_tx_different_each_call() {
+        let tx1 = HashTimer::now_tx(
+            "test",
+            b"payload",
+            b"nonce1234567890123456789012",
+            b"node_id_12345678901234567890",
+        );
+        std::thread::sleep(std::time::Duration::from_micros(10));
+        let tx2 = HashTimer::now_tx(
+            "test",
+            b"payload",
+            b"nonce1234567890123456789012",
+            b"node_id_12345678901234567890",
+        );
+
+        // Should have different timestamps (assuming enough time passed)
+        assert_ne!(
+            tx1.digest(),
+            tx2.digest(),
+            "Different timestamps should produce different digests"
+        );
+    }
+
+    #[test]
+    fn hashtimer_now_block_vs_now_round() {
+        let block_ht = HashTimer::now_block(
+            "domain",
+            b"p",
+            b"nonce123456789012345678901",
+            b"node123456789012345678901234",
+        );
+        let round_ht = HashTimer::now_round(
+            "domain",
+            b"p",
+            b"nonce123456789012345678901",
+            b"node123456789012345678901234",
+        );
+
+        // Different contexts should produce different entropy even with same inputs
+        assert_ne!(
+            block_ht.entropy, round_ht.entropy,
+            "block and round contexts must differ"
+        );
+    }
+
+    #[test]
+    fn random_nonce_never_repeats() {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        for _ in 0..1000 {
+            let nonce = random_nonce();
+            assert!(seen.insert(nonce), "Nonce collision detected");
+        }
+    }
+
+    #[test]
+    fn hashtimer_time_accessor() {
+        let time = IppanTimeMicros(12345678);
+        let timer = HashTimer::derive("tx", time, b"d", b"p", &[0u8; 32], &[0u8; 32]);
+
+        assert_eq!(
+            timer.time().0,
+            12345678,
+            "time() accessor must return correct value"
+        );
+    }
+
+    #[test]
+    fn digest_from_parts_deterministic() {
+        let timestamp_us = 1000000i64;
+        let entropy = [42u8; HASHTIMER_ENTROPY_BYTES];
+
+        let digest1 = digest_from_parts(timestamp_us, &entropy);
+        let digest2 = digest_from_parts(timestamp_us, &entropy);
+
+        assert_eq!(digest1, digest2, "digest_from_parts must be deterministic");
+    }
 }

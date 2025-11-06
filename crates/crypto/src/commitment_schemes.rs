@@ -423,8 +423,8 @@ mod tests {
 
     #[test]
     fn test_commitment_factory() {
-        let pedersen = CommitmentFactory::create_pedersen();
-        let hash = CommitmentFactory::create_hash();
+        let _pedersen = CommitmentFactory::create_pedersen();
+        let _hash = CommitmentFactory::create_hash();
         let vector = CommitmentFactory::create_vector(5);
 
         assert_eq!(vector.vector_size, 5);
