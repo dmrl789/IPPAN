@@ -1,5 +1,5 @@
 # Cargo Dependency Fixes Applied
-**Date**: 2025-11-04  
+**Date**: 2025-11-06  
 **Status**: ✅ Complete
 
 ---
@@ -42,7 +42,7 @@ env_logger = "0.10"
 toml = "0.8"
 
 # Networking
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 url = "2.5"
 igd = { version = "0.12", features = ["aio", "tokio"] }
 local-ip-address = "0.6"
@@ -67,7 +67,7 @@ tokio-test = "0.4"
 ### Enhanced Feature Flags
 ```toml
 # libp2p - Added NAT traversal and hole punching
-libp2p = { version = "0.53", features = [
+libp2p = { version = "0.56", features = [
   "tcp", "yamux", "noise", "gossipsub", "identify", 
   "ping", "kad", "request-response", "serde", "mdns", 
   "tokio", "macros",

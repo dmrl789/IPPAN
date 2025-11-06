@@ -263,19 +263,14 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 #### **reqwest**
 | Crate | Version | Features | Status |
 |-------|---------|----------|--------|
-| **Workspace** | Not defined | - | 🔴 |
-| `ippan-node` | `0.11` | `json, rustls-tls, stream` | - |
-| `ippan-p2p` | `0.11` | `json, rustls-tls` | - |
-| `ippan-rpc` | `0.11` | `json, rustls-tls` | - |
-| `ippan-ai-service` | `0.11` | `json, rustls-tls` (optional) | - |
-| `ippan-ai-core` | `0.11` | `json, rustls-tls` (optional) | - |
+| **Workspace** | `0.12` | `json, rustls-tls` | ✅ |
+| `ippan-node` | `workspace` | `json, rustls-tls, stream` | ✅ |
+| `ippan-p2p` | `workspace` | `json, rustls-tls` | ✅ |
+| `ippan-rpc` | `workspace` | `json, rustls-tls` | ✅ |
+| `ippan-ai-service` | `workspace` | `json, rustls-tls` (optional) | ✅ |
+| `ippan-ai-core` | `workspace` | `json, rustls-tls` (optional) | ✅ |
 
-**Issue**: Consistent version but not in workspace.
-
-**Recommendation**: Add to workspace:
-```toml
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
-```
+**Status**: Centralized at workspace level on `0.12.x` with rustls-only TLS. Downstream crates inherit features as needed; CLI and benchmarking tools now use the workspace entry instead of pinning `0.11`.
 
 ---
 
@@ -404,7 +399,7 @@ wasmtime-wasi = "24.0"
 #### **libp2p** (Workspace ✅ Well-configured)
 Current workspace features:
 ```toml
-libp2p = { version = "0.53", features = [
+libp2p = { version = "0.56", features = [
   "tcp", "yamux", "noise", "gossipsub", "identify", 
   "ping", "kad", "request-response", "serde", "mdns", 
   "tokio", "macros"
@@ -422,7 +417,7 @@ libp2p = { version = "0.53", features = [
 **Recommendation**:
 ```toml
 # In workspace
-libp2p = { version = "0.53", features = [
+libp2p = { version = "0.56", features = [
   "tcp", "yamux", "noise", "gossipsub", "identify", 
   "ping", "kad", "request-response", "serde", "mdns", 
   "tokio", "macros",
@@ -642,7 +637,7 @@ either = "1"
 num_cpus = "1.0"
 
 # UPDATE THESE:
-libp2p = { version = "0.53", features = [
+libp2p = { version = "0.56", features = [
   "tcp", "yamux", "noise", "gossipsub", "identify", 
   "ping", "kad", "request-response", "serde", "mdns", 
   "tokio", "macros",
