@@ -200,7 +200,9 @@ pub struct PrometheusExporter {
 
 impl PrometheusExporter {
     pub fn new(endpoint: String) -> Self {
-        Self { _endpoint: endpoint }
+        Self {
+            _endpoint: endpoint,
+        }
     }
 }
 
@@ -220,7 +222,9 @@ pub struct JsonExporter {
 
 impl JsonExporter {
     pub fn new(endpoint: String) -> Self {
-        Self { _endpoint: endpoint }
+        Self {
+            _endpoint: endpoint,
+        }
     }
 }
 

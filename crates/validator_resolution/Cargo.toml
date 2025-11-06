@@ -23,3 +23,5 @@ ippan-l1-handle-anchors = { path = "../l1_handle_anchors" }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }

@@ -237,7 +237,5 @@ fn test_selection_determinism() {
 
     // Different round should produce different selection
     let result3 = engine.select_verifiers(43, &metrics, 3, 0).unwrap();
-    assert!(
-        result3.primary != result1.primary || result3.shadows != result1.shadows
-    );
+    assert!(result3.primary != result1.primary || result3.shadows != result1.shadows);
 }

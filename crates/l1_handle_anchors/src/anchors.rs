@@ -322,4 +322,41 @@ mod tests {
         proof2.anchor.owner = [99u8; 32];
         assert!(!storage.verify_ownership_proof(&proof2));
     }
+
+    #[test]
+    fn test_store_anchor_invalid_signature() {
+        let storage = L1HandleAnchorStorage::new();
+        let anchor = HandleOwnershipAnchor {
+            handle_hash: HandleOwnershipAnchor::compute_handle_hash("@invalid.ipn"),
+            owner: [1u8; 32],
+            l2_location: [2u8; 32],
+            block_height: 1,
+            round: 1,
+            timestamp: 1,
+            signature: Vec::new(),
+        };
+
+        let err = storage.store_anchor(anchor).unwrap_err();
+        assert!(matches!(err, HandleAnchorError::InvalidSignature));
+    }
+
+    #[test]
+    fn test_cleanup_expired_anchors() {
+        let storage = L1HandleAnchorStorage::new();
+        let mut anchor =
+            HandleOwnershipAnchor::new("@expired.ipn", [3u8; 32], [4u8; 32], 1, 1, vec![1]);
+        anchor.timestamp = 0; // mark as expired
+        storage.store_anchor(anchor).unwrap();
+
+        let removed = storage.cleanup_expired();
+        assert_eq!(removed, 1);
+        assert!(storage.get_all_anchors().is_empty());
+    }
+
+    #[test]
+    fn test_create_proof_missing_handle() {
+        let storage = L1HandleAnchorStorage::new();
+        let err = storage.create_ownership_proof("@missing.ipn").unwrap_err();
+        assert!(matches!(err, HandleAnchorError::AnchorNotFound { .. }));
+    }
 }

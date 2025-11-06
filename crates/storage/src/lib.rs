@@ -644,9 +644,9 @@ impl Storage for MemoryStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::round::RoundWindow;
+    use ippan_types::l2::{L2Commit, L2ExitRecord, L2ExitStatus, L2Network, L2NetworkStatus};
+    use ippan_types::round::{RoundCertificate, RoundFinalizationRecord, RoundWindow};
     use ippan_types::{Amount, IppanTimeMicros, Transaction};
-    use ippan_types::l2::L2NetworkStatus;
     use tempfile::tempdir;
 
     #[test]
@@ -658,9 +658,7 @@ mod tests {
         let latest_height = storage.get_latest_height().expect("height");
         assert_eq!(latest_height, 0, "genesis block should set height to 0");
 
-        let genesis_block = storage
-            .get_block_by_height(0)
-            .expect("fetch genesis block");
+        let genesis_block = storage.get_block_by_height(0).expect("fetch genesis block");
         assert!(genesis_block.is_some(), "genesis block present after init");
 
         let genesis_account = storage
@@ -677,12 +675,7 @@ mod tests {
         let storage = SledStorage::new(dir.path()).expect("sled storage");
         storage.initialize().expect("initialize");
 
-        let tx = Transaction::new(
-            [1u8; 32],
-            [2u8; 32],
-            Amount::from_micro_ipn(42),
-            7,
-        );
+        let tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_micro_ipn(42), 7);
         let tx_hash = tx.hash();
         storage
             .store_transaction(tx.clone())
@@ -726,7 +719,12 @@ mod tests {
         Block::new(vec![], vec![], round, creator)
     }
 
-    fn create_test_transaction(from: [u8; 32], to: [u8; 32], amount: u64, nonce: u64) -> Transaction {
+    fn create_test_transaction(
+        from: [u8; 32],
+        to: [u8; 32],
+        amount: u64,
+        nonce: u64,
+    ) -> Transaction {
         Transaction::new(from, to, Amount::from_atomic(amount.into()), nonce)
     }
 
@@ -1220,5 +1218,216 @@ mod tests {
 
         let all_commits = storage.list_l2_commits(None).expect("list all");
         assert_eq!(all_commits.len(), 2);
+    }
+
+    #[test]
+    fn sled_storage_l2_roundtrip() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("initialize");
+
+        let network_a = L2Network {
+            id: "l2-a".to_string(),
+            proof_type: "zk".to_string(),
+            da_mode: "inline".to_string(),
+            status: L2NetworkStatus::Active,
+            last_epoch: 1,
+            total_commits: 1,
+            total_exits: 0,
+            last_commit_time: Some(1_000),
+            registered_at: 100,
+            challenge_window_ms: Some(60_000),
+        };
+        let network_b = L2Network {
+            id: "l2-b".to_string(),
+            proof_type: "optimistic".to_string(),
+            da_mode: "external".to_string(),
+            status: L2NetworkStatus::Inactive,
+            last_epoch: 2,
+            total_commits: 2,
+            total_exits: 1,
+            last_commit_time: None,
+            registered_at: 200,
+            challenge_window_ms: None,
+        };
+
+        storage.put_l2_network(network_b).expect("put b");
+        storage.put_l2_network(network_a).expect("put a");
+
+        let networks = storage.list_l2_networks().expect("list networks");
+        assert_eq!(networks.len(), 2);
+        assert_eq!(networks[0].id, "l2-a");
+        assert_eq!(networks[1].id, "l2-b");
+
+        let commit = L2Commit {
+            id: "commit-1".to_string(),
+            l2_id: "l2-a".to_string(),
+            epoch: 10,
+            state_root: "root".to_string(),
+            da_hash: "hash".to_string(),
+            proof_type: "zk".to_string(),
+            proof: None,
+            inline_data: None,
+            submitted_at: 1_500,
+            hashtimer: "timer".to_string(),
+        };
+
+        storage
+            .store_l2_commit(commit.clone())
+            .expect("store commit");
+        let commits_all = storage.list_l2_commits(None).expect("list all");
+        assert_eq!(commits_all.len(), 1);
+        assert_eq!(commits_all[0].id, commit.id);
+
+        let commits_filtered = storage
+            .list_l2_commits(Some("l2-a"))
+            .expect("list filtered");
+        assert_eq!(commits_filtered.len(), 1);
+
+        let exit = L2ExitRecord {
+            id: "exit-1".to_string(),
+            l2_id: "l2-a".to_string(),
+            epoch: 3,
+            account: "0xabc".to_string(),
+            amount: 42.0,
+            nonce: Some(1),
+            proof_of_inclusion: "proof".to_string(),
+            status: L2ExitStatus::Pending,
+            submitted_at: 2_000,
+            finalized_at: None,
+            rejection_reason: None,
+            challenge_window_ends_at: None,
+        };
+
+        storage.store_l2_exit(exit.clone()).expect("store exit");
+        let exits = storage.list_l2_exits(Some("l2-a")).expect("list exits");
+        assert_eq!(exits.len(), 1);
+        assert_eq!(exits[0].id, exit.id);
+    }
+
+    #[test]
+    fn sled_storage_round_artifacts() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("initialize");
+
+        let certificate = RoundCertificate {
+            round: 50,
+            block_ids: vec![[1u8; 32], [2u8; 32]],
+            agg_sig: vec![1, 2, 3],
+        };
+        storage
+            .store_round_certificate(certificate.clone())
+            .expect("store cert");
+
+        let fetched_certificate = storage
+            .get_round_certificate(50)
+            .expect("get cert")
+            .expect("cert exists");
+        assert_eq!(fetched_certificate.block_ids, certificate.block_ids);
+
+        let window = RoundWindow {
+            id: 50,
+            start_us: IppanTimeMicros(1000),
+            end_us: IppanTimeMicros(2000),
+        };
+        let finalization = RoundFinalizationRecord {
+            round: 50,
+            window,
+            ordered_tx_ids: vec![[3u8; 32]],
+            fork_drops: vec![],
+            state_root: [9u8; 32],
+            proof: certificate,
+        };
+
+        storage
+            .store_round_finalization(finalization.clone())
+            .expect("store finalization");
+
+        let fetched = storage
+            .get_round_finalization(50)
+            .expect("get finalization")
+            .expect("record exists");
+        assert_eq!(fetched.state_root, finalization.state_root);
+
+        let latest = storage
+            .get_latest_round_finalization()
+            .expect("get latest")
+            .expect("latest exists");
+        assert_eq!(latest.round, 50);
+    }
+
+    #[test]
+    fn sled_storage_transactions_by_address_and_count() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("initialize");
+
+        let from = [1u8; 32];
+        let to = [2u8; 32];
+        let other = [3u8; 32];
+
+        let tx1 = Transaction::new(from, to, Amount::from_micro_ipn(10), 1);
+        let tx2 = Transaction::new(other, from, Amount::from_micro_ipn(20), 2);
+
+        storage.store_transaction(tx1.clone()).expect("store tx1");
+        storage.store_transaction(tx2.clone()).expect("store tx2");
+
+        let from_txs = storage
+            .get_transactions_by_address(&from)
+            .expect("get from txs");
+        assert_eq!(from_txs.len(), 2);
+        assert_eq!(storage.get_transaction_count().unwrap(), 2);
+
+        let to_txs = storage
+            .get_transactions_by_address(&to)
+            .expect("get to txs");
+        assert_eq!(to_txs.len(), 1);
+
+        let tx_hash = tx1.hash();
+        let fetched = storage
+            .get_transaction(&tx_hash)
+            .expect("get specific")
+            .expect("tx exists");
+        assert_eq!(fetched.hash(), tx_hash);
+    }
+
+    #[test]
+    fn sled_storage_validator_telemetry_round_trip() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("initialize");
+
+        let validator_id = [8u8; 32];
+        let telemetry = ValidatorTelemetry {
+            validator_id,
+            blocks_proposed: 5,
+            blocks_verified: 15,
+            rounds_active: 25,
+            avg_latency_us: 300,
+            slash_count: 1,
+            stake: 50_000,
+            age_rounds: 40,
+            last_active_round: 24,
+            uptime_percentage: 98.5,
+            recent_performance: 0.9,
+            network_contribution: 0.7,
+        };
+
+        storage
+            .store_validator_telemetry(&validator_id, &telemetry)
+            .expect("store telemetry");
+
+        let fetched_single = storage
+            .get_validator_telemetry(&validator_id)
+            .expect("get telemetry")
+            .expect("telemetry exists");
+        assert_eq!(fetched_single.blocks_verified, telemetry.blocks_verified);
+
+        let all = storage
+            .get_all_validator_telemetry()
+            .expect("get all telemetry");
+        assert_eq!(all.len(), 1);
+        assert!(all.contains_key(&validator_id));
     }
 }
