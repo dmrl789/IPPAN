@@ -66,17 +66,17 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-        - name: Build and push IPPAN Node
-          uses: docker/build-push-action@v5
-          with:
-            context: .
-            file: ./Dockerfile
-            push: true
-            tags: |
-              ${{ env.IMAGE_PREFIX }}/ippan-node:${{ env.IMAGE_TAG }}
-              ${{ env.IMAGE_PREFIX }}/ippan-node:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build and push IPPAN Node
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/ippan-node:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_PREFIX }}/ippan-node:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
       - name: Build and push IPPAN UI
         uses: docker/build-push-action@v5
@@ -84,21 +84,21 @@ jobs:
           context: ./apps/mobile
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/ippan-ui:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
-        - name: Build and push IPPAN Gateway
-          uses: docker/build-push-action@v5
-          with:
-            context: ./apps/gateway
-            push: true
-            tags: ${{ env.IMAGE_PREFIX }}/ippan-gateway:latest
-            cache-from: type=gha
-            cache-to: type=gha,mode=max
+      - name: Build and push IPPAN Gateway
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/gateway
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/ippan-gateway:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
-        - name: Set image tag output
-          id: image_tag
-          run: echo "value=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+      - name: Set image tag output
+        id: image_tag
+        run: echo "value=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
   deploy-server1:
     name: Deploy to Server 1 (Full Stack)
@@ -179,9 +179,9 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER2_HOST }} >> ~/.ssh/known_hosts
 
-        - name: Deploy to Server 2
-          run: |
-            ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.SERVER2_HOST }} <<EOF
+      - name: Deploy to Server 2
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.SERVER2_HOST }} <<EOF
               set -e
 
               IMAGE_TAG=${IMAGE_TAG:-latest}
