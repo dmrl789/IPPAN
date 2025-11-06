@@ -13,36 +13,36 @@ use ippan_types::{
 use std::sync::Arc;
 use std::time::Duration;
 
+fn create_test_config() -> PoAConfig {
+    PoAConfig {
+        slot_duration_ms: 100,
+        validators: vec![
+            Validator {
+                id: [1u8; 32],
+                address: [1u8; 32],
+                stake: 1000,
+                is_active: true,
+            },
+            Validator {
+                id: [2u8; 32],
+                address: [2u8; 32],
+                stake: 2000,
+                is_active: true,
+            },
+        ],
+        max_transactions_per_block: 1000,
+        block_reward: 10,
+        finalization_interval_ms: 200,
+        enable_ai_reputation: false,
+        enable_fee_caps: true,
+        enable_dag_fair_emission: true,
+    }
+}
+
 #[cfg(all(test, feature = "integration-tests"))]
 #[allow(clippy::module_inception)]
 mod tests {
     use super::*;
-
-    fn create_test_config() -> PoAConfig {
-        PoAConfig {
-            slot_duration_ms: 100,
-            validators: vec![
-                Validator {
-                    id: [1u8; 32],
-                    address: [1u8; 32],
-                    stake: 1000,
-                    is_active: true,
-                },
-                Validator {
-                    id: [2u8; 32],
-                    address: [2u8; 32],
-                    stake: 2000,
-                    is_active: true,
-                },
-            ],
-            max_transactions_per_block: 1000,
-            block_reward: 10,
-            finalization_interval_ms: 200,
-            enable_ai_reputation: false,
-            enable_fee_caps: true,
-            enable_dag_fair_emission: true,
-        }
-    }
 
     #[tokio::test]
     async fn test_consensus_creation() {
