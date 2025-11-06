@@ -106,7 +106,7 @@ let config = PoAConfig {
     "model_id": "reputation_v1",
     "version": 1,
     "model_type": "gbdt",
-    "hash_sha256": "...",
+    "hash_sha256": "0397885bb1360a7b991f7fbb4373edbc7defadb0fd6f3c91bfb0efe3e4203fe7",
     "feature_count": 6,
     "output_scale": 10000,
     "output_min": 0,
