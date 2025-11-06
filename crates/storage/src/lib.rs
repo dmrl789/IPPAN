@@ -114,6 +114,228 @@ pub struct ValidatorTelemetry {
     pub network_contribution: f64,
 }
 
+#[derive(Default, Clone)]
+pub struct MemoryStorage {
+    inner: Arc<MemoryStorageInner>,
+}
+
+#[derive(Default)]
+struct MemoryStorageInner {
+    blocks: RwLock<HashMap<[u8; 32], Block>>,
+    blocks_by_height: RwLock<BTreeMap<u64, [u8; 32]>>,
+    transactions: RwLock<HashMap<[u8; 32], Transaction>>,
+    accounts: RwLock<HashMap<[u8; 32], Account>>,
+    l2_networks: RwLock<HashMap<String, L2Network>>,
+    l2_commits: RwLock<HashMap<String, L2Commit>>,
+    l2_exits: RwLock<HashMap<String, L2ExitRecord>>,
+    round_certificates: RwLock<HashMap<RoundId, RoundCertificate>>,
+    round_finalizations: RwLock<HashMap<RoundId, RoundFinalizationRecord>>,
+    validator_telemetry: RwLock<HashMap<[u8; 32], ValidatorTelemetry>>,
+    chain_state: RwLock<ChainState>,
+    latest_height: RwLock<u64>,
+    latest_finalized_round: RwLock<Option<RoundId>>,
+}
+
+impl MemoryStorage {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Storage for MemoryStorage {
+    fn store_block(&self, block: Block) -> Result<()> {
+        let hash = block.hash();
+        {
+            let mut blocks = self.inner.blocks.write();
+            blocks.insert(hash, block.clone());
+        }
+        {
+            let mut blocks_by_height = self.inner.blocks_by_height.write();
+            blocks_by_height.insert(block.header.round, hash);
+        }
+        {
+            let mut latest_height = self.inner.latest_height.write();
+            if block.header.round > *latest_height {
+                *latest_height = block.header.round;
+            }
+        }
+        Ok(())
+    }
+
+    fn get_block(&self, hash: &[u8; 32]) -> Result<Option<Block>> {
+        Ok(self.inner.blocks.read().get(hash).cloned())
+    }
+
+    fn get_block_by_height(&self, height: u64) -> Result<Option<Block>> {
+        let hash = self.inner.blocks_by_height.read().get(&height).copied();
+        Ok(hash.and_then(|id| self.inner.blocks.read().get(&id).cloned()))
+    }
+
+    fn store_transaction(&self, tx: Transaction) -> Result<()> {
+        let hash = tx.hash();
+        self.inner.transactions.write().insert(hash, tx);
+        Ok(())
+    }
+
+    fn get_transaction(&self, hash: &[u8; 32]) -> Result<Option<Transaction>> {
+        Ok(self.inner.transactions.read().get(hash).cloned())
+    }
+
+    fn get_latest_height(&self) -> Result<u64> {
+        Ok(*self.inner.latest_height.read())
+    }
+
+    fn get_account(&self, address: &[u8; 32]) -> Result<Option<Account>> {
+        Ok(self.inner.accounts.read().get(address).cloned())
+    }
+
+    fn update_account(&self, account: Account) -> Result<()> {
+        self.inner.accounts.write().insert(account.address, account);
+        Ok(())
+    }
+
+    fn get_all_accounts(&self) -> Result<Vec<Account>> {
+        Ok(self.inner.accounts.read().values().cloned().collect())
+    }
+
+    fn get_transactions_by_address(&self, address: &[u8; 32]) -> Result<Vec<Transaction>> {
+        let transactions = self.inner.transactions.read();
+        Ok(transactions
+            .values()
+            .filter(|tx| tx.from == *address || tx.to == *address)
+            .cloned()
+            .collect())
+    }
+
+    fn get_transaction_count(&self) -> Result<u64> {
+        Ok(self.inner.transactions.read().len() as u64)
+    }
+
+    fn put_l2_network(&self, network: L2Network) -> Result<()> {
+        self.inner
+            .l2_networks
+            .write()
+            .insert(network.id.clone(), network);
+        Ok(())
+    }
+
+    fn get_l2_network(&self, id: &str) -> Result<Option<L2Network>> {
+        Ok(self.inner.l2_networks.read().get(id).cloned())
+    }
+
+    fn list_l2_networks(&self) -> Result<Vec<L2Network>> {
+        let mut networks: Vec<L2Network> =
+            self.inner.l2_networks.read().values().cloned().collect();
+        networks.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(networks)
+    }
+
+    fn store_l2_commit(&self, commit: L2Commit) -> Result<()> {
+        self.inner
+            .l2_commits
+            .write()
+            .insert(commit.id.clone(), commit);
+        Ok(())
+    }
+
+    fn list_l2_commits(&self, l2_id: Option<&str>) -> Result<Vec<L2Commit>> {
+        Ok(self
+            .inner
+            .l2_commits
+            .read()
+            .values()
+            .filter(|commit| l2_id.map(|id| commit.l2_id == id).unwrap_or(true))
+            .cloned()
+            .collect())
+    }
+
+    fn store_l2_exit(&self, exit: L2ExitRecord) -> Result<()> {
+        self.inner.l2_exits.write().insert(exit.id.clone(), exit);
+        Ok(())
+    }
+
+    fn list_l2_exits(&self, l2_id: Option<&str>) -> Result<Vec<L2ExitRecord>> {
+        Ok(self
+            .inner
+            .l2_exits
+            .read()
+            .values()
+            .filter(|exit| l2_id.map(|id| exit.l2_id == id).unwrap_or(true))
+            .cloned()
+            .collect())
+    }
+
+    fn store_round_certificate(&self, certificate: RoundCertificate) -> Result<()> {
+        self.inner
+            .round_certificates
+            .write()
+            .insert(certificate.round, certificate);
+        Ok(())
+    }
+
+    fn get_round_certificate(&self, round: RoundId) -> Result<Option<RoundCertificate>> {
+        Ok(self.inner.round_certificates.read().get(&round).cloned())
+    }
+
+    fn store_round_finalization(&self, record: RoundFinalizationRecord) -> Result<()> {
+        let round = record.round;
+        self.inner.round_finalizations.write().insert(round, record);
+        {
+            let mut latest = self.inner.latest_finalized_round.write();
+            if latest.map(|current| round > current).unwrap_or(true) {
+                *latest = Some(round);
+            }
+        }
+        Ok(())
+    }
+
+    fn get_round_finalization(&self, round: RoundId) -> Result<Option<RoundFinalizationRecord>> {
+        Ok(self.inner.round_finalizations.read().get(&round).cloned())
+    }
+
+    fn get_latest_round_finalization(&self) -> Result<Option<RoundFinalizationRecord>> {
+        let latest = *self.inner.latest_finalized_round.read();
+        Ok(latest.and_then(|round| self.inner.round_finalizations.read().get(&round).cloned()))
+    }
+
+    fn get_chain_state(&self) -> Result<ChainState> {
+        Ok(self.inner.chain_state.read().clone())
+    }
+
+    fn update_chain_state(&self, state: &ChainState) -> Result<()> {
+        *self.inner.chain_state.write() = state.clone();
+        Ok(())
+    }
+
+    fn store_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+        telemetry: &ValidatorTelemetry,
+    ) -> Result<()> {
+        self.inner
+            .validator_telemetry
+            .write()
+            .insert(*validator_id, telemetry.clone());
+        Ok(())
+    }
+
+    fn get_validator_telemetry(
+        &self,
+        validator_id: &[u8; 32],
+    ) -> Result<Option<ValidatorTelemetry>> {
+        Ok(self
+            .inner
+            .validator_telemetry
+            .read()
+            .get(validator_id)
+            .cloned())
+    }
+
+    fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
+        Ok(self.inner.validator_telemetry.read().clone())
+    }
+}
+
 /// Sled-backed implementation
 pub struct SledStorage {
     db: Db,
@@ -433,14 +655,3 @@ impl Storage for SledStorage {
 // =====================================================================
 // In-memory backend for testing (MemoryStorage) and exhaustive tests
 // =====================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ippan_types::l2::{L2Commit, L2ExitRecord, L2ExitStatus, L2Network, L2NetworkStatus};
-    use ippan_types::round::{RoundCertificate, RoundFinalizationRecord, RoundWindow};
-    use ippan_types::{Amount, IppanTimeMicros, Transaction};
-    use tempfile::tempdir;
-
-    // ... (full test module as already implemented in your version)
-}
