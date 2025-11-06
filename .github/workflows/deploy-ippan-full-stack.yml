@@ -34,9 +34,10 @@ jobs:
   build-and-push:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
-    if: github.event.inputs.force_rebuild == 'true' || contains(github.event.head_commit.message, '[rebuild]')
+    env:
+      IMAGE_TAG: ${{ github.sha }}
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
+      image-tag: ${{ steps.image_tag.outputs.value }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -65,13 +66,15 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push IPPAN Node
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ env.IMAGE_PREFIX }}/ippan-node:latest
+        - name: Build and push IPPAN Node
+          uses: docker/build-push-action@v5
+          with:
+            context: .
+            file: ./Dockerfile
+            push: true
+            tags: |
+              ${{ env.IMAGE_PREFIX }}/ippan-node:${{ env.IMAGE_TAG }}
+              ${{ env.IMAGE_PREFIX }}/ippan-node:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -84,14 +87,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push IPPAN Gateway
-        uses: docker/build-push-action@v5
-        with:
-          context: ./apps/gateway
-          push: true
-          tags: ${{ env.IMAGE_PREFIX }}/ippan-gateway:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        - name: Build and push IPPAN Gateway
+          uses: docker/build-push-action@v5
+          with:
+            context: ./apps/gateway
+            push: true
+            tags: ${{ env.IMAGE_PREFIX }}/ippan-gateway:latest
+            cache-from: type=gha
+            cache-to: type=gha,mode=max
+
+        - name: Set image tag output
+          id: image_tag
+          run: echo "value=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
   deploy-server1:
     name: Deploy to Server 1 (Full Stack)
@@ -159,6 +166,8 @@ jobs:
     needs: [build-and-push]
     if: always() && !cancelled()
     environment: production
+    env:
+      IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -170,44 +179,54 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to Server 2
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.SERVER2_HOST }} << 'EOF'
-            set -e
-            
-            # Navigate to deployment directory
-            cd ${{ secrets.DEPLOY_APP_DIR || '~/ippan-deploy' }}
-            
-            # Create directory if it doesn't exist
-            mkdir -p deploy/data/node2
-            
-            # Pull latest deployment files
-            git pull origin main || echo "Git pull failed, continuing with existing files"
-            
-            # Copy deployment files if they exist in repo
-            if [ -f "deploy/docker-compose.production.yml" ]; then
-              cp deploy/docker-compose.production.yml ./
-            fi
-            
-            # Pull latest Docker images
-            docker-compose -f docker-compose.production.yml pull
-            
-            # Stop existing containers
-            docker-compose -f docker-compose.production.yml down --remove-orphans || true
-            
-            # Start Node 2
-            docker-compose -f docker-compose.production.yml up -d
-            
-            # Wait for service to start
-            sleep 15
-            
-            # Health checks
-            echo "Running health checks..."
-            curl -f http://localhost:8080/health || echo "Node 2 health check failed"
-            ss -ltnp | grep :4001 || echo "P2P port check failed"
-            
-            echo "Server 2 deployment completed successfully"
-          EOF
+        - name: Deploy to Server 2
+          run: |
+            ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.SERVER2_HOST }} <<EOF
+              set -e
+
+              IMAGE_TAG=${IMAGE_TAG:-latest}
+              export IMAGE_TAG
+              echo "Using Docker image tag: ${IMAGE_TAG}"
+
+              # Navigate to deployment directory
+              cd ${{ secrets.DEPLOY_APP_DIR || '~/ippan-deploy' }}
+
+              # Create directory if it doesn't exist
+              mkdir -p deploy/data/node2
+
+              # Pull latest deployment files
+              git pull origin main || echo "Git pull failed, continuing with existing files"
+
+              # Copy deployment files if they exist in repo
+              if [ -f "deploy/docker-compose.production.yml" ]; then
+                cp deploy/docker-compose.production.yml ./
+              fi
+
+              # Pull latest Docker images
+              docker pull "ghcr.io/dmrl789/ippan/ippan-node:${IMAGE_TAG}"
+              docker-compose -f docker-compose.production.yml pull
+
+              # Stop existing containers
+              docker-compose -f docker-compose.production.yml down --remove-orphans || true
+
+              # Start Node 2
+              docker-compose -f docker-compose.production.yml up -d
+
+              # Wait for service to start
+              sleep 15
+
+              # Health checks
+              echo "Running health checks..."
+              if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+                echo "Node 2 health check passed"
+              else
+                echo "Node 2 health check failed"
+                exit 1
+              fi
+              ss -ltnp | grep :4001 || echo "P2P port check failed"
+
+              echo "Server 2 deployment completed successfully"
+            EOF
 
   verify-deployment:
     name: Verify Full Stack Deployment
