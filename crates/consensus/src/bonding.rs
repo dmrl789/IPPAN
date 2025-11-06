@@ -13,8 +13,8 @@ use ippan_types::ValidatorId;
 /// Required validator bond amount (10 IPN in micro-IPN)
 pub const VALIDATOR_BOND_AMOUNT: u64 = 10 * 100_000_000; // 10 IPN
 
-/// Minimum bond to remain active
-pub const MIN_BOND_AMOUNT: u64 = VALIDATOR_BOND_AMOUNT;
+/// Minimum bond to remain active (allow up to 50% slashing before deactivation)
+pub const MIN_BOND_AMOUNT: u64 = VALIDATOR_BOND_AMOUNT / 2;
 
 /// Validator bond record
 #[derive(Debug, Clone, Serialize, Deserialize)]
