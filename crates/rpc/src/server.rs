@@ -1417,8 +1417,10 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_transaction_with_security() {
         let dir = tempdir().expect("tempdir");
-        let mut config = SecurityConfig::default();
-        config.audit_log_path = dir.path().join("audit.log").to_string_lossy().to_string();
+        let config = SecurityConfig {
+            audit_log_path: dir.path().join("audit.log").to_string_lossy().to_string(),
+            ..SecurityConfig::default()
+        };
         let manager = SecurityManager::new(config).expect("manager");
         let state = build_app_state(Some(Arc::new(manager)), None);
         let addr: SocketAddr = "10.0.0.10:8080".parse().unwrap();
@@ -1434,10 +1436,12 @@ mod tests {
         .await
         .expect("security success");
 
-        let mut deny_config = SecurityConfig::default();
-        deny_config.enable_ip_whitelist = true;
-        deny_config.whitelisted_ips = vec![];
-        deny_config.audit_log_path = dir.path().join("blocked.log").to_string_lossy().to_string();
+        let deny_config = SecurityConfig {
+            enable_ip_whitelist: true,
+            whitelisted_ips: vec![],
+            audit_log_path: dir.path().join("blocked.log").to_string_lossy().to_string(),
+            ..SecurityConfig::default()
+        };
         let deny_state = build_app_state(
             Some(Arc::new(SecurityManager::new(deny_config).unwrap())),
             None,
@@ -1753,8 +1757,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_forward_to_network_delivers_message() {
-        let mut config = P2PConfig::default();
-        config.message_timeout = Duration::from_millis(5);
+        let config = P2PConfig {
+            message_timeout: Duration::from_millis(5),
+            ..P2PConfig::default()
+        };
         let network =
             Arc::new(HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network"));
         let mut events = network.take_incoming_events().expect("event receiver");
@@ -1829,8 +1835,10 @@ mod tests {
         let p2p_peers = handle_get_p2p_peers(State(state)).await;
         assert!(p2p_peers.0.is_empty());
 
-        let mut config = P2PConfig::default();
-        config.message_timeout = Duration::from_millis(5);
+        let config = P2PConfig {
+            message_timeout: Duration::from_millis(5),
+            ..P2PConfig::default()
+        };
         let network =
             Arc::new(HttpP2PNetwork::new(config, "http://127.0.0.1:9800".into()).expect("network"));
         network
@@ -1958,10 +1966,12 @@ mod tests {
     #[tokio::test]
     async fn test_p2p_handlers_security_denied() {
         let dir = tempdir().expect("tempdir");
-        let mut config = SecurityConfig::default();
-        config.enable_ip_whitelist = true;
-        config.whitelisted_ips = vec![];
-        config.audit_log_path = dir.path().join("audit.log").to_string_lossy().to_string();
+        let config = SecurityConfig {
+            enable_ip_whitelist: true,
+            whitelisted_ips: vec![],
+            audit_log_path: dir.path().join("audit.log").to_string_lossy().to_string(),
+            ..SecurityConfig::default()
+        };
         let manager = SecurityManager::new(config).expect("manager");
         let state = build_app_state(Some(Arc::new(manager)), None);
 
@@ -2041,10 +2051,12 @@ mod tests {
     #[tokio::test]
     async fn test_guard_request_with_security_failure() {
         let dir = tempdir().expect("tempdir");
-        let mut config = SecurityConfig::default();
-        config.enable_ip_whitelist = true;
-        config.whitelisted_ips = vec![];
-        config.audit_log_path = dir.path().join("audit.log").to_string_lossy().to_string();
+        let config = SecurityConfig {
+            enable_ip_whitelist: true,
+            whitelisted_ips: vec![],
+            audit_log_path: dir.path().join("audit.log").to_string_lossy().to_string(),
+            ..SecurityConfig::default()
+        };
         let manager = SecurityManager::new(config).expect("manager");
         let state = build_app_state(Some(Arc::new(manager)), None);
 
@@ -2115,8 +2127,10 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_peer_address_with_metadata() {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
-        let mut config = P2PConfig::default();
-        config.message_timeout = std::time::Duration::from_millis(5);
+        let config = P2PConfig {
+            message_timeout: std::time::Duration::from_millis(5),
+            ..P2PConfig::default()
+        };
         let network =
             Arc::new(HttpP2PNetwork::new(config, "http://127.0.0.1:9550".into()).expect("network"));
 
