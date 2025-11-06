@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 set -euo pipefail
 
 echo "🚀 Deploying IPPAN nodes (Unified UI disabled)..."
@@ -28,8 +28,21 @@ docker-compose ps
 
 # Test endpoints
 echo "Testing endpoints..."
-curl -s http://localhost:8080/health || echo "Node health check failed"
-curl -s http://localhost:8081/health || echo "Gateway health check failed"
+
+check_endpoint() {
+  local url="$1"
+  local label="$2"
+
+  if curl -fsS --max-time 10 "$url" > /dev/null; then
+    echo "✅ ${label} responded successfully"
+  else
+    echo "❌ ${label} check failed (${url})"
+    return 1
+  fi
+}
+
+check_endpoint "http://localhost:8080/health" "Node health"
+check_endpoint "http://localhost:8081/health" "Gateway health"
 
 echo "✅ Deployment completed!"
 echo "Nodes are online. Unified UI is no longer served from this host."
