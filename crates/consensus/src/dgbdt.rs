@@ -95,7 +95,7 @@ impl DGBDTEngine {
         };
 
         let verification_score = if metrics.rounds_active > 0 {
-            ((metrics.blocks_verified * 1000 / metrics.rounds_active).min(10000)) as f64
+            ((metrics.blocks_verified * 10000 / metrics.rounds_active).min(10000)) as f64
         } else {
             5000.0
         };
@@ -220,15 +220,21 @@ impl DGBDTEngine {
         let target = (selection_value % total_score as u64) as i64;
         let mut cumulative = 0i64;
 
-        for (&validator_id, &score) in scores.iter() {
-            cumulative += score as i64;
+        let mut ordered: Vec<(ValidatorId, i32)> = scores.iter().map(|(id, score)| (*id, *score)).collect();
+        ordered.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        for (validator_id, score) in &ordered {
+            cumulative += *score as i64;
             if target < cumulative {
-                return Ok(validator_id);
+                return Ok(*validator_id);
             }
         }
 
         // Fallback (shouldn't reach here)
-        Ok(*scores.keys().next().unwrap())
+        Ok(ordered
+            .last()
+            .map(|(id, _)| *id)
+            .unwrap_or_else(|| scores.keys().next().copied().unwrap()))
     }
 
     /// Record selection in history for learning

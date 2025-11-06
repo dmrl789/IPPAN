@@ -198,15 +198,24 @@ impl DLCConsensus {
     ) -> Result<(ValidatorId, Vec<ValidatorId>)> {
         let dgbdt = self.dgbdt_engine.read();
         let metrics = self.validator_metrics.read();
+        
+        if metrics.is_empty() {
+            return Ok((self.validator_id, Vec::new()));
+        }
 
         // Use D-GBDT to select based on reputation and fairness
-        let selection = dgbdt.select_verifiers(
+        let selection = match dgbdt.select_verifiers(
             round_seed,
             &metrics,
             self.config.shadow_verifier_count,
             self.config.min_reputation_score,
-        )?;
-
+        ) {
+            Ok(selection) => selection,
+            Err(_) => {
+                return Ok((self.validator_id, Vec::new()));
+            }
+        };
+        
         Ok((selection.primary, selection.shadows))
     }
 
