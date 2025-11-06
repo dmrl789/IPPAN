@@ -124,6 +124,30 @@ The command queries `/health`, `/status`, and `/peers` on every target, prints a
 - `GET /account/{address}` - Get account info
 - `GET /time` - Get current IPPAN Time
 
+## 🔄 Releases & CI Automation
+
+### Versioning & Release Channels
+
+- **Semantic versioning**: Production releases are tagged as `vMAJOR.MINOR.PATCH` and published through `.github/workflows/release.yml`.
+- **Branch policy**: Feature work lands on topic branches → `develop`; `main` is always releasable and only updated through reviewed pull requests once CI passes.
+- **Promotion flow**: Dispatching the `Release` workflow with the target tag builds images, signs artifacts, and pushes signed tags back to the repository and GHCR.
+- **Hotfixes**: Apply critical fixes from `hotfix/*` directly to `main`, tag a patch release, then back-merge to `develop`.
+
+### Continuous Integration Workflows
+
+- **CI pipeline** (`.github/workflows/ci.yml`): Runs on every push/PR to `main` and `develop`, executing Rust formatting, `cargo check`, `cargo build`, `cargo clippy`, targeted AI/DLC tests, plus Gateway and Unified UI lint/build checks.
+- **Extended test matrix** (`test.yml`, `build.yml`): Provides nightly stress builds and integration suites for long-running validations before release.
+- **Deployment automation** (`deploy.yml`, `deploy-ippan-full-stack.yml`, `prod-deploy.yml`): Builds production images and promotes them to infrastructure once CI is green.
+- **Quality gates**: Workflows must report success before `main` merges, and releases require `Release` plus deployment workflows to complete without manual retries.
+
+### Operational Validation Scripts
+
+- `deploy/check-nodes.sh`: Performs JSON health sampling, enforces HTTP 200s for `/health`, `/status`, `/peers`, and fails if peer count is zero.
+- `deploy/health-check.sh`: Validates consensus, time service, and connectivity between production nodes; warns if block height drift exceeds five blocks.
+- `deploy/verify-deployment.sh`: Confirms UI, gateway, RPC, and key P2P ports across both servers after a rollout.
+- `deploy/monitor-production.sh`: Continuous watcher that logs node vitals every 30s and raises alerts if either node is unreachable or both go down.
+- See `docs/DEPLOYMENT_GUIDE.md` for full runbooks, success criteria, and post-deployment QA steps.
+
 ## 🐳 Deployment
 
 ### Automated Deployment (Recommended)
@@ -135,7 +159,7 @@ The IPPAN network uses automated GitHub Actions deployment:
 - **Docker Registry**: Uses GitHub Container Registry (GHCR)
 - **Health Checks**: Verifies deployment success
 
-See [Automated Deployment Guide](docs/automated-deployment-guide.md) for setup instructions.
+See [Automated Deployment Guide](docs/automated-deployment-guide.md) and the expanded [Deployment Guide](docs/DEPLOYMENT_GUIDE.md) for setup instructions and QA requirements.
 
 ### Manual Docker Deployment
 
