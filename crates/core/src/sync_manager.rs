@@ -98,7 +98,6 @@ pub struct SyncManager {
     state: Arc<RwLock<SyncState>>,
     performance: Arc<RwLock<SyncPerformance>>,
     event_sender: mpsc::UnboundedSender<SyncEvent>,
-    event_receiver: Arc<RwLock<Option<mpsc::UnboundedReceiver<SyncEvent>>>>,
     peer_connections: Arc<RwLock<HashMap<String, PeerConnection>>>,
     sync_queue: Arc<RwLock<VecDeque<SyncTask>>>,
     last_sync_time: Arc<RwLock<Option<Instant>>>,
@@ -166,7 +165,6 @@ impl SyncManager {
             state: Arc::new(RwLock::new(SyncState::Idle)),
             performance: Arc::new(RwLock::new(SyncPerformance::default())),
             event_sender,
-            event_receiver: Arc::new(RwLock::new(None)),
             peer_connections: Arc::new(RwLock::new(HashMap::new())),
             sync_queue: Arc::new(RwLock::new(VecDeque::new())),
             last_sync_time: Arc::new(RwLock::new(None)),
@@ -245,16 +243,14 @@ impl SyncManager {
     /// Trigger manual synchronization
     pub async fn trigger_sync(&self) -> Result<()> {
         let mut queue = self.sync_queue.write().await;
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?;
         let task = SyncTask {
-            task_id: format!(
-                "manual_sync_{}",
-                SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()
-            ),
+            task_id: format!("manual_sync_{}", timestamp.as_secs()),
             task_type: SyncTaskType::BlockSync,
             priority: 10, // High priority
             created_at: Instant::now(),
             retry_count: 0,
-            data: Vec::new(),
+            data: format!("manual sync issued at {}", timestamp.as_millis()).into_bytes(),
         };
         queue.push_back(task);
         info!("Triggered manual synchronization");
@@ -343,7 +339,23 @@ impl SyncManager {
         let mut queue = self.sync_queue.write().await;
         let mut processed_tasks = Vec::new();
 
+        if !queue.is_empty() {
+            let slice = queue.make_contiguous();
+            slice.sort_by(|a, b| {
+                b.priority
+                    .cmp(&a.priority)
+                    .then_with(|| a.created_at.cmp(&b.created_at))
+            });
+        }
+
         while let Some(mut task) = queue.pop_front() {
+            let payload_bytes = task.data.len();
+            let task_age = task.created_at.elapsed();
+            debug!(
+                "Processing sync task {} (priority {}, retries {}, payload {} bytes, age {:?})",
+                task.task_id, task.priority, task.retry_count, payload_bytes, task_age
+            );
+
             match self.process_sync_task(&task).await {
                 Ok(_) => {
                     processed_tasks.push(task.task_id);
@@ -352,12 +364,21 @@ impl SyncManager {
                     error!("Failed to process sync task {}: {}", task.task_id, e);
 
                     task.retry_count += 1;
+                    if task.priority > 0 {
+                        task.priority -= 1;
+                    }
                     if task.retry_count < self.config.retry_attempts {
                         queue.push_back(task);
+                        let slice = queue.make_contiguous();
+                        slice.sort_by(|a, b| {
+                            b.priority
+                                .cmp(&a.priority)
+                                .then_with(|| a.created_at.cmp(&b.created_at))
+                        });
                     } else {
                         warn!(
-                            "Dropping sync task {} after {} retries",
-                            task.task_id, self.config.retry_attempts
+                            "Dropping sync task {} after {} retries (payload {} bytes)",
+                            task.task_id, self.config.retry_attempts, payload_bytes
                         );
                     }
                 }
@@ -395,8 +416,14 @@ impl SyncManager {
 
     /// Synchronize blocks with peers
     async fn sync_blocks(&self) -> Result<()> {
-        let connections = self.peer_connections.read().await;
-        let active_peers: Vec<_> = connections.values().filter(|conn| conn.is_active).collect();
+        let active_peers: Vec<PeerConnection> = {
+            let connections = self.peer_connections.read().await;
+            connections
+                .values()
+                .filter(|conn| conn.is_active && conn.sync_capability.max_batch_size > 0)
+                .cloned()
+                .collect()
+        };
 
         if active_peers.is_empty() {
             return Ok(());
@@ -409,8 +436,21 @@ impl SyncManager {
 
         // Request blocks from peers
         for peer in active_peers {
-            self.request_blocks_from_peer(&peer.peer_id, &our_tips)
-                .await?;
+            let batch_limit = peer
+                .sync_capability
+                .max_batch_size
+                .min(self.config.batch_size);
+
+            self.request_blocks_from_peer(
+                &peer.peer_id,
+                &our_tips,
+                batch_limit,
+                peer.sync_capability.supported_protocols.clone(),
+                peer.performance_score,
+            )
+            .await?;
+
+            self.update_peer_activity(&peer.peer_id, true).await;
         }
 
         Ok(())
@@ -471,10 +511,45 @@ impl SyncManager {
     }
 
     /// Request blocks from a specific peer
-    async fn request_blocks_from_peer(&self, peer_id: &str, _our_tips: &[[u8; 32]]) -> Result<()> {
-        debug!("Requesting blocks from peer: {}", peer_id);
+    async fn request_blocks_from_peer(
+        &self,
+        peer_id: &str,
+        our_tips: &[[u8; 32]],
+        batch_limit: usize,
+        protocols: Vec<String>,
+        performance_score: f64,
+    ) -> Result<()> {
+        if protocols.is_empty() {
+            warn!(
+                "Peer {} has no supported protocols; skipping block request",
+                peer_id
+            );
+            return Ok(());
+        }
+
+        debug!(
+            "Requesting up to {} blocks from peer {} (score {:.2}) using {:?} for {} tips",
+            batch_limit,
+            peer_id,
+            performance_score,
+            protocols,
+            our_tips.len()
+        );
+
         // Implement peer communication logic
         Ok(())
+    }
+
+    async fn update_peer_activity(&self, peer_id: &str, success: bool) {
+        let mut connections = self.peer_connections.write().await;
+        if let Some(connection) = connections.get_mut(peer_id) {
+            connection.last_seen = Instant::now();
+            if success {
+                connection.performance_score = (connection.performance_score + 0.05).min(1.5);
+            } else {
+                connection.performance_score = (connection.performance_score * 0.9).max(0.1);
+            }
+        }
     }
 
     /// Update performance metrics

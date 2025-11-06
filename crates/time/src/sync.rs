@@ -184,7 +184,7 @@ impl TimeSyncService {
                         SwarmEvent::NewListenAddr { address, .. } => {
                             info!("Time sync listening on {address}");
                         }
-                        SwarmEvent::Behaviour(RequestResponseEvent::Message { peer, message }) => {
+                        SwarmEvent::Behaviour(RequestResponseEvent::Message { peer, message, .. }) => {
                             match message {
                                 RequestResponseMessage::Request { channel, .. } => {
                                     let response = TimeResponse { time_us: now_us() };

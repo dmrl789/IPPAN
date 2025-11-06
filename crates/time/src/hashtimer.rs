@@ -408,7 +408,7 @@ mod tests {
 
         // Digest should be reproducible from time prefix
         let original_digest = original.digest();
-        assert_eq!(hex[14..64], hex::encode(&original_digest)[0..50]);
+        assert_eq!(hex[14..64], hex::encode(original_digest)[0..50]);
     }
 
     #[test]

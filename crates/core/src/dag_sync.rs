@@ -14,7 +14,7 @@ use anyhow::{anyhow, Context as _, Result};
 use ed25519_dalek::SigningKey;
 use either::Either;
 use futures::StreamExt;
-use libp2p::core::transport::upgrade;
+use libp2p::core::transport::{upgrade, PortUse};
 use libp2p::core::Endpoint;
 use libp2p::gossipsub;
 use libp2p::identity;
@@ -151,18 +151,21 @@ impl NetworkBehaviour for DagBehaviour {
         peer: PeerId,
         addr: &Multiaddr,
         role_override: Endpoint,
+        port_use: PortUse,
     ) -> Result<Self::ConnectionHandler, ConnectionDenied> {
         let gossip_handler = self.gossip.handle_established_outbound_connection(
             connection_id,
             peer,
             addr,
             role_override,
+            port_use,
         )?;
         let mdns_handler = self.mdns.handle_established_outbound_connection(
             connection_id,
             peer,
             addr,
             role_override,
+            port_use,
         )?;
         Ok(gossip_handler.select(mdns_handler))
     }
@@ -370,6 +373,9 @@ fn handle_gossip_event(
             }
         }
         gossipsub::Event::Subscribed { .. } | gossipsub::Event::Unsubscribed { .. } => {}
+        gossipsub::Event::SlowPeer { peer_id, .. } => {
+            warn!("peer {peer_id} is slow to process gossipsub traffic");
+        }
         gossipsub::Event::GossipsubNotSupported { peer_id } => {
             warn!("peer {peer_id} does not support gossipsub");
         }

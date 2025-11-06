@@ -52,6 +52,28 @@ edition = "2021"
 license = "Apache-2.0"
 authors = ["IPPAN Contributors"]
 
+[workspace.metadata]
+version = "0.1.0" # metadata-version
+
+[workspace.metadata.release]
+shared-version = true
+workspace = true
+tag-prefix = "v"
+tag-name = "v{{version}}"
+consolidate-commits = true
+sign-commit = false
+sign-tag = false
+publish = false
+push = true
+push-remote = "origin"
+allow-branch = ["main", "release/*", "hotfix/*"]
+pre-release-commit-message = "chore(release): {{version}}"
+
+[[workspace.metadata.release.pre-release-replacements]]
+file = "Cargo.toml"
+search = 'version = "{{prev_version}}" # metadata-version'
+replace = 'version = "{{version}}" # metadata-version'
+
 [workspace.dependencies]
 # --------------------------
 # Core libraries
@@ -144,7 +166,7 @@ env_logger = "0.10"
 # --------------------------
 # Networking and web layer
 # --------------------------
-libp2p = { version = "0.53", features = [
+libp2p = { version = "0.56", features = [
   "tcp",
   "yamux",
   "noise",
@@ -160,7 +182,7 @@ libp2p = { version = "0.53", features = [
   "relay",
   "dcutr"
 ] }
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 url = "2.5"
 igd = { version = "0.12", features = ["aio", "tokio"] }
 local-ip-address = "0.6"

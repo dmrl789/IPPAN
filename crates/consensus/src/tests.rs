@@ -274,7 +274,10 @@ async fn test_round_finalization() {
     consensus.stop().await.unwrap();
 
     let latest_height = storage.get_latest_height().unwrap();
-    assert!(latest_height >= 0);
+    assert!(
+        latest_height > 0,
+        "expected at least one finalized block height"
+    );
 }
 
 #[tokio::test]

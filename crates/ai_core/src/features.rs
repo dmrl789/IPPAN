@@ -160,7 +160,7 @@ mod tests {
             rounds_active: 10000,
             avg_latency_us: 100000,
             slash_count: 0,
-            stake: 100000_00000000,
+            stake: 10_000_000_000_000,
             age_rounds: 1000000,
         };
         let config = FeatureConfig::default();
@@ -178,7 +178,7 @@ mod tests {
             rounds_active: 10000,
             avg_latency_us: 100000,
             slash_count: 5,
-            stake: 100000_00000000,
+            stake: 10_000_000_000_000,
             age_rounds: 1000000,
         };
         let config = FeatureConfig::default();
@@ -194,7 +194,7 @@ mod tests {
             rounds_active: 1,
             avg_latency_us: 5_000_000,
             slash_count: 100,
-            stake: 10_000_000_00000000,
+            stake: 1_000_000_000_000_000,
             age_rounds: 100_000_000,
         };
         let config = FeatureConfig::default();
@@ -230,7 +230,7 @@ mod tests {
             rounds_active: 10000,
             avg_latency_us: 123456,
             slash_count: 2,
-            stake: 123456_00000000,
+            stake: 12_345_600_000_000,
             age_rounds: 2000000,
         };
         let config = FeatureConfig::default();
