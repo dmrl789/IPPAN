@@ -3,6 +3,7 @@
 //!
 //! Ensures identical predictions, rankings, and hashes across all validator nodes.
 
+use crate::serialization::canonical_json_string;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{collections::HashMap, fs, path::Path};
@@ -84,11 +85,17 @@ impl DeterministicGBDT {
     }
 
     pub fn save_json<P: AsRef<Path>>(&self, path: P) -> Result<(), DeterministicGBDTError> {
-        let json = serde_json::to_string_pretty(self)
+        let json = canonical_json_string(self)
             .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
         fs::write(path, json)
             .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
         Ok(())
+    }
+
+    /// Serialize the model into canonical JSON for deterministic hashing.
+    pub fn to_canonical_json(&self) -> Result<String, DeterministicGBDTError> {
+        canonical_json_string(self)
+            .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))
     }
 
     pub fn save_binary<P: AsRef<Path>>(&self, path: P) -> Result<(), DeterministicGBDTError> {
@@ -144,7 +151,9 @@ impl DeterministicGBDT {
 
     /// Deterministic model certificate hash (anchors to HashTimer)
     pub fn model_hash(&self, round_hash_timer: &str) -> String {
-        let serialized = serde_json::to_string(self).unwrap();
+        let serialized = self
+            .to_canonical_json()
+            .expect("Deterministic serialization failed");
         let mut hasher = Sha3_256::new();
         hasher.update(serialized.as_bytes());
         hasher.update(round_hash_timer.as_bytes());

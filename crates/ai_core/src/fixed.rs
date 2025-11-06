@@ -1,20 +1,21 @@
 //! Deterministic fixed-point arithmetic utilities for `ai_core`.
 //!
-//! This module provides a micro-precision (1e-6) fixed-point type that
-//! guarantees bit-for-bit reproducibility across architectures. All
-//! operations promote intermediate values to `i128` to avoid overflow and
-//! rounding inconsistencies when multiplying or dividing.
+//! Floating-point operations can produce non-deterministic results across CPU
+//! architectures and compiler settings. This module provides a micro-precision
+//! (1e-6) fixed-point type that guarantees bit-for-bit reproducibility across
+//! platforms. Intermediate operations promote to `i128` to avoid overflow and
+//! rounding drift during multiplication and division.
 
 use core::fmt::{self, Display, Formatter};
 use core::iter::{Product, Sum};
-use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use serde::{Deserialize, Serialize};
 
-/// The scaling factor used for the fixed-point representation (1e-6).
+/// Scaling factor: 1 unit = 1e-6.
 pub const SCALE: i64 = 1_000_000;
 
-/// Deterministic fixed-point 64-bit number with micro precision.
+/// Deterministic fixed-point 64-bit number with six decimal places of precision.
 #[derive(
     Clone,
     Copy,
@@ -30,47 +31,65 @@ pub const SCALE: i64 = 1_000_000;
 pub struct Fixed(pub i64);
 
 impl Fixed {
-    /// Creates a fixed-point value from a raw scaled integer.
+    /// Construct from a raw scaled integer.
     #[inline]
     pub const fn from_scaled(raw: i64) -> Self {
         Self(raw)
     }
 
-    /// Returns the raw scaled integer value.
+    /// Return the raw scaled integer value.
     #[inline]
     pub const fn into_inner(self) -> i64 {
         self.0
     }
 
-    /// Creates a fixed-point value from an `f64` by rounding to the nearest micro unit.
+    /// Convert an `f64` value into fixed-point, rounding to the nearest micro unit.
     #[inline]
     pub fn from_f64(value: f64) -> Self {
         Self((value * SCALE as f64).round() as i64)
     }
 
-    /// Creates a fixed-point value from an `f32` by rounding to the nearest micro unit.
+    /// Convert an `f32` value into fixed-point, rounding to the nearest micro unit.
     #[inline]
     pub fn from_f32(value: f32) -> Self {
         Self::from_f64(value as f64)
     }
 
-    /// Converts the fixed-point value back to an `f64`.
+    /// Convert fixed-point back to `f64`.
     #[inline]
     pub fn to_f64(self) -> f64 {
         self.0 as f64 / SCALE as f64
     }
 
-    /// Converts the fixed-point value back to an `f32`.
+    /// Convert fixed-point back to `f32`.
     #[inline]
     pub fn to_f32(self) -> f32 {
         self.to_f64() as f32
+    }
+
+    /// Zero constant.
+    #[inline]
+    pub const fn zero() -> Self {
+        Self(0)
+    }
+
+    /// One constant (represents 1.0).
+    #[inline]
+    pub const fn one() -> Self {
+        Self(SCALE)
+    }
+
+    /// Absolute value.
+    #[inline]
+    pub fn abs(self) -> Self {
+        Self(self.0.abs())
     }
 
     /// Multiplies two fixed-point numbers with rounding toward zero.
     #[inline]
     pub fn mul(self, rhs: Self) -> Self {
         let product = self.0 as i128 * rhs.0 as i128;
-        Self(((product) / SCALE as i128) as i64)
+        Self((product / SCALE as i128) as i64)
     }
 
     /// Divides two fixed-point numbers with rounding toward zero.
@@ -87,13 +106,22 @@ impl Fixed {
 
 impl Default for Fixed {
     fn default() -> Self {
-        Self(0)
+        Self::zero()
     }
 }
 
 impl Display for Fixed {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{:.6}", self.to_f64())
+    }
+}
+
+impl Neg for Fixed {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        Self(-self.0)
     }
 }
 
@@ -203,13 +231,13 @@ impl<'a> Sum<&'a Fixed> for Fixed {
 
 impl Product for Fixed {
     fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self::from_scaled(SCALE), |acc, x| acc * x)
+        iter.fold(Self::one(), |acc, x| acc * x)
     }
 }
 
 impl<'a> Product<&'a Fixed> for Fixed {
     fn product<I: Iterator<Item = &'a Fixed>>(iter: I) -> Self {
-        iter.fold(Self::from_scaled(SCALE), |acc, x| acc * *x)
+        iter.fold(Self::one(), |acc, x| acc * *x)
     }
 }
 
@@ -264,5 +292,14 @@ mod tests {
     fn fixed_display_outputs_micro_precision() {
         let value = Fixed::from_f64(-12.345_678);
         assert_eq!(format!("{}", value), "-12.345678");
+    }
+
+    #[test]
+    fn fixed_blake3_hash_consistency() {
+        let x = Fixed::from_f64(1.234567);
+        let y = Fixed::from_f64(1.234567);
+        let hx = blake3::hash(&serde_json::to_vec(&x).unwrap());
+        let hy = blake3::hash(&serde_json::to_vec(&y).unwrap());
+        assert_eq!(hx, hy);
     }
 }
