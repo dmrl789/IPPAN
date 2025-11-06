@@ -394,7 +394,9 @@ pub trait BlockStorage: Send + Sync {
 
 impl BlockHandler {
     pub fn new(block_storage: Arc<dyn BlockStorage>) -> Self {
-        Self { _block_storage: block_storage }
+        Self {
+            _block_storage: block_storage,
+        }
     }
 }
 

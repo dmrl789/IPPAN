@@ -44,7 +44,7 @@ impl ReputationScore {
 
     /// Apply a reputation delta
     pub fn apply_delta(&mut self, delta: i64) {
-        self.total = (self.total + delta).max(0).min(100_000); // Clamp between 0 and 100k
+        self.total = (self.total + delta).clamp(0, 100_000); // Clamp between 0 and 100k
 
         if delta > 0 {
             self.positive_actions += 1;

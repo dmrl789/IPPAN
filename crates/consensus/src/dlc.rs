@@ -198,7 +198,7 @@ impl DLCConsensus {
     ) -> Result<(ValidatorId, Vec<ValidatorId>)> {
         let dgbdt = self.dgbdt_engine.read();
         let metrics = self.validator_metrics.read();
-        
+
         if metrics.is_empty() {
             return Ok((self.validator_id, Vec::new()));
         }
@@ -215,7 +215,7 @@ impl DLCConsensus {
                 return Ok((self.validator_id, Vec::new()));
             }
         };
-        
+
         Ok((selection.primary, selection.shadows))
     }
 

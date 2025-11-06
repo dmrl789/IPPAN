@@ -425,12 +425,7 @@ fn test_floating_point_precision_consistency() {
 
     // Test with values that might cause floating point precision issues
     let features1 = vec![0.1, 0.2, 0.3, 0.4];
-    let features2 = vec![
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-    ];
+    let features2 = vec![0.1, 0.2, 0.3, 0.4];
 
     let prediction1 = model.predict(&features1);
     let prediction2 = model.predict(&features2);

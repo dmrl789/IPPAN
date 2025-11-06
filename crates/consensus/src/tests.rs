@@ -3,12 +3,7 @@ use crate::{PoAConfig, PoAConsensus, Validator};
 use ed25519_dalek::SigningKey;
 use ippan_storage::MemoryStorage;
 use ippan_types::{
-    AccessKey,
-    Block,
-    ConfidentialEnvelope,
-    ConfidentialProof,
-    ConfidentialProofType,
-    Transaction,
+    AccessKey, Block, ConfidentialEnvelope, ConfidentialProof, ConfidentialProofType, Transaction,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,7 +33,6 @@ fn create_test_config() -> PoAConfig {
         enable_dag_fair_emission: true,
     }
 }
-
 
 #[tokio::test]
 async fn test_consensus_creation() {
@@ -280,7 +274,10 @@ async fn test_round_finalization() {
     consensus.stop().await.unwrap();
 
     let latest_height = storage.get_latest_height().unwrap();
-    assert!(latest_height >= 0);
+    assert!(
+        latest_height > 0,
+        "expected at least one finalized block height"
+    );
 }
 
 #[tokio::test]

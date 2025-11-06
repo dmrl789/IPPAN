@@ -309,31 +309,6 @@ pub fn verify_stark_proof(proof: &StarkProof, block: &Block) -> Result<bool> {
     generator.verify_proof(proof, block)
 }
 
-/// Create proof components for a block
-fn create_proof_components(block: &Block) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-    let commitment = block.hash();
-    let merkle_root = block.header.merkle_root;
-    let proof_data = bincode::serialize(block).context("Failed to serialize block")?;
-
-    Ok((commitment.to_vec(), merkle_root.to_vec(), proof_data))
-}
-
-/// Verify proof components
-fn verify_proof_components(
-    commitment: &[u8],
-    merkle_root: &[u8],
-    _proof_data: &[u8],
-    block: &Block,
-) -> Result<bool> {
-    let expected_commitment = block.hash();
-    let expected_merkle_root = block.header.merkle_root;
-
-    let commitment_valid = commitment == expected_commitment.to_vec();
-    let merkle_root_valid = merkle_root == expected_merkle_root.to_vec();
-
-    Ok(commitment_valid && merkle_root_valid)
-}
-
 /// Serialize a proof to bytes
 pub fn serialize_proof(proof: &StarkProof) -> Result<Vec<u8>> {
     bincode::serialize(proof).context("Failed to serialize proof")

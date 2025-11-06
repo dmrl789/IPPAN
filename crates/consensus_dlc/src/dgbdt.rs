@@ -397,7 +397,7 @@ mod tests {
         let metrics = ValidatorMetrics::default();
 
         let score = model.score(&metrics);
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
     }
 
     #[test]
