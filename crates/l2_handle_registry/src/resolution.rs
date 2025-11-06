@@ -144,7 +144,6 @@ impl Clone for HandleResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio_test;
 
     #[tokio::test]
     async fn test_handle_resolution() {
@@ -155,7 +154,7 @@ mod tests {
         let resolver = HandleResolver::new(registry.clone());
 
         let handle = Handle::new("@test.ipn");
-        
+
         // Generate proper signature
         let signing_key = SigningKey::from_bytes(&[42u8; 32]);
         let owner = PublicKey::new(signing_key.verifying_key().to_bytes());

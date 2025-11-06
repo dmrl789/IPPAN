@@ -1,5 +1,5 @@
 //! IPPAN Block Explorer and API Gateway
-//! 
+//!
 //! Provides a RESTful API for exploring the IPPAN blockchain.
 
 use anyhow::Result;
@@ -24,11 +24,11 @@ struct Cli {
     /// Bind address
     #[arg(long, default_value = "0.0.0.0")]
     host: String,
-    
+
     /// Bind port
     #[arg(short, long, default_value = "3000")]
     port: u16,
-    
+
     /// IPPAN node RPC URL
     #[arg(long, default_value = "http://localhost:8080")]
     node_rpc: String,
@@ -43,14 +43,14 @@ struct AppState {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    
+
     let cli = Cli::parse();
-    
+
     let state = AppState {
         node_rpc: cli.node_rpc.clone(),
         client: reqwest::Client::new(),
     };
-    
+
     let app = Router::new()
         .route("/", get(index))
         .route("/api/health", get(health))
@@ -65,19 +65,20 @@ async fn main() -> Result<()> {
         .route("/api/node/peers", get(get_node_peers))
         .layer(CorsLayer::permissive())
         .with_state(Arc::new(state));
-    
+
     let addr = format!("{}:{}", cli.host, cli.port);
     tracing::info!("🚀 IPPAN Explorer starting on {}", addr);
     tracing::info!("📡 Connected to node: {}", cli.node_rpc);
-    
+
     let listener = TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
-    
+
     Ok(())
 }
 
 async fn index() -> Html<&'static str> {
-    Html(r#"
+    Html(
+        r#"
 <!DOCTYPE html>
 <html>
 <head>
@@ -148,7 +149,8 @@ curl http://localhost:3000/api/validators</code></pre>
     </div>
 </body>
 </html>
-    "#)
+    "#,
+    )
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -167,23 +169,40 @@ struct PaginationParams {
     limit: usize,
 }
 
-fn default_page() -> usize { 1 }
-fn default_limit() -> usize { 20 }
+fn default_page() -> usize {
+    1
+}
+fn default_limit() -> usize {
+    20
+}
 
 async fn get_blocks(
     State(state): State<Arc<AppState>>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
-        .get(format!("{}/blocks?page={}&limit={}", 
-            state.node_rpc, params.page, params.limit))
+    let resp = state
+        .client
+        .get(format!(
+            "{}/blocks?page={}&limit={}",
+            state.node_rpc, params.page, params.limit
+        ))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }
 
@@ -191,15 +210,26 @@ async fn get_block(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
+    let resp = state
+        .client
         .get(format!("{}/block/{}", state.node_rpc, id))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }
 
@@ -207,16 +237,29 @@ async fn get_transactions(
     State(state): State<Arc<AppState>>,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
-        .get(format!("{}/transactions?page={}&limit={}", 
-            state.node_rpc, params.page, params.limit))
+    let resp = state
+        .client
+        .get(format!(
+            "{}/transactions?page={}&limit={}",
+            state.node_rpc, params.page, params.limit
+        ))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }
 
@@ -224,30 +267,52 @@ async fn get_transaction(
     State(state): State<Arc<AppState>>,
     Path(hash): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
+    let resp = state
+        .client
         .get(format!("{}/transaction/{}", state.node_rpc, hash))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }
 
 async fn get_validators(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
+    let resp = state
+        .client
         .get(format!("{}/validators", state.node_rpc))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }
 
@@ -255,59 +320,103 @@ async fn get_validator(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
+    let resp = state
+        .client
         .get(format!("{}/validator/{}", state.node_rpc, id))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }
 
 async fn get_stats(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
+    let resp = state
+        .client
         .get(format!("{}/blockchain/info", state.node_rpc))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }
 
 async fn get_node_status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
+    let resp = state
+        .client
         .get(format!("{}/node/status", state.node_rpc))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }
 
 async fn get_node_peers(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let resp = state.client
+    let resp = state
+        .client
         .get(format!("{}/node/peers", state.node_rpc))
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Failed to connect to node: {}", e)))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to connect to node: {}", e),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response: {}", e)))?;
-    
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+
     Ok(Json(resp))
 }

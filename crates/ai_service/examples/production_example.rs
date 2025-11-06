@@ -10,7 +10,6 @@ use ippan_ai_service::{
 };
 use std::collections::HashMap;
 use tracing::{error, info, warn};
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

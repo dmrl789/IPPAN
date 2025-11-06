@@ -1,5 +1,5 @@
 //! Deterministic Gradient-Boosted Decision Tree (D-GBDT) fairness engine
-//! 
+//!
 //! This module implements a deterministic machine learning model for validator
 //! selection and reputation scoring using integer-only arithmetic.
 
@@ -63,19 +63,13 @@ impl ValidatorMetrics {
     }
 
     /// Update metrics with new data
-    pub fn update(
-        &mut self,
-        uptime_delta: f64,
-        latency_sample: f64,
-        proposed: u64,
-        verified: u64,
-    ) {
+    pub fn update(&mut self, uptime_delta: f64, latency_sample: f64, proposed: u64, verified: u64) {
         // Exponential moving average for uptime
         self.uptime = 0.9 * self.uptime + 0.1 * uptime_delta;
-        
+
         // Exponential moving average for latency
         self.latency = 0.9 * self.latency + 0.1 * latency_sample;
-        
+
         self.blocks_proposed += proposed;
         self.blocks_verified += verified;
         self.rounds_active += 1;
@@ -141,12 +135,7 @@ impl TreeNode {
     }
 
     /// Create an internal node
-    pub fn internal(
-        feature_index: usize,
-        threshold: i64,
-        left: TreeNode,
-        right: TreeNode,
-    ) -> Self {
+    pub fn internal(feature_index: usize, threshold: i64, left: TreeNode, right: TreeNode) -> Self {
         Self {
             feature_index,
             threshold,
@@ -163,19 +152,17 @@ impl TreeNode {
         }
 
         let feature_value = features.get(self.feature_index).copied().unwrap_or(0);
-        
+
         if feature_value < self.threshold {
             if let Some(left) = &self.left {
                 left.predict(features)
             } else {
                 0
             }
+        } else if let Some(right) = &self.right {
+            right.predict(features)
         } else {
-            if let Some(right) = &self.right {
-                right.predict(features)
-            } else {
-                0
-            }
+            0
         }
     }
 }
@@ -204,10 +191,10 @@ impl FairnessModel {
     pub fn new_default() -> Self {
         // Default weights: uptime, latency, honesty, proposal rate, verification rate, stake
         let weights = vec![0.25, 0.15, 0.25, 0.15, 0.15, 0.05];
-        
+
         // Create a simple default tree
         let default_tree = TreeNode::leaf(5000); // Neutral score
-        
+
         Self {
             weights,
             trees: vec![default_tree],
@@ -219,7 +206,7 @@ impl FairnessModel {
     /// Create a production-ready fairness model with multiple trees
     pub fn new_production() -> Self {
         let weights = vec![0.25, 0.15, 0.25, 0.15, 0.15, 0.05];
-        
+
         // Tree 1: Focus on uptime and honesty
         let tree1 = TreeNode::internal(
             0, // uptime
@@ -232,7 +219,7 @@ impl FairnessModel {
                 TreeNode::leaf(9000), // High honesty
             ),
         );
-        
+
         // Tree 2: Focus on performance (latency and proposal rate)
         let tree2 = TreeNode::internal(
             1, // latency_inv
@@ -245,7 +232,7 @@ impl FairnessModel {
                 TreeNode::leaf(8000), // High proposal rate
             ),
         );
-        
+
         // Tree 3: Focus on verification and stake
         let tree3 = TreeNode::internal(
             4, // verification_rate
@@ -258,7 +245,7 @@ impl FairnessModel {
                 TreeNode::leaf(8000), // High stake
             ),
         );
-        
+
         Self {
             weights,
             trees: vec![tree1, tree2, tree3],
@@ -285,14 +272,14 @@ impl FairnessModel {
             normalized.verification_rate,
             normalized.stake_weight,
         ];
-        
+
         // GBDT prediction: sum of all tree predictions
         let mut score = self.bias;
-        
+
         for tree in &self.trees {
             score += tree.predict(&features);
         }
-        
+
         // Apply weights (linear combination)
         let mut weighted_score = 0i64;
         for (i, &feature) in features.iter().enumerate() {
@@ -300,10 +287,10 @@ impl FairnessModel {
                 weighted_score += ((feature as f64) * self.weights[i]) as i64;
             }
         }
-        
+
         // Combine tree predictions and weighted features
         score = (score + weighted_score) / 2;
-        
+
         // Clamp to valid range [0, scale]
         score.max(0).min(self.scale)
     }
@@ -320,15 +307,15 @@ impl FairnessModel {
         if self.weights.is_empty() {
             return Err(DlcError::Model("Model has no weights".to_string()));
         }
-        
+
         if self.trees.is_empty() {
             return Err(DlcError::Model("Model has no trees".to_string()));
         }
-        
+
         if self.scale <= 0 {
             return Err(DlcError::Model("Invalid scale factor".to_string()));
         }
-        
+
         Ok(())
     }
 
@@ -369,10 +356,10 @@ pub fn rank_validators(
         .into_iter()
         .map(|(id, metrics)| (id, model.score(&metrics)))
         .collect();
-    
+
     // Sort by score (descending)
     rankings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    
+
     rankings
         .into_iter()
         .enumerate()
@@ -399,7 +386,7 @@ mod tests {
     fn test_metrics_normalization() {
         let metrics = ValidatorMetrics::new(0.95, 0.1, 1.0, 100, 500, 10_000_000, 1000);
         let normalized = metrics.to_normalized();
-        
+
         assert_eq!(normalized.uptime, 9500);
         assert!(normalized.latency_inv > 8000);
     }
@@ -408,7 +395,7 @@ mod tests {
     fn test_fairness_model_scoring() {
         let model = FairnessModel::new_default();
         let metrics = ValidatorMetrics::default();
-        
+
         let score = model.score(&metrics);
         assert!(score >= 0.0 && score <= 1.0);
     }
@@ -422,13 +409,8 @@ mod tests {
 
     #[test]
     fn test_tree_prediction() {
-        let tree = TreeNode::internal(
-            0,
-            5000,
-            TreeNode::leaf(1000),
-            TreeNode::leaf(9000),
-        );
-        
+        let tree = TreeNode::internal(0, 5000, TreeNode::leaf(1000), TreeNode::leaf(9000));
+
         assert_eq!(tree.predict(&[3000]), 1000);
         assert_eq!(tree.predict(&[7000]), 9000);
     }
@@ -437,7 +419,7 @@ mod tests {
     fn test_validator_ranking() {
         let model = FairnessModel::new_production();
         let mut validators = HashMap::new();
-        
+
         validators.insert(
             "val1".to_string(),
             ValidatorMetrics::new(0.99, 0.05, 1.0, 100, 500, 10_000_000, 100),
@@ -446,7 +428,7 @@ mod tests {
             "val2".to_string(),
             ValidatorMetrics::new(0.95, 0.15, 0.98, 80, 400, 5_000_000, 100),
         );
-        
+
         let rankings = rank_validators(&model, validators);
         assert_eq!(rankings.len(), 2);
         assert_eq!(rankings[0].rank, 1);
@@ -456,11 +438,11 @@ mod tests {
     fn test_deterministic_scoring() {
         let model = FairnessModel::new_production();
         let metrics = ValidatorMetrics::new(0.99, 0.1, 1.0, 100, 500, 10_000_000, 100);
-        
+
         // Score should be deterministic
         let score1 = model.score_deterministic(&metrics);
         let score2 = model.score_deterministic(&metrics);
-        
+
         assert_eq!(score1, score2);
     }
 }

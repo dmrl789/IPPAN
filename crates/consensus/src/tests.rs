@@ -39,6 +39,7 @@ fn create_test_config() -> PoAConfig {
     }
 }
 
+
 #[tokio::test]
 async fn test_consensus_creation() {
     let config = create_test_config();

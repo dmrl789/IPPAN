@@ -1,5 +1,5 @@
 //! IPPAN Blockchain Command Line Interface
-//! 
+//!
 //! A comprehensive CLI tool for interacting with IPPAN nodes.
 
 use anyhow::Result;
@@ -63,9 +63,9 @@ enum NodeCommands {
 #[derive(Subcommand)]
 enum WalletCommands {
     /// Get wallet balance
-    Balance { 
+    Balance {
         /// Wallet address
-        address: String 
+        address: String,
     },
     /// Send transaction
     Send {
@@ -81,14 +81,14 @@ enum WalletCommands {
 #[derive(Subcommand)]
 enum TxCommands {
     /// Get transaction by hash
-    Get { 
+    Get {
         /// Transaction hash
-        hash: String 
+        hash: String,
     },
     /// Send raw transaction
-    Send { 
+    Send {
         /// Raw transaction hex
-        raw_tx: String 
+        raw_tx: String,
     },
     /// List pending transactions
     Pending,
@@ -97,9 +97,9 @@ enum TxCommands {
 #[derive(Subcommand)]
 enum QueryCommands {
     /// Get block by height or hash
-    Block { 
+    Block {
         /// Block height or hash
-        id: String 
+        id: String,
     },
     /// Get latest block
     LatestBlock,
@@ -123,18 +123,18 @@ enum ValidatorCommands {
     /// List all validators
     List,
     /// Get validator info
-    Info { 
+    Info {
         /// Validator ID
-        validator_id: String 
+        validator_id: String,
     },
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    
+
     let cli = Cli::parse();
-    
+
     match cli.command {
         Commands::Node { action } => handle_node_commands(action, &cli.rpc_url).await,
         Commands::Wallet { action } => handle_wallet_commands(action, &cli.rpc_url).await,
@@ -146,7 +146,7 @@ async fn main() -> Result<()> {
 
 async fn handle_node_commands(cmd: NodeCommands, rpc_url: &str) -> Result<()> {
     let client = reqwest::Client::new();
-    
+
     let response = match cmd {
         NodeCommands::Status => {
             client
@@ -154,42 +154,32 @@ async fn handle_node_commands(cmd: NodeCommands, rpc_url: &str) -> Result<()> {
                 .send()
                 .await?
         }
-        NodeCommands::Peers => {
-            client
-                .get(format!("{}/node/peers", rpc_url))
-                .send()
-                .await?
-        }
+        NodeCommands::Peers => client.get(format!("{}/node/peers", rpc_url)).send().await?,
         NodeCommands::Version => {
             client
                 .get(format!("{}/node/version", rpc_url))
                 .send()
                 .await?
         }
-        NodeCommands::Info => {
-            client
-                .get(format!("{}/node/info", rpc_url))
-                .send()
-                .await?
-        }
+        NodeCommands::Info => client.get(format!("{}/node/info", rpc_url)).send().await?,
     };
-    
+
     let json: Value = response.json().await?;
     println!("{}", serde_json::to_string_pretty(&json)?);
-    
+
     Ok(())
 }
 
 async fn handle_wallet_commands(cmd: WalletCommands, rpc_url: &str) -> Result<()> {
     let client = reqwest::Client::new();
-    
+
     match cmd {
         WalletCommands::Balance { address } => {
             let response = client
                 .get(format!("{}/wallet/{}/balance", rpc_url, address))
                 .send()
                 .await?;
-            
+
             let json: Value = response.json().await?;
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
@@ -199,32 +189,32 @@ async fn handle_wallet_commands(cmd: WalletCommands, rpc_url: &str) -> Result<()
                 "to": to,
                 "amount": amount,
             });
-            
+
             let response = client
                 .post(format!("{}/transaction", rpc_url))
                 .json(&payload)
                 .send()
                 .await?;
-            
+
             let json: Value = response.json().await?;
             println!("Transaction sent!");
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
     }
-    
+
     Ok(())
 }
 
 async fn handle_tx_commands(cmd: TxCommands, rpc_url: &str) -> Result<()> {
     let client = reqwest::Client::new();
-    
+
     match cmd {
         TxCommands::Get { hash } => {
             let response = client
                 .get(format!("{}/transaction/{}", rpc_url, hash))
                 .send()
                 .await?;
-            
+
             let json: Value = response.json().await?;
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
@@ -232,13 +222,13 @@ async fn handle_tx_commands(cmd: TxCommands, rpc_url: &str) -> Result<()> {
             let payload = serde_json::json!({
                 "raw": raw_tx
             });
-            
+
             let response = client
                 .post(format!("{}/transaction", rpc_url))
                 .json(&payload)
                 .send()
                 .await?;
-            
+
             let json: Value = response.json().await?;
             println!("Transaction sent!");
             println!("{}", serde_json::to_string_pretty(&json)?);
@@ -248,18 +238,18 @@ async fn handle_tx_commands(cmd: TxCommands, rpc_url: &str) -> Result<()> {
                 .get(format!("{}/transactions/pending", rpc_url))
                 .send()
                 .await?;
-            
+
             let json: Value = response.json().await?;
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
     }
-    
+
     Ok(())
 }
 
 async fn handle_query_commands(cmd: QueryCommands, rpc_url: &str) -> Result<()> {
     let client = reqwest::Client::new();
-    
+
     let response = match cmd {
         QueryCommands::Block { id } => {
             client
@@ -286,39 +276,36 @@ async fn handle_query_commands(cmd: QueryCommands, rpc_url: &str) -> Result<()> 
                 .await?
         }
     };
-    
+
     let json: Value = response.json().await?;
     println!("{}", serde_json::to_string_pretty(&json)?);
-    
+
     Ok(())
 }
 
 async fn handle_validator_commands(cmd: ValidatorCommands, rpc_url: &str) -> Result<()> {
     let client = reqwest::Client::new();
-    
+
     match cmd {
         ValidatorCommands::Register { id, stake } => {
             let payload = serde_json::json!({
                 "validator_id": id,
                 "stake": stake,
             });
-            
+
             let response = client
                 .post(format!("{}/validator/register", rpc_url))
                 .json(&payload)
                 .send()
                 .await?;
-            
+
             let json: Value = response.json().await?;
             println!("Validator registered!");
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
         ValidatorCommands::List => {
-            let response = client
-                .get(format!("{}/validators", rpc_url))
-                .send()
-                .await?;
-            
+            let response = client.get(format!("{}/validators", rpc_url)).send().await?;
+
             let json: Value = response.json().await?;
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
@@ -327,11 +314,11 @@ async fn handle_validator_commands(cmd: ValidatorCommands, rpc_url: &str) -> Res
                 .get(format!("{}/validator/{}", rpc_url, validator_id))
                 .send()
                 .await?;
-            
+
             let json: Value = response.json().await?;
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
     }
-    
+
     Ok(())
 }

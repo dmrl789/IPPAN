@@ -1,5 +1,5 @@
 //! HashTimer? implementation for deterministic time-based ordering
-//! 
+//!
 //! This module provides deterministic ordering of consensus events using
 //! cryptographic hashes combined with timestamps.
 
@@ -29,7 +29,7 @@ impl HashTimer {
     pub fn for_round(round: u64) -> Self {
         let now = Utc::now();
         let hash = Self::compute_hash(&now, round);
-        
+
         Self {
             timestamp: now,
             hash,
@@ -40,7 +40,7 @@ impl HashTimer {
     /// Create a HashTimer with specific timestamp and round
     pub fn new(timestamp: DateTime<Utc>, round: u64) -> Self {
         let hash = Self::compute_hash(&timestamp, round);
-        
+
         Self {
             timestamp,
             hash,
@@ -135,7 +135,7 @@ mod tests {
     fn test_hashtimer_ordering() {
         let ht1 = HashTimer::for_round(1);
         let ht2 = HashTimer::for_round(2);
-        
+
         assert!(ht1 < ht2);
         assert_eq!(HashTimer::order(&ht1, &ht2), Ordering::Less);
     }
@@ -150,7 +150,7 @@ mod tests {
     fn test_hashtimer_next_round() {
         let ht1 = HashTimer::for_round(5);
         let ht2 = ht1.next_round();
-        
+
         assert_eq!(ht2.round, 6);
         assert!(ht1 < ht2);
     }
@@ -160,7 +160,7 @@ mod tests {
         let ht1 = HashTimer::for_round(3);
         let ht2 = HashTimer::for_round(3);
         let ht3 = HashTimer::for_round(4);
-        
+
         assert!(ht1.same_round(&ht2));
         assert!(!ht1.same_round(&ht3));
     }

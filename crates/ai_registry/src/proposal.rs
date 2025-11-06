@@ -72,10 +72,10 @@ impl ProposalManager {
             voting_threshold,
             min_proposal_stake,
             base_registration_fee: 1_000_000, // 1 IPN base fee
-            fee_per_mb: 100_000, // 0.1 IPN per MB
+            fee_per_mb: 100_000,              // 0.1 IPN per MB
         }
     }
-    
+
     /// Create with custom fee parameters
     pub fn with_fees(
         voting_threshold: f64,
@@ -182,7 +182,7 @@ impl ProposalManager {
                 if *status != ProposalStatus::Approved {
                     return Err(anyhow::anyhow!("Proposal {} is not approved", proposal_id));
                 }
-                
+
                 // Clone proposal data we need
                 let data = (
                     proposal.clone(),
@@ -198,8 +198,8 @@ impl ProposalManager {
         let registration_fee = self.calculate_registration_fee(model_size);
 
         // Convert timestamp to DateTime
-        let timestamp = DateTime::from_timestamp(proposal_data.created_at as i64, 0)
-            .unwrap_or_else(Utc::now);
+        let timestamp =
+            DateTime::from_timestamp(proposal_data.created_at as i64, 0).unwrap_or_else(Utc::now);
 
         // Create ModelId from proposal
         let model_id = ModelId {
@@ -309,9 +309,9 @@ impl ProposalManager {
     /// Calculate registration fee based on model size
     fn calculate_registration_fee(&self, model_size_bytes: u64) -> u64 {
         // Base fee + size-based fee
-        let size_mb = (model_size_bytes + 999_999) / 1_000_000; // Round up to nearest MB
+        let size_mb = model_size_bytes.div_ceil(1_000_000); // Round up to nearest MB
         let size_fee = size_mb * self.fee_per_mb;
-        
+
         self.base_registration_fee.saturating_add(size_fee)
     }
 }
@@ -383,26 +383,44 @@ mod tests {
     fn test_registration_fee_calculation() {
         // Test with default fees: base=1M µIPN (1 IPN), per_mb=100K µIPN (0.1 IPN)
         let manager = ProposalManager::default();
-        
+
         // Small model (< 1MB): should be base fee only
-        assert_eq!(manager.calculate_registration_fee(500_000), 1_000_000 + 100_000);
-        
+        assert_eq!(
+            manager.calculate_registration_fee(500_000),
+            1_000_000 + 100_000
+        );
+
         // 1MB model: base + 1MB
-        assert_eq!(manager.calculate_registration_fee(1_000_000), 1_000_000 + 100_000);
-        
+        assert_eq!(
+            manager.calculate_registration_fee(1_000_000),
+            1_000_000 + 100_000
+        );
+
         // 10MB model: base + 10MB
-        assert_eq!(manager.calculate_registration_fee(10_000_000), 1_000_000 + 1_000_000);
-        
+        assert_eq!(
+            manager.calculate_registration_fee(10_000_000),
+            1_000_000 + 1_000_000
+        );
+
         // 100MB model: base + 100MB
-        assert_eq!(manager.calculate_registration_fee(100_000_000), 1_000_000 + 10_000_000);
+        assert_eq!(
+            manager.calculate_registration_fee(100_000_000),
+            1_000_000 + 10_000_000
+        );
     }
 
     #[test]
     fn test_custom_fee_parameters() {
         // Custom fees: base=2M, per_mb=200K
         let manager = ProposalManager::with_fees(0.67, 1_000_000, 2_000_000, 200_000);
-        
-        assert_eq!(manager.calculate_registration_fee(1_000_000), 2_000_000 + 200_000);
-        assert_eq!(manager.calculate_registration_fee(10_000_000), 2_000_000 + 2_000_000);
+
+        assert_eq!(
+            manager.calculate_registration_fee(1_000_000),
+            2_000_000 + 200_000
+        );
+        assert_eq!(
+            manager.calculate_registration_fee(10_000_000),
+            2_000_000 + 2_000_000
+        );
     }
 }

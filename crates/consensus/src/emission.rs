@@ -243,17 +243,17 @@ pub fn round_reward(round: u64, params: &ippan_economics::EmissionParams) -> u12
     if round == 0 {
         return 0;
     }
-    
+
     let halving_interval = params.halving_interval_rounds.max(1);
     // Halving occurs at round = halving_interval, 2*halving_interval, etc.
     // Rounds 1 to halving_interval-1: epoch 0 (no halving)
     // Rounds halving_interval to 2*halving_interval-1: epoch 1 (first halving)
     let halvings = round / halving_interval;
-    
+
     if halvings >= 64 {
         return 0;
     }
-    
+
     (params.initial_round_reward_micro as u128) >> halvings.min(63)
 }
 
@@ -262,29 +262,29 @@ pub fn projected_supply(rounds: u64, params: &ippan_economics::EmissionParams) -
     if rounds == 0 {
         return 0;
     }
-    
+
     let halving_interval = params.halving_interval_rounds.max(1);
     let r0 = params.initial_round_reward_micro as u128;
-    
+
     // Calculate which halving epoch we're in
     let complete_epochs = rounds / halving_interval;
     let remaining_rounds = rounds % halving_interval;
-    
+
     let mut supply = 0u128;
-    
+
     // Sum rewards for all complete epochs
     // Each epoch i has halving_interval rounds with reward r0 >> i
     for epoch in 0..complete_epochs.min(64) {
         let epoch_reward = r0 >> epoch;
         supply = supply.saturating_add(epoch_reward * halving_interval as u128);
     }
-    
+
     // Add rewards for remaining partial epoch
     if complete_epochs < 64 {
         let epoch_reward = r0 >> complete_epochs.min(63);
         supply = supply.saturating_add(epoch_reward * remaining_rounds as u128);
     }
-    
+
     supply.min(params.max_supply_micro as u128)
 }
 
@@ -293,25 +293,26 @@ pub fn rounds_until_cap(params: &ippan_economics::EmissionParams) -> u64 {
     // Binary search for the round that reaches the cap
     let mut low = 1u64;
     let mut high = u64::MAX / 2; // Reasonable upper bound
-    
+
     // First check if cap is reachable
-    let max_theoretical_supply = 2u128 * params.initial_round_reward_micro as u128 * params.halving_interval_rounds as u128;
+    let max_theoretical_supply =
+        2u128 * params.initial_round_reward_micro as u128 * params.halving_interval_rounds as u128;
     if params.max_supply_micro as u128 > max_theoretical_supply {
         // Cap is never reached with current parameters
         return u64::MAX;
     }
-    
+
     while low < high {
         let mid = low + (high - low) / 2;
         let supply = projected_supply(mid, params);
-        
+
         if supply >= params.max_supply_micro as u128 {
             high = mid;
         } else {
             low = mid + 1;
         }
     }
-    
+
     low
 }
 
@@ -331,15 +332,16 @@ impl ValidatorContribution {
         // Weight: proposed blocks * proposer_weight + verified blocks * verifier_weight
         let proposer_weight = params.proposer_weight_bps as u128;
         let verifier_weight = params.verifier_weight_bps as u128;
-        
+
         // Calculate block score with better precision (multiply before divide)
-        let block_score = (self.blocks_proposed as u128 * proposer_weight 
-            + self.blocks_verified as u128 * verifier_weight) / 10000;
-        
+        let block_score = (self.blocks_proposed as u128 * proposer_weight
+            + self.blocks_verified as u128 * verifier_weight)
+            / 10000;
+
         // Apply reputation and uptime factors
         let reputation_factor = self.reputation_score as u128;
         let uptime_factor = self.uptime_factor as u128;
-        
+
         (block_score * reputation_factor * uptime_factor) / (10000 * 10000)
     }
 }
@@ -366,46 +368,43 @@ pub fn distribute_round_reward(
     network_pool: u128,
 ) -> RoundDistribution {
     use std::collections::HashMap;
-    
+
     let base_emission = round_reward(round, params);
-    
+
     // Calculate total weighted score
-    let total_score: u128 = contributions
-        .iter()
-        .map(|c| c.weighted_score(params))
-        .sum();
-    
+    let total_score: u128 = contributions.iter().map(|c| c.weighted_score(params)).sum();
+
     let mut validator_rewards = HashMap::new();
-    
+
     if total_score > 0 {
         // Distribute base emission proportionally
         let mut distributed_base = 0u128;
-        
+
         for (idx, contribution) in contributions.iter().enumerate() {
             let score = contribution.weighted_score(params);
-            
+
             // For last validator, give remainder to avoid rounding errors
             let base_share = if idx == contributions.len() - 1 {
                 base_emission.saturating_sub(distributed_base)
             } else {
                 (base_emission * score) / total_score
             };
-            
+
             distributed_base = distributed_base.saturating_add(base_share);
-            
+
             // Also distribute fees, commissions, and network dividend proportionally
             let fee_share = (transaction_fees * score) / total_score;
             let ai_share = (ai_commissions * score) / total_score;
             let network_share = (network_pool * score) / total_score;
-            
+
             let total_reward = base_share + fee_share + ai_share + network_share;
-            
+
             validator_rewards.insert(contribution.validator_id, total_reward);
         }
     }
-    
+
     let total_distributed: u128 = validator_rewards.values().sum();
-    
+
     RoundDistribution {
         round,
         total_base_emission: base_emission,

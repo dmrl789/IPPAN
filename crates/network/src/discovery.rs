@@ -139,7 +139,7 @@ impl PeerDiscovery {
     /// Add a bootstrap peer
     pub async fn add_bootstrap_peer(&self, address: String) -> Result<()> {
         let peer = Peer::new(address.clone());
-        self.add_peer(peer).await;
+        let _ = self.add_peer(peer).await;
         Ok(())
     }
 
@@ -284,7 +284,7 @@ impl PeerDiscovery {
     /// Start the peer exchange loop
     async fn start_peer_exchange_loop(&self) {
         let config = self.config.clone();
-        let discovery_sender = self.discovery_sender.clone();
+        let _discovery_sender = self.discovery_sender.clone();
         let is_running = self.is_running.clone();
 
         tokio::spawn(async move {

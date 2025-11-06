@@ -402,6 +402,7 @@ mod tests {
     use super::*;
     use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};
 
+    #[allow(dead_code)]
     fn create_test_gbdt_model() -> GBDTModel {
         GBDTModel::new(
             vec![Tree {

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::{interval, timeout};
@@ -431,7 +431,7 @@ impl ConnectionManager {
     async fn handle_connection_stream(
         connections: &Arc<RwLock<HashMap<String, ActiveConnection>>>,
         config: &ConnectionConfig,
-        message_sender: &mpsc::UnboundedSender<NetworkMessage>,
+        _message_sender: &mpsc::UnboundedSender<NetworkMessage>,
         peer_id: &str,
         mut stream: TcpStream,
     ) {
@@ -457,7 +457,7 @@ impl ConnectionManager {
                     break;
                 }
                 Ok(Ok(n)) => {
-                    let data = buffer[..n].to_vec();
+                    let _data = buffer[..n].to_vec();
 
                     // Update connection stats
                     {
@@ -506,8 +506,8 @@ impl ConnectionManager {
     /// Handle send data
     async fn handle_send_data(
         connections: &Arc<RwLock<HashMap<String, ActiveConnection>>>,
-        config: &ConnectionConfig,
-        message_sender: &mpsc::UnboundedSender<NetworkMessage>,
+        _config: &ConnectionConfig,
+        _message_sender: &mpsc::UnboundedSender<NetworkMessage>,
         peer_id: &str,
         data: Vec<u8>,
     ) {
@@ -592,7 +592,6 @@ pub struct ConnectionStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::Ipv4Addr;
 
     #[tokio::test]
     async fn test_connection_manager_creation() {

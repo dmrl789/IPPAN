@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 //! IPPAN Multi-Address Wallet
 //!
 //! A comprehensive wallet implementation for managing multiple IPPAN addresses,
