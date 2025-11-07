@@ -367,16 +367,88 @@ pub fn compute_scores(
 }
 
 // ---------------------------------------------------------------------
+// Test Helpers
+// ---------------------------------------------------------------------
+
+/// Create a simple test model for testing purposes
+#[cfg(feature = "deterministic_math")]
+pub fn create_test_model() -> DeterministicGBDT {
+    let tree = GBDTTree {
+        nodes: vec![
+            DecisionNode {
+                feature: 0,
+                threshold: Fixed::from_int(100),
+                left: Some(1),
+                right: Some(2),
+                value: None,
+            },
+            DecisionNode {
+                feature: 0,
+                threshold: Fixed::zero(),
+                left: None,
+                right: None,
+                value: Some(Fixed::from_int(1)),
+            },
+            DecisionNode {
+                feature: 0,
+                threshold: Fixed::zero(),
+                left: None,
+                right: None,
+                value: Some(Fixed::from_int(2)),
+            },
+        ],
+    };
+    DeterministicGBDT {
+        trees: vec![tree],
+        learning_rate: Fixed::from_f64(0.1),
+    }
+}
+
+/// Create a simple test model for testing purposes
+#[cfg(not(feature = "deterministic_math"))]
+pub fn create_test_model() -> DeterministicGBDT {
+    let tree = GBDTTree {
+        nodes: vec![
+            DecisionNode {
+                feature: 0,
+                threshold: 100.0,
+                left: Some(1),
+                right: Some(2),
+                value: None,
+            },
+            DecisionNode {
+                feature: 0,
+                threshold: 0.0,
+                left: None,
+                right: None,
+                value: Some(1.0),
+            },
+            DecisionNode {
+                feature: 0,
+                threshold: 0.0,
+                left: None,
+                right: None,
+                value: Some(2.0),
+            },
+        ],
+    };
+    DeterministicGBDT {
+        trees: vec![tree],
+        learning_rate: 0.1,
+    }
+}
+
+// ---------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
-    fn test_model_hash_consistency() {
+    #[cfg(feature = "deterministic_math")]
+    fn test_model_hash_consistency_fixed() {
         let model = DeterministicGBDT {
             trees: vec![GBDTTree {
                 nodes: vec![DecisionNode {
@@ -388,6 +460,26 @@ mod tests {
                 }],
             }],
             learning_rate: Fixed::from_f64(0.1),
+        };
+        let h1 = model.model_hash("round1").unwrap();
+        let h2 = model.model_hash("round1").unwrap();
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    #[cfg(not(feature = "deterministic_math"))]
+    fn test_model_hash_consistency_float() {
+        let model = DeterministicGBDT {
+            trees: vec![GBDTTree {
+                nodes: vec![DecisionNode {
+                    feature: 0,
+                    threshold: 0.0,
+                    left: None,
+                    right: None,
+                    value: Some(0.1),
+                }],
+            }],
+            learning_rate: 0.1,
         };
         let h1 = model.model_hash("round1").unwrap();
         let h2 = model.model_hash("round1").unwrap();

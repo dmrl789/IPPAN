@@ -9,7 +9,7 @@
 
 use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
-    DeterministicGBDTError, GBDTTree, ValidatorFeatures,
+    GBDTTree, ValidatorFeatures,
 };
 use ippan_ai_core::fixed::Fixed;
 use sha2::{Digest, Sha256};
@@ -84,7 +84,10 @@ fn test_ippan_time_normalization() {
 
     assert_eq!(features.len(), 3);
 
-    let by_id: HashMap<_, _> = features.into_iter().map(|f| (f.node_id.clone(), f)).collect();
+    let by_id: HashMap<_, _> = features
+        .into_iter()
+        .map(|f| (f.node_id.clone(), f))
+        .collect();
 
     assert_eq!(by_id["node1"].delta_time_us, -50);
     assert_eq!(by_id["node2"].delta_time_us, 30);
@@ -115,7 +118,12 @@ fn test_normalize_features_clock_offset_invariance() {
     let map = |features: Vec<ValidatorFeatures>| -> HashMap<String, (i64, Fixed, Fixed, Fixed)> {
         features
             .into_iter()
-            .map(|f| (f.node_id, (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy)))
+            .map(|f| {
+                (
+                    f.node_id,
+                    (f.delta_time_us, f.latency_ms, f.uptime_pct, f.peer_entropy),
+                )
+            })
             .collect()
     };
 

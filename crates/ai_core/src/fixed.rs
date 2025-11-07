@@ -31,6 +31,10 @@ impl Fixed {
 
     /// Create a Fixed from raw micro units
     #[inline]
+    pub const fn zero() -> Self {
+        Fixed(0)
+    }
+
     pub const fn from_micro(micro: i64) -> Self {
         Fixed(micro)
     }
@@ -103,7 +107,7 @@ impl Fixed {
     /// Saturating multiplication
     #[inline]
     pub fn saturating_mul(self, rhs: Self) -> Self {
-        self.checked_mul(rhs).unwrap_or_else(|| {
+        self.checked_mul(rhs).unwrap_or({
             if (self.0 < 0) == (rhs.0 < 0) {
                 Fixed::MAX
             } else {
@@ -115,7 +119,7 @@ impl Fixed {
     /// Saturating division
     #[inline]
     pub fn saturating_div(self, rhs: Self) -> Self {
-        self.checked_div(rhs).unwrap_or_else(|| {
+        self.checked_div(rhs).unwrap_or({
             if rhs.0 == 0 {
                 if self.0 >= 0 {
                     Fixed::MAX

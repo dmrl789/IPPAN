@@ -209,12 +209,17 @@ impl MonitoringSystem {
                     });
                 }
                 "execution_time_ms"
-                    if metric.value > Fixed::from_int(self.config.alert_thresholds.execution_time_ms as i64) =>
+                    if metric.value
+                        > Fixed::from_int(
+                            self.config.alert_thresholds.execution_time_ms as i64,
+                        ) =>
                 {
                     alerts.push(Alert {
                         metric_name: name.clone(),
                         value: metric.value,
-                        threshold: Fixed::from_int(self.config.alert_thresholds.execution_time_ms as i64),
+                        threshold: Fixed::from_int(
+                            self.config.alert_thresholds.execution_time_ms as i64,
+                        ),
                         severity: AlertSeverity::Critical,
                     });
                 }
@@ -308,8 +313,16 @@ mod tests {
         let mut monitor = MonitoringSystem::new(MonitoringConfig::default());
         #[cfg(feature = "deterministic_math")]
         {
-            monitor.record_metric("cpu_usage".to_string(), Fixed::from_f64(90.0), HashMap::new());
-            monitor.record_metric("error_rate".to_string(), Fixed::from_f64(10.0), HashMap::new());
+            monitor.record_metric(
+                "cpu_usage".to_string(),
+                Fixed::from_f64(90.0),
+                HashMap::new(),
+            );
+            monitor.record_metric(
+                "error_rate".to_string(),
+                Fixed::from_f64(10.0),
+                HashMap::new(),
+            );
         }
         #[cfg(not(feature = "deterministic_math"))]
         {
