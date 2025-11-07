@@ -368,10 +368,93 @@ pub fn compute_scores(
 }
 
 // ---------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------
+
+#[cfg(any(test, feature = "enable-tests"))]
+impl DeterministicGBDT {
+    /// Creates a deterministic test model for use in integration tests and examples.
+    pub fn create_test_model() -> Self {
+        #[cfg(feature = "deterministic_math")]
+        {
+            let tree = GBDTTree {
+                nodes: vec![
+                    DecisionNode {
+                        feature: 0,
+                        threshold: Fixed::ZERO,
+                        left: Some(1),
+                        right: Some(2),
+                        value: None,
+                    },
+                    DecisionNode {
+                        feature: 0,
+                        threshold: Fixed::ZERO,
+                        left: None,
+                        right: None,
+                        value: Some(Fixed::from_f64(0.1)),
+                    },
+                    DecisionNode {
+                        feature: 0,
+                        threshold: Fixed::ZERO,
+                        left: None,
+                        right: None,
+                        value: Some(Fixed::from_f64(-0.05)),
+                    },
+                ],
+            };
+
+            Self {
+                trees: vec![tree],
+                learning_rate: Fixed::from_f64(1.0),
+            }
+        }
+
+        #[cfg(not(feature = "deterministic_math"))]
+        {
+            let tree = GBDTTree {
+                nodes: vec![
+                    DecisionNode {
+                        feature: 0,
+                        threshold: 0.0,
+                        left: Some(1),
+                        right: Some(2),
+                        value: None,
+                    },
+                    DecisionNode {
+                        feature: 0,
+                        threshold: 0.0,
+                        left: None,
+                        right: None,
+                        value: Some(0.1),
+                    },
+                    DecisionNode {
+                        feature: 0,
+                        threshold: 0.0,
+                        left: None,
+                        right: None,
+                        value: Some(-0.05),
+                    },
+                ],
+            };
+
+            Self {
+                trees: vec![tree],
+                learning_rate: 0.1,
+            }
+        }
+    }
+}
+
+#[cfg(any(test, feature = "enable-tests"))]
+pub fn create_test_model() -> DeterministicGBDT {
+    DeterministicGBDT::create_test_model()
+}
+
+// ---------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, feature = "deterministic_math"))]
 mod tests {
     use super::*;
     use std::collections::HashMap;

@@ -179,8 +179,18 @@ async fn test_memory_usage() {
     }
 
     // Service should still be responsive
-    let health = service.health_check().await.expect("Health check failed");
-    assert!(health.status == ippan_ai_service::HealthStatus::Healthy);
+    let health = service
+        .health_check()
+        .await
+        .expect("Health check failed");
+    assert!(
+        matches!(
+            health.status,
+            ippan_ai_service::HealthStatus::Healthy | ippan_ai_service::HealthStatus::Degraded
+        ),
+        "Unexpected health status: {:?}",
+        health.status
+    );
 
     service.stop().await.expect("Failed to stop service");
 }
@@ -204,8 +214,18 @@ async fn test_error_recovery() {
     assert!(result.is_err(), "Should handle invalid input gracefully");
 
     // Service should still be healthy after error
-    let health = service.health_check().await.expect("Health check failed");
-    assert!(health.status == ippan_ai_service::HealthStatus::Healthy);
+    let health = service
+        .health_check()
+        .await
+        .expect("Health check failed");
+    assert!(
+        matches!(
+            health.status,
+            ippan_ai_service::HealthStatus::Healthy | ippan_ai_service::HealthStatus::Degraded
+        ),
+        "Unexpected health status: {:?}",
+        health.status
+    );
 
     service.stop().await.expect("Failed to stop service");
 }

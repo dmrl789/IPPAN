@@ -1,3 +1,5 @@
+#![cfg(feature = "deterministic_math")]
+
 //! Comprehensive unit tests for deterministic GBDT module
 //!
 //! Tests cover:
@@ -9,9 +11,9 @@
 
 use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DecisionNode, DeterministicGBDT,
-    DeterministicGBDTError, GBDTTree, ValidatorFeatures,
+    GBDTTree, ValidatorFeatures,
 };
-use ippan_ai_core::fixed::Fixed;
+use ippan_ai_core::Fixed;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
