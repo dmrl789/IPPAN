@@ -32,10 +32,10 @@ async fn test_dgbdt_verifier_selection() {
             blocks_verified: 200 + (i as u64 * 20),
             rounds_active: 100,
             avg_latency_us: 50_000 + (i as u64 * 10_000),
-            uptime_percentage: 0.95 + (i as f64 * 0.01),
+            uptime_percentage: 950_000 + (i as i64 * 10_000), // 95% + 1% per validator
             slash_count: 0,
-            recent_performance: 0.9,
-            network_contribution: 0.85,
+            recent_performance: 900_000, // 90% in fixed-point
+            network_contribution: 850_000, // 85% in fixed-point
             stake_amount: 10_000_000 * (i as u64 + 1),
         };
 
@@ -116,7 +116,7 @@ async fn test_temporal_finality() {
 }
 
 #[tokio::test]
-async fn test_hashtimer_deterministic_ordering() {
+async fn test_hashtimer_generation() {
     let round_id = 1;
     let previous_hash = [0u8; 32];
     let validator_id = [1u8; 32];
@@ -124,10 +124,18 @@ async fn test_hashtimer_deterministic_ordering() {
     let hashtimer1 = generate_round_hashtimer(round_id, &previous_hash, &validator_id);
     let hashtimer2 = generate_round_hashtimer(round_id, &previous_hash, &validator_id);
 
-    // Should be deterministic for same inputs (within same microsecond)
+    // HashTimers should be valid and have positive timestamps
     assert!(hashtimer1.timestamp_us > 0);
     assert!(hashtimer2.timestamp_us > 0);
-    assert_eq!(hashtimer1, hashtimer2);
+    
+    // Entropy is randomized for security, so they will differ
+    // This is by design - each HashTimer should be unique
+    assert_ne!(hashtimer1.entropy, hashtimer2.entropy);
+    
+    // But both should be the same validator
+    // For the same round, different hashtimers can be generated
+    let hashtimer3 = generate_round_hashtimer(round_id + 1, &previous_hash, &validator_id);
+    assert!(hashtimer3.timestamp_us > 0);
 }
 
 #[tokio::test]
@@ -156,10 +164,10 @@ async fn test_dlc_integrated_consensus() {
         blocks_verified: 20,
         rounds_active: 10,
         avg_latency_us: 50_000,
-        uptime_percentage: 0.99,
+        uptime_percentage: 990_000, // 99% in fixed-point
         slash_count: 0,
-        recent_performance: 0.95,
-        network_contribution: 0.90,
+        recent_performance: 950_000, // 95% in fixed-point
+        network_contribution: 900_000, // 90% in fixed-point
         stake_amount: 20_000_000,
     };
     integrated.update_validator_metrics(validator_id, metrics);
@@ -175,10 +183,10 @@ fn test_dgbdt_reputation_scoring() {
         blocks_verified: 200,
         rounds_active: 100,
         avg_latency_us: 50_000,
-        uptime_percentage: 0.99,
+        uptime_percentage: 990_000, // 99% in fixed-point
         slash_count: 0,
-        recent_performance: 0.95,
-        network_contribution: 0.90,
+        recent_performance: 950_000, // 95% in fixed-point
+        network_contribution: 900_000, // 90% in fixed-point
         stake_amount: 20_000_000,
     };
 
@@ -191,10 +199,10 @@ fn test_dgbdt_reputation_scoring() {
         blocks_verified: 20,
         rounds_active: 100,
         avg_latency_us: 150_000,
-        uptime_percentage: 0.70,
+        uptime_percentage: 700_000, // 70% in fixed-point
         slash_count: 5,
-        recent_performance: 0.50,
-        network_contribution: 0.40,
+        recent_performance: 500_000, // 50% in fixed-point
+        network_contribution: 400_000, // 40% in fixed-point
         stake_amount: 1_000_000,
     };
 

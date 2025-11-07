@@ -10,7 +10,7 @@ description = "Core AI utilities and deterministic evaluation helpers for IPPAN 
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["deterministic_math"]
 ai_l1 = []
 remote_loading = ["reqwest"]
 enable-tests = []
