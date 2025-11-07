@@ -39,14 +39,31 @@ pub struct FeeCapConfig {
     pub cap_validator: Amount,
 }
 
+pub const DEFAULT_FEE_CAP_TRANSFER_MICRO_IPN: u64 = 100;
+pub const DEFAULT_FEE_CAP_L2_ANCHOR_MICRO_IPN: u64 = 1_000;
+pub const DEFAULT_FEE_CAP_L2_EXIT_MICRO_IPN: u64 = 2_000;
+pub const DEFAULT_FEE_CAP_GOVERNANCE_MICRO_IPN: u64 = 10_000;
+pub const DEFAULT_FEE_CAP_VALIDATOR_MICRO_IPN: u64 = 10_000;
+
+pub const DEFAULT_FEE_CAP_TRANSFER: Amount =
+    Amount::from_micro_ipn(DEFAULT_FEE_CAP_TRANSFER_MICRO_IPN);
+pub const DEFAULT_FEE_CAP_L2_ANCHOR: Amount =
+    Amount::from_micro_ipn(DEFAULT_FEE_CAP_L2_ANCHOR_MICRO_IPN);
+pub const DEFAULT_FEE_CAP_L2_EXIT: Amount =
+    Amount::from_micro_ipn(DEFAULT_FEE_CAP_L2_EXIT_MICRO_IPN);
+pub const DEFAULT_FEE_CAP_GOVERNANCE: Amount =
+    Amount::from_micro_ipn(DEFAULT_FEE_CAP_GOVERNANCE_MICRO_IPN);
+pub const DEFAULT_FEE_CAP_VALIDATOR: Amount =
+    Amount::from_micro_ipn(DEFAULT_FEE_CAP_VALIDATOR_MICRO_IPN);
+
 impl Default for FeeCapConfig {
     fn default() -> Self {
         Self {
-            cap_transfer: Amount::from_micro_ipn(100), // 0.0001 IPN (minimal)
-            cap_l2_anchor: Amount::from_micro_ipn(1_000), // 0.001 IPN (L2 state commitment)
-            cap_l2_exit: Amount::from_micro_ipn(2_000), // 0.002 IPN (L2 exit request)
-            cap_governance: Amount::from_micro_ipn(10_000), // 0.01 IPN
-            cap_validator: Amount::from_micro_ipn(10_000), // 0.01 IPN
+            cap_transfer: DEFAULT_FEE_CAP_TRANSFER, // 0.0001 IPN (minimal)
+            cap_l2_anchor: DEFAULT_FEE_CAP_L2_ANCHOR, // 0.001 IPN (L2 state commitment)
+            cap_l2_exit: DEFAULT_FEE_CAP_L2_EXIT,   // 0.002 IPN (L2 exit request)
+            cap_governance: DEFAULT_FEE_CAP_GOVERNANCE, // 0.01 IPN
+            cap_validator: DEFAULT_FEE_CAP_VALIDATOR, // 0.01 IPN
         }
     }
 }
@@ -168,6 +185,16 @@ impl Default for FeeCollector {
 mod tests {
     use super::*;
 
+    #[test]
+    fn default_fee_cap_constants_match_config() {
+        let cfg = FeeCapConfig::default();
+        assert_eq!(cfg.cap_transfer, DEFAULT_FEE_CAP_TRANSFER);
+        assert_eq!(cfg.cap_l2_anchor, DEFAULT_FEE_CAP_L2_ANCHOR);
+        assert_eq!(cfg.cap_l2_exit, DEFAULT_FEE_CAP_L2_EXIT);
+        assert_eq!(cfg.cap_governance, DEFAULT_FEE_CAP_GOVERNANCE);
+        assert_eq!(cfg.cap_validator, DEFAULT_FEE_CAP_VALIDATOR);
+    }
+
     fn tx_with_topic(topic: &str) -> Transaction {
         let mut tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_micro_ipn(1000), 1);
         tx.topics = vec![topic.to_string()];
@@ -202,11 +229,31 @@ mod tests {
     fn fee_validation_caps() {
         let cfg = FeeCapConfig::default();
         let tx = tx_with_topic("l2_anchor");
-        assert!(validate_fee(&tx, Amount::from_micro_ipn(500), &cfg).is_ok());
-        assert!(validate_fee(&tx, Amount::from_micro_ipn(1001), &cfg).is_err());
+        assert!(validate_fee(
+            &tx,
+            Amount::from_micro_ipn(DEFAULT_FEE_CAP_L2_ANCHOR_MICRO_IPN / 2),
+            &cfg
+        )
+        .is_ok());
+        assert!(validate_fee(
+            &tx,
+            Amount::from_micro_ipn(DEFAULT_FEE_CAP_L2_ANCHOR_MICRO_IPN + 1),
+            &cfg
+        )
+        .is_err());
         let tx2 = tx_with_topic("l2_exit");
-        assert!(validate_fee(&tx2, Amount::from_micro_ipn(1_999), &cfg).is_ok());
-        assert!(validate_fee(&tx2, Amount::from_micro_ipn(2_001), &cfg).is_err());
+        assert!(validate_fee(
+            &tx2,
+            Amount::from_micro_ipn(DEFAULT_FEE_CAP_L2_EXIT_MICRO_IPN - 1),
+            &cfg
+        )
+        .is_ok());
+        assert!(validate_fee(
+            &tx2,
+            Amount::from_micro_ipn(DEFAULT_FEE_CAP_L2_EXIT_MICRO_IPN + 1),
+            &cfg
+        )
+        .is_err());
     }
 
     #[test]

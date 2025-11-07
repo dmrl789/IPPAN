@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   ippan-node-1:
-    image: ghcr.io/dmrl789/ippan/ippan-node:latest
+    image: ghcr.io/dmrl789/ippan/ippan-node:${IMAGE_TAG:-latest}
     container_name: ippan-node-1
     restart: unless-stopped
     environment:
@@ -52,7 +52,7 @@ services:
         max-file: "5"
 
   ippan-node-2:
-    image: ghcr.io/dmrl789/ippan/ippan-node:latest
+    image: ghcr.io/dmrl789/ippan/ippan-node:${IMAGE_TAG:-latest}
     container_name: ippan-node-2
     restart: unless-stopped
     environment:
@@ -83,7 +83,7 @@ services:
       - LOG_FORMAT=json
       - DEV_MODE=false
     ports:
-      - "8080:8080"    # RPC API
+      - "8081:8080"    # RPC API
       - "9001:9001"    # P2P port
     volumes:
       - node2_data:/var/lib/ippan/db

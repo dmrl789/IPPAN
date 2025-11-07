@@ -1,6 +1,10 @@
+const assetPrefix = process.env.NEXT_PUBLIC_ASSET_PREFIX || '';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  assetPrefix: assetPrefix || undefined,
   env: {
+    NEXT_PUBLIC_ASSET_PREFIX: assetPrefix,
     NEXT_PUBLIC_ENABLE_FULL_UI: process.env.NEXT_PUBLIC_ENABLE_FULL_UI || '1',
     NEXT_PUBLIC_GATEWAY_URL: process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8081/api',
     NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:7080',
