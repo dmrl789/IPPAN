@@ -29,6 +29,7 @@ pub mod execution;
 pub mod feature_engineering;
 pub mod features;
 pub mod fixed;
+pub mod fixed_point;
 pub mod gbdt;
 pub mod health;
 pub mod log;
@@ -65,6 +66,7 @@ pub use deterministic_gbdt::{
     ValidatorFeatures,
 };
 pub use fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
+pub use fixed_point::FixedPoint;
 pub use gbdt::{
     eval_gbdt, FeatureNormalization, GBDTError, GBDTMetrics, GBDTModel, GBDTResult,
     ModelMetadata as GBDTModelMetadata, Node, SecurityConstraints, Tree,
@@ -75,7 +77,6 @@ pub use feature_engineering::{
     FeatureEngineeringConfig, FeatureEngineeringPipeline, FeatureImportance, FeatureStatistics,
     ProcessedFeatureData, RawFeatureData,
 };
-pub use fixed::{Fixed, FixedError, SCALE as FIXED_SCALE};
 pub use model_manager::{
     ModelLoadResult, ModelManager, ModelManagerConfig, ModelManagerMetrics, ModelSaveResult,
 };
