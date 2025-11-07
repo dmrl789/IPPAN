@@ -76,7 +76,7 @@ jobs:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
     needs: dependencies
-    if: needs.dependencies.result == 'success' && (github.event.inputs.force_rebuild == 'true' || contains(github.event.head_commit.message, '[rebuild]'))
+    if: needs.dependencies.result == 'success' && (github.event.inputs.force_rebuild == 'true' || contains(github.event.head_commit.message, '[rebuild]') || github.ref == 'refs/heads/main')
     env:
       IMAGE_TAG: ${{ github.sha }}
     outputs:

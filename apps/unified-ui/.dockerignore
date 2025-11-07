@@ -1,14 +1,45 @@
-node_modules
-.next
+# ==============================
+# IPPAN Unified Full Stack Docker Ignore
+# ==============================
+
+# Git metadata
 .git
 .gitignore
+
+# Docker configuration files
 .dockerignore
-README.md
+Dockerfile*
+
+# Local environment files
+.env
 .env*.local
+
+# System and editor files
 .DS_Store
-coverage
 .vscode
+.idea
+
+# Logs and temporary files
 *.log
+logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+tmp
+coverage
+
+# Build outputs
+node_modules
+.next
+dist
+out
+build
+
+# Documentation and development assets
+README.md
+docs/
+tests/
+
+# CI/CD artifacts
+coverage/
+reports/

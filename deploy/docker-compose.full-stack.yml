@@ -107,6 +107,28 @@ services:
       - ippan-full-stack
     logging: *default-logging
 
+    ippan-ui:
+      image: ippan-ui:ci
+      build:
+        context: ../apps/unified-ui
+        dockerfile: Dockerfile
+      depends_on:
+        - ippan-gateway
+      restart: unless-stopped
+      environment:
+        NODE_ENV: "production"
+        PORT: "3001"
+        NEXT_PUBLIC_API_BASE_URL: "http://ippan-gateway:7080/api"
+        NEXT_PUBLIC_WS_URL: "ws://ippan-gateway:7080/ws"
+        NEXT_PUBLIC_GATEWAY_URL: "http://ippan-gateway:7080/api"
+        NEXT_PUBLIC_ASSET_PREFIX: ""
+        NEXT_PUBLIC_ENABLE_FULL_UI: "1"
+      ports:
+        - "3001:3001"
+      networks:
+        - ippan-full-stack
+      logging: *default-logging
+
 networks:
   ippan-full-stack:
     driver: bridge

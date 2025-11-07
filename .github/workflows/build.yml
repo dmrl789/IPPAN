@@ -25,6 +25,10 @@ jobs:
             path: apps/gateway
             dockerfile: Dockerfile
             image: ghcr.io/${{ github.repository_owner }}/gateway
+          - name: unified-ui
+            path: apps/unified-ui
+            dockerfile: Dockerfile
+            image: ghcr.io/${{ github.repository_owner }}/ippan-ui
 
     steps:
       - name: Checkout
