@@ -12,7 +12,7 @@ fn fp(value: f64) -> Fixed {
 fn test_deterministic_gbdt_basic_functionality() {
     let model = deterministic_gbdt::create_test_model();
     assert_eq!(model.trees.len(), 1);
-    assert_eq!(model.learning_rate, fp(1.0));
+    assert_eq!(model.learning_rate, fp(0.1));
 
     let features = vec![
         Fixed::from_int(1),

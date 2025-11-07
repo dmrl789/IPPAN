@@ -30,6 +30,15 @@ When enabled, all floating-point types (`f32`/`f64`) are replaced with `Fixed` t
 - `normalize_features()`: Converts f64 inputs to `Fixed` outputs
 - `compute_scores()`: Returns `HashMap<String, Fixed>`
 
+#### **gbdt.rs**
+- `GBDTResult.confidence`: Now deterministic `Fixed`
+- `GBDTMetrics.avg_time_us`: Uses `Fixed` averages with integer-only math
+- `ModelMetadata.performance_metrics`: Deterministic `Fixed` values for hashing
+
+#### **model_manager.rs**
+- `ModelManagerMetrics.avg_*_ms`: Tracked with `Fixed` to remove floating averages
+- Rolling average updates use integer-only accumulation
+
 #### **types.rs**
 - `ModelOutput.confidence`: Uses `Fixed` when feature is enabled
 - `ExecutionMetadata.cpu_usage`: Uses `Fixed` when feature is enabled

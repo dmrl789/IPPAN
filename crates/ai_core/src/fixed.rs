@@ -25,6 +25,12 @@ pub const SCALE: i64 = 1_000_000;
 #[repr(transparent)]
 pub struct Fixed(pub i64);
 
+impl Default for Fixed {
+    fn default() -> Self {
+        Fixed::ZERO
+    }
+}
+
 // Custom serialization to support both JSON floats and integers
 impl Serialize for Fixed {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

@@ -5,6 +5,7 @@
 //! - Integrity verification and performance metrics
 //! - Secure storage with hash checking and rollback capability
 
+use crate::fixed::Fixed;
 use crate::gbdt::{GBDTError, GBDTModel};
 use crate::model::ModelPackage;
 use serde::{Deserialize, Serialize};
@@ -71,8 +72,8 @@ pub struct ModelManagerMetrics {
     pub total_validation_errors: u64,
     pub total_load_errors: u64,
     pub total_save_errors: u64,
-    pub avg_load_time_ms: f64,
-    pub avg_save_time_ms: f64,
+    pub avg_load_time_ms: Fixed,
+    pub avg_save_time_ms: Fixed,
     pub current_cached_models: usize,
     pub total_disk_usage_bytes: u64,
 }
@@ -378,18 +379,30 @@ impl ModelManager {
     fn update_load_metrics(&self, d: Duration) {
         if let Ok(mut m) = self.metrics.write() {
             m.total_models_loaded += 1;
-            let ms = d.as_millis() as f64;
-            m.avg_load_time_ms = (m.avg_load_time_ms * (m.total_models_loaded - 1) as f64 + ms)
-                / m.total_models_loaded as f64;
+            let millis = d.as_millis().min(i64::MAX as u128) as i64;
+            let ms = Fixed::from_int(millis);
+            let count = m.total_models_loaded as i64;
+            let accumulated = if count > 1 {
+                m.avg_load_time_ms.mul_int(count - 1)
+            } else {
+                Fixed::ZERO
+            };
+            m.avg_load_time_ms = (accumulated + ms).div_int(count.max(1));
         }
     }
 
     fn update_save_metrics(&self, d: Duration) {
         if let Ok(mut m) = self.metrics.write() {
             m.total_models_saved += 1;
-            let ms = d.as_millis() as f64;
-            m.avg_save_time_ms = (m.avg_save_time_ms * (m.total_models_saved - 1) as f64 + ms)
-                / m.total_models_saved as f64;
+            let millis = d.as_millis().min(i64::MAX as u128) as i64;
+            let ms = Fixed::from_int(millis);
+            let count = m.total_models_saved as i64;
+            let accumulated = if count > 1 {
+                m.avg_save_time_ms.mul_int(count - 1)
+            } else {
+                Fixed::ZERO
+            };
+            m.avg_save_time_ms = (accumulated + ms).div_int(count.max(1));
         }
     }
 
