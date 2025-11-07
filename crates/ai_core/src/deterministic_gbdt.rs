@@ -457,7 +457,6 @@ pub fn create_test_model() -> DeterministicGBDT {
 #[cfg(all(test, feature = "deterministic_math"))]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn test_model_hash_consistency() {
