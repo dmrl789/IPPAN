@@ -37,7 +37,7 @@ impl Default for ValidatorMetrics {
             avg_latency_us: 50_000,
             uptime_percentage: 1_000_000, // 100%
             slash_count: 0,
-            recent_performance: 1_000_000, // 100%
+            recent_performance: 1_000_000,   // 100%
             network_contribution: 1_000_000, // 100%
             stake_amount: 0,
         }
@@ -119,7 +119,7 @@ impl DGBDTEngine {
         };
 
         let slash_penalty = 10000 - ((metrics.slash_count as i64 * 1000).min(10000));
-        
+
         // Performance and contribution are already scaled by 1_000_000
         let performance_score = ((metrics.recent_performance * 10000) / 1_000_000).min(10000);
 
@@ -130,9 +130,11 @@ impl DGBDTEngine {
 
         // Weighted sum using fixed-point weights (scaled by 1_000_000)
         // Each score is 0-10000, weight is 0-1_000_000, so we divide by 1_000_000
-        let weighted_score = 
-            (proposal_score * self.weights.get("blocks_proposed").unwrap_or(&250_000)) / 1_000_000
-            + (verification_score * self.weights.get("blocks_verified").unwrap_or(&200_000)) / 1_000_000
+        let weighted_score = (proposal_score
+            * self.weights.get("blocks_proposed").unwrap_or(&250_000))
+            / 1_000_000
+            + (verification_score * self.weights.get("blocks_verified").unwrap_or(&200_000))
+                / 1_000_000
             + (uptime_score * self.weights.get("uptime").unwrap_or(&150_000)) / 1_000_000
             + (latency_score * self.weights.get("latency").unwrap_or(&150_000)) / 1_000_000
             + (slash_penalty * self.weights.get("slash_penalty").unwrap_or(&100_000)) / 1_000_000
@@ -296,7 +298,7 @@ mod tests {
             avg_latency_us: 50_000,
             uptime_percentage: 990_000, // 99% in fixed-point
             slash_count: 0,
-            recent_performance: 950_000, // 95% in fixed-point
+            recent_performance: 950_000,   // 95% in fixed-point
             network_contribution: 900_000, // 90% in fixed-point
             stake_amount: 10_000_000,
         };

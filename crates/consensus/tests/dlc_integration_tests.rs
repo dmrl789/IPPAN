@@ -34,7 +34,7 @@ async fn test_dgbdt_verifier_selection() {
             avg_latency_us: 50_000 + (i as u64 * 10_000),
             uptime_percentage: 950_000 + (i as i64 * 10_000), // 95% + 1% per validator
             slash_count: 0,
-            recent_performance: 900_000, // 90% in fixed-point
+            recent_performance: 900_000,   // 90% in fixed-point
             network_contribution: 850_000, // 85% in fixed-point
             stake_amount: 10_000_000 * (i as u64 + 1),
         };
@@ -127,11 +127,11 @@ async fn test_hashtimer_generation() {
     // HashTimers should be valid and have positive timestamps
     assert!(hashtimer1.timestamp_us > 0);
     assert!(hashtimer2.timestamp_us > 0);
-    
+
     // Entropy is randomized for security, so they will differ
     // This is by design - each HashTimer should be unique
     assert_ne!(hashtimer1.entropy, hashtimer2.entropy);
-    
+
     // But both should be the same validator
     // For the same round, different hashtimers can be generated
     let hashtimer3 = generate_round_hashtimer(round_id + 1, &previous_hash, &validator_id);
@@ -166,7 +166,7 @@ async fn test_dlc_integrated_consensus() {
         avg_latency_us: 50_000,
         uptime_percentage: 990_000, // 99% in fixed-point
         slash_count: 0,
-        recent_performance: 950_000, // 95% in fixed-point
+        recent_performance: 950_000,   // 95% in fixed-point
         network_contribution: 900_000, // 90% in fixed-point
         stake_amount: 20_000_000,
     };
@@ -185,7 +185,7 @@ fn test_dgbdt_reputation_scoring() {
         avg_latency_us: 50_000,
         uptime_percentage: 990_000, // 99% in fixed-point
         slash_count: 0,
-        recent_performance: 950_000, // 95% in fixed-point
+        recent_performance: 950_000,   // 95% in fixed-point
         network_contribution: 900_000, // 90% in fixed-point
         stake_amount: 20_000_000,
     };
@@ -201,7 +201,7 @@ fn test_dgbdt_reputation_scoring() {
         avg_latency_us: 150_000,
         uptime_percentage: 700_000, // 70% in fixed-point
         slash_count: 5,
-        recent_performance: 500_000, // 50% in fixed-point
+        recent_performance: 500_000,   // 50% in fixed-point
         network_contribution: 400_000, // 40% in fixed-point
         stake_amount: 1_000_000,
     };
