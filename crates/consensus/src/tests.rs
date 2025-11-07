@@ -6,7 +6,6 @@ use ippan_types::{
     AccessKey, Block, ConfidentialEnvelope, ConfidentialProof, ConfidentialProofType, Transaction,
 };
 use std::sync::Arc;
-use std::time::Duration;
 
 fn create_test_config() -> PoAConfig {
     PoAConfig {
@@ -253,38 +252,71 @@ async fn test_fee_validation() {
 
 #[tokio::test]
 async fn test_round_finalization() {
-    let config = create_test_config();
+    let mut config = create_test_config();
     let storage = Arc::new(MemoryStorage::default());
     let validator_id = [1u8; 32];
 
-    let mut consensus = PoAConsensus::new(config, storage.clone(), validator_id);
+    config.validators = vec![Validator {
+        id: validator_id,
+        address: validator_id,
+        stake: 1000,
+        is_active: true,
+    }];
 
-    consensus.start().await.unwrap();
+    let consensus = PoAConsensus::new(config, storage.clone(), validator_id);
 
-    let tx = Transaction::new(
-        [1u8; 32],
-        [2u8; 32],
+    let signer = SigningKey::from_bytes(&[1u8; 32]);
+    let recipient = SigningKey::from_bytes(&[2u8; 32]);
+    let mut tx = Transaction::new(
+        signer.verifying_key().to_bytes(),
+        recipient.verifying_key().to_bytes(),
         ippan_types::Amount::from_micro_ipn(1000),
         1,
     );
+    let signer_bytes = signer.to_bytes();
+    tx.sign(&signer_bytes).unwrap();
     consensus.mempool().add_transaction(tx).unwrap();
 
-    let mut finalized = false;
-    for _ in 0..10 {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        if storage.get_latest_height().unwrap() > 0 {
-            finalized = true;
-            break;
-        }
+    let slot = *consensus.current_slot.read();
+    PoAConsensus::propose_block(
+        &consensus.storage,
+        &consensus.mempool,
+        &consensus.config,
+        &consensus.round_tracker,
+        slot,
+        validator_id,
+        &consensus.telemetry_manager,
+        &consensus.metrics,
+    )
+    .await
+    .unwrap();
+
+    {
+        let mut tracker = consensus.round_tracker.write();
+        tracker.round_start = Instant::now() - consensus.finalization_interval;
+        let now = IppanTimeMicros::now();
+        let elapsed = consensus.finalization_interval.as_micros();
+        let elapsed_u64 = elapsed.min(u128::from(u64::MAX)) as u64;
+        tracker.round_start_time = IppanTimeMicros(now.0.saturating_sub(elapsed_u64));
     }
 
-    consensus.stop().await.unwrap();
+    PoAConsensus::finalize_round_if_ready(
+        &consensus.storage,
+        &consensus.round_tracker,
+        consensus.finalization_interval,
+        &consensus.config,
+        &consensus.fee_collector,
+    )
+    .unwrap();
 
     let latest_height = storage.get_latest_height().unwrap();
+    let finalization = storage.get_latest_round_finalization().unwrap();
+
     assert!(
-        finalized && latest_height > 0,
-        "expected at least one finalized block height"
+        latest_height > 0,
+        "expected block to be stored before finalization"
     );
+    assert!(finalization.is_some(), "expected finalization record");
 }
 
 #[tokio::test]
