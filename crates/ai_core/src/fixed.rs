@@ -11,7 +11,7 @@
 
 use serde::{
     de::{self, Visitor},
-    Serialize,
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -21,9 +21,20 @@ pub const SCALE: i64 = 1_000_000;
 
 /// Deterministic fixed-point number with micro-precision.
 /// Internally stored as `i64`, representing value * 1_000_000.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Fixed(pub i64);
+
+// Custom serialization to support both JSON floats and integers
+impl Serialize for Fixed {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Always serialize as integer for deterministic output
+        serializer.serialize_i64(self.0)
+    }
+}
 
 impl Fixed {
     pub const ZERO: Self = Fixed(0);
@@ -201,10 +212,10 @@ impl Fixed {
     }
 }
 
-impl<'de> serde::Deserialize<'de> for Fixed {
+impl<'de> Deserialize<'de> for Fixed {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         struct FixedVisitor;
 

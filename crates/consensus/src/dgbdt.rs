@@ -11,16 +11,20 @@ use std::collections::HashMap;
 use ippan_types::{RoundId, ValidatorId};
 
 /// Validator metrics used for D-GBDT scoring
+/// All scores are in fixed-point format (scaled by 1_000_000) for determinism
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorMetrics {
     pub blocks_proposed: u64,
     pub blocks_verified: u64,
     pub rounds_active: u64,
     pub avg_latency_us: u64,
-    pub uptime_percentage: f64,
+    /// Uptime as fixed-point: 1_000_000 = 100%, 990_000 = 99%
+    pub uptime_percentage: i64,
     pub slash_count: u32,
-    pub recent_performance: f64,
-    pub network_contribution: f64,
+    /// Recent performance as fixed-point: 1_000_000 = 100%, 950_000 = 95%
+    pub recent_performance: i64,
+    /// Network contribution as fixed-point: 1_000_000 = 100%, 850_000 = 85%
+    pub network_contribution: i64,
     pub stake_amount: u64,
 }
 
@@ -31,10 +35,10 @@ impl Default for ValidatorMetrics {
             blocks_verified: 0,
             rounds_active: 0,
             avg_latency_us: 50_000,
-            uptime_percentage: 1.0,
+            uptime_percentage: 1_000_000, // 100%
             slash_count: 0,
-            recent_performance: 1.0,
-            network_contribution: 1.0,
+            recent_performance: 1_000_000, // 100%
+            network_contribution: 1_000_000, // 100%
             stake_amount: 0,
         }
     }
@@ -50,9 +54,10 @@ pub struct VerifierSelection {
 }
 
 /// D-GBDT Engine for deterministic validator selection
+/// All weights are stored as fixed-point integers (scaled by 1_000_000)
 pub struct DGBDTEngine {
-    /// Model weights for different factors
-    weights: HashMap<String, f64>,
+    /// Model weights for different factors (scaled by 1_000_000)
+    weights: HashMap<String, i64>,
 
     /// Historical performance data
     history: Vec<SelectionHistory>,
@@ -68,17 +73,18 @@ struct SelectionHistory {
 
 impl DGBDTEngine {
     /// Create a new D-GBDT engine with default weights
+    /// All weights are fixed-point scaled by 1_000_000
     pub fn new() -> Self {
         let mut weights = HashMap::new();
 
-        // Initialize weights for fairness model
-        weights.insert("blocks_proposed".to_string(), 0.25);
-        weights.insert("blocks_verified".to_string(), 0.20);
-        weights.insert("uptime".to_string(), 0.15);
-        weights.insert("latency".to_string(), 0.15);
-        weights.insert("slash_penalty".to_string(), 0.10);
-        weights.insert("performance".to_string(), 0.10);
-        weights.insert("stake".to_string(), 0.05);
+        // Initialize weights for fairness model (scaled by 1_000_000)
+        weights.insert("blocks_proposed".to_string(), 250_000); // 0.25
+        weights.insert("blocks_verified".to_string(), 200_000); // 0.20
+        weights.insert("uptime".to_string(), 150_000); // 0.15
+        weights.insert("latency".to_string(), 150_000); // 0.15
+        weights.insert("slash_penalty".to_string(), 100_000); // 0.10
+        weights.insert("performance".to_string(), 100_000); // 0.10
+        weights.insert("stake".to_string(), 50_000); // 0.05
 
         Self {
             weights,
@@ -87,42 +93,51 @@ impl DGBDTEngine {
     }
 
     /// Calculate reputation score (0-10000) for a validator
+    /// Uses only integer arithmetic for deterministic results across architectures
     pub fn calculate_reputation(&self, metrics: &ValidatorMetrics) -> i32 {
+        // All calculations use fixed-point arithmetic (scaled by 1_000_000)
         let proposal_score = if metrics.rounds_active > 0 {
-            ((metrics.blocks_proposed * 10000 / metrics.rounds_active).min(10000)) as f64
+            ((metrics.blocks_proposed * 10000 / metrics.rounds_active).min(10000)) as i64
         } else {
-            5000.0
+            5000
         };
 
         let verification_score = if metrics.rounds_active > 0 {
-            ((metrics.blocks_verified * 10000 / metrics.rounds_active).min(10000)) as f64
+            ((metrics.blocks_verified * 10000 / metrics.rounds_active).min(10000)) as i64
         } else {
-            5000.0
+            5000
         };
 
-        let uptime_score = (metrics.uptime_percentage * 10000.0).min(10000.0);
+        // uptime_percentage is already scaled by 1_000_000, convert to 0-10000 scale
+        let uptime_score = ((metrics.uptime_percentage * 10000) / 1_000_000).min(10000);
 
+        // Latency score: lower is better
         let latency_score = {
-            let normalized = (200_000.0 - metrics.avg_latency_us.min(200_000) as f64) / 200_000.0;
-            (normalized * 10000.0).max(0.0)
+            let clamped_latency = metrics.avg_latency_us.min(200_000);
+            let normalized = ((200_000 - clamped_latency) * 10000) / 200_000;
+            normalized.max(0) as i64
         };
 
-        let slash_penalty = 10000.0 - (metrics.slash_count as f64 * 1000.0).min(10000.0);
-        let performance_score = (metrics.recent_performance * 10000.0).min(10000.0);
+        let slash_penalty = 10000 - ((metrics.slash_count as i64 * 1000).min(10000));
+        
+        // Performance and contribution are already scaled by 1_000_000
+        let performance_score = ((metrics.recent_performance * 10000) / 1_000_000).min(10000);
 
         let stake_score = {
-            let normalized = (metrics.stake_amount as f64 / 100_000_000.0).min(1.0);
-            normalized * 10000.0
+            let normalized = (metrics.stake_amount.min(100_000_000) * 10000) / 100_000_000;
+            normalized as i64
         };
 
-        // Weighted sum
-        let weighted_score = proposal_score * self.weights.get("blocks_proposed").unwrap_or(&0.25)
-            + verification_score * self.weights.get("blocks_verified").unwrap_or(&0.20)
-            + uptime_score * self.weights.get("uptime").unwrap_or(&0.15)
-            + latency_score * self.weights.get("latency").unwrap_or(&0.15)
-            + slash_penalty * self.weights.get("slash_penalty").unwrap_or(&0.10)
-            + performance_score * self.weights.get("performance").unwrap_or(&0.10)
-            + stake_score * self.weights.get("stake").unwrap_or(&0.05);
+        // Weighted sum using fixed-point weights (scaled by 1_000_000)
+        // Each score is 0-10000, weight is 0-1_000_000, so we divide by 1_000_000
+        let weighted_score = 
+            (proposal_score * self.weights.get("blocks_proposed").unwrap_or(&250_000)) / 1_000_000
+            + (verification_score * self.weights.get("blocks_verified").unwrap_or(&200_000)) / 1_000_000
+            + (uptime_score * self.weights.get("uptime").unwrap_or(&150_000)) / 1_000_000
+            + (latency_score * self.weights.get("latency").unwrap_or(&150_000)) / 1_000_000
+            + (slash_penalty * self.weights.get("slash_penalty").unwrap_or(&100_000)) / 1_000_000
+            + (performance_score * self.weights.get("performance").unwrap_or(&100_000)) / 1_000_000
+            + (stake_score * self.weights.get("stake").unwrap_or(&50_000)) / 1_000_000;
 
         (weighted_score as i32).clamp(0, 10000)
     }
@@ -253,9 +268,10 @@ impl DGBDTEngine {
     }
 
     /// Update model weights (for adaptive learning)
-    pub fn update_weights(&mut self, factor: &str, new_weight: f64) {
+    /// new_weight should be scaled by 1_000_000 (e.g., 500_000 = 0.5)
+    pub fn update_weights(&mut self, factor: &str, new_weight: i64) {
         if let Some(weight) = self.weights.get_mut(factor) {
-            *weight = new_weight.clamp(0.0, 1.0);
+            *weight = new_weight.clamp(0, 1_000_000);
         }
     }
 }
@@ -278,10 +294,10 @@ mod tests {
             blocks_verified: 200,
             rounds_active: 100,
             avg_latency_us: 50_000,
-            uptime_percentage: 0.99,
+            uptime_percentage: 990_000, // 99% in fixed-point
             slash_count: 0,
-            recent_performance: 0.95,
-            network_contribution: 0.90,
+            recent_performance: 950_000, // 95% in fixed-point
+            network_contribution: 900_000, // 90% in fixed-point
             stake_amount: 10_000_000,
         };
 

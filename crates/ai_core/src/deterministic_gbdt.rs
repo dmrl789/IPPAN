@@ -437,7 +437,7 @@ pub fn compute_scores(
 // Test helpers
 // ---------------------------------------------------------------------
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
 impl DeterministicGBDT {
     /// Creates a deterministic test model for use in integration tests and examples.
     pub fn create_test_model() -> Self {
@@ -471,7 +471,7 @@ impl DeterministicGBDT {
 
             Self {
                 trees: vec![tree],
-                learning_rate: Fixed::from_f64(1.0),
+                learning_rate: Fixed::from_f64(0.1),
             }
         }
 
@@ -511,7 +511,7 @@ impl DeterministicGBDT {
     }
 }
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
 pub fn create_test_model() -> DeterministicGBDT {
     DeterministicGBDT::create_test_model()
 }
