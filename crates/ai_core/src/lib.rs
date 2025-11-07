@@ -8,6 +8,7 @@
 //! - `gbdt`: Integer-only Gradient Boosted Decision Tree evaluator
 //! - `determinism`: Deterministic context and RNG utilities
 //! - `execution`: Deterministic model execution engine
+//! - `fixed`: Deterministic fixed-point arithmetic with micro (1e-6) precision
 //! - `model`: Model packaging and verification utilities
 //! - `model_manager`: Model registry and lifecycle management
 //! - `feature_engineering`: Feature preprocessing and statistics
@@ -63,6 +64,7 @@ pub use deterministic_gbdt::{
     compute_scores, DecisionNode, DeterministicGBDT, DeterministicGBDTError, GBDTTree,
     ValidatorFeatures,
 };
+pub use fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
 pub use gbdt::{
     eval_gbdt, FeatureNormalization, GBDTError, GBDTMetrics, GBDTModel, GBDTResult,
     ModelMetadata as GBDTModelMetadata, Node, SecurityConstraints, Tree,

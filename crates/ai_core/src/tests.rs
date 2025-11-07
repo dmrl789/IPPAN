@@ -356,7 +356,14 @@ impl BenchmarkSuite {
         let start = Instant::now();
 
         for _ in 0..iterations {
-            monitoring.record_metric("eval_time_ms".to_string(), 10.0, HashMap::new());
+            #[cfg(feature = "deterministic_math")]
+            {
+                monitoring.record_metric("eval_time_ms".to_string(), crate::fixed::Fixed::from_f64(10.0), HashMap::new());
+            }
+            #[cfg(not(feature = "deterministic_math"))]
+            {
+                monitoring.record_metric("eval_time_ms".to_string(), 10.0, HashMap::new());
+            }
         }
 
         let duration = start.elapsed();

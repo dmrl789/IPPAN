@@ -6,7 +6,12 @@
 use ippan_ai_core::deterministic_gbdt::{
     compute_scores, normalize_features, DecisionNode, DeterministicGBDT, GBDTTree,
 };
+use ippan_ai_core::FixedPoint;
 use std::collections::HashMap;
+
+fn fp(value: f64) -> FixedPoint {
+    FixedPoint::from_f64(value)
+}
 
 /// Build a simple deterministic GBDT model
 fn build_simple_model() -> DeterministicGBDT {
@@ -14,24 +19,24 @@ fn build_simple_model() -> DeterministicGBDT {
         nodes: vec![
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: Some(1),
                 right: Some(2),
                 value: None,
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(1.5),
+                value: Some(fp(1.5)),
             },
             DecisionNode {
                 feature: 0,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(-0.5),
+                value: Some(fp(-0.5)),
             },
         ],
     };
@@ -40,38 +45,38 @@ fn build_simple_model() -> DeterministicGBDT {
         nodes: vec![
             DecisionNode {
                 feature: 1,
-                threshold: 1.0,
+                threshold: FixedPoint::from_integer(1),
                 left: Some(1),
                 right: Some(2),
                 value: None,
             },
             DecisionNode {
                 feature: 1,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.25),
+                value: Some(fp(0.25)),
             },
             DecisionNode {
                 feature: 1,
-                threshold: 0.0,
+                threshold: FixedPoint::zero(),
                 left: None,
                 right: None,
-                value: Some(0.75),
+                value: Some(fp(0.75)),
             },
         ],
     };
 
     DeterministicGBDT {
         trees: vec![tree1, tree2],
-        learning_rate: 0.1,
+        learning_rate: fp(0.1),
     }
 }
 
 #[test]
 fn deterministic_prediction_same_features() {
     let model = build_simple_model();
-    let features = vec![0.0_f64, 0.5, 99.9, 0.42];
+    let features = vec![FixedPoint::zero(), fp(0.5), fp(99.9), fp(0.42)];
 
     let y1 = model.predict(&features);
     let y2 = model.predict(&features);
@@ -102,7 +107,7 @@ fn normalize_features_clock_offset_cancels_when_median_also_offset() {
     assert_eq!(feats_a.len(), feats_b.len());
 
     // Map features by node_id for comparison
-    let map_a: HashMap<String, (i64, f64, f64, f64)> = feats_a
+    let map_a: HashMap<String, (i64, FixedPoint, FixedPoint, FixedPoint)> = feats_a
         .into_iter()
         .map(|f| {
             (
@@ -112,7 +117,7 @@ fn normalize_features_clock_offset_cancels_when_median_also_offset() {
         })
         .collect();
 
-    let map_b: HashMap<String, (i64, f64, f64, f64)> = feats_b
+    let map_b: HashMap<String, (i64, FixedPoint, FixedPoint, FixedPoint)> = feats_b
         .into_iter()
         .map(|f| {
             (
@@ -140,13 +145,13 @@ fn compute_scores_and_certificate_consistency() {
     let feats = normalize_features(&telemetry, median);
     let round_hash_timer = "4b2e18f2fa7c_round_example";
 
-    let scores_a = compute_scores(&model_a, &feats, round_hash_timer);
-    let scores_b = compute_scores(&model_b, &feats, round_hash_timer);
+    let scores_a = compute_scores(&model_a, &feats, round_hash_timer).unwrap();
+    let scores_b = compute_scores(&model_b, &feats, round_hash_timer).unwrap();
 
     assert_eq!(scores_a, scores_b);
 
-    let cert_a = model_a.model_hash(round_hash_timer);
-    let cert_b = model_b.model_hash(round_hash_timer);
+    let cert_a = model_a.model_hash(round_hash_timer).unwrap();
+    let cert_b = model_b.model_hash(round_hash_timer).unwrap();
 
     assert_eq!(cert_a, cert_b);
     assert!(!cert_a.is_empty());
@@ -164,13 +169,13 @@ fn cross_node_consensus_scores_identical() {
     let round_ht = "round_42_hashtimer_abc123";
 
     let f1 = normalize_features(&telemetry, median);
-    let s1 = compute_scores(&model, &f1, round_ht);
+    let s1 = compute_scores(&model, &f1, round_ht).unwrap();
 
     let f2 = normalize_features(&telemetry, median);
-    let s2 = compute_scores(&model, &f2, round_ht);
+    let s2 = compute_scores(&model, &f2, round_ht).unwrap();
 
     let f3 = normalize_features(&telemetry, median);
-    let s3 = compute_scores(&model, &f3, round_ht);
+    let s3 = compute_scores(&model, &f3, round_ht).unwrap();
 
     assert_eq!(s1, s2);
     assert_eq!(s2, s3);
@@ -180,18 +185,23 @@ fn cross_node_consensus_scores_identical() {
 fn model_hash_is_reproducible() {
     let model = build_simple_model();
     let round_ht = "hash_42_test";
-    let h1 = model.model_hash(round_ht);
-    let h2 = model.model_hash(round_ht);
+    let h1 = model.model_hash(round_ht).unwrap();
+    let h2 = model.model_hash(round_ht).unwrap();
     assert_eq!(h1, h2);
 }
 
 #[test]
 fn fixed_point_prediction_stable() {
     let model = build_simple_model();
-    let features = vec![1.0, 2.0, 3.0, 4.0];
+    let features = vec![
+        FixedPoint::from_integer(1),
+        FixedPoint::from_integer(2),
+        FixedPoint::from_integer(3),
+        FixedPoint::from_integer(4),
+    ];
     let y1 = model.predict(&features);
     let y2 = model.predict(&features);
-    assert!((y1 - y2).abs() < 1e-12);
+    assert_eq!(y1, y2);
 }
 
 #[test]

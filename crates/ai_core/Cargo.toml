@@ -14,6 +14,7 @@ default = []
 ai_l1 = []
 remote_loading = ["reqwest"]
 enable-tests = []
+deterministic_math = []
 
 [dependencies]
 anyhow = { workspace = true }

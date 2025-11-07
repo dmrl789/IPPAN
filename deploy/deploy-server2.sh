@@ -7,6 +7,11 @@ set -e
 
 echo "🚀 Deploying IPPAN Node 2 to Server 2..."
 
+# Resolve Docker image tag
+IMAGE_TAG="${IMAGE_TAG:-${GITHUB_SHA:-latest}}"
+export IMAGE_TAG
+echo "🖼️ Using Docker image tag: ${IMAGE_TAG}"
+
 # Check if Docker and Docker Compose are available
 if ! command -v docker &> /dev/null; then
     echo "❌ Docker is not installed. Please install Docker first."
@@ -24,6 +29,7 @@ mkdir -p ./data/node2
 
 # Pull latest images
 echo "📥 Pulling latest Docker images..."
+docker pull "ghcr.io/dmrl789/ippan/ippan-node:${IMAGE_TAG}"
 docker-compose -f docker-compose.production.yml pull
 
 # Stop existing containers if running
@@ -50,6 +56,7 @@ if curl -f -s http://localhost:8080/health > /dev/null 2>&1; then
     echo "✅ Node 2 is responding on port 8080"
 else
     echo "⚠️  Node 2 health check failed"
+    exit 1
 fi
 
 # Check P2P connectivity

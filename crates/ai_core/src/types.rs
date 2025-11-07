@@ -3,6 +3,7 @@
 //! Defines model identifiers, metadata, input/output formats, execution
 //! contexts, and deterministic inference metadata used across the AI Core.
 
+use crate::fixed::Fixed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -146,6 +147,9 @@ pub struct ModelOutput {
     /// Output shape
     pub shape: Vec<usize>,
     /// Confidence or quality score (1.0 = deterministic exact match)
+    #[cfg(feature = "deterministic_math")]
+    pub confidence: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub confidence: f64,
     /// Deterministic execution metadata
     pub metadata: ExecutionMetadata,
@@ -183,7 +187,10 @@ pub struct ExecutionMetadata {
     pub duration_us: u64,
     /// Memory used in bytes
     pub memory_usage: u64,
-    /// CPU usage percentage
+    /// CPU usage percentage (0-10000 basis points)
+    #[cfg(feature = "deterministic_math")]
+    pub cpu_usage: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub cpu_usage: f64,
     /// Whether execution succeeded
     pub success: bool,

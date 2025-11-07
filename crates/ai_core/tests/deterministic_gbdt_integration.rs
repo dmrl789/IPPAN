@@ -27,7 +27,7 @@ fn test_deterministic_gbdt_usage_example() {
 
     // Normalize and score deterministically
     let features = normalize_features(&telemetry, ippan_time_median);
-    let scores = compute_scores(&model, &features, round_hash_timer);
+    let scores = compute_scores(&model, &features, round_hash_timer).unwrap();
 
     // Verify results
     assert_eq!(scores.len(), 3);
@@ -37,23 +37,19 @@ fn test_deterministic_gbdt_usage_example() {
 
     // All scores should be finite and positive
     for (node_id, score) in &scores {
+        let value = score.to_f64();
         assert!(
-            score.is_finite(),
+            value.is_finite(),
             "Score for {} is not finite: {}",
             node_id,
-            score
+            value
         );
-        assert!(
-            *score >= 0.0,
-            "Score for {} is negative: {}",
-            node_id,
-            score
-        );
+        assert!(value >= 0.0, "Score for {} is negative: {}", node_id, value);
     }
 
     // Verify determinism - run the same computation again
     let features2 = normalize_features(&telemetry, ippan_time_median);
-    let scores2 = compute_scores(&model, &features2, round_hash_timer);
+    let scores2 = compute_scores(&model, &features2, round_hash_timer).unwrap();
 
     // Results should be identical
     assert_eq!(scores, scores2);
@@ -77,7 +73,7 @@ fn test_with_actual_model_file() {
             let round_hash = "test_round";
 
             let features = normalize_features(&telemetry, ippan_time_median);
-            let scores = compute_scores(&model, &features, round_hash);
+            let scores = compute_scores(&model, &features, round_hash).unwrap();
 
             assert_eq!(scores.len(), 1);
             assert!(scores.contains_key("test_node"));
@@ -108,15 +104,15 @@ fn test_cross_node_determinism_simulation() {
 
     // Simulate Node A processing
     let features_a = normalize_features(&telemetry, ippan_time_median);
-    let scores_a = compute_scores(&model, &features_a, round_hash);
+    let scores_a = compute_scores(&model, &features_a, round_hash).unwrap();
 
     // Simulate Node B processing (should be identical)
     let features_b = normalize_features(&telemetry, ippan_time_median);
-    let scores_b = compute_scores(&model, &features_b, round_hash);
+    let scores_b = compute_scores(&model, &features_b, round_hash).unwrap();
 
     // Simulate Node C processing (should be identical)
     let features_c = normalize_features(&telemetry, ippan_time_median);
-    let scores_c = compute_scores(&model, &features_c, round_hash);
+    let scores_c = compute_scores(&model, &features_c, round_hash).unwrap();
 
     // All results should be identical
     assert_eq!(scores_a, scores_b);
@@ -150,25 +146,26 @@ fn test_realistic_validator_scenarios() {
     let round_hash = "realistic_round_test";
 
     let features = normalize_features(&telemetry, ippan_time_median);
-    let scores = compute_scores(&model, &features, round_hash);
+    let scores = compute_scores(&model, &features, round_hash).unwrap();
 
     // Verify all validators have scores
     assert_eq!(scores.len(), 4);
 
     // All scores should be finite
     for (validator, score) in &scores {
+        let value = score.to_f64();
         assert!(
-            score.is_finite(),
+            value.is_finite(),
             "Score for {} is not finite: {}",
             validator,
-            score
+            value
         );
-        println!("{}: {:.6}", validator, score);
+        println!("{}: {}", validator, score);
     }
 
     // Verify determinism
     let features2 = normalize_features(&telemetry, ippan_time_median);
-    let scores2 = compute_scores(&model, &features2, round_hash);
+    let scores2 = compute_scores(&model, &features2, round_hash).unwrap();
     assert_eq!(scores, scores2);
 }
 
@@ -181,14 +178,14 @@ fn test_model_hash_certificate_generation() {
     let round_hash_1 = "round_12345";
     let round_hash_2 = "round_67890";
 
-    let hash_1 = model.model_hash(round_hash_1);
-    let hash_2 = model.model_hash(round_hash_2);
+    let hash_1 = model.model_hash(round_hash_1).unwrap();
+    let hash_2 = model.model_hash(round_hash_2).unwrap();
 
     // Different round hashes should produce different model hashes
     assert_ne!(hash_1, hash_2);
 
     // Same round hash should produce same model hash
-    let hash_1_again = model.model_hash(round_hash_1);
+    let hash_1_again = model.model_hash(round_hash_1).unwrap();
     assert_eq!(hash_1, hash_1_again);
 
     // Hashes should be valid hex strings
