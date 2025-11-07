@@ -134,7 +134,7 @@ Decentralized governance system for AI model management:
   "model_id": "reputation_v2",
   "version": 2,
   "model_url": "https://models.ippan.org/reputation_v2.json",
-  "model_hash": "sha256_hash_here",
+  "model_hash": "0397885bb1360a7b991f7fbb4373edbc7defadb0fd6f3c91bfb0efe3e4203fe7",
   "signature": "ed25519_signature_here",
   "signer_pubkey": "ed25519_public_key_here",
   "activation_round": 1000,

@@ -10,6 +10,9 @@ permissions:
   contents: read
   security-events: write
 
+env:
+  RUSTFLAGS: "-D warnings"
+
 jobs:
   rust:
     name: Rust Checks
@@ -19,7 +22,6 @@ jobs:
       CARGO_TERM_COLOR: always
       CONSENSUS_MODE: DLC
       toolchain: stable
-      RUSTFLAGS: "-D warnings"
 
     steps:
       - name: Checkout

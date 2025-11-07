@@ -9,6 +9,7 @@
 //! - Retention management for historical metrics
 //! - Compatible with consensus-level deterministic AI evaluation
 
+use crate::fixed::Fixed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -50,21 +51,39 @@ impl Default for MonitoringConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlertThresholds {
     /// CPU usage threshold (percentage)
+    #[cfg(feature = "deterministic_math")]
+    pub cpu_usage: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub cpu_usage: f64,
     /// Memory usage threshold (percentage)
+    #[cfg(feature = "deterministic_math")]
+    pub memory_usage: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub memory_usage: f64,
     /// Execution time threshold (milliseconds)
     pub execution_time_ms: u64,
     /// Error rate threshold (percentage)
+    #[cfg(feature = "deterministic_math")]
+    pub error_rate: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub error_rate: f64,
 }
 
 impl Default for AlertThresholds {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "deterministic_math")]
+            cpu_usage: Fixed::from_f64(80.0),
+            #[cfg(not(feature = "deterministic_math"))]
             cpu_usage: 80.0,
+            #[cfg(feature = "deterministic_math")]
+            memory_usage: Fixed::from_f64(85.0),
+            #[cfg(not(feature = "deterministic_math"))]
             memory_usage: 85.0,
             execution_time_ms: 5000,
+            #[cfg(feature = "deterministic_math")]
+            error_rate: Fixed::from_f64(5.0),
+            #[cfg(not(feature = "deterministic_math"))]
             error_rate: 5.0,
         }
     }
@@ -73,6 +92,9 @@ impl Default for AlertThresholds {
 /// Runtime metric record
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricValue {
+    #[cfg(feature = "deterministic_math")]
+    pub value: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub value: f64,
     pub timestamp: u64,
     pub tags: HashMap<String, String>,
@@ -82,7 +104,13 @@ pub struct MetricValue {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Alert {
     pub metric_name: String,
+    #[cfg(feature = "deterministic_math")]
+    pub value: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub value: f64,
+    #[cfg(feature = "deterministic_math")]
+    pub threshold: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub threshold: f64,
     pub severity: AlertSeverity,
 }
@@ -112,6 +140,25 @@ impl MonitoringSystem {
     }
 
     /// Record a new metric
+    #[cfg(feature = "deterministic_math")]
+    pub fn record_metric(&mut self, name: String, value: Fixed, tags: HashMap<String, String>) {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        self.metrics.insert(
+            name,
+            MetricValue {
+                value,
+                timestamp,
+                tags,
+            },
+        );
+    }
+
+    /// Record a new metric (fallback to f64)
+    #[cfg(not(feature = "deterministic_math"))]
     pub fn record_metric(&mut self, name: String, value: f64, tags: HashMap<String, String>) {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -139,6 +186,55 @@ impl MonitoringSystem {
     }
 
     /// Check for alert conditions and return triggered alerts
+    #[cfg(feature = "deterministic_math")]
+    pub fn check_alerts(&self) -> Vec<Alert> {
+        let mut alerts = Vec::new();
+
+        for (name, metric) in &self.metrics {
+            match name.as_str() {
+                "cpu_usage" if metric.value > self.config.alert_thresholds.cpu_usage => {
+                    alerts.push(Alert {
+                        metric_name: name.clone(),
+                        value: metric.value,
+                        threshold: self.config.alert_thresholds.cpu_usage,
+                        severity: AlertSeverity::Warning,
+                    });
+                }
+                "memory_usage" if metric.value > self.config.alert_thresholds.memory_usage => {
+                    alerts.push(Alert {
+                        metric_name: name.clone(),
+                        value: metric.value,
+                        threshold: self.config.alert_thresholds.memory_usage,
+                        severity: AlertSeverity::Warning,
+                    });
+                }
+                "execution_time_ms"
+                    if metric.value > Fixed::from_int(self.config.alert_thresholds.execution_time_ms as i64) =>
+                {
+                    alerts.push(Alert {
+                        metric_name: name.clone(),
+                        value: metric.value,
+                        threshold: Fixed::from_int(self.config.alert_thresholds.execution_time_ms as i64),
+                        severity: AlertSeverity::Critical,
+                    });
+                }
+                "error_rate" if metric.value > self.config.alert_thresholds.error_rate => {
+                    alerts.push(Alert {
+                        metric_name: name.clone(),
+                        value: metric.value,
+                        threshold: self.config.alert_thresholds.error_rate,
+                        severity: AlertSeverity::Critical,
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        alerts
+    }
+
+    /// Check for alert conditions and return triggered alerts (fallback to f64)
+    #[cfg(not(feature = "deterministic_math"))]
     pub fn check_alerts(&self) -> Vec<Alert> {
         let mut alerts = Vec::new();
 
@@ -210,8 +306,16 @@ mod tests {
     #[test]
     fn test_alert_detection() {
         let mut monitor = MonitoringSystem::new(MonitoringConfig::default());
-        monitor.record_metric("cpu_usage".to_string(), 90.0, HashMap::new());
-        monitor.record_metric("error_rate".to_string(), 10.0, HashMap::new());
+        #[cfg(feature = "deterministic_math")]
+        {
+            monitor.record_metric("cpu_usage".to_string(), Fixed::from_f64(90.0), HashMap::new());
+            monitor.record_metric("error_rate".to_string(), Fixed::from_f64(10.0), HashMap::new());
+        }
+        #[cfg(not(feature = "deterministic_math"))]
+        {
+            monitor.record_metric("cpu_usage".to_string(), 90.0, HashMap::new());
+            monitor.record_metric("error_rate".to_string(), 10.0, HashMap::new());
+        }
 
         let alerts = monitor.check_alerts();
         assert_eq!(alerts.len(), 2);
@@ -226,7 +330,14 @@ mod tests {
         let mut tags = HashMap::new();
         tags.insert("node".to_string(), "validator1".to_string());
 
-        monitor.record_metric("cpu_usage".to_string(), 50.0, tags.clone());
+        #[cfg(feature = "deterministic_math")]
+        {
+            monitor.record_metric("cpu_usage".to_string(), Fixed::from_f64(50.0), tags.clone());
+        }
+        #[cfg(not(feature = "deterministic_math"))]
+        {
+            monitor.record_metric("cpu_usage".to_string(), 50.0, tags.clone());
+        }
         monitor.cleanup_old_metrics();
 
         assert_eq!(monitor.metrics_count(), 1);

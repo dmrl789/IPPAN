@@ -16,10 +16,57 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '*')
   .filter((value) => value.length > 0)
 
 const healthTimeoutMs = Number.parseInt(process.env.HEALTH_TIMEOUT_MS ?? '5000', 10)
-const rewriteApiPrefix = process.env.API_PREFIX ?? '/api'
-const rewriteWsPrefix = process.env.WS_PREFIX ?? '/ws'
+const rewriteApiPrefixRaw = process.env.API_PREFIX ?? '/api'
+const rewriteWsPrefixRaw = process.env.WS_PREFIX ?? '/ws'
 const enableExplorer = process.env.ENABLE_EXPLORER !== 'false'
-const explorerPrefix = process.env.EXPLORER_PREFIX ?? '/explorer/api'
+const explorerPrefixRaw = process.env.EXPLORER_PREFIX ?? '/explorer/api'
+
+function normalizePrefix(prefix) {
+  if (!prefix) {
+    return ''
+  }
+
+  let normalized = prefix.trim()
+
+  if (normalized === '') {
+    return ''
+  }
+
+  if (!normalized.startsWith('/')) {
+    normalized = `/${normalized}`
+  }
+
+  while (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1)
+  }
+
+  return normalized
+}
+
+function stripPathPrefix(path, prefix) {
+  if (!prefix || prefix === '/') {
+    return path
+  }
+
+  if (path === prefix) {
+    return '/'
+  }
+
+  if (path.startsWith(`${prefix}/`)) {
+    const stripped = path.slice(prefix.length)
+    return stripped.length === 0 ? '/' : stripped
+  }
+
+  return path
+}
+
+const rewriteApiPrefix = normalizePrefix(rewriteApiPrefixRaw)
+const rewriteWsPrefix = normalizePrefix(rewriteWsPrefixRaw)
+const explorerPrefix = normalizePrefix(explorerPrefixRaw)
+
+const apiMountPath = rewriteApiPrefix === '' ? '/' : rewriteApiPrefix
+const wsMountPath = rewriteWsPrefix === '' ? '/' : rewriteWsPrefix
+const explorerMountPath = explorerPrefix === '' ? '/' : explorerPrefix
 
 function isOriginAllowed(origin) {
   if (!origin || allowedOrigins.length === 0) {
@@ -87,51 +134,36 @@ app.get('/api/health/node', async (_req, res) => {
 })
 
 app.use(
-  rewriteApiPrefix,
+  apiMountPath,
   createProxyMiddleware({
     target: targetRpcUrl,
     changeOrigin: true,
     ws: false,
-    pathRewrite: (path, req) => {
-      if (!rewriteApiPrefix || rewriteApiPrefix === '/') {
-        return path
-      }
-      return path.replace(new RegExp(`^${rewriteApiPrefix}`), '') || '/'
-    },
+    pathRewrite: (path) => stripPathPrefix(path, rewriteApiPrefix),
     logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
   }),
 )
 
 app.use(
-  rewriteWsPrefix,
+  wsMountPath,
   createProxyMiddleware({
     target: targetWsUrl,
     changeOrigin: true,
     ws: true,
     logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
-    pathRewrite: (path, req) => {
-      if (!rewriteWsPrefix || rewriteWsPrefix === '/') {
-        return path
-      }
-      return path.replace(new RegExp(`^${rewriteWsPrefix}`), '') || '/'
-    },
+    pathRewrite: (path) => stripPathPrefix(path, rewriteWsPrefix),
   }),
 )
 
 // Blockchain Explorer routes
 if (enableExplorer) {
   app.use(
-    explorerPrefix,
+    explorerMountPath,
     createProxyMiddleware({
       target: targetRpcUrl,
       changeOrigin: true,
       ws: false,
-      pathRewrite: (path, req) => {
-        if (!explorerPrefix || explorerPrefix === '/') {
-          return path
-        }
-        return path.replace(new RegExp(`^${explorerPrefix}`), '') || '/'
-      },
+      pathRewrite: (path) => stripPathPrefix(path, explorerPrefix),
       logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
     }),
   )

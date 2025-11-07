@@ -8,6 +8,7 @@
 //! - `gbdt`: Integer-only Gradient Boosted Decision Tree evaluator
 //! - `determinism`: Deterministic context and RNG utilities
 //! - `execution`: Deterministic model execution engine
+//! - `fixed`: Deterministic fixed-point arithmetic with micro (1e-6) precision
 //! - `model`: Model packaging and verification utilities
 //! - `model_manager`: Model registry and lifecycle management
 //! - `feature_engineering`: Feature preprocessing and statistics
@@ -27,6 +28,7 @@ pub mod errors;
 pub mod execution;
 pub mod feature_engineering;
 pub mod features;
+pub mod fixed;
 pub mod gbdt;
 pub mod health;
 pub mod log;
@@ -36,6 +38,7 @@ pub mod models;
 pub mod monitoring;
 pub mod production_config;
 pub mod security;
+pub mod serialization;
 pub mod tests;
 pub mod types;
 pub mod validation;
@@ -93,6 +96,7 @@ pub use health::{
 
 // Core model and execution
 pub use errors::AiCoreError;
+pub use fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
 pub use model::{load_model, verify_model_hash, ModelPackage, MODEL_HASH_SIZE};
 pub use types::{
     DataType, ExecutionContext, ExecutionMetadata, ExecutionResult, ModelId, ModelInput,

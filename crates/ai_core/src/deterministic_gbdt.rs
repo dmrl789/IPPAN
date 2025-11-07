@@ -3,24 +3,41 @@
 //!
 //! Ensures identical predictions, rankings, and hashes across all validator nodes.
 
+use crate::fixed::Fixed;
+use crate::serialization::canonical_json_string;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{collections::HashMap, fs, path::Path};
 use tracing::{info, warn};
-
-/// Fixed-point arithmetic precision (1 µ = 1e-6)
-const FP_PRECISION: f64 = 1_000_000.0;
 
 /// Normalized validator telemetry (anchored to IPPAN Time)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorFeatures {
     pub node_id: String,
     pub delta_time_us: i64, // deviation from IPPAN Time median (µs)
+    #[cfg(feature = "deterministic_math")]
+    pub latency_ms: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub latency_ms: f64,
+    #[cfg(feature = "deterministic_math")]
+    pub uptime_pct: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub uptime_pct: f64,
+    #[cfg(feature = "deterministic_math")]
+    pub peer_entropy: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub peer_entropy: f64,
+    #[cfg(feature = "deterministic_math")]
+    pub cpu_usage: Option<Fixed>,
+    #[cfg(not(feature = "deterministic_math"))]
     pub cpu_usage: Option<f64>,
+    #[cfg(feature = "deterministic_math")]
+    pub memory_usage: Option<Fixed>,
+    #[cfg(not(feature = "deterministic_math"))]
     pub memory_usage: Option<f64>,
+    #[cfg(feature = "deterministic_math")]
+    pub network_reliability: Option<Fixed>,
+    #[cfg(not(feature = "deterministic_math"))]
     pub network_reliability: Option<f64>,
 }
 
@@ -28,9 +45,15 @@ pub struct ValidatorFeatures {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DecisionNode {
     pub feature: usize,
+    #[cfg(feature = "deterministic_math")]
+    pub threshold: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub threshold: f64,
     pub left: Option<usize>,
     pub right: Option<usize>,
+    #[cfg(feature = "deterministic_math")]
+    pub value: Option<Fixed>,
+    #[cfg(not(feature = "deterministic_math"))]
     pub value: Option<f64>,
 }
 
@@ -44,6 +67,9 @@ pub struct GBDTTree {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DeterministicGBDT {
     pub trees: Vec<GBDTTree>,
+    #[cfg(feature = "deterministic_math")]
+    pub learning_rate: Fixed,
+    #[cfg(not(feature = "deterministic_math"))]
     pub learning_rate: f64,
 }
 
@@ -84,11 +110,17 @@ impl DeterministicGBDT {
     }
 
     pub fn save_json<P: AsRef<Path>>(&self, path: P) -> Result<(), DeterministicGBDTError> {
-        let json = serde_json::to_string_pretty(self)
+        let json = canonical_json_string(self)
             .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
         fs::write(path, json)
             .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))?;
         Ok(())
+    }
+
+    /// Serialize the model into canonical JSON for deterministic hashing.
+    pub fn to_canonical_json(&self) -> Result<String, DeterministicGBDTError> {
+        canonical_json_string(self)
+            .map_err(|e| DeterministicGBDTError::SerializationError(e.to_string()))
     }
 
     pub fn save_binary<P: AsRef<Path>>(&self, path: P) -> Result<(), DeterministicGBDTError> {
@@ -104,8 +136,50 @@ impl DeterministicGBDT {
     // ---------------------------------------------------------------------
 
     /// Deterministic prediction using fixed-point arithmetic
+    #[cfg(feature = "deterministic_math")]
+    pub fn predict(&self, features: &[Fixed]) -> Fixed {
+        let mut score = Fixed::ZERO;
+
+        for tree in &self.trees {
+            let mut node_idx = 0usize;
+            loop {
+                if node_idx >= tree.nodes.len() {
+                    warn!("Invalid node index {}", node_idx);
+                    break;
+                }
+                let node = &tree.nodes[node_idx];
+
+                if let Some(value) = node.value {
+                    score += value;
+                    break;
+                }
+
+                if node.feature >= features.len() {
+                    warn!(
+                        "Feature index {} out of bounds (len={})",
+                        node.feature,
+                        features.len()
+                    );
+                    break;
+                }
+
+                let feat_val = features[node.feature];
+                node_idx = if feat_val <= node.threshold {
+                    node.left.unwrap_or(node_idx)
+                } else {
+                    node.right.unwrap_or(node_idx)
+                };
+            }
+        }
+
+        score * self.learning_rate
+    }
+
+    /// Deterministic prediction using fixed-point arithmetic (fallback to f64)
+    #[cfg(not(feature = "deterministic_math"))]
     pub fn predict(&self, features: &[f64]) -> f64 {
         let mut score_fp: i64 = 0;
+        const FP_PRECISION: f64 = 1_000_000.0;
 
         for tree in &self.trees {
             let mut node_idx = 0usize;
@@ -144,7 +218,9 @@ impl DeterministicGBDT {
 
     /// Deterministic model certificate hash (anchors to HashTimer)
     pub fn model_hash(&self, round_hash_timer: &str) -> String {
-        let serialized = serde_json::to_string(self).unwrap();
+        let serialized = self
+            .to_canonical_json()
+            .expect("Deterministic serialization failed");
         let mut hasher = Sha3_256::new();
         hasher.update(serialized.as_bytes());
         hasher.update(round_hash_timer.as_bytes());
@@ -195,6 +271,32 @@ impl DeterministicGBDT {
 
 /// Normalize raw telemetry using IPPAN Time median.
 /// Input: map (node_id → (local_time_us, latency_ms, uptime, entropy))
+#[cfg(feature = "deterministic_math")]
+pub fn normalize_features(
+    telemetry: &HashMap<String, (i64, f64, f64, f64)>,
+    ippan_time_median: i64,
+) -> Vec<ValidatorFeatures> {
+    telemetry
+        .iter()
+        .map(|(node_id, (local_time_us, latency, uptime, entropy))| {
+            let delta_time_us = local_time_us - ippan_time_median;
+            ValidatorFeatures {
+                node_id: node_id.clone(),
+                delta_time_us,
+                latency_ms: Fixed::from_f64(*latency),
+                uptime_pct: Fixed::from_f64(*uptime),
+                peer_entropy: Fixed::from_f64(*entropy),
+                cpu_usage: None,
+                memory_usage: None,
+                network_reliability: None,
+            }
+        })
+        .collect()
+}
+
+/// Normalize raw telemetry using IPPAN Time median (fallback to f64).
+/// Input: map (node_id → (local_time_us, latency_ms, uptime, entropy))
+#[cfg(not(feature = "deterministic_math"))]
 pub fn normalize_features(
     telemetry: &HashMap<String, (i64, f64, f64, f64)>,
     ippan_time_median: i64,
@@ -218,6 +320,32 @@ pub fn normalize_features(
 }
 
 /// Compute deterministic validator scores
+#[cfg(feature = "deterministic_math")]
+pub fn compute_scores(
+    model: &DeterministicGBDT,
+    features: &[ValidatorFeatures],
+    round_hash_timer: &str,
+) -> HashMap<String, Fixed> {
+    let mut scores = HashMap::new();
+
+    for v in features {
+        let feature_vector = vec![
+            Fixed::from_int(v.delta_time_us),
+            v.latency_ms,
+            v.uptime_pct,
+            v.peer_entropy,
+        ];
+        let score = model.predict(&feature_vector);
+        scores.insert(v.node_id.clone(), score);
+    }
+
+    let cert = model.model_hash(round_hash_timer);
+    info!("Deterministic GBDT certificate: {}", cert);
+    scores
+}
+
+/// Compute deterministic validator scores (fallback to f64)
+#[cfg(not(feature = "deterministic_math"))]
 pub fn compute_scores(
     model: &DeterministicGBDT,
     features: &[ValidatorFeatures],
@@ -241,6 +369,41 @@ pub fn compute_scores(
     scores
 }
 
+#[cfg(feature = "deterministic_math")]
+fn sample_test_model() -> DeterministicGBDT {
+    let tree = GBDTTree {
+        nodes: vec![
+            DecisionNode {
+                feature: 0,
+                threshold: Fixed::ZERO,
+                left: Some(1),
+                right: Some(2),
+                value: None,
+            },
+            DecisionNode {
+                feature: 0,
+                threshold: Fixed::ZERO,
+                left: None,
+                right: None,
+                value: Some(Fixed::from_f64(0.1)),
+            },
+            DecisionNode {
+                feature: 0,
+                threshold: Fixed::ZERO,
+                left: None,
+                right: None,
+                value: Some(Fixed::from_f64(0.2)),
+            },
+        ],
+    };
+
+    DeterministicGBDT {
+        trees: vec![tree],
+        learning_rate: Fixed::from_f64(0.1),
+    }
+}
+
+#[cfg(not(feature = "deterministic_math"))]
 fn sample_test_model() -> DeterministicGBDT {
     let tree = GBDTTree {
         nodes: vec![
@@ -295,6 +458,40 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    #[cfg(feature = "deterministic_math")]
+    fn create_test_model() -> DeterministicGBDT {
+        let tree = GBDTTree {
+            nodes: vec![
+                DecisionNode {
+                    feature: 0,
+                    threshold: Fixed::ZERO,
+                    left: Some(1),
+                    right: Some(2),
+                    value: None,
+                },
+                DecisionNode {
+                    feature: 0,
+                    threshold: Fixed::ZERO,
+                    left: None,
+                    right: None,
+                    value: Some(Fixed::from_f64(0.1)),
+                },
+                DecisionNode {
+                    feature: 0,
+                    threshold: Fixed::ZERO,
+                    left: None,
+                    right: None,
+                    value: Some(Fixed::from_f64(0.2)),
+                },
+            ],
+        };
+        DeterministicGBDT {
+            trees: vec![tree],
+            learning_rate: Fixed::from_f64(0.1),
+        }
+    }
+
+    #[cfg(not(feature = "deterministic_math"))]
     fn create_test_model() -> DeterministicGBDT {
         let tree = GBDTTree {
             nodes: vec![
@@ -328,6 +525,17 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "deterministic_math")]
+    fn test_prediction_determinism() {
+        let model = create_test_model();
+        let features = vec![Fixed::from_int(1), Fixed::from_int(2), Fixed::from_int(3), Fixed::from_int(4)];
+        let r1 = model.predict(&features);
+        let r2 = model.predict(&features);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    #[cfg(not(feature = "deterministic_math"))]
     fn test_prediction_determinism() {
         let model = create_test_model();
         let features = vec![1.0, 2.0, 3.0, 4.0];
@@ -358,6 +566,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "deterministic_math")]
+    fn test_model_validation() {
+        let valid = create_test_model();
+        assert!(valid.validate().is_ok());
+        let invalid = DeterministicGBDT {
+            trees: vec![],
+            learning_rate: Fixed::from_f64(0.1),
+        };
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    #[cfg(not(feature = "deterministic_math"))]
     fn test_model_validation() {
         let valid = create_test_model();
         assert!(valid.validate().is_ok());

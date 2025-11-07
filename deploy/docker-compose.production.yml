@@ -83,7 +83,7 @@ services:
       - LOG_FORMAT=json
       - DEV_MODE=false
     ports:
-      - "8080:8080"    # RPC API
+      - "8081:8080"    # RPC API
       - "9001:9001"    # P2P port
     volumes:
       - node2_data:/var/lib/ippan/db
