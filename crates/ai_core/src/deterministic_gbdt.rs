@@ -84,6 +84,55 @@ pub struct DeterministicGBDT {
     pub learning_rate: f64,
 }
 
+#[cfg(feature = "deterministic_math")]
+#[derive(Deserialize)]
+struct FloatDecisionNode {
+    feature: usize,
+    threshold: f64,
+    left: Option<usize>,
+    right: Option<usize>,
+    value: Option<f64>,
+}
+
+#[cfg(feature = "deterministic_math")]
+#[derive(Deserialize)]
+struct FloatGBDTTree {
+    nodes: Vec<FloatDecisionNode>,
+}
+
+#[cfg(feature = "deterministic_math")]
+#[derive(Deserialize)]
+struct FloatDeterministicGBDT {
+    trees: Vec<FloatGBDTTree>,
+    learning_rate: f64,
+}
+
+#[cfg(feature = "deterministic_math")]
+impl FloatDeterministicGBDT {
+    fn into_fixed(self) -> DeterministicGBDT {
+        DeterministicGBDT {
+            trees: self
+                .trees
+                .into_iter()
+                .map(|tree| GBDTTree {
+                    nodes: tree
+                        .nodes
+                        .into_iter()
+                        .map(|node| DecisionNode {
+                            feature: node.feature,
+                            threshold: Fixed::from_f64(node.threshold),
+                            left: node.left,
+                            right: node.right,
+                            value: node.value.map(Fixed::from_f64),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            learning_rate: Fixed::from_f64(self.learning_rate),
+        }
+    }
+}
+
 /// Error types for deterministic GBDT operations
 #[derive(Debug, thiserror::Error)]
 pub enum DeterministicGBDTError {
@@ -105,10 +154,29 @@ impl DeterministicGBDT {
     pub fn from_json_file<P: AsRef<Path>>(path: P) -> Result<Self, DeterministicGBDTError> {
         let data = fs::read_to_string(path.as_ref())
             .map_err(|e| DeterministicGBDTError::ModelLoadError(e.to_string()))?;
-        let model: Self = serde_json::from_str(&data)
-            .map_err(|e| DeterministicGBDTError::ModelLoadError(e.to_string()))?;
-        model.validate()?;
-        Ok(model)
+        match serde_json::from_str::<Self>(&data) {
+            Ok(model) => {
+                model.validate()?;
+                Ok(model)
+            }
+            Err(err) => {
+                #[cfg(feature = "deterministic_math")]
+                {
+                    let _ = &err;
+                    let float_model: FloatDeterministicGBDT =
+                        serde_json::from_str(&data).map_err(|parse_err| {
+                            DeterministicGBDTError::ModelLoadError(parse_err.to_string())
+                        })?;
+                    let model = float_model.into_fixed();
+                    model.validate()?;
+                    Ok(model)
+                }
+                #[cfg(not(feature = "deterministic_math"))]
+                {
+                    Err(DeterministicGBDTError::ModelLoadError(err.to_string()))
+                }
+            }
+        }
     }
 
     pub fn from_binary_file<P: AsRef<Path>>(path: P) -> Result<Self, DeterministicGBDTError> {
@@ -371,7 +439,7 @@ pub fn compute_scores(
 // Test helpers
 // ---------------------------------------------------------------------
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
 impl DeterministicGBDT {
     /// Creates a deterministic test model for use in integration tests and examples.
     pub fn create_test_model() -> Self {
@@ -405,7 +473,7 @@ impl DeterministicGBDT {
 
             Self {
                 trees: vec![tree],
-                learning_rate: Fixed::from_f64(1.0),
+                learning_rate: Fixed::from_f64(0.1),
             }
         }
 
@@ -445,7 +513,7 @@ impl DeterministicGBDT {
     }
 }
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
 pub fn create_test_model() -> DeterministicGBDT {
     DeterministicGBDT::create_test_model()
 }

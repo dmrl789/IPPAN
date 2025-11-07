@@ -358,7 +358,11 @@ impl BenchmarkSuite {
         for _ in 0..iterations {
             #[cfg(feature = "deterministic_math")]
             {
-                monitoring.record_metric("eval_time_ms".to_string(), crate::fixed::Fixed::from_f64(10.0), HashMap::new());
+                monitoring.record_metric(
+                    "eval_time_ms".to_string(),
+                    crate::fixed::Fixed::from_f64(10.0),
+                    HashMap::new(),
+                );
             }
             #[cfg(not(feature = "deterministic_math"))]
             {

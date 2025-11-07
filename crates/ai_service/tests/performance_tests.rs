@@ -179,10 +179,7 @@ async fn test_memory_usage() {
     }
 
     // Service should still be responsive
-    let health = service
-        .health_check()
-        .await
-        .expect("Health check failed");
+    let health = service.health_check().await.expect("Health check failed");
     assert!(
         matches!(
             health.status,
@@ -214,10 +211,7 @@ async fn test_error_recovery() {
     assert!(result.is_err(), "Should handle invalid input gracefully");
 
     // Service should still be healthy after error
-    let health = service
-        .health_check()
-        .await
-        .expect("Health check failed");
+    let health = service.health_check().await.expect("Health check failed");
     assert!(
         matches!(
             health.status,
