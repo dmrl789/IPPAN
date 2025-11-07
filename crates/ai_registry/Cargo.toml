@@ -34,6 +34,8 @@ bincode = { workspace = true }
 sled = { workspace = true }
 axum = { workspace = true, optional = true }
 tokio = { workspace = true }
+sha2 = { workspace = true }
+pathdiff = "0.2"
 
 [dev-dependencies]
 rand = { workspace = true }
