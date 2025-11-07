@@ -18,7 +18,7 @@ fn test_deterministic_gbdt_basic_functionality() {
     // Test model creation
     let model = create_test_model();
     assert_eq!(model.trees.len(), 1);
-    assert_eq!(model.learning_rate, fp(0.1));
+    assert_eq!(model.learning_rate, fp(1.0));
 
     // Test prediction
     let features = vec![

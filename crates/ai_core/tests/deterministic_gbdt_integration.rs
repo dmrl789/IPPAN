@@ -39,7 +39,9 @@ fn test_deterministic_gbdt_usage_example() {
     assert!(scores.contains_key("nodeB"));
     assert!(scores.contains_key("nodeC"));
 
-    // All scores should be finite (can be negative since GBDT models can have negative leaf values)
+    // All scores must be finite and within a reasonable range
+    // (values can be negative depending on leaf weights, but no NaN/Inf allowed)
+    let mut has_positive = false;
     for (node_id, score) in &scores {
         let value = score.to_f64();
         assert!(
@@ -48,17 +50,25 @@ fn test_deterministic_gbdt_usage_example() {
             node_id,
             value
         );
-        // Note: Scores can be negative - this is normal for GBDT models
+        if value > 0.0 {
+            has_positive = true;
+        }
     }
+
+    // Expect at least one positive validator score (for diversity in scoring)
+    assert!(
+        has_positive,
+        "Expected at least one positive validator score"
+    );
 
     // Verify determinism - run the same computation again
     let features2 = normalize_features(&telemetry, ippan_time_median);
     let scores2 = compute_scores(&model, &features2, round_hash_timer);
 
-    // Results should be identical
+    // Results must be identical bit-for-bit
     assert_eq!(scores, scores2);
 
-    println!("Validator scores: {:?}", scores);
+    println!("✅ Validator scores: {:?}", scores);
 }
 
 /// Test with the actual model file from the models directory
@@ -122,8 +132,7 @@ fn test_cross_node_determinism_simulation() {
     assert_eq!(scores_a, scores_b);
     assert_eq!(scores_b, scores_c);
 
-    println!("Cross-node determinism verified - all nodes produced identical results");
-    println!("Node A scores: {:?}", scores_a);
+    println!("✅ Cross-node determinism verified - all nodes produced identical results");
 }
 
 /// Test with realistic validator scenarios

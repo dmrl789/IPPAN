@@ -9,6 +9,8 @@ use crate::{
 use std::collections::HashMap;
 use tracing::info;
 
+const FLOAT32_FEATURE_SCALE: i64 = 10_000;
+
 /// Model execution engine
 pub struct ExecutionEngine {
     /// Loaded models cache
@@ -236,8 +238,8 @@ impl ExecutionEngine {
                     if c.len() == 4 {
                         let mut arr = [0u8; 4];
                         arr.copy_from_slice(c);
-                        let f = f32::from_le_bytes(arr);
-                        features.push((f * 10_000.0) as i64);
+                        let value = float32_bytes_to_scaled_i64(arr, FLOAT32_FEATURE_SCALE);
+                        features.push(value);
                     }
                 }
             }
@@ -253,7 +255,9 @@ impl ExecutionEngine {
     /// Estimate CPU cycles from duration
     fn estimate_cpu_cycles(&self, d: std::time::Duration) -> u64 {
         const FREQ: u64 = 3_000_000_000; // 3 GHz
-        (d.as_secs_f64() * FREQ as f64) as u64
+        let nanos = d.as_nanos();
+        let cycles = nanos.saturating_mul(FREQ as u128) / 1_000_000_000u128;
+        cycles.min(u64::MAX as u128) as u64
     }
 
     /// Compute deterministic execution hash
@@ -307,4 +311,50 @@ impl ExecutionEngine {
     pub fn model_count(&self) -> usize {
         self.models.len()
     }
+}
+
+fn float32_bytes_to_scaled_i64(bytes: [u8; 4], scale: i64) -> i64 {
+    let bits = u32::from_le_bytes(bytes);
+    let sign = if (bits >> 31) == 0 { 1 } else { -1 };
+    let exponent = ((bits >> 23) & 0xff) as i32;
+    let mantissa = (bits & 0x7fffff) as u32;
+
+    match exponent {
+        255 => {
+            // Infinity or NaN
+            if mantissa == 0 {
+                return if sign > 0 { i64::MAX } else { i64::MIN };
+            }
+            return 0;
+        }
+        0 => {
+            if mantissa == 0 {
+                return 0;
+            }
+            let significand = mantissa as i128;
+            scale_significand(significand, -126 - 23, scale, sign)
+        }
+        _ => {
+            let significand = ((1 << 23) | mantissa) as i128;
+            let exp = (exponent - 127) - 23;
+            scale_significand(significand, exp, scale, sign)
+        }
+    }
+}
+
+fn scale_significand(significand: i128, exp: i32, scale: i64, sign: i32) -> i64 {
+    let mut magnitude = significand.saturating_mul(scale as i128);
+
+    if exp >= 0 {
+        magnitude = match magnitude.checked_shl(exp as u32) {
+            Some(val) => val,
+            None => return if sign >= 0 { i64::MAX } else { i64::MIN },
+        };
+    } else {
+        let shift = (-exp) as u32;
+        magnitude >>= shift;
+    }
+
+    let signed = if sign >= 0 { magnitude } else { -magnitude };
+    signed.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }

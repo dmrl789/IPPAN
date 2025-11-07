@@ -13,6 +13,7 @@
 
 use crate::{model::ModelPackage, serialization::canonical_json_string};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
@@ -227,13 +228,16 @@ impl GBDTModel {
         scale: i32,
         feature_count: usize,
     ) -> Result<Self, GBDTError> {
+        let tree_count = trees.len();
+        let max_depth = Self::calculate_max_depth(&trees)?;
+        let model_hash = Self::calculate_model_hash(&trees, bias, scale)?;
         let metadata = ModelMetadata {
             version: "1.0.0".into(),
             created_at: chrono::Utc::now().timestamp() as u64,
             feature_count,
-            tree_count: trees.len(),
-            max_depth: Self::calculate_max_depth(&trees)?,
-            model_hash: Self::calculate_model_hash(&trees, bias, scale),
+            tree_count,
+            max_depth,
+            model_hash,
             training_data_hash: String::new(),
             performance_metrics: HashMap::new(),
         };
@@ -523,14 +527,23 @@ impl GBDTModel {
         Ok(l.max(r))
     }
 
-    pub fn calculate_model_hash(trees: &[Tree], bias: i32, scale: i32) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut h = DefaultHasher::new();
-        trees.hash(&mut h);
-        bias.hash(&mut h);
-        scale.hash(&mut h);
-        format!("{:x}", h.finish())
+    pub fn calculate_model_hash(
+        trees: &[Tree],
+        bias: i32,
+        scale: i32,
+    ) -> Result<String, GBDTError> {
+        #[derive(Serialize)]
+        struct HashMaterial<'a> {
+            trees: &'a [Tree],
+            bias: i32,
+            scale: i32,
+        }
+
+        let payload = HashMaterial { trees, bias, scale };
+        let canonical = canonical_json_string(&payload)
+            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        let digest = Sha256::digest(canonical.as_bytes());
+        Ok(hex::encode(digest))
     }
 
     pub fn get_metrics(&self) -> &GBDTMetrics {
