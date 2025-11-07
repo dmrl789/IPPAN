@@ -9,6 +9,7 @@ use crate::gbdt::{GBDTError, GBDTModel};
 use crate::model::ModelPackage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
@@ -200,17 +201,24 @@ impl ModelManager {
             })?;
 
         let path = self.get_model_path(model_id);
-        let model_hash = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);
+        let model_hash = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale)?;
+        let hash_bytes =
+            hex::decode(&model_hash).map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Invalid model hash hex: {}", e),
+            })?;
+        let hash_len = hash_bytes.len();
+        let hash_sha256: [u8; 32] =
+            hash_bytes
+                .try_into()
+                .map_err(|_| GBDTError::ModelValidationFailed {
+                    reason: format!("Model hash length {} != 32 bytes", hash_len),
+                })?;
 
         let metadata = crate::model::ModelMetadata {
             model_id: model_id.to_string(),
             version: 1,
             model_type: "gbdt".into(),
-            hash_sha256: model_hash
-                .clone()
-                .into_bytes()
-                .try_into()
-                .unwrap_or([0; 32]),
+            hash_sha256,
             feature_count: model.metadata.feature_count,
             output_scale: model.scale,
             output_min: -10_000,
@@ -288,7 +296,7 @@ impl ModelManager {
     async fn validate_model(&self, model: &mut GBDTModel) -> Result<bool, GBDTError> {
         model.validate()?;
 
-        let expected = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);
+        let expected = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale)?;
         if model.metadata.model_hash != expected {
             return Err(GBDTError::SecurityValidationFailed {
                 reason: "Model hash mismatch".to_string(),

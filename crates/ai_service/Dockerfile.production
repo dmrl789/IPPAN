@@ -1,25 +1,25 @@
 # Production Dockerfile for AI Service
-FROM rust:1.75-slim as builder
+FROM rust:1.88-slim as builder
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     ca-certificates \
+    clang \
+    llvm \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy manifests
+# Copy workspace manifests and all crate manifests (ai_service depends on other crates)
 COPY Cargo.toml Cargo.lock ./
-COPY crates/ai_service/Cargo.toml ./crates/ai_service/
+COPY crates/ crates/
 
-# Copy source code
-COPY crates/ai_service/src ./crates/ai_service/src
-
-# Build the application
-RUN cargo build --release --package ippan-ai-service
+# Build the application with locked dependencies
+RUN cargo build --release --package ippan-ai-service --locked
 
 # Runtime stage
 FROM debian:bookworm-slim

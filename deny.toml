@@ -27,7 +27,7 @@ ignore = [
   # instant — unmaintained but stable
   { id = "RUSTSEC-2024-0384", reason = "instant is unmaintained but still functional" },
   # paste — unmaintained but safe
-  { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained but still functional" },
+  { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained but still functional" }
 ]
 
 # -------------------------------
@@ -52,8 +52,7 @@ allow = [
   "BSL-1.0",
   "CDLA-Permissive-2.0",
   "Unicode-DFS-2016",
-  "Unicode-3.0",
-  "OpenSSL"
+  "Unicode-3.0"
 ]
 
 # Accept dual-licensed crates if either side is compliant
