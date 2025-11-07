@@ -1,0 +1,50 @@
+{
+  "generated_at": "2025-11-07T15:55:55.157505512+00:00",
+  "manifest_version": 1,
+  "models": [
+    {
+      "artifact": {
+        "blake3": "903f7b30331d2da1d0393f5f479e5ade1fc61586c88af4e0281018a3ea9dd730",
+        "format": "deterministic_gbdt.canonical_json",
+        "path": "models/deterministic_gbdt_model.json",
+        "sha256": "8f8bf9d202a952dcc3b0e6708ebf4b2c7dc925ae6afd9625b3d25a694b7c2cf1",
+        "size_bytes": 2040
+      },
+      "inference": {
+        "architectures": {
+          "aarch64": "2f941cebebfd8e70f786ae018571771146242d4764efd9647dcbd132c905a51d",
+          "x86_64": "2f941cebebfd8e70f786ae018571771146242d4764efd9647dcbd132c905a51d"
+        },
+        "seed": "ippan::deterministic_inference::v1"
+      },
+      "metadata": {
+        "architecture": "deterministic_gbdt",
+        "author": "IPPAN Core Team",
+        "created_at": 1735689600000000,
+        "description": "Gradient boosted decision tree used for consensus reputation scoring.",
+        "id": {
+          "hash": "8f8bf9d202a952dcc3b0e6708ebf4b2c7dc925ae6afd9625b3d25a694b7c2cf1",
+          "name": "deterministic_gbdt",
+          "version": "1.0.0"
+        },
+        "input_shape": [
+          4
+        ],
+        "license": "Apache-2.0",
+        "name": "Deterministic Validator Reputation Model",
+        "output_shape": [
+          1
+        ],
+        "parameter_count": 13,
+        "size_bytes": 2040,
+        "tags": [
+          "deterministic",
+          "gbdt",
+          "reputation"
+        ],
+        "updated_at": 1735689600000000,
+        "version": "1.0.0"
+      }
+    }
+  ]
+}
