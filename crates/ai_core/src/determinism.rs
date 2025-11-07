@@ -4,7 +4,7 @@
 //! enforcing seed control, input hashing, and deterministic context state.
 
 use crate::{errors::Result, fixed_point::FixedPoint, types::*};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tracing::{info, warn};
 
 /// Deterministic execution manager
@@ -38,7 +38,7 @@ pub struct DeterministicContext {
     /// Deterministic seed
     pub seed: u64,
     /// Context parameters (model-specific)
-    pub parameters: HashMap<String, String>,
+    pub parameters: BTreeMap<String, String>,
 }
 
 impl Default for DeterminismManager {
@@ -80,7 +80,7 @@ impl DeterminismManager {
         execution_id: &str,
         model_id: &ModelId,
         input: &ModelInput,
-        parameters: HashMap<String, String>,
+        parameters: impl IntoIterator<Item = (String, String)>,
     ) -> Result<DeterministicContext> {
         info!(
             "Creating deterministic context for execution: {}",
@@ -98,7 +98,7 @@ impl DeterminismManager {
             model_id: model_id.clone(),
             input_hash,
             seed,
-            parameters,
+            parameters: parameters.into_iter().collect::<BTreeMap<_, _>>(),
         };
 
         self.update_state(&context);
