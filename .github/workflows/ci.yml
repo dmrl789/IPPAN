@@ -11,7 +11,9 @@ permissions:
   security-events: write
 
 env:
-  RUSTFLAGS: "-D warnings"
+  # Allow warnings in CI but fail on errors
+  # Use -D warnings only in clippy step for stricter linting
+  RUSTFLAGS: ""
 
 jobs:
   rust:

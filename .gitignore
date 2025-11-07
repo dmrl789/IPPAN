@@ -149,3 +149,7 @@ temp/
 
 # Gateway package-lock is tracked
 !apps/gateway/package-lock.json
+
+# SBOM files
+*.cdx.json
+*-sbom.json

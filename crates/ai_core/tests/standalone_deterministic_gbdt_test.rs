@@ -106,6 +106,7 @@ fn test_usage_example() {
     assert!(scores.contains_key("nodeB"));
     assert!(scores.contains_key("nodeC"));
 
+    // All scores should be finite and within a bounded range
     let mut has_positive = false;
     for (node_id, score) in &scores {
         let value = score.to_f64();
@@ -125,10 +126,11 @@ fn test_usage_example() {
             has_positive = true;
         }
     }
+
     assert!(
         has_positive,
         "Expected at least one positive validator score"
     );
 
-    println!("Validator scores: {:?}", scores);
+    println!("✅ Validator scores: {:?}", scores);
 }
