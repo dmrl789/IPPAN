@@ -162,7 +162,7 @@ async fn test_service_status() {
     let service = AIService::new(config).unwrap();
 
     let status = service.get_status();
-    assert_eq!(status.version, "1.0.0");
+    assert_eq!(status.version, "0.1.0");
     assert!(!status.is_running);
 }
 

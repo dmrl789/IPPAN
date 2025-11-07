@@ -3,7 +3,6 @@
 //!
 //! Ensures identical predictions, rankings, and hashes across all validator nodes.
 
-use crate::fixed::Fixed;
 use crate::serialization::canonical_json_string;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
