@@ -1,3 +1,5 @@
+#![cfg(feature = "deterministic_math")]
+
 //! Integration test demonstrating the deterministic GBDT usage example
 //!
 //! This test shows how to use the deterministic GBDT module in a real-world scenario
@@ -27,7 +29,7 @@ fn test_deterministic_gbdt_usage_example() {
 
     // Normalize and score deterministically
     let features = normalize_features(&telemetry, ippan_time_median);
-    let scores = compute_scores(&model, &features, round_hash_timer).unwrap();
+    let scores = compute_scores(&model, &features, round_hash_timer);
 
     // Verify results
     assert_eq!(scores.len(), 3);
@@ -49,7 +51,7 @@ fn test_deterministic_gbdt_usage_example() {
 
     // Verify determinism - run the same computation again
     let features2 = normalize_features(&telemetry, ippan_time_median);
-    let scores2 = compute_scores(&model, &features2, round_hash_timer).unwrap();
+    let scores2 = compute_scores(&model, &features2, round_hash_timer);
 
     // Results should be identical
     assert_eq!(scores, scores2);
@@ -73,7 +75,7 @@ fn test_with_actual_model_file() {
             let round_hash = "test_round";
 
             let features = normalize_features(&telemetry, ippan_time_median);
-            let scores = compute_scores(&model, &features, round_hash).unwrap();
+            let scores = compute_scores(&model, &features, round_hash);
 
             assert_eq!(scores.len(), 1);
             assert!(scores.contains_key("test_node"));
@@ -104,15 +106,15 @@ fn test_cross_node_determinism_simulation() {
 
     // Simulate Node A processing
     let features_a = normalize_features(&telemetry, ippan_time_median);
-    let scores_a = compute_scores(&model, &features_a, round_hash).unwrap();
+    let scores_a = compute_scores(&model, &features_a, round_hash);
 
     // Simulate Node B processing (should be identical)
     let features_b = normalize_features(&telemetry, ippan_time_median);
-    let scores_b = compute_scores(&model, &features_b, round_hash).unwrap();
+    let scores_b = compute_scores(&model, &features_b, round_hash);
 
     // Simulate Node C processing (should be identical)
     let features_c = normalize_features(&telemetry, ippan_time_median);
-    let scores_c = compute_scores(&model, &features_c, round_hash).unwrap();
+    let scores_c = compute_scores(&model, &features_c, round_hash);
 
     // All results should be identical
     assert_eq!(scores_a, scores_b);
@@ -146,7 +148,7 @@ fn test_realistic_validator_scenarios() {
     let round_hash = "realistic_round_test";
 
     let features = normalize_features(&telemetry, ippan_time_median);
-    let scores = compute_scores(&model, &features, round_hash).unwrap();
+    let scores = compute_scores(&model, &features, round_hash);
 
     // Verify all validators have scores
     assert_eq!(scores.len(), 4);
@@ -165,7 +167,7 @@ fn test_realistic_validator_scenarios() {
 
     // Verify determinism
     let features2 = normalize_features(&telemetry, ippan_time_median);
-    let scores2 = compute_scores(&model, &features2, round_hash).unwrap();
+    let scores2 = compute_scores(&model, &features2, round_hash);
     assert_eq!(scores, scores2);
 }
 

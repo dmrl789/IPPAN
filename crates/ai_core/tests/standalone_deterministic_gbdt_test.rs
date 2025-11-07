@@ -1,9 +1,11 @@
+#![cfg(feature = "deterministic_math")]
+
 use ippan_ai_core::deterministic_gbdt;
-use ippan_ai_core::FixedPoint;
+use ippan_ai_core::Fixed;
 use std::collections::HashMap;
 
-fn fp(value: f64) -> FixedPoint {
-    FixedPoint::from_f64(value)
+fn fp(value: f64) -> Fixed {
+    Fixed::from_f64(value)
 }
 
 #[test]
@@ -13,10 +15,10 @@ fn test_deterministic_gbdt_basic_functionality() {
     assert_eq!(model.learning_rate, fp(0.1));
 
     let features = vec![
-        FixedPoint::from_integer(1),
-        FixedPoint::from_integer(2),
-        FixedPoint::from_integer(3),
-        FixedPoint::from_integer(4),
+        Fixed::from_int(1),
+        Fixed::from_int(2),
+        Fixed::from_int(3),
+        Fixed::from_int(4),
     ];
     let prediction = model.predict(&features);
     let repeat = model.predict(&features);
@@ -52,7 +54,7 @@ fn test_validator_scoring() {
     let round_hash = "test_round";
 
     let features = deterministic_gbdt::normalize_features(&telemetry, ippan_time_median);
-    let scores = deterministic_gbdt::compute_scores(&model, &features, round_hash).unwrap();
+    let scores = deterministic_gbdt::compute_scores(&model, &features, round_hash);
 
     assert_eq!(scores.len(), 1);
     assert!(scores.contains_key("test_node"));
@@ -97,7 +99,7 @@ fn test_usage_example() {
 
     let model = deterministic_gbdt::create_test_model();
     let features = deterministic_gbdt::normalize_features(&telemetry, ippan_time_median);
-    let scores = deterministic_gbdt::compute_scores(&model, &features, round_hash_timer).unwrap();
+    let scores = deterministic_gbdt::compute_scores(&model, &features, round_hash_timer);
 
     assert_eq!(scores.len(), 3);
     assert!(scores.contains_key("nodeA"));
