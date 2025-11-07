@@ -3,6 +3,7 @@
 //!
 //! Ensures identical predictions, rankings, and hashes across all validator nodes.
 
+#[cfg(feature = "deterministic_math")]
 use crate::fixed::Fixed;
 use crate::serialization::canonical_json_string;
 use serde::{Deserialize, Serialize};
@@ -81,6 +82,72 @@ pub struct DeterministicGBDT {
     pub learning_rate: Fixed,
     #[cfg(not(feature = "deterministic_math"))]
     pub learning_rate: f64,
+}
+
+/// Create a small deterministic test model used across integration tests.
+#[cfg(feature = "deterministic_math")]
+pub fn create_test_model() -> DeterministicGBDT {
+    DeterministicGBDT {
+        trees: vec![GBDTTree {
+            nodes: vec![
+                DecisionNode {
+                    feature: 0,
+                    threshold: Fixed::ZERO,
+                    left: Some(1),
+                    right: Some(2),
+                    value: None,
+                },
+                DecisionNode {
+                    feature: 0,
+                    threshold: Fixed::ZERO,
+                    left: None,
+                    right: None,
+                    value: Some(Fixed::from_f64(0.1)),
+                },
+                DecisionNode {
+                    feature: 0,
+                    threshold: Fixed::ZERO,
+                    left: None,
+                    right: None,
+                    value: Some(Fixed::from_f64(0.2)),
+                },
+            ],
+        }],
+        learning_rate: Fixed::from_f64(0.1),
+    }
+}
+
+/// Create a small test model for non-deterministic (f64) builds.
+#[cfg(not(feature = "deterministic_math"))]
+pub fn create_test_model() -> DeterministicGBDT {
+    DeterministicGBDT {
+        trees: vec![GBDTTree {
+            nodes: vec![
+                DecisionNode {
+                    feature: 0,
+                    threshold: 0.0,
+                    left: Some(1),
+                    right: Some(2),
+                    value: None,
+                },
+                DecisionNode {
+                    feature: 0,
+                    threshold: 0.0,
+                    left: None,
+                    right: None,
+                    value: Some(0.1),
+                },
+                DecisionNode {
+                    feature: 0,
+                    threshold: 0.0,
+                    left: None,
+                    right: None,
+                    value: Some(0.2),
+                },
+            ],
+        }],
+        learning_rate: 0.1,
+    }
 }
 
 /// Error types for deterministic GBDT operations
@@ -370,10 +437,9 @@ pub fn compute_scores(
 // Tests
 // ---------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, feature = "deterministic_math"))]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn test_model_hash_consistency() {

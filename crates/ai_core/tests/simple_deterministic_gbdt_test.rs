@@ -1,12 +1,14 @@
+#![cfg(feature = "deterministic_math")]
+
 //! Simple test for deterministic GBDT module
 //! This test focuses only on the deterministic GBDT functionality
 
 use ippan_ai_core::deterministic_gbdt::{compute_scores, create_test_model, normalize_features};
-use ippan_ai_core::FixedPoint;
+use ippan_ai_core::Fixed;
 use std::collections::HashMap;
 
-fn fp(value: f64) -> FixedPoint {
-    FixedPoint::from_f64(value)
+fn fp(value: f64) -> Fixed {
+    Fixed::from_f64(value)
 }
 
 #[test]
@@ -18,10 +20,10 @@ fn test_deterministic_gbdt_basic_functionality() {
 
     // Test prediction
     let features = vec![
-        FixedPoint::from_integer(1),
-        FixedPoint::from_integer(2),
-        FixedPoint::from_integer(3),
-        FixedPoint::from_integer(4),
+        Fixed::from_int(1),
+        Fixed::from_int(2),
+        Fixed::from_int(3),
+        Fixed::from_int(4),
     ];
     let prediction = model.predict(&features);
 
@@ -60,7 +62,7 @@ fn test_validator_scoring() {
     let round_hash = "test_round";
 
     let features = normalize_features(&telemetry, ippan_time_median);
-    let scores = compute_scores(&model, &features, round_hash).unwrap();
+    let scores = compute_scores(&model, &features, round_hash);
 
     assert_eq!(scores.len(), 1);
     assert!(scores.contains_key("test_node"));
