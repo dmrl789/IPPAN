@@ -2,19 +2,28 @@
 //! This test focuses only on the deterministic GBDT functionality
 
 use ippan_ai_core::deterministic_gbdt::{compute_scores, create_test_model, normalize_features};
+use ippan_ai_core::FixedPoint;
 use std::collections::HashMap;
+
+fn fp(value: f64) -> FixedPoint {
+    FixedPoint::from_f64(value)
+}
 
 #[test]
 fn test_deterministic_gbdt_basic_functionality() {
     // Test model creation
     let model = create_test_model();
     assert_eq!(model.trees.len(), 1);
-    assert_eq!(model.learning_rate, 0.1);
+    assert_eq!(model.learning_rate, fp(0.1));
 
     // Test prediction
-    let features = vec![1.0, 2.0, 3.0, 4.0];
+    let features = vec![
+        FixedPoint::from_integer(1),
+        FixedPoint::from_integer(2),
+        FixedPoint::from_integer(3),
+        FixedPoint::from_integer(4),
+    ];
     let prediction = model.predict(&features);
-    assert!(prediction.is_finite());
 
     // Test determinism
     let prediction2 = model.predict(&features);
@@ -51,11 +60,11 @@ fn test_validator_scoring() {
     let round_hash = "test_round";
 
     let features = normalize_features(&telemetry, ippan_time_median);
-    let scores = compute_scores(&model, &features, round_hash);
+    let scores = compute_scores(&model, &features, round_hash).unwrap();
 
     assert_eq!(scores.len(), 1);
     assert!(scores.contains_key("test_node"));
-    assert!(scores["test_node"].is_finite());
+    assert!(scores["test_node"].to_f64().is_finite());
 }
 
 #[test]
@@ -63,8 +72,8 @@ fn test_model_hash_consistency() {
     let model = create_test_model();
     let round_hash = "consistent_round";
 
-    let hash1 = model.model_hash(round_hash);
-    let hash2 = model.model_hash(round_hash);
+    let hash1 = model.model_hash(round_hash).unwrap();
+    let hash2 = model.model_hash(round_hash).unwrap();
 
     assert_eq!(hash1, hash2);
     assert!(!hash1.is_empty());
@@ -73,7 +82,7 @@ fn test_model_hash_consistency() {
 #[test]
 fn test_cross_platform_determinism() {
     let model = create_test_model();
-    let features = vec![1.5, 2.5, 3.5, 4.5];
+    let features = vec![fp(1.5), fp(2.5), fp(3.5), fp(4.5)];
 
     // Simulate multiple nodes computing the same prediction
     let node1_result = model.predict(&features);

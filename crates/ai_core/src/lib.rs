@@ -64,6 +64,7 @@ pub use deterministic_gbdt::{
     compute_scores, DecisionNode, DeterministicGBDT, DeterministicGBDTError, GBDTTree,
     ValidatorFeatures,
 };
+pub use fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
 pub use gbdt::{
     eval_gbdt, FeatureNormalization, GBDTError, GBDTMetrics, GBDTModel, GBDTResult,
     ModelMetadata as GBDTModelMetadata, Node, SecurityConstraints, Tree,
@@ -96,7 +97,6 @@ pub use health::{
 
 // Core model and execution
 pub use errors::AiCoreError;
-pub use fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
 pub use model::{load_model, verify_model_hash, ModelPackage, MODEL_HASH_SIZE};
 pub use types::{
     DataType, ExecutionContext, ExecutionMetadata, ExecutionResult, ModelId, ModelInput,
