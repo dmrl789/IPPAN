@@ -655,3 +655,47 @@ impl Storage for SledStorage {
 // =====================================================================
 // In-memory backend for testing (MemoryStorage) and exhaustive tests
 // =====================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ippan_types::{BlockId, RoundCertificate, RoundId};
+    use tempfile::tempdir;
+
+    fn sample_cert(round: RoundId) -> RoundCertificate {
+        let first: BlockId = [round as u8; 32];
+        let second: BlockId = [42u8; 32];
+        RoundCertificate {
+            round,
+            block_ids: vec![first, second],
+            agg_sig: vec![1, 2, 3, 4],
+        }
+    }
+
+    #[test]
+    fn memory_round_certificate_round_trip() {
+        let storage = MemoryStorage::new();
+        let cert = sample_cert(7);
+
+        storage.store_round_certificate(cert.clone()).unwrap();
+        let fetched = storage.get_round_certificate(7).unwrap();
+
+        assert_eq!(fetched, Some(cert));
+    }
+
+    #[test]
+    fn sled_round_certificate_round_trip() {
+        let dir = tempdir().expect("temp dir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("init");
+
+        let cert = sample_cert(3);
+        storage.store_round_certificate(cert.clone()).unwrap();
+
+        let fetched = storage.get_round_certificate(3).unwrap();
+        assert_eq!(fetched, Some(cert));
+
+        let missing = storage.get_round_certificate(99).unwrap();
+        assert!(missing.is_none());
+    }
+}

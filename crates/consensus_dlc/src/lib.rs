@@ -53,11 +53,12 @@ use bond::BondManager;
 use dag::BlockDAG;
 use dgbdt::FairnessModel;
 use emission::{EmissionSchedule, RewardDistributor};
-use error::Result;
+use error::{DlcError, Result};
 use hashtimer::HashTimer;
 use reputation::ReputationDB;
 use verifier::{ValidatorSetManager, VerifiedBlock, VerifierSet};
 
+use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -78,7 +79,7 @@ pub struct DlcConfig {
     /// Number of validators to select per round
     pub validators_per_round: usize,
     /// Minimum stake required to be a validator
-    pub min_validator_stake: u64,
+    pub min_validator_stake: Amount,
     /// Unstaking lock duration in rounds
     pub unstaking_lock_rounds: u64,
     /// Minimum reputation to participate
@@ -140,9 +141,16 @@ impl DlcConsensus {
     pub fn register_validator(
         &mut self,
         validator_id: String,
-        stake: u64,
+        stake: Amount,
         metrics: dgbdt::ValidatorMetrics,
     ) -> Result<()> {
+        if stake < self.config.min_validator_stake {
+            return Err(DlcError::InvalidBond(format!(
+                "Stake {} is below minimum {}",
+                stake, self.config.min_validator_stake
+            )));
+        }
+
         // Create bond
         self.bonds.create_bond(validator_id.clone(), stake)?;
 

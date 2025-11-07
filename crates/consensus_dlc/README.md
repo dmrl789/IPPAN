@@ -73,6 +73,7 @@ DLC combines multiple innovative technologies to provide a fair, secure, and eff
 
 ```rust
 use ippan_consensus_dlc::*;
+use ippan_types::Amount;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -90,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         1.0,   // honesty
         100,   // blocks_proposed
         500,   // blocks_verified
-        10_000_000, // stake
+        Amount::from_micro_ipn(10_000_000), // stake
         100    // rounds_active
     );
     
@@ -119,12 +120,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```rust
 use ippan_consensus_dlc::dgbdt::*;
+use ippan_types::Amount;
 
 // Create a custom fairness model
 let model = FairnessModel::new_production();
 
 // Score a validator
-let metrics = ValidatorMetrics::new(0.99, 0.05, 1.0, 100, 500, 10_000_000, 100);
+let metrics = ValidatorMetrics::new(
+    0.99,
+    0.05,
+    1.0,
+    100,
+    500,
+    Amount::from_micro_ipn(10_000_000),
+    100,
+);
 let score = model.score(&metrics);
 
 println!("Validator score: {}", score);
@@ -213,7 +223,7 @@ use ippan_consensus_dlc::DlcConfig;
 
 let config = DlcConfig {
     validators_per_round: 21,
-    min_validator_stake: 10 * 10u64.pow(8), // 10 IPN
+    min_validator_stake: Amount::from_ipn(10), // 10 IPN
     unstaking_lock_rounds: 1_440, // ~1 day
     min_reputation: 5000,
     enable_slashing: true,

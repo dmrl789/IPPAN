@@ -4,6 +4,8 @@
 //! selection and reputation scoring using integer-only arithmetic.
 
 use crate::error::{DlcError, Result};
+use ippan_types::currency::denominations;
+use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -21,7 +23,7 @@ pub struct ValidatorMetrics {
     /// Number of blocks verified
     pub blocks_verified: u64,
     /// Stake amount
-    pub stake: u64,
+    pub stake: Amount,
     /// Time active in rounds
     pub rounds_active: u64,
 }
@@ -34,7 +36,7 @@ impl Default for ValidatorMetrics {
             honesty: 1.0,
             blocks_proposed: 0,
             blocks_verified: 0,
-            stake: 0,
+            stake: Amount::zero(),
             rounds_active: 0,
         }
     }
@@ -48,7 +50,7 @@ impl ValidatorMetrics {
         honesty: f64,
         blocks_proposed: u64,
         blocks_verified: u64,
-        stake: u64,
+        stake: Amount,
         rounds_active: u64,
     ) -> Self {
         Self {
@@ -91,7 +93,10 @@ impl ValidatorMetrics {
             } else {
                 0
             },
-            stake_weight: (self.stake / 1_000_000).min(10000) as i64, // Normalize stake
+            stake_weight: {
+                let stake_micro = self.stake.atomic() / denominations::MICRO_IPN;
+                (stake_micro / 1_000_000u128).min(10_000u128) as i64
+            },
         }
     }
 }
@@ -374,6 +379,7 @@ pub fn rank_validators(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ippan_types::Amount;
 
     #[test]
     fn test_validator_metrics() {
@@ -384,7 +390,15 @@ mod tests {
 
     #[test]
     fn test_metrics_normalization() {
-        let metrics = ValidatorMetrics::new(0.95, 0.1, 1.0, 100, 500, 10_000_000, 1000);
+        let metrics = ValidatorMetrics::new(
+            0.95,
+            0.1,
+            1.0,
+            100,
+            500,
+            Amount::from_micro_ipn(10_000_000),
+            1000,
+        );
         let normalized = metrics.to_normalized();
 
         assert_eq!(normalized.uptime, 9500);
@@ -422,11 +436,27 @@ mod tests {
 
         validators.insert(
             "val1".to_string(),
-            ValidatorMetrics::new(0.99, 0.05, 1.0, 100, 500, 10_000_000, 100),
+            ValidatorMetrics::new(
+                0.99,
+                0.05,
+                1.0,
+                100,
+                500,
+                Amount::from_micro_ipn(10_000_000),
+                100,
+            ),
         );
         validators.insert(
             "val2".to_string(),
-            ValidatorMetrics::new(0.95, 0.15, 0.98, 80, 400, 5_000_000, 100),
+            ValidatorMetrics::new(
+                0.95,
+                0.15,
+                0.98,
+                80,
+                400,
+                Amount::from_micro_ipn(5_000_000),
+                100,
+            ),
         );
 
         let rankings = rank_validators(&model, validators);
@@ -437,7 +467,15 @@ mod tests {
     #[test]
     fn test_deterministic_scoring() {
         let model = FairnessModel::new_production();
-        let metrics = ValidatorMetrics::new(0.99, 0.1, 1.0, 100, 500, 10_000_000, 100);
+        let metrics = ValidatorMetrics::new(
+            0.99,
+            0.1,
+            1.0,
+            100,
+            500,
+            Amount::from_micro_ipn(10_000_000),
+            100,
+        );
 
         // Score should be deterministic
         let score1 = model.score_deterministic(&metrics);

@@ -338,21 +338,46 @@ impl ValidatorSetManager {
 mod tests {
     use super::*;
     use crate::hashtimer::HashTimer;
+    use ippan_types::Amount;
 
     fn create_test_validators() -> HashMap<String, ValidatorMetrics> {
         let mut validators = HashMap::new();
 
         validators.insert(
             "val1".to_string(),
-            ValidatorMetrics::new(0.99, 0.05, 1.0, 100, 500, 10_000_000, 100),
+            ValidatorMetrics::new(
+                0.99,
+                0.05,
+                1.0,
+                100,
+                500,
+                Amount::from_micro_ipn(10_000_000),
+                100,
+            ),
         );
         validators.insert(
             "val2".to_string(),
-            ValidatorMetrics::new(0.95, 0.15, 0.98, 80, 400, 5_000_000, 100),
+            ValidatorMetrics::new(
+                0.95,
+                0.15,
+                0.98,
+                80,
+                400,
+                Amount::from_micro_ipn(5_000_000),
+                100,
+            ),
         );
         validators.insert(
             "val3".to_string(),
-            ValidatorMetrics::new(0.97, 0.10, 0.99, 90, 450, 8_000_000, 100),
+            ValidatorMetrics::new(
+                0.97,
+                0.10,
+                0.99,
+                90,
+                450,
+                Amount::from_micro_ipn(8_000_000),
+                100,
+            ),
         );
 
         validators
