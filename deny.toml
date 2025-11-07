@@ -50,9 +50,8 @@ allow = [
   "CC0-1.0",
   "Zlib",
   "BSL-1.0",
-  "Unicode-DFS-2016",
   "Unicode-3.0",
-  "OpenSSL"
+  "CDLA-Permissive-2.0"
 ]
 
 # Accept dual-licensed crates if either side is compliant

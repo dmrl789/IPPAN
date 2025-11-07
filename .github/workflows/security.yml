@@ -35,6 +35,11 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
 
+      - name: Setup Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      
       - name: Rust Security & License Check
         run: |
           echo "🔍 Running cargo-deny checks..."
