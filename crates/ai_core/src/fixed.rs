@@ -9,7 +9,10 @@
 //! - Serialization produces identical bytes on all platforms
 //! - No floating-point operations are ever used
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -38,47 +41,65 @@ impl<'de> Deserialize<'de> for Fixed {
     where
         D: Deserializer<'de>,
     {
-        use serde::de::{self, Visitor};
-        
         struct FixedVisitor;
-        
+
         impl<'de> Visitor<'de> for FixedVisitor {
             type Value = Fixed;
-            
+
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a number (float or integer)")
+                formatter.write_str(
+                    "a fixed-point value encoded as integer micro-units or decimal number",
+                )
             }
-            
+
             fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                // If it's already in micro units, use directly
-                Ok(Fixed(value))
+                Ok(Fixed::from_micro(value))
             }
-            
+
             fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                Ok(Fixed(value as i64))
+                if value > i64::MAX as u64 {
+                    return Err(de::Error::custom("fixed-point value out of range"));
+                }
+                Ok(Fixed::from_micro(value as i64))
             }
-            
+
             fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                // Convert float to fixed-point
-                Ok(Fixed::from_f64(value))
+                if !value.is_finite() {
+                    return Err(de::Error::custom("non-finite fixed-point value"));
+                }
+                let scaled = (value * SCALE as f64).round();
+                if scaled < i64::MIN as f64 || scaled > i64::MAX as f64 {
+                    return Err(de::Error::custom("fixed-point value out of range"));
+                }
+                Ok(Fixed::from_micro(scaled as i64))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if let Ok(int_micro) = value.parse::<i64>() {
+                    return self.visit_i64(int_micro);
+                }
+                let float_val = value
+                    .parse::<f64>()
+                    .map_err(|_| de::Error::custom("invalid fixed-point string"))?;
+                self.visit_f64(float_val)
             }
         }
-        
-        // Try i64 first (for bincode), then fall back to any (for JSON with floats)
+
         if deserializer.is_human_readable() {
-            // JSON and other human-readable formats - support floats
             deserializer.deserialize_any(FixedVisitor)
         } else {
-            // Binary formats like bincode - use i64
             deserializer.deserialize_i64(FixedVisitor)
         }
     }

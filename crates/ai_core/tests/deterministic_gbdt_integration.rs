@@ -5,14 +5,16 @@
 //! This test shows how to use the deterministic GBDT module in a real-world scenario
 //! with IPPAN Time normalization and validator scoring.
 
-use ippan_ai_core::deterministic_gbdt::{compute_scores, normalize_features, DeterministicGBDT};
+use ippan_ai_core::deterministic_gbdt::{
+    compute_scores, create_test_model, normalize_features, DeterministicGBDT,
+};
 use std::collections::HashMap;
 
 /// Integration test demonstrating the usage example from the user's request
 #[test]
 fn test_deterministic_gbdt_usage_example() {
     // Create a test model (in production, this would be loaded from a shared file)
-    let model = DeterministicGBDT::create_test_model();
+    let model = create_test_model();
 
     // Example telemetry from nodes (as shown in the user's request)
     let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
@@ -92,7 +94,7 @@ fn test_with_actual_model_file() {
 /// Test cross-node determinism simulation
 #[test]
 fn test_cross_node_determinism_simulation() {
-    let model = DeterministicGBDT::create_test_model();
+    let model = create_test_model();
 
     // Simulate the same telemetry being processed by different nodes
     let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
@@ -127,7 +129,7 @@ fn test_cross_node_determinism_simulation() {
 /// Test with realistic validator scenarios
 #[test]
 fn test_realistic_validator_scenarios() {
-    let model = DeterministicGBDT::create_test_model();
+    let model = create_test_model();
 
     // Create realistic validator scenarios
     let mut telemetry = HashMap::new();
@@ -174,7 +176,7 @@ fn test_realistic_validator_scenarios() {
 /// Test model hash certificate generation
 #[test]
 fn test_model_hash_certificate_generation() {
-    let model = DeterministicGBDT::create_test_model();
+    let model = create_test_model();
 
     // Test with different round hashes
     let round_hash_1 = "round_12345";

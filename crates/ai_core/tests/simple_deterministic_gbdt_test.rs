@@ -1,3 +1,5 @@
+#![cfg(feature = "deterministic_math")]
+
 //! Simple test for deterministic GBDT module
 //! This test focuses only on the deterministic GBDT functionality
 
