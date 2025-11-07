@@ -75,6 +75,7 @@ pub use feature_engineering::{
     FeatureEngineeringConfig, FeatureEngineeringPipeline, FeatureImportance, FeatureStatistics,
     ProcessedFeatureData, RawFeatureData,
 };
+pub use fixed::{Fixed, FixedError, SCALE as FIXED_SCALE};
 pub use model_manager::{
     ModelLoadResult, ModelManager, ModelManagerConfig, ModelManagerMetrics, ModelSaveResult,
 };
