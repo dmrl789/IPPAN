@@ -9,6 +9,7 @@
 //! - Retention management for historical metrics
 //! - Compatible with consensus-level deterministic AI evaluation
 
+#[cfg(feature = "deterministic_math")]
 use crate::fixed::Fixed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -3,6 +3,7 @@
 //!
 //! Ensures identical predictions, rankings, and hashes across all validator nodes.
 
+#[cfg(feature = "deterministic_math")]
 use crate::fixed::Fixed;
 use crate::serialization::canonical_json_string;
 use serde::{Deserialize, Serialize};
