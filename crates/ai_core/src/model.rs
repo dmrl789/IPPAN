@@ -5,6 +5,8 @@
 
 use crate::serialization::canonical_json_string;
 use serde::{Deserialize, Serialize};
+
+use crate::fixed::Fixed;
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
@@ -151,7 +153,7 @@ fn compute_model_hash(model: &crate::gbdt::GBDTModel) -> [u8; MODEL_HASH_SIZE] {
         tree_count: usize,
         max_depth: usize,
         training_data_hash: &'a str,
-        performance_metrics: &'a std::collections::HashMap<String, f64>,
+        performance_metrics: &'a std::collections::HashMap<String, Fixed>,
     }
 
     #[derive(Serialize)]
