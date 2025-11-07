@@ -9,7 +9,7 @@
 //! - Serialization produces identical bytes on all platforms
 //! - No floating-point operations are ever used
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -18,9 +18,71 @@ pub const SCALE: i64 = 1_000_000;
 
 /// Deterministic fixed-point number with micro-precision.
 /// Internally stored as `i64`, representing value * 1_000_000.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Fixed(pub i64);
+
+// Custom serialization to support both JSON floats and integers
+impl Serialize for Fixed {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Always serialize as integer for deterministic output
+        serializer.serialize_i64(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for Fixed {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        
+        struct FixedVisitor;
+        
+        impl<'de> Visitor<'de> for FixedVisitor {
+            type Value = Fixed;
+            
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a number (float or integer)")
+            }
+            
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                // If it's already in micro units, use directly
+                Ok(Fixed(value))
+            }
+            
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Fixed(value as i64))
+            }
+            
+            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                // Convert float to fixed-point
+                Ok(Fixed::from_f64(value))
+            }
+        }
+        
+        // Try i64 first (for bincode), then fall back to any (for JSON with floats)
+        if deserializer.is_human_readable() {
+            // JSON and other human-readable formats - support floats
+            deserializer.deserialize_any(FixedVisitor)
+        } else {
+            // Binary formats like bincode - use i64
+            deserializer.deserialize_i64(FixedVisitor)
+        }
+    }
+}
 
 impl Fixed {
     pub const ZERO: Self = Fixed(0);
