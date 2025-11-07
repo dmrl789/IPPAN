@@ -3,6 +3,8 @@
 //! Simple test for deterministic GBDT module
 //! This test focuses only on the deterministic GBDT functionality
 
+#![cfg(feature = "deterministic_math")]
+
 use ippan_ai_core::deterministic_gbdt::{compute_scores, create_test_model, normalize_features};
 use ippan_ai_core::Fixed;
 use std::collections::HashMap;
@@ -66,7 +68,8 @@ fn test_validator_scoring() {
 
     assert_eq!(scores.len(), 1);
     assert!(scores.contains_key("test_node"));
-    assert!(scores["test_node"].to_f64().is_finite());
+    let score_value = scores["test_node"].to_f64();
+    assert!(score_value.is_finite());
 }
 
 #[test]
