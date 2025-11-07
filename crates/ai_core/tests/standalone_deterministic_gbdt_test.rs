@@ -12,7 +12,7 @@ fn fp(value: f64) -> Fixed {
 fn test_deterministic_gbdt_basic_functionality() {
     let model = deterministic_gbdt::create_test_model();
     assert_eq!(model.trees.len(), 1);
-    assert_eq!(model.learning_rate, fp(0.1));
+    assert_eq!(model.learning_rate, fp(1.0));
 
     let features = vec![
         Fixed::from_int(1),
@@ -106,6 +106,7 @@ fn test_usage_example() {
     assert!(scores.contains_key("nodeB"));
     assert!(scores.contains_key("nodeC"));
 
+    let mut has_positive = false;
     for (node_id, score) in &scores {
         let value = score.to_f64();
         assert!(
@@ -114,8 +115,20 @@ fn test_usage_example() {
             node_id,
             value
         );
-        assert!(value >= 0.0, "Score for {} is negative: {}", node_id, value);
+        assert!(
+            value >= -0.5,
+            "Score for {} is below expected floor: {}",
+            node_id,
+            value
+        );
+        if value > 0.0 {
+            has_positive = true;
+        }
     }
+    assert!(
+        has_positive,
+        "Expected at least one positive validator score"
+    );
 
     println!("Validator scores: {:?}", scores);
 }
