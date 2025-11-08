@@ -1,9 +1,14 @@
-//! IPPAN HTTP P2P stack - deterministic peer connectivity, gossip propagation,
-//! and metadata tracking for DAG consensus nodes. Provides the high-level
-//! network manager used by RPC services and consensus layers, including
-//! UPnP/NAT traversal, peer discovery, and message broadcast helpers.
+//! IPPAN HTTP and libp2p P2P stack - deterministic peer connectivity, gossip
+//! propagation, and metadata tracking for DAG consensus nodes. Provides the
+//! high-level network managers used by RPC services and consensus layers,
+//! including UPnP/NAT traversal, peer discovery, libp2p relays, and message
+//! broadcast helpers.
 //!
+pub mod libp2p_network;
 pub mod parallel_gossip;
+pub use libp2p_network::{
+    Libp2pCommand, Libp2pConfig, Libp2pEvent, Libp2pNetwork, DEFAULT_GOSSIP_TOPICS,
+};
 pub use parallel_gossip::{
     DagVertexAnnouncement, GossipConfig, GossipError, GossipMessage, GossipMetricsSnapshot,
     GossipPayload, GossipTopic, ParallelGossipNetwork,
