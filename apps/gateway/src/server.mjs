@@ -157,18 +157,31 @@ app.use(
 
 // Blockchain Explorer routes
 if (enableExplorer) {
+  // Explorer API proxy - strips the explorer prefix and forwards to node
   app.use(
     explorerMountPath,
     createProxyMiddleware({
       target: targetRpcUrl,
       changeOrigin: true,
       ws: false,
-      pathRewrite: (path) => stripPathPrefix(path, explorerPrefix),
+      pathRewrite: (path) => {
+        const rewritten = stripPathPrefix(path, explorerPrefix)
+        console.log(`[Explorer] Rewriting ${path} -> ${rewritten}`)
+        return rewritten
+      },
       logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
+      onError: (err, req, res) => {
+        console.error(`[Explorer] Proxy error: ${err.message}`)
+        res.status(502).json({
+          error: 'Bad Gateway',
+          message: 'Failed to proxy request to blockchain node',
+          path: req.path,
+        })
+      },
     }),
   )
 
-  // Explorer info endpoint
+  // Explorer info endpoint (landing page for /explorer)
   app.get('/explorer', (req, res) => {
     res.json({
       name: 'IPPAN Blockchain Explorer',
@@ -192,6 +205,8 @@ if (enableExplorer) {
       documentation: 'https://docs.ippan.com/api',
     })
   })
+
+  console.log(`✓ Explorer API enabled at ${explorerPrefix}`)
 }
 
 app.use((req, res) => {
@@ -202,12 +217,16 @@ app.use((req, res) => {
 })
 
 const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`Gateway listening on port ${port}`)
-  console.log(`Proxying API requests to ${targetRpcUrl}`)
-  console.log(`Proxying websocket requests to ${targetWsUrl}`)
+  console.log(`✓ Gateway listening on port ${port}`)
+  console.log(`✓ Proxying API requests to ${targetRpcUrl}`)
+  console.log(`  - API prefix: ${rewriteApiPrefix || '/'} -> ${targetRpcUrl}`)
+  console.log(`✓ Proxying websocket requests to ${targetWsUrl}`)
+  console.log(`  - WS prefix: ${rewriteWsPrefix || '/'} -> ${targetWsUrl}`)
   if (enableExplorer) {
-    console.log(`Blockchain explorer enabled at ${explorerPrefix}`)
+    console.log(`✓ Blockchain explorer enabled at ${explorerPrefix}`)
   }
+  console.log(`✓ CORS origins: ${allowedOrigins.join(', ')}`)
+  console.log(`✓ Ready to accept connections`)
 })
 
 function shutdown() {
