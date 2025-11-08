@@ -84,3 +84,36 @@ This directory contains the complete set of Product Requirements Documents for t
 
 ## Document Relationships
 
+- `IPPAN Vision 2025` defines the north-star objectives and feeds requirements into the remaining PRDs.
+- `IPPAN L1 Architecture` operationalizes the vision for protocol engineers and links to consensus and storage deliverables.
+- `IPPAN Storage & Data Availability` inherits L1 constraints and sets expectations for data retention, compliance, and node roles.
+- `Beyond BFT` provides the theoretical backing for the consensus assumptions embedded throughout the vision and architecture docs.
+
+---
+
+## How Developers Use These PRDs
+
+- Translate product intent into actionable engineering tasks; cross-reference acceptance criteria when scoping features.
+- Validate architectural decisions by mapping proposed changes back to the constraints captured in the L1 and Storage PRDs.
+- Use the consensus theory document to confirm that implementation details in `crates/consensus` remain compliant with the modeled guarantees.
+- Align documentation updates with the [Developer Guide](../DEVELOPER_GUIDE.md) so onboarding materials stay consistent.
+
+---
+
+## Change Management
+
+1. Start a draft PRD update in a feature branch and note the driver (issue link, research note, or incident).
+2. Capture revision metadata at the top of the document (`Last updated: YYYY-MM-DD – Author`).
+3. Summarize rationale, impacted components, and open questions in the introduction for faster review cycles.
+4. Notify affected module owners (e.g., `@agent-alpha` for consensus) when the change introduces new requirements.
+5. Link merged PRs or implementation tickets back to the relevant PRD section to preserve traceability.
+
+---
+
+## Related Technical References
+
+- [`../AI_IMPLEMENTATION_GUIDE.md`](../AI_IMPLEMENTATION_GUIDE.md) — Deterministic AI implementation details that operationalize PRD requirements.
+- [`../CONSENSUS_RESEARCH_SUMMARY.md`](../CONSENSUS_RESEARCH_SUMMARY.md) — Narrative summary of the DLC approach for engineering and product teams.
+- [`../DAG_FAIR_EMISSION_SYSTEM.md`](../DAG_FAIR_EMISSION_SYSTEM.md) — Emission policies referenced in roadmap and economics sections.
+- [`../README.md`](../README.md) — Entry point for additional modules, diagrams, and operational guides.
+
