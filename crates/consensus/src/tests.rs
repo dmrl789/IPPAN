@@ -3,9 +3,11 @@ use crate::{PoAConfig, PoAConsensus, Validator};
 use ed25519_dalek::SigningKey;
 use ippan_storage::MemoryStorage;
 use ippan_types::{
-    AccessKey, Block, ConfidentialEnvelope, ConfidentialProof, ConfidentialProofType, Transaction,
+    AccessKey, Block, ConfidentialEnvelope, ConfidentialProof, ConfidentialProofType, IppanTimeMicros,
+    Transaction,
 };
 use std::sync::Arc;
+use std::time::Instant;
 
 fn create_test_config() -> PoAConfig {
     PoAConfig {
