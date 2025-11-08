@@ -1,0 +1,368 @@
+# 🤖 IPPAN Agent Configuration
+# Machine-readable scope definitions for Cursor agent automation
+# Version: 2025-11-08
+
+# Global settings
+project:
+  name: "IPPAN"
+  type: "monorepo"
+  language: "rust"
+  charter: ".cursor/AGENT_CHARTER.md"
+  
+# Default rules for all agents
+defaults:
+  branch_prefix: "cursor/"
+  commit_format: "[{agent_name}] {summary}"
+  require_tests: true
+  require_docs: true
+  deterministic: true
+  
+# Agent scope definitions
+# Each agent has exclusive write access to its assigned paths
+agents:
+  
+  # Core Development Agents
+  - name: "ai-core"
+    display_name: "Agent-Zeta (AI Core)"
+    description: "Deterministic AI logic, D-GBDT, Proof-of-Inference"
+    scope:
+      write:
+        - "crates/ai_core/**"
+      read:
+        - "crates/types/**"
+        - "crates/crypto/**"
+        - "crates/consensus/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".github/**"
+    maintainer: "MetaAgent"
+    
+  - name: "ai-registry"
+    display_name: "Agent-Zeta (AI Registry)"
+    description: "AI model registry and versioning"
+    scope:
+      write:
+        - "crates/ai_registry/**"
+      read:
+        - "crates/types/**"
+        - "crates/storage/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "MetaAgent"
+    
+  - name: "consensus"
+    display_name: "Agent-Alpha (Consensus)"
+    description: "DLC consensus, round scheduler, validator scoring"
+    scope:
+      write:
+        - "crates/consensus/**"
+      read:
+        - "crates/types/**"
+        - "crates/crypto/**"
+        - "crates/ippan_economics/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Ugo Giuliani"
+    
+  - name: "economics"
+    display_name: "Agent-Alpha (Economics)"
+    description: "Emission, validator rewards, treasury logic"
+    scope:
+      write:
+        - "crates/ippan_economics/**"
+      read:
+        - "crates/types/**"
+        - "crates/consensus/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Ugo Giuliani"
+    
+  - name: "storage"
+    display_name: "Agent-Beta (Storage)"
+    description: "Sled and in-memory database abstraction"
+    scope:
+      write:
+        - "crates/storage/**"
+      read:
+        - "crates/types/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Desirée Verga"
+    
+  - name: "crypto"
+    display_name: "Agent-Beta (Crypto)"
+    description: "Keypairs, signing, encryption, address formats"
+    scope:
+      write:
+        - "crates/crypto/**"
+      read:
+        - "crates/types/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Desirée Verga"
+    
+  - name: "p2p"
+    display_name: "Agent-Gamma (P2P)"
+    description: "libp2p stack, DHT, NAT traversal"
+    scope:
+      write:
+        - "crates/p2p/**"
+        - "crates/network/**"
+      read:
+        - "crates/types/**"
+        - "crates/crypto/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Kambei Sapote"
+    
+  - name: "mempool"
+    display_name: "Agent-Gamma (Mempool)"
+    description: "Transaction validation and relay logic"
+    scope:
+      write:
+        - "crates/mempool/**"
+      read:
+        - "crates/types/**"
+        - "crates/crypto/**"
+        - "crates/consensus/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Kambei Sapote"
+    
+  - name: "wallet"
+    display_name: "Agent-Delta (Wallet)"
+    description: "Ed25519 wallet and domain registry"
+    scope:
+      write:
+        - "crates/wallet/**"
+        - "crates/addressing/**"
+      read:
+        - "crates/crypto/**"
+        - "crates/types/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Desirée Verga"
+    
+  - name: "governance"
+    display_name: "Agent-Epsilon (Governance)"
+    description: "Voting and validator scoring"
+    scope:
+      write:
+        - "crates/governance/**"
+        - "crates/metrics/**"
+      read:
+        - "crates/types/**"
+        - "crates/consensus/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Marco F."
+    
+  - name: "gateway"
+    display_name: "Agent-Theta (Gateway)"
+    description: "Warp/Actix backend exposing JSON and WebSocket APIs"
+    scope:
+      write:
+        - "apps/gateway/**"
+        - "crates/api_gateway/**"
+      read:
+        - "crates/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Ugo Giuliani"
+    
+  - name: "explorer"
+    display_name: "Agent-Theta (Explorer)"
+    description: "Block explorer and GraphQL endpoints"
+    scope:
+      write:
+        - "crates/explorer/**"
+      read:
+        - "crates/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Ugo Giuliani"
+    
+  - name: "ui"
+    display_name: "Agent-Lambda (UI)"
+    description: "Unified UI and Tauri frontend"
+    scope:
+      write:
+        - "apps/ui/**"
+        - "apps/mobile/**"
+      read:
+        - "apps/gateway/**"
+      forbidden:
+        - "Cargo.toml"
+        - "package.json"
+    maintainer: "Desirée Verga"
+    
+  - name: "infra"
+    display_name: "Agent-Sigma (Infrastructure)"
+    description: "Dockerfiles, GitHub Actions, CI"
+    scope:
+      write:
+        - "deploy/**"
+        - "deployments/**"
+        - ".github/workflows/**"
+        - "docker/**"
+        - "Dockerfile*"
+      read:
+        - "**"
+      forbidden: []  # Infra agent can modify dependencies
+    maintainer: "MetaAgent"
+    
+  - name: "tests"
+    display_name: "Agent-Omega (Tests)"
+    description: "Integration tests, TPS validation"
+    scope:
+      write:
+        - "tests/**"
+        - "benchmarks/**"
+      read:
+        - "crates/**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Kambei Sapote"
+    
+  - name: "docs"
+    display_name: "DocsAgent"
+    description: "Documentation, PRDs, whitepapers"
+    scope:
+      write:
+        - "docs/**"
+        - "*.md"
+        - "CONTRIBUTING.md"
+        - "CHANGELOG.md"
+      read:
+        - "**"
+      forbidden:
+        - "Cargo.toml"
+        - "Cargo.lock"
+    maintainer: "Desirée Verga"
+
+# Testing requirements by scope
+testing:
+  unit_tests:
+    required: true
+    coverage_minimum: 70
+    
+  integration_tests:
+    required_for:
+      - "crates/consensus/**"
+      - "crates/ai_core/**"
+      - "crates/p2p/**"
+      - "apps/gateway/**"
+    
+  determinism_tests:
+    required_for:
+      - "crates/ai_core/**"
+      - "crates/consensus/**"
+      - "crates/crypto/**"
+
+# CI/CD gates
+ci:
+  required_checks:
+    - "cargo check --workspace"
+    - "cargo test --workspace --all-features"
+    - "cargo clippy -- -D warnings"
+    - "cargo fmt -- --check"
+    
+  optional_checks:
+    - "cargo deny check"
+    - "cargo audit"
+    
+  merge_requirements:
+    - "ci_green"
+    - "human_approval_min: 1"
+    - "no_conflicts"
+
+# Documentation requirements
+documentation:
+  required_for_public_api: true
+  formats:
+    - "rustdoc"
+    - "markdown"
+  
+  doc_comments:
+    required_for:
+      - "pub struct"
+      - "pub enum"
+      - "pub fn"
+      - "pub trait"
+
+# Determinism enforcement
+determinism:
+  enforce: true
+  checks:
+    - "no_floating_point_in_consensus"
+    - "deterministic_serialization"
+    - "sorted_collections"
+    - "fixed_point_arithmetic"
+    - "seeded_randomness"
+    
+  forbidden_patterns:
+    - "f32"
+    - "f64"
+    - "HashMap" # Use BTreeMap instead
+    - "HashSet" # Use BTreeSet instead
+    - "SystemTime::now()" # Use deterministic time
+    - "thread_rng()" # Use seeded RNG
+
+# Collaboration rules
+collaboration:
+  cross_agent_communication:
+    method: "github_comments"
+    format: "@agent-name: message"
+    
+  conflict_resolution:
+    escalate_to: "MetaAgent"
+    
+  scope_changes:
+    require_approval: true
+    approvers:
+      - "Ugo Giuliani"
+      - "Desirée Verga"
+      - "MetaAgent"
+
+# Maintenance windows
+maintenance:
+  dependency_updates:
+    frequency: "weekly"
+    agent: "infra"
+    
+  security_patches:
+    frequency: "as_needed"
+    priority: "p0"
+    agent: "infra"
+    
+  documentation_sync:
+    frequency: "per_merge"
+    agent: "docs"
+
+# Logging and observability
+logging:
+  agent_actions:
+    log_to: ".meta/logs/"
+    format: "json"
+    
+  assignments:
+    file: ".meta/logs/assignments.log"
+    
+  conflicts:
+    file: ".meta/logs/conflicts.log"
+    
+  approvals:
+    file: ".meta/logs/approvals.log"
