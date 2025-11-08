@@ -3,8 +3,14 @@ const assetPrefix = process.env.NEXT_PUBLIC_ASSET_PREFIX || '';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   assetPrefix: assetPrefix || undefined,
-  // Enable standalone output for Docker deployments
-  output: 'standalone',
+  // Enable static export for optimal deployment
+  output: 'export',
+  // Disable image optimization for static export
+  images: {
+    unoptimized: true,
+  },
+  // Trailing slash for better static hosting compatibility
+  trailingSlash: true,
   env: {
     NEXT_PUBLIC_ASSET_PREFIX: assetPrefix,
     NEXT_PUBLIC_ENABLE_FULL_UI: process.env.NEXT_PUBLIC_ENABLE_FULL_UI || '1',
@@ -21,19 +27,6 @@ const nextConfig = {
       tls: false,
     };
     return config;
-  },
-  async rewrites() {
-    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8081/api';
-    return [
-      {
-        source: '/api/ai/:path*',
-        destination: `${gatewayUrl}/ai/:path*`,
-      },
-      {
-        source: '/api/blockchain/:path*',
-        destination: `${gatewayUrl}/blockchain/:path*`,
-      },
-    ];
   },
 };
 

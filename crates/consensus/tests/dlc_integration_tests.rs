@@ -173,6 +173,94 @@ async fn test_dlc_integrated_consensus() {
     integrated.update_validator_metrics(validator_id, metrics);
 }
 
+#[tokio::test]
+async fn test_dlc_verifier_selection_respects_min_reputation_threshold() {
+    use std::time::Duration;
+    use tokio::time::sleep;
+
+    let mut config = DLCConfig::default();
+    config.temporal_finality_ms = 5;
+    config.min_reputation_score = 9_000;
+
+    let validator_id = [9u8; 32];
+    let mut dlc = DLCConsensus::new(config, validator_id);
+
+    let low_validator = [1u8; 32];
+    let low_metrics = ValidatorMetrics {
+        blocks_proposed: 10,
+        blocks_verified: 15,
+        rounds_active: 100,
+        avg_latency_us: 150_000,
+        uptime_percentage: 700_000,
+        slash_count: 5,
+        recent_performance: 500_000,
+        network_contribution: 400_000,
+        stake_amount: 1_000_000,
+    };
+
+    dlc.update_validator_metrics(low_validator, low_metrics);
+
+    sleep(Duration::from_millis(10)).await;
+    dlc.process_round().await.unwrap();
+
+    let state = dlc.get_state();
+    assert_eq!(state.round_id, 2);
+    assert_eq!(state.primary_verifier, validator_id);
+    assert!(state.shadow_verifiers.is_empty());
+}
+
+#[tokio::test]
+async fn test_dlc_verifier_selection_prefers_high_reputation_validator() {
+    use std::time::Duration;
+    use tokio::time::sleep;
+
+    let mut config = DLCConfig::default();
+    config.temporal_finality_ms = 5;
+    config.min_reputation_score = 8_000;
+    config.shadow_verifier_count = 2;
+
+    let self_validator = [8u8; 32];
+    let mut dlc = DLCConsensus::new(config, self_validator);
+
+    let high_validator = [2u8; 32];
+    let low_validator = [3u8; 32];
+
+    let high_metrics = ValidatorMetrics {
+        blocks_proposed: 120,
+        blocks_verified: 240,
+        rounds_active: 120,
+        avg_latency_us: 40_000,
+        uptime_percentage: 990_000,
+        slash_count: 0,
+        recent_performance: 970_000,
+        network_contribution: 950_000,
+        stake_amount: 25_000_000,
+    };
+
+    let low_metrics = ValidatorMetrics {
+        blocks_proposed: 10,
+        blocks_verified: 20,
+        rounds_active: 100,
+        avg_latency_us: 150_000,
+        uptime_percentage: 700_000,
+        slash_count: 5,
+        recent_performance: 500_000,
+        network_contribution: 400_000,
+        stake_amount: 1_000_000,
+    };
+
+    dlc.update_validator_metrics(high_validator, high_metrics);
+    dlc.update_validator_metrics(low_validator, low_metrics);
+
+    sleep(Duration::from_millis(10)).await;
+    dlc.process_round().await.unwrap();
+
+    let state = dlc.get_state();
+    assert_eq!(state.round_id, 2);
+    assert_eq!(state.primary_verifier, high_validator);
+    assert!(state.shadow_verifiers.is_empty());
+}
+
 #[test]
 fn test_dgbdt_reputation_scoring() {
     let engine = DGBDTEngine::new();
@@ -246,4 +334,81 @@ fn test_selection_determinism() {
     // Different round should produce different selection
     let result3 = engine.select_verifiers(43, &metrics, 3, 0).unwrap();
     assert!(result3.primary != result1.primary || result3.shadows != result1.shadows);
+}
+
+#[test]
+fn test_dgbdt_select_verifiers_filters_min_reputation() {
+    let engine = DGBDTEngine::new();
+    let mut metrics = std::collections::HashMap::new();
+
+    let high_validator = [1u8; 32];
+    let low_validator = [2u8; 32];
+
+    let high_metrics = ValidatorMetrics {
+        blocks_proposed: 100,
+        blocks_verified: 200,
+        rounds_active: 100,
+        avg_latency_us: 50_000,
+        uptime_percentage: 990_000,
+        slash_count: 0,
+        recent_performance: 950_000,
+        network_contribution: 900_000,
+        stake_amount: 20_000_000,
+    };
+
+    let low_metrics = ValidatorMetrics {
+        blocks_proposed: 10,
+        blocks_verified: 20,
+        rounds_active: 100,
+        avg_latency_us: 150_000,
+        uptime_percentage: 700_000,
+        slash_count: 5,
+        recent_performance: 500_000,
+        network_contribution: 400_000,
+        stake_amount: 1_000_000,
+    };
+
+    metrics.insert(high_validator, high_metrics);
+    metrics.insert(low_validator, low_metrics);
+
+    let result = engine
+        .select_verifiers(7, &metrics, 2, 8_000)
+        .expect("high reputation validator should be selected");
+
+    assert_eq!(result.primary, high_validator);
+    assert!(result.shadows.is_empty());
+    assert!(result.selection_scores.is_empty());
+}
+
+#[test]
+fn test_dgbdt_select_verifiers_errors_without_candidates() {
+    let engine = DGBDTEngine::new();
+    let metrics = std::collections::HashMap::new();
+
+    let err = engine.select_verifiers(1, &metrics, 1, 0);
+    assert!(err.is_err());
+}
+
+#[test]
+fn test_dgbdt_select_verifiers_errors_when_threshold_excludes_all() {
+    let engine = DGBDTEngine::new();
+    let mut metrics = std::collections::HashMap::new();
+
+    let validator = [4u8; 32];
+    let low_metrics = ValidatorMetrics {
+        blocks_proposed: 10,
+        blocks_verified: 20,
+        rounds_active: 100,
+        avg_latency_us: 150_000,
+        uptime_percentage: 700_000,
+        slash_count: 5,
+        recent_performance: 500_000,
+        network_contribution: 400_000,
+        stake_amount: 1_000_000,
+    };
+
+    metrics.insert(validator, low_metrics);
+
+    let err = engine.select_verifiers(3, &metrics, 1, 9_000);
+    assert!(err.is_err());
 }

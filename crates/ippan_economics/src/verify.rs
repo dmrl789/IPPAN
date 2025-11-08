@@ -17,11 +17,7 @@ pub fn epoch_auto_burn(
 
 /// Sum helper to compute expected emission for a closed interval of rounds [start, end] inclusive.
 /// Caller should clamp per-round values to hard cap before summation (if needed).
-pub fn sum_emission_over_rounds<F>(
-    start: u64,
-    end: u64,
-    mut emission_fn: F,
-) -> MicroIPN
+pub fn sum_emission_over_rounds<F>(start: u64, end: u64, mut emission_fn: F) -> MicroIPN
 where
     F: FnMut(u64) -> MicroIPN,
 {
