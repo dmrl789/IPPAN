@@ -43,10 +43,8 @@ Read other crates for context if necessary, but never edit them.
 
 - Commit format:
 ```
-
 [agent-name] short summary
-
-````
+```
 Example:  
 `[ai-core] Replace floating-point math with deterministic fixed-point ops`
 
@@ -72,7 +70,7 @@ All code must compile and pass:
 ```bash
 cargo check --workspace
 cargo test --workspace --all-features
-````
+```
 
 Add or update tests relevant to your scope under `/tests` or local `mod tests`.
 
@@ -81,7 +79,6 @@ Add or update tests relevant to your scope under `/tests` or local `mod tests`.
 ## ⚙️ 6. CI/CD & Dependencies
 
 * Do **not** modify:
-
   * Root `Cargo.toml`
   * `Cargo.lock`
   * `.github/workflows`
@@ -102,9 +99,9 @@ If you add public APIs or new components:
 
 ## 🧍 8. Collaboration Rules
 
-* Do **not** assume other agents’ unfinished work exists.
+* Do **not** assume other agents' unfinished work exists.
 * Treat missing code as TODOs or interfaces to implement later.
-* Never rename, delete, or move other agents’ modules.
+* Never rename, delete, or move other agents' modules.
 * Avoid touching shared registry files (`lib.rs`, `mod.rs`) unless within your crate.
 
 ---
@@ -146,4 +143,3 @@ When you start a new agent in Cursor or Codex, use a message like:
 ---
 
 ### End of Charter
-
