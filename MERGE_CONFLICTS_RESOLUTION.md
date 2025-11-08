@@ -35,14 +35,15 @@ sysinfo = "0.29"  # NEW: for memory monitoring
 
 **Conflict Location**: Lines 70-77 (Production dependencies)
 
-**Conflict Details**:
+**Conflict Details (our branch)**:
 ```toml
-<<<<<<< HEAD (our branch)
 warp = "0.3"
 sysinfo = "0.29"
-=======
+```
+
+**Conflict Details (origin/main)**:
+```toml
 warp = { workspace = true }
->>>>>>> origin/main
 ```
 
 **Resolution**:
@@ -57,16 +58,17 @@ sysinfo = "0.29"
 
 ---
 
-**Conflict Details**:
+**Conflict Details (our branch)**:
 ```toml
-<<<<<<< HEAD
 toml = "0.8"
 warp = "0.3"
 sysinfo = "0.29"
-=======
+```
+
+**Conflict Details (origin/main)**:
+```toml
 toml = { workspace = true }
 warp = { workspace = true }
->>>>>>> origin/main
 ```
 
 **Resolution**:
@@ -86,9 +88,8 @@ sysinfo = "0.29"             ← Keep our addition for memory monitoring
 
 **Conflict Location**: Lines 9-31 (Dependencies section)
 
-**Conflict Details**:
+**Conflict Details (our branch)**:
 ```toml
-<<<<<<< HEAD (our branch)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
@@ -99,7 +100,10 @@ sha2 = "0.10"
 hex = "0.4"
 futures = "0.3"
 ed25519-dalek = "2.1"
-=======
+```
+
+**Conflict Details (origin/main)**:
+```toml
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -109,7 +113,6 @@ parking_lot = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 futures = { workspace = true }
->>>>>>> origin/main
 ```
 
 **Resolution**:
