@@ -16,7 +16,7 @@ pub struct RoundWindow {
 pub struct RoundCertificate {
     pub round: RoundId,
     pub block_ids: Vec<BlockId>,
-    #[serde(with = "serde_bytes", default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty", with = "serde_bytes")]
     pub agg_sig: Vec<u8>,
 }
 
