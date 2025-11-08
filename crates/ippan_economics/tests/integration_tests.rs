@@ -5,7 +5,7 @@
 //! module of IPPAN.
 
 use ippan_economics::prelude::*;
-use ippan_economics::{ValidatorId, ValidatorParticipation, ValidatorRole};
+use ippan_economics::{projected_supply, ValidatorId, ValidatorParticipation, ValidatorRole};
 use rust_decimal::Decimal;
 
 #[test]
@@ -41,6 +41,30 @@ fn test_halving_schedule() {
 
     let second_halving = emission_engine.calculate_round_reward(21).unwrap();
     assert_eq!(second_halving, before_halving / 4);
+}
+
+#[test]
+fn test_emission_projection_alignment() {
+    let params = EmissionParams {
+        initial_round_reward_micro: 1_000,
+        halving_interval_rounds: 4,
+        max_supply_micro: 100_000,
+        ..Default::default()
+    };
+
+    let mut emission_engine = EmissionEngine::with_params(params.clone());
+
+    for round in 1..=8 {
+        emission_engine.advance_round(round).unwrap();
+    }
+
+    let supply_info = emission_engine.get_supply_info();
+    assert_eq!(supply_info.current_round, 8);
+    assert_eq!(supply_info.total_supply, 6_000);
+
+    let projected = projected_supply(8, &params) as u64;
+    assert_eq!(supply_info.total_supply as u64, projected);
+    assert_eq!(emission_engine.total_supply(), supply_info.total_supply);
 }
 
 #[test]
@@ -99,6 +123,42 @@ fn test_reward_distribution_fairness() {
     assert!(high.total_reward > medium.total_reward);
     assert!(medium.total_reward > low.total_reward);
     assert_eq!(observer.total_reward, 0);
+}
+
+#[test]
+fn test_validator_uptime_impacts_rewards() {
+    let round_rewards = RoundRewards::new(EmissionParams::default());
+
+    let participations = vec![
+        ValidatorParticipation {
+            validator_id: ValidatorId::new("uptime_high"),
+            role: ValidatorRole::Verifier,
+            blocks_contributed: 12,
+            uptime_score: Decimal::new(95, 2), // 0.95
+        },
+        ValidatorParticipation {
+            validator_id: ValidatorId::new("uptime_low"),
+            role: ValidatorRole::Verifier,
+            blocks_contributed: 12,
+            uptime_score: Decimal::new(65, 2), // 0.65
+        },
+    ];
+
+    let distribution = round_rewards
+        .distribute_round_rewards(7, 12_000, participations, 0)
+        .unwrap();
+
+    let high = distribution
+        .validator_rewards
+        .get(&ValidatorId::new("uptime_high"))
+        .unwrap();
+    let low = distribution
+        .validator_rewards
+        .get(&ValidatorId::new("uptime_low"))
+        .unwrap();
+
+    assert!(high.weight_factor > low.weight_factor);
+    assert!(high.total_reward > low.total_reward);
 }
 
 #[test]
@@ -213,4 +273,38 @@ fn test_round_reward_distribution_components() {
         + reward.network_dividend;
 
     assert_eq!(reward.total_reward, total);
+}
+
+#[test]
+fn test_treasury_balance_via_network_dividend() {
+    let round_rewards = RoundRewards::new(EmissionParams::default());
+
+    let participations = vec![
+        ValidatorParticipation {
+            validator_id: ValidatorId::new("validator_alpha"),
+            role: ValidatorRole::Verifier,
+            blocks_contributed: 10,
+            uptime_score: Decimal::ONE,
+        },
+        ValidatorParticipation {
+            validator_id: ValidatorId::new("validator_beta"),
+            role: ValidatorRole::Verifier,
+            blocks_contributed: 10,
+            uptime_score: Decimal::ONE,
+        },
+    ];
+
+    let round_reward = 10_000;
+    let distribution = round_rewards
+        .distribute_round_rewards(9, round_reward, participations, 0)
+        .unwrap();
+
+    let treasury_balance: RewardAmount = distribution
+        .validator_rewards
+        .values()
+        .map(|reward| reward.network_dividend)
+        .sum();
+
+    let expected_treasury = (round_reward * 5) / 100;
+    assert_eq!(treasury_balance, expected_treasury);
 }
