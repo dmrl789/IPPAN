@@ -54,12 +54,14 @@ This crate implements the core economics logic for IPPAN, providing:
 
 ### Reward Composition
 
-| Component | Weight | Description |
+| Component | Source | Description |
 |------------|---------|-------------|
-| Round Emission | 60% | Base reward per round |
-| Transaction Fees | 25% | Deterministic micro-fees per tx |
-| AI Service Commissions | 10% | Derived from inference tasks |
-| Network Dividend | 5% | Weekly redistribution by uptime × reputation |
+| Round Emission | 85% of emission schedule | Direct rewards to validators |
+| Transaction Fees | 90% of collected fees | Direct fees to validators |
+| AI Service Commissions | 10% of emission | Reserved for AI inference rewards |
+| Network Dividend | 5% of emission + 10% of fees | Accumulated for periodic redistribution |
+
+The network dividend accumulates over time and is redistributed periodically (e.g., weekly) based on validator uptime and reputation scores.
 
 ---
 
