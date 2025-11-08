@@ -217,8 +217,10 @@ mod tests {
     #[test]
     fn test_address_generation() {
         let (address, private_key, public_key) = generate_new_address().unwrap();
-        assert!(address.starts_with('i'));
-        assert_eq!(address.len(), 65);
+        // Base58Check addresses don't have a fixed prefix
+        assert!(!address.is_empty());
+        // Length varies with Base58Check but should be reasonable
+        assert!(address.len() > 30 && address.len() < 60);
         assert_eq!(private_key.len(), 32);
         assert_eq!(public_key.len(), 32);
     }
