@@ -85,7 +85,8 @@ jobs:
             echo "✅ Note: Conversion helpers (from_f64/to_f64) are allowed for interop"
             echo "❌ Direct f32/f64 arithmetic operations are NOT allowed"
             echo ""
-            echo "Allowing build to continue since conversion helpers are legitimate"
+            echo "ERROR: Floating-point arithmetic detected in AI core!"
+            exit 1
           else
             echo "✅ No problematic floating point operations found"
           fi
