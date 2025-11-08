@@ -89,6 +89,10 @@ pub struct Transaction {
     pub amount: Amount,
     /// Nonce for replay protection
     pub nonce: u64,
+    /// HashTimer for temporal ordering and validation
+    pub hashtimer: HashTimer,
+    /// Timestamp when transaction was created
+    pub timestamp: IppanTimeMicros,
     /// Visibility flag describing how the payload should be handled.
     #[serde(default)]
     pub visibility: TransactionVisibility,
@@ -104,10 +108,6 @@ pub struct Transaction {
     /// Transaction signature (64 bytes)
     #[serde(with = "serde_bytes")]
     pub signature: [u8; 64],
-    /// HashTimer for temporal ordering and validation
-    pub hashtimer: HashTimer,
-    /// Timestamp when transaction was created
-    pub timestamp: IppanTimeMicros,
 }
 
 impl Transaction {
@@ -195,7 +195,7 @@ impl Transaction {
     fn message_bytes(&self) -> Vec<u8> {
         // Capacity hint only; it may be slightly overestimated and that's fine.
         let mut bytes = Vec::with_capacity(
-            self.from.len() + self.to.len() + 16 + 8 + 7 + 25 + 8, // rough sizes (16 for u128)
+            self.from.len() + self.to.len() + 16 + 8 + 40 + 8 + 1, // rough sizes
         );
         bytes.extend_from_slice(&self.from);
         bytes.extend_from_slice(&self.to);
