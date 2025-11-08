@@ -120,6 +120,10 @@ impl Fixed {
 
     /// Create a Fixed from raw micro units
     #[inline]
+    pub const fn zero() -> Self {
+        Fixed(0)
+    }
+
     pub const fn from_micro(micro: i64) -> Self {
         Fixed(micro)
     }

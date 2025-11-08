@@ -115,7 +115,7 @@ impl DGBDTEngine {
         let latency_score = {
             let clamped_latency = metrics.avg_latency_us.min(200_000);
             let normalized = ((200_000 - clamped_latency) * 10000) / 200_000;
-            normalized.max(0) as i64
+            normalized as i64
         };
 
         let slash_penalty = 10000 - ((metrics.slash_count as i64 * 1000).min(10000));

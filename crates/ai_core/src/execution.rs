@@ -317,22 +317,28 @@ fn float32_bytes_to_scaled_i64(bytes: [u8; 4], scale: i64) -> i64 {
     let bits = u32::from_le_bytes(bytes);
     let sign = if (bits >> 31) == 0 { 1 } else { -1 };
     let exponent = ((bits >> 23) & 0xff) as i32;
-    let mantissa = (bits & 0x7fffff) as u32;
+    let mantissa = bits & 0x7fffff;
 
     match exponent {
         255 => {
             // Infinity or NaN
             if mantissa == 0 {
-                return if sign > 0 { i64::MAX } else { i64::MIN };
+                if sign > 0 {
+                    i64::MAX
+                } else {
+                    i64::MIN
+                }
+            } else {
+                0
             }
-            return 0;
         }
         0 => {
             if mantissa == 0 {
-                return 0;
+                0
+            } else {
+                let significand = mantissa as i128;
+                scale_significand(significand, -126 - 23, scale, sign)
             }
-            let significand = mantissa as i128;
-            scale_significand(significand, -126 - 23, scale, sign)
         }
         _ => {
             let significand = ((1 << 23) | mantissa) as i128;

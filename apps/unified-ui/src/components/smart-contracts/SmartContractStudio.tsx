@@ -180,11 +180,11 @@ contract SimpleStorage {
                   </ul>
                 </div>
               </div>
-              ) : (
-                <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
-                  Click &ldquo;Analyze with AI&rdquo; to get started
-                </div>
-              )}
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-500 dark:text-gray-400">
+                Click &ldquo;Analyze with AI&rdquo; to get started
+              </div>
+            )}
           </div>
         </div>
       </motion.div>

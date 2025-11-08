@@ -1,9 +1,5 @@
-#![cfg(feature = "deterministic_math")]
-
 //! Simple test for deterministic GBDT module
 //! This test focuses only on the deterministic GBDT functionality
-
-#![cfg(feature = "deterministic_math")]
 
 use ippan_ai_core::deterministic_gbdt::{compute_scores, create_test_model, normalize_features};
 use ippan_ai_core::Fixed;
@@ -14,6 +10,7 @@ fn fp(value: f64) -> Fixed {
 }
 
 #[test]
+#[cfg(feature = "deterministic_math")]
 fn test_deterministic_gbdt_basic_functionality() {
     // Test model creation
     let model = create_test_model();
@@ -35,6 +32,7 @@ fn test_deterministic_gbdt_basic_functionality() {
 }
 
 #[test]
+#[cfg(feature = "deterministic_math")]
 fn test_ippan_time_normalization() {
     let mut telemetry = HashMap::new();
     telemetry.insert("node1".to_string(), (100_000, 1.2, 99.9, 0.42));
@@ -55,6 +53,7 @@ fn test_ippan_time_normalization() {
 }
 
 #[test]
+#[cfg(feature = "deterministic_math")]
 fn test_validator_scoring() {
     let model = create_test_model();
     let mut telemetry = HashMap::new();
@@ -73,6 +72,7 @@ fn test_validator_scoring() {
 }
 
 #[test]
+#[cfg(feature = "deterministic_math")]
 fn test_model_hash_consistency() {
     let model = create_test_model();
     let round_hash = "consistent_round";
@@ -85,6 +85,7 @@ fn test_model_hash_consistency() {
 }
 
 #[test]
+#[cfg(feature = "deterministic_math")]
 fn test_cross_platform_determinism() {
     let model = create_test_model();
     let features = vec![fp(1.5), fp(2.5), fp(3.5), fp(4.5)];

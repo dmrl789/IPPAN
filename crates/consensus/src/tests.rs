@@ -267,18 +267,17 @@ async fn test_round_finalization() {
 
     let consensus = PoAConsensus::new(config, storage.clone(), validator_id);
 
-    let signer = SigningKey::from_bytes(&[1u8; 32]);
-    let recipient = SigningKey::from_bytes(&[2u8; 32]);
-    let mut tx = Transaction::new(
-        signer.verifying_key().to_bytes(),
-        recipient.verifying_key().to_bytes(),
-        ippan_types::Amount::from_micro_ipn(1000),
-        1,
-    );
-    let signer_bytes = signer.to_bytes();
-    tx.sign(&signer_bytes).unwrap();
+    // Create signed transaction
+    let proposer_key = SigningKey::from_bytes(&[7u8; 32]);
+    let recipient_key = SigningKey::from_bytes(&[8u8; 32]);
+    let from = proposer_key.verifying_key().to_bytes();
+    let to = recipient_key.verifying_key().to_bytes();
+    let mut tx = Transaction::new(from, to, ippan_types::Amount::from_micro_ipn(1000), 1);
+    let private_key = proposer_key.to_bytes();
+    tx.sign(&private_key).expect("sign test transaction");
     consensus.mempool().add_transaction(tx).unwrap();
 
+    // Propose block
     let slot = *consensus.current_slot.read();
     PoAConsensus::propose_block(
         &consensus.storage,
@@ -293,6 +292,7 @@ async fn test_round_finalization() {
     .await
     .unwrap();
 
+    // Simulate finalization
     {
         let mut tracker = consensus.round_tracker.write();
         tracker.round_start = Instant::now() - consensus.finalization_interval;

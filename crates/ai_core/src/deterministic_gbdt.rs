@@ -527,7 +527,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_model_hash_consistency() {
+    #[cfg(feature = "deterministic_math")]
+    fn test_model_hash_consistency_fixed() {
         let model = DeterministicGBDT {
             trees: vec![GBDTTree {
                 nodes: vec![DecisionNode {
@@ -539,6 +540,26 @@ mod tests {
                 }],
             }],
             learning_rate: Fixed::from_f64(0.1),
+        };
+        let h1 = model.model_hash("round1").unwrap();
+        let h2 = model.model_hash("round1").unwrap();
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    #[cfg(not(feature = "deterministic_math"))]
+    fn test_model_hash_consistency_float() {
+        let model = DeterministicGBDT {
+            trees: vec![GBDTTree {
+                nodes: vec![DecisionNode {
+                    feature: 0,
+                    threshold: 0.0,
+                    left: None,
+                    right: None,
+                    value: Some(0.1),
+                }],
+            }],
+            learning_rate: 0.1,
         };
         let h1 = model.model_hash("round1").unwrap();
         let h2 = model.model_hash("round1").unwrap();
