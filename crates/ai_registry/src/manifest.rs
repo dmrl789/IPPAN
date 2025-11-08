@@ -111,7 +111,7 @@ impl ModelManifestEntry {
 
         let sha256 = canonical_sha256(canonical_json.as_bytes());
         let blake3 = canonical_blake3(canonical_json.as_bytes());
-        let size_bytes = canonical_json.as_bytes().len() as u64;
+        let size_bytes = canonical_json.len() as u64;
 
         // Update metadata with canonical measurements.
         metadata.id.hash = sha256.clone();

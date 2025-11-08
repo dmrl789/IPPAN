@@ -1,9 +1,5 @@
-#![cfg(feature = "deterministic_math")]
-
 //! Simple test for deterministic GBDT module
 //! This test focuses only on the deterministic GBDT functionality
-
-#![cfg(feature = "deterministic_math")]
 
 use ippan_ai_core::deterministic_gbdt::{compute_scores, create_test_model, normalize_features};
 use ippan_ai_core::Fixed;

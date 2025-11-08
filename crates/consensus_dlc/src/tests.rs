@@ -329,7 +329,7 @@ async fn test_full_consensus_cycle() {
             1.0 - (i as f64 * 0.01),
             100 * i,
             500 * i,
-            Amount::from_micro_ipn(10_000_000 * i as u64),
+            Amount::from_micro_ipn(10_000_000 * i),
             100,
         );
 
