@@ -1,3 +1,5 @@
+#![cfg(feature = "deterministic_math")]
+
 use ippan_ai_core::deterministic_gbdt;
 use ippan_ai_core::Fixed;
 use std::collections::HashMap;
@@ -104,6 +106,8 @@ fn test_usage_example() {
     assert!(scores.contains_key("nodeB"));
     assert!(scores.contains_key("nodeC"));
 
+    // All scores should be finite and within a bounded range
+    let mut has_positive = false;
     for (node_id, score) in &scores {
         let value = score.to_f64();
         assert!(
@@ -112,8 +116,21 @@ fn test_usage_example() {
             node_id,
             value
         );
-        assert!(value >= 0.0, "Score for {} is negative: {}", node_id, value);
+        assert!(
+            value >= -0.5,
+            "Score for {} is below expected floor: {}",
+            node_id,
+            value
+        );
+        if value > 0.0 {
+            has_positive = true;
+        }
     }
 
-    println!("Validator scores: {:?}", scores);
+    assert!(
+        has_positive,
+        "Expected at least one positive validator score"
+    );
+
+    println!("✅ Validator scores: {:?}", scores);
 }

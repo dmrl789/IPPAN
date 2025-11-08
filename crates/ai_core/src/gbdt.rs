@@ -11,8 +11,9 @@
 //! - Security hardening against adversarial inputs
 //! - Comprehensive logging and observability
 
-use crate::{model::ModelPackage, serialization::canonical_json_string};
+use crate::{fixed::Fixed, model::ModelPackage, serialization::canonical_json_string};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
@@ -57,7 +58,7 @@ pub enum GBDTError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GBDTResult {
     pub value: i32,
-    pub confidence: f64,
+    pub confidence: Fixed,
     pub evaluation_time_us: u64,
     pub trees_evaluated: usize,
     pub features_used: Vec<i64>,
@@ -69,7 +70,7 @@ pub struct GBDTResult {
 pub struct GBDTMetrics {
     pub total_evaluations: u64,
     pub total_time_us: u64,
-    pub avg_time_us: f64,
+    pub avg_time_us: Fixed,
     pub max_time_us: u64,
     pub min_time_us: u64,
     pub error_count: u64,
@@ -87,7 +88,7 @@ pub struct ModelMetadata {
     pub max_depth: usize,
     pub model_hash: String,
     pub training_data_hash: String,
-    pub performance_metrics: HashMap<String, f64>,
+    pub performance_metrics: HashMap<String, Fixed>,
 }
 
 /// A decision tree node (internal or leaf)
@@ -227,13 +228,16 @@ impl GBDTModel {
         scale: i32,
         feature_count: usize,
     ) -> Result<Self, GBDTError> {
+        let tree_count = trees.len();
+        let max_depth = Self::calculate_max_depth(&trees)?;
+        let model_hash = Self::calculate_model_hash(&trees, bias, scale)?;
         let metadata = ModelMetadata {
             version: "1.0.0".into(),
             created_at: chrono::Utc::now().timestamp() as u64,
             feature_count,
-            tree_count: trees.len(),
-            max_depth: Self::calculate_max_depth(&trees)?,
-            model_hash: Self::calculate_model_hash(&trees, bias, scale),
+            tree_count,
+            max_depth,
+            model_hash,
             training_data_hash: String::new(),
             performance_metrics: HashMap::new(),
         };
@@ -326,7 +330,7 @@ impl GBDTModel {
         }
 
         debug!(
-            "GBDT evaluation completed in {}?s, value: {}, confidence: {:.3}",
+            "GBDT evaluation completed in {}µs, value: {}, confidence: {}",
             result.evaluation_time_us, result.value, result.confidence
         );
 
@@ -452,24 +456,30 @@ impl GBDTModel {
         Ok(normalized)
     }
 
-    fn calculate_confidence(&self, trees_evaluated: usize, evaluation_time: Duration) -> f64 {
-        let time_factor = if evaluation_time.as_micros() < 1000 {
-            1.0
-        } else if evaluation_time.as_micros() < 5000 {
-            0.8
+    fn calculate_confidence(&self, trees_evaluated: usize, evaluation_time: Duration) -> Fixed {
+        let time_factor = if evaluation_time.as_micros() < 1_000 {
+            Fixed::ONE
+        } else if evaluation_time.as_micros() < 5_000 {
+            Fixed::from_ratio(4, 5)
         } else {
-            0.6
+            Fixed::from_ratio(3, 5)
         };
-        let tree_factor = trees_evaluated as f64 / self.trees.len().max(1) as f64;
-        (time_factor * tree_factor).min(1.0)
+        let max_trees = self.trees.len().max(1) as i64;
+        let tree_factor = Fixed::from_ratio(trees_evaluated as i64, max_trees);
+        (time_factor * tree_factor).min(Fixed::ONE)
     }
 
     fn update_metrics(&mut self, evaluation_time: Duration) {
         let t = evaluation_time.as_micros() as u64;
         self.metrics.total_evaluations += 1;
         self.metrics.total_time_us += t;
-        self.metrics.avg_time_us =
-            self.metrics.total_time_us as f64 / self.metrics.total_evaluations as f64;
+        if self.metrics.total_evaluations > 0 {
+            let total_time = self.metrics.total_time_us.min(i64::MAX as u64) as i64;
+            let evaluations = self.metrics.total_evaluations as i64;
+            self.metrics.avg_time_us = Fixed::from_ratio(total_time, evaluations);
+        } else {
+            self.metrics.avg_time_us = Fixed::ZERO;
+        }
         self.metrics.max_time_us = self.metrics.max_time_us.max(t);
         self.metrics.min_time_us = if self.metrics.min_time_us == 0 {
             t
@@ -523,14 +533,23 @@ impl GBDTModel {
         Ok(l.max(r))
     }
 
-    pub fn calculate_model_hash(trees: &[Tree], bias: i32, scale: i32) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut h = DefaultHasher::new();
-        trees.hash(&mut h);
-        bias.hash(&mut h);
-        scale.hash(&mut h);
-        format!("{:x}", h.finish())
+    pub fn calculate_model_hash(
+        trees: &[Tree],
+        bias: i32,
+        scale: i32,
+    ) -> Result<String, GBDTError> {
+        #[derive(Serialize)]
+        struct HashMaterial<'a> {
+            trees: &'a [Tree],
+            bias: i32,
+            scale: i32,
+        }
+
+        let payload = HashMaterial { trees, bias, scale };
+        let canonical = canonical_json_string(&payload)
+            .map_err(|e| GBDTError::ModelSerializationError(e.to_string()))?;
+        let digest = Sha256::digest(canonical.as_bytes());
+        Ok(hex::encode(digest))
     }
 
     pub fn get_metrics(&self) -> &GBDTMetrics {
@@ -615,7 +634,7 @@ mod tests {
         let mut m = test_model();
         let r = m.evaluate(&[30]).unwrap();
         assert_eq!(r.value, 10);
-        assert!(r.confidence > 0.0);
+        assert!(r.confidence > Fixed::ZERO);
     }
 
     #[test]

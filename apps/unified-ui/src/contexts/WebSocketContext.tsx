@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 
 interface WebSocketMessage {
   type: string;
@@ -28,7 +28,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 
-  const connect = () => {
+  const connect = useCallback(() => {
     try {
       const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:7080/ws';
       const ws = new WebSocket(wsUrl);
@@ -79,7 +79,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       console.error('Failed to create WebSocket connection:', err);
       setError('Failed to create WebSocket connection');
     }
-  };
+  }, []);
 
   useEffect(() => {
     connect();

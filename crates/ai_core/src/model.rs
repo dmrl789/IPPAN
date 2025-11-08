@@ -3,7 +3,11 @@
 //! Provides deterministic model packaging, integrity verification, and
 //! SHA-based hashing for L1-deployed AI models (GBDT, linear, etc.)
 
+use crate::serialization::canonical_json_string;
 use serde::{Deserialize, Serialize};
+
+use crate::fixed::Fixed;
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 pub const MODEL_HASH_SIZE: usize = 32;
@@ -141,10 +145,48 @@ pub fn verify_model_hash(package: &ModelPackage) -> Result<(), ModelError> {
 
 /// Compute deterministic hash of model structure
 fn compute_model_hash(model: &crate::gbdt::GBDTModel) -> [u8; MODEL_HASH_SIZE] {
-    let json = serde_json::to_string(model).expect("Model serialization failed");
-    let hash = blake3::hash(json.as_bytes());
+    #[derive(Serialize)]
+    struct HashableMetadata<'a> {
+        version: &'a str,
+        created_at: u64,
+        feature_count: usize,
+        tree_count: usize,
+        max_depth: usize,
+        training_data_hash: &'a str,
+        performance_metrics: &'a std::collections::HashMap<String, Fixed>,
+    }
+
+    #[derive(Serialize)]
+    struct HashableModel<'a> {
+        trees: &'a [crate::gbdt::Tree],
+        bias: i32,
+        scale: i32,
+        metadata: HashableMetadata<'a>,
+        feature_normalization: &'a Option<crate::gbdt::FeatureNormalization>,
+        security_constraints: &'a crate::gbdt::SecurityConstraints,
+    }
+
+    let hashable = HashableModel {
+        trees: &model.trees,
+        bias: model.bias,
+        scale: model.scale,
+        metadata: HashableMetadata {
+            version: &model.metadata.version,
+            created_at: model.metadata.created_at,
+            feature_count: model.metadata.feature_count,
+            tree_count: model.metadata.tree_count,
+            max_depth: model.metadata.max_depth,
+            training_data_hash: &model.metadata.training_data_hash,
+            performance_metrics: &model.metadata.performance_metrics,
+        },
+        feature_normalization: &model.feature_normalization,
+        security_constraints: &model.security_constraints,
+    };
+
+    let json = canonical_json_string(&hashable).expect("Model serialization failed");
+    let hash = Sha256::digest(json.as_bytes());
     let mut result = [0u8; MODEL_HASH_SIZE];
-    result.copy_from_slice(&hash.as_bytes()[..MODEL_HASH_SIZE]);
+    result.copy_from_slice(&hash[..MODEL_HASH_SIZE]);
     result
 }
 

@@ -3,8 +3,12 @@
 //! Ensures reproducible, verifiable GBDT inference across nodes by
 //! enforcing seed control, input hashing, and deterministic context state.
 
-use crate::{errors::Result, fixed::Fixed, types::*};
-use std::collections::HashMap;
+use crate::{
+    errors::Result,
+    fixed::{Fixed, SCALE},
+    types::*,
+};
+use std::collections::{BTreeMap, HashMap};
 use tracing::{info, warn};
 
 /// Deterministic execution manager
@@ -38,7 +42,7 @@ pub struct DeterministicContext {
     /// Deterministic seed
     pub seed: u64,
     /// Context parameters (model-specific)
-    pub parameters: HashMap<String, String>,
+    pub parameters: BTreeMap<String, String>,
 }
 
 impl Default for DeterminismManager {
@@ -80,7 +84,7 @@ impl DeterminismManager {
         execution_id: &str,
         model_id: &ModelId,
         input: &ModelInput,
-        parameters: HashMap<String, String>,
+        parameters: impl IntoIterator<Item = (String, String)>,
     ) -> Result<DeterministicContext> {
         info!(
             "Creating deterministic context for execution: {}",
@@ -98,7 +102,7 @@ impl DeterminismManager {
             model_id: model_id.clone(),
             input_hash,
             seed,
-            parameters,
+            parameters: parameters.into_iter().collect::<BTreeMap<_, _>>(),
         };
 
         self.update_state(&context);
@@ -266,8 +270,8 @@ impl DeterministicRng {
 
     pub fn next_fixed(&mut self) -> Fixed {
         let raw = self.next_u64();
-        let scaled = (i128::from(raw) * i128::from(crate::fixed::SCALE - 1)) / i128::from(u64::MAX);
-        Fixed(scaled as i64)
+        let scaled = (i128::from(raw) * i128::from(SCALE - 1)) / i128::from(u64::MAX);
+        Fixed::from_micro(scaled as i64)
     }
 
     /// Temporary float helper for legacy callers. Prefer `next_fixed`.

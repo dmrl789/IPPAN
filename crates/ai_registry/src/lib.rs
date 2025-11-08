@@ -42,6 +42,7 @@ pub mod activation;
 pub mod errors;
 pub mod fees;
 pub mod governance;
+pub mod manifest;
 pub mod proposal;
 pub mod registry;
 pub mod security;
@@ -53,6 +54,11 @@ pub use activation::ActivationManager;
 pub use errors::{RegistryError, Result};
 pub use fees::{FeeCalculation, FeeManager, FeeStats};
 pub use governance::GovernanceManager;
+pub use manifest::{
+    canonical_blake3, canonical_sha256, load_manifest, validate_inference_hashes,
+    write_architecture_hash_files, DeterministicInferenceHashes, ModelArtifact, ModelManifest,
+    ModelManifestEntry, DEFAULT_INFERENCE_SEED,
+};
 pub use proposal::{AiModelProposal, ProposalManager, ProposalStatus};
 pub use registry::ModelRegistry;
 pub use security::{AuthToken, SecurityConfig, SecurityManager, SecurityStats, UserPermissions};

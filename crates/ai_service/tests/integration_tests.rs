@@ -2,7 +2,7 @@
 
 use ippan_ai_service::{
     AIService, AIServiceConfig, ContractAnalysisType, LLMConfig, LLMRequest, OptimizationGoal,
-    SmartContractAnalysisRequest, TransactionData, TransactionOptimizationRequest,
+    SmartContractAnalysisRequest, TransactionData, TransactionOptimizationRequest, VERSION,
 };
 use std::collections::HashMap;
 
@@ -162,7 +162,7 @@ async fn test_service_status() {
     let service = AIService::new(config).unwrap();
 
     let status = service.get_status();
-    assert_eq!(status.version, "1.0.0");
+    assert_eq!(status.version, VERSION);
     assert!(!status.is_running);
 }
 

@@ -1,11 +1,14 @@
 # Multi-stage build for production
-FROM rustlang/rust:nightly-slim AS builder
+FROM rust:1.88-slim AS builder
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     ca-certificates \
+    clang \
+    llvm \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -16,8 +19,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY node/ node/
 
-# Build the application
-RUN cargo build --release --workspace
+# Build the application with locked dependencies
+RUN cargo build --release --workspace --locked
 
 # Runtime stage
 FROM debian:bookworm-slim

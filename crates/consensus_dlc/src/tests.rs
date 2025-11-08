@@ -4,6 +4,7 @@ use super::*;
 use crate::dag::Block;
 use crate::dgbdt::ValidatorMetrics;
 use crate::hashtimer::HashTimer;
+use ippan_types::Amount;
 
 #[tokio::test]
 async fn test_dlc_initialization() {
@@ -21,7 +22,15 @@ async fn test_validator_registration() {
     let config = DlcConfig::default();
     let mut consensus = DlcConsensus::new(config);
 
-    let metrics = ValidatorMetrics::new(0.99, 0.05, 1.0, 100, 500, 10_000_000, 100);
+    let metrics = ValidatorMetrics::new(
+        0.99,
+        0.05,
+        1.0,
+        100,
+        500,
+        Amount::from_micro_ipn(10_000_000),
+        100,
+    );
 
     let result =
         consensus.register_validator("validator1".to_string(), bond::VALIDATOR_BOND, metrics);
@@ -37,7 +46,15 @@ async fn test_consensus_round_processing() {
 
     // Register validators
     for i in 1..=3 {
-        let metrics = ValidatorMetrics::new(0.99, 0.05, 1.0, 100, 500, 10_000_000, 100);
+        let metrics = ValidatorMetrics::new(
+            0.99,
+            0.05,
+            1.0,
+            100,
+            500,
+            Amount::from_micro_ipn(10_000_000),
+            100,
+        );
         consensus
             .register_validator(format!("validator{}", i), bond::VALIDATOR_BOND, metrics)
             .unwrap();
@@ -79,7 +96,15 @@ async fn test_verifier_selection_determinism() {
     for i in 1..=5 {
         validators.insert(
             format!("val{}", i),
-            ValidatorMetrics::new(0.99, 0.05, 1.0, 100, 500, 10_000_000, 100),
+            ValidatorMetrics::new(
+                0.99,
+                0.05,
+                1.0,
+                100,
+                500,
+                Amount::from_micro_ipn(10_000_000),
+                100,
+            ),
         );
     }
 
@@ -221,11 +246,27 @@ async fn test_fairness_model_scoring() {
     let model = FairnessModel::new_production();
 
     // High-quality validator
-    let good_metrics = ValidatorMetrics::new(0.99, 0.05, 1.0, 1000, 5000, 100_000_000, 1000);
+    let good_metrics = ValidatorMetrics::new(
+        0.99,
+        0.05,
+        1.0,
+        1000,
+        5000,
+        Amount::from_micro_ipn(100_000_000),
+        1000,
+    );
     let good_score = model.score_deterministic(&good_metrics);
 
     // Low-quality validator
-    let bad_metrics = ValidatorMetrics::new(0.80, 0.30, 0.70, 10, 50, 1_000_000, 100);
+    let bad_metrics = ValidatorMetrics::new(
+        0.80,
+        0.30,
+        0.70,
+        10,
+        50,
+        Amount::from_micro_ipn(1_000_000),
+        100,
+    );
     let bad_score = model.score_deterministic(&bad_metrics);
 
     // Both should be valid scores
@@ -288,12 +329,16 @@ async fn test_full_consensus_cycle() {
             1.0 - (i as f64 * 0.01),
             100 * i,
             500 * i,
-            10_000_000 * i,
+            Amount::from_micro_ipn(10_000_000 * i),
             100,
         );
 
         consensus
-            .register_validator(format!("validator{}", i), bond::VALIDATOR_BOND * i, metrics)
+            .register_validator(
+                format!("validator{}", i),
+                bond::VALIDATOR_BOND * i as u128,
+                metrics,
+            )
             .unwrap();
     }
 

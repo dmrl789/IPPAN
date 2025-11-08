@@ -5,10 +5,12 @@
 //! - Integrity verification and performance metrics
 //! - Secure storage with hash checking and rollback capability
 
+use crate::fixed::Fixed;
 use crate::gbdt::{GBDTError, GBDTModel};
 use crate::model::ModelPackage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
@@ -70,8 +72,8 @@ pub struct ModelManagerMetrics {
     pub total_validation_errors: u64,
     pub total_load_errors: u64,
     pub total_save_errors: u64,
-    pub avg_load_time_ms: f64,
-    pub avg_save_time_ms: f64,
+    pub avg_load_time_ms: Fixed,
+    pub avg_save_time_ms: Fixed,
     pub current_cached_models: usize,
     pub total_disk_usage_bytes: u64,
 }
@@ -200,17 +202,24 @@ impl ModelManager {
             })?;
 
         let path = self.get_model_path(model_id);
-        let model_hash = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);
+        let model_hash = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale)?;
+        let hash_bytes =
+            hex::decode(&model_hash).map_err(|e| GBDTError::ModelValidationFailed {
+                reason: format!("Invalid model hash hex: {}", e),
+            })?;
+        let hash_len = hash_bytes.len();
+        let hash_sha256: [u8; 32] =
+            hash_bytes
+                .try_into()
+                .map_err(|_| GBDTError::ModelValidationFailed {
+                    reason: format!("Model hash length {} != 32 bytes", hash_len),
+                })?;
 
         let metadata = crate::model::ModelMetadata {
             model_id: model_id.to_string(),
             version: 1,
             model_type: "gbdt".into(),
-            hash_sha256: model_hash
-                .clone()
-                .into_bytes()
-                .try_into()
-                .unwrap_or([0; 32]),
+            hash_sha256,
             feature_count: model.metadata.feature_count,
             output_scale: model.scale,
             output_min: -10_000,
@@ -288,7 +297,7 @@ impl ModelManager {
     async fn validate_model(&self, model: &mut GBDTModel) -> Result<bool, GBDTError> {
         model.validate()?;
 
-        let expected = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale);
+        let expected = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale)?;
         if model.metadata.model_hash != expected {
             return Err(GBDTError::SecurityValidationFailed {
                 reason: "Model hash mismatch".to_string(),
@@ -370,18 +379,30 @@ impl ModelManager {
     fn update_load_metrics(&self, d: Duration) {
         if let Ok(mut m) = self.metrics.write() {
             m.total_models_loaded += 1;
-            let ms = d.as_millis() as f64;
-            m.avg_load_time_ms = (m.avg_load_time_ms * (m.total_models_loaded - 1) as f64 + ms)
-                / m.total_models_loaded as f64;
+            let millis = d.as_millis().min(i64::MAX as u128) as i64;
+            let ms = Fixed::from_int(millis);
+            let count = m.total_models_loaded as i64;
+            let accumulated = if count > 1 {
+                m.avg_load_time_ms.mul_int(count - 1)
+            } else {
+                Fixed::ZERO
+            };
+            m.avg_load_time_ms = (accumulated + ms).div_int(count.max(1));
         }
     }
 
     fn update_save_metrics(&self, d: Duration) {
         if let Ok(mut m) = self.metrics.write() {
             m.total_models_saved += 1;
-            let ms = d.as_millis() as f64;
-            m.avg_save_time_ms = (m.avg_save_time_ms * (m.total_models_saved - 1) as f64 + ms)
-                / m.total_models_saved as f64;
+            let millis = d.as_millis().min(i64::MAX as u128) as i64;
+            let ms = Fixed::from_int(millis);
+            let count = m.total_models_saved as i64;
+            let accumulated = if count > 1 {
+                m.avg_save_time_ms.mul_int(count - 1)
+            } else {
+                Fixed::ZERO
+            };
+            m.avg_save_time_ms = (accumulated + ms).div_int(count.max(1));
         }
     }
 

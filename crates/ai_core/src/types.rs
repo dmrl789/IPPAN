@@ -3,6 +3,7 @@
 //! Defines model identifiers, metadata, input/output formats, execution
 //! contexts, and deterministic inference metadata used across the AI Core.
 
+#[cfg(feature = "deterministic_math")]
 use crate::fixed::Fixed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

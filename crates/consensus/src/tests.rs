@@ -261,21 +261,29 @@ async fn test_round_finalization() {
 
     consensus.start().await.unwrap();
 
-    let tx = Transaction::new(
-        [1u8; 32],
-        [2u8; 32],
-        ippan_types::Amount::from_micro_ipn(1000),
-        1,
-    );
+    let proposer_key = SigningKey::from_bytes(&[7u8; 32]);
+    let recipient_key = SigningKey::from_bytes(&[8u8; 32]);
+    let from = proposer_key.verifying_key().to_bytes();
+    let to = recipient_key.verifying_key().to_bytes();
+    let mut tx = Transaction::new(from, to, ippan_types::Amount::from_micro_ipn(1000), 1);
+    let private_key = proposer_key.to_bytes();
+    tx.sign(&private_key).expect("sign test transaction");
     consensus.mempool().add_transaction(tx).unwrap();
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    let mut finalized = false;
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if storage.get_latest_height().unwrap() > 0 {
+            finalized = true;
+            break;
+        }
+    }
 
     consensus.stop().await.unwrap();
 
     let latest_height = storage.get_latest_height().unwrap();
     assert!(
-        latest_height > 0,
+        finalized && latest_height > 0,
         "expected at least one finalized block height"
     );
 }

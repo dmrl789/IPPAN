@@ -64,7 +64,8 @@ fn test_validator_scoring() {
 
     assert_eq!(scores.len(), 1);
     assert!(scores.contains_key("test_node"));
-    assert!(scores["test_node"].to_f64().is_finite());
+    let score_value = scores["test_node"].to_f64();
+    assert!(score_value.is_finite());
 }
 
 #[test]

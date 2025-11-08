@@ -4,17 +4,18 @@
 //! for malicious behavior, and bond management.
 
 use crate::error::{DlcError, Result};
+use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Minimum validator bond amount (in micro-IPN)
-pub const VALIDATOR_BOND: u64 = 10 * 10u64.pow(8); // 10 IPN
+/// Minimum validator bond amount (10 IPN)
+pub const VALIDATOR_BOND: Amount = Amount::from_ipn(10);
 
-/// Minimum bond to become a validator
-pub const MIN_VALIDATOR_BOND: u64 = 10 * 10u64.pow(8); // 10 IPN
+/// Minimum bond to become a validator (10 IPN)
+pub const MIN_VALIDATOR_BOND: Amount = Amount::from_ipn(10);
 
-/// Maximum bond amount
-pub const MAX_VALIDATOR_BOND: u64 = 1_000_000 * 10u64.pow(8); // 1 million IPN
+/// Maximum bond amount (1,000,000 IPN)
+pub const MAX_VALIDATOR_BOND: Amount = Amount::from_ipn(1_000_000);
 
 /// Slash percentage for double signing (in basis points)
 pub const DOUBLE_SIGN_SLASH_BPS: u64 = 5000; // 50%
@@ -33,7 +34,7 @@ pub enum BondStatus {
     /// Bond is being unstaked (time-locked)
     Unstaking { unlock_round: u64 },
     /// Bond has been slashed
-    Slashed { reason: String, amount: u64 },
+    Slashed { reason: String, amount: Amount },
     /// Bond is frozen (temporarily inactive)
     Frozen { reason: String },
     /// Bond has been withdrawn
@@ -45,8 +46,8 @@ pub enum BondStatus {
 pub struct ValidatorBond {
     /// Owner of the bond
     pub owner: String,
-    /// Total bonded amount (in micro-IPN)
-    pub amount: u64,
+    /// Total bonded amount
+    pub amount: Amount,
     /// Current status
     pub status: BondStatus,
     /// When the bond was created
@@ -54,14 +55,14 @@ pub struct ValidatorBond {
     /// Last update timestamp
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// Total slashed amount (historical)
-    pub total_slashed: u64,
+    pub total_slashed: Amount,
     /// Slashing history
     pub slash_history: Vec<SlashEvent>,
 }
 
 impl ValidatorBond {
     /// Create a new validator bond
-    pub fn new(owner: impl Into<String>, amount: u64) -> Result<Self> {
+    pub fn new(owner: impl Into<String>, amount: Amount) -> Result<Self> {
         let owner = owner.into();
 
         if amount < MIN_VALIDATOR_BOND {
@@ -84,7 +85,7 @@ impl ValidatorBond {
             status: BondStatus::Active,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            total_slashed: 0,
+            total_slashed: Amount::zero(),
             slash_history: Vec::new(),
         })
     }
@@ -100,7 +101,7 @@ impl ValidatorBond {
     }
 
     /// Add more to the bond
-    pub fn add_stake(&mut self, additional: u64) -> Result<()> {
+    pub fn add_stake(&mut self, additional: Amount) -> Result<()> {
         if !self.is_active() {
             return Err(DlcError::InvalidBond(
                 "Cannot add stake to inactive bond".to_string(),
@@ -151,7 +152,7 @@ impl ValidatorBond {
     }
 
     /// Complete unstaking and withdraw
-    pub fn complete_unstaking(&mut self, current_round: u64) -> Result<u64> {
+    pub fn complete_unstaking(&mut self, current_round: u64) -> Result<Amount> {
         match &self.status {
             BondStatus::Unstaking { unlock_round } => {
                 if current_round < *unlock_round {
@@ -162,7 +163,7 @@ impl ValidatorBond {
                 }
 
                 let amount = self.amount;
-                self.amount = 0;
+                self.amount = Amount::zero();
                 self.status = BondStatus::Withdrawn;
                 self.updated_at = chrono::Utc::now();
 
@@ -181,16 +182,17 @@ impl ValidatorBond {
     }
 
     /// Slash the bond for malicious behavior
-    pub fn slash(&mut self, reason: String, percentage_bps: u64, round: u64) -> Result<u64> {
-        if self.amount == 0 {
+    pub fn slash(&mut self, reason: String, percentage_bps: u64, round: u64) -> Result<Amount> {
+        if self.amount.is_zero() {
             return Err(DlcError::InvalidBond(
                 "Bond has no funds to slash".to_string(),
             ));
         }
 
-        // Calculate slash amount
-        let slash_amount = (self.amount as u128 * percentage_bps as u128 / 10_000u128) as u64;
-        let slash_amount = slash_amount.min(self.amount);
+        // Calculate slash amount using integer arithmetic on atomic units
+        let mut slash_atomic = self.amount.atomic() * percentage_bps as u128 / 10_000u128;
+        slash_atomic = slash_atomic.min(self.amount.atomic());
+        let slash_amount = Amount::from_atomic(slash_atomic);
 
         // Apply slash
         self.amount = self.amount.saturating_sub(slash_amount);
@@ -258,11 +260,11 @@ impl ValidatorBond {
     }
 
     /// Get bond value weight (for voting/selection purposes)
-    pub fn voting_weight(&self) -> u64 {
+    pub fn voting_weight(&self) -> Amount {
         if self.is_active() {
             self.amount
         } else {
-            0
+            Amount::zero()
         }
     }
 }
@@ -271,7 +273,7 @@ impl ValidatorBond {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SlashEvent {
     pub reason: String,
-    pub amount: u64,
+    pub amount: Amount,
     pub round: u64,
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
@@ -282,9 +284,9 @@ pub struct BondManager {
     /// All validator bonds
     bonds: HashMap<String, ValidatorBond>,
     /// Total bonded amount across all validators
-    total_bonded: u64,
+    total_bonded: Amount,
     /// Total slashed amount (historical)
-    total_slashed: u64,
+    total_slashed: Amount,
     /// Unstaking lock duration in rounds
     unstaking_lock_rounds: u64,
 }
@@ -294,14 +296,14 @@ impl BondManager {
     pub fn new(unstaking_lock_rounds: u64) -> Self {
         Self {
             bonds: HashMap::new(),
-            total_bonded: 0,
-            total_slashed: 0,
+            total_bonded: Amount::zero(),
+            total_slashed: Amount::zero(),
             unstaking_lock_rounds,
         }
     }
 
     /// Create a new bond for a validator
-    pub fn create_bond(&mut self, validator_id: String, amount: u64) -> Result<()> {
+    pub fn create_bond(&mut self, validator_id: String, amount: Amount) -> Result<()> {
         if self.bonds.contains_key(&validator_id) {
             return Err(DlcError::InvalidBond(format!(
                 "Validator {} already has a bond",
@@ -327,7 +329,7 @@ impl BondManager {
     }
 
     /// Add stake to existing bond
-    pub fn add_stake(&mut self, validator_id: &str, amount: u64) -> Result<()> {
+    pub fn add_stake(&mut self, validator_id: &str, amount: Amount) -> Result<()> {
         let bond = self
             .bonds
             .get_mut(validator_id)
@@ -350,7 +352,7 @@ impl BondManager {
     }
 
     /// Complete unstaking and withdraw
-    pub fn complete_unstaking(&mut self, validator_id: &str, current_round: u64) -> Result<u64> {
+    pub fn complete_unstaking(&mut self, validator_id: &str, current_round: u64) -> Result<Amount> {
         let bond = self
             .bonds
             .get_mut(validator_id)
@@ -369,7 +371,7 @@ impl BondManager {
         reason: String,
         percentage_bps: u64,
         round: u64,
-    ) -> Result<u64> {
+    ) -> Result<Amount> {
         let bond = self
             .bonds
             .get_mut(validator_id)
@@ -392,18 +394,26 @@ impl BondManager {
     }
 
     /// Get total voting power of all active validators
-    pub fn total_voting_power(&self) -> u64 {
-        self.bonds.values().map(|bond| bond.voting_weight()).sum()
+    pub fn total_voting_power(&self) -> Amount {
+        self.bonds
+            .values()
+            .map(|bond| bond.voting_weight())
+            .fold(Amount::zero(), |acc, weight| acc.saturating_add(weight))
+    }
+
+    /// Get total bonded amount
+    pub fn total_bonded_amount(&self) -> Amount {
+        self.total_bonded
     }
 
     /// Get bond statistics
     pub fn stats(&self) -> BondStats {
         let active_count = self.active_validators().len();
         let total_validators = self.bonds.len();
-        let avg_bond = if total_validators > 0 {
-            self.total_bonded / total_validators as u64
+        let average_bond = if total_validators > 0 {
+            self.total_bonded / total_validators as u128
         } else {
-            0
+            Amount::zero()
         };
 
         BondStats {
@@ -411,7 +421,7 @@ impl BondManager {
             active_validators: active_count,
             total_bonded: self.total_bonded,
             total_slashed: self.total_slashed,
-            average_bond: avg_bond,
+            average_bond,
         }
     }
 }
@@ -421,14 +431,15 @@ impl BondManager {
 pub struct BondStats {
     pub total_validators: usize,
     pub active_validators: usize,
-    pub total_bonded: u64,
-    pub total_slashed: u64,
-    pub average_bond: u64,
+    pub total_bonded: Amount,
+    pub total_slashed: Amount,
+    pub average_bond: Amount,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ippan_types::currency::denominations;
 
     #[test]
     fn test_bond_creation() {
@@ -439,7 +450,8 @@ mod tests {
 
     #[test]
     fn test_bond_min_amount() {
-        let result = ValidatorBond::new("validator1", MIN_VALIDATOR_BOND - 1);
+        let result =
+            ValidatorBond::new("validator1", MIN_VALIDATOR_BOND - Amount::from_micro_ipn(1));
         assert!(result.is_err());
     }
 
@@ -483,7 +495,7 @@ mod tests {
         let withdrawn = bond.complete_unstaking(150).unwrap();
 
         assert_eq!(withdrawn, VALIDATOR_BOND);
-        assert_eq!(bond.amount, 0);
+        assert_eq!(bond.amount, Amount::zero());
     }
 
     #[test]
@@ -518,7 +530,7 @@ mod tests {
             .create_bond("val2".to_string(), VALIDATOR_BOND * 2)
             .unwrap();
 
-        assert_eq!(manager.total_bonded, VALIDATOR_BOND * 3);
+        assert_eq!(manager.total_bonded_amount(), VALIDATOR_BOND * 3);
         assert_eq!(manager.active_validators().len(), 2);
     }
 
@@ -529,7 +541,7 @@ mod tests {
 
         let mut slashed_bond = ValidatorBond::new("val2", VALIDATOR_BOND).unwrap();
         slashed_bond.slash("test".to_string(), 10000, 1).unwrap();
-        assert_eq!(slashed_bond.voting_weight(), 0);
+        assert_eq!(slashed_bond.voting_weight(), Amount::zero());
     }
 
     #[test]
@@ -546,5 +558,13 @@ mod tests {
         let stats = manager.stats();
         assert_eq!(stats.total_validators, 2);
         assert_eq!(stats.active_validators, 2);
+        assert_eq!(stats.total_bonded, VALIDATOR_BOND * 2);
+    }
+
+    #[test]
+    fn test_micro_conversion_alignment() {
+        let bond = ValidatorBond::new("validator1", VALIDATOR_BOND).unwrap();
+        let normalized = bond.amount.atomic() / denominations::MICRO_IPN;
+        assert_eq!(normalized, 10_000_000u128);
     }
 }

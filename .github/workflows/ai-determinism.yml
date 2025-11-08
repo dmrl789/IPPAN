@@ -122,3 +122,110 @@ jobs:
       - name: Fuzz fee validation
         run: |
           cargo test --manifest-path crates/consensus/Cargo.toml --release fuzz_fee_validation
+
+  generate-inference-artifacts:
+    name: Cross-architecture inference (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: test-determinism
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate deterministic inference output
+        run: |
+          mkdir -p target/determinism
+          cargo run \
+            --manifest-path crates/ai_core/Cargo.toml \
+            --release \
+            --bin dump_inference \
+            -- \
+            --output target/determinism/inference-${{ matrix.arch }}.json
+
+      - name: Upload inference artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-core-inference-${{ matrix.arch }}
+          path: target/determinism/inference-${{ matrix.arch }}.json
+          if-no-files-found: error
+
+  compare-inference-outputs:
+    name: Compare inference outputs across architectures
+    runs-on: ubuntu-24.04
+    needs:
+      - generate-inference-artifacts
+
+    steps:
+      - name: Download x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-core-inference-x86_64
+          path: comparison/x86_64
+
+      - name: Download aarch64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-core-inference-aarch64
+          path: comparison/aarch64
+
+      - name: Compare inference outputs
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          base = pathlib.Path("comparison")
+          x86_path = base / "x86_64" / "inference-x86_64.json"
+          arm_path = base / "aarch64" / "inference-aarch64.json"
+
+          x86 = json.loads(x86_path.read_text())
+          arm = json.loads(arm_path.read_text())
+
+          scores_equal = x86["scores"] == arm["scores"]
+          features_equal = x86["features"] == arm["features"]
+          hashes_equal = x86["model_hash"] == arm["model_hash"]
+
+          result = {
+              "x86_64": x86,
+              "aarch64": arm,
+              "scores_equal": scores_equal,
+              "features_equal": features_equal,
+              "model_hash_equal": hashes_equal,
+          }
+
+          result_dir = base / "result"
+          result_dir.mkdir(parents=True, exist_ok=True)
+          (result_dir / "inference-comparison.json").write_text(
+              json.dumps(result, indent=2)
+          )
+
+          if not (scores_equal and features_equal and hashes_equal):
+              sys.exit("Inference outputs mismatch between architectures")
+
+          print("Inference outputs are identical across architectures.")
+          PY
+
+      - name: Upload comparison artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-core-inference-comparison
+          path: comparison/result/inference-comparison.json
+          if-no-files-found: error
+
+      - name: Publish comparison summary
+        run: |
+          {
+            echo "### Cross-architecture inference comparison";
+            echo "* Outputs match across x86_64 and aarch64 runners.";
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,3 +1,5 @@
+#![cfg(feature = "deterministic_math")]
+
 //! Tests for deterministic GBDT + IPPAN Time integration
 //!
 //! Ensures identical inference results across nodes using
@@ -19,21 +21,21 @@ fn build_simple_model() -> DeterministicGBDT {
         nodes: vec![
             DecisionNode {
                 feature: 0,
-                threshold: Fixed::zero(),
+                threshold: Fixed::ZERO,
                 left: Some(1),
                 right: Some(2),
                 value: None,
             },
             DecisionNode {
                 feature: 0,
-                threshold: Fixed::zero(),
+                threshold: Fixed::ZERO,
                 left: None,
                 right: None,
                 value: Some(fp(1.5)),
             },
             DecisionNode {
                 feature: 0,
-                threshold: Fixed::zero(),
+                threshold: Fixed::ZERO,
                 left: None,
                 right: None,
                 value: Some(fp(-0.5)),
@@ -52,14 +54,14 @@ fn build_simple_model() -> DeterministicGBDT {
             },
             DecisionNode {
                 feature: 1,
-                threshold: Fixed::zero(),
+                threshold: Fixed::ZERO,
                 left: None,
                 right: None,
                 value: Some(fp(0.25)),
             },
             DecisionNode {
                 feature: 1,
-                threshold: Fixed::zero(),
+                threshold: Fixed::ZERO,
                 left: None,
                 right: None,
                 value: Some(fp(0.75)),
@@ -76,7 +78,7 @@ fn build_simple_model() -> DeterministicGBDT {
 #[test]
 fn deterministic_prediction_same_features() {
     let model = build_simple_model();
-    let features = vec![Fixed::zero(), fp(0.5), fp(99.9), fp(0.42)];
+    let features = vec![Fixed::ZERO, fp(0.5), fp(99.9), fp(0.42)];
 
     let y1 = model.predict(&features);
     let y2 = model.predict(&features);
