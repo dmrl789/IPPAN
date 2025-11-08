@@ -3112,10 +3112,12 @@ name = "ippan-p2p"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "futures",
  "hex",
  "igd",
  "ippan-types",
+ "libp2p",
  "local-ip-address",
  "parking_lot 0.12.5",
  "rand 0.8.5",

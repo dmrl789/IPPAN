@@ -1,9 +1,20 @@
-//! IPPAN HTTP P2P stack - deterministic peer connectivity, gossip propagation,
-//! and metadata tracking for DAG consensus nodes. Provides the high-level
-//! network manager used by RPC services and consensus layers, including
-//! UPnP/NAT traversal, peer discovery, and message broadcast helpers.
+//! IPPAN P2P stack - provides both HTTP and libp2p networking implementations.
 //!
+//! This crate offers two P2P networking approaches:
+//! - **libp2p_network**: Production-ready libp2p with DHT, gossipsub, NAT traversal
+//! - **HTTP P2P**: Legacy HTTP-based networking for simple deployments
+//!
+//! The libp2p implementation is recommended for production use as it provides:
+//! - Kademlia DHT for distributed peer discovery
+//! - GossipSub for efficient message propagation
+//! - mDNS for local network peer discovery
+//! - Relay and DCUtR for NAT traversal
+//! - Request/Response protocol for direct queries
+//!
+pub mod libp2p_network;
 pub mod parallel_gossip;
+
+pub use libp2p_network::{LibP2PConfig, LibP2PNetwork, NetworkEvent as LibP2PNetworkEvent};
 pub use parallel_gossip::{
     DagVertexAnnouncement, GossipConfig, GossipError, GossipMessage, GossipMetricsSnapshot,
     GossipPayload, GossipTopic, ParallelGossipNetwork,
