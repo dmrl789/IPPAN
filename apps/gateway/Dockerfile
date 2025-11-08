@@ -1,16 +1,18 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine
+
+ENV NODE_ENV=production
+ENV PORT=8080
 
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
 
-RUN npm ci --omit=dev || npm install --omit=dev
+RUN npm ci --omit=dev && npm cache clean --force
 
-COPY . .
+COPY src ./src
 
-ENV NODE_ENV=production
-ENV PORT=8080
+USER node
 
 EXPOSE 8080
 
-CMD ["npm", "run", "start"]
+CMD ["node", "src/server.mjs"]

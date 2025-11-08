@@ -1,5 +1,5 @@
-import express from 'express'
 import cors from 'cors'
+import express from 'express'
 import morgan from 'morgan'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { URL } from 'url'
@@ -60,14 +60,6 @@ function stripPathPrefix(path, prefix) {
   return path
 }
 
-const rewriteApiPrefix = normalizePrefix(rewriteApiPrefixRaw)
-const rewriteWsPrefix = normalizePrefix(rewriteWsPrefixRaw)
-const explorerPrefix = normalizePrefix(explorerPrefixRaw)
-
-const apiMountPath = rewriteApiPrefix === '' ? '/' : rewriteApiPrefix
-const wsMountPath = rewriteWsPrefix === '' ? '/' : rewriteWsPrefix
-const explorerMountPath = explorerPrefix === '' ? '/' : explorerPrefix
-
 function isOriginAllowed(origin) {
   if (!origin || allowedOrigins.length === 0) {
     return true
@@ -79,6 +71,27 @@ function isOriginAllowed(origin) {
 
   return allowedOrigins.includes(origin)
 }
+
+function handleProxyError(err, req, res, target) {
+  const upstream = target?.href ?? target ?? 'upstream'
+  const path = req?.originalUrl ?? req?.url ?? '<unknown>'
+  console.error(`Proxy error for ${path} (${upstream}):`, err.message)
+  if (res && !res.headersSent) {
+    res.status(502).json({
+      error: 'Bad gateway',
+      reason: err.message,
+      upstream,
+    })
+  }
+}
+
+const rewriteApiPrefix = normalizePrefix(rewriteApiPrefixRaw)
+const rewriteWsPrefix = normalizePrefix(rewriteWsPrefixRaw)
+const explorerPrefix = normalizePrefix(explorerPrefixRaw)
+
+const apiMountPath = rewriteApiPrefix === '' ? '/' : rewriteApiPrefix
+const wsMountPath = rewriteWsPrefix === '' ? '/' : rewriteWsPrefix
+const explorerMountPath = explorerPrefix === '' ? '/' : explorerPrefix
 
 const corsOptions = {
   origin(origin, callback) {
@@ -94,8 +107,8 @@ const corsOptions = {
 }
 
 app.disable('x-powered-by')
+app.set('trust proxy', true)
 app.use(cors(corsOptions))
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT ?? '2mb' }))
 app.use(morgan('combined'))
 
 async function pingTarget() {
@@ -133,43 +146,40 @@ app.get('/api/health/node', async (_req, res) => {
   res.status(statusCode).json(result)
 })
 
-app.use(
-  apiMountPath,
-  createProxyMiddleware({
+const apiProxy = createProxyMiddleware({
+  target: targetRpcUrl,
+  changeOrigin: true,
+  ws: false,
+  logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
+  pathRewrite: (path) => stripPathPrefix(path, rewriteApiPrefix),
+  onError: handleProxyError,
+})
+
+const wsProxy = createProxyMiddleware({
+  target: targetWsUrl,
+  changeOrigin: true,
+  ws: true,
+  logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
+  pathRewrite: (path) => stripPathPrefix(path, rewriteWsPrefix),
+  onError: handleProxyError,
+})
+
+app.use(apiMountPath, apiProxy)
+app.use(wsMountPath, wsProxy)
+
+if (enableExplorer) {
+  const explorerProxy = createProxyMiddleware({
     target: targetRpcUrl,
     changeOrigin: true,
     ws: false,
-    pathRewrite: (path) => stripPathPrefix(path, rewriteApiPrefix),
     logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
-  }),
-)
+    pathRewrite: (path) => stripPathPrefix(path, explorerPrefix),
+    onError: handleProxyError,
+  })
 
-app.use(
-  wsMountPath,
-  createProxyMiddleware({
-    target: targetWsUrl,
-    changeOrigin: true,
-    ws: true,
-    logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
-    pathRewrite: (path) => stripPathPrefix(path, rewriteWsPrefix),
-  }),
-)
+  app.use(explorerMountPath, explorerProxy)
 
-// Blockchain Explorer routes
-if (enableExplorer) {
-  app.use(
-    explorerMountPath,
-    createProxyMiddleware({
-      target: targetRpcUrl,
-      changeOrigin: true,
-      ws: false,
-      pathRewrite: (path) => stripPathPrefix(path, explorerPrefix),
-      logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
-    }),
-  )
-
-  // Explorer info endpoint
-  app.get('/explorer', (req, res) => {
+  app.get('/explorer', (_req, res) => {
     res.json({
       name: 'IPPAN Blockchain Explorer',
       version: '1.0.0',
@@ -210,12 +220,44 @@ const server = app.listen(port, '0.0.0.0', () => {
   }
 })
 
+function isWebsocketUpgrade(url, mountPath) {
+  if (!url) {
+    return false
+  }
+
+  const parsed = new URL(url, 'http://localhost')
+  const pathname = parsed.pathname ?? '/'
+
+  if (mountPath === '/' || mountPath === '') {
+    return true
+  }
+
+  if (pathname === mountPath) {
+    return true
+  }
+
+  return pathname.startsWith(`${mountPath}/`)
+}
+
+server.on('upgrade', (req, socket, head) => {
+  if (isWebsocketUpgrade(req.url, wsMountPath)) {
+    wsProxy.upgrade(req, socket, head)
+    return
+  }
+
+  socket.destroy()
+})
+
 function shutdown() {
   console.log('Shutting down gateway...')
   server.close(() => {
     process.exit(0)
   })
 }
+
+server.on('error', (error) => {
+  console.error('Gateway server error:', error)
+})
 
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
