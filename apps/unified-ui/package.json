@@ -8,7 +8,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "export": "next build",
+    "serve": "npx serve@latest out",
+    "docker:build": "docker build -t ippan-unified-ui .",
+    "docker:run": "docker run -p 3000:80 ippan-unified-ui"
   },
   "dependencies": {
     "@headlessui/react": "1.7.19",

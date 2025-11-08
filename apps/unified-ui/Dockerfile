@@ -1,50 +1,36 @@
 # ============================================
 # IPPAN Unified UI — Production Dockerfile
-# Multi-stage build for minimal size & security
+# Static export served with Nginx
 # ============================================
 
-# ---- Base image ----
-FROM node:20-alpine AS base
-RUN apk add --no-cache libc6-compat
-WORKDIR /app
-
-# ---- Dependencies stage ----
-FROM base AS deps
-ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
-
 # ---- Build stage ----
-FROM base AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
 COPY . .
+
+# Build static export
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ---- Runtime stage ----
-FROM node:20-alpine AS runner
-WORKDIR /app
+FROM nginx:alpine AS runner
 
-# Environment
-ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3001 \
-    HOSTNAME="0.0.0.0"
+# Copy static files from build
+COPY --from=builder /app/out /usr/share/nginx/html
 
-# Security: non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy necessary build outputs
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Expose port
+EXPOSE 80
 
-# Final ownership and permissions
-USER nextjs
-
-EXPOSE 3001
-
-CMD ["node", "server.js"]
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]
