@@ -235,12 +235,7 @@ F_r \le 0.1 \times R(t)
 > IPPAN’s DAG-Fair Emission transforms block mining into time-anchored micro-rewards. Each HashTimer round defines a precise emission slice shared fairly among validators — enabling millions of blocks per second without inflation drift, ensuring a stable, transparent, and verifiable monetary policy.
 
 ---
-
-<<<<<<< HEAD
 ## 8. DAG-Fair Emission Framework
-=======
-## 🪙 8. DAG-Fair Emission Framework
->>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
 
 ### 8.1 Rationale
 
@@ -271,11 +266,7 @@ Rewards are computed **per round** and distributed proportionally to the nodes t
 Each round *t* issues a deterministic amount R(t) according to:
 
 ```
-<<<<<<< HEAD
-R(t) = R₀ / 2^⌊t / Tₕ⌋
-=======
 R(t) = R₀ / 2^(⌊t/Tₕ⌋)
->>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
 ```
 
 where
@@ -299,14 +290,8 @@ Let
 Then:
 
 ```
-<<<<<<< HEAD
-Rewardᵦ = R(t) / Bᵣ
-
-Rewardᵥ = Σ(b ∈ Bᵣ(v)) [R(t) / Bᵣ × f(v)]
-=======
 Reward_b = R(t) / Bᵣ
 Reward_v = Σ(b∈Bᵣ(v)) (R(t) / Bᵣ) × f(v)
->>>>>>> 952abe6 (feat: Add ippan_economics crate and DAG-Fair emission framework)
 ```
 
 where *f(v)* is a weighting factor based on node role and uptime:
