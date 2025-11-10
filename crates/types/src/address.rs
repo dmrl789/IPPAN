@@ -36,7 +36,7 @@ pub const CHECKSUM_LENGTH: usize = 4;
 /// Calculate a checksum for Base58Check encoding using double SHA256
 fn calculate_checksum(data: &[u8]) -> [u8; CHECKSUM_LENGTH] {
     let hash1 = Sha256::digest(data);
-    let hash2 = Sha256::digest(&hash1);
+    let hash2 = Sha256::digest(hash1);
     let mut checksum = [0u8; CHECKSUM_LENGTH];
     checksum.copy_from_slice(&hash2[..CHECKSUM_LENGTH]);
     checksum
@@ -209,7 +209,7 @@ mod tests {
     fn test_legacy_hex_format_backward_compatibility() {
         // Test that legacy hex format can still be decoded
         let bytes = [0xABu8; ADDRESS_BYTES];
-        let legacy_encoded = format!("i{}", hex::encode(&bytes));
+        let legacy_encoded = format!("i{}", hex::encode(bytes));
 
         assert_eq!(legacy_encoded.len(), ADDRESS_STRING_LENGTH);
         assert!(legacy_encoded.starts_with('i'));
@@ -250,7 +250,8 @@ mod tests {
         let bad = "x".to_string() + &"00".repeat(ADDRESS_BYTES);
         let err = decode_address(&bad).unwrap_err();
         // Should fail with Base58 decode error or other error
-        assert!(err.to_string().len() > 0);
+        let message = err.to_string();
+        assert!(!message.is_empty());
     }
 
     #[test]

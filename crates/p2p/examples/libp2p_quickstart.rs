@@ -8,9 +8,12 @@ use tracing::{info, warn};
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let mut config = Libp2pConfig::default();
-    config.listen_addresses = vec!["/ip4/0.0.0.0/tcp/0".parse::<Multiaddr>()?];
-    config.agent_version = format!("ippan-libp2p-demo/{}", env!("CARGO_PKG_VERSION"));
+    let listen_address = "/ip4/0.0.0.0/tcp/0".parse::<Multiaddr>()?;
+    let mut config = Libp2pConfig {
+        listen_addresses: vec![listen_address],
+        agent_version: format!("ippan-libp2p-demo/{}", env!("CARGO_PKG_VERSION")),
+        ..Libp2pConfig::default()
+    };
     config.gossip_topics.push("ippan/demo".into());
 
     let network = Libp2pNetwork::new(config)?;
