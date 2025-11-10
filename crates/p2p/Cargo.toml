@@ -23,6 +23,9 @@ reqwest = { workspace = true }
 url = { workspace = true }
 igd = { workspace = true }
 local-ip-address = { workspace = true }
+libp2p = { workspace = true }
+async-trait = { workspace = true }
+blake3 = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true, features = ["std", "std_rng"] }
