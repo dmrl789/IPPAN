@@ -564,6 +564,90 @@ mod serialization_tests {
         assert_eq!(json2, json3, "Block serialization is not deterministic");
     }
 
+    /// Test bincode round-trip serialization for Transaction
+    #[test]
+    fn test_transaction_bincode_roundtrip() {
+        let secret = SigningKey::from_bytes(&[33u8; 32]);
+        let from = secret.verifying_key().to_bytes();
+        let mut tx = Transaction::new(from, [34u8; 32], Amount::from_atomic(13579), 321);
+        tx.topics = vec!["binary".to_string(), "consistency".to_string()];
+        let envelope = ConfidentialEnvelope {
+            enc_algo: "AES-256-GCM".to_string(),
+            iv: hex::encode([0x11u8; 12]),
+            ciphertext: hex::encode([0x22u8; 24]),
+            access_keys: vec![AccessKey {
+                recipient_pub: hex::encode([0x33u8; 32]),
+                enc_key: hex::encode([0x44u8; 32]),
+            }],
+        };
+        tx.set_confidential_envelope(envelope);
+        let mut public_inputs = std::collections::BTreeMap::new();
+        public_inputs.insert("balance".to_string(), "13579".to_string());
+        let proof = ConfidentialProof {
+            proof_type: ConfidentialProofType::Stark,
+            proof: hex::encode([0x55u8; 16]),
+            public_inputs,
+        };
+        tx.set_confidential_proof(proof);
+        tx.sign(&secret.to_bytes()).unwrap();
+
+        let bytes = bincode::serialize(&tx).expect("Failed to serialize transaction with bincode");
+        let deserialized: Transaction =
+            bincode::deserialize(&bytes).expect("Failed to deserialize transaction with bincode");
+
+        assert_eq!(tx.id, deserialized.id, "Transaction ID mismatch");
+        assert_eq!(tx.from, deserialized.from, "From address mismatch");
+        assert_eq!(tx.to, deserialized.to, "To address mismatch");
+        assert_eq!(tx.amount, deserialized.amount, "Amount mismatch");
+        assert_eq!(tx.nonce, deserialized.nonce, "Nonce mismatch");
+        assert_eq!(tx.hashtimer, deserialized.hashtimer, "HashTimer mismatch");
+        assert_eq!(tx.timestamp, deserialized.timestamp, "Timestamp mismatch");
+        assert_eq!(tx.visibility, deserialized.visibility, "Visibility mismatch");
+        assert_eq!(tx.topics, deserialized.topics, "Topics mismatch");
+        assert_eq!(tx.confidential, deserialized.confidential, "Confidential mismatch");
+        assert_eq!(tx.zk_proof, deserialized.zk_proof, "ZK proof mismatch");
+        assert_eq!(tx.signature, deserialized.signature, "Signature mismatch");
+
+        assert_eq!(
+            tx.hash(),
+            deserialized.hash(),
+            "Transaction hash mismatch after bincode round-trip",
+        );
+        assert!(deserialized.is_valid(), "Deserialized transaction should be valid");
+    }
+
+    /// Test bincode round-trip serialization for RoundFinalizationRecord
+    #[test]
+    fn test_round_finalization_record_bincode_roundtrip() {
+        let window = RoundWindow {
+            id: 205,
+            start_us: IppanTimeMicros(7_500_000),
+            end_us: IppanTimeMicros(8_000_000),
+        };
+
+        let proof = RoundCertificate {
+            round: 205,
+            block_ids: vec![[0x51u8; 32], [0x52u8; 32]],
+            agg_sig: vec![0x10, 0x20, 0x30, 0x40],
+        };
+
+        let record = RoundFinalizationRecord {
+            round: 205,
+            window,
+            ordered_tx_ids: vec![[0x61u8; 32], [0x62u8; 32], [0x63u8; 32]],
+            fork_drops: vec![[0x71u8; 32]],
+            state_root: [0x81u8; 32],
+            proof,
+        };
+
+        let bytes =
+            bincode::serialize(&record).expect("Failed to serialize finalization record with bincode");
+        let deserialized: RoundFinalizationRecord = bincode::deserialize(&bytes)
+            .expect("Failed to deserialize finalization record with bincode");
+
+        assert_eq!(record, deserialized, "RoundFinalizationRecord mismatch after round-trip");
+    }
+
     /// Test that HashTimer serialization maintains temporal consistency
     #[test]
     fn test_hashtimer_serialization_consistency() {
