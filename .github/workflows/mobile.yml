@@ -8,6 +8,9 @@ on:
   push:
     tags:
       - 'v*'
+  release:
+    types:
+      - published
 
 permissions:
   contents: read
@@ -31,6 +34,14 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+
       - name: Grant Gradle wrapper permissions
         run: chmod +x gradlew
 
@@ -46,11 +57,12 @@ jobs:
         with:
           name: android-test-reports
           path: app/build/reports/
+          if-no-files-found: ignore
           retention-days: 7
 
   release-apk:
     name: Build Release APK (Tag)
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -90,3 +102,9 @@ jobs:
           name: android-wallet-release-apk
           path: app/build/outputs/apk/release/*.apk
           retention-days: 14
+
+      - name: Attach APK to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/*.apk
