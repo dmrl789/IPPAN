@@ -129,7 +129,7 @@ mod type_tests {
 // ========================================================================
 
 #[cfg(test)]
-mod serialization_tests {
+mod serialization_roundtrip_tests {
     use super::*;
     use ed25519_dalek::SigningKey;
 
@@ -225,7 +225,7 @@ mod serialization_tests {
 }
 
 #[cfg(test)]
-mod serialization_tests {
+mod serialization_tests_extended {
     use super::*;
     use ed25519_dalek::SigningKey;
 

@@ -1552,6 +1552,7 @@ mod tests {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
         let account_address = sample_public_key([4u8; 32]);
+        let tx = sample_transaction([4u8; 32], [5u8; 32], 1);
         let account = Account {
             address: account_address,
             balance: 500,
@@ -1561,7 +1562,6 @@ mod tests {
             .storage
             .update_account(account.clone())
             .expect("account");
-        let tx = sample_transaction([4u8; 32], [5u8; 32], 1);
         state.storage.store_transaction(tx.clone()).expect("tx1");
         state
             .storage
