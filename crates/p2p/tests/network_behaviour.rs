@@ -311,9 +311,7 @@ async fn peer_reconnection_restores_metadata() {
         "peer removed from topology"
     );
     assert!(
-        metadata_by_address(network.get_peer_metadata())
-            .get(&peer_addr)
-            .is_none(),
+        !metadata_by_address(network.get_peer_metadata()).contains_key(&peer_addr),
         "metadata cleared after remove"
     );
 
