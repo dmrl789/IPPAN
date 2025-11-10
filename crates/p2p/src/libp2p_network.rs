@@ -32,7 +32,7 @@ use libp2p::{mdns, Multiaddr, PeerId, Transport};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 /// Default gossip topics propagated across the libp2p fabric.
 pub const DEFAULT_GOSSIP_TOPICS: &[&str] =
@@ -458,6 +458,15 @@ fn handle_swarm_event(
                 });
             }
         }
+        SwarmEvent::Behaviour(ComposedEvent::Identify(event)) => {
+            trace!("Received identify event: {:?}", event);
+        }
+        SwarmEvent::Behaviour(ComposedEvent::Ping(event)) => {
+            trace!("Received ping event: {:?}", event);
+        }
+        SwarmEvent::Behaviour(ComposedEvent::Kademlia(event)) => {
+            trace!("Received Kademlia event: {:?}", event);
+        }
         SwarmEvent::Behaviour(ComposedEvent::Mdns(event)) => match event {
             mdns::Event::Discovered(discovered) => {
                 let mut aggregate: HashMap<PeerId, Vec<Multiaddr>> = HashMap::new();
@@ -486,12 +495,15 @@ fn handle_swarm_event(
                 }
             }
         },
+        SwarmEvent::Behaviour(ComposedEvent::Relay(
+            relay::client::Event::ReservationReqAccepted { relay_peer_id, .. },
+        )) => {
+            let _ = event_tx.send(Libp2pEvent::RelayReservationAccepted {
+                relay: relay_peer_id,
+            });
+        }
         SwarmEvent::Behaviour(ComposedEvent::Relay(event)) => {
-            if let relay::client::Event::ReservationReqAccepted { relay_peer_id, .. } = event {
-                let _ = event_tx.send(Libp2pEvent::RelayReservationAccepted {
-                    relay: relay_peer_id,
-                });
-            }
+            trace!("Ignoring relay client event: {:?}", event);
         }
         SwarmEvent::Behaviour(ComposedEvent::Dcutr(event)) => match event.result {
             Ok(_) => {
