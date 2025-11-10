@@ -20,9 +20,6 @@ jobs:
     name: Build & Test (PR)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/mobile/android-wallet
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,7 +37,8 @@ jobs:
           packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: Grant Gradle wrapper permissions
-        run: chmod +x apps/mobile/android-wallet/gradlew
+        working-directory: apps/mobile/android-wallet
+        run: chmod +x gradlew
 
       - name: Run unit tests
         working-directory: apps/mobile/android-wallet
@@ -55,7 +53,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-test-reports
-          path: app/build/reports/
+          path: apps/mobile/android-wallet/app/build/reports/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -65,9 +63,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    defaults:
-      run:
-        working-directory: apps/mobile/android-wallet
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,7 +82,8 @@ jobs:
           packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: Grant Gradle wrapper permissions
-        run: chmod +x apps/mobile/android-wallet/gradlew
+        working-directory: apps/mobile/android-wallet
+        run: chmod +x gradlew
 
       - name: Build release APK
         working-directory: apps/mobile/android-wallet
@@ -97,11 +93,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-wallet-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: apps/mobile/android-wallet/app/build/outputs/apk/release/*.apk
           retention-days: 14
 
       - name: Attach APK to GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: apps/mobile/android-wallet/app/build/outputs/apk/release/*.apk
