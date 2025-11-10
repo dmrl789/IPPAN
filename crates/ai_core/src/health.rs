@@ -1,6 +1,9 @@
 //! Health checks and monitoring for AI Core
 
-use crate::errors::{AiCoreError, Result};
+use crate::{
+    errors::{AiCoreError, Result},
+    fixed::Fixed,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -309,12 +312,12 @@ impl HealthChecker for MemoryUsageChecker {
 
 /// Model execution checker
 pub struct ModelExecutionChecker {
-    max_failure_rate: f64,
+    max_failure_rate: Fixed,
     min_executions: u64,
 }
 
 impl ModelExecutionChecker {
-    pub fn new(max_failure_rate: f64, min_executions: u64) -> Self {
+    pub fn new(max_failure_rate: Fixed, min_executions: u64) -> Self {
         Self {
             max_failure_rate,
             min_executions,
@@ -346,10 +349,10 @@ impl HealthChecker for ModelExecutionChecker {
             });
         }
 
-        let failure_rate = failed_executions as f64 / total_executions as f64;
+        let failure_rate = Fixed::from_ratio(failed_executions as i64, total_executions as i64);
         let status = if failure_rate > self.max_failure_rate {
             HealthStatus::Unhealthy
-        } else if failure_rate > self.max_failure_rate / 2.0 {
+        } else if failure_rate > self.max_failure_rate.div_int(2) {
             HealthStatus::Degraded
         } else {
             HealthStatus::Healthy
@@ -359,9 +362,9 @@ impl HealthChecker for ModelExecutionChecker {
             name: self.name().to_string(),
             status,
             message: format!(
-                "Failure rate: {:.2}% (threshold: {:.2}%)",
-                failure_rate * 100.0,
-                self.max_failure_rate * 100.0
+                "Failure rate: {} (threshold: {})",
+                (failure_rate * Fixed::from_int(100)).to_string(),
+                (self.max_failure_rate * Fixed::from_int(100)).to_string()
             ),
             duration_us: 0,
             timestamp: 0,
@@ -412,14 +415,14 @@ fn get_memory_usage() -> Result<u64> {
 }
 
 /// Get system load average (1-minute average)
-fn get_load_average() -> Result<f64> {
+fn get_load_average() -> Result<Fixed> {
     #[cfg(target_os = "linux")]
     {
         use std::fs;
         if let Ok(loadavg) = fs::read_to_string("/proc/loadavg") {
             // Format: "0.52 0.58 0.59 1/467 12345"
             if let Some(first) = loadavg.split_whitespace().next() {
-                if let Ok(load) = first.parse::<f64>() {
+                if let Some(load) = Fixed::from_decimal_str(first) {
                     return Ok(load);
                 }
             }
@@ -430,7 +433,7 @@ fn get_load_average() -> Result<f64> {
     use sysinfo::{System, SystemExt};
     let sys = System::new();
     let load = sys.load_average();
-    Ok(load.one)
+    Ok(Fixed::from_f64(load.one))
 }
 
 #[cfg(test)]
@@ -452,7 +455,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_execution_checker() {
-        let checker = ModelExecutionChecker::new(0.1, 10);
+        let checker = ModelExecutionChecker::new(Fixed::from_f64(0.1), 10);
         let result = checker.check().unwrap();
         assert_eq!(result.name, "model_execution");
     }
@@ -466,7 +469,7 @@ mod tests {
         );
         monitor.register_check(
             "execution".into(),
-            Box::new(ModelExecutionChecker::new(0.1, 10)),
+            Box::new(ModelExecutionChecker::new(Fixed::from_f64(0.1), 10)),
         );
 
         let health = monitor.run_health_checks().await;

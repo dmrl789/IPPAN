@@ -181,10 +181,7 @@ impl ExecutionEngine {
             end_time: 0,
             duration_us: exec_time.as_micros() as u64,
             memory_usage: metadata.size_bytes + input.data.len() as u64,
-            #[cfg(feature = "deterministic_math")]
             cpu_usage: crate::fixed::Fixed::ZERO,
-            #[cfg(not(feature = "deterministic_math"))]
-            cpu_usage: 0.0,
             success: true,
             error: None,
             metadata: {
@@ -203,10 +200,7 @@ impl ExecutionEngine {
             data: output_data,
             dtype: input.dtype,
             shape: metadata.output_shape.clone(),
-            #[cfg(feature = "deterministic_math")]
             confidence: crate::fixed::Fixed::ONE,
-            #[cfg(not(feature = "deterministic_math"))]
-            confidence: 1.0,
             metadata: metadata_block,
         })
     }
