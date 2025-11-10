@@ -18,4 +18,6 @@ rand_core = { workspace = true, features = ["getrandom"] }
 time = { workspace = true }
 ed25519-dalek = { workspace = true }
 thiserror = { workspace = true }
+bs58 = { workspace = true }
+sha2 = { workspace = true }
 ippan-time = { path = "../time" }

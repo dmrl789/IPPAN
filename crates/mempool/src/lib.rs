@@ -10,12 +10,12 @@
 //! - **Thread-safe**
 //! - **Confidential transaction support**
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use ippan_crypto::validate_confidential_transaction;
 use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BinaryHeap, HashMap};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 /// Transaction metadata
@@ -25,6 +25,56 @@ struct TransactionMeta {
     added_at: Instant,
     fee: u64,
 }
+
+#[derive(Default)]
+struct BroadcastState {
+    queue: VecDeque<String>,
+    enqueued: HashSet<String>,
+}
+
+impl BroadcastState {
+    fn enqueue(&mut self, hash: String) {
+        if self.enqueued.insert(hash.clone()) {
+            self.queue.push_back(hash);
+        }
+    }
+
+    fn remove(&mut self, hash: &str) {
+        if self.enqueued.remove(hash) {
+            self.queue.retain(|queued| queued != hash);
+        }
+    }
+
+    fn drain(&mut self, max: usize) -> Vec<String> {
+        if max == 0 {
+            return Vec::new();
+        }
+
+        let mut drained = Vec::with_capacity(std::cmp::min(max, self.queue.len()));
+
+        for _ in 0..max {
+            match self.queue.pop_front() {
+                Some(hash) => {
+                    self.enqueued.remove(&hash);
+                    drained.push(hash);
+                }
+                None => break,
+            }
+        }
+
+        drained
+    }
+
+    fn len(&self) -> usize {
+        self.queue.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+}
+
+const MAX_FEE_PER_TX: u64 = 10_000_000;
 
 /// Candidate for block inclusion
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,6 +108,7 @@ pub struct Mempool {
     max_size: usize,
     expiration_duration: Duration,
     last_cleanup: RwLock<Instant>,
+    broadcast: RwLock<BroadcastState>,
 }
 
 impl Mempool {
@@ -68,6 +119,7 @@ impl Mempool {
             max_size,
             expiration_duration: Duration::from_secs(300),
             last_cleanup: RwLock::new(Instant::now()),
+            broadcast: RwLock::new(BroadcastState::default()),
         }
     }
 
@@ -78,15 +130,33 @@ impl Mempool {
             max_size,
             expiration_duration,
             last_cleanup: RwLock::new(Instant::now()),
+            broadcast: RwLock::new(BroadcastState::default()),
         }
     }
 
     /// Add transaction to mempool
     pub fn add_transaction(&self, tx: Transaction) -> Result<bool> {
+        self.cleanup_expired_transactions();
+
+        if !tx.is_valid() {
+            return Err(anyhow!("invalid transaction payload or signature"));
+        }
+
+        if tx.visibility == ippan_types::TransactionVisibility::Confidential {
+            validate_confidential_transaction(&tx)?;
+        }
+
+        let fee = self.calculate_transaction_fee(&tx);
+        if fee > MAX_FEE_PER_TX {
+            return Err(anyhow!(
+                "transaction fee {} exceeds maximum allowed {}",
+                fee,
+                MAX_FEE_PER_TX
+            ));
+        }
+
         let tx_hash = hex::encode(tx.hash());
         let sender = hex::encode(tx.from);
-
-        self.cleanup_expired_transactions();
 
         let mut transactions = self.transactions.write();
         let mut sender_nonces = self.sender_nonces.write();
@@ -95,21 +165,19 @@ impl Mempool {
             return Ok(false);
         }
 
-        // Ensure space before adding new transaction
-        if transactions.len() >= self.max_size
-            && !self.make_space_for_transaction(&mut transactions, &mut sender_nonces, 0)
-        {
+        if !self.ensure_nonce_admissible(
+            &sender,
+            tx.nonce,
+            fee,
+            &mut transactions,
+            &mut sender_nonces,
+        )? {
             return Ok(false);
         }
 
-        // Lightweight confidential validation
-        if tx.visibility == ippan_types::TransactionVisibility::Confidential {
-            validate_confidential_transaction(&tx)?;
-        }
-
-        let fee = self.calculate_transaction_fee(&tx);
-        const MAX_FEE_PER_TX: u64 = 10_000_000;
-        if fee > MAX_FEE_PER_TX {
+        if transactions.len() >= self.max_size
+            && !self.make_space_for_transaction(&mut transactions, &mut sender_nonces, fee)
+        {
             return Ok(false);
         }
 
@@ -123,7 +191,12 @@ impl Mempool {
         sender_nonces
             .entry(sender)
             .or_default()
-            .insert(tx.nonce, tx_hash);
+            .insert(tx.nonce, tx_hash.clone());
+
+        drop(sender_nonces);
+        drop(transactions);
+
+        self.enqueue_for_broadcast(tx_hash);
 
         Ok(true)
     }
@@ -140,7 +213,12 @@ impl Mempool {
                     sender_nonces.remove(&sender);
                 }
             }
-            Ok(Some(meta.transaction))
+
+            let tx = meta.transaction;
+            drop(sender_nonces);
+            drop(transactions);
+            self.remove_from_broadcast(tx_hash);
+            Ok(Some(tx))
         } else {
             Ok(None)
         }
@@ -166,6 +244,38 @@ impl Mempool {
         } else {
             Vec::new()
         }
+    }
+
+    /// Check if there are transactions pending broadcast.
+    pub fn has_pending_broadcasts(&self) -> bool {
+        !self.broadcast.read().is_empty()
+    }
+
+    /// Number of transactions queued for broadcast.
+    pub fn pending_broadcasts(&self) -> usize {
+        self.broadcast.read().len()
+    }
+
+    /// Drain up to `max` transactions from the broadcast queue in insertion order.
+    pub fn drain_broadcast_queue(&self, max: usize) -> Vec<Transaction> {
+        if max == 0 {
+            return Vec::new();
+        }
+
+        let hashes = {
+            let mut broadcast = self.broadcast.write();
+            broadcast.drain(max)
+        };
+
+        if hashes.is_empty() {
+            return Vec::new();
+        }
+
+        let transactions = self.transactions.read();
+        hashes
+            .into_iter()
+            .filter_map(|hash| transactions.get(&hash).map(|meta| meta.transaction.clone()))
+            .collect()
     }
 
     /// Fee-prioritized selection for block building
@@ -283,10 +393,57 @@ impl Mempool {
                         sender_nonces.remove(&sender);
                     }
                 }
+                self.remove_from_broadcast(&hash);
             }
         }
 
         *self.last_cleanup.write() = now;
+    }
+
+    fn ensure_nonce_admissible(
+        &self,
+        sender: &str,
+        nonce: u64,
+        new_fee: u64,
+        transactions: &mut HashMap<String, TransactionMeta>,
+        sender_nonces: &mut HashMap<String, BTreeMap<u64, String>>,
+    ) -> Result<bool> {
+        if let Some(nonces) = sender_nonces.get(sender) {
+            if let Some(existing_hash_ref) = nonces.get(&nonce) {
+                let existing_hash = existing_hash_ref.clone();
+                if let Some(existing_meta) = transactions.get(&existing_hash) {
+                    match new_fee.cmp(&existing_meta.fee) {
+                        Ordering::Less => return Ok(false),
+                        Ordering::Equal => return Ok(false),
+                        Ordering::Greater => {
+                            transactions.remove(&existing_hash);
+                            if let Some(nonce_map) = sender_nonces.get_mut(sender) {
+                                nonce_map.remove(&nonce);
+                                if nonce_map.is_empty() {
+                                    sender_nonces.remove(sender);
+                                }
+                            }
+                            self.remove_from_broadcast(&existing_hash);
+                        }
+                    }
+                } else if let Some(nonce_map) = sender_nonces.get_mut(sender) {
+                    nonce_map.remove(&nonce);
+                    if nonce_map.is_empty() {
+                        sender_nonces.remove(sender);
+                    }
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    fn enqueue_for_broadcast(&self, tx_hash: String) {
+        self.broadcast.write().enqueue(tx_hash);
+    }
+
+    fn remove_from_broadcast(&self, tx_hash: &str) {
+        self.broadcast.write().remove(tx_hash);
     }
 
     fn calculate_transaction_fee(&self, tx: &Transaction) -> u64 {
@@ -345,6 +502,7 @@ impl Mempool {
                             sender_nonces.remove(&sender);
                         }
                     }
+                    self.remove_from_broadcast(&hash);
                     return true;
                 }
             }
@@ -393,13 +551,47 @@ pub struct MempoolStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::SigningKey;
     use ippan_types::{Amount, Transaction};
     use std::time::Duration;
+
+    fn make_account(seed: u8) -> ([u8; 32], [u8; 32]) {
+        let secret = [seed; 32];
+        let signing_key = SigningKey::from_bytes(&secret);
+        let public = signing_key.verifying_key().to_bytes();
+        (secret, public)
+    }
+
+    fn signed_transaction(
+        sender_seed: u8,
+        recipient_seed: u8,
+        amount: Amount,
+        nonce: u64,
+        topics: Vec<String>,
+    ) -> Transaction {
+        let (secret, from) = make_account(sender_seed);
+        let (_, to) = make_account(recipient_seed);
+        let mut tx = Transaction::new(from, to, amount, nonce);
+        if !topics.is_empty() {
+            tx.set_topics(topics);
+        }
+        tx.sign(&secret).expect("transaction signing");
+        tx
+    }
+
+    fn basic_transaction(
+        sender_seed: u8,
+        recipient_seed: u8,
+        amount: Amount,
+        nonce: u64,
+    ) -> Transaction {
+        signed_transaction(sender_seed, recipient_seed, amount, nonce, Vec::new())
+    }
 
     #[test]
     fn test_mempool_add_remove() {
         let mempool = Mempool::new(100);
-        let tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx = basic_transaction(1, 2, Amount::from_atomic(1000), 1);
         let tx_hash = hex::encode(tx.hash());
         assert!(mempool.add_transaction(tx.clone()).unwrap());
         assert_eq!(mempool.size(), 1);
@@ -412,23 +604,21 @@ mod tests {
     #[test]
     fn test_mempool_sender_transactions() {
         let mempool = Mempool::new(100);
-        let sender = [1u8; 32];
-        let tx1 = Transaction::new(sender, [2u8; 32], Amount::from_atomic(1000), 1);
-        let tx2 = Transaction::new(sender, [3u8; 32], Amount::from_atomic(2000), 2);
+        let tx1 = basic_transaction(1, 2, Amount::from_atomic(1000), 1);
+        let tx2 = basic_transaction(1, 3, Amount::from_atomic(2000), 2);
+        let sender_hex = hex::encode(tx1.from);
         mempool.add_transaction(tx1).unwrap();
         mempool.add_transaction(tx2).unwrap();
-        let sender_txs = mempool.get_sender_transactions(&hex::encode(sender));
+        let sender_txs = mempool.get_sender_transactions(&sender_hex);
         assert_eq!(sender_txs.len(), 2);
     }
 
     #[test]
     fn test_mempool_fee_prioritization() {
         let mempool = Mempool::new(100);
-        let sender1 = [1u8; 32];
-        let sender2 = [2u8; 32];
-        let tx1 = Transaction::new(sender1, [3u8; 32], Amount::from_atomic(1000), 1);
-        let tx2 = Transaction::new(sender2, [4u8; 32], Amount::from_atomic(2000), 1);
-        let tx3 = Transaction::new(sender1, [5u8; 32], Amount::from_atomic(1500), 2);
+        let tx1 = basic_transaction(1, 3, Amount::from_atomic(1000), 1);
+        let tx2 = basic_transaction(2, 4, Amount::from_atomic(2000), 1);
+        let tx3 = basic_transaction(1, 5, Amount::from_atomic(1500), 2);
         mempool.add_transaction(tx1).unwrap();
         mempool.add_transaction(tx2).unwrap();
         mempool.add_transaction(tx3).unwrap();
@@ -439,17 +629,19 @@ mod tests {
     #[test]
     fn test_mempool_nonce_ordering() {
         let mempool = Mempool::new(100);
-        let sender = [1u8; 32];
-        let tx1 = Transaction::new(sender, [2u8; 32], Amount::from_atomic(1000), 1);
-        let tx2 = Transaction::new(sender, [3u8; 32], Amount::from_atomic(2000), 2);
-        let tx3 = Transaction::new(sender, [4u8; 32], Amount::from_atomic(1500), 3);
+        let sender_seed = 1u8;
+        let tx1 = basic_transaction(sender_seed, 2, Amount::from_atomic(1000), 1);
+        let tx2 = basic_transaction(sender_seed, 3, Amount::from_atomic(2000), 2);
+        let tx3 = basic_transaction(sender_seed, 4, Amount::from_atomic(1500), 3);
+        let sender_bytes = tx1.from;
+
         mempool.add_transaction(tx2.clone()).unwrap();
         mempool.add_transaction(tx1.clone()).unwrap();
         mempool.add_transaction(tx3.clone()).unwrap();
         let block_txs = mempool.get_transactions_for_block(3);
         let nonces: Vec<_> = block_txs
             .iter()
-            .filter(|tx| tx.from == sender)
+            .filter(|tx| tx.from == sender_bytes)
             .map(|tx| tx.nonce)
             .collect();
         assert_eq!(nonces, vec![1, 2, 3]);
@@ -458,11 +650,11 @@ mod tests {
     #[test]
     fn test_mempool_expiration() {
         let mempool = Mempool::new_with_expiration(100, Duration::from_millis(100));
-        let tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
+        let tx = basic_transaction(1, 2, Amount::from_atomic(1000), 1);
         assert!(mempool.add_transaction(tx).unwrap());
         assert_eq!(mempool.size(), 1);
         std::thread::sleep(Duration::from_millis(150));
-        let tx2 = Transaction::new([3u8; 32], [4u8; 32], Amount::from_atomic(1000), 1);
+        let tx2 = basic_transaction(3, 4, Amount::from_atomic(1000), 1);
         assert!(mempool.add_transaction(tx2).unwrap());
         assert_eq!(mempool.size(), 1);
     }
@@ -470,12 +662,75 @@ mod tests {
     #[test]
     fn test_mempool_stats() {
         let mempool = Mempool::new(100);
-        let tx1 = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
-        let tx2 = Transaction::new([3u8; 32], [4u8; 32], Amount::from_atomic(2000), 1);
+        let tx1 = basic_transaction(1, 2, Amount::from_atomic(1000), 1);
+        let tx2 = basic_transaction(3, 4, Amount::from_atomic(2000), 1);
         mempool.add_transaction(tx1).unwrap();
         mempool.add_transaction(tx2).unwrap();
         let stats = mempool.get_stats();
         assert_eq!(stats.size, 2);
         assert!(stats.total_fee > 0);
+    }
+
+    #[test]
+    fn test_mempool_rejects_invalid_transaction() {
+        let mempool = Mempool::new(10);
+        let (_, from) = make_account(1);
+        let (_, to) = make_account(2);
+        let tx = Transaction::new(from, to, Amount::from_atomic(1000), 1);
+        assert!(mempool.add_transaction(tx).is_err());
+    }
+
+    #[test]
+    fn test_mempool_replaces_lower_fee_for_same_nonce() {
+        let mempool = Mempool::new(10);
+        let low_fee = signed_transaction(1, 2, Amount::from_atomic(1000), 1, vec!["a".into()]);
+        let high_fee = signed_transaction(1, 3, Amount::from_atomic(1000), 1, vec!["a".repeat(64)]);
+        let low_hash = hex::encode(low_fee.hash());
+        let high_hash = hex::encode(high_fee.hash());
+
+        assert!(mempool.add_transaction(low_fee).unwrap());
+        assert!(mempool.add_transaction(high_fee.clone()).unwrap());
+        assert!(mempool.get_transaction(&low_hash).is_none());
+        assert!(mempool.get_transaction(&high_hash).is_some());
+        assert_eq!(mempool.size(), 1);
+    }
+
+    #[test]
+    fn test_mempool_rejects_lower_fee_duplicate_nonce() {
+        let mempool = Mempool::new(10);
+        let high_fee =
+            signed_transaction(1, 2, Amount::from_atomic(1000), 1, vec!["topic".repeat(32)]);
+        let low_fee = signed_transaction(1, 3, Amount::from_atomic(1000), 1, vec!["t".into()]);
+
+        assert!(mempool.add_transaction(high_fee.clone()).unwrap());
+        assert!(!mempool.add_transaction(low_fee).unwrap());
+        let high_hash = hex::encode(high_fee.hash());
+        assert!(mempool.get_transaction(&high_hash).is_some());
+        assert_eq!(mempool.size(), 1);
+    }
+
+    #[test]
+    fn test_mempool_broadcast_queue_pipeline() {
+        let mempool = Mempool::new(10);
+        let tx = basic_transaction(1, 2, Amount::from_atomic(1000), 1);
+        let tx_hash = hex::encode(tx.hash());
+        assert!(mempool.add_transaction(tx.clone()).unwrap());
+        assert!(mempool.has_pending_broadcasts());
+        assert_eq!(mempool.pending_broadcasts(), 1);
+
+        let drained = mempool.drain_broadcast_queue(10);
+        assert_eq!(drained.len(), 1);
+        assert_eq!(hex::encode(drained[0].hash()), tx_hash);
+        assert!(!mempool.has_pending_broadcasts());
+
+        let drained_again = mempool.drain_broadcast_queue(10);
+        assert!(drained_again.is_empty());
+
+        let tx2 = basic_transaction(1, 3, Amount::from_atomic(2000), 2);
+        let tx2_hash = hex::encode(tx2.hash());
+        assert!(mempool.add_transaction(tx2.clone()).unwrap());
+        assert_eq!(mempool.pending_broadcasts(), 1);
+        mempool.remove_transaction(&tx2_hash).unwrap();
+        assert_eq!(mempool.pending_broadcasts(), 0);
     }
 }

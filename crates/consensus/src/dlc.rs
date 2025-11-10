@@ -11,13 +11,14 @@ use anyhow::Result;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing::{info, warn};
 
 use ippan_types::{Block, BlockId, IppanTimeMicros, RoundId, ValidatorId};
 
 use crate::bonding::BondingManager;
 use crate::dgbdt::{DGBDTEngine, ValidatorMetrics};
+use crate::hashtimer_integration::should_close_round;
 use crate::parallel_dag::{ParallelDag, ParallelDagConfig};
 use crate::shadow_verifier::ShadowVerifierSet;
 
@@ -159,14 +160,15 @@ impl DLCConsensus {
     pub async fn process_round(&mut self) -> Result<()> {
         let mut round = self.current_round.write();
 
-        // Check if round should close based on temporal finality
-        let elapsed = round.round_start.elapsed();
-        let finality_window = Duration::from_millis(self.config.temporal_finality_ms);
-
-        if elapsed < finality_window {
+        // Check if round should close based on deterministic temporal finality
+        if !should_close_round(
+            round.round_start_time,
+            self.config.temporal_finality_ms,
+        ) {
             return Ok(()); // Round not ready to close
         }
 
+        let elapsed = round.round_start.elapsed();
         info!("Round {} closing after {:?}", round.round_id, elapsed);
 
         // Select next round's verifiers using D-GBDT
@@ -335,5 +337,26 @@ mod tests {
         assert_eq!(config.temporal_finality_ms, 250);
         assert!(config.temporal_finality_ms >= 100);
         assert!(config.temporal_finality_ms <= 250);
+    }
+
+    #[tokio::test]
+    async fn test_process_round_respects_hashtimer_window() {
+        let config = DLCConfig {
+            temporal_finality_ms: 100,
+            ..Default::default()
+        };
+        let mut dlc = DLCConsensus::new(config, [1u8; 32]);
+
+        {
+            let mut round = dlc.current_round.write();
+            round.round_start = Instant::now();
+            let now = IppanTimeMicros::now();
+            round.round_start_time = IppanTimeMicros(now.0.saturating_sub(200_000));
+        }
+
+        dlc.process_round().await.unwrap();
+
+        let state = dlc.get_state();
+        assert_eq!(state.round_id, 2);
     }
 }

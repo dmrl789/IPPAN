@@ -24,6 +24,37 @@ fn fp(value: f64) -> Fixed {
     Fixed::from_f64(value)
 }
 
+const EXPECTED_CANONICAL_TEST_MODEL_JSON: &str = r#"{
+  "learning_rate": 100000,
+  "trees": [
+    {
+      "nodes": [
+        {
+          "feature": 0,
+          "left": 1,
+          "right": 2,
+          "threshold": 0,
+          "value": null
+        },
+        {
+          "feature": 0,
+          "left": null,
+          "right": null,
+          "threshold": 0,
+          "value": 100000
+        },
+        {
+          "feature": 0,
+          "left": null,
+          "right": null,
+          "threshold": 0,
+          "value": -50000
+        }
+      ]
+    }
+  ]
+}"#;
+
 /// Test model loading from JSON file
 #[test]
 fn test_model_loading_from_json() {
@@ -248,6 +279,54 @@ fn test_model_serialization_round_trip() {
     assert_eq!(model.predict(&features), loaded_bin.predict(&features));
 }
 
+/// Canonical JSON must be stable bit-for-bit for the test model
+#[test]
+fn test_canonical_json_for_test_model_is_bit_stable() {
+    let model = create_test_model();
+    let canonical = model.to_canonical_json().unwrap();
+    assert_eq!(canonical, EXPECTED_CANONICAL_TEST_MODEL_JSON);
+
+    // Regenerating the JSON should not change any bytes
+    let canonical_repeat = model.to_canonical_json().unwrap();
+    assert_eq!(canonical, canonical_repeat);
+}
+
+/// Saved JSON artifact must match canonical serialization and remain stable across saves
+#[test]
+fn test_save_json_matches_canonical_bytes() {
+    let model = create_test_model();
+    let temp_dir = TempDir::new().unwrap();
+
+    let first_path = temp_dir.path().join("model.json");
+    model.save_json(&first_path).unwrap();
+    let first_bytes = fs::read_to_string(&first_path).unwrap();
+    assert_eq!(first_bytes, EXPECTED_CANONICAL_TEST_MODEL_JSON);
+
+    let second_path = temp_dir.path().join("model_again.json");
+    model.save_json(&second_path).unwrap();
+    let second_bytes = fs::read_to_string(&second_path).unwrap();
+    assert_eq!(first_bytes, second_bytes);
+}
+
+/// Binary encoding must remain identical across runs and match bincode reference bytes
+#[test]
+fn test_binary_encoding_is_bit_stable() {
+    let model = create_test_model();
+    let expected_bytes = bincode::serialize(&model).unwrap();
+
+    let temp_dir = TempDir::new().unwrap();
+
+    let first_path = temp_dir.path().join("model.bin");
+    model.save_binary(&first_path).unwrap();
+    let first_bytes = fs::read(&first_path).unwrap();
+    assert_eq!(first_bytes, expected_bytes);
+
+    let second_path = temp_dir.path().join("model_again.bin");
+    model.save_binary(&second_path).unwrap();
+    let second_bytes = fs::read(&second_path).unwrap();
+    assert_eq!(first_bytes, second_bytes);
+}
+
 /// Golden hash verification on x86_64
 #[test]
 fn test_deterministic_golden_model_hash_matches_reference_on_x86_64() {
@@ -289,4 +368,28 @@ fn test_deterministic_golden_model_hash_matches_reference_on_x86_64() {
             );
         }
     }
+}
+
+/// Golden hash verification on aarch64
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn test_deterministic_golden_model_hash_matches_reference_on_aarch64() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let model_path = manifest_dir.join("../../models/deterministic_gbdt_model.json");
+    let golden_path = manifest_dir.join("../../models/deterministic_gbdt_model.aarch64.sha256");
+
+    let model =
+        DeterministicGBDT::from_json_file(&model_path).expect("Failed to load deterministic model");
+    let canonical_json = model.to_canonical_json().unwrap();
+
+    let mut hasher = Sha256::new();
+    hasher.update(canonical_json.as_bytes());
+    let computed_hash = format!("{:x}", hasher.finalize());
+
+    let golden_hash = fs::read_to_string(&golden_path)
+        .expect("Missing golden hash file")
+        .trim()
+        .to_string();
+
+    assert_eq!(computed_hash, golden_hash);
 }
