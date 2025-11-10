@@ -3,6 +3,7 @@ package org.ippan.wallet.ui.components
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.rounded.ArrowCircleDown
 import androidx.compose.material.icons.rounded.ArrowCircleUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -45,7 +47,16 @@ import org.ippan.wallet.ui.theme.Success
 import org.ippan.wallet.WalletViewModel.Companion.formatTimestamp
 
 @Composable
-fun OverviewScreen(state: WalletUiState.Success, onSendClick: () -> Unit) {
+fun OverviewScreen(state: WalletUiState, onSendClick: () -> Unit) {
+    when (state) {
+        is WalletUiState.Success -> OverviewSuccessContent(state, onSendClick)
+        WalletUiState.Loading -> OverviewLoadingContent()
+        is WalletUiState.Error -> OverviewErrorContent(state.message)
+    }
+}
+
+@Composable
+private fun OverviewSuccessContent(state: WalletUiState.Success, onSendClick: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
 
@@ -251,5 +262,33 @@ fun TransactionRow(transaction: WalletTransaction) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun OverviewLoadingContent() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+private fun OverviewErrorContent(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.error
+        )
     }
 }
