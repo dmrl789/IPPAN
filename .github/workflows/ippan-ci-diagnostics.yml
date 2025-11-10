@@ -95,8 +95,11 @@ jobs:
           echo "Branch: $(git rev-parse --abbrev-ref HEAD)"
           echo "Event name: ${{ github.event_name }}"
           echo "Runner: ${{ runner.os }} (image: ${{ runner.name }})"
-          echo "--- Environment Variables ---"
-          env | sort
+          echo "CI: $CI"
+          echo "Workflow: $GITHUB_WORKFLOW"
+          echo "Run ID: $GITHUB_RUN_ID"
+          echo "Run Attempt: $GITHUB_RUN_ATTEMPT"
+          echo "Repository: $GITHUB_REPOSITORY"
           echo "=== Cargo Packages ==="
           cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | "\(.name) \(.version)"'
           echo "=== Cargo Dependency Tree ==="
