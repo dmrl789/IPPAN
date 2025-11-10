@@ -28,3 +28,4 @@ async-trait = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true, features = ["std", "std_rng"] }
+axum = { workspace = true }

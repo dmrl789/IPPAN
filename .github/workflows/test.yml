@@ -50,7 +50,7 @@ jobs:
         run: |
           # Only run if there are integration test directories
           if find . -name "tests" -type d | grep -q .; then
-            cargo test --workspace --all-features --verbose --test '*'
+            cargo test --workspace --all-features --verbose --tests
           else
             echo "No integration tests found, skipping..."
           fi

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getAIStatus, toggleAI as toggleAIService } from '@/lib/api/ai-api';
 
 interface AIStatus {
   isActive: boolean;
@@ -45,13 +46,14 @@ export function AIProvider({ children }: { children: ReactNode }) {
         const aiEnabled = process.env.NEXT_PUBLIC_AI_ENABLED === '1';
         
         if (aiEnabled) {
-          // Try to connect to AI service
-          const response = await fetch('/api/ai/status');
-          if (response.ok) {
-            const status = await response.json();
-            setAiStatus(status);
+          // Try to connect to AI service via backend API
+          const response = await getAIStatus();
+          
+          if (response.data) {
+            setAiStatus(response.data);
           } else {
             // Fallback to default enabled state
+            console.warn('AI service API not available, using defaults:', response.error);
             setAiStatus({
               isActive: true,
               version: '1.0.0',
@@ -81,18 +83,15 @@ export function AIProvider({ children }: { children: ReactNode }) {
       setError(null);
       const newStatus = !aiStatus.isActive;
       
-      const response = await fetch('/api/ai/toggle', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ enabled: newStatus }),
-      });
+      // Connect directly to backend API using the API client
+      const response = await toggleAIService(newStatus);
 
-      if (response.ok) {
+      if (response.data?.success) {
         setAiStatus(prev => ({ ...prev, isActive: newStatus }));
       } else {
-        throw new Error('Failed to toggle AI status');
+        // If API is not available, just toggle locally
+        console.warn('AI service API not available, toggling locally:', response.error);
+        setAiStatus(prev => ({ ...prev, isActive: newStatus }));
       }
     } catch (err) {
       console.error('Failed to toggle AI:', err);

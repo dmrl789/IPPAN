@@ -25,6 +25,10 @@ pub struct SupplyTracker {
     emission_history: HashMap<RoundIndex, RewardAmount>,
     /// Burn history for verification
     burn_history: HashMap<RoundIndex, RewardAmount>,
+    /// Network dividend accumulation history
+    dividend_history: HashMap<RoundIndex, RewardAmount>,
+    /// Total accumulated network dividend
+    total_dividend_accumulated: RewardAmount,
     /// Last verification round
     last_verification_round: RoundIndex,
 }
@@ -38,6 +42,8 @@ impl SupplyTracker {
             current_round: 0,
             emission_history: HashMap::new(),
             burn_history: HashMap::new(),
+            dividend_history: HashMap::new(),
+            total_dividend_accumulated: 0,
             last_verification_round: 0,
         }
     }
@@ -254,6 +260,61 @@ impl SupplyTracker {
     pub fn current_round(&self) -> RoundIndex {
         self.current_round
     }
+
+    /// Record network dividend accumulation for a round
+    pub fn record_dividend(
+        &mut self,
+        round: RoundIndex,
+        amount: RewardAmount,
+    ) -> Result<(), SupplyError> {
+        self.total_dividend_accumulated =
+            self.total_dividend_accumulated.checked_add(amount).ok_or(
+                SupplyError::InvalidSupplyData("Overflow adding dividend".into()),
+            )?;
+
+        self.dividend_history.insert(round, amount);
+        debug!("Recorded dividend for round {}: {}", round, amount);
+        Ok(())
+    }
+
+    /// Get total accumulated network dividend
+    pub fn total_dividend_accumulated(&self) -> RewardAmount {
+        self.total_dividend_accumulated
+    }
+
+    /// Distribute accumulated dividend and reset counter
+    pub fn distribute_dividend(&mut self, amount: RewardAmount) -> Result<(), SupplyError> {
+        if amount > self.total_dividend_accumulated {
+            return Err(SupplyError::InvalidSupplyData(format!(
+                "Cannot distribute more dividend than accumulated: {} > {}",
+                amount, self.total_dividend_accumulated
+            )));
+        }
+
+        self.total_dividend_accumulated =
+            self.total_dividend_accumulated.checked_sub(amount).ok_or(
+                SupplyError::InvalidSupplyData("Underflow subtracting dividend".into()),
+            )?;
+
+        info!(
+            "Distributed {} micro-IPN from network dividend pool",
+            amount
+        );
+        Ok(())
+    }
+
+    /// Get dividend history within range
+    pub fn get_dividend_history(
+        &self,
+        start: RoundIndex,
+        end: RoundIndex,
+    ) -> HashMap<RoundIndex, RewardAmount> {
+        self.dividend_history
+            .iter()
+            .filter(|(r, _)| **r >= start && **r <= end)
+            .map(|(r, a)| (*r, *a))
+            .collect()
+    }
 }
 
 /// Deterministic reward for a specific round based on emission parameters.
@@ -352,7 +413,7 @@ pub struct SupplyAuditResult {
 
 impl Default for SupplyTracker {
     fn default() -> Self {
-        Self::new(2_100_000_000_000) // 21 M IPN in micro-IPN
+        Self::new(21_000_000_000_000) // 21M IPN in micro-IPN (21M * 1M µIPN)
     }
 }
 
@@ -426,5 +487,24 @@ mod tests {
 
         let rounds = rounds_until_supply_cap(&params);
         assert!(rounds.is_some());
+    }
+
+    #[test]
+    fn test_dividend_tracking() {
+        let mut tracker = SupplyTracker::new(1_000_000);
+
+        // Record dividend accumulation
+        tracker.record_dividend(1, 100).unwrap();
+        assert_eq!(tracker.total_dividend_accumulated(), 100);
+
+        tracker.record_dividend(2, 150).unwrap();
+        assert_eq!(tracker.total_dividend_accumulated(), 250);
+
+        // Distribute some dividend
+        tracker.distribute_dividend(100).unwrap();
+        assert_eq!(tracker.total_dividend_accumulated(), 150);
+
+        // Cannot distribute more than accumulated
+        assert!(tracker.distribute_dividend(200).is_err());
     }
 }

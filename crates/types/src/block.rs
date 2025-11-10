@@ -1,7 +1,6 @@
 use crate::transaction::Transaction;
 use crate::{HashTimer, IppanTimeMicros};
 use blake3::Hasher as Blake3;
-use hex;
 use serde::{Deserialize, Serialize};
 use serde_bytes;
 
@@ -53,7 +52,7 @@ pub struct BlockHeader {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub validator_sigs: Vec<String>,
     /// Optional VRF proof used for committee sampling or priority.
-    #[serde(default, with = "serde_bytes")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty", with = "serde_bytes")]
     pub vrf_proof: Vec<u8>,
 }
 
@@ -63,7 +62,7 @@ pub struct Block {
     /// Metadata header.
     pub header: BlockHeader,
     /// Signature issued by the creator (Ed25519 today, aggregated later).
-    #[serde(default, with = "serde_bytes")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty", with = "serde_bytes")]
     pub signature: Vec<u8>,
     /// Optional inlined transactions; maintained for compatibility with the
     /// current execution pipeline until the availability layer is wired in.
