@@ -176,11 +176,27 @@ EOF
       # ============================================================
       - name: ✅ Approve Merge if Checks Pass
         if: github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened' || github.event.action == 'ready_for_review')
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           pr_number=${{ github.event.pull_request.number }}
           sleep 30
-          ci_status=$(gh pr checks $pr_number --json conclusion --jq '.[0].conclusion' || echo "pending")
-          if [ "$ci_status" = "success" ]; then
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY##*/}"
+          ci_status=$(gh api graphql \
+            -F owner="$owner" \
+            -F name="$repo" \
+            -F number="$pr_number" \
+            -f query='query($owner:String!, $name:String!, $number:Int!){
+              repository(owner:$owner, name:$name){
+                pullRequest(number:$number){
+                  statusCheckRollup{ state }
+                }
+              }
+            }' \
+            --jq '.data.repository.pullRequest.statusCheckRollup.state // "PENDING"' \
+            2>/dev/null || echo "PENDING")
+          if [ "${ci_status^^}" = "SUCCESS" ]; then
             pr_title="${{ github.event.pull_request.title }}"
             pr_body="${{ github.event.pull_request.body }}"
             if echo "$pr_title" | grep -qE "^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+"; then
