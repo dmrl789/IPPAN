@@ -8,12 +8,11 @@ REQUIRED_WORKFLOWS=(
   "ci.yml"
   "test.yml"
   "build.yml"
-  "security.yml"
+  "security-suite.yml"
   "release.yml"
   "check-nodes.yml"
   "prod-deploy.yml"
   "deploy-fix.yml"
-  "codeql.yml"
   "dependabot.yml"
 )
 
