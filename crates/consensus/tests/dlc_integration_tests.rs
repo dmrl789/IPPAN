@@ -178,9 +178,11 @@ async fn test_dlc_verifier_selection_respects_min_reputation_threshold() {
     use std::time::Duration;
     use tokio::time::sleep;
 
-    let mut config = DLCConfig::default();
-    config.temporal_finality_ms = 5;
-    config.min_reputation_score = 9_000;
+    let config = DLCConfig {
+        temporal_finality_ms: 5,
+        min_reputation_score: 9_000,
+        ..DLCConfig::default()
+    };
 
     let validator_id = [9u8; 32];
     let mut dlc = DLCConsensus::new(config, validator_id);
@@ -214,10 +216,12 @@ async fn test_dlc_verifier_selection_prefers_high_reputation_validator() {
     use std::time::Duration;
     use tokio::time::sleep;
 
-    let mut config = DLCConfig::default();
-    config.temporal_finality_ms = 5;
-    config.min_reputation_score = 8_000;
-    config.shadow_verifier_count = 2;
+    let config = DLCConfig {
+        temporal_finality_ms: 5,
+        min_reputation_score: 8_000,
+        shadow_verifier_count: 2,
+        ..DLCConfig::default()
+    };
 
     let self_validator = [8u8; 32];
     let mut dlc = DLCConsensus::new(config, self_validator);

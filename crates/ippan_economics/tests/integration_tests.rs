@@ -62,8 +62,8 @@ fn test_emission_projection_alignment() {
     assert_eq!(supply_info.current_round, 8);
     assert_eq!(supply_info.total_supply, 6_000);
 
-    let projected = projected_supply(8, &params) as u64;
-    assert_eq!(supply_info.total_supply as u64, projected);
+    let projected = projected_supply(8, &params);
+    assert_eq!(u128::from(supply_info.total_supply), projected);
     assert_eq!(emission_engine.total_supply(), supply_info.total_supply);
 }
 
