@@ -1552,9 +1552,10 @@ mod tests {
     async fn test_handle_get_account_branches() {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let account_address = sample_public_key([4u8; 32]);
         let tx = sample_transaction([4u8; 32], sample_public_key([5u8; 32]), 1);
         let account = Account {
-            address: tx.from,
+            address: account_address,
             balance: 500,
             nonce: 7,
         };
@@ -1821,7 +1822,7 @@ mod tests {
         let network = Arc::new(raw_network);
 
         let mut state = (*build_app_state(None, None)).clone();
-        state.p2p_network = Some(network.clone());
+        state.p2p_network = Some(Arc::clone(&network));
         let state = Arc::new(state);
 
         let peers = vec!["http://198.51.100.1:9000".into()];
