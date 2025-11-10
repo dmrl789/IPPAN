@@ -109,6 +109,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
+    testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
     testImplementation("app.cash.paparazzi:paparazzi:1.3.1")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.11.0")
