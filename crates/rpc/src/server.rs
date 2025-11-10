@@ -930,6 +930,7 @@ mod tests {
     use anyhow::anyhow;
     use axum::extract::{ConnectInfo, Path as AxumPath, Query};
     use axum::Json;
+    use ed25519_dalek::SigningKey;
     use ippan_consensus::{PoAConfig, Validator};
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
@@ -1007,7 +1008,12 @@ mod tests {
     }
 
     fn sample_transaction(from: [u8; 32], to: [u8; 32], nonce: u64) -> Transaction {
-        Transaction::new(from, to, Amount::from_micro_ipn(10 + nonce), nonce)
+        let signing_key = SigningKey::from_bytes(&from);
+        let sender = signing_key.verifying_key().to_bytes();
+        let mut tx = Transaction::new(sender, to, Amount::from_micro_ipn(10 + nonce), nonce);
+        tx.sign(&signing_key.to_bytes())
+            .expect("sample transaction signed");
+        tx
     }
 
     struct FailingStorage {
@@ -1533,8 +1539,9 @@ mod tests {
     async fn test_handle_get_account_branches() {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let tx = sample_transaction([4u8; 32], [5u8; 32], 1);
         let account = Account {
-            address: [4u8; 32],
+            address: tx.from,
             balance: 500,
             nonce: 7,
         };
@@ -1542,11 +1549,10 @@ mod tests {
             .storage
             .update_account(account.clone())
             .expect("account");
-        let tx = sample_transaction([4u8; 32], [5u8; 32], 1);
         state.storage.store_transaction(tx.clone()).expect("tx1");
         state
             .storage
-            .store_transaction(sample_transaction([6u8; 32], [4u8; 32], 2))
+            .store_transaction(sample_transaction([6u8; 32], account.address, 2))
             .expect("tx2");
 
         let ok = handle_get_account(
@@ -1795,9 +1801,10 @@ mod tests {
             message_timeout: Duration::from_millis(5),
             ..P2PConfig::default()
         };
-        let network =
-            Arc::new(HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network"));
+        let mut network =
+            HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network");
         let mut events = network.take_incoming_events().expect("event receiver");
+        let network = Arc::new(network);
 
         let mut state = (*build_app_state(None, None)).clone();
         state.p2p_network = Some(network.clone());
