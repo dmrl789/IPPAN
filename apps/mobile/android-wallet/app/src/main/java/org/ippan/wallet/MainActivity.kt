@@ -231,11 +231,7 @@ private fun WalletNavHost(
 
 @Composable
 private fun OverviewRoute(uiState: WalletUiState, onSendClick: () -> Unit) {
-    when (uiState) {
-        is WalletUiState.Success -> OverviewScreen(state = uiState, onSendClick = onSendClick)
-        WalletUiState.Loading -> LoadingScreen()
-        is WalletUiState.Error -> ErrorScreen(uiState.message)
-    }
+    OverviewScreen(state = uiState, onSendClick = onSendClick)
 }
 
 @Composable
