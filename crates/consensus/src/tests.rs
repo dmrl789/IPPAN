@@ -35,17 +35,16 @@ fn create_test_config() -> PoAConfig {
     }
 }
 
-fn signed_transaction(from_seed: u8, to: [u8; 32], amount_micro: u64, nonce: u64) -> Transaction {
-    let signing_key = SigningKey::from_bytes(&[from_seed; 32]);
-    let from = signing_key.verifying_key().to_bytes();
+fn signed_transaction(from_seed: u8, to_seed: u8, amount_micro: u64, nonce: u64) -> Transaction {
+    let from_key = SigningKey::from_bytes(&[from_seed; 32]);
+    let to_key = SigningKey::from_bytes(&[to_seed; 32]);
     let mut tx = Transaction::new(
-        from,
-        to,
+        from_key.verifying_key().to_bytes(),
+        to_key.verifying_key().to_bytes(),
         ippan_types::Amount::from_micro_ipn(amount_micro),
         nonce,
     );
-    tx.sign(&signing_key.to_bytes())
-        .expect("sign test transaction");
+    tx.sign(&from_key.to_bytes()).expect("sign test transaction");
     tx
 }
 
@@ -94,10 +93,10 @@ async fn test_block_proposal() {
 
     let consensus = PoAConsensus::new(config, storage.clone(), validator_id);
 
-    let tx = signed_transaction(3, [4u8; 32], 1000, 1);
+    let tx = signed_transaction(3, 4, 1000, 1);
     consensus.mempool().add_transaction(tx).unwrap();
 
-    let transactions = vec![signed_transaction(5, [6u8; 32], 2000, 1)];
+    let transactions = vec![signed_transaction(5, 6, 2000, 2)];
     let result = consensus.propose_block(transactions).await;
 
     assert!(result.is_ok());
@@ -113,7 +112,7 @@ async fn test_block_validation() {
 
     let consensus = PoAConsensus::new(config, storage, validator_id);
 
-    let tx = signed_transaction(1, [2u8; 32], 1000, 1);
+    let tx = signed_transaction(1, 2, 1000, 1);
     let block = Block::new(vec![], vec![tx], 1, validator_id);
 
     let result = consensus.validate_block(&block).await;
@@ -196,8 +195,8 @@ async fn test_mempool_integration() {
     let consensus = PoAConsensus::new(config, storage, validator_id);
     let mempool = consensus.mempool();
 
-    let tx1 = signed_transaction(1, [2u8; 32], 1000, 1);
-    let tx2 = signed_transaction(3, [4u8; 32], 2000, 1);
+    let tx1 = signed_transaction(1, 2, 1000, 1);
+    let tx2 = signed_transaction(3, 4, 2000, 2);
 
     assert!(mempool.add_transaction(tx1).is_ok());
     assert!(mempool.add_transaction(tx2).is_ok());
@@ -229,7 +228,7 @@ async fn test_fee_validation() {
 
     let consensus = PoAConsensus::new(config, storage, validator_id);
 
-    let tx = signed_transaction(1, [2u8; 32], 1000, 1);
+    let tx = signed_transaction(1, 2, 1000, 1);
     let result = consensus
         .validate_block(&Block::new(vec![], vec![tx], 1, validator_id))
         .await;
@@ -332,12 +331,9 @@ async fn test_concurrent_operations() {
     for i in 0..10 {
         let consensus_clone = consensus.clone();
         let handle = tokio::spawn(async move {
-            let tx = signed_transaction(
-                i as u8,
-                [(i + 1) as u8; 32],
-                1000 + i as u64,
-                1,
-            );
+            let from_seed = (i + 1) as u8;
+            let to_seed = (i + 17) as u8;
+            let tx = signed_transaction(from_seed, to_seed, 1000 + i as u64, 1);
             consensus_clone.mempool().add_transaction(tx)
         });
         handles.push(handle);

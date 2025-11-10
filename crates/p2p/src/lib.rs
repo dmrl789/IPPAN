@@ -195,7 +195,7 @@ pub struct HttpP2PNetwork {
     listen_address: String,
     announce_address: Arc<RwLock<String>>,
     incoming_sender: mpsc::UnboundedSender<NetworkEvent>,
-    incoming_receiver: Option<mpsc::UnboundedReceiver<NetworkEvent>>,
+    incoming_receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<NetworkEvent>>>>,
     discovery_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     announce_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
@@ -230,7 +230,7 @@ impl HttpP2PNetwork {
             listen_address,
             announce_address: Arc::new(RwLock::new(announce_address)),
             incoming_sender,
-            incoming_receiver: Some(incoming_receiver),
+            incoming_receiver: Arc::new(Mutex::new(Some(incoming_receiver))),
             discovery_task: Arc::new(Mutex::new(None)),
             announce_task: Arc::new(Mutex::new(None)),
         })
@@ -267,8 +267,8 @@ impl HttpP2PNetwork {
             .collect()
     }
 
-    pub fn take_incoming_events(&mut self) -> Option<mpsc::UnboundedReceiver<NetworkEvent>> {
-        self.incoming_receiver.take()
+    pub fn take_incoming_events(&self) -> Option<mpsc::UnboundedReceiver<NetworkEvent>> {
+        self.incoming_receiver.lock().take()
     }
 
     pub async fn start(&mut self) -> Result<()> {
