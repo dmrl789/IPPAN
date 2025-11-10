@@ -261,10 +261,7 @@ mod serialization_tests {
         );
         assert_eq!(tx.zk_proof, deserialized.zk_proof, "ZK proof mismatch");
         assert_eq!(tx.signature, deserialized.signature, "Signature mismatch");
-        assert_eq!(
-            tx.hashtimer, deserialized.hashtimer,
-            "HashTimer mismatch"
-        );
+        assert_eq!(tx.hashtimer, deserialized.hashtimer, "HashTimer mismatch");
         assert_eq!(tx.timestamp, deserialized.timestamp, "Timestamp mismatch");
 
         // Verify hash consistency
@@ -340,7 +337,8 @@ mod serialization_tests {
         tx.set_confidential_proof(proof);
         tx.sign(&secret.to_bytes()).unwrap();
 
-        let json = serde_json::to_string(&tx).expect("Failed to serialize confidential transaction");
+        let json =
+            serde_json::to_string(&tx).expect("Failed to serialize confidential transaction");
         let deserialized: Transaction =
             serde_json::from_str(&json).expect("Failed to deserialize confidential transaction");
 
@@ -386,14 +384,10 @@ mod serialization_tests {
         let json = serde_json::to_string(&block).expect("Failed to serialize block");
 
         // Deserialize from JSON
-        let deserialized: Block =
-            serde_json::from_str(&json).expect("Failed to deserialize block");
+        let deserialized: Block = serde_json::from_str(&json).expect("Failed to deserialize block");
 
         // Verify header fields match
-        assert_eq!(
-            block.header.id, deserialized.header.id,
-            "Block ID mismatch"
-        );
+        assert_eq!(block.header.id, deserialized.header.id, "Block ID mismatch");
         assert_eq!(
             block.header.creator, deserialized.header.creator,
             "Creator mismatch"
@@ -504,21 +498,17 @@ mod serialization_tests {
             agg_sig: vec![0xAAu8, 0xBB, 0xCC, 0xDD],
         };
 
-        let json =
-            serde_json::to_string(&cert).expect("Failed to serialize RoundCertificate");
+        let json = serde_json::to_string(&cert).expect("Failed to serialize RoundCertificate");
         let deserialized: RoundCertificate =
             serde_json::from_str(&json).expect("Failed to deserialize RoundCertificate");
 
         assert_eq!(cert.round, deserialized.round, "Round ID mismatch");
+        assert_eq!(cert.block_ids, deserialized.block_ids, "Block IDs mismatch");
         assert_eq!(
-            cert.block_ids, deserialized.block_ids,
-            "Block IDs mismatch"
+            cert.agg_sig, deserialized.agg_sig,
+            "Aggregate signature mismatch"
         );
-        assert_eq!(cert.agg_sig, deserialized.agg_sig, "Aggregate signature mismatch");
-        assert_eq!(
-            cert, deserialized,
-            "RoundCertificate equality check failed"
-        );
+        assert_eq!(cert, deserialized, "RoundCertificate equality check failed");
     }
 
     /// Test round-trip serialization/deserialization for RoundFinalizationRecord (JSON)
@@ -545,10 +535,10 @@ mod serialization_tests {
             proof: cert,
         };
 
-        let json = serde_json::to_string(&record)
-            .expect("Failed to serialize RoundFinalizationRecord");
-        let deserialized: RoundFinalizationRecord = serde_json::from_str(&json)
-            .expect("Failed to deserialize RoundFinalizationRecord");
+        let json =
+            serde_json::to_string(&record).expect("Failed to serialize RoundFinalizationRecord");
+        let deserialized: RoundFinalizationRecord =
+            serde_json::from_str(&json).expect("Failed to deserialize RoundFinalizationRecord");
 
         assert_eq!(record.round, deserialized.round, "Round ID mismatch");
         assert_eq!(record.window, deserialized.window, "Window mismatch");
@@ -628,8 +618,7 @@ mod serialization_tests {
 
         // Serialize and deserialize
         let json = serde_json::to_string(&tx).expect("Failed to serialize");
-        let deserialized: Transaction =
-            serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: Transaction = serde_json::from_str(&json).expect("Failed to deserialize");
 
         // Verify HashTimer consistency
         assert_eq!(
@@ -673,8 +662,8 @@ mod serialization_tests {
 
         let json =
             serde_json::to_string(&block).expect("Failed to serialize block with optional fields");
-        let deserialized: Block = serde_json::from_str(&json)
-            .expect("Failed to deserialize block with optional fields");
+        let deserialized: Block =
+            serde_json::from_str(&json).expect("Failed to deserialize block with optional fields");
 
         assert_eq!(
             block.header.erasure_root, deserialized.header.erasure_root,
@@ -707,8 +696,7 @@ mod serialization_tests {
         tx.sign(&secret.to_bytes()).unwrap();
 
         let json = serde_json::to_string(&tx).expect("Failed to serialize");
-        let deserialized: Transaction =
-            serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: Transaction = serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(tx.nonce, deserialized.nonce);
         assert_eq!(tx.nonce, u64::MAX);
