@@ -36,8 +36,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio::time::interval;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+use url::Url;
 
 /// P2P network errors
 #[derive(thiserror::Error, Debug)]
@@ -187,91 +189,110 @@ pub struct HttpP2PNetwork {
     client: Client,
     peers: Arc<RwLock<HashSet<String>>>,
     peer_metadata: Arc<RwLock<HashMap<String, PeerRecord>>>,
-    message_sender: mpsc::UnboundedSender<NetworkMessage>,
-    message_receiver: Option<mpsc::UnboundedReceiver<NetworkMessage>>,
     peer_count: Arc<RwLock<usize>>,
     is_running: Arc<RwLock<bool>>,
     local_peer_id: String,
     listen_address: String,
-    local_address: String,
     announce_address: Arc<RwLock<String>>,
-    upnp_mapping_active: Arc<RwLock<bool>>,
     incoming_sender: mpsc::UnboundedSender<NetworkEvent>,
-    incoming_receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<NetworkEvent>>>>,
-    discovery_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    incoming_receiver: Option<mpsc::UnboundedReceiver<NetworkEvent>>,
+    discovery_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+    announce_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl HttpP2PNetwork {
-    /// Create a new HTTP P2P network manager.
     pub fn new(config: P2PConfig, listen_address: String) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(config.message_timeout)
-            .build()
-            .map_err(|err| anyhow!("failed to build HTTP client: {err}"))?;
+        let listen_address = normalize_peer(&listen_address)?;
+        let http_timeout = if config.message_timeout.is_zero() {
+            Duration::from_secs(10)
+        } else {
+            config.message_timeout
+        };
 
-        let (message_sender, message_receiver) = mpsc::unbounded_channel();
+        let client = Client::builder().timeout(http_timeout).build()?;
         let (incoming_sender, incoming_receiver) = mpsc::unbounded_channel();
-
-        let peers = Arc::new(RwLock::new(HashSet::new()));
-        let peer_metadata = Arc::new(RwLock::new(HashMap::new()));
-        let peer_count = Arc::new(RwLock::new(0usize));
-
-        // Preload bootstrap peers so that discovery starts from them immediately.
-        for peer in &config.bootstrap_peers {
-            let _ = Self::add_peer_entry(
-                &peers,
-                &peer_metadata,
-                &peer_count,
-                config.max_peers,
-                &listen_address,
-                peer,
-            );
-        }
 
         let announce_address = config
             .public_host
             .clone()
+            .map(|addr| ensure_http_scheme(&addr))
+            .and_then(|addr| normalize_peer(&addr).ok())
             .unwrap_or_else(|| listen_address.clone());
 
         Ok(Self {
             config,
             client,
-            peers,
-            peer_metadata,
-            message_sender,
-            message_receiver: Some(message_receiver),
-            peer_count,
+            peers: Arc::new(RwLock::new(HashSet::new())),
+            peer_metadata: Arc::new(RwLock::new(HashMap::new())),
+            peer_count: Arc::new(RwLock::new(0)),
             is_running: Arc::new(RwLock::new(false)),
-            local_peer_id: format!("http-{}", listen_address),
-            listen_address: listen_address.clone(),
-            local_address: listen_address,
+            local_peer_id: derive_peer_id(&listen_address),
+            listen_address,
             announce_address: Arc::new(RwLock::new(announce_address)),
-            upnp_mapping_active: Arc::new(RwLock::new(false)),
             incoming_sender,
-            incoming_receiver: Arc::new(Mutex::new(Some(incoming_receiver))),
+            incoming_receiver: Some(incoming_receiver),
             discovery_task: Arc::new(Mutex::new(None)),
+            announce_task: Arc::new(Mutex::new(None)),
         })
     }
 
-    /// Start background tasks for peer discovery and message dispatch.
+    pub fn get_local_peer_id(&self) -> String {
+        self.local_peer_id.clone()
+    }
+
+    pub fn get_peer_count(&self) -> usize {
+        *self.peer_count.read()
+    }
+
+    pub fn get_peers(&self) -> Vec<String> {
+        let mut peers: Vec<String> = self.peers.read().iter().cloned().collect();
+        peers.sort();
+        peers
+    }
+
+    pub fn get_peer_metadata(&self) -> Vec<PeerInfo> {
+        let peers: HashSet<String> = self.peers.read().iter().cloned().collect();
+        self.peer_metadata
+            .read()
+            .values()
+            .map(|record| PeerInfo {
+                id: record
+                    .peer_id
+                    .clone()
+                    .unwrap_or_else(|| derive_peer_id(&record.address)),
+                address: record.address.clone(),
+                last_seen: record.last_seen,
+                is_connected: peers.contains(&record.address),
+            })
+            .collect()
+    }
+
+    pub fn take_incoming_events(&mut self) -> Option<mpsc::UnboundedReceiver<NetworkEvent>> {
+        self.incoming_receiver.take()
+    }
+
     pub async fn start(&mut self) -> Result<()> {
-        if *self.is_running.read() {
-            return Ok(());
+        {
+            let mut running = self.is_running.write();
+            if *running {
+                return Ok(());
+            }
+            *running = true;
         }
 
-        if let Some(receiver) = self.message_receiver.take() {
-            self.spawn_message_dispatch(receiver);
+        for peer in self.config.bootstrap_peers.clone() {
+            if let Err(err) = self.add_peer(peer).await {
+                warn!("Failed to add bootstrap peer: {err}");
+            }
         }
 
-        *self.is_running.write() = true;
-        self.run_discovery_iteration().await.ok();
-        let handle = self.spawn_peer_discovery_task();
-        *self.discovery_task.lock() = Some(handle);
+        self.spawn_discovery_loop();
+        self.spawn_announce_loop();
 
+        info!("HTTP P2P network started");
         Ok(())
     }
 
-    /// Stop the background tasks.
     pub async fn stop(&self) -> Result<()> {
         {
             let mut running = self.is_running.write();
@@ -284,414 +305,363 @@ impl HttpP2PNetwork {
         if let Some(handle) = self.discovery_task.lock().take() {
             handle.abort();
         }
+        if let Some(handle) = self.announce_task.lock().take() {
+            handle.abort();
+        }
+
+        info!("HTTP P2P network stopped");
+        Ok(())
+    }
+
+    pub async fn add_peer(&self, peer: String) -> Result<()> {
+        let peer = normalize_peer(&peer)?;
+        if peer == self.listen_address {
+            return Ok(());
+        }
+
+        let mut was_new = false;
+        {
+            let mut peers = self.peers.write();
+            // Enforce max_peers limit before accepting new peers
+            if peers.len() >= self.config.max_peers && !peers.contains(&peer) {
+                debug!("Peer limit reached ({}), rejecting new peer: {}", self.config.max_peers, peer);
+                return Ok(());
+            }
+            if peers.insert(peer.clone()) {
+                *self.peer_count.write() = peers.len();
+                was_new = true;
+            }
+        }
+
+        if was_new {
+            {
+                let mut metadata = self.peer_metadata.write();
+                metadata
+                    .entry(peer.clone())
+                    .or_insert_with(|| PeerRecord::new(peer.clone()));
+            }
+
+            if let Err(err) = self.send_peer_info(&peer).await {
+                debug!("Failed to announce to {}: {}", peer, err);
+            }
+        }
 
         Ok(())
     }
 
-    /// Returns the peer ID used to identify the local node.
-    pub fn get_local_peer_id(&self) -> String {
-        self.local_peer_id.clone()
+    pub fn remove_peer(&self, peer: &str) {
+        if let Ok(peer) = normalize_peer(peer) {
+            let mut peers = self.peers.write();
+            if peers.remove(&peer) {
+                *self.peer_count.write() = peers.len();
+            }
+            self.peer_metadata.write().remove(&peer);
+        }
     }
 
-    /// Return the address the network listens on.
-    pub fn listen_address(&self) -> &str {
-        &self.listen_address
-    }
-
-    /// Expose the current announce address for diagnostics.
-    pub fn announce_address(&self) -> String {
-        self.announce_address.read().clone()
-    }
-
-    /// Indicates whether UPnP port mapping is active.
-    pub fn is_upnp_mapping_active(&self) -> bool {
-        *self.upnp_mapping_active.read()
-    }
-
-    /// Provide a sender for broadcasting network messages.
-    pub fn message_sender(&self) -> mpsc::UnboundedSender<NetworkMessage> {
-        self.message_sender.clone()
-    }
-
-    /// Returns the number of currently connected peers.
-    pub fn get_peer_count(&self) -> usize {
-        *self.peer_count.read()
-    }
-
-    /// Returns a snapshot of the known peer addresses.
-    pub fn get_peers(&self) -> Vec<String> {
-        self.peers.read().iter().cloned().collect()
-    }
-
-    /// Returns metadata describing every known peer.
-    pub fn get_peer_metadata(&self) -> Vec<PeerInfo> {
-        let peers = self.peers.read();
-        self.peer_metadata
-            .read()
-            .values()
-            .map(|record| PeerInfo {
-                id: record
-                    .peer_id
-                    .clone()
-                    .unwrap_or_else(|| record.address.clone()),
-                address: record.address.clone(),
-                last_seen: record.last_seen,
-                is_connected: peers.contains(&record.address),
-            })
-            .collect()
-    }
-
-    /// Take the incoming event channel if it is still available.
-    pub fn take_incoming_events(&self) -> Option<mpsc::UnboundedReceiver<NetworkEvent>> {
-        self.incoming_receiver.lock().take()
-    }
-
-    /// Add a peer to the topology.
-    pub async fn add_peer(&self, address: String) -> Result<()> {
-        Self::add_peer_entry(
-            &self.peers,
-            &self.peer_metadata,
-            &self.peer_count,
-            self.config.max_peers,
-            &self.local_address,
-            &address,
-        )?;
-        Ok(())
-    }
-
-    /// Remove a peer from the topology and clear its metadata.
-    pub fn remove_peer(&self, address: &str) {
-        Self::remove_peer_entry(&self.peers, &self.peer_metadata, &self.peer_count, address);
-    }
-
-    /// Process an inbound message from a remote peer.
     pub async fn process_incoming_message(
         &self,
         from: &str,
         message: NetworkMessage,
     ) -> Result<()> {
-        Self::add_peer_entry(
-            &self.peers,
-            &self.peer_metadata,
-            &self.peer_count,
-            self.config.max_peers,
-            &self.local_address,
-            from,
-        )?;
+        let from = normalize_peer(from)?;
+        self.add_peer(from.clone()).await?;
+        self.touch_peer(&from);
 
-        let now = ippan_time_now();
-        Self::touch_peer_record(&self.peer_metadata, from, now);
-
-        match message.clone() {
-            NetworkMessage::Block(block) => {
-                self.dispatch_event(NetworkEvent::Block {
-                    from: from.to_string(),
-                    block,
-                });
-            }
-            NetworkMessage::Transaction(transaction) => {
-                self.dispatch_event(NetworkEvent::Transaction {
-                    from: from.to_string(),
-                    transaction,
-                });
-            }
-            NetworkMessage::BlockRequest { hash } => {
-                self.dispatch_event(NetworkEvent::BlockRequest {
-                    from: from.to_string(),
-                    hash,
-                });
-            }
-            NetworkMessage::BlockResponse(block) => {
-                self.dispatch_event(NetworkEvent::BlockResponse {
-                    from: from.to_string(),
-                    block,
-                });
-            }
+        match &message {
             NetworkMessage::PeerInfo {
                 peer_id,
                 addresses,
                 time_us,
             } => {
-                self.update_peer_record(from, Some(peer_id.clone()), time_us, &addresses);
-                for address in &addresses {
-                    let _ = Self::add_peer_entry(
-                        &self.peers,
-                        &self.peer_metadata,
-                        &self.peer_count,
-                        self.config.max_peers,
-                        &self.local_address,
-                        address,
-                    );
-                }
-                self.dispatch_event(NetworkEvent::PeerInfo {
-                    from: from.to_string(),
-                    peer_id,
-                    addresses,
-                    time_us,
-                });
+                self.record_peer_metadata(&from, peer_id, addresses, *time_us);
             }
             NetworkMessage::PeerDiscovery { peers } => {
-                let mut discovered = Vec::new();
-                for peer in &peers {
-                    if let Ok(inserted) = Self::add_peer_entry(
-                        &self.peers,
-                        &self.peer_metadata,
-                        &self.peer_count,
-                        self.config.max_peers,
-                        &self.local_address,
-                        peer,
-                    ) {
-                        if inserted {
-                            discovered.push(peer.clone());
-                        }
+                for peer in peers.clone() {
+                    if let Err(err) = self.add_peer(peer).await {
+                        debug!("Failed to add discovered peer: {err}");
                     }
                 }
-
-                if !peers.is_empty() {
-                    self.dispatch_event(NetworkEvent::PeerDiscovery {
-                        from: from.to_string(),
-                        peers: peers.clone(),
-                    });
-                }
-
-                // Ensure we keep metadata entries for peers discovered through gossip.
-                for peer in discovered {
-                    Self::touch_peer_record(&self.peer_metadata, &peer, now);
-                }
             }
+            _ => {}
         }
 
+        let event = match message.clone() {
+            NetworkMessage::Block(block) => NetworkEvent::Block {
+                from: from.clone(),
+                block,
+            },
+            NetworkMessage::Transaction(transaction) => NetworkEvent::Transaction {
+                from: from.clone(),
+                transaction,
+            },
+            NetworkMessage::PeerInfo {
+                peer_id,
+                addresses,
+                time_us,
+            } => NetworkEvent::PeerInfo {
+                from: from.clone(),
+                peer_id,
+                addresses,
+                time_us,
+            },
+            NetworkMessage::PeerDiscovery { peers } => NetworkEvent::PeerDiscovery {
+                from: from.clone(),
+                peers,
+            },
+            NetworkMessage::BlockRequest { hash } => NetworkEvent::BlockRequest {
+                from: from.clone(),
+                hash,
+            },
+            NetworkMessage::BlockResponse(block) => NetworkEvent::BlockResponse {
+                from: from.clone(),
+                block,
+            },
+        };
+
+        self.incoming_sender.send(event)?;
         Ok(())
     }
 
-    fn dispatch_event(&self, event: NetworkEvent) {
-        if let Err(err) = self.incoming_sender.send(event.clone()) {
-            warn!("failed to dispatch network event {event:?}: {err}");
-        }
-    }
-
-    fn spawn_message_dispatch(&self, mut receiver: mpsc::UnboundedReceiver<NetworkMessage>) {
+    fn spawn_discovery_loop(&mut self) {
         let peers = self.peers.clone();
-        let client = self.client.clone();
-        let config = self.config.clone();
-        tokio::spawn(async move {
-            while let Some(message) = receiver.recv().await {
-                let targets: Vec<String> = peers.read().iter().cloned().collect();
-                for peer in targets {
-                    let endpoint = format!("{}/p2p/messages", peer.trim_end_matches('/'));
-                    if let Err(err) = client
-                        .post(endpoint)
-                        .json(&message)
-                        .timeout(config.message_timeout)
-                        .send()
-                        .await
-                    {
-                        debug!("failed to deliver message to {peer}: {err}");
-                    }
-                }
-            }
-        });
-    }
-
-    fn spawn_peer_discovery_task(&self) -> tokio::task::JoinHandle<()> {
-        let client = self.client.clone();
-        let peers = self.peers.clone();
-        let peer_metadata = self.peer_metadata.clone();
+        let metadata = self.peer_metadata.clone();
         let peer_count = self.peer_count.clone();
-        let incoming_sender = self.incoming_sender.clone();
-        let config = self.config.clone();
+        let incoming = self.incoming_sender.clone();
         let is_running = self.is_running.clone();
-        let local_address = self.local_address.clone();
+        let client = self.client.clone();
+        let listen_address = self.listen_address.clone();
+        let max_peers = self.config.max_peers;
+        let interval_duration = self
+            .config
+            .peer_discovery_interval
+            .max(Duration::from_millis(100));
 
-        tokio::spawn(async move {
-            let mut ticker = interval(config.peer_discovery_interval);
+        *self.discovery_task.lock() = Some(tokio::spawn(async move {
+            let mut ticker = interval(interval_duration);
             loop {
                 ticker.tick().await;
                 if !*is_running.read() {
                     break;
                 }
 
-                let _ = Self::discover_from_known_peers(
-                    &client,
-                    &peers,
-                    &peer_metadata,
-                    &peer_count,
-                    &incoming_sender,
-                    &config,
-                    &local_address,
-                )
-                .await;
-            }
-        })
-    }
+                let known_peers: Vec<String> = peers.read().iter().cloned().collect();
+                for peer in known_peers {
+                    if peer == listen_address {
+                        continue;
+                    }
 
-    async fn run_discovery_iteration(&self) -> Result<()> {
-        Self::discover_from_known_peers(
-            &self.client,
-            &self.peers,
-            &self.peer_metadata,
-            &self.peer_count,
-            &self.incoming_sender,
-            &self.config,
-            &self.local_address,
-        )
-        .await
-    }
+                    match fetch_peer_list(&client, &peer).await {
+                        Ok(list) => {
+                            let mut newly_discovered = Vec::new();
+                            for candidate in list {
+                                if candidate == listen_address {
+                                    continue;
+                                }
+                                let Ok(candidate) = normalize_peer(&candidate) else {
+                                    continue;
+                                };
 
-    async fn discover_from_known_peers(
-        client: &Client,
-        peers: &Arc<RwLock<HashSet<String>>>,
-        peer_metadata: &Arc<RwLock<HashMap<String, PeerRecord>>>,
-        peer_count: &Arc<RwLock<usize>>,
-        incoming_sender: &mpsc::UnboundedSender<NetworkEvent>,
-        config: &P2PConfig,
-        local_address: &str,
-    ) -> Result<()> {
-        let mut targets: Vec<String> = config.bootstrap_peers.clone();
-        for peer in peers.read().iter() {
-            if !targets.contains(peer) {
-                targets.push(peer.clone());
-            }
-        }
-
-        for target in targets {
-            let endpoint = format!("{}/p2p/peers", target.trim_end_matches('/'));
-            match client
-                .get(&endpoint)
-                .timeout(config.message_timeout)
-                .send()
-                .await
-            {
-                Ok(response) => match response.json::<Vec<String>>().await {
-                    Ok(discovered) => {
-                        if !discovered.is_empty() {
-                            let mut newly_added = Vec::new();
-                            for peer in &discovered {
-                                match Self::add_peer_entry(
-                                    peers,
-                                    peer_metadata,
-                                    peer_count,
-                                    config.max_peers,
-                                    local_address,
-                                    peer,
-                                ) {
-                                    Ok(inserted) if inserted => newly_added.push(peer.clone()),
-                                    Ok(_) => {}
-                                    Err(err) => {
-                                        debug!(
-                                            "failed to add discovered peer {peer} from {target}: {err}"
-                                        );
+                                let mut added = false;
+                                {
+                                    let mut guard = peers.write();
+                                    // Enforce max_peers limit in discovery loop
+                                    if guard.len() < max_peers && guard.insert(candidate.clone()) {
+                                        *peer_count.write() = guard.len();
+                                        added = true;
                                     }
+                                }
+
+                                if added {
+                                    {
+                                        let mut meta_guard = metadata.write();
+                                        meta_guard
+                                            .entry(candidate.clone())
+                                            .or_insert_with(|| PeerRecord::new(candidate.clone()))
+                                            .last_seen = ippan_time_now();
+                                    }
+                                    newly_discovered.push(candidate.clone());
                                 }
                             }
 
-                            if let Err(err) = incoming_sender.send(NetworkEvent::PeerDiscovery {
-                                from: target.clone(),
-                                peers: discovered.clone(),
-                            }) {
-                                warn!("failed to enqueue discovery event from {target}: {err}");
-                            }
-
-                            for peer in newly_added {
-                                Self::touch_peer_record(peer_metadata, &peer, ippan_time_now());
+                            if !newly_discovered.is_empty() {
+                                let _ = incoming.send(NetworkEvent::PeerDiscovery {
+                                    from: peer.clone(),
+                                    peers: newly_discovered,
+                                });
                             }
                         }
+                        Err(err) => {
+                            debug!("Failed to fetch peer list from {}: {}", peer, err);
+                        }
                     }
-                    Err(err) => {
-                        debug!("failed to decode peer list response from {endpoint}: {err}");
-                    }
-                },
-                Err(err) => {
-                    debug!("peer discovery request to {endpoint} failed: {err}");
                 }
             }
-        }
-
-        Ok(())
+        }));
     }
 
-    fn add_peer_entry(
-        peers: &Arc<RwLock<HashSet<String>>>,
-        peer_metadata: &Arc<RwLock<HashMap<String, PeerRecord>>>,
-        peer_count: &Arc<RwLock<usize>>,
-        max_peers: usize,
-        local_address: &str,
-        address: &str,
-    ) -> Result<bool> {
-        if address == local_address {
-            return Ok(false);
-        }
+    fn spawn_announce_loop(&mut self) {
+        let peers = self.peers.clone();
+        let client = self.client.clone();
+        let is_running = self.is_running.clone();
+        let peer_id = self.local_peer_id.clone();
+        let announce_address = self.announce_address.clone();
+        let listen_address = self.listen_address.clone();
+        let interval_duration = self
+            .config
+            .peer_announce_interval
+            .max(Duration::from_secs(5));
 
-        let mut guard = peers.write();
-        if guard.contains(address) {
-            return Ok(false);
-        }
+        *self.announce_task.lock() = Some(tokio::spawn(async move {
+            let mut ticker = interval(interval_duration);
+            loop {
+                ticker.tick().await;
+                if !*is_running.read() {
+                    break;
+                }
 
-        if guard.len() >= max_peers {
-            return Err(anyhow!("max peer count reached"));
-        }
+                let addresses = {
+                    let announce = announce_address.read().clone();
+                    vec![announce]
+                };
 
-        guard.insert(address.to_string());
-        *peer_count.write() = guard.len();
-        drop(guard);
+                let message = NetworkMessage::PeerInfo {
+                    peer_id: peer_id.clone(),
+                    addresses: addresses.clone(),
+                    time_us: Some(ippan_time_now()),
+                };
 
-        peer_metadata
-            .write()
-            .entry(address.to_string())
-            .or_insert_with(|| PeerRecord::new(address.to_string()))
-            .last_seen = ippan_time_now();
-
-        Ok(true)
+                let snapshot: Vec<String> = peers.read().iter().cloned().collect();
+                for peer in snapshot {
+                    if peer == listen_address {
+                        continue;
+                    }
+                    if let Err(err) = post_message(&client, &peer, &message).await {
+                        debug!("Failed to announce to {}: {}", peer, err);
+                    }
+                }
+            }
+        }));
     }
 
-    fn remove_peer_entry(
-        peers: &Arc<RwLock<HashSet<String>>>,
-        peer_metadata: &Arc<RwLock<HashMap<String, PeerRecord>>>,
-        peer_count: &Arc<RwLock<usize>>,
-        address: &str,
-    ) {
-        let mut guard = peers.write();
-        if guard.remove(address) {
-            *peer_count.write() = guard.len();
-        }
-        drop(guard);
-
-        peer_metadata.write().remove(address);
+    async fn send_peer_info(&self, peer: &str) -> Result<()> {
+        let address = self.announce_address.read().clone();
+        let message = NetworkMessage::PeerInfo {
+            peer_id: self.local_peer_id.clone(),
+            addresses: vec![address],
+            time_us: Some(ippan_time_now()),
+        };
+        post_message(&self.client, peer, &message).await
     }
 
-    fn touch_peer_record(
-        peer_metadata: &Arc<RwLock<HashMap<String, PeerRecord>>>,
-        address: &str,
-        time_us: u64,
-    ) {
-        let mut metadata = peer_metadata.write();
-        let entry = metadata
-            .entry(address.to_string())
-            .or_insert_with(|| PeerRecord::new(address.to_string()));
-        entry.last_seen = time_us;
-    }
-
-    fn update_peer_record(
-        &self,
-        address: &str,
-        peer_id: Option<String>,
-        announced_time: Option<u64>,
-        advertised_addresses: &[String],
-    ) {
+    fn touch_peer(&self, peer: &str) {
         let mut metadata = self.peer_metadata.write();
-        let record = metadata
-            .entry(address.to_string())
-            .or_insert_with(|| PeerRecord::new(address.to_string()));
-        if let Some(id) = peer_id {
-            record.peer_id = Some(id);
-        }
-        record.last_announced_us = announced_time;
-        record.last_seen = announced_time.unwrap_or_else(ippan_time_now);
-        if !advertised_addresses.is_empty() {
-            record.advertised_addresses = advertised_addresses.to_vec();
-            record.observed_address = Some(address.to_string());
+        metadata
+            .entry(peer.to_string())
+            .or_insert_with(|| PeerRecord::new(peer.to_string()))
+            .last_seen = ippan_time_now();
+    }
+
+    fn record_peer_metadata(
+        &self,
+        observed: &str,
+        peer_id: &str,
+        addresses: &[String],
+        announced_time: Option<u64>,
+    ) {
+        let normalized_addresses: Vec<String> = addresses
+            .iter()
+            .filter_map(|addr| normalize_peer(addr).ok())
+            .collect();
+
+        let mut metadata = self.peer_metadata.write();
+        let mut update_record = |address: String| {
+            let entry = metadata
+                .entry(address.clone())
+                .or_insert_with(|| PeerRecord::new(address.clone()));
+            entry.peer_id = Some(peer_id.to_string());
+            entry.last_seen = announced_time.unwrap_or_else(ippan_time_now);
+            entry.last_announced_us = announced_time;
+            entry.observed_address = Some(observed.to_string());
+            for advertised in addresses {
+                if !entry.advertised_addresses.contains(advertised) {
+                    entry.advertised_addresses.push(advertised.clone());
+                }
+            }
+        };
+
+        update_record(observed.to_string());
+        for address in normalized_addresses {
+            update_record(address);
         }
     }
+}
+
+fn derive_peer_id(address: &str) -> String {
+    let hash = blake3::hash(address.as_bytes());
+    format!("peer-{}", &hash.to_hex()[..16])
+}
+
+fn ensure_http_scheme(address: &str) -> String {
+    if address.starts_with("http://") || address.starts_with("https://") {
+        address.to_string()
+    } else {
+        format!("http://{}", address)
+    }
+}
+
+fn normalize_peer(address: &str) -> Result<String> {
+    let trimmed = address.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("peer address cannot be empty"));
+    }
+
+    let candidate = ensure_http_scheme(trimmed);
+    let mut url = Url::parse(&candidate)?;
+    url.set_path("");
+    url.set_query(None);
+    url.set_fragment(None);
+    let mut normalized = url.to_string();
+    while normalized.ends_with('/') {
+        normalized.pop();
+    }
+    Ok(normalized)
+}
+
+async fn fetch_peer_list(client: &Client, peer: &str) -> Result<Vec<String>> {
+    let url = format!("{}/p2p/peers", peer);
+    let response = client.get(url).send().await?;
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "peer {} responded with status {}",
+            peer,
+            response.status()
+        ));
+    }
+    Ok(response.json().await?)
+}
+
+async fn post_message(client: &Client, peer: &str, message: &NetworkMessage) -> Result<()> {
+    let endpoint = match message {
+        NetworkMessage::Block(_) => "/p2p/blocks",
+        NetworkMessage::Transaction(_) => "/p2p/transactions",
+        NetworkMessage::PeerInfo { .. } => "/p2p/peer-info",
+        NetworkMessage::PeerDiscovery { .. } => "/p2p/peer-discovery",
+        NetworkMessage::BlockRequest { .. } => "/p2p/block-request",
+        NetworkMessage::BlockResponse { .. } => "/p2p/block-response",
+    };
+
+    let url = format!("{}{}", peer, endpoint);
+    let response = client.post(url).json(message).send().await?;
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "peer {} returned error status {} for {}",
+            peer,
+            response.status(),
+            endpoint
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
