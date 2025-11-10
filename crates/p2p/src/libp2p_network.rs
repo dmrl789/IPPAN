@@ -85,24 +85,54 @@ impl Default for Libp2pConfig {
 /// Commands used to control the background swarm task.
 #[derive(Debug)]
 pub enum Libp2pCommand {
-    Publish { topic: String, data: Vec<u8> },
-    Dial { address: Multiaddr },
-    AddExplicitPeer { peer_id: PeerId, address: Option<Multiaddr> },
-    RemoveExplicitPeer { peer_id: PeerId, address: Option<Multiaddr> },
+    Publish {
+        topic: String,
+        data: Vec<u8>,
+    },
+    Dial {
+        address: Multiaddr,
+    },
+    AddExplicitPeer {
+        peer_id: PeerId,
+        address: Option<Multiaddr>,
+    },
+    RemoveExplicitPeer {
+        peer_id: PeerId,
+        address: Option<Multiaddr>,
+    },
     Shutdown,
 }
 
 /// Events produced by the libp2p network.
 #[derive(Debug, Clone)]
 pub enum Libp2pEvent {
-    Gossip { peer: PeerId, topic: String, data: Vec<u8> },
-    PeerDiscovered { peers: Vec<(PeerId, Vec<Multiaddr>)> },
-    PeerConnected { peer: PeerId },
-    PeerDisconnected { peer: PeerId },
-    NewListenAddr { address: Multiaddr },
-    RelayReservationAccepted { relay: PeerId },
-    HolePunchSucceeded { peer: PeerId },
-    HolePunchFailed { peer: PeerId, error: String },
+    Gossip {
+        peer: PeerId,
+        topic: String,
+        data: Vec<u8>,
+    },
+    PeerDiscovered {
+        peers: Vec<(PeerId, Vec<Multiaddr>)>,
+    },
+    PeerConnected {
+        peer: PeerId,
+    },
+    PeerDisconnected {
+        peer: PeerId,
+    },
+    NewListenAddr {
+        address: Multiaddr,
+    },
+    RelayReservationAccepted {
+        relay: PeerId,
+    },
+    HolePunchSucceeded {
+        peer: PeerId,
+    },
+    HolePunchFailed {
+        peer: PeerId,
+        error: String,
+    },
 }
 
 /// Combined behaviour of libp2p protocols.
@@ -156,7 +186,10 @@ impl ComposedBehaviour {
         let kademlia = kad::Behaviour::with_config(peer_id, store, kad_cfg);
 
         let mdns_behaviour = Toggle::from(if config.enable_mdns {
-            Some(mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id)?)
+            Some(mdns::tokio::Behaviour::new(
+                mdns::Config::default(),
+                peer_id,
+            )?)
         } else {
             None
         });
@@ -240,8 +273,10 @@ pub struct Libp2pNetwork {
 impl Libp2pNetwork {
     /// Initialise libp2p and spawn background swarm task.
     pub fn new(config: Libp2pConfig) -> Result<Self> {
-        let keypair =
-            config.identity_keypair.clone().unwrap_or_else(identity::Keypair::generate_ed25519);
+        let keypair = config
+            .identity_keypair
+            .clone()
+            .unwrap_or_else(identity::Keypair::generate_ed25519);
         let peer_id = PeerId::from(keypair.public());
         info!("Initialising libp2p peer {}", peer_id);
 
@@ -431,7 +466,10 @@ fn handle_swarm_event(
                         continue;
                     }
                     swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
-                    swarm.behaviour_mut().kademlia.add_address(&peer, addr.clone());
+                    swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer, addr.clone());
                     if swarm.dial(addr.clone()).is_ok() {
                         aggregate.entry(peer).or_default().push(addr);
                     }
@@ -505,14 +543,23 @@ fn handle_command(
         Libp2pCommand::AddExplicitPeer { peer_id, address } => {
             swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
             if let Some(addr) = address {
-                swarm.behaviour_mut().kademlia.add_address(&peer_id, addr.clone());
+                swarm
+                    .behaviour_mut()
+                    .kademlia
+                    .add_address(&peer_id, addr.clone());
                 let _ = swarm.dial(addr);
             }
         }
         Libp2pCommand::RemoveExplicitPeer { peer_id, address } => {
-            swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
+            swarm
+                .behaviour_mut()
+                .gossipsub
+                .remove_explicit_peer(&peer_id);
             if let Some(addr) = address {
-                swarm.behaviour_mut().kademlia.remove_address(&peer_id, &addr);
+                swarm
+                    .behaviour_mut()
+                    .kademlia
+                    .remove_address(&peer_id, &addr);
             } else {
                 swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
             }

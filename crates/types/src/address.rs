@@ -7,7 +7,11 @@ pub enum AddressError {
     #[error("address must start with 'i' or '1'")]
     InvalidPrefix,
     #[error("address must be between {min} and {max} characters, got {actual}")]
-    InvalidLength { min: usize, max: usize, actual: usize },
+    InvalidLength {
+        min: usize,
+        max: usize,
+        actual: usize,
+    },
     #[error("address payload is not valid hexadecimal")]
     InvalidHex(#[from] hex::FromHexError),
     #[error("address payload must be exactly 32 bytes")]
@@ -44,17 +48,17 @@ fn calculate_checksum(data: &[u8]) -> [u8; CHECKSUM_LENGTH] {
 /// This is then Base58 encoded for a compact, checksummed representation.
 pub fn encode_address_base58check(bytes: &[u8; ADDRESS_BYTES]) -> String {
     let mut payload = Vec::with_capacity(1 + ADDRESS_BYTES + CHECKSUM_LENGTH);
-    
+
     // Add version byte
     payload.push(ADDRESS_VERSION);
-    
+
     // Add public key bytes
     payload.extend_from_slice(bytes);
-    
+
     // Calculate and add checksum
     let checksum = calculate_checksum(&payload);
     payload.extend_from_slice(&checksum);
-    
+
     // Encode to Base58
     bs58::encode(payload).into_string()
 }
@@ -63,31 +67,31 @@ pub fn encode_address_base58check(bytes: &[u8; ADDRESS_BYTES]) -> String {
 pub fn decode_address_base58check(address: &str) -> Result<[u8; ADDRESS_BYTES], AddressError> {
     // Decode from Base58
     let decoded = bs58::decode(address).into_vec()?;
-    
+
     // Verify minimum length (version + address + checksum)
     if decoded.len() != 1 + ADDRESS_BYTES + CHECKSUM_LENGTH {
         return Err(AddressError::InvalidPayloadLength);
     }
-    
+
     // Verify version byte
     if decoded[0] != ADDRESS_VERSION {
         return Err(AddressError::InvalidVersion);
     }
-    
+
     // Extract components
     let payload = &decoded[..1 + ADDRESS_BYTES];
     let checksum = &decoded[1 + ADDRESS_BYTES..];
-    
+
     // Verify checksum
     let calculated_checksum = calculate_checksum(payload);
     if checksum != calculated_checksum {
         return Err(AddressError::InvalidChecksum);
     }
-    
+
     // Extract address bytes
     let mut address_bytes = [0u8; ADDRESS_BYTES];
     address_bytes.copy_from_slice(&decoded[1..1 + ADDRESS_BYTES]);
-    
+
     Ok(address_bytes)
 }
 
@@ -109,12 +113,12 @@ pub fn decode_address(address: &str) -> Result<[u8; ADDRESS_BYTES], AddressError
             return Ok(bytes);
         }
     }
-    
+
     // Fall back to legacy hex format for backward compatibility
     if address.starts_with('i') && address.len() == ADDRESS_STRING_LENGTH {
         return decode_address_legacy_hex(address);
     }
-    
+
     // If neither format works, try Base58Check anyway and return its error
     decode_address_base58check(address)
 }
@@ -181,10 +185,10 @@ mod tests {
     fn test_base58check_encode_decode_roundtrip() {
         let bytes = [0xABu8; ADDRESS_BYTES];
         let encoded = encode_address_base58check(&bytes);
-        
+
         // Base58Check addresses should be shorter than hex format
         assert!(encoded.len() < ADDRESS_STRING_LENGTH);
-        
+
         let decoded = decode_address_base58check(&encoded).expect("address should decode");
         assert_eq!(decoded, bytes);
     }
@@ -193,10 +197,10 @@ mod tests {
     fn test_encode_decode_roundtrip() {
         let bytes = [0xABu8; ADDRESS_BYTES];
         let encoded = encode_address(&bytes);
-        
+
         // Should use Base58Check by default
         assert!(encoded.len() < ADDRESS_STRING_LENGTH);
-        
+
         let decoded = decode_address(&encoded).expect("address should decode");
         assert_eq!(decoded, bytes);
     }
@@ -206,10 +210,10 @@ mod tests {
         // Test that legacy hex format can still be decoded
         let bytes = [0xABu8; ADDRESS_BYTES];
         let legacy_encoded = format!("i{}", hex::encode(&bytes));
-        
+
         assert_eq!(legacy_encoded.len(), ADDRESS_STRING_LENGTH);
         assert!(legacy_encoded.starts_with('i'));
-        
+
         let decoded = decode_address(&legacy_encoded).expect("legacy address should decode");
         assert_eq!(decoded, bytes);
     }
@@ -218,11 +222,11 @@ mod tests {
     fn test_base58check_invalid_checksum() {
         let bytes = [0xABu8; ADDRESS_BYTES];
         let mut encoded = encode_address_base58check(&bytes);
-        
+
         // Corrupt the checksum by modifying the last character
         encoded.pop();
         encoded.push('X');
-        
+
         let result = decode_address_base58check(&encoded);
         assert!(result.is_err());
     }
@@ -235,7 +239,7 @@ mod tests {
         payload.extend_from_slice(&[0xABu8; ADDRESS_BYTES]);
         let checksum = calculate_checksum(&payload);
         payload.extend_from_slice(&checksum);
-        
+
         let encoded = bs58::encode(payload).into_string();
         let result = decode_address_base58check(&encoded);
         assert!(matches!(result, Err(AddressError::InvalidVersion)));
@@ -262,7 +266,7 @@ mod tests {
         let bytes = [0x42u8; ADDRESS_BYTES];
         let valid_address = encode_address(&bytes);
         assert!(is_valid_address(&valid_address));
-        
+
         assert!(!is_valid_address("invalid_address"));
         assert!(!is_valid_address(""));
     }
@@ -271,10 +275,10 @@ mod tests {
     fn test_different_keys_produce_different_addresses() {
         let bytes1 = [0x01u8; ADDRESS_BYTES];
         let bytes2 = [0x02u8; ADDRESS_BYTES];
-        
+
         let addr1 = encode_address(&bytes1);
         let addr2 = encode_address(&bytes2);
-        
+
         assert_ne!(addr1, addr2);
     }
 
@@ -283,17 +287,17 @@ mod tests {
         // Verify that the checksum catches single bit errors
         let bytes = [0x55u8; ADDRESS_BYTES];
         let encoded = encode_address_base58check(&bytes);
-        
+
         // Decode to get the raw bytes
         let raw = bs58::decode(&encoded).into_vec().unwrap();
-        
+
         // Flip a bit in the address portion
         let mut corrupted = raw.clone();
         corrupted[1] ^= 0x01;
-        
+
         let corrupted_address = bs58::encode(corrupted).into_string();
         let result = decode_address_base58check(&corrupted_address);
-        
+
         // Should fail checksum validation
         assert!(result.is_err());
     }

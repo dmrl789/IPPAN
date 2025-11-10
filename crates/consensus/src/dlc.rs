@@ -161,10 +161,7 @@ impl DLCConsensus {
         let mut round = self.current_round.write();
 
         // Check if round should close based on deterministic temporal finality
-        if !should_close_round(
-            round.round_start_time,
-            self.config.temporal_finality_ms,
-        ) {
+        if !should_close_round(round.round_start_time, self.config.temporal_finality_ms) {
             return Ok(()); // Round not ready to close
         }
 

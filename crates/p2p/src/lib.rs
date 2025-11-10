@@ -324,7 +324,10 @@ impl HttpP2PNetwork {
             let mut peers = self.peers.write();
             // Enforce max_peers limit before accepting new peers
             if peers.len() >= self.config.max_peers && !peers.contains(&peer) {
-                debug!("Peer limit reached ({}), rejecting new peer: {}", self.config.max_peers, peer);
+                debug!(
+                    "Peer limit reached ({}), rejecting new peer: {}",
+                    self.config.max_peers, peer
+                );
                 return Ok(());
             }
             if peers.insert(peer.clone()) {

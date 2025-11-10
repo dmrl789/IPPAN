@@ -143,7 +143,10 @@ async fn wait_for_discovery_event(
 
     match timeout(timeout_duration, discovery).await {
         Ok(result) => result,
-        Err(_) => Err(format!("no discovery event for {peer} within {:?}", timeout_duration)),
+        Err(_) => Err(format!(
+            "no discovery event for {peer} within {:?}",
+            timeout_duration
+        )),
     }
 }
 

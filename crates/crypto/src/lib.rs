@@ -23,25 +23,25 @@ use thiserror::Error;
 pub enum CryptoError {
     #[error("Invalid public key: {0}")]
     InvalidPublicKey(String),
-    
+
     #[error("Invalid private key: {0}")]
     InvalidPrivateKey(String),
-    
+
     #[error("Invalid signature: {0}")]
     InvalidSignature(String),
-    
+
     #[error("Signature verification failed")]
     VerificationFailed,
-    
+
     #[error("Key derivation failed: {0}")]
     KeyDerivationFailed(String),
-    
+
     #[error("Invalid key length: expected {expected}, got {actual}")]
     InvalidKeyLength { expected: usize, actual: usize },
-    
+
     #[error("Encoding error: {0}")]
     EncodingError(String),
-    
+
     #[error("Decoding error: {0}")]
     DecodingError(String),
 }
@@ -93,7 +93,7 @@ impl KeyPair {
     pub fn private_key(&self) -> [u8; 32] {
         self.signing_key.to_bytes()
     }
-    
+
     /// Create KeyPair from existing private key bytes
     pub fn from_private_key(private_key: &[u8; 32]) -> Result<Self, CryptoError> {
         let signing_key = SigningKey::from_bytes(private_key);
@@ -103,29 +103,29 @@ impl KeyPair {
             verifying_key,
         })
     }
-    
+
     /// Create KeyPair from hex-encoded private key
     pub fn from_private_key_hex(hex_key: &str) -> Result<Self, CryptoError> {
         let bytes = hex::decode(hex_key)
             .map_err(|e| CryptoError::DecodingError(format!("Invalid hex: {}", e)))?;
-        
+
         if bytes.len() != 32 {
             return Err(CryptoError::InvalidKeyLength {
                 expected: 32,
                 actual: bytes.len(),
             });
         }
-        
+
         let mut key_bytes = [0u8; 32];
         key_bytes.copy_from_slice(&bytes);
         Self::from_private_key(&key_bytes)
     }
-    
+
     /// Export private key as hex string
     pub fn private_key_hex(&self) -> String {
         hex::encode(self.private_key())
     }
-    
+
     /// Export public key as hex string
     pub fn public_key_hex(&self) -> String {
         hex::encode(self.public_key())
@@ -144,7 +144,7 @@ impl KeyPair {
             .map_err(|_| CryptoError::VerificationFailed)?;
         Ok(())
     }
-    
+
     /// Verify a signature with a specific public key
     pub fn verify_with_public_key(
         message: &[u8],
@@ -153,14 +153,14 @@ impl KeyPair {
     ) -> Result<(), CryptoError> {
         let verifying_key = VerifyingKey::from_bytes(public_key)
             .map_err(|e| CryptoError::InvalidPublicKey(format!("{}", e)))?;
-        
+
         let sig = Signature::from_bytes(signature);
         verifying_key
             .verify(message, &sig)
             .map_err(|_| CryptoError::VerificationFailed)?;
         Ok(())
     }
-    
+
     /// Generate IPPAN address from public key
     pub fn generate_address(&self) -> String {
         ippan_types::address::encode_address(&self.public_key())
@@ -299,66 +299,72 @@ mod tests {
         let sig = kp.sign(msg);
         assert!(kp.verify(msg, &sig).is_ok());
     }
-    
+
     #[test]
     fn test_keypair_from_private_key() {
         let kp1 = KeyPair::generate();
         let private_key = kp1.private_key();
-        
+
         let kp2 = KeyPair::from_private_key(&private_key).unwrap();
         assert_eq!(kp1.public_key(), kp2.public_key());
         assert_eq!(kp1.private_key(), kp2.private_key());
     }
-    
+
     #[test]
     fn test_keypair_from_hex() {
         let kp1 = KeyPair::generate();
         let hex_key = kp1.private_key_hex();
-        
+
         let kp2 = KeyPair::from_private_key_hex(&hex_key).unwrap();
         assert_eq!(kp1.public_key(), kp2.public_key());
     }
-    
+
     #[test]
     fn test_invalid_hex_key() {
         let result = KeyPair::from_private_key_hex("invalid_hex");
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CryptoError::DecodingError(_)));
     }
-    
+
     #[test]
     fn test_invalid_key_length() {
         let result = KeyPair::from_private_key_hex("aabbcc");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CryptoError::InvalidKeyLength { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            CryptoError::InvalidKeyLength { .. }
+        ));
     }
-    
+
     #[test]
     fn test_verify_with_public_key() {
         let kp = KeyPair::generate();
         let msg = b"Test message";
         let sig = kp.sign(msg);
         let pubkey = kp.public_key();
-        
+
         assert!(KeyPair::verify_with_public_key(msg, &sig, &pubkey).is_ok());
     }
-    
+
     #[test]
     fn test_verify_invalid_signature() {
         let kp = KeyPair::generate();
         let msg = b"Test message";
         let invalid_sig = [0u8; 64];
-        
+
         let result = kp.verify(msg, &invalid_sig);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CryptoError::VerificationFailed));
+        assert!(matches!(
+            result.unwrap_err(),
+            CryptoError::VerificationFailed
+        ));
     }
-    
+
     #[test]
     fn test_generate_address() {
         let kp = KeyPair::generate();
         let address = kp.generate_address();
-        
+
         // Base58Check addresses should not be empty and should be valid
         assert!(!address.is_empty());
         assert!(ippan_types::address::is_valid_address(&address));
