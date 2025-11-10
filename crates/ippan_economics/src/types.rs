@@ -87,7 +87,7 @@ impl Default for EmissionParams {
         Self {
             initial_round_reward_micro: 10_000, // 10,000 µIPN = 0.01 IPN per round
             halving_interval_rounds: 630_000_000, // ≈ 2 years @ 10 rps
-            max_supply_micro: 21_000_000_000_000_000, // 21 M IPN (21M * 1M µIPN)
+            max_supply_micro: 21_000_000_000_000, // 21 M IPN (21M * 1M µIPN)
             fee_cap_fraction: Decimal::new(1, 1), // 0.1 = 10%
             proposer_weight_bps: 5455,          // ~54.5% (1.2× bonus)
             verifier_weight_bps: 4545,          // ~45.5% (1.0× baseline)
@@ -161,41 +161,50 @@ pub struct SupplyInfo {
 }
 
 /// Breakdown of per-round reward composition
+///
+/// Note: Round emission comes from the emission schedule.
+/// Transaction fees are actual fees collected and capped.
+/// The total is then split among validators based on their contribution,
+/// with each component tracked separately for transparency.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RewardComposition {
-    pub round_emission: RewardAmount,   // 60 %
-    pub transaction_fees: RewardAmount, // 25 %
-    pub ai_commissions: RewardAmount,   // 10 %
-    pub network_dividend: RewardAmount, // 5 %
+    pub round_emission: RewardAmount,   // Base emission from schedule
+    pub transaction_fees: RewardAmount, // Actual fees collected (after cap)
+    pub ai_commissions: RewardAmount,   // Reserved for AI services
+    pub network_dividend: RewardAmount, // Reserved for network dividend pool
 }
 
 impl RewardComposition {
-    /// Deterministic 60 / 25 / 10 / 5 split
-    pub fn new(total_reward: RewardAmount) -> Self {
-        let round_emission = (total_reward * 60) / 100;
-        let transaction_fees = (total_reward * 25) / 100;
-        let ai_commissions = (total_reward * 10) / 100;
-        let network_dividend = (total_reward * 5) / 100;
+    /// Create composition from round emission only (no fees)
+    pub fn new(round_emission: RewardAmount) -> Self {
+        // Split emission: 85% direct, 10% AI, 5% dividend
+        let direct_emission = (round_emission * 85) / 100;
+        let ai_commissions = (round_emission * 10) / 100;
+        let network_dividend = (round_emission * 5) / 100;
         Self {
-            round_emission,
-            transaction_fees,
+            round_emission: direct_emission,
+            transaction_fees: 0,
             ai_commissions,
             network_dividend,
         }
     }
 
-    /// Adjust distribution using actual collected fees
-    pub fn new_with_fees(round_reward: RewardAmount, actual_fees: RewardAmount) -> Self {
-        let transaction_fees = actual_fees;
-        let remaining = round_reward.saturating_sub(transaction_fees);
-        let round_emission = (remaining * 60) / 100;
-        let ai_commissions = (remaining * 10) / 100;
-        let network_dividend = (remaining * 5) / 100;
+    /// Create composition with both emission and fees
+    pub fn new_with_fees(round_emission: RewardAmount, actual_fees: RewardAmount) -> Self {
+        // Base emission split: 85% direct, 10% AI, 5% dividend
+        let direct_emission = (round_emission * 85) / 100;
+        let ai_from_emission = (round_emission * 10) / 100;
+        let dividend_from_emission = (round_emission * 5) / 100;
+
+        // Fees split: 90% direct to validators, 10% to dividend pool
+        let direct_fees = (actual_fees * 90) / 100;
+        let dividend_from_fees = actual_fees.saturating_sub(direct_fees);
+
         Self {
-            round_emission,
-            transaction_fees,
-            ai_commissions,
-            network_dividend,
+            round_emission: direct_emission,
+            transaction_fees: direct_fees,
+            ai_commissions: ai_from_emission,
+            network_dividend: dividend_from_emission + dividend_from_fees,
         }
     }
 

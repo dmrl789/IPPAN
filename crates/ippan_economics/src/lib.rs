@@ -24,6 +24,8 @@ pub mod params;
 pub mod supply;
 pub mod types;
 
+mod verify;
+
 pub use distribution::RoundRewards;
 pub use emission::EmissionEngine;
 pub use errors::*;
@@ -32,6 +34,7 @@ pub use supply::{
     projected_supply, rounds_until_supply_cap, scheduled_round_reward, SupplyTracker,
 };
 pub use types::*;
+pub use verify::*;
 
 /// Re-export commonly used types for convenience
 pub mod prelude {

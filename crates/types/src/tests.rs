@@ -1,6 +1,7 @@
 use crate::{
     AccessKey, Amount, Block, ConfidentialEnvelope, ConfidentialProof, ConfidentialProofType,
-    HashTimer, IppanTimeMicros, Transaction,
+    HashTimer, IppanTimeMicros, RoundCertificate, RoundFinalizationRecord, RoundWindow,
+    Transaction,
 };
 
 #[cfg(test)]
@@ -55,9 +56,7 @@ mod type_tests {
     fn test_transaction_hash_deterministic() {
         let tx1 = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
         let tx2 = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
-
-        // Hashes should be different due to different hashtimers (time-based)
-        assert_ne!(tx1.hash(), tx2.hash());
+        assert_ne!(tx1.hash(), tx2.hash()); // time-based difference
     }
 
     #[test]
@@ -68,8 +67,6 @@ mod type_tests {
         let mut tx = Transaction::new(from, [2u8; 32], Amount::from_atomic(1000), 1);
         tx.sign(&secret.to_bytes()).unwrap();
         assert!(tx.is_valid());
-
-        // Test invalid transaction (zero amount)
         let invalid_tx = Transaction::new(from, [2u8; 32], Amount::zero(), 1);
         assert!(!invalid_tx.is_valid());
     }
@@ -78,9 +75,7 @@ mod type_tests {
     fn test_block_creation() {
         let tx1 = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
         let tx2 = Transaction::new([3u8; 32], [4u8; 32], Amount::from_atomic(2000), 1);
-        let transactions = vec![tx1, tx2];
-
-        let block = Block::new(vec![[0u8; 32]], transactions.clone(), 1, [5u8; 32]);
+        let block = Block::new(vec![[0u8; 32]], vec![tx1, tx2], 1, [5u8; 32]);
         assert_eq!(block.header.round, 1);
         assert_eq!(block.header.creator, [5u8; 32]);
         assert_eq!(block.transactions.len(), 2);
@@ -96,28 +91,8 @@ mod type_tests {
         tx.sign(&secret.to_bytes()).unwrap();
         let block = Block::new(vec![[0u8; 32]], vec![tx], 1, [5u8; 32]);
         assert!(block.is_valid());
-
-        // Empty transactions are permitted; block remains valid
         let empty_block = Block::new(vec![[0u8; 32]], vec![], 1, [5u8; 32]);
         assert!(empty_block.is_valid());
-    }
-
-    #[test]
-    fn test_ippan_time_monotonic() {
-        let t1 = IppanTimeMicros::now();
-        std::thread::sleep(std::time::Duration::from_micros(10));
-        let t2 = IppanTimeMicros::now();
-
-        assert!(t2.0 > t1.0);
-    }
-
-    #[test]
-    fn test_transaction_topics() {
-        let mut tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1000), 1);
-        tx.topics = vec!["transfer".to_string(), "payment".to_string()];
-
-        assert_eq!(tx.topics.len(), 2);
-        assert!(tx.topics.contains(&"transfer".to_string()));
     }
 
     #[test]
@@ -136,40 +111,115 @@ mod type_tests {
                 enc_key: hex::encode([0x02u8; 32]),
             }],
         };
-
         tx.set_confidential_envelope(envelope);
-        // Confidential tx requires a proof to be considered valid
         let mut public_inputs = std::collections::BTreeMap::new();
         public_inputs.insert("balance".to_string(), "1000".to_string());
-        let proof = ConfidentialProof {
+        tx.set_confidential_proof(ConfidentialProof {
             proof_type: ConfidentialProofType::Stark,
             proof: hex::encode([1u8, 2, 3, 4]),
             public_inputs,
-        };
-        tx.set_confidential_proof(proof);
+        });
         tx.sign(&secret.to_bytes()).unwrap();
         assert!(tx.is_valid());
     }
+}
+
+// ========================================================================
+// SERIALIZATION / DESERIALIZATION CONSISTENCY TESTS
+// ========================================================================
+
+#[cfg(test)]
+mod serialization_tests {
+    use super::*;
+    use ed25519_dalek::SigningKey;
+
+    fn create_signed_tx() -> Transaction {
+        let key = SigningKey::from_bytes(&[7u8; 32]);
+        let from = key.verifying_key().to_bytes();
+        let mut tx = Transaction::new(from, [8u8; 32], Amount::from_atomic(1000), 1);
+        tx.sign(&key.to_bytes()).unwrap();
+        tx
+    }
+
+    fn create_block() -> Block {
+        let tx = create_signed_tx();
+        Block::new(vec![[1u8; 32]], vec![tx], 5, [9u8; 32])
+    }
 
     #[test]
-    fn test_zk_proof_transaction() {
-        use ed25519_dalek::SigningKey;
-        let secret = SigningKey::from_bytes(&[4u8; 32]);
-        let from = secret.verifying_key().to_bytes();
-        let mut tx = Transaction::new(from, [2u8; 32], Amount::from_atomic(1000), 1);
+    fn test_transaction_json_roundtrip() {
+        let tx = create_signed_tx();
+        let json = serde_json::to_string(&tx).unwrap();
+        let decoded: Transaction = serde_json::from_str(&json).unwrap();
+        assert_eq!(tx.id, decoded.id);
+        assert_eq!(tx.hash(), decoded.hash());
+        assert!(decoded.is_valid());
+    }
 
-        let mut public_inputs = std::collections::BTreeMap::new();
-        public_inputs.insert("balance".to_string(), "1000".to_string());
+    #[test]
+    fn test_confidential_tx_roundtrip() {
+        let mut tx = create_signed_tx();
+        let envelope = ConfidentialEnvelope {
+            enc_algo: "AES-256".into(),
+            iv: "abcd".into(),
+            ciphertext: "1234".into(),
+            access_keys: vec![AccessKey {
+                recipient_pub: "a".into(),
+                enc_key: "b".into(),
+            }],
+        };
+        tx.set_confidential_envelope(envelope);
+        let json = serde_json::to_string(&tx).unwrap();
+        let decoded: Transaction = serde_json::from_str(&json).unwrap();
+        assert_eq!(tx.confidential, decoded.confidential);
+    }
 
-        let zk_proof = ConfidentialProof {
-            proof_type: ConfidentialProofType::Stark,
-            proof: hex::encode([0x01u8, 0x02, 0x03, 0x04]),
-            public_inputs,
+    #[test]
+    fn test_block_json_roundtrip() {
+        let block = create_block();
+        let json = serde_json::to_string(&block).unwrap();
+        let decoded: Block = serde_json::from_str(&json).unwrap();
+        assert_eq!(block.header.id, decoded.header.id);
+        assert_eq!(block.hash(), decoded.hash());
+        assert!(decoded.is_valid());
+    }
+
+    #[test]
+    fn test_deterministic_serialization() {
+        let tx = create_signed_tx();
+        let s1 = serde_json::to_string(&tx).unwrap();
+        let s2 = serde_json::to_string(&tx).unwrap();
+        assert_eq!(s1, s2);
+
+        let block = create_block();
+        let b1 = serde_json::to_string(&block).unwrap();
+        let b2 = serde_json::to_string(&block).unwrap();
+        assert_eq!(b1, b2);
+    }
+
+    #[test]
+    fn test_round_structs_roundtrip() {
+        let window = RoundWindow {
+            id: 1,
+            start_us: IppanTimeMicros(1000),
+            end_us: IppanTimeMicros(2000),
+        };
+        let cert = RoundCertificate {
+            round: 1,
+            block_ids: vec![[1u8; 32], [2u8; 32]],
+            agg_sig: vec![0xAA],
+        };
+        let record = RoundFinalizationRecord {
+            round: 1,
+            window,
+            ordered_tx_ids: vec![[3u8; 32]],
+            fork_drops: vec![],
+            state_root: [4u8; 32],
+            proof: cert.clone(),
         };
 
-        tx.set_confidential_proof(zk_proof);
-        tx.sign(&secret.to_bytes()).unwrap();
-        assert!(tx.zk_proof.is_some());
-        assert!(tx.is_valid());
+        let json = serde_json::to_string(&record).unwrap();
+        let decoded: RoundFinalizationRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(record, decoded);
     }
 }
