@@ -322,6 +322,11 @@ impl HttpP2PNetwork {
         let mut was_new = false;
         {
             let mut peers = self.peers.write();
+            // Enforce max_peers limit before accepting new peers
+            if peers.len() >= self.config.max_peers && !peers.contains(&peer) {
+                debug!("Peer limit reached ({}), rejecting new peer: {}", self.config.max_peers, peer);
+                return Ok(());
+            }
             if peers.insert(peer.clone()) {
                 *self.peer_count.write() = peers.len();
                 was_new = true;
@@ -426,6 +431,7 @@ impl HttpP2PNetwork {
         let is_running = self.is_running.clone();
         let client = self.client.clone();
         let listen_address = self.listen_address.clone();
+        let max_peers = self.config.max_peers;
         let interval_duration = self
             .config
             .peer_discovery_interval
@@ -459,7 +465,8 @@ impl HttpP2PNetwork {
                                 let mut added = false;
                                 {
                                     let mut guard = peers.write();
-                                    if guard.insert(candidate.clone()) {
+                                    // Enforce max_peers limit in discovery loop
+                                    if guard.len() < max_peers && guard.insert(candidate.clone()) {
                                         *peer_count.write() = guard.len();
                                         added = true;
                                     }
