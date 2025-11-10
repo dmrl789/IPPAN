@@ -162,9 +162,11 @@ impl RateLimiter {
         let mut limiters = self.ip_limiters.write().await;
 
         let limiter = limiters.entry(ip).or_insert_with(|| {
-            let quota =
-                Quota::per_second(NonZeroU32::new(self.config.requests_per_second).unwrap())
-                    .allow_burst(NonZeroU32::new(self.config.burst_capacity).unwrap());
+            let requests_per_second = self.config.requests_per_second.max(1);
+            let burst_capacity = self.config.burst_capacity.max(1);
+
+            let quota = Quota::per_second(NonZeroU32::new(requests_per_second).unwrap())
+                .allow_burst(NonZeroU32::new(burst_capacity).unwrap());
             GovernorRateLimiter::direct(quota)
         });
 
@@ -184,12 +186,19 @@ impl RateLimiter {
             .or_insert_with(HashMap::new);
 
         let limiter = ip_limiters.entry(ip).or_insert_with(|| {
-            let quota = Quota::per_second(NonZeroU32::new(limit.requests_per_second).unwrap())
-                .allow_burst(NonZeroU32::new(limit.burst_capacity).unwrap());
+            let quota = Self::endpoint_quota(limit);
             GovernorRateLimiter::direct(quota)
         });
 
         Ok(limiter.check().is_ok())
+    }
+
+    fn endpoint_quota(limit: &EndpointLimit) -> Quota {
+        let requests_per_second = limit.requests_per_second.max(1);
+        let burst_capacity = limit.burst_capacity.max(1).min(requests_per_second);
+
+        Quota::per_second(NonZeroU32::new(requests_per_second).unwrap())
+            .allow_burst(NonZeroU32::new(burst_capacity).unwrap())
     }
 
     /// Clean up old rate limiter entries to prevent memory leaks
