@@ -105,17 +105,45 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Benchmark D-GBDT selection
-        run: |
-          cargo bench -p ippan-consensus --bench dgbdt_selection || echo "No benchmark found, skipping"
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-dlc-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-dlc-bench-
+            ${{ runner.os }}-dlc-
 
-      - name: Benchmark shadow verification
+      - name: Run DLC benchmarks
         run: |
-          cargo bench -p ippan-consensus --bench shadow_verification || echo "No benchmark found, skipping"
+          set -o pipefail
+          LOG_FILE=dlc-benchmarks.txt
+          : > "$LOG_FILE"
 
-      - name: Report results
-        run: |
-          echo "📊 DLC consensus benchmarks complete"
+          run_bench() {
+            local name="$1"
+            shift
+            echo "== $name ==" | tee -a "$LOG_FILE"
+            cargo bench "$@" 2>&1 | tee -a "$LOG_FILE" || {
+              echo "No benchmark found for $name, skipping" | tee -a "$LOG_FILE"
+            }
+            echo "" | tee -a "$LOG_FILE"
+          }
+
+          run_bench "D-GBDT selection" -p ippan-consensus --bench dgbdt_selection
+          run_bench "Shadow verification" -p ippan-consensus --bench shadow_verification
+
+          echo "📊 DLC consensus benchmarks complete" | tee -a "$LOG_FILE"
+
+      - name: Upload benchmark logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlc-benchmarks.txt
+          path: dlc-benchmarks.txt
+          if-no-files-found: error
 
   dlc-validation:
     name: DLC Specification Validation
