@@ -930,6 +930,7 @@ mod tests {
     use anyhow::anyhow;
     use axum::extract::{ConnectInfo, Path as AxumPath, Query};
     use axum::Json;
+    use ed25519_dalek::SigningKey;
     use ippan_consensus::{PoAConfig, Validator};
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
@@ -1006,8 +1007,27 @@ mod tests {
         build_app_state(None, None)
     }
 
+    fn sample_private_key(seed: [u8; 32]) -> SigningKey {
+        SigningKey::from_bytes(&seed)
+    }
+
+    fn sample_public_key(seed: [u8; 32]) -> [u8; 32] {
+        sample_private_key(seed).verifying_key().to_bytes()
+    }
+
     fn sample_transaction(from: [u8; 32], to: [u8; 32], nonce: u64) -> Transaction {
-        Transaction::new(from, to, Amount::from_micro_ipn(10 + nonce), nonce)
+        let signing_key = sample_private_key(from);
+        let from_public = signing_key.verifying_key().to_bytes();
+        let to_public = sample_public_key(to);
+        let mut tx = Transaction::new(
+            from_public,
+            to_public,
+            Amount::from_micro_ipn(10 + nonce),
+            nonce,
+        );
+        let private_bytes = signing_key.to_bytes();
+        tx.sign(&private_bytes).expect("sign sample transaction");
+        tx
     }
 
     struct FailingStorage {
@@ -1299,13 +1319,13 @@ mod tests {
     #[test]
     fn test_account_to_response_serializes() {
         let account = Account {
-            address: [1u8; 32],
+            address: sample_public_key([1u8; 32]),
             balance: 1_000,
             nonce: 2,
         };
         let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
         let response = account_to_response(account, vec![tx.clone()]);
-        assert_eq!(response.address, hex::encode([1u8; 32]));
+        assert_eq!(response.address, hex::encode(sample_public_key([1u8; 32])));
         assert_eq!(response.transactions.len(), 1);
         assert_eq!(response.transactions[0].hash.len(), 64);
         assert_eq!(response.transactions[0].transaction.hash(), tx.hash());
@@ -1432,7 +1452,7 @@ mod tests {
         let missing = handle_get_transaction(
             State(state.clone()),
             ConnectInfo(addr),
-            AxumPath(hex::encode([7u8; 32])),
+            AxumPath(hex::encode(sample_public_key([7u8; 32]))),
         )
         .await
         .expect_err("not found");
@@ -1534,7 +1554,7 @@ mod tests {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
         let account = Account {
-            address: [4u8; 32],
+            address: sample_public_key([4u8; 32]),
             balance: 500,
             nonce: 7,
         };
@@ -1562,7 +1582,7 @@ mod tests {
         let missing = handle_get_account(
             State(state.clone()),
             ConnectInfo(addr),
-            AxumPath(hex::encode([9u8; 32])),
+            AxumPath(hex::encode(sample_public_key([9u8; 32]))),
         )
         .await
         .expect_err("missing");
@@ -1670,13 +1690,13 @@ mod tests {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
         let mut config = PoAConfig::default();
         config.validators.push(Validator {
-            id: [3u8; 32],
-            address: [4u8; 32],
+            id: sample_public_key([3u8; 32]),
+            address: sample_public_key([4u8; 32]),
             stake: 1_000,
             is_active: true,
         });
 
-        let poa = PoAConsensus::new(config, storage.clone(), [9u8; 32]);
+        let poa = PoAConsensus::new(config, storage.clone(), sample_public_key([9u8; 32]));
         let mempool = poa.mempool();
         let consensus = Arc::new(Mutex::new(poa));
 
@@ -1795,9 +1815,10 @@ mod tests {
             message_timeout: Duration::from_millis(5),
             ..P2PConfig::default()
         };
-        let network =
-            Arc::new(HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network"));
-        let mut events = network.take_incoming_events().expect("event receiver");
+        let mut raw_network =
+            HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network");
+        let mut events = raw_network.take_incoming_events().expect("event receiver");
+        let network = Arc::new(raw_network);
 
         let mut state = (*build_app_state(None, None)).clone();
         state.p2p_network = Some(network.clone());
@@ -1934,7 +1955,7 @@ mod tests {
     async fn test_handle_get_account_error_paths() {
         let failing = FailingStorage::new(&["get_transactions_by_address"]);
         let account = Account {
-            address: [3u8; 32],
+            address: sample_public_key([3u8; 32]),
             balance: 5_000,
             nonce: 1,
         };
@@ -2137,13 +2158,13 @@ mod tests {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
         let mut config = PoAConfig::default();
         config.validators.push(Validator {
-            id: [42u8; 32],
-            address: [42u8; 32],
+            id: sample_public_key([42u8; 32]),
+            address: sample_public_key([42u8; 32]),
             stake: 1_000,
             is_active: true,
         });
 
-        let poa = PoAConsensus::new(config, storage, [42u8; 32]);
+        let poa = PoAConsensus::new(config, storage, sample_public_key([42u8; 32]));
         let mempool = poa.mempool();
         let consensus = Arc::new(Mutex::new(poa));
         let (tx_sender, mut rx) = mpsc::unbounded_channel();
