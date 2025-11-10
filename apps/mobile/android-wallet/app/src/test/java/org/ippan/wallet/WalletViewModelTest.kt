@@ -47,14 +47,14 @@ class WalletViewModelTest {
     
     @Test
     fun `submit transfer should update form state`() = runTest {
-        val transferRequest = TransferRequest(
-            toAddress = "ippan_test123",
-            amount = 100.0,
-            symbol = "IPP",
-            note = "Test transfer"
-        )
+        // Set up the form state first
+        viewModel.updateToAddress("ippan_test123")
+        viewModel.updateAmount("100.0")
+        viewModel.updateSymbol("IPP")
+        viewModel.updateNote("Test transfer")
         
-        viewModel.submitTransfer(transferRequest)
+        // Submit without activity (skips biometric auth)
+        viewModel.submitTransfer(activity = null)
         
         val formState = viewModel.sendFormState.value
         assertTrue(formState.isSubmitting)
@@ -97,14 +97,12 @@ class WalletViewModelTest {
     
     @Test
     fun `dismiss success banner should clear last transfer result`() = runTest {
-        // First submit a transfer to set lastTransferResult
-        val transferRequest = TransferRequest(
-            toAddress = "ippan_test789",
-            amount = 25.0,
-            symbol = "IPP"
-        )
+        // First set up and submit a transfer to set lastTransferResult
+        viewModel.updateToAddress("ippan_test789")
+        viewModel.updateAmount("25.0")
+        viewModel.updateSymbol("IPP")
         
-        viewModel.submitTransfer(transferRequest)
+        viewModel.submitTransfer(activity = null)
         
         // Wait for the transfer to complete
         kotlinx.coroutines.delay(100)
