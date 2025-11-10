@@ -1015,13 +1015,12 @@ mod tests {
         sample_private_key(seed).verifying_key().to_bytes()
     }
 
-    fn sample_transaction(from: [u8; 32], to: [u8; 32], nonce: u64) -> Transaction {
-        let signing_key = sample_private_key(from);
+    fn sample_transaction(from_seed: [u8; 32], to_address: [u8; 32], nonce: u64) -> Transaction {
+        let signing_key = sample_private_key(from_seed);
         let from_public = signing_key.verifying_key().to_bytes();
-        let to_public = sample_public_key(to);
         let mut tx = Transaction::new(
             from_public,
-            to_public,
+            to_address,
             Amount::from_micro_ipn(10 + nonce),
             nonce,
         );
@@ -1323,7 +1322,7 @@ mod tests {
             balance: 1_000,
             nonce: 2,
         };
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 3);
         let response = account_to_response(account, vec![tx.clone()]);
         assert_eq!(response.address, hex::encode(sample_public_key([1u8; 32])));
         assert_eq!(response.transactions.len(), 1);
@@ -1389,7 +1388,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_block_from_peer_updates_state() {
         let state = make_app_state();
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 1);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 1);
         let tx_hash_hex = hex::encode(tx.hash());
         state
             .mempool
@@ -1412,7 +1411,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_transaction_from_peer_persists() {
         let state = make_app_state();
-        let tx = sample_transaction([5u8; 32], [6u8; 32], 2);
+        let tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 2);
         let tx_hash = tx.hash();
 
         ingest_transaction_from_peer(&state, &tx).expect("ingest tx");
@@ -1433,7 +1432,7 @@ mod tests {
     async fn test_handle_get_transaction_paths() {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
-        let tx = sample_transaction([8u8; 32], [9u8; 32], 4);
+        let tx = sample_transaction([8u8; 32], sample_public_key([9u8; 32]), 4);
         let tx_hash = tx.hash();
         state
             .storage
@@ -1478,7 +1477,7 @@ mod tests {
         let manager = SecurityManager::new(config).expect("manager");
         let state = build_app_state(Some(Arc::new(manager)), None);
         let addr: SocketAddr = "10.0.0.10:8080".parse().unwrap();
-        let tx = sample_transaction([11u8; 32], [12u8; 32], 5);
+        let tx = sample_transaction([11u8; 32], sample_public_key([12u8; 32]), 5);
         let tx_hash = tx.hash();
         state.storage.store_transaction(tx).expect("store tx");
 
@@ -1553,8 +1552,9 @@ mod tests {
     async fn test_handle_get_account_branches() {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let tx = sample_transaction([4u8; 32], sample_public_key([5u8; 32]), 1);
         let account = Account {
-            address: sample_public_key([4u8; 32]),
+            address: tx.from,
             balance: 500,
             nonce: 7,
         };
@@ -1562,11 +1562,11 @@ mod tests {
             .storage
             .update_account(account.clone())
             .expect("account");
-        let tx = sample_transaction([4u8; 32], [5u8; 32], 1);
         state.storage.store_transaction(tx.clone()).expect("tx1");
+        let tx2 = sample_transaction([6u8; 32], account.address, 2);
         state
             .storage
-            .store_transaction(sample_transaction([6u8; 32], [4u8; 32], 2))
+            .store_transaction(tx2.clone())
             .expect("tx2");
 
         let ok = handle_get_account(
@@ -1680,7 +1680,7 @@ mod tests {
         assert_eq!(config.0.max_l2_count, 1);
 
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
-        let tx = sample_transaction([2u8; 32], [3u8; 32], 9);
+        let tx = sample_transaction([2u8; 32], sample_public_key([3u8; 32]), 9);
         let response = handle_submit_tx(State(state.clone()), ConnectInfo(addr), Json(tx)).await;
         assert_eq!(response.0, StatusCode::SERVICE_UNAVAILABLE);
     }
@@ -1712,7 +1712,7 @@ mod tests {
         let ok_state = Arc::new(ok_state);
 
         let addr: SocketAddr = "127.0.0.1:9101".parse().unwrap();
-        let tx = sample_transaction([5u8; 32], [6u8; 32], 11);
+        let tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 11);
         let accepted =
             handle_submit_tx(State(ok_state.clone()), ConnectInfo(addr), Json(tx.clone())).await;
         assert_eq!(accepted.0, StatusCode::OK);
@@ -1734,7 +1734,7 @@ mod tests {
         let rejected = handle_submit_tx(
             State(fail_state),
             ConnectInfo(addr),
-            Json(sample_transaction([7u8; 32], [8u8; 32], 12)),
+            Json(sample_transaction([7u8; 32], sample_public_key([8u8; 32]), 12)),
         )
         .await;
         assert_eq!(rejected.0, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1744,7 +1744,7 @@ mod tests {
     async fn test_handle_p2p_blocks_and_transactions() {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9100".parse().unwrap();
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 3);
         let block = Block::new(vec![], vec![tx.clone()], 2, [7u8; 32]);
         let block_message = NetworkMessage::Block(block.clone());
 
@@ -2032,7 +2032,7 @@ mod tests {
 
         let addr: SocketAddr = "127.0.0.1:8300".parse().unwrap();
         let block = Block::new(vec![], vec![], 1, [9u8; 32]);
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 3);
 
         let blocked = handle_p2p_blocks(
             State(state.clone()),
@@ -2173,7 +2173,7 @@ mod tests {
         let snapshot = handle.snapshot().await.expect("snapshot");
         assert_eq!(snapshot.validators.len(), 1);
 
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 1);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 1);
         handle.submit_transaction(tx.clone()).expect("submit");
         let received = rx.recv().await.expect("recv");
         assert_eq!(received.hash(), tx.hash());
