@@ -2,7 +2,6 @@ package org.ippan.wallet.ui
 
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
-import app.cash.paparazzi.RenderingMode
 import java.time.Instant
 import org.junit.Rule
 import org.junit.Test
@@ -23,8 +22,7 @@ class WalletScreensSnapshotTest {
 
     @get:Rule
     val paparazzi = Paparazzi(
-        deviceConfig = DeviceConfig.PIXEL_6.copy(softButtons = false),
-        renderingMode = RenderingMode.SHRINK
+        deviceConfig = DeviceConfig.PIXEL_6.copy(softButtons = false)
     )
 
     private val sampleTransactions = listOf(
