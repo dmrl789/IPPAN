@@ -1007,24 +1007,25 @@ mod tests {
         build_app_state(None, None)
     }
 
-    fn sample_signing_key(seed: [u8; 32]) -> SigningKey {
+    fn sample_private_key(seed: [u8; 32]) -> SigningKey {
         SigningKey::from_bytes(&seed)
     }
 
     fn sample_public_key(seed: [u8; 32]) -> [u8; 32] {
-        sample_signing_key(seed).verifying_key().to_bytes()
+        sample_private_key(seed).verifying_key().to_bytes()
     }
 
-    fn sample_transaction(from_seed: [u8; 32], to: [u8; 32], nonce: u64) -> Transaction {
-        let signing_key = sample_signing_key(from_seed);
+    fn sample_transaction(from_seed: [u8; 32], to_address: [u8; 32], nonce: u64) -> Transaction {
+        let signing_key = sample_private_key(from_seed);
+        let from_public = signing_key.verifying_key().to_bytes();
         let mut tx = Transaction::new(
-            signing_key.verifying_key().to_bytes(),
-            to,
+            from_public,
+            to_address,
             Amount::from_micro_ipn(10 + nonce),
             nonce,
         );
-        let private_key = signing_key.to_bytes();
-        tx.sign(&private_key).expect("sign sample transaction");
+        let private_bytes = signing_key.to_bytes();
+        tx.sign(&private_bytes).expect("sign sample transaction");
         tx
     }
 
@@ -1317,13 +1318,13 @@ mod tests {
     #[test]
     fn test_account_to_response_serializes() {
         let account = Account {
-            address: [1u8; 32],
+            address: sample_public_key([1u8; 32]),
             balance: 1_000,
             nonce: 2,
         };
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 3);
         let response = account_to_response(account, vec![tx.clone()]);
-        assert_eq!(response.address, hex::encode([1u8; 32]));
+        assert_eq!(response.address, hex::encode(sample_public_key([1u8; 32])));
         assert_eq!(response.transactions.len(), 1);
         assert_eq!(response.transactions[0].hash.len(), 64);
         assert_eq!(response.transactions[0].transaction.hash(), tx.hash());
@@ -1387,7 +1388,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_block_from_peer_updates_state() {
         let state = make_app_state();
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 1);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 1);
         let tx_hash_hex = hex::encode(tx.hash());
         state
             .mempool
@@ -1410,7 +1411,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_transaction_from_peer_persists() {
         let state = make_app_state();
-        let tx = sample_transaction([5u8; 32], [6u8; 32], 2);
+        let tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 2);
         let tx_hash = tx.hash();
 
         ingest_transaction_from_peer(&state, &tx).expect("ingest tx");
@@ -1431,7 +1432,7 @@ mod tests {
     async fn test_handle_get_transaction_paths() {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
-        let tx = sample_transaction([8u8; 32], [9u8; 32], 4);
+        let tx = sample_transaction([8u8; 32], sample_public_key([9u8; 32]), 4);
         let tx_hash = tx.hash();
         state
             .storage
@@ -1450,7 +1451,7 @@ mod tests {
         let missing = handle_get_transaction(
             State(state.clone()),
             ConnectInfo(addr),
-            AxumPath(hex::encode([7u8; 32])),
+            AxumPath(hex::encode(sample_public_key([7u8; 32]))),
         )
         .await
         .expect_err("not found");
@@ -1476,7 +1477,7 @@ mod tests {
         let manager = SecurityManager::new(config).expect("manager");
         let state = build_app_state(Some(Arc::new(manager)), None);
         let addr: SocketAddr = "10.0.0.10:8080".parse().unwrap();
-        let tx = sample_transaction([11u8; 32], [12u8; 32], 5);
+        let tx = sample_transaction([11u8; 32], sample_public_key([12u8; 32]), 5);
         let tx_hash = tx.hash();
         state.storage.store_transaction(tx).expect("store tx");
 
@@ -1552,7 +1553,7 @@ mod tests {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
         let account_address = sample_public_key([4u8; 32]);
-        let tx = sample_transaction([4u8; 32], [5u8; 32], 1);
+        let tx = sample_transaction([4u8; 32], sample_public_key([5u8; 32]), 1);
         let account = Account {
             address: account_address,
             balance: 500,
@@ -1563,9 +1564,10 @@ mod tests {
             .update_account(account.clone())
             .expect("account");
         state.storage.store_transaction(tx.clone()).expect("tx1");
+        let tx2 = sample_transaction([6u8; 32], account.address, 2);
         state
             .storage
-            .store_transaction(sample_transaction([6u8; 32], account_address, 2))
+            .store_transaction(tx2.clone())
             .expect("tx2");
 
         let ok = handle_get_account(
@@ -1581,7 +1583,7 @@ mod tests {
         let missing = handle_get_account(
             State(state.clone()),
             ConnectInfo(addr),
-            AxumPath(hex::encode([9u8; 32])),
+            AxumPath(hex::encode(sample_public_key([9u8; 32]))),
         )
         .await
         .expect_err("missing");
@@ -1679,7 +1681,7 @@ mod tests {
         assert_eq!(config.0.max_l2_count, 1);
 
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
-        let tx = sample_transaction([2u8; 32], [3u8; 32], 9);
+        let tx = sample_transaction([2u8; 32], sample_public_key([3u8; 32]), 9);
         let response = handle_submit_tx(State(state.clone()), ConnectInfo(addr), Json(tx)).await;
         assert_eq!(response.0, StatusCode::SERVICE_UNAVAILABLE);
     }
@@ -1689,13 +1691,13 @@ mod tests {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
         let mut config = PoAConfig::default();
         config.validators.push(Validator {
-            id: [3u8; 32],
-            address: [4u8; 32],
+            id: sample_public_key([3u8; 32]),
+            address: sample_public_key([4u8; 32]),
             stake: 1_000,
             is_active: true,
         });
 
-        let poa = PoAConsensus::new(config, storage.clone(), [9u8; 32]);
+        let poa = PoAConsensus::new(config, storage.clone(), sample_public_key([9u8; 32]));
         let mempool = poa.mempool();
         let consensus = Arc::new(Mutex::new(poa));
 
@@ -1711,7 +1713,7 @@ mod tests {
         let ok_state = Arc::new(ok_state);
 
         let addr: SocketAddr = "127.0.0.1:9101".parse().unwrap();
-        let tx = sample_transaction([5u8; 32], [6u8; 32], 11);
+        let tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 11);
         let accepted =
             handle_submit_tx(State(ok_state.clone()), ConnectInfo(addr), Json(tx.clone())).await;
         assert_eq!(accepted.0, StatusCode::OK);
@@ -1733,7 +1735,7 @@ mod tests {
         let rejected = handle_submit_tx(
             State(fail_state),
             ConnectInfo(addr),
-            Json(sample_transaction([7u8; 32], [8u8; 32], 12)),
+            Json(sample_transaction([7u8; 32], sample_public_key([8u8; 32]), 12)),
         )
         .await;
         assert_eq!(rejected.0, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1743,7 +1745,7 @@ mod tests {
     async fn test_handle_p2p_blocks_and_transactions() {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9100".parse().unwrap();
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 3);
         let block = Block::new(vec![], vec![tx.clone()], 2, [7u8; 32]);
         let block_message = NetworkMessage::Block(block.clone());
 
@@ -1814,12 +1816,10 @@ mod tests {
             message_timeout: Duration::from_millis(5),
             ..P2PConfig::default()
         };
-        let mut network_instance =
+        let mut raw_network =
             HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network");
-        let mut events = network_instance
-            .take_incoming_events()
-            .expect("event receiver");
-        let network = Arc::new(network_instance);
+        let mut events = raw_network.take_incoming_events().expect("event receiver");
+        let network = Arc::new(raw_network);
 
         let mut state = (*build_app_state(None, None)).clone();
         state.p2p_network = Some(Arc::clone(&network));
@@ -1956,7 +1956,7 @@ mod tests {
     async fn test_handle_get_account_error_paths() {
         let failing = FailingStorage::new(&["get_transactions_by_address"]);
         let account = Account {
-            address: [3u8; 32],
+            address: sample_public_key([3u8; 32]),
             balance: 5_000,
             nonce: 1,
         };
@@ -2033,7 +2033,7 @@ mod tests {
 
         let addr: SocketAddr = "127.0.0.1:8300".parse().unwrap();
         let block = Block::new(vec![], vec![], 1, [9u8; 32]);
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 3);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 3);
 
         let blocked = handle_p2p_blocks(
             State(state.clone()),
@@ -2159,13 +2159,13 @@ mod tests {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
         let mut config = PoAConfig::default();
         config.validators.push(Validator {
-            id: [42u8; 32],
-            address: [42u8; 32],
+            id: sample_public_key([42u8; 32]),
+            address: sample_public_key([42u8; 32]),
             stake: 1_000,
             is_active: true,
         });
 
-        let poa = PoAConsensus::new(config, storage, [42u8; 32]);
+        let poa = PoAConsensus::new(config, storage, sample_public_key([42u8; 32]));
         let mempool = poa.mempool();
         let consensus = Arc::new(Mutex::new(poa));
         let (tx_sender, mut rx) = mpsc::unbounded_channel();
@@ -2174,7 +2174,7 @@ mod tests {
         let snapshot = handle.snapshot().await.expect("snapshot");
         assert_eq!(snapshot.validators.len(), 1);
 
-        let tx = sample_transaction([1u8; 32], [2u8; 32], 1);
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 1);
         handle.submit_transaction(tx.clone()).expect("submit");
         let received = rx.recv().await.expect("recv");
         assert_eq!(received.hash(), tx.hash());
