@@ -1,6 +1,9 @@
 //! Production configuration management for AI Core
 
-use crate::errors::{AiCoreError, Result};
+use crate::{
+    errors::{AiCoreError, Result},
+    fixed::Fixed,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -36,10 +39,10 @@ pub struct HealthConfig {
     pub check_interval: Duration,
     /// Memory threshold (bytes)
     pub memory_threshold: u64,
-    /// CPU threshold (percentage)
-    pub cpu_threshold: f64,
-    /// Max failure rate
-    pub max_failure_rate: f64,
+    /// CPU threshold (percentage, fixed-point)
+    pub cpu_threshold: Fixed,
+    /// Max failure rate (probability, fixed-point)
+    pub max_failure_rate: Fixed,
     /// Min executions for health check
     pub min_executions: u64,
 }
@@ -112,8 +115,8 @@ pub struct PerformanceConfig {
     pub metrics_interval: Duration,
     /// Enable profiling
     pub profiling: bool,
-    /// Profiling sample rate
-    pub sample_rate: f64,
+    /// Profiling sample rate (fraction, fixed-point)
+    pub sample_rate: Fixed,
     /// Enable tracing
     pub tracing: bool,
     /// Trace buffer size
@@ -158,8 +161,8 @@ impl Default for HealthConfig {
             enabled: true,
             check_interval: Duration::from_secs(30),
             memory_threshold: 1_000_000_000, // 1GB
-            cpu_threshold: 80.0,
-            max_failure_rate: 0.1, // 10%
+            cpu_threshold: Fixed::from_f64(80.0),
+            max_failure_rate: Fixed::from_f64(0.1), // 10%
             min_executions: 100,
         }
     }
@@ -214,7 +217,7 @@ impl Default for PerformanceConfig {
             metrics: true,
             metrics_interval: Duration::from_secs(60),
             profiling: false,
-            sample_rate: 0.01, // 1%
+            sample_rate: Fixed::from_f64(0.01), // 1%
             tracing: true,
             trace_buffer_size: 10000,
         }
@@ -405,7 +408,7 @@ impl ConfigManager {
             warnings.push("Health monitoring enabled but memory threshold is 0".to_string());
         }
 
-        if config.health.max_failure_rate > 1.0 {
+        if config.health.max_failure_rate > Fixed::ONE {
             warnings.push("Max failure rate should be between 0 and 1".to_string());
         }
 
@@ -432,7 +435,9 @@ impl ConfigManager {
         }
 
         // Validate performance configuration
-        if config.performance.sample_rate < 0.0 || config.performance.sample_rate > 1.0 {
+        if config.performance.sample_rate < Fixed::ZERO
+            || config.performance.sample_rate > Fixed::ONE
+        {
             warnings.push("Sample rate should be between 0 and 1".to_string());
         }
 

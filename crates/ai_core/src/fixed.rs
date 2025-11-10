@@ -96,10 +96,8 @@ impl<'de> Deserialize<'de> for Fixed {
                 if let Ok(int_micro) = value.parse::<i64>() {
                     return self.visit_i64(int_micro);
                 }
-                let float_val = value
-                    .parse::<f64>()
-                    .map_err(|_| de::Error::custom("invalid fixed-point string"))?;
-                self.visit_f64(float_val)
+                Fixed::from_decimal_str(value)
+                    .ok_or_else(|| de::Error::custom("invalid fixed-point string"))
             }
         }
 
@@ -138,6 +136,61 @@ impl Fixed {
     #[inline]
     pub const fn from_int(val: i64) -> Self {
         Fixed(val.saturating_mul(SCALE))
+    }
+
+    /// Create from a decimal string with up to 6 fractional digits.
+    ///
+    /// The parser accepts optional sign, optional decimal point, and truncates
+    /// or rounds fractional digits beyond micro precision.
+    #[inline]
+    pub fn from_decimal_str(value: &str) -> Option<Self> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        let negative = trimmed.starts_with('-');
+        let positive = if trimmed.starts_with(['-', '+']) {
+            &trimmed[1..]
+        } else {
+            trimmed
+        };
+
+        if positive.is_empty() {
+            return Some(Fixed::ZERO);
+        }
+
+        let mut parts = positive.splitn(2, '.');
+        let int_part = parts.next().unwrap_or("0");
+        let frac_part = parts.next().unwrap_or("");
+
+        let mut int_value: i128 = if int_part.is_empty() {
+            0
+        } else {
+            match int_part.parse::<i128>() {
+                Ok(v) => v,
+                Err(_) => return None,
+            }
+        };
+
+        let (fraction_micro, carry) = parse_fraction_component(frac_part)?;
+        if carry {
+            int_value = int_value.checked_add(1)?;
+        }
+
+        let mut total_micro = int_value
+            .checked_mul(SCALE as i128)?
+            .checked_add(fraction_micro as i128)?;
+
+        if negative {
+            total_micro = -total_micro;
+        }
+
+        if total_micro > i64::MAX as i128 || total_micro < i64::MIN as i128 {
+            return None;
+        }
+
+        Some(Fixed(total_micro as i64))
     }
 
     /// Convert to integer (truncating)
@@ -369,6 +422,47 @@ impl fmt::Display for Fixed {
 // ---------------------------------------------------------------------------
 
 use blake3::Hasher;
+
+fn parse_fraction_component(part: &str) -> Option<(i64, bool)> {
+    if part.is_empty() {
+        return Some((0, false));
+    }
+
+    let mut digits = String::new();
+    let mut should_round_up = false;
+
+    for (idx, ch) in part.chars().enumerate() {
+        if !ch.is_ascii_digit() {
+            return None;
+        }
+        if idx < 6 {
+            digits.push(ch);
+        } else if idx == 6 {
+            if ch >= '5' {
+                should_round_up = true;
+            }
+        } else if !should_round_up && ch != '0' {
+            should_round_up = true;
+        }
+    }
+
+    while digits.len() < 6 {
+        digits.push('0');
+    }
+
+    let mut micro = digits.parse::<i64>().ok()?;
+    let mut carry = false;
+
+    if should_round_up {
+        micro += 1;
+        if micro >= SCALE {
+            micro -= SCALE;
+            carry = true;
+        }
+    }
+
+    Some((micro, carry))
+}
 
 /// Deterministic Blake3 hash of a single fixed value
 pub fn hash_fixed(val: Fixed) -> [u8; 32] {

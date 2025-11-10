@@ -8,11 +8,11 @@
 //! - Configuration hot-reloading
 //! - Secrets management
 
-use crate::feature_engineering::FeatureEngineeringConfig;
 use crate::gbdt::{GBDTError, SecurityConstraints};
 use crate::model_manager::ModelManagerConfig;
 use crate::monitoring::MonitoringConfig;
 use crate::security::SecurityConfig;
+use crate::{feature_engineering::FeatureEngineeringConfig, fixed::Fixed};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -65,7 +65,7 @@ pub struct GBDTConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceLimits {
     pub max_memory_bytes: u64,
-    pub max_cpu_percent: f64,
+    pub max_cpu_percent: Fixed,
     pub max_disk_bytes: u64,
     pub max_network_bandwidth_bps: u64,
     pub max_file_descriptors: u32,
@@ -192,7 +192,7 @@ impl ProductionConfig {
             _ => {}
         }
 
-        if self.resources.max_cpu_percent > 100.0 {
+        if self.resources.max_cpu_percent > Fixed::from_int(100) {
             errors.push("CPU limit cannot exceed 100%".to_string());
         }
         if self.resources.max_memory_bytes == 0 {
@@ -238,7 +238,7 @@ impl Default for ResourceLimits {
     fn default() -> Self {
         Self {
             max_memory_bytes: 2 * 1024 * 1024 * 1024,
-            max_cpu_percent: 80.0,
+            max_cpu_percent: Fixed::from_f64(80.0),
             max_disk_bytes: 10 * 1024 * 1024 * 1024,
             max_network_bandwidth_bps: 100 * 1024 * 1024,
             max_file_descriptors: 1024,
@@ -428,7 +428,7 @@ pub mod templates {
     pub fn production_template() -> ProductionConfig {
         let mut config = ProductionConfig::default_for_environment(Environment::Production);
         config.resources.max_memory_bytes = 8 * 1024 * 1024 * 1024;
-        config.resources.max_cpu_percent = 90.0;
+        config.resources.max_cpu_percent = Fixed::from_f64(90.0);
         config.resources.max_threads = 32;
         config.monitoring.enable_performance_monitoring = true;
         config.security.enable_input_validation = true;
@@ -445,7 +445,7 @@ pub mod templates {
     pub fn development_template() -> ProductionConfig {
         let mut config = ProductionConfig::default_for_environment(Environment::Development);
         config.resources.max_memory_bytes = 2 * 1024 * 1024 * 1024;
-        config.resources.max_cpu_percent = 50.0;
+        config.resources.max_cpu_percent = Fixed::from_f64(50.0);
         config.monitoring.enable_performance_monitoring = false;
         config.security.enable_input_validation = true;
         config.feature_flags.enable_debug_mode = true;
@@ -460,7 +460,7 @@ pub mod templates {
     pub fn testing_template() -> ProductionConfig {
         let mut config = ProductionConfig::default_for_environment(Environment::Testing);
         config.resources.max_memory_bytes = 512 * 1024 * 1024;
-        config.resources.max_cpu_percent = 25.0;
+        config.resources.max_cpu_percent = Fixed::from_f64(25.0);
         config.monitoring.enable_performance_monitoring = false;
         config.security.enable_input_validation = false;
         config.feature_flags.enable_debug_mode = true;
@@ -486,7 +486,7 @@ mod tests {
     #[test]
     fn test_config_validation() {
         let mut config = ProductionConfig::default_for_environment(Environment::Production);
-        config.resources.max_cpu_percent = 150.0;
+        config.resources.max_cpu_percent = Fixed::from_f64(150.0);
         let validation = config.validate();
         assert!(!validation.is_valid);
         assert!(!validation.errors.is_empty());

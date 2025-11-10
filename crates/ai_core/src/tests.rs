@@ -6,7 +6,6 @@
 //! - Stress and security testing
 //! - End-to-end deployment checks
 
-use crate::deployment::{DeploymentStatus, ProductionDeployment};
 use crate::feature_engineering::{
     FeatureEngineeringConfig, FeatureEngineeringPipeline, RawFeatureData,
 };
@@ -14,6 +13,10 @@ use crate::gbdt::{GBDTModel, Node, Tree};
 use crate::monitoring::{MonitoringConfig, MonitoringSystem};
 use crate::production_config::{Environment, ProductionConfig, ProductionConfigManager};
 use crate::security::{SecurityConfig, SecuritySeverity, SecuritySystem};
+use crate::{
+    deployment::{DeploymentStatus, ProductionDeployment},
+    fixed::Fixed,
+};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -24,7 +27,7 @@ use tokio::time::sleep;
 pub struct TestConfig {
     pub test_timeout: Duration,
     pub max_memory_mb: u64,
-    pub max_cpu_percent: f64,
+    pub max_cpu_percent: Fixed,
     pub enable_stress_tests: bool,
     pub enable_performance_tests: bool,
     pub enable_security_tests: bool,
@@ -37,7 +40,7 @@ impl Default for TestConfig {
         Self {
             test_timeout: Duration::from_secs(30),
             max_memory_mb: 512,
-            max_cpu_percent: 50.0,
+            max_cpu_percent: Fixed::from_f64(50.0),
             enable_stress_tests: true,
             enable_performance_tests: true,
             enable_security_tests: true,
@@ -60,7 +63,7 @@ pub struct TestResult {
     pub passed: bool,
     pub duration: Duration,
     pub error: Option<String>,
-    pub metrics: HashMap<String, f64>,
+    pub metrics: HashMap<String, Fixed>,
 }
 
 impl TestSuite {
@@ -219,10 +222,9 @@ impl TestSuite {
             Err(_) => (false, Some("Test timeout".to_string())),
         };
 
-        metrics.insert(
-            "memory_mb".to_string(),
-            get_memory_usage() as f64 / (1024.0 * 1024.0),
-        );
+        let memory_bytes = get_memory_usage();
+        let memory_mb = Fixed::from_ratio(memory_bytes as i64, 1_048_576);
+        metrics.insert("memory_mb".to_string(), memory_mb);
 
         let test_result = TestResult {
             name: name.to_string(),
@@ -313,12 +315,13 @@ impl BenchmarkSuite {
             let _ = model.evaluate(&features)?;
         }
         let duration = start.elapsed();
-        let evals_per_sec = iterations as f64 / duration.as_secs_f64();
+        let duration_us = duration.as_micros().max(1) as i64;
+        let evals_per_sec = Fixed::from_ratio((iterations as i64) * 1_000_000, duration_us);
 
         println!("GBDT Evaluation Benchmark:");
         println!("  Iterations: {}", iterations);
         println!("  Duration: {:?}", duration);
-        println!("  Evaluations/sec: {:.2}", evals_per_sec);
+        println!("  Evaluations/sec: {}", evals_per_sec);
         Ok(())
     }
 
@@ -329,8 +332,9 @@ impl BenchmarkSuite {
         let sample_count = self.config.test_data_size.max(1);
         let feature_count = 10;
 
+        let features = vec![vec![Fixed::from_int(1); feature_count]; sample_count];
         let raw_data = RawFeatureData {
-            features: vec![vec![1.0; feature_count]; sample_count],
+            features,
             feature_names: (0..feature_count)
                 .map(|i| format!("feature_{}", i))
                 .collect(),
@@ -356,27 +360,21 @@ impl BenchmarkSuite {
         let start = Instant::now();
 
         for _ in 0..iterations {
-            #[cfg(feature = "deterministic_math")]
-            {
-                monitoring.record_metric(
-                    "eval_time_ms".to_string(),
-                    crate::fixed::Fixed::from_f64(10.0),
-                    HashMap::new(),
-                );
-            }
-            #[cfg(not(feature = "deterministic_math"))]
-            {
-                monitoring.record_metric("eval_time_ms".to_string(), 10.0, HashMap::new());
-            }
+            monitoring.record_metric(
+                "eval_time_ms".to_string(),
+                Fixed::from_f64(10.0),
+                HashMap::new(),
+            );
         }
 
         let duration = start.elapsed();
-        let records_per_sec = iterations as f64 / duration.as_secs_f64();
+        let duration_us = duration.as_micros().max(1) as i64;
+        let records_per_sec = Fixed::from_ratio((iterations as i64) * 1_000_000, duration_us);
 
         println!("Monitoring Benchmark:");
         println!("  Iterations: {}", iterations);
         println!("  Duration: {:?}", duration);
-        println!("  Records/sec: {:.2}", records_per_sec);
+        println!("  Records/sec: {}", records_per_sec);
         Ok(())
     }
 
@@ -391,12 +389,14 @@ impl BenchmarkSuite {
         }
 
         let duration = start.elapsed();
-        let validations_per_second = iterations as f64 / duration.as_secs_f64();
+        let duration_us = duration.as_micros().max(1) as i64;
+        let validations_per_second =
+            Fixed::from_ratio((iterations as i64) * 1_000_000, duration_us);
 
         println!("Security Benchmark:");
         println!("  Iterations: {}", iterations);
         println!("  Duration: {:?}", duration);
-        println!("  Validations/sec: {:.2}", validations_per_second);
+        println!("  Validations/sec: {}", validations_per_second);
         Ok(())
     }
 }
@@ -416,7 +416,7 @@ pub mod test_utils {
 
     pub fn create_test_data(size: usize) -> RawFeatureData {
         RawFeatureData {
-            features: vec![vec![1.0; 10]; size],
+            features: vec![vec![Fixed::from_int(1); 10]; size],
             feature_names: (0..10).map(|i| format!("feature_{}", i)).collect(),
             sample_count: size,
             feature_count: 10,

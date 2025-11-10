@@ -23,7 +23,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_bytes = { workspace = true }
 hex = { workspace = true }
-blake3 = { workspace = true }
+blake3 = { version = "1", default-features = false, features = ["pure"] }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 ed25519-dalek = { workspace = true }

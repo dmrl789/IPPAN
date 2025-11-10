@@ -5,32 +5,35 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use ippan_ai_core::deterministic_gbdt::{compute_scores, normalize_features, DeterministicGBDT};
+use ippan_ai_core::{
+    deterministic_gbdt::{compute_scores, normalize_features, DeterministicGBDT},
+    fixed::Fixed,
+};
 use serde::Serialize;
 
 #[derive(Serialize)]
 struct TelemetryRecord {
     node_id: String,
     local_time_us: i64,
-    latency_ms: f64,
-    uptime_pct: f64,
-    peer_entropy: f64,
+    latency_ms: Fixed,
+    uptime_pct: Fixed,
+    peer_entropy: Fixed,
 }
 
 #[derive(Serialize)]
 struct FeatureRecord {
     node_id: String,
     delta_time_us: i64,
-    latency_ms: f64,
-    uptime_pct: f64,
-    peer_entropy: f64,
+    latency_ms: Fixed,
+    uptime_pct: Fixed,
+    peer_entropy: Fixed,
 }
 
 #[derive(Serialize)]
 struct ScoreRecord {
     node_id: String,
     score_micro: i64,
-    score: f64,
+    score: String,
 }
 
 #[derive(Serialize)]
@@ -47,7 +50,7 @@ fn main() -> Result<()> {
     let output_path = parse_output_path()?;
 
     let telemetry_samples = sample_telemetry();
-    let telemetry_map: HashMap<String, (i64, f64, f64, f64)> = telemetry_samples
+    let telemetry_map: HashMap<String, (i64, Fixed, Fixed, Fixed)> = telemetry_samples
         .iter()
         .map(|record| {
             (
@@ -80,9 +83,9 @@ fn main() -> Result<()> {
         .map(|feature| FeatureRecord {
             node_id: feature.node_id.clone(),
             delta_time_us: feature.delta_time_us,
-            latency_ms: feature.latency_ms.to_f64(),
-            uptime_pct: feature.uptime_pct.to_f64(),
-            peer_entropy: feature.peer_entropy.to_f64(),
+            latency_ms: feature.latency_ms,
+            uptime_pct: feature.uptime_pct,
+            peer_entropy: feature.peer_entropy,
         })
         .collect();
     feature_records.sort_by(|a, b| a.node_id.cmp(&b.node_id));
@@ -91,7 +94,7 @@ fn main() -> Result<()> {
         .into_iter()
         .map(|(node_id, score)| ScoreRecord {
             score_micro: score.to_micro(),
-            score: score.to_f64(),
+            score: score.to_string(),
             node_id,
         })
         .collect();
@@ -152,30 +155,30 @@ fn sample_telemetry() -> Vec<TelemetryRecord> {
         TelemetryRecord {
             node_id: "validator-alpha".to_string(),
             local_time_us: 10_000_120,
-            latency_ms: 1.18,
-            uptime_pct: 99.92,
-            peer_entropy: 0.82,
+            latency_ms: Fixed::from_f64(1.18),
+            uptime_pct: Fixed::from_f64(99.92),
+            peer_entropy: Fixed::from_f64(0.82),
         },
         TelemetryRecord {
             node_id: "validator-beta".to_string(),
             local_time_us: 10_000_070,
-            latency_ms: 1.45,
-            uptime_pct: 98.75,
-            peer_entropy: 0.76,
+            latency_ms: Fixed::from_f64(1.45),
+            uptime_pct: Fixed::from_f64(98.75),
+            peer_entropy: Fixed::from_f64(0.76),
         },
         TelemetryRecord {
             node_id: "validator-gamma".to_string(),
             local_time_us: 10_000_180,
-            latency_ms: 0.97,
-            uptime_pct: 99.65,
-            peer_entropy: 0.88,
+            latency_ms: Fixed::from_f64(0.97),
+            uptime_pct: Fixed::from_f64(99.65),
+            peer_entropy: Fixed::from_f64(0.88),
         },
         TelemetryRecord {
             node_id: "validator-delta".to_string(),
             local_time_us: 10_000_010,
-            latency_ms: 1.62,
-            uptime_pct: 97.95,
-            peer_entropy: 0.73,
+            latency_ms: Fixed::from_f64(1.62),
+            uptime_pct: Fixed::from_f64(97.95),
+            peer_entropy: Fixed::from_f64(0.73),
         },
     ]
 }

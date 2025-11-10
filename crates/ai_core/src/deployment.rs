@@ -7,12 +7,12 @@
 //! - Service discovery hooks
 //! - Rolling updates, rollback, and validation
 
-use crate::feature_engineering::FeatureEngineeringPipeline;
 use crate::gbdt::{GBDTError, GBDTModel};
 use crate::model_manager::ModelManager;
 use crate::monitoring::MonitoringSystem;
 use crate::production_config::ProductionConfigManager;
 use crate::security::SecuritySystem;
+use crate::{feature_engineering::FeatureEngineeringPipeline, fixed::Fixed};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -60,9 +60,26 @@ pub struct DeploymentMetrics {
     pub failed_requests: u64,
     pub average_response_time: Duration,
     pub memory_usage_bytes: u64,
-    pub cpu_usage_percent: f64,
+    pub cpu_usage_percent: Fixed,
     pub last_health_check: SystemTime,
     pub consecutive_failures: u32,
+}
+
+impl Default for DeploymentMetrics {
+    fn default() -> Self {
+        Self {
+            startup_time: Duration::ZERO,
+            uptime: Duration::ZERO,
+            total_requests: 0,
+            successful_requests: 0,
+            failed_requests: 0,
+            average_response_time: Duration::ZERO,
+            memory_usage_bytes: 0,
+            cpu_usage_percent: Fixed::ZERO,
+            last_health_check: SystemTime::now(),
+            consecutive_failures: 0,
+        }
+    }
 }
 
 /// Production deployment manager
@@ -376,11 +393,11 @@ impl ProductionDeployment {
         self.startup_time.elapsed()
     }
 
-    pub async fn get_resource_usage(&self) -> HashMap<String, f64> {
+    pub async fn get_resource_usage(&self) -> HashMap<String, Fixed> {
         HashMap::from([
-            ("memory_percent".into(), 45.0),
-            ("cpu_percent".into(), 23.0),
-            ("disk_percent".into(), 12.0),
+            ("memory_percent".into(), Fixed::from_f64(45.0)),
+            ("cpu_percent".into(), Fixed::from_f64(23.0)),
+            ("disk_percent".into(), Fixed::from_f64(12.0)),
         ])
     }
 }
@@ -401,23 +418,6 @@ impl Clone for ProductionDeployment {
             max_startup_time: self.max_startup_time,
             max_shutdown_time: self.max_shutdown_time,
             resource_semaphore: self.resource_semaphore.clone(),
-        }
-    }
-}
-
-impl Default for DeploymentMetrics {
-    fn default() -> Self {
-        Self {
-            startup_time: Duration::ZERO,
-            uptime: Duration::ZERO,
-            total_requests: 0,
-            successful_requests: 0,
-            failed_requests: 0,
-            average_response_time: Duration::ZERO,
-            memory_usage_bytes: 0,
-            cpu_usage_percent: 0.0,
-            last_health_check: SystemTime::now(),
-            consecutive_failures: 0,
         }
     }
 }
