@@ -6,6 +6,9 @@ import { URL } from 'url'
 
 const app = express()
 
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
 const port = Number.parseInt(process.env.PORT ?? '8080', 10)
 const targetRpcUrl = process.env.TARGET_RPC_URL ?? 'http://node:8080'
 const targetWsUrl = process.env.TARGET_WS_URL ?? targetRpcUrl.replace(/^http/, 'ws')
@@ -21,54 +24,33 @@ const rewriteWsPrefixRaw = process.env.WS_PREFIX ?? '/ws'
 const enableExplorer = process.env.ENABLE_EXPLORER !== 'false'
 const explorerPrefixRaw = process.env.EXPLORER_PREFIX ?? '/explorer/api'
 
+// ---------------------------------------------------------------------------
+// Utility functions
+// ---------------------------------------------------------------------------
 function normalizePrefix(prefix) {
-  if (!prefix) {
-    return ''
-  }
-
+  if (!prefix) return ''
   let normalized = prefix.trim()
-
-  if (normalized === '') {
-    return ''
-  }
-
-  if (!normalized.startsWith('/')) {
-    normalized = `/${normalized}`
-  }
-
+  if (normalized === '') return ''
+  if (!normalized.startsWith('/')) normalized = `/${normalized}`
   while (normalized.length > 1 && normalized.endsWith('/')) {
     normalized = normalized.slice(0, -1)
   }
-
   return normalized
 }
 
 function stripPathPrefix(path, prefix) {
-  if (!prefix || prefix === '/') {
-    return path
-  }
-
-  if (path === prefix) {
-    return '/'
-  }
-
+  if (!prefix || prefix === '/') return path
+  if (path === prefix) return '/'
   if (path.startsWith(`${prefix}/`)) {
     const stripped = path.slice(prefix.length)
     return stripped.length === 0 ? '/' : stripped
   }
-
   return path
 }
 
 function isOriginAllowed(origin) {
-  if (!origin || allowedOrigins.length === 0) {
-    return true
-  }
-
-  if (allowedOrigins.includes('*')) {
-    return true
-  }
-
+  if (!origin || allowedOrigins.length === 0) return true
+  if (allowedOrigins.includes('*')) return true
   return allowedOrigins.includes(origin)
 }
 
@@ -85,6 +67,9 @@ function handleProxyError(err, req, res, target) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Normalized prefixes
+// ---------------------------------------------------------------------------
 const rewriteApiPrefix = normalizePrefix(rewriteApiPrefixRaw)
 const rewriteWsPrefix = normalizePrefix(rewriteWsPrefixRaw)
 const explorerPrefix = normalizePrefix(explorerPrefixRaw)
@@ -93,13 +78,15 @@ const apiMountPath = rewriteApiPrefix === '' ? '/' : rewriteApiPrefix
 const wsMountPath = rewriteWsPrefix === '' ? '/' : rewriteWsPrefix
 const explorerMountPath = explorerPrefix === '' ? '/' : explorerPrefix
 
+// ---------------------------------------------------------------------------
+// Middleware and configuration
+// ---------------------------------------------------------------------------
 const corsOptions = {
   origin(origin, callback) {
     if (!origin || isOriginAllowed(origin)) {
       callback(null, true)
       return
     }
-
     console.warn(`Blocked CORS origin: ${origin}`)
     callback(null, false)
   },
@@ -111,6 +98,9 @@ app.set('trust proxy', true)
 app.use(cors(corsOptions))
 app.use(morgan('combined'))
 
+// ---------------------------------------------------------------------------
+// Health checks
+// ---------------------------------------------------------------------------
 async function pingTarget() {
   try {
     const controller = new AbortController()
@@ -146,6 +136,9 @@ app.get('/api/health/node', async (_req, res) => {
   res.status(statusCode).json(result)
 })
 
+// ---------------------------------------------------------------------------
+// Proxy setup
+// ---------------------------------------------------------------------------
 const apiProxy = createProxyMiddleware({
   target: targetRpcUrl,
   changeOrigin: true,
@@ -167,13 +160,22 @@ const wsProxy = createProxyMiddleware({
 app.use(apiMountPath, apiProxy)
 app.use(wsMountPath, wsProxy)
 
+// ---------------------------------------------------------------------------
+// Explorer proxy (optional)
+// ---------------------------------------------------------------------------
 if (enableExplorer) {
   const explorerProxy = createProxyMiddleware({
     target: targetRpcUrl,
     changeOrigin: true,
     ws: false,
     logLevel: process.env.PROXY_LOG_LEVEL ?? 'warn',
-    pathRewrite: (path) => stripPathPrefix(path, explorerPrefix),
+    pathRewrite: (path) => {
+      const rewritten = stripPathPrefix(path, explorerPrefix)
+      if (process.env.PROXY_LOG_LEVEL === 'debug' || process.env.NODE_ENV !== 'production') {
+        console.log(`[Explorer] Rewriting ${path} -> ${rewritten}`)
+      }
+      return rewritten
+    },
     onError: handleProxyError,
   })
 
@@ -204,6 +206,9 @@ if (enableExplorer) {
   })
 }
 
+// ---------------------------------------------------------------------------
+// Fallback and server setup
+// ---------------------------------------------------------------------------
 app.use((req, res) => {
   res.status(404).json({
     error: 'Not found',
@@ -212,31 +217,27 @@ app.use((req, res) => {
 })
 
 const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`Gateway listening on port ${port}`)
-  console.log(`Proxying API requests to ${targetRpcUrl}`)
-  console.log(`Proxying websocket requests to ${targetWsUrl}`)
+  console.log(`✓ Gateway listening on port ${port}`)
+  console.log(`✓ Proxying API requests to ${targetRpcUrl}`)
+  console.log(`  - API prefix: ${rewriteApiPrefix || '/'} -> ${targetRpcUrl}`)
+  console.log(`✓ Proxying websocket requests to ${targetWsUrl}`)
+  console.log(`  - WS prefix: ${rewriteWsPrefix || '/'} -> ${targetWsUrl}`)
   if (enableExplorer) {
-    console.log(`Blockchain explorer enabled at ${explorerPrefix}`)
+    console.log(`✓ Blockchain explorer enabled at ${explorerPrefix}`)
   }
+  console.log(`✓ CORS origins: ${allowedOrigins.join(', ')}`)
+  console.log(`✓ Ready to accept connections`)
 })
 
+// ---------------------------------------------------------------------------
+// WebSocket upgrade handler
+// ---------------------------------------------------------------------------
 function isWebsocketUpgrade(url, mountPath) {
-  if (!url) {
-    return false
-  }
-
+  if (!url) return false
   const parsed = new URL(url, 'http://localhost')
   const pathname = parsed.pathname ?? '/'
-
-  if (mountPath === '/' || mountPath === '') {
-    return true
-  }
-
-  if (pathname === mountPath) {
-    return true
-  }
-
-  return pathname.startsWith(`${mountPath}/`)
+  if (mountPath === '/' || mountPath === '') return true
+  return pathname === mountPath || pathname.startsWith(`${mountPath}/`)
 }
 
 server.on('upgrade', (req, socket, head) => {
@@ -244,13 +245,16 @@ server.on('upgrade', (req, socket, head) => {
     wsProxy.upgrade(req, socket, head)
     return
   }
-
   socket.destroy()
 })
 
+// ---------------------------------------------------------------------------
+// Graceful shutdown
+// ---------------------------------------------------------------------------
 function shutdown() {
   console.log('Shutting down gateway...')
   server.close(() => {
+    console.log('✓ Gateway stopped cleanly')
     process.exit(0)
   })
 }
