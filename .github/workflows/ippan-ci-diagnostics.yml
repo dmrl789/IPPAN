@@ -2,10 +2,6 @@ name: "🧪 IPPAN CI Diagnostic Suite"
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - develop
 
 permissions:
   contents: read
@@ -97,10 +93,21 @@ jobs:
           echo "=== Environment Summary ==="
           echo "Git commit: $(git rev-parse HEAD)"
           echo "Branch: $(git rev-parse --abbrev-ref HEAD)"
-          echo "Crates:"
-          cargo metadata --no-deps --format-version 1 | jq '.packages[].name'
-          echo "Node packages:"
-          jq '.dependencies | keys' apps/gateway/package.json
+          echo "Event name: ${{ github.event_name }}"
+          echo "Runner: ${{ runner.os }} (image: ${{ runner.name }})"
+          echo "CI: $CI"
+          echo "Workflow: $GITHUB_WORKFLOW"
+          echo "Run ID: $GITHUB_RUN_ID"
+          echo "Run Attempt: $GITHUB_RUN_ATTEMPT"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "=== Cargo Packages ==="
+          cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | "\(.name) \(.version)"'
+          echo "=== Cargo Dependency Tree ==="
+          cargo tree --workspace --all-features --edges normal,build,proc-macro || true
+          echo "=== Node Dependencies (apps/gateway) ==="
+          (cd apps/gateway && npm ls --depth=0 || true)
+          echo "=== package.json declared dependencies ==="
+          jq '.dependencies' apps/gateway/package.json
 
       - name: "📦 Upload diagnostic logs"
         if: always()
