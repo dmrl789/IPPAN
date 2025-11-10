@@ -40,12 +40,14 @@ jobs:
           packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: Grant Gradle wrapper permissions
-        run: chmod +x gradlew
+        run: chmod +x apps/mobile/android-wallet/gradlew
 
       - name: Run unit tests
+        working-directory: apps/mobile/android-wallet
         run: ./gradlew test
 
       - name: Assemble debug build
+        working-directory: apps/mobile/android-wallet
         run: ./gradlew assembleDebug
 
       - name: Upload test reports
@@ -85,9 +87,10 @@ jobs:
           packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: Grant Gradle wrapper permissions
-        run: chmod +x gradlew
+        run: chmod +x apps/mobile/android-wallet/gradlew
 
       - name: Build release APK
+        working-directory: apps/mobile/android-wallet
         run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Upload release APK
