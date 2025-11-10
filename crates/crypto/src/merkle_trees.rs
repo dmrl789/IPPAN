@@ -412,13 +412,16 @@ mod tests {
 
     #[test]
     fn test_sparse_merkle_tree() {
-        let mut tree = SparseMerkleTree::new(256);
+        let mut tree = SparseMerkleTree::new(8);
 
-        tree.set_leaf(vec![1, 2, 3, 4], b"value1".to_vec()).unwrap();
-        tree.set_leaf(vec![5, 6, 7, 8], b"value2".to_vec()).unwrap();
+        let key1 = vec![1u8];
+        let key2 = vec![2u8];
 
-        assert_eq!(tree.get_leaf(&[1, 2, 3, 4]), Some(&b"value1".to_vec()));
-        assert_eq!(tree.get_leaf(&[5, 6, 7, 8]), Some(&b"value2".to_vec()));
+        tree.set_leaf(key1.clone(), b"value1".to_vec()).unwrap();
+        tree.set_leaf(key2.clone(), b"value2".to_vec()).unwrap();
+
+        assert_eq!(tree.get_leaf(&key1), Some(&b"value1".to_vec()));
+        assert_eq!(tree.get_leaf(&key2), Some(&b"value2".to_vec()));
     }
 
     #[test]
