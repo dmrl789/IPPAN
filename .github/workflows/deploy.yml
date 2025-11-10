@@ -1,160 +1,554 @@
-name: 🚀 IPPAN Full-Stack Deployment
+name: Deployment Orchestrator
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      build_images:
+        description: 'Build and push Docker images'
+        required: false
+        default: true
+        type: boolean
+      force_rebuild:
+        description: 'Force rebuild without cache'
+        required: false
+        default: false
+        type: boolean
+      deploy:
+        description: 'Deploy to remote environment'
+        required: false
+        default: true
+        type: boolean
+      restart_nodes:
+        description: 'Run restart and recovery on the primary server'
+        required: false
+        default: false
+        type: boolean
+      fix_secondary:
+        description: 'Run recovery tasks on the secondary server'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+  deployments: write
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NODE: ghcr.io/${{ github.repository_owner }}/ippan-node
-  IMAGE_GATEWAY: ghcr.io/${{ github.repository_owner }}/ippan-gateway
+  IMAGE_NAMESPACE: ghcr.io/dmrl789
+  IMAGE_SUITE: ghcr.io/dmrl789/ippan
   DOCKER_BUILDKIT: 1
 
 jobs:
-  build-and-deploy:
-    name: Build & Deploy IPPAN Network
+  build:
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
-
+    outputs:
+      run-build: ${{ steps.decision.outputs.run_build }}
+      image-tag: ${{ steps.image_tag.outputs.value }}
     steps:
-      - name: 🧩 Checkout repository
+      - id: decision
+        name: Determine Build Requirement
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = "push" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          elif [ "${BUILD_IMAGES}" = "true" ] || [ "${FORCE_REBUILD}" = "true" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BUILD_IMAGES: ${{ github.event.inputs.build_images }}
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+
+      - name: Checkout repository
+        if: steps.decision.outputs.run_build == 'true'
         uses: actions/checkout@v4
 
-      - name: 🧱 Set up Docker Buildx
+      - name: Set up QEMU
+        if: steps.decision.outputs.run_build == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.decision.outputs.run_build == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: 🔑 Login to GitHub Container Registry
+      - name: Login to GitHub Container Registry
+        if: steps.decision.outputs.run_build == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🛠️ Build & Push Node image
+      - name: Build & Push Node image
+        if: steps.decision.outputs.run_build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.production
           push: true
-          tags: ${{ env.IMAGE_NODE }}:latest
+          tags: |
+            ${{ env.IMAGE_SUITE }}/ippan-node:${{ github.sha }}
+            ${{ env.IMAGE_SUITE }}/ippan-node:latest
+            ${{ env.IMAGE_NAMESPACE }}/ippan-node:${{ github.sha }}
+            ${{ env.IMAGE_NAMESPACE }}/ippan-node:latest
+          cache-from: type=gha,scope=node
+          cache-to: type=gha,mode=max,scope=node
+          no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
 
-      - name: 🛠️ Build & Push Gateway image
+      - name: Build & Push Gateway image
+        if: steps.decision.outputs.run_build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./apps/gateway
           file: ./apps/gateway/Dockerfile
           push: true
-          tags: ${{ env.IMAGE_GATEWAY }}:latest
+          tags: |
+            ${{ env.IMAGE_SUITE }}/ippan-gateway:${{ github.sha }}
+            ${{ env.IMAGE_SUITE }}/ippan-gateway:latest
+            ${{ env.IMAGE_SUITE }}/gateway:${{ github.sha }}
+            ${{ env.IMAGE_SUITE }}/gateway:latest
+            ${{ env.IMAGE_NAMESPACE }}/ippan-gateway:${{ github.sha }}
+            ${{ env.IMAGE_NAMESPACE }}/ippan-gateway:latest
+          cache-from: type=gha,scope=gateway
+          cache-to: type=gha,mode=max,scope=gateway
+          no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
 
-      # ----------------------------------------------------------------------
-      # 🔹 Deploy to Server 1 (Full-Stack)
-      # ----------------------------------------------------------------------
-      - name: 🚀 Deploy to Server 1 (188.245.97.41)
-        uses: appleboy/ssh-action@v1.1.0
+      - name: Build & Push Unified UI image
+        if: steps.decision.outputs.run_build == 'true'
+        uses: docker/build-push-action@v5
         with:
-          host: ${{ secrets.SERVER1_HOST }}
-          username: ${{ secrets.SERVER1_USER }}
-          key: ${{ secrets.SERVER1_SSH_KEY }}
+          context: ./apps/unified-ui
+          file: ./apps/unified-ui/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_SUITE }}/unified-ui:${{ github.sha }}
+            ${{ env.IMAGE_SUITE }}/unified-ui:latest
+            ${{ env.IMAGE_NAMESPACE }}/unified-ui:${{ github.sha }}
+            ${{ env.IMAGE_NAMESPACE }}/unified-ui:latest
+            ${{ env.IMAGE_SUITE }}/ippan-ui:${{ github.sha }}
+            ${{ env.IMAGE_SUITE }}/ippan-ui:latest
+          cache-from: type=gha,scope=unified-ui
+          cache-to: type=gha,mode=max,scope=unified-ui
+          no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
+
+      - id: image_tag
+        name: Set image tag output
+        run: echo "value=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.deploy == 'true' &&
+       github.event.inputs.environment == 'production')
+    env:
+      IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
+    steps:
+      - name: Validate deployment secrets
+        run: |
+          set -euo pipefail
+          missing=0
+
+          primary_host="${PRIMARY_HOST:-}"
+          primary_user="${PRIMARY_USER:-}"
+          primary_key="${PRIMARY_KEY:-}"
+          secondary_host="${SECONDARY_HOST:-}"
+          secondary_user="${SECONDARY_USER:-}"
+          secondary_key="${SECONDARY_KEY:-}"
+
+          if [ -z "$primary_host" ]; then
+            echo "::error::Missing primary host secret (SERVER1_HOST or DEPLOY_HOST)"
+            missing=1
+          fi
+
+          if [ -z "$primary_user" ]; then
+            echo "::error::Missing primary user secret (SERVER1_USER or DEPLOY_USER)"
+            missing=1
+          fi
+
+          if [ -z "$primary_key" ]; then
+            echo "::error::Missing primary SSH key (SERVER1_SSH_KEY or DEPLOY_SSH_KEY)"
+            missing=1
+          fi
+
+          if [ -z "$secondary_host" ]; then
+            echo "::error::Missing secondary host secret (SERVER2_HOST or SECONDARY_HOST)"
+            missing=1
+          fi
+
+          if [ -z "$secondary_user" ]; then
+            echo "::error::Missing secondary user secret (SERVER2_USER or DEPLOY_USER)"
+            missing=1
+          fi
+
+          if [ -z "$secondary_key" ]; then
+            echo "::error::Missing secondary SSH key (SERVER2_SSH_KEY or DEPLOY_SSH_KEY)"
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "PRIMARY_PORT=${PRIMARY_PORT:-22}" >> "$GITHUB_ENV"
+          echo "SECONDARY_PORT=${SECONDARY_PORT:-22}" >> "$GITHUB_ENV"
+        env:
+          PRIMARY_HOST: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
+          PRIMARY_USER: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
+          PRIMARY_KEY: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          PRIMARY_PORT: ${{ secrets.SERVER1_PORT || secrets.DEPLOY_PORT }}
+          SECONDARY_HOST: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
+          SECONDARY_USER: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
+          SECONDARY_KEY: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          SECONDARY_PORT: ${{ secrets.SERVER2_PORT || secrets.DEPLOY_PORT }}
+
+      - name: Deploy to Primary Server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
+          port: ${{ env.PRIMARY_PORT }}
+          username: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
+          key: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.SERVER1_FINGERPRINT || secrets.DEPLOY_FINGERPRINT }}
+          timeout: 300s
+          envs: IMAGE_TAG,GITHUB_REPOSITORY
           script: |
-            set -e
-            cd /opt/ippan || (git clone https://github.com/${{ github.repository }}.git /opt/ippan && cd /opt/ippan)
-            git fetch --all
-            git reset --hard origin/main
+            set -euo pipefail
+
+            BRANCH=main
+            APP_DIR=/opt/ippan
+
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo apt-get update -y
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            elif [ "$(id -u)" -eq 0 ]; then
+              apt-get update -y
+              DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            else
+              echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
+            fi
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              mkdir -p "$APP_DIR"
+              git clone "https://github.com/${GITHUB_REPOSITORY}.git" "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+            git fetch --all --prune
+            git checkout "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+
+            export IMAGE_TAG="${IMAGE_TAG:-latest}"
+
             docker compose -f deploy/docker-compose.full-stack.yml pull
             docker compose -f deploy/docker-compose.full-stack.yml up -d --build
-            docker system prune -f
-            echo "✅ Server 1 updated successfully"
 
-      # ----------------------------------------------------------------------
-      # 🔹 Deploy to Server 2 (Node-Only)
-      # ----------------------------------------------------------------------
-      - name: 🚀 Deploy to Server 2 (135.181.145.174)
-        uses: appleboy/ssh-action@v1.1.0
+            docker system prune -f || true
+
+            sleep 30
+
+            curl -fsSL http://localhost:8080/health | jq '.' || {
+              echo "::error::Primary node health check failed"
+              exit 1
+            }
+
+            if docker ps --format '{{.Names}}' | grep -q gateway; then
+              curl -fsSL http://localhost:7080/health | jq '.' || {
+                echo "::error::Gateway health check failed"
+                exit 1
+              }
+            fi
+
+            curl -fsSL http://localhost:3001 || echo "Unified UI health endpoint not available"
+
+            sudo ufw allow 9000/tcp || true
+            sudo ufw reload || true
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      - name: Deploy to Secondary Server
+        uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SERVER2_HOST }}
-          username: ${{ secrets.SERVER2_USER }}
-          key: ${{ secrets.SERVER2_SSH_KEY }}
+          host: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
+          port: ${{ env.SECONDARY_PORT }}
+          username: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
+          key: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.SECONDARY_FINGERPRINT }}
+          timeout: 300s
+          envs: IMAGE_TAG,GITHUB_REPOSITORY
           script: |
-            set -e
-            cd /opt/ippan || (git clone https://github.com/${{ github.repository }}.git /opt/ippan && cd /opt/ippan)
-            git fetch --all
-            git reset --hard origin/main
+            set -euo pipefail
+
+            BRANCH=main
+            APP_DIR=/opt/ippan
+
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo apt-get update -y
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            elif [ "$(id -u)" -eq 0 ]; then
+              apt-get update -y
+              DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            else
+              echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
+            fi
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              mkdir -p "$APP_DIR"
+              git clone "https://github.com/${GITHUB_REPOSITORY}.git" "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+            git fetch --all --prune
+            git checkout "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+
+            export IMAGE_TAG="${IMAGE_TAG:-latest}"
+
             docker compose -f deploy/docker-compose.production.yml pull
             docker compose -f deploy/docker-compose.production.yml up -d --build
-            docker system prune -f
-            echo "✅ Server 2 updated successfully"
 
-      # ----------------------------------------------------------------------
-      # 🔹 Health Checks
-      # ----------------------------------------------------------------------
-      - name: 🏥 Health Check Server 1
-        uses: appleboy/ssh-action@v1.1.0
-        with:
-          host: ${{ secrets.SERVER1_HOST }}
-          username: ${{ secrets.SERVER1_USER }}
-          key: ${{ secrets.SERVER1_SSH_KEY }}
-          script: |
-            echo "Waiting for services to start..."
+            docker system prune -f || true
+
             sleep 30
-            
-            # Check node health
-            if curl -f http://localhost:8080/health; then
-              echo "✅ Node 1 health check passed"
-            else
-              echo "❌ Node 1 health check failed"
-              exit 1
-            fi
-            
-            # Check gateway if running
-            if docker ps | grep -q gateway; then
-              if curl -f http://localhost:8081/health; then
-                echo "✅ Gateway health check passed"
-              else
-                echo "❌ Gateway health check failed"
-                exit 1
-              fi
-            fi
 
-      - name: 🏥 Health Check Server 2
-        uses: appleboy/ssh-action@v1.1.0
-        with:
-          host: ${{ secrets.SERVER2_HOST }}
-          username: ${{ secrets.SERVER2_USER }}
-          key: ${{ secrets.SERVER2_SSH_KEY }}
-          script: |
-            echo "Waiting for services to start..."
-            sleep 30
-            
-            # Check node health
-            if curl -f http://localhost:8080/health; then
-              echo "✅ Node 2 health check passed"
-            else
-              echo "❌ Node 2 health check failed"
+            curl -fsSL http://localhost:8080/health | jq '.' || {
+              echo "::error::Secondary node health check failed"
               exit 1
-            fi
+            }
 
-      # ----------------------------------------------------------------------
-      # 🔹 Verify P2P Connectivity
-      # ----------------------------------------------------------------------
-      - name: 🔗 Verify P2P Connectivity
+            sudo ufw allow 9001/tcp || true
+            sudo ufw reload || true
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      - name: Verify P2P Connectivity
         run: |
-          echo "Testing P2P connectivity between nodes..."
-          
-          # Test Server 1 P2P port
-          if timeout 10 bash -c "</dev/tcp/${{ secrets.SERVER1_HOST }}/9000"; then
-            echo "✅ Server 1 P2P port 9000 is accessible"
-          else
-            echo "❌ Server 1 P2P port 9000 is not accessible"
+          set -euo pipefail
+
+          primary="${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}"
+          secondary="${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}"
+
+          echo "Testing primary node P2P on ${primary}:9000"
+          timeout 10 bash -c "</dev/tcp/${primary}/9000" || {
+            echo "::error::Primary P2P port 9000 unreachable"
+            exit 1
+          }
+
+          echo "Testing secondary node P2P on ${secondary}:9001"
+          timeout 10 bash -c "</dev/tcp/${secondary}/9001" || {
+            echo "::error::Secondary P2P port 9001 unreachable"
+            exit 1
+          }
+
+          echo "🎉 Production deployment validated."
+
+  repair:
+    name: Repair Production Nodes
+    runs-on: ubuntu-latest
+    needs: build
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      (github.event.inputs.restart_nodes == 'true' ||
+       github.event.inputs.fix_secondary == 'true')
+    steps:
+      - name: Validate repair secrets
+        run: |
+          set -euo pipefail
+          missing=0
+
+          if [ "${RESTART_NODES}" = "true" ]; then
+            if [ -z "${PRIMARY_HOST}" ] || [ -z "${PRIMARY_USER}" ] || [ -z "${PRIMARY_KEY}" ]; then
+              echo "::error::Missing primary server secrets (SERVER1_* or DEPLOY_*)"
+              missing=1
+            fi
+          fi
+
+          if [ "${FIX_SECONDARY}" = "true" ]; then
+            if [ -z "${SECONDARY_HOST}" ] || [ -z "${SECONDARY_USER}" ] || [ -z "${SECONDARY_KEY}" ]; then
+              echo "::error::Missing secondary server secrets (SERVER2_* or SECONDARY_*)"
+              missing=1
+            fi
+          fi
+
+          if [ "$missing" -ne 0 ]; then
             exit 1
           fi
-          
-          # Test Server 2 P2P port
-          if timeout 10 bash -c "</dev/tcp/${{ secrets.SERVER2_HOST }}/9001"; then
-            echo "✅ Server 2 P2P port 9001 is accessible"
-          else
-            echo "❌ Server 2 P2P port 9001 is not accessible"
-            exit 1
+
+          echo "PRIMARY_PORT=${PRIMARY_PORT:-22}" >> "$GITHUB_ENV"
+          echo "SECONDARY_PORT=${SECONDARY_PORT:-22}" >> "$GITHUB_ENV"
+        env:
+          RESTART_NODES: ${{ github.event.inputs.restart_nodes }}
+          FIX_SECONDARY: ${{ github.event.inputs.fix_secondary }}
+          PRIMARY_HOST: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
+          PRIMARY_USER: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
+          PRIMARY_KEY: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          PRIMARY_PORT: ${{ secrets.SERVER1_PORT || secrets.DEPLOY_PORT }}
+          SECONDARY_HOST: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
+          SECONDARY_USER: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
+          SECONDARY_KEY: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          SECONDARY_PORT: ${{ secrets.SERVER2_PORT || secrets.DEPLOY_PORT }}
+
+      - name: Repair primary server
+        if: github.event.inputs.restart_nodes == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
+          port: ${{ env.PRIMARY_PORT }}
+          username: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
+          key: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.SERVER1_FINGERPRINT || secrets.DEPLOY_FINGERPRINT }}
+          timeout: 300s
+          script: |
+            set -euo pipefail
+
+            echo "🔧 Repairing primary node services..."
+
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo apt-get update -y
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            elif [ "$(id -u)" -eq 0 ]; then
+              apt-get update -y
+              DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            else
+              echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
+            fi
+
+            cd /opt/ippan || exit 1
+
+            docker compose down || true
+            docker system prune -f || true
+
+            if command -v systemctl >/dev/null 2>&1; then
+              sudo systemctl restart docker
+            fi
+
+            docker compose -f docker-compose.yml -f docker-compose.full-stack.yml up -d --force-recreate
+
+            sleep 30
+
+            curl -fsSL "http://127.0.0.1:8080/health" | jq '.' || echo "⚠️ Local node health check failed"
+
+            sudo ufw allow 9000/tcp || true
+            sudo ufw reload || true
+
+            echo "✅ Primary server repair completed."
+
+      - name: Repair secondary server
+        if: github.event.inputs.fix_secondary == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
+          port: ${{ env.SECONDARY_PORT }}
+          username: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
+          key: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.SECONDARY_FINGERPRINT }}
+          timeout: 300s
+          script: |
+            set -euo pipefail
+
+            echo "🔧 Repairing secondary node..."
+
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo apt-get update -y
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            elif [ "$(id -u)" -eq 0 ]; then
+              apt-get update -y
+              DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            else
+              echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
+            fi
+
+            cd /opt/ippan || exit 1
+
+            docker compose down || true
+            docker system prune -f || true
+
+            if command -v systemctl >/dev/null 2>&1; then
+              sudo systemctl restart docker
+            fi
+
+            docker compose -f docker-compose.yml -f docker-compose.full-stack.yml up -d --force-recreate
+
+            sleep 30
+
+            curl -fsSL "http://127.0.0.1:8080/health" | jq '.' || echo "⚠️ Local node health check failed"
+
+            sudo ufw allow 9001/tcp || true
+            sudo ufw reload || true
+
+            echo "✅ Secondary server repair completed."
+
+      - name: Verify primary node health
+        if: github.event.inputs.restart_nodes == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
+          port: ${{ env.PRIMARY_PORT }}
+          username: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
+          key: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.SERVER1_FINGERPRINT || secrets.DEPLOY_FINGERPRINT }}
+          timeout: 300s
+          script: |
+            set -euo pipefail
+            curl -fsSL "http://127.0.0.1:8080/health" | jq '.'
+            echo "✅ Primary node reports healthy status."
+
+      - name: Verify secondary node health
+        if: github.event.inputs.fix_secondary == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
+          port: ${{ env.SECONDARY_PORT }}
+          username: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
+          key: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          fingerprint: ${{ secrets.SECONDARY_FINGERPRINT }}
+          timeout: 300s
+          script: |
+            set -euo pipefail
+            curl -fsSL "http://127.0.0.1:8080/health" | jq '.'
+            echo "✅ Secondary node reports healthy status."
+
+      - name: Verify P2P connectivity after repair
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event.inputs.restart_nodes }}" = "true" ]; then
+            primary="${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}"
+            echo "Testing primary node P2P on ${primary}:9000"
+            timeout 10 bash -c "</dev/tcp/${primary}/9000" || {
+              echo "::error::Primary P2P port 9000 closed"
+              exit 1
+            }
           fi
-          
-          echo "🎉 All connectivity checks passed!"
+
+          if [ "${{ github.event.inputs.fix_secondary }}" = "true" ]; then
+            secondary="${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}"
+            echo "Testing secondary node P2P on ${secondary}:9001"
+            timeout 10 bash -c "</dev/tcp/${secondary}/9001" || {
+              echo "::error::Secondary P2P port 9001 closed"
+              exit 1
+            }
+          fi
+
+          echo "✅ P2P connectivity verified after repairs."
