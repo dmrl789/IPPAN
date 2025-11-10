@@ -50,12 +50,25 @@ jobs:
         working-directory: apps/mobile/android-wallet
         run: ./gradlew assembleDebug
 
+      - name: Run instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect
+          disable-animations: true
+          script: cd apps/mobile/android-wallet && ./gradlew connectedDebugAndroidTest
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-test-reports
-          path: apps/mobile/android-wallet/app/build/reports/
+          path: |
+            apps/mobile/android-wallet/app/build/reports/
+            apps/mobile/android-wallet/app/build/outputs/androidTest-results/
           if-no-files-found: ignore
           retention-days: 7
 
