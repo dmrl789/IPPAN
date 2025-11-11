@@ -190,11 +190,15 @@ impl DlcConsensus {
         for block in blocks_to_process {
             match verifier_set.validate(&block) {
                 Ok(()) => {
-                    let verified = VerifiedBlock::new(block.clone(), verifier_set.all_verifiers());
+                    let block_clone = block.clone();
+                    let verified =
+                        VerifiedBlock::new(block_clone.clone(), verifier_set.all_verifiers());
                     verified_blocks.push(verified);
 
-                    // Insert into DAG
-                    self.dag.insert(block)?;
+                    // Insert into DAG if we have not already ingested this block
+                    if !self.dag.blocks.contains_key(&block_clone.id) {
+                        self.dag.insert(block_clone)?;
+                    }
                 }
                 Err(e) => {
                     tracing::warn!("Block validation failed: {}", e);

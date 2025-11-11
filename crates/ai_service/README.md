@@ -71,6 +71,14 @@ The service reads the following environment variables at startup:
 | `JSON_EXPORTER_ENDPOINT` | URL used by the JSON exporter | `http://localhost:8080/metrics` | No |
 | `HEALTH_PORT` | Port for the `/health` and `/metrics` endpoints | `8080` | No |
 
+Additional rate limiting knobs:
+
+- `AI_RATE_LIMIT_RPS`, `AI_RATE_LIMIT_BURST`, `AI_RATE_LIMIT_GLOBAL_RPS`
+- `AI_HEALTH_RATE_LIMIT_RPS`, `AI_HEALTH_RATE_LIMIT_BURST`
+- `AI_METRICS_RATE_LIMIT_RPS`, `AI_METRICS_RATE_LIMIT_BURST`
+
+Both `/health` and `/metrics` are protected by the shared security rate limiter. `/metrics` now renders Prometheus-compatible counters and gauges for request totals, success rates, resource usage, and limiter activity.
+
 Secrets can also be provided via prefixed variables (e.g. `IPPAN_SECRET_LLM_API_KEY`) or mounted files in `secrets/`. The configuration manager validates that an LLM API key is present before the service starts.
 
 For local development you can copy `.env.example` to `.env` and adjust the values as needed.

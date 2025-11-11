@@ -463,4 +463,126 @@ mod tests {
         assert!(registry.transfer(transfer).is_ok());
         assert_eq!(registry.resolve(&handle).unwrap(), owner2);
     }
+
+    #[test]
+    fn test_handle_update_merges_metadata() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
+        let registry = L2HandleRegistry::new();
+        let handle = Handle::new("@update.ipn");
+
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
+
+        // Register handle
+        let mut registration_message = Vec::new();
+        registration_message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        registration_message.extend_from_slice(handle.as_str().as_bytes());
+        registration_message.extend_from_slice(owner.as_bytes());
+        let registration_hash = Sha256::digest(&registration_message);
+        let registration_sig = signing_key.sign(&registration_hash);
+
+        let reg = HandleRegistration {
+            handle: handle.clone(),
+            owner: owner.clone(),
+            signature: registration_sig.to_bytes().to_vec(),
+            metadata: HashMap::new(),
+            expires_at: None,
+        };
+        registry.register(reg).unwrap();
+
+        // Prepare update signature
+        let mut update_message = Vec::new();
+        update_message.extend_from_slice(b"IPPAN_HANDLE_UPDATE");
+        update_message.extend_from_slice(handle.as_str().as_bytes());
+        update_message.extend_from_slice(owner.as_bytes());
+        let update_hash = Sha256::digest(&update_message);
+        let update_sig = signing_key.sign(&update_hash);
+
+        let mut updates = HashMap::new();
+        updates.insert("alias".into(), "alice".into());
+
+        let update = HandleUpdate {
+            handle: handle.clone(),
+            owner: owner.clone(),
+            signature: update_sig.to_bytes().to_vec(),
+            updates,
+        };
+
+        registry.update(update).unwrap();
+
+        let metadata = registry.get_metadata(&handle).unwrap();
+        assert_eq!(metadata.metadata.get("alias"), Some(&"alice".to_string()));
+        assert!(metadata.updated_at >= metadata.created_at);
+    }
+
+    #[test]
+    fn test_handle_expiration_blocks_resolution() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
+        let registry = L2HandleRegistry::new();
+        let handle = Handle::new("@expiring.ipn");
+        let signing_key = SigningKey::from_bytes(&[11u8; 32]);
+        let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
+        let expires_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .saturating_sub(10);
+
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        message.extend_from_slice(handle.as_str().as_bytes());
+        message.extend_from_slice(owner.as_bytes());
+        message.extend_from_slice(&expires_at.to_le_bytes());
+        let hash = Sha256::digest(&message);
+        let signature = signing_key.sign(&hash);
+
+        let reg = HandleRegistration {
+            handle: handle.clone(),
+            owner: owner.clone(),
+            signature: signature.to_bytes().to_vec(),
+            metadata: HashMap::new(),
+            expires_at: Some(expires_at),
+        };
+
+        registry.register(reg).unwrap();
+        let err = registry.resolve(&handle).unwrap_err();
+        assert!(matches!(err, HandleRegistryError::HandleExpired { .. }));
+    }
+
+    #[test]
+    fn test_list_owner_handles_returns_all_handles() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use sha2::{Digest, Sha256};
+
+        let registry = L2HandleRegistry::new();
+        let signing_key = SigningKey::from_bytes(&[55u8; 32]);
+        let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
+
+        for suffix in ["one", "two", "three"] {
+            let handle = Handle::new(format!("@multi-{}.ipn", suffix));
+            let mut message = Vec::new();
+            message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+            message.extend_from_slice(handle.as_str().as_bytes());
+            message.extend_from_slice(owner.as_bytes());
+            let hash = Sha256::digest(&message);
+            let signature = signing_key.sign(&hash);
+
+            let reg = HandleRegistration {
+                handle: handle.clone(),
+                owner: owner.clone(),
+                signature: signature.to_bytes().to_vec(),
+                metadata: HashMap::new(),
+                expires_at: None,
+            };
+            registry.register(reg).unwrap();
+        }
+
+        let handles = registry.list_owner_handles(&owner);
+        assert_eq!(handles.len(), 3);
+        assert!(handles.iter().any(|h| h.as_str().contains("one")));
+    }
 }

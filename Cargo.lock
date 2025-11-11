@@ -2818,6 +2818,7 @@ dependencies = [
  "ippan-ai-registry",
  "ippan-consensus",
  "ippan-crypto",
+ "ippan-security",
  "ippan-types",
  "reqwest",
  "serde",

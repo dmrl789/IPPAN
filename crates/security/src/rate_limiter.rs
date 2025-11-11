@@ -235,12 +235,27 @@ impl RateLimiter {
         }
     }
 
-    /// Get rate limiting statistics
-    pub fn get_stats(&self) -> serde_json::Value {
-        // This would be async in a real implementation
+    /// Get rate limiting statistics snapshot
+    pub async fn stats_snapshot(&self) -> RateLimitStatsSnapshot {
+        let stats = self.stats.read().await;
+        RateLimitStatsSnapshot {
+            total_requests: stats.total_requests,
+            allowed_requests: stats.allowed_requests,
+            ip_rate_limited: stats.ip_rate_limited,
+            endpoint_rate_limited: stats.endpoint_rate_limited,
+            global_rate_limited: stats.global_rate_limited,
+        }
+    }
+
+    /// Convenience helper returning statistics as JSON
+    pub async fn get_stats_json(&self) -> serde_json::Value {
+        let snapshot = self.stats_snapshot().await;
         serde_json::json!({
-            "rate_limiter": "active",
-            "note": "Detailed stats would be available in async context"
+            "total_requests": snapshot.total_requests,
+            "allowed_requests": snapshot.allowed_requests,
+            "ip_rate_limited": snapshot.ip_rate_limited,
+            "endpoint_rate_limited": snapshot.endpoint_rate_limited,
+            "global_rate_limited": snapshot.global_rate_limited,
         })
     }
 }
@@ -248,6 +263,16 @@ impl RateLimiter {
 /// Rate limiting statistics
 #[derive(Debug, Default)]
 struct RateLimitStats {
+    pub total_requests: u64,
+    pub allowed_requests: u64,
+    pub ip_rate_limited: u64,
+    pub endpoint_rate_limited: u64,
+    pub global_rate_limited: u64,
+}
+
+/// Public snapshot of rate limiting statistics
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct RateLimitStatsSnapshot {
     pub total_requests: u64,
     pub allowed_requests: u64,
     pub ip_rate_limited: u64,

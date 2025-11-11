@@ -246,6 +246,19 @@ mod tests {
     }
 
     #[test]
+    fn fee_cap_disabled_when_denom_zero() {
+        let params = EconomicsParams {
+            fee_cap_numer: 0,
+            fee_cap_denom: 0,
+            ..Default::default()
+        };
+
+        let (allowed, capped) = apply_fee_cap(5_000, 10_000, &params);
+        assert_eq!(allowed, 0);
+        assert_eq!(capped, 5_000);
+    }
+
+    #[test]
     fn test_reward_distribution() {
         let params = EconomicsParams::default();
         let participants = vec![
@@ -343,5 +356,21 @@ mod tests {
         }];
 
         assert!(validate_participation_set(&invalid_participants).is_err());
+    }
+
+    #[test]
+    fn distribution_errors_when_no_weights() {
+        let params = EconomicsParams::default();
+        let participants = vec![Participation {
+            validator_id: [1u8; 32],
+            role: Role::Proposer,
+            blocks_proposed: 0,
+            blocks_verified: 0,
+            reputation_score: 1.0,
+            stake_weight: 1,
+        }];
+
+        let err = distribute_round(1_000, 500, &participants, &params).unwrap_err();
+        assert!(matches!(err, EconomicsError::NoParticipants));
     }
 }

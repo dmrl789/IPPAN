@@ -157,6 +157,11 @@ fn test_block_storage<S: Storage>(storage: &S) {
     storage.store_block(block2).unwrap();
     let latest_height = storage.get_latest_height().unwrap();
     assert_eq!(latest_height, 2);
+
+    // Non-existent block by hash and height should return None
+    let missing_hash = [9u8; 32];
+    assert!(storage.get_block(&missing_hash).unwrap().is_none());
+    assert!(storage.get_block_by_height(99).unwrap().is_none());
 }
 
 fn test_transaction_storage<S: Storage>(storage: &S) {
@@ -193,6 +198,9 @@ fn test_transaction_storage<S: Storage>(storage: &S) {
 
     let addr3_txs = storage.get_transactions_by_address(&addr3).unwrap();
     assert_eq!(addr3_txs.len(), 2); // tx2 (to), tx3 (to)
+
+    let missing_hash = [0u8; 32];
+    assert!(storage.get_transaction(&missing_hash).unwrap().is_none());
 }
 
 fn test_account_storage<S: Storage>(storage: &S) {
@@ -249,6 +257,8 @@ fn test_l2_network_storage<S: Storage>(storage: &S) {
     // List all networks
     let all_networks = storage.list_l2_networks().unwrap();
     assert_eq!(all_networks.len(), 2);
+    assert_eq!(all_networks[0].id, "net1");
+    assert_eq!(all_networks[1].id, "net2");
 
     // Non-existent network
     let non_existent = storage.get_l2_network("non-existent").unwrap();
@@ -272,9 +282,12 @@ fn test_l2_commit_storage<S: Storage>(storage: &S) {
     // List commits for specific network
     let net1_commits = storage.list_l2_commits(Some("net1")).unwrap();
     assert_eq!(net1_commits.len(), 2);
+    assert!(net1_commits.iter().any(|c| c.id == "commit1"));
+    assert!(net1_commits.iter().any(|c| c.id == "commit2"));
 
     let net2_commits = storage.list_l2_commits(Some("net2")).unwrap();
     assert_eq!(net2_commits.len(), 1);
+    assert_eq!(net2_commits[0].id, "commit3");
 }
 
 fn test_l2_exit_storage<S: Storage>(storage: &S) {
@@ -372,6 +385,10 @@ fn test_chain_state_storage<S: Storage>(storage: &S) {
     let retrieved2 = storage.get_chain_state().unwrap();
     assert_eq!(retrieved2.total_issued_micro, 1500000);
     assert_eq!(retrieved2.last_updated_round, 51);
+
+    // Ensure retrieving chain state does not mutate underlying storage
+    let snapshot = storage.get_chain_state().unwrap();
+    assert_eq!(snapshot.total_issued_micro, 1500000);
 }
 
 fn test_validator_telemetry_storage<S: Storage>(storage: &S) {
@@ -411,6 +428,9 @@ fn test_validator_telemetry_storage<S: Storage>(storage: &S) {
     // Non-existent validator
     let non_existent = storage.get_validator_telemetry(&[255u8; 32]).unwrap();
     assert!(non_existent.is_none());
+
+    let telemetry_map = storage.get_all_validator_telemetry().unwrap();
+    assert_eq!(telemetry_map[&val2_id].network_contribution, 0.95);
 }
 
 // ============================================================================
@@ -550,6 +570,53 @@ fn sled_storage_validator_telemetry() {
     let temp_dir = TempDir::new().unwrap();
     let storage = SledStorage::new(temp_dir.path()).unwrap();
     test_validator_telemetry_storage(&storage);
+}
+
+#[test]
+fn sled_storage_chain_state_persistence_across_restart() {
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().to_path_buf();
+
+    {
+        let storage = SledStorage::new(&path).unwrap();
+        storage.initialize().unwrap();
+
+        let mut state = storage.get_chain_state().unwrap();
+        state.add_issued_micro(42);
+        state.update_round(7);
+        storage.update_chain_state(&state).unwrap();
+        storage.flush().unwrap();
+    }
+
+    {
+        let storage = SledStorage::new(&path).unwrap();
+        let state = storage.get_chain_state().unwrap();
+        assert_eq!(state.total_issued_micro, 42);
+        assert_eq!(state.last_updated_round, 7);
+    }
+}
+
+#[test]
+fn sled_storage_validator_telemetry_persistence() {
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().to_path_buf();
+    let validator_id = [99u8; 32];
+
+    {
+        let storage = SledStorage::new(&path).unwrap();
+        let telemetry = create_test_validator_telemetry(validator_id);
+        storage
+            .store_validator_telemetry(&validator_id, &telemetry)
+            .unwrap();
+        storage.flush().unwrap();
+    }
+
+    {
+        let storage = SledStorage::new(&path).unwrap();
+        let telemetry = storage.get_validator_telemetry(&validator_id).unwrap();
+        assert!(telemetry.is_some());
+        assert_eq!(telemetry.unwrap().uptime_percentage, 99.5);
+    }
 }
 
 // ============================================================================

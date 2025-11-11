@@ -1,0 +1,20 @@
+name: Auto Cleanup
+
+on:
+  schedule:
+    - cron: '0 5 * * 0'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 14
+          keep_minimum_runs: 10
+      - name: Delete old branches
+        uses: phpdocker-io/github-action-delete-merged-branches@v1.2
+        with:
+          dry_run: false

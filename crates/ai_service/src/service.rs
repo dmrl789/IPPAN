@@ -14,6 +14,7 @@ use crate::{
         TransactionOptimizationRequest, TransactionOptimizationResponse,
     },
 };
+use serde::Serialize;
 use std::collections::HashMap;
 use tokio::time::{interval, Duration};
 use tracing::info;
@@ -414,7 +415,7 @@ impl AIService {
 }
 
 /// Service status information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ServiceStatus {
     pub is_running: bool,
     pub llm_enabled: bool,
