@@ -13,7 +13,7 @@ jobs:
     name: Dependabot Auto-merge
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
-    
+
     steps:
       - name: Dependabot metadata
         id: metadata

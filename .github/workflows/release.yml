@@ -53,7 +53,7 @@ jobs:
           else
             git log --pretty=format:"- %s (%h)" --max-count=20 > changelog.txt
           fi
-          
+
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           cat changelog.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -68,11 +68,11 @@ jobs:
           name: Release ${{ steps.version.outputs.version }}
           body: |
             ## Changes in this Release
-            
+
             ${{ steps.changelog.outputs.changelog }}
-            
+
             ## Installation
-            
+
             See the [README](https://github.com/${{ github.repository }}) for installation instructions.
           draft: false
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}

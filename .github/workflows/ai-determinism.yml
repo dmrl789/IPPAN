@@ -2,9 +2,9 @@ name: AI Determinism Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   RUSTFLAGS: "-D warnings"
@@ -21,21 +21,18 @@ jobs:
             run-tests: true
           - target: aarch64-unknown-linux-gnu
             run-tests: false
-
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
       - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-
       - name: Cache cargo dependencies
         uses: actions/cache@v4
         with:
@@ -47,7 +44,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.target }}-
             ${{ runner.os }}-cargo-
-
       - name: Build AI core
         run: |
           cargo build --manifest-path crates/ai_core/Cargo.toml --target ${{ matrix.target }} --release
@@ -81,23 +77,20 @@ jobs:
           name: determinism-logs.txt
           path: determinism-logs.txt
           if-no-files-found: error
-
   test-no-float:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
       - name: Check for floating point usage in AI core
         run: |
           # Allow conversion helpers (from_f64, to_f64, From<FixedPoint> for f64)
           # Allow f64 in serialization structs and conditional compilation
           # but block actual f32/f64 arithmetic operations
           FOUND_VIOLATIONS=0
-          
+
           # Look for f32/f64 declarations and operations, excluding allowed patterns
           if grep -R "f32\|f64" crates/ai_core/src/ | \
              grep -v "from_f64\|to_f64\|impl From<.*> for f64\|/// Convert to an\|/// Construct from an\|pub fn.*f64\|as f64 / Self::SCALE\|as f64).round()\|\.as_secs_f64()\|f32::from_le_bytes" | \
@@ -110,7 +103,7 @@ jobs:
             echo "These should be converted to Fixed-point arithmetic"
             FOUND_VIOLATIONS=1
           fi
-          
+
           if [ $FOUND_VIOLATIONS -eq 1 ]; then
             echo ""
             echo "✅ Note: Conversion helpers (from_f64/to_f64) are allowed for interop"
@@ -123,40 +116,32 @@ jobs:
           else
             echo "✅ No problematic floating point operations found"
           fi
-
   test-model-hash:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
       - name: Verify model hash
         run: |
           cd models
           sha256sum reputation_v1.json > model_hash.txt
           echo "Model hash: $(cat model_hash.txt)"
           echo "Model hash verification completed"
-
   test-fee-caps:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
       - name: Run fee cap tests
         run: |
           cargo test --manifest-path crates/consensus/Cargo.toml --release fees
-
       - name: Fuzz fee validation
         run: |
           cargo test --manifest-path crates/consensus/Cargo.toml --release fuzz_fee_validation
-
   generate-inference-artifacts:
     name: Cross-architecture inference (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -169,13 +154,11 @@ jobs:
             runner: ubuntu-24.04
           - arch: aarch64
             runner: ubuntu-24.04-arm
-
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
       - name: Generate deterministic inference output
         run: |
           mkdir -p target/determinism
@@ -185,33 +168,28 @@ jobs:
             --bin dump_inference \
             -- \
             --output target/determinism/inference-${{ matrix.arch }}.json
-
       - name: Upload inference artifact
         uses: actions/upload-artifact@v4
         with:
           name: ai-core-inference-${{ matrix.arch }}
           path: target/determinism/inference-${{ matrix.arch }}.json
           if-no-files-found: error
-
   compare-inference-outputs:
     name: Compare inference outputs across architectures
     runs-on: ubuntu-24.04
     needs:
       - generate-inference-artifacts
-
     steps:
       - name: Download x86_64 artifact
         uses: actions/download-artifact@v4
         with:
           name: ai-core-inference-x86_64
           path: comparison/x86_64
-
       - name: Download aarch64 artifact
         uses: actions/download-artifact@v4
         with:
           name: ai-core-inference-aarch64
           path: comparison/aarch64
-
       - name: Compare inference outputs
         run: |
           python - <<'PY'
@@ -249,14 +227,12 @@ jobs:
 
           print("Inference outputs are identical across architectures.")
           PY
-
       - name: Upload comparison artifact
         uses: actions/upload-artifact@v4
         with:
           name: ai-core-inference-comparison
           path: comparison/result/inference-comparison.json
           if-no-files-found: error
-
       - name: Publish comparison summary
         run: |
           {

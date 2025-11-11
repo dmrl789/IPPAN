@@ -19,7 +19,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: 🗑️ Close stale PRs
         uses: actions/stale@v9
         with:
@@ -31,7 +30,6 @@ jobs:
           stale-pr-label: 'stale'
           exempt-pr-labels: 'keep-open,in-progress,blocked'
           operations-per-run: 30
-
       - name: 🧹 Delete merged branches
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,7 +56,6 @@ jobs:
             echo "Deleting branch: $branch"
             git push origin --delete "$branch" || echo "⚠️ Could not delete $branch"
           done
-
       - name: 🕓 Delete stale branches (>30 days inactive)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -75,7 +72,6 @@ jobs:
               git push origin --delete "$branch" || echo "⚠️ Could not delete $branch"
             fi
           done
-
       - name: 📊 Generate cleanup summary
         run: |
           echo "## 🧹 Branch Cleanup Summary" >> $GITHUB_STEP_SUMMARY

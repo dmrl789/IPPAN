@@ -2,18 +2,18 @@ name: AI Service CI/CD
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
-      - 'crates/ai_service/**'
-      - 'crates/ai_core/**'
-      - 'crates/ai_registry/**'
-      - '.github/workflows/ai-service.yml'
+      - crates/ai_service/**
+      - crates/ai_core/**
+      - crates/ai_registry/**
+      - .github/workflows/ai-service.yml
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
-      - 'crates/ai_service/**'
-      - 'crates/ai_core/**'
-      - 'crates/ai_registry/**'
+      - crates/ai_service/**
+      - crates/ai_core/**
+      - crates/ai_registry/**
 
 permissions:
   contents: read
@@ -30,136 +30,115 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-D warnings"
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-          pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
-    
-    - name: Cache cargo dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-ai-
-          ${{ runner.os }}-cargo-
-    
-    - name: Run tests
-      run: cargo test -p ippan-ai-service --verbose
-    
-    - name: Run integration tests
-      run: cargo test -p ippan-ai-service --test production_tests --verbose || echo "Integration tests skipped"
-      continue-on-error: true
-    
-    - name: Run clippy
-      run: cargo clippy -p ippan-ai-service --all-targets -- -D warnings
-    
-    - name: Check formatting
-      run: cargo fmt -p ippan-ai-service -- --check
-
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-
+            ${{ runner.os }}-cargo-
+      - name: Run tests
+        run: cargo test -p ippan-ai-service --verbose
+      - name: Run integration tests
+        run: cargo test -p ippan-ai-service --test production_tests --verbose || echo "Integration tests skipped"
+        continue-on-error: true
+      - name: Run clippy
+        run: cargo clippy -p ippan-ai-service --all-targets -- -D warnings
+      - name: Check formatting
+        run: cargo fmt -p ippan-ai-service -- --check
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Install cargo-audit
-      run: cargo install cargo-audit --locked
-    
-    - name: Run security audit
-      run: cargo audit
-      continue-on-error: true
-
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run security audit
+        run: cargo audit
+        continue-on-error: true
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [test, security]
+    needs:
+      - test
+      - security
     env:
       RUSTFLAGS: "-D warnings"
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-          pkg-config libssl-dev ca-certificates
-    
-    - name: Cache cargo dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-ai-
-          ${{ runner.os }}-cargo-
-    
-    - name: Build release
-      run: cargo build -p ippan-ai-service --release
-    
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ai-service-binary
-        path: target/release/ippan-ai-service
-        retention-days: 7
-        if-no-files-found: ignore
-
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ai-
+            ${{ runner.os }}-cargo-
+      - name: Build release
+        run: cargo build -p ippan-ai-service --release
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-service-binary
+          path: target/release/ippan-ai-service
+          retention-days: 7
+          if-no-files-found: ignore
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [test, security]
+    needs:
+      - test
+      - security
     if: github.event_name == 'push'
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: crates/ai_service/Dockerfile.production
-        push: true
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/ai-service:latest
-          ghcr.io/${{ github.repository_owner }}/ai-service:${{ github.sha }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: crates/ai_service/Dockerfile.production
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ai-service:latest
+            ghcr.io/${{ github.repository_owner }}/ai-service:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

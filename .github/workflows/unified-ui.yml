@@ -2,12 +2,12 @@ name: Unified UI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
       - 'apps/unified-ui/**'
       - '.github/workflows/unified-ui.yml'
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
       - 'apps/unified-ui/**'
 

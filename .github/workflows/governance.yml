@@ -71,17 +71,14 @@ jobs:
       github.event_name == 'pull_request' ||
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'metaagent')
-
     steps:
       - name: 🧭 Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: 🧰 Ensure log directory
         run: mkdir -p "${{ env.META_AGENT_LOG_DIR }}"
-
       - name: 🧠 Install dependencies
         run: |
           sudo apt-get update -y
@@ -89,32 +86,30 @@ jobs:
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
           sudo apt-get install -y gh
           cargo install --locked cargo-deny
-
       - name: 🧠 Initialize MetaAgent state
         id: init
         run: |
           echo "MetaAgent initialized at $(date -u)" >> $META_AGENT_LOG_DIR/assignments.log
           if [ ! -f "$META_AGENT_LOG_DIR/agent-registry.json" ]; then
             cat > $META_AGENT_LOG_DIR/agent-registry.json <<'EOF'
-{
-  "agents": {
-    "codex": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "testsprite": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "security-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "infra-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "release-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "docs-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "ui-coach": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "gw-sre": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "legal": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null}
-  },
-  "locks": {},
-  "conflicts": [],
-  "last_quota_reset": "$(date -u +%Y-%m-%d)"
-}
-EOF
+            {
+              "agents": {
+                "codex": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "testsprite": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "security-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "infra-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "release-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "docs-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "ui-coach": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "gw-sre": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "legal": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null}
+              },
+              "locks": {},
+              "conflicts": [],
+              "last_quota_reset": "$(date -u +%Y-%m-%d)"
+            }
+            EOF
           fi
-
       # ============================================================
       # 1. ASSIGNMENT LOGIC
       # ============================================================
@@ -144,7 +139,6 @@ EOF
                 ;;
             esac
           done
-
       # ============================================================
       # 2. CONFLICT DETECTION
       # ============================================================
@@ -170,56 +164,55 @@ EOF
               fi
             done
           fi
-
       # ============================================================
       # 3. MERGE VALIDATION
       # ============================================================
-        - name: ✅ Approve Merge if Checks Pass
-          if: github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened' || github.event.action == 'ready_for_review')
-          env:
-            GITHUB_REPOSITORY: ${{ github.repository }}
-          run: |
-            pr_number=${{ github.event.pull_request.number }}
-            sleep 30
-            owner="${GITHUB_REPOSITORY%%/*}"
-            repo="${GITHUB_REPOSITORY##*/}"
-            ci_status=$(gh api graphql \
-              -F owner="$owner" \
-              -F name="$repo" \
-              -F number="$pr_number" \
-              -f query='query($owner:String!, $name:String!, $number:Int!){
-                repository(owner:$owner, name:$name){
-                  pullRequest(number:$number){
-                    statusCheckRollup{ state }
-                  }
+      - name: ✅ Approve Merge if Checks Pass
+        if: github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened' || github.event.action == 'ready_for_review')
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          pr_number=${{ github.event.pull_request.number }}
+          sleep 30
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY##*/}"
+          ci_status=$(gh api graphql \
+            -F owner="$owner" \
+            -F name="$repo" \
+            -F number="$pr_number" \
+            -f query='query($owner:String!, $name:String!, $number:Int!){
+              repository(owner:$owner, name:$name){
+                pullRequest(number:$number){
+                  statusCheckRollup{ state }
                 }
-              }' \
-              --jq '.data.repository.pullRequest.statusCheckRollup.state // "PENDING"' \
-              2>/dev/null || echo "PENDING")
-            if [ -z "$ci_status" ] || [ "${ci_status^^}" = "PENDING" ]; then
-              ci_states_json=$(gh pr checks $pr_number --json state --jq '[.[].state]' 2>/dev/null || echo '[]')
-              ci_status=$(echo "$ci_states_json" | jq -r '
-                if length == 0 then
-                  "PENDING"
-                elif all(. == "SUCCESS") then
-                  "SUCCESS"
-                elif any(. == "FAILURE" or . == "ERROR" or . == "CANCELLED") then
-                  "FAILURE"
-                else
-                  "PENDING"
-                end
-              ')
-            fi
-            if [ "${ci_status^^}" = "SUCCESS" ]; then
-              pr_title="${{ github.event.pull_request.title }}"
-              pr_body="${{ github.event.pull_request.body }}"
-              if echo "$pr_title" | grep -qE "^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+"; then
-                if echo "$pr_body" | grep -qE "(closes|fixes|resolves) #[0-9]+"; then
-                  gh pr add-labels $pr_number "${{ env.META_APPROVAL_LABEL }}"
-                  echo "$(date -u): Approved PR #$pr_number" >> $META_AGENT_LOG_DIR/approvals.log
-                fi
+              }
+            }' \
+            --jq '.data.repository.pullRequest.statusCheckRollup.state // "PENDING"' \
+            2>/dev/null || echo "PENDING")
+          if [ -z "$ci_status" ] || [ "${ci_status^^}" = "PENDING" ]; then
+            ci_states_json=$(gh pr checks $pr_number --json state --jq '[.[].state]' 2>/dev/null || echo '[]')
+            ci_status=$(echo "$ci_states_json" | jq -r '
+              if length == 0 then
+                "PENDING"
+              elif all(. == "SUCCESS") then
+                "SUCCESS"
+              elif any(. == "FAILURE" or . == "ERROR" or . == "CANCELLED") then
+                "FAILURE"
+              else
+                "PENDING"
+              end
+            ')
+          fi
+          if [ "${ci_status^^}" = "SUCCESS" ]; then
+            pr_title="${{ github.event.pull_request.title }}"
+            pr_body="${{ github.event.pull_request.body }}"
+            if echo "$pr_title" | grep -qE "^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+"; then
+              if echo "$pr_body" | grep -qE "(closes|fixes|resolves) #[0-9]+"; then
+                gh pr add-labels $pr_number "${{ env.META_APPROVAL_LABEL }}"
+                echo "$(date -u): Approved PR #$pr_number" >> $META_AGENT_LOG_DIR/approvals.log
               fi
             fi
+          fi
       # ============================================================
       # 4. LOCK MANAGEMENT
       # ============================================================
@@ -239,7 +232,6 @@ EOF
           jq --arg pr "$pr_number" \
             'del(.locks | to_entries[] | select(.value == $pr) | .key)' \
             $META_AGENT_LOG_DIR/agent-registry.json > tmp.json && mv tmp.json $META_AGENT_LOG_DIR/agent-registry.json
-
       # ============================================================
       # 5. MANUAL ACTIONS
       # ============================================================
@@ -260,7 +252,6 @@ EOF
               jq '.agents | map_values(.active_tasks = 0)' $META_AGENT_LOG_DIR/agent-registry.json > tmp.json && mv tmp.json $META_AGENT_LOG_DIR/agent-registry.json
               ;;
           esac
-
       # ============================================================
       # 6. LOG SYNCHRONIZATION
       # ============================================================
@@ -285,7 +276,8 @@ EOF
     steps:
       - name: ⚙️ Enable auto-merge for Codex PR
         if: >
-          contains(github.event.pull_request.labels.*.name, env.META_APPROVAL_LABEL) &&
+          contains(github.event.pull_request.labels.*.name, env.META_APPROVAL_LABEL)
+          &&
           !github.event.pull_request.draft
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}

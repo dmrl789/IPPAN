@@ -536,7 +536,7 @@ jobs:
             echo "✅ Secondary node reports healthy status."
 
       - name: Verify P2P connectivity after repair
-        run: |
+        run: |-
           set -euo pipefail
 
           if [ "${{ github.event.inputs.restart_nodes }}" = "true" ]; then
