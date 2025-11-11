@@ -161,5 +161,5 @@ jobs:
         tags: |
           ghcr.io/${{ github.repository_owner }}/ai-service:latest
           ghcr.io/${{ github.repository_owner }}/ai-service:${{ github.sha }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=gha,scope=ai-service-v2
+        cache-to: type=gha,mode=max,scope=ai-service-v2

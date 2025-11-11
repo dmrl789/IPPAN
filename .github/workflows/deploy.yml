@@ -107,8 +107,8 @@ jobs:
             ${{ env.IMAGE_SUITE }}/ippan-node:latest
             ${{ env.IMAGE_NAMESPACE }}/ippan-node:${{ github.sha }}
             ${{ env.IMAGE_NAMESPACE }}/ippan-node:latest
-          cache-from: type=gha,scope=node
-          cache-to: type=gha,mode=max,scope=node
+          cache-from: type=gha,scope=node-v2
+          cache-to: type=gha,mode=max,scope=node-v2
           no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
 
       - name: Build & Push Gateway image
@@ -125,8 +125,8 @@ jobs:
             ${{ env.IMAGE_SUITE }}/gateway:latest
             ${{ env.IMAGE_NAMESPACE }}/ippan-gateway:${{ github.sha }}
             ${{ env.IMAGE_NAMESPACE }}/ippan-gateway:latest
-          cache-from: type=gha,scope=gateway
-          cache-to: type=gha,mode=max,scope=gateway
+          cache-from: type=gha,scope=gateway-v2
+          cache-to: type=gha,mode=max,scope=gateway-v2
           no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
 
       - name: Build & Push Unified UI image
@@ -143,8 +143,8 @@ jobs:
             ${{ env.IMAGE_NAMESPACE }}/unified-ui:latest
             ${{ env.IMAGE_SUITE }}/ippan-ui:${{ github.sha }}
             ${{ env.IMAGE_SUITE }}/ippan-ui:latest
-          cache-from: type=gha,scope=unified-ui
-          cache-to: type=gha,mode=max,scope=unified-ui
+          cache-from: type=gha,scope=unified-ui-v2
+          cache-to: type=gha,mode=max,scope=unified-ui-v2
           no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
 
       - id: image_tag
