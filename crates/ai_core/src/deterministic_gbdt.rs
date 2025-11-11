@@ -20,7 +20,8 @@ where
         let value = Value::deserialize(deserializer)?;
         value_to_fixed(&value).map_err(D::Error::custom)
     } else {
-        Fixed::deserialize(deserializer).map_err(D::Error::custom)
+        let micro = i64::deserialize(deserializer)?;
+        Ok(Fixed::from_micro(micro))
     }
 }
 
@@ -36,7 +37,9 @@ where
             None => Ok(None),
         }
     } else {
-        Option::<Fixed>::deserialize(deserializer).map_err(D::Error::custom)
+        Option::<i64>::deserialize(deserializer)
+            .map(|opt| opt.map(Fixed::from_micro))
+            .map_err(D::Error::custom)
     }
 }
 
@@ -257,20 +260,23 @@ impl DeterministicGBDT {
 // Feature normalization & scoring
 // ---------------------------------------------------------------------
 
-pub fn normalize_features(
-    telemetry: &HashMap<String, (i64, Fixed, Fixed, Fixed)>,
+pub fn normalize_features<T>(
+    telemetry: &HashMap<String, (i64, T, T, T)>,
     ippan_time_median: i64,
-) -> Vec<ValidatorFeatures> {
+) -> Vec<ValidatorFeatures>
+where
+    T: Copy + Into<Fixed>,
+{
     telemetry
         .iter()
-        .map(|(node_id, (local_time_us, latency, uptime, entropy))| {
+        .map(|(node_id, &(local_time_us, latency, uptime, entropy))| {
             let delta_time_us = local_time_us - ippan_time_median;
             ValidatorFeatures {
                 node_id: node_id.clone(),
                 delta_time_us,
-                latency_ms: *latency,
-                uptime_pct: *uptime,
-                peer_entropy: *entropy,
+                latency_ms: latency.into(),
+                uptime_pct: uptime.into(),
+                peer_entropy: entropy.into(),
                 cpu_usage: None,
                 memory_usage: None,
                 network_reliability: None,
@@ -308,7 +314,7 @@ pub fn compute_scores(
 // Test helpers
 // ---------------------------------------------------------------------
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
 impl DeterministicGBDT {
     /// Creates a deterministic test model for use in integration tests and examples.
     pub fn create_test_model() -> Self {
@@ -345,7 +351,7 @@ impl DeterministicGBDT {
     }
 }
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
 pub fn create_test_model() -> DeterministicGBDT {
     DeterministicGBDT::create_test_model()
 }

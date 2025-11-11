@@ -228,8 +228,8 @@ impl FeatureEngineeringPipeline {
             }
 
             if row.len() < n {
-                for entry in missing.iter_mut().skip(row.len()) {
-                    *entry += 1;
+                for count in missing.iter_mut().skip(row.len()) {
+                    *count += 1;
                 }
             }
         }
