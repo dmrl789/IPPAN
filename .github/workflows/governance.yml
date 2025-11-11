@@ -210,8 +210,10 @@ jobs:
               ')
             fi
             if [ "${ci_status^^}" = "SUCCESS" ]; then
-              pr_title="${{ github.event.pull_request.title }}"
-              pr_body="${{ github.event.pull_request.body }}"
+              # Fetch PR title and body safely using gh CLI
+              pr_title=$(gh pr view $pr_number --json title --jq '.title')
+              pr_body=$(gh pr view $pr_number --json body --jq '.body')
+              
               if echo "$pr_title" | grep -qE "^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+"; then
                 if echo "$pr_body" | grep -qE "(closes|fixes|resolves) #[0-9]+"; then
                   gh pr add-labels $pr_number "${{ env.META_APPROVAL_LABEL }}"
