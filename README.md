@@ -210,10 +210,35 @@ let round_hashtimer = HashTimer::now_round("consensus", payload, nonce, node_id)
 
 ## 🔧 Configuration
 
-Environment variables:
+### Environment Variables
+
+For comprehensive documentation of all environment variables and secrets, see:
+
+📖 **[Secrets and Environment Variables Guide](docs/SECRETS_AND_ENVIRONMENT_VARIABLES.md)**
+
+Quick reference for common variables:
+
 - `RUST_LOG`: Logging level (default: info)
 - `IPPAN_NETWORK`: Network type (mainnet/testnet)
 - `IPPAN_DATA_DIR`: Data directory path
+- `BOOTSTRAP_NODES`: Comma-separated peer URLs
+- `NODE_ID`: Unique node identifier
+- `VALIDATOR_ID`: 64-character hex validator ID
+
+### Configuration Files
+
+Example configurations are provided:
+
+- **Node**: `config/ippan.env.example` → Copy to `config/ippan.env`
+- **Gateway**: `apps/gateway/.env.example` → Copy to `apps/gateway/.env`
+- **UI**: `apps/unified-ui/.env.example` → Copy to `apps/unified-ui/.env.local`
+- **Deployment**: `deploy/.env.example` → Copy to `deploy/.env`
+
+### GitHub Secrets Setup
+
+For CI/CD deployments, configure GitHub secrets following:
+
+📖 **[GitHub Secrets Setup Guide](docs/GITHUB_SECRETS_SETUP.md)**
 
 ## 📈 Performance
 
