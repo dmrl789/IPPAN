@@ -26,13 +26,13 @@ fn fp(value: f64) -> Fixed {
 
 type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
 
-fn telemetry_entry(time_us: i64, latency_ms: f64, uptime_pct: f64, entropy: f64) -> (i64, Fixed, Fixed, Fixed) {
-    (
-        time_us,
-        fp(latency_ms),
-        fp(uptime_pct),
-        fp(entropy),
-    )
+fn telemetry_entry(
+    time_us: i64,
+    latency_ms: f64,
+    uptime_pct: f64,
+    entropy: f64,
+) -> (i64, Fixed, Fixed, Fixed) {
+    (time_us, fp(latency_ms), fp(uptime_pct), fp(entropy))
 }
 
 const EXPECTED_CANONICAL_TEST_MODEL_JSON: &str = r#"{
@@ -155,14 +155,32 @@ fn test_ippan_time_normalization() {
 #[test]
 fn test_normalize_features_clock_offset_invariance() {
     let telemetry_a: TelemetryMap = HashMap::from([
-        ("nodeA".into(), telemetry_entry(100_000_i64, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), telemetry_entry(100_080_i64, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), telemetry_entry(100_030_i64, 2.1, 98.9, 0.45)),
+        (
+            "nodeA".into(),
+            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+        ),
+        (
+            "nodeB".into(),
+            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+        ),
+        (
+            "nodeC".into(),
+            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+        ),
     ]);
     let telemetry_b: TelemetryMap = HashMap::from([
-        ("nodeA".into(), telemetry_entry(105_000_i64, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), telemetry_entry(105_080_i64, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), telemetry_entry(105_030_i64, 2.1, 98.9, 0.45)),
+        (
+            "nodeA".into(),
+            telemetry_entry(105_000_i64, 1.2, 99.9, 0.42),
+        ),
+        (
+            "nodeB".into(),
+            telemetry_entry(105_080_i64, 0.9, 99.8, 0.38),
+        ),
+        (
+            "nodeC".into(),
+            telemetry_entry(105_030_i64, 2.1, 98.9, 0.45),
+        ),
     ]);
 
     let features_a = normalize_features(&telemetry_a, 100_050);

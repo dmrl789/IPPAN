@@ -13,7 +13,12 @@ use std::collections::HashMap;
 
 type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
 
-fn telemetry_entry(time_us: i64, latency_ms: f64, uptime_pct: f64, entropy: f64) -> (i64, Fixed, Fixed, Fixed) {
+fn telemetry_entry(
+    time_us: i64,
+    latency_ms: f64,
+    uptime_pct: f64,
+    entropy: f64,
+) -> (i64, Fixed, Fixed, Fixed) {
     (
         time_us,
         Fixed::from_f64(latency_ms),
@@ -30,9 +35,18 @@ fn test_deterministic_gbdt_usage_example() {
 
     // Example telemetry from nodes (as shown in the user's request)
     let telemetry: TelemetryMap = HashMap::from([
-        ("nodeA".into(), telemetry_entry(100_000_i64, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), telemetry_entry(100_080_i64, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), telemetry_entry(100_030_i64, 2.1, 98.9, 0.45)),
+        (
+            "nodeA".into(),
+            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+        ),
+        (
+            "nodeB".into(),
+            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+        ),
+        (
+            "nodeC".into(),
+            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+        ),
     ]);
 
     // IPPAN Time median in µs (as shown in the user's request)
