@@ -18,6 +18,8 @@ services:
       - LLM_API_ENDPOINT=${LLM_API_ENDPOINT}
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-gpt-4}
+      - PROMETHEUS_ENDPOINT=${PROMETHEUS_ENDPOINT:-http://prometheus:9090/api/v1/write}
+      - JSON_EXPORTER_ENDPOINT=${JSON_EXPORTER_ENDPOINT:-http://localhost:8080/metrics}
       - MONITORING_INTERVAL=30
       - HEALTH_PORT=8080
     volumes:
