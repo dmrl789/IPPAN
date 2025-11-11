@@ -376,7 +376,13 @@ impl AIService {
 
     #[cfg(feature = "analytics")]
     async fn start_monitoring_task(&self) -> Result<(), AIServiceError> {
-        let mut interval = interval(Duration::from_secs(30)); // Default monitoring interval
+        let interval_seconds = std::env::var("MONITORING_INTERVAL")
+            .ok()
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(30);
+
+        let mut interval = interval(Duration::from_secs(interval_seconds)); // Configurable monitoring interval
         tokio::spawn(async move {
             loop {
                 interval.tick().await;

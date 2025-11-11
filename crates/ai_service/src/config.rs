@@ -28,8 +28,11 @@ impl ConfigManager {
     /// Create a new configuration manager
     pub fn new() -> Result<Self, AIServiceError> {
         let environment = Self::detect_environment()?;
-        let config = Self::load_config(&environment)?;
-        let secrets = Self::load_secrets(&environment)?;
+        let mut config = Self::load_config(&environment)?;
+        let mut secrets = Self::load_secrets(&environment)?;
+
+        Self::apply_env_overrides(&mut config);
+        Self::apply_secret_overrides(&mut config, &mut secrets)?;
 
         Ok(Self {
             config,
@@ -203,6 +206,133 @@ impl ConfigManager {
         }
 
         Ok(secrets)
+    }
+
+    fn apply_env_overrides(config: &mut AIServiceConfig) {
+        if let Ok(value) = env::var("ENABLE_LLM") {
+            if let Some(parsed) = Self::parse_bool(&value) {
+                config.enable_llm = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("ENABLE_ANALYTICS") {
+            if let Some(parsed) = Self::parse_bool(&value) {
+                config.enable_analytics = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("ENABLE_SMART_CONTRACTS") {
+            if let Some(parsed) = Self::parse_bool(&value) {
+                config.enable_smart_contracts = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("ENABLE_MONITORING") {
+            if let Some(parsed) = Self::parse_bool(&value) {
+                config.enable_monitoring = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("LLM_API_ENDPOINT") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                config.llm_config.api_endpoint = trimmed.to_string();
+            }
+        }
+
+        if let Ok(value) = env::var("LLM_MODEL") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                config.llm_config.model_name = trimmed.to_string();
+            }
+        }
+
+        if let Ok(value) = env::var("LLM_MAX_TOKENS") {
+            if let Ok(parsed) = value.trim().parse::<u32>() {
+                config.llm_config.max_tokens = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("LLM_TEMPERATURE") {
+            if let Ok(parsed) = value.trim().parse::<f32>() {
+                config.llm_config.temperature = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("LLM_TIMEOUT") {
+            if let Ok(parsed) = value.trim().parse::<u64>() {
+                config.llm_config.timeout_seconds = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("ANALYTICS_REALTIME") {
+            if let Some(parsed) = Self::parse_bool(&value) {
+                config.analytics_config.enable_realtime = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("ANALYTICS_RETENTION_DAYS") {
+            if let Ok(parsed) = value.trim().parse::<u32>() {
+                config.analytics_config.retention_days = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("ANALYTICS_INTERVAL") {
+            if let Ok(parsed) = value.trim().parse::<u64>() {
+                config.analytics_config.analysis_interval = parsed;
+            }
+        }
+
+        if let Ok(value) = env::var("ANALYTICS_PREDICTIVE") {
+            if let Some(parsed) = Self::parse_bool(&value) {
+                config.analytics_config.enable_predictive = parsed;
+            }
+        }
+    }
+
+    fn apply_secret_overrides(
+        config: &mut AIServiceConfig,
+        secrets: &mut HashMap<String, String>,
+    ) -> Result<(), AIServiceError> {
+        let env_api_key = env::var("LLM_API_KEY")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+
+        let secret_api_key = secrets
+            .get("llm_api_key")
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+
+        if let Some(api_key) = env_api_key.or(secret_api_key) {
+            config.llm_config.api_key = api_key.clone();
+            secrets.insert("llm_api_key".to_string(), api_key);
+            Ok(())
+        } else {
+            Err(AIServiceError::ConfigError(
+                "Missing required secret: LLM_API_KEY. Provide via environment variable or secret store."
+                    .to_string(),
+            ))
+        }
+    }
+
+    fn parse_bool(value: &str) -> Option<bool> {
+        let value = value.trim();
+        if value.eq_ignore_ascii_case("true")
+            || value.eq_ignore_ascii_case("yes")
+            || value.eq_ignore_ascii_case("y")
+            || value == "1"
+        {
+            Some(true)
+        } else if value.eq_ignore_ascii_case("false")
+            || value.eq_ignore_ascii_case("no")
+            || value.eq_ignore_ascii_case("n")
+            || value == "0"
+        {
+            Some(false)
+        } else {
+            None
+        }
     }
 }
 

@@ -36,14 +36,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut exporters: Vec<Box<dyn MetricsExporter + Send + Sync>> = Vec::new();
 
     if environment == Environment::Production {
-        exporters.push(Box::new(PrometheusExporter::new(
-            "http://prometheus:9090/api/v1/write".to_string(),
-        )));
+        let prometheus_endpoint = std::env::var("PROMETHEUS_ENDPOINT")
+            .unwrap_or_else(|_| "http://prometheus:9090/api/v1/write".to_string());
+
+        if prometheus_endpoint.trim().is_empty() {
+            warn!("PROMETHEUS_ENDPOINT is empty; Prometheus exporter disabled");
+        } else {
+            info!(
+                "Configuring Prometheus exporter with endpoint {}",
+                prometheus_endpoint
+            );
+            exporters.push(Box::new(PrometheusExporter::new(
+                prometheus_endpoint.trim().to_string(),
+            )));
+        }
     }
 
-    exporters.push(Box::new(JsonExporter::new(
-        "http://localhost:8080/metrics".to_string(),
-    )));
+    let json_endpoint = std::env::var("JSON_EXPORTER_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:8080/metrics".to_string());
+    if json_endpoint.trim().is_empty() {
+        warn!("JSON_EXPORTER_ENDPOINT is empty; JSON exporter disabled");
+    } else {
+        exporters.push(Box::new(JsonExporter::new(
+            json_endpoint.trim().to_string(),
+        )));
+    }
 
     // Create AI Service
     let mut service = AIService::new(config).map_err(|e| {
@@ -63,8 +80,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metrics_task = {
         let metrics_collector = metrics_collector.clone();
         let exporters = exporters;
+        let interval_seconds = std::env::var("MONITORING_INTERVAL")
+            .ok()
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(30);
+
+        info!("Metrics collection interval set to {}s", interval_seconds);
+
         tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(30));
+            let mut interval = interval(Duration::from_secs(interval_seconds));
             loop {
                 interval.tick().await;
 
