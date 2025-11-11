@@ -363,6 +363,7 @@ pub fn create_test_model() -> DeterministicGBDT {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_model_hash_consistency_fixed() {
@@ -381,5 +382,28 @@ mod tests {
         let h1 = model.model_hash("round1").unwrap();
         let h2 = model.model_hash("round1").unwrap();
         assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_json_integers_are_treated_as_micro_units() {
+        let data = json!({
+            "node_id": "validator-alpha",
+            "delta_time_us": 0,
+            "latency_ms": 1_500, // 1.5 ms expressed in micro-units
+            "uptime_pct": 999_000, // 99.9% expressed in micro-units
+            "peer_entropy": 500_000,
+            "cpu_usage": 250_000,
+        });
+
+        let features: ValidatorFeatures =
+            serde_json::from_value(data).expect("valid features json");
+
+        assert_eq!(features.latency_ms, Fixed::from_micro(1_500));
+        assert_eq!(features.uptime_pct, Fixed::from_micro(999_000));
+        assert_eq!(features.peer_entropy, Fixed::from_micro(500_000));
+        assert_eq!(
+            features.cpu_usage.expect("cpu_usage should be present"),
+            Fixed::from_micro(250_000)
+        );
     }
 }
