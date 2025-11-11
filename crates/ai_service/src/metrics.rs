@@ -20,6 +20,8 @@ pub struct MetricsCollector {
     pub analytics_requests: Arc<AtomicU64>,
     pub smart_contract_requests: Arc<AtomicU64>,
     pub optimization_requests: Arc<AtomicU64>,
+    pub health_requests: Arc<AtomicU64>,
+    pub metrics_requests: Arc<AtomicU64>,
 
     // System metrics
     pub memory_usage_bytes: Arc<AtomicU64>,
@@ -52,6 +54,8 @@ impl MetricsCollector {
             analytics_requests: Arc::new(AtomicU64::new(0)),
             smart_contract_requests: Arc::new(AtomicU64::new(0)),
             optimization_requests: Arc::new(AtomicU64::new(0)),
+            health_requests: Arc::new(AtomicU64::new(0)),
+            metrics_requests: Arc::new(AtomicU64::new(0)),
             memory_usage_bytes: Arc::new(AtomicU64::new(0)),
             cpu_usage_percent: Arc::new(AtomicU64::new(0)),
             active_connections: Arc::new(AtomicUsize::new(0)),
@@ -87,6 +91,12 @@ impl MetricsCollector {
             }
             "optimization" => {
                 self.optimization_requests.fetch_add(1, Ordering::Relaxed);
+            }
+            "health" => {
+                self.health_requests.fetch_add(1, Ordering::Relaxed);
+            }
+            "metrics" => {
+                self.metrics_requests.fetch_add(1, Ordering::Relaxed);
             }
             _ => {}
         }
@@ -146,6 +156,8 @@ impl MetricsCollector {
             analytics_requests: self.analytics_requests.load(Ordering::Relaxed),
             smart_contract_requests: self.smart_contract_requests.load(Ordering::Relaxed),
             optimization_requests: self.optimization_requests.load(Ordering::Relaxed),
+            health_requests: self.health_requests.load(Ordering::Relaxed),
+            metrics_requests: self.metrics_requests.load(Ordering::Relaxed),
             memory_usage_bytes: self.memory_usage_bytes.load(Ordering::Relaxed),
             cpu_usage_percent: self.cpu_usage_percent.load(Ordering::Relaxed),
             active_connections: self.active_connections.load(Ordering::Relaxed),
@@ -180,6 +192,8 @@ pub struct MetricsSnapshot {
     pub analytics_requests: u64,
     pub smart_contract_requests: u64,
     pub optimization_requests: u64,
+    pub health_requests: u64,
+    pub metrics_requests: u64,
     pub memory_usage_bytes: u64,
     pub cpu_usage_percent: u64,
     pub active_connections: usize,

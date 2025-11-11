@@ -321,4 +321,67 @@ mod tests {
             .unwrap();
         assert!(result.total_fee <= 1_000_000);
     }
+
+    #[test]
+    fn test_fee_override_units_and_to_amount() {
+        let manager = L2FeeManager::new();
+        let calc = manager
+            .calculate_fee(L2TxKind::AIModelStorage, Some(42), None)
+            .unwrap();
+
+        assert_eq!(calc.units, 42);
+        assert_eq!(calc.total_fee, 42); // base fee is zero, so unit only
+        assert_eq!(
+            calc.to_amount().atomic(),
+            42_u128 * ippan_types::denominations::MICRO_IPN
+        );
+    }
+
+    #[test]
+    fn test_missing_base_fee_errors() {
+        let mut structure = L2FeeStructure::default();
+        structure.base_fees.remove(&L2TxKind::ContractDeploy);
+
+        let mut manager = L2FeeManager::new();
+        manager.update_fee_structure(structure);
+
+        let err = manager
+            .calculate_fee(L2TxKind::ContractDeploy, None, None)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            L2FeeError::MissingBaseFee(L2TxKind::ContractDeploy)
+        ));
+    }
+
+    #[test]
+    fn test_fee_structure_serialization_round_trip() {
+        let structure = L2FeeStructure::default();
+        let json = structure.to_json().expect("serialize");
+        let restored = L2FeeStructure::from_json(&json).expect("deserialize");
+        assert_eq!(structure.base_fees.len(), restored.base_fees.len());
+        assert_eq!(
+            structure.base_fees.get(&L2TxKind::ContractCall),
+            restored.base_fees.get(&L2TxKind::ContractCall)
+        );
+    }
+
+    #[test]
+    fn test_collect_fee_accumulates_totals() {
+        let mut manager = L2FeeManager::new();
+        manager.collect_fee(L2TxKind::AIModelRegister, 1_000);
+        manager.collect_fee(L2TxKind::AIModelRegister, 2_000);
+        manager.collect_fee(L2TxKind::FederatedLearning, 500);
+
+        let stats = manager.get_statistics();
+        assert_eq!(stats.total_collected, 3_500);
+        assert_eq!(
+            stats.fees_by_type.get(&L2TxKind::AIModelRegister),
+            Some(&3_000)
+        );
+        assert_eq!(
+            stats.fees_by_type.get(&L2TxKind::FederatedLearning),
+            Some(&500)
+        );
+    }
 }

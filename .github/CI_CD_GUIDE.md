@@ -13,9 +13,9 @@ This document describes the CI/CD pipeline for the IPPAN blockchain project, inc
    - Tests: Rust code (formatting, clippy, build, test)
    - Tests: Gateway Node.js code (lint, build, security audit)
 
-2. **`test.yml`** - Comprehensive test suite
-   - Runs: Unit tests, integration tests, gateway tests
-   - Includes: Docker-based integration testing
+2. **`test-suite.yml`** - Comprehensive (nightly) test suite
+   - Runs: Unit, integration, and Docker-based validation tests
+   - Generates: Coverage summary and nightly dashboard artifact
 
 3. **`build.yml`** - Docker image building
    - Builds: IPPAN blockchain node and gateway images
@@ -23,39 +23,42 @@ This document describes the CI/CD pipeline for the IPPAN blockchain project, inc
 
 ### Security & Quality
 
-4. **`security.yml`** - Security scanning
-   - Runs: Trivy vulnerability scanner, Rust audit, Node.js audit
-   - Includes: License compliance checking
-   - Schedule: Daily at 2 AM UTC
+4. **`security-suite.yml`** - Security scanning
+   - Runs: Cargo audit, npm audit, license checks
+   - Supports: Optional NVD API key for Android dependency scanning
 
-5. **`codeql.yml`** - Code quality analysis
-   - Languages: Rust, JavaScript/TypeScript
-   - Schedule: Weekly on Mondays at 3 AM UTC
+5. **`ai-determinism.yml`** - Deterministic AI verification
+   - Ensures: Cross-architecture stability for IPPAN AI models
+   - Triggers: Push/PRs touching AI core crates
+
+6. **`ai-service.yml`** - AI service regression checks
+   - Validates: AI service builds, clippy, tests, and container images
+   - Includes: Security audit coverage for AI crates
 
 ### Deployment
 
-6. **`prod-deploy.yml`** - Production deployment
-   - Deploys: To primary and secondary servers
+7. **`deploy.yml`** - Production deployment
+   - Deploys: Core services to production targets once CI is green
    - Includes: Health checks and P2P connectivity verification
 
-7. **`deploy-fix.yml`** - Deployment repair
-   - Fixes: Stuck deployments, connectivity issues
-   - Includes: Service restart and health verification
+8. **`deploy-ippan-full-stack.yml`** - Full-stack deployment validation
+   - Builds: Multi-service stack
+   - Runs: Validation hooks prior to promotion
 
-8. **`check-nodes.yml`** - Node health monitoring
+9. **`check-nodes.yml`** - Node health monitoring
    - Schedule: Every 30 minutes
    - Checks: API health endpoints
 
 ### Release Management
 
-9. **`release.yml`** - Release automation
+10. **`release.yml`** - Release automation
    - Triggers: On version tags (v*)
    - Creates: GitHub releases with changelog
    - Builds: Docker images for release
 
-10. **`dependabot.yml`** - Dependency management
-    - Auto-merges: Minor and patch updates
-    - Requires: Dependabot bot actor
+11. **`dependabot.yml`** - Dependency management
+     - Auto-merges: Minor and patch updates
+     - Requires: Dependabot bot actor
 
 ## Configuration Requirements
 
@@ -85,15 +88,15 @@ This document describes the CI/CD pipeline for the IPPAN blockchain project, inc
 ```mermaid
 graph TD
     A[Push/PR] --> B[CI]
-    A --> C[Security]
-    A --> D[CodeQL]
-    B --> E[Build]
-    E --> F[Test]
-    F --> G[Deploy]
-    H[Tag] --> I[Release]
-    I --> J[Build & Push]
-    K[Schedule] --> L[Check Nodes]
-    M[Dependabot] --> N[Auto-merge]
+    B --> C[Build]
+    C --> D[Nightly Test Suite]
+    D --> E[Deployment]
+    F[Security Suite] --> B
+    G[Schedule] --> D
+    G --> H[Check Nodes]
+    I[Tag] --> J[Release]
+    J --> C
+    K[Dependabot] --> L[Auto-merge]
 ```
 
 ## Maintenance Tasks

@@ -2,9 +2,21 @@ name: Test Suite
 
 on:
   push:
-    branches: [ main, develop ]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [ main, develop ]
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    branches:
+      - main
+      - develop
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -215,15 +227,50 @@ jobs:
             --output-dir coverage \
             -- --test-threads=1
 
-      - name: Generate coverage summary
-        run: |
-          python3 scripts/generate_coverage_summary.py coverage/cobertura.xml coverage/coverage-summary.md
+        - name: Generate coverage summary
+          run: |
+            python3 scripts/generate_coverage_summary.py coverage/cobertura.xml coverage/coverage-summary.md
 
-      - name: Upload coverage summary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-summary
-          path: coverage/coverage-summary.md
+        - name: Assemble nightly dashboard
+          run: |
+            set -euo pipefail
+            DASHBOARD_DIR=coverage/nightly
+            mkdir -p "$DASHBOARD_DIR"
+            DASHBOARD_FILE="$DASHBOARD_DIR/dashboard.md"
+            CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+            if [ -z "$CURRENT_BRANCH" ] || [ "$CURRENT_BRANCH" = "HEAD" ]; then
+              CURRENT_BRANCH="${GITHUB_REF##*/}"
+            fi
+            if [ -z "$CURRENT_BRANCH" ]; then
+              CURRENT_BRANCH="unknown"
+            fi
+            {
+              echo "# IPPAN Nightly Dashboard"
+              echo
+              echo "- Run Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+              echo "- Workflow: $GITHUB_WORKFLOW"
+              echo "- Run ID: $GITHUB_RUN_ID"
+              echo "- Branch: $CURRENT_BRANCH"
+              echo "- Commit: $(git rev-parse HEAD)"
+              echo
+              echo "## Coverage Summary"
+              echo
+              cat coverage/coverage-summary.md
+            } > "$DASHBOARD_FILE"
+
+        - name: Upload coverage summary artifact
+          uses: actions/upload-artifact@v4
+          with:
+            name: coverage-summary
+            path: coverage/coverage-summary.md
+
+        - name: Upload nightly dashboard
+          if: always()
+          uses: actions/upload-artifact@v4
+          with:
+            name: nightly-dashboard
+            path: coverage/nightly/dashboard.md
+            retention-days: 7
 
   full-stack-validation:
     name: Full Stack Docker Validation

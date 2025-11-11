@@ -18,6 +18,7 @@
 - Use the provided `tests` suite as reference when onboarding new model artifacts.
 
 ## Cross-Compiling (aarch64)
-- Install [`cross`](https://github.com/cross-rs/cross) and ensure either Docker or Podman is available.
-- Run `cross test -p ippan-ai-core --target aarch64-unknown-linux-gnu` to exercise the deterministic suite under aarch64.
-- Without a container engine, the command will fail; install Docker/Podman or run on a host where one is available.
+- Install the Rust standard library for the target with `rustup target add aarch64-unknown-linux-gnu`.
+- If you are compiling locally (without `cross`), install an aarch64 linker toolchain (e.g., `gcc-aarch64-linux-gnu`) and run `cargo test --no-run -p ippan-ai-core --features deterministic_math --target aarch64-unknown-linux-gnu`.
+- Alternatively install [`cross`](https://github.com/cross-rs/cross) and ensure Docker or Podman is available, then run `cross test -p ippan-ai-core --target aarch64-unknown-linux-gnu`.
+- The deterministic suite now emits a SHA-256 digest for a realistic validator telemetry scenario; both x86_64 and aarch64 golden references must remain identical.
