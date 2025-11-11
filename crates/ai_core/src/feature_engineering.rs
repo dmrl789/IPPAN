@@ -228,8 +228,8 @@ impl FeatureEngineeringPipeline {
             }
 
             if row.len() < n {
-                for idx in row.len()..n {
-                    missing[idx] += 1;
+                for entry in missing.iter_mut().skip(row.len()) {
+                    *entry += 1;
                 }
             }
         }
@@ -305,7 +305,7 @@ impl FeatureEngineeringPipeline {
         }
 
         for score in &mut variances {
-            *score = *score / total;
+            *score /= total;
         }
 
         let mut selected: Vec<usize> = variances
@@ -526,6 +526,33 @@ pub mod utils {
     }
 }
 
+fn scale_fixed_to_i64(value: Fixed) -> i64 {
+    (value.to_micro() / 1000).clamp(i64::MIN + 1, i64::MAX - 1)
+}
+
+fn fixed_sqrt(value: Fixed) -> Fixed {
+    if value.is_negative() {
+        return Fixed::ZERO;
+    }
+    let raw = value.to_micro() as i128;
+    let scaled = raw * i128::from(SCALE);
+    let sqrt = integer_sqrt_u128(scaled.max(0) as u128);
+    Fixed::from_micro(sqrt as i64)
+}
+
+fn integer_sqrt_u128(n: u128) -> u128 {
+    if n <= 1 {
+        return n;
+    }
+    let mut x0 = n;
+    let mut x1 = (x0 + 1) >> 1;
+    while x1 < x0 {
+        x0 = x1;
+        x1 = (x0 + n / x0) >> 1;
+    }
+    x0
+}
+
 #[cfg(test)]
 mod tests {
     use super::{utils, *};
@@ -580,31 +607,4 @@ mod tests {
         assert_eq!(raw.sample_count, 2);
         assert_eq!(raw.feature_count, 2);
     }
-}
-
-fn scale_fixed_to_i64(value: Fixed) -> i64 {
-    (value.to_micro() / 1000).clamp(i64::MIN + 1, i64::MAX - 1)
-}
-
-fn fixed_sqrt(value: Fixed) -> Fixed {
-    if value.is_negative() {
-        return Fixed::ZERO;
-    }
-    let raw = value.to_micro() as i128;
-    let scaled = (raw as i128) * (SCALE as i128);
-    let sqrt = integer_sqrt_u128(scaled.max(0) as u128);
-    Fixed::from_micro(sqrt as i64)
-}
-
-fn integer_sqrt_u128(n: u128) -> u128 {
-    if n <= 1 {
-        return n;
-    }
-    let mut x0 = n;
-    let mut x1 = (x0 + 1) >> 1;
-    while x1 < x0 {
-        x0 = x1;
-        x1 = (x0 + n / x0) >> 1;
-    }
-    x0
 }

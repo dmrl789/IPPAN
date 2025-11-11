@@ -35,8 +35,8 @@ fn test_deterministic_gbdt_basic_functionality() {
 #[cfg(feature = "deterministic_math")]
 fn test_ippan_time_normalization() {
     let mut telemetry = HashMap::new();
-    telemetry.insert("node1".to_string(), (100_000, 1.2, 99.9, 0.42));
-    telemetry.insert("node2".to_string(), (100_080, 0.9, 99.8, 0.38));
+    telemetry.insert("node1".to_string(), (100_000, fp(1.2), fp(99.9), fp(0.42)));
+    telemetry.insert("node2".to_string(), (100_080, fp(0.9), fp(99.8), fp(0.38)));
 
     let ippan_time_median = 100_050;
     let features = normalize_features(&telemetry, ippan_time_median);
@@ -57,7 +57,10 @@ fn test_ippan_time_normalization() {
 fn test_validator_scoring() {
     let model = create_test_model();
     let mut telemetry = HashMap::new();
-    telemetry.insert("test_node".to_string(), (100_000, 1.0, 99.0, 0.5));
+    telemetry.insert(
+        "test_node".to_string(),
+        (100_000, fp(1.0), fp(99.0), fp(0.5)),
+    );
 
     let ippan_time_median = 100_000;
     let round_hash = "test_round";

@@ -8,7 +8,12 @@
 use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DeterministicGBDT,
 };
+use ippan_ai_core::Fixed;
 use std::collections::HashMap;
+
+fn fp(value: f64) -> Fixed {
+    Fixed::from_f64(value)
+}
 
 /// Integration test demonstrating the usage example from the user's request
 #[test]
@@ -17,10 +22,10 @@ fn test_deterministic_gbdt_usage_example() {
     let model = create_test_model();
 
     // Example telemetry from nodes (as shown in the user's request)
-    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("nodeA".into(), (100_000, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), (100_080, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), (100_030, 2.1, 98.9, 0.45)),
+    let telemetry: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
+        ("nodeA".into(), (100_000, fp(1.2), fp(99.9), fp(0.42))),
+        ("nodeB".into(), (100_080, fp(0.9), fp(99.8), fp(0.38))),
+        ("nodeC".into(), (100_030, fp(2.1), fp(98.9), fp(0.45))),
     ]);
 
     // IPPAN Time median in µs (as shown in the user's request)
@@ -81,7 +86,10 @@ fn test_with_actual_model_file() {
         Ok(model) => {
             // Test with sample telemetry
             let mut telemetry = HashMap::new();
-            telemetry.insert("test_node".to_string(), (100_000, 1.0, 99.0, 0.5));
+            telemetry.insert(
+                "test_node".to_string(),
+                (100_000, fp(1.0), fp(99.0), fp(0.5)),
+            );
 
             let ippan_time_median = 100_000;
             let round_hash = "test_round";
@@ -107,10 +115,10 @@ fn test_cross_node_determinism_simulation() {
     let model = create_test_model();
 
     // Simulate the same telemetry being processed by different nodes
-    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("node1".into(), (100_000, 1.0, 99.0, 0.5)),
-        ("node2".into(), (100_050, 1.5, 98.5, 0.6)),
-        ("node3".into(), (99_950, 0.8, 99.5, 0.4)),
+    let telemetry: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
+        ("node1".into(), (100_000, fp(1.0), fp(99.0), fp(0.5))),
+        ("node2".into(), (100_050, fp(1.5), fp(98.5), fp(0.6))),
+        ("node3".into(), (99_950, fp(0.8), fp(99.5), fp(0.4))),
     ]);
 
     let ippan_time_median = 100_000;
@@ -144,16 +152,28 @@ fn test_realistic_validator_scenarios() {
     let mut telemetry = HashMap::new();
 
     // High-performance validator
-    telemetry.insert("validator_alpha".to_string(), (100_000, 0.5, 99.9, 0.8));
+    telemetry.insert(
+        "validator_alpha".to_string(),
+        (100_000, fp(0.5), fp(99.9), fp(0.8)),
+    );
 
     // Average validator
-    telemetry.insert("validator_beta".to_string(), (100_020, 1.2, 98.5, 0.6));
+    telemetry.insert(
+        "validator_beta".to_string(),
+        (100_020, fp(1.2), fp(98.5), fp(0.6)),
+    );
 
     // Poor validator
-    telemetry.insert("validator_gamma".to_string(), (100_100, 3.0, 85.0, 0.3));
+    telemetry.insert(
+        "validator_gamma".to_string(),
+        (100_100, fp(3.0), fp(85.0), fp(0.3)),
+    );
 
     // New validator (recently joined)
-    telemetry.insert("validator_delta".to_string(), (99_980, 2.5, 95.0, 0.4));
+    telemetry.insert(
+        "validator_delta".to_string(),
+        (99_980, fp(2.5), fp(95.0), fp(0.4)),
+    );
 
     let ippan_time_median = 100_000;
     let round_hash = "realistic_round_test";
