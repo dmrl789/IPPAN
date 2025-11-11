@@ -363,8 +363,8 @@ impl HealthChecker for ModelExecutionChecker {
             status,
             message: format!(
                 "Failure rate: {} (threshold: {})",
-                (failure_rate * Fixed::from_int(100)).to_string(),
-                (self.max_failure_rate * Fixed::from_int(100)).to_string()
+                failure_rate * Fixed::from_int(100),
+                self.max_failure_rate * Fixed::from_int(100)
             ),
             duration_us: 0,
             timestamp: 0,

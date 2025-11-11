@@ -44,7 +44,8 @@ fn signed_transaction(from_seed: u8, to_seed: u8, amount_micro: u64, nonce: u64)
         ippan_types::Amount::from_micro_ipn(amount_micro),
         nonce,
     );
-    tx.sign(&from_key.to_bytes()).expect("sign test transaction");
+    tx.sign(&from_key.to_bytes())
+        .expect("sign test transaction");
     tx
 }
 
