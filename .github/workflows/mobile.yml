@@ -76,6 +76,8 @@ jobs:
       name: Dependency Vulnerability Scan
       if: github.event_name == 'pull_request'
       runs-on: ubuntu-latest
+      env:
+        NVD_API_KEY: ${{ secrets.NVD_API_KEY || '' }}
       steps:
         - name: Checkout
           uses: actions/checkout@v4
@@ -93,37 +95,36 @@ jobs:
           working-directory: apps/mobile/android-wallet
           run: chmod +x gradlew
 
-        - name: Check for NVD API key
-          id: nvd_key
-          shell: bash
-          run: |
-            if [ -z "${{ secrets.NVD_API_KEY }}" ]; then
-              echo "configured=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "configured=true" >> "$GITHUB_OUTPUT"
-            fi
+      - name: Check for NVD API key
+        id: nvd_key
+        shell: bash
+        run: |
+          if [ -z "$NVD_API_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
 
-        - name: Skip dependency scan (missing NVD API key)
-          if: steps.nvd_key.outputs.configured == 'false'
-          run: echo "NVD API key not configured; skipping dependency check."
+      - name: Skip dependency scan (missing NVD API key)
+        if: steps.nvd_key.outputs.configured == 'false'
+        run: echo "NVD API key not configured; skipping dependency check."
 
-        - name: Run dependency check
-          if: steps.nvd_key.outputs.configured == 'true'
-          working-directory: apps/mobile/android-wallet
-          env:
-            GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
-            NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-          run: ./gradlew dependencyCheckAnalyze --stacktrace -Pnvd.api.key="$NVD_API_KEY"
-
-        - name: Upload dependency reports
-          if: steps.nvd_key.outputs.configured == 'true' && always()
-          uses: actions/upload-artifact@v4
-          with:
-            name: android-dependency-reports
-            path: |
-              apps/mobile/android-wallet/app/build/reports/dependency-check*
-            if-no-files-found: ignore
-            retention-days: 7
+      - name: Run dependency check
+        if: steps.nvd_key.outputs.configured == 'true' && env.NVD_API_KEY != ''
+        working-directory: apps/mobile/android-wallet
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
+          NVD_API_KEY: ${{ env.NVD_API_KEY }}
+        run: ./gradlew dependencyCheckAnalyze --stacktrace -Pnvd.api.key="$NVD_API_KEY"
+      - name: Upload dependency reports
+        if: steps.nvd_key.outputs.configured == 'true' && env.NVD_API_KEY != '' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-dependency-reports
+          path: |
+            apps/mobile/android-wallet/app/build/reports/dependency-check*
+          if-no-files-found: ignore
+          retention-days: 7
 
   release-apk:
     name: Build Release APK (Tag)
