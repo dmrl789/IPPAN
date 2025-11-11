@@ -2,7 +2,7 @@ name: Security Suite
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   schedule:
     - cron: '0 3 * * 1'
 
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'javascript-typescript', 'rust' ]
+        language: ['javascript-typescript', 'rust']
     steps:
       - name: Checkout
         uses: actions/checkout@v4

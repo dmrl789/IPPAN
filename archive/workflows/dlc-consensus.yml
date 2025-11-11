@@ -28,7 +28,7 @@ jobs:
   dlc-tests:
     name: DLC Consensus Tests
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,7 +95,7 @@ jobs:
   dlc-benchmarks:
     name: DLC Performance Benchmarks
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -148,7 +148,7 @@ jobs:
   dlc-validation:
     name: DLC Specification Validation
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
