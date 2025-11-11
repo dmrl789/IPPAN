@@ -121,8 +121,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=release-v2
+          cache-to: type=gha,mode=max,scope=release-v2
 
       - name: Upload to release
         uses: softprops/action-gh-release@v1

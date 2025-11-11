@@ -51,15 +51,29 @@ The service supports multiple configuration methods:
 
 ### Environment Variables
 
-```bash
-export IPPAN_ENV=production
-export LLM_API_KEY=your-api-key
-export LLM_MODEL=gpt-4
-export ENABLE_LLM=true
-export ENABLE_ANALYTICS=true
-export ENABLE_SMART_CONTRACTS=true
-export ENABLE_MONITORING=true
-```
+The service reads the following environment variables at startup:
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `IPPAN_ENV` | Environment (`development`, `staging`, `production`, `testing`) | `development` | Yes |
+| `LLM_API_KEY` | API key used for outbound LLM requests (also accepted as `IPPAN_SECRET_LLM_API_KEY`) | - | Yes |
+| `LLM_API_ENDPOINT` | Base URL for the LLM provider | `https://api.openai.com/v1` | No |
+| `LLM_MODEL` | LLM model name | `gpt-4` | No |
+| `LLM_MAX_TOKENS` | Maximum tokens per completion | `4000` | No |
+| `LLM_TEMPERATURE` | Sampling temperature for completions | `0.7` | No |
+| `LLM_TIMEOUT` | LLM request timeout (seconds) | `30` | No |
+| `ENABLE_LLM` | Toggle LLM features | `true` | No |
+| `ENABLE_ANALYTICS` | Toggle analytics engine | `true` | No |
+| `ENABLE_SMART_CONTRACTS` | Toggle smart-contract analysis | `true` | No |
+| `ENABLE_MONITORING` | Toggle monitoring pipeline | `true` | No |
+| `MONITORING_INTERVAL` | Metrics emission interval (seconds) | `30` | No |
+| `PROMETHEUS_ENDPOINT` | Remote write endpoint for Prometheus exporter (production) | `http://prometheus:9090/api/v1/write` | Yes (production) |
+| `JSON_EXPORTER_ENDPOINT` | URL used by the JSON exporter | `http://localhost:8080/metrics` | No |
+| `HEALTH_PORT` | Port for the `/health` and `/metrics` endpoints | `8080` | No |
+
+Secrets can also be provided via prefixed variables (e.g. `IPPAN_SECRET_LLM_API_KEY`) or mounted files in `secrets/`. The configuration manager validates that an LLM API key is present before the service starts.
+
+For local development you can copy `.env.example` to `.env` and adjust the values as needed.
 
 ### Configuration Files
 
