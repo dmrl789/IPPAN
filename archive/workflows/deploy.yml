@@ -197,48 +197,48 @@ jobs:
       SECONDARY_KEY: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY || '' }}
       SECONDARY_FINGERPRINT: ${{ secrets.SECONDARY_FINGERPRINT || '' }}
       SECONDARY_PORT: ${{ secrets.SERVER2_PORT || secrets.SECONDARY_PORT || secrets.DEPLOY_PORT || '22' }}
-      steps:
-        - name: Warn missing deployment secrets
-          if: env.PRIMARY_HOST == '' || env.PRIMARY_USER == '' || env.PRIMARY_KEY == '' || env.SECONDARY_HOST == '' || env.SECONDARY_USER == '' || env.SECONDARY_KEY == ''
-          run: |
-            missing=()
-            for var in PRIMARY_HOST PRIMARY_USER PRIMARY_KEY SECONDARY_HOST SECONDARY_USER SECONDARY_KEY; do
-              if [ -z "${!var:-}" ]; then
-                missing+=("$var")
-              fi
-            done
-            printf '::warning::Missing deployment secret(s): %s\n' "$(IFS=', '; echo "${missing[*]}")"
-
-        - name: Validate deployment secrets
-          if: env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != '' && env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
-          run: |
-            set -euo pipefail
-            missing=0
-
-            for var in PRIMARY_HOST PRIMARY_USER PRIMARY_KEY SECONDARY_HOST SECONDARY_USER SECONDARY_KEY; do
-              if [ -z "${!var}" ]; then
-                echo "::error::Missing secret: $var"
-                missing=1
-              fi
-            done
-
-            if [ "$missing" -ne 0 ]; then
-              exit 1
+    steps:
+      - name: Warn missing deployment secrets
+        if: env.PRIMARY_HOST == '' || env.PRIMARY_USER == '' || env.PRIMARY_KEY == '' || env.SECONDARY_HOST == '' || env.SECONDARY_USER == '' || env.SECONDARY_KEY == ''
+        run: |
+          missing=()
+          for var in PRIMARY_HOST PRIMARY_USER PRIMARY_KEY SECONDARY_HOST SECONDARY_USER SECONDARY_KEY; do
+            if [ -z "${!var:-}" ]; then
+              missing+=("$var")
             fi
+          done
+          printf '::warning::Missing deployment secret(s): %s\n' "$(IFS=', '; echo "${missing[*]}")"
 
-        - name: Deploy to Primary Server
-          if: env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != ''
-          uses: appleboy/ssh-action@v1.2.0
-          with:
-            host: ${{ env.PRIMARY_HOST }}
-            port: ${{ env.PRIMARY_PORT }}
-            username: ${{ env.PRIMARY_USER }}
-            key: ${{ env.PRIMARY_KEY }}
-            fingerprint: ${{ env.PRIMARY_FINGERPRINT }}
-          timeout: 300s
+      - name: Validate deployment secrets
+        if: env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != '' && env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
+        run: |
+          set -euo pipefail
+          missing=0
+
+          for var in PRIMARY_HOST PRIMARY_USER PRIMARY_KEY SECONDARY_HOST SECONDARY_USER SECONDARY_KEY; do
+            if [ -z "${!var}" ]; then
+              echo "::error::Missing secret: $var"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Deploy to Primary Server
+        if: env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != ''
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ env.PRIMARY_HOST }}
+          port: ${{ env.PRIMARY_PORT }}
+          username: ${{ env.PRIMARY_USER }}
+          key: ${{ env.PRIMARY_KEY }}
+          fingerprint: ${{ env.PRIMARY_FINGERPRINT }}
           envs: IMAGE_TAG,GITHUB_REPOSITORY
+          timeout: 300s
           script: |
-            set -euo pipefail
+          set -euo pipefail
 
             BRANCH=main
             APP_DIR=/opt/ippan
@@ -272,19 +272,19 @@ jobs:
 
             sleep 30
 
-            curl -fsSL http://localhost:8080/health | jq '.' || {
+            curl -fsSL 'http://localhost:8080/health' | jq '.' || {
               echo "::error::Primary node health check failed"
               exit 1
             }
 
             if docker ps --format '{{.Names}}' | grep -q gateway; then
-              curl -fsSL http://localhost:7080/health | jq '.' || {
+              curl -fsSL 'http://localhost:7080/health' | jq '.' || {
                 echo "::error::Gateway health check failed"
                 exit 1
               }
             fi
 
-            curl -fsSL http://localhost:3001 || echo "Unified UI health endpoint not available"
+            curl -fsSL 'http://localhost:3001' || echo 'Unified UI health endpoint not available'
 
             sudo ufw allow 9000/tcp || true
             sudo ufw reload || true
@@ -292,19 +292,19 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
           GITHUB_REPOSITORY: ${{ github.repository }}
 
-        - name: Deploy to Secondary Server
-          if: env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
-          uses: appleboy/ssh-action@v1.2.0
-          with:
-            host: ${{ env.SECONDARY_HOST }}
-            port: ${{ env.SECONDARY_PORT }}
-            username: ${{ env.SECONDARY_USER }}
-            key: ${{ env.SECONDARY_KEY }}
-            fingerprint: ${{ env.SECONDARY_FINGERPRINT }}
-          timeout: 300s
+      - name: Deploy to Secondary Server
+        if: env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ env.SECONDARY_HOST }}
+          port: ${{ env.SECONDARY_PORT }}
+          username: ${{ env.SECONDARY_USER }}
+          key: ${{ env.SECONDARY_KEY }}
+          fingerprint: ${{ env.SECONDARY_FINGERPRINT }}
           envs: IMAGE_TAG,GITHUB_REPOSITORY
+          timeout: 300s
           script: |
-            set -euo pipefail
+          set -euo pipefail
 
             BRANCH=main
             APP_DIR=/opt/ippan
@@ -338,7 +338,7 @@ jobs:
 
             sleep 30
 
-            curl -fsSL http://localhost:8080/health | jq '.' || {
+            curl -fsSL 'http://localhost:8080/health' | jq '.' || {
               echo "::error::Secondary node health check failed"
               exit 1
             }
@@ -349,27 +349,27 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
           GITHUB_REPOSITORY: ${{ github.repository }}
 
-        - name: Verify P2P Connectivity
-          if: env.PRIMARY_HOST != '' && env.SECONDARY_HOST != ''
-          run: |
-            set -euo pipefail
+      - name: Verify P2P Connectivity
+        if: env.PRIMARY_HOST != '' && env.SECONDARY_HOST != ''
+        run: |
+          set -euo pipefail
 
-            primary="$PRIMARY_HOST"
-            secondary="$SECONDARY_HOST"
+          primary="$PRIMARY_HOST"
+          secondary="$SECONDARY_HOST"
 
-            echo "Testing primary node P2P on ${primary}:9000"
-            timeout 10 bash -c "</dev/tcp/${primary}/9000" || {
-              echo "::error::Primary P2P port 9000 unreachable"
-              exit 1
-            }
+          echo "Testing primary node P2P on ${primary}:9000"
+          timeout 10 bash -c "</dev/tcp/${primary}/9000" || {
+            echo "::error::Primary P2P port 9000 unreachable"
+            exit 1
+          }
 
-            echo "Testing secondary node P2P on ${secondary}:9001"
-            timeout 10 bash -c "</dev/tcp/${secondary}/9001" || {
-              echo "::error::Secondary P2P port 9001 unreachable"
-              exit 1
-            }
+          echo "Testing secondary node P2P on ${secondary}:9001"
+          timeout 10 bash -c "</dev/tcp/${secondary}/9001" || {
+            echo "::error::Secondary P2P port 9001 unreachable"
+            exit 1
+          }
 
-            echo "🎉 Production deployment validated."
+          echo "🎉 Production deployment validated."
 
   repair:
     name: Repair Production Nodes
@@ -391,37 +391,38 @@ jobs:
       SECONDARY_FINGERPRINT: ${{ secrets.SECONDARY_FINGERPRINT || '' }}
       SECONDARY_PORT: ${{ secrets.SERVER2_PORT || secrets.SECONDARY_PORT || secrets.DEPLOY_PORT || '22' }}
     steps:
-        - name: Validate repair secrets
-          run: |
-            set -euo pipefail
-            missing=0
+      - name: Validate repair secrets
+        run: |
+          set -euo pipefail
 
-            if [ "${RESTART_NODES}" = "true" ]; then
-              if [ -z "${PRIMARY_HOST}" ] || [ -z "${PRIMARY_USER}" ] || [ -z "${PRIMARY_KEY}" ]; then
-                echo "::warning::Missing primary server secrets (SERVER1_* or DEPLOY_*)"
-                missing=1
-              fi
-            fi
+          missing=0
 
-            if [ "${FIX_SECONDARY}" = "true" ]; then
-              if [ -z "${SECONDARY_HOST}" ] || [ -z "${SECONDARY_USER}" ] || [ -z "${SECONDARY_KEY}" ]; then
-                echo "::warning::Missing secondary server secrets (SERVER2_* or SECONDARY_*)"
-                missing=1
-              fi
+          if [ "${RESTART_NODES}" = "true" ]; then
+            if [ -z "${PRIMARY_HOST}" ] || [ -z "${PRIMARY_USER}" ] || [ -z "${PRIMARY_KEY}" ]; then
+              echo "::warning::Missing primary server secrets (SERVER1_* or DEPLOY_*)"
+              missing=1
             fi
+          fi
 
-            if [ "$missing" -ne 0 ]; then
-              echo "::warning::Repair steps will be skipped for missing secret sets."
+          if [ "${FIX_SECONDARY}" = "true" ]; then
+            if [ -z "${SECONDARY_HOST}" ] || [ -z "${SECONDARY_USER}" ] || [ -z "${SECONDARY_KEY}" ]; then
+              echo "::warning::Missing secondary server secrets (SERVER2_* or SECONDARY_*)"
+              missing=1
             fi
-          env:
-            RESTART_NODES: ${{ github.event.inputs.restart_nodes }}
-            FIX_SECONDARY: ${{ github.event.inputs.fix_secondary }}
-            PRIMARY_HOST: ${{ env.PRIMARY_HOST }}
-            PRIMARY_USER: ${{ env.PRIMARY_USER }}
-            PRIMARY_KEY: ${{ env.PRIMARY_KEY }}
-            SECONDARY_HOST: ${{ env.SECONDARY_HOST }}
-            SECONDARY_USER: ${{ env.SECONDARY_USER }}
-            SECONDARY_KEY: ${{ env.SECONDARY_KEY }}
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo "::warning::Repair steps will be skipped for missing secret sets."
+          fi
+        env:
+          RESTART_NODES: ${{ github.event.inputs.restart_nodes }}
+          FIX_SECONDARY: ${{ github.event.inputs.fix_secondary }}
+          PRIMARY_HOST: ${{ env.PRIMARY_HOST }}
+          PRIMARY_USER: ${{ env.PRIMARY_USER }}
+          PRIMARY_KEY: ${{ env.PRIMARY_KEY }}
+          SECONDARY_HOST: ${{ env.SECONDARY_HOST }}
+          SECONDARY_USER: ${{ env.SECONDARY_USER }}
+          SECONDARY_KEY: ${{ env.SECONDARY_KEY }}
 
       - name: Repair primary server
         if: github.event.inputs.restart_nodes == 'true' && env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != ''
@@ -434,18 +435,18 @@ jobs:
           fingerprint: ${{ env.PRIMARY_FINGERPRINT }}
           timeout: 300s
           script: |
-            set -euo pipefail
+          set -euo pipefail
 
             echo "🔧 Repairing primary node services..."
 
             if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-              sudo apt-get update -y
-              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
             elif [ "$(id -u)" -eq 0 ]; then
-              apt-get update -y
-              DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            apt-get update -y
+            DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
             else
-              echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
+            echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
             fi
 
             cd /opt/ippan || exit 1
@@ -454,7 +455,7 @@ jobs:
             docker system prune -f || true
 
             if command -v systemctl >/dev/null 2>&1; then
-              sudo systemctl restart docker
+            sudo systemctl restart docker
             fi
 
             docker compose -f docker-compose.yml -f docker-compose.full-stack.yml up -d --force-recreate
@@ -479,18 +480,18 @@ jobs:
           fingerprint: ${{ env.SECONDARY_FINGERPRINT }}
           timeout: 300s
           script: |
-            set -euo pipefail
+          set -euo pipefail
 
             echo "🔧 Repairing secondary node..."
 
             if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-              sudo apt-get update -y
-              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
             elif [ "$(id -u)" -eq 0 ]; then
-              apt-get update -y
-              DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
+            apt-get update -y
+            DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-plugin jq ufw
             else
-              echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
+            echo "⚠️ Skipping package updates (no passwordless sudo/root access)"
             fi
 
             cd /opt/ippan || exit 1
@@ -499,7 +500,7 @@ jobs:
             docker system prune -f || true
 
             if command -v systemctl >/dev/null 2>&1; then
-              sudo systemctl restart docker
+            sudo systemctl restart docker
             fi
 
             docker compose -f docker-compose.yml -f docker-compose.full-stack.yml up -d --force-recreate
@@ -512,7 +513,6 @@ jobs:
             sudo ufw reload || true
 
             echo "✅ Secondary server repair completed."
-
       - name: Verify primary node health
         if: github.event.inputs.restart_nodes == 'true' && env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != ''
         uses: appleboy/ssh-action@v1.2.0
