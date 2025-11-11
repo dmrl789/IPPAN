@@ -72,7 +72,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-<<<<<<< HEAD
   dependency-scan:
     name: Dependency Vulnerability Scan
     if: github.event_name == 'pull_request'
