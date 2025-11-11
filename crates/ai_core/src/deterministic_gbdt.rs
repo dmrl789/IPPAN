@@ -37,9 +37,8 @@ where
             None => Ok(None),
         }
     } else {
-        Option::<i64>::deserialize(deserializer)
-            .map(|opt| opt.map(Fixed::from_micro))
-            .map_err(D::Error::custom)
+        let micro = Option::<i64>::deserialize(deserializer)?;
+        Ok(micro.map(Fixed::from_micro))
     }
 }
 
