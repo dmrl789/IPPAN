@@ -25,6 +25,11 @@ jobs:
     name: Full Workspace Tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      status: ${{ steps.test_results.outputs.status }}
+      passed: ${{ steps.test_results.outputs.passed }}
+      failed: ${{ steps.test_results.outputs.failed }}
+      total: ${{ steps.test_results.outputs.total }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -86,6 +91,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     needs: full-test-suite
+    outputs:
+      coverage: ${{ steps.coverage_results.outputs.coverage }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -141,7 +148,7 @@ jobs:
           fi
 
       - name: Upload coverage artifacts
-        if: always() && (github.event_name == 'schedule' || inputs.upload_coverage)
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upload_coverage))
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ github.run_number }}

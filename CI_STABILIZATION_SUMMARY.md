@@ -194,8 +194,17 @@ Criteria checkboxes automatically update based on:
 ### `.github/workflows/nightly-validation.yml` (NEW)
 - Complete workflow implementation (400+ lines)
 - 3 jobs with proper dependencies
+- **Added job-level outputs declarations** (P0 fix)
+- **Gated inputs context for scheduled runs** (P1 fix)
 - Comprehensive error handling
 - PROJECT_STATUS.md generation logic
+
+### Code Review Fixes Applied
+1. **P0 Critical**: Added `outputs:` blocks to expose step outputs at job level
+   - `full-test-suite.outputs.status` now properly declared
+   - `coverage-analysis.outputs.coverage` now properly declared
+2. **P1 High**: Fixed `inputs` context usage in scheduled runs
+   - Conditional now gates `inputs.upload_coverage` behind `workflow_dispatch` check
 
 ## ✅ Validation Performed
 
