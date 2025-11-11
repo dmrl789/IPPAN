@@ -344,6 +344,19 @@ impl Fixed {
     }
 }
 
+impl From<f64> for Fixed {
+    fn from(value: f64) -> Self {
+        debug_assert!(value.is_finite(), "non-finite value cannot be converted to Fixed");
+        Fixed::from_f64(value)
+    }
+}
+
+impl From<f32> for Fixed {
+    fn from(value: f32) -> Self {
+        Fixed::from(value as f64)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Arithmetic traits
 // ---------------------------------------------------------------------------

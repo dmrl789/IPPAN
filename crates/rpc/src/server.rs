@@ -1817,7 +1817,7 @@ mod tests {
             message_timeout: Duration::from_millis(5),
             ..P2PConfig::default()
         };
-        let mut raw_network =
+        let raw_network =
             HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network");
         let mut events = raw_network.take_incoming_events().expect("event receiver");
         let network = Arc::new(raw_network);
