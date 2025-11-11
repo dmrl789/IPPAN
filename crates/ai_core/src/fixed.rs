@@ -361,6 +361,12 @@ impl From<f32> for Fixed {
 // Arithmetic traits
 // ---------------------------------------------------------------------------
 
+impl From<f64> for Fixed {
+    fn from(value: f64) -> Self {
+        Fixed::from_f64(value)
+    }
+}
+
 impl Add for Fixed {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {

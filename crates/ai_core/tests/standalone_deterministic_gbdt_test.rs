@@ -108,10 +108,17 @@ fn test_cross_platform_determinism() {
 
 #[test]
 fn test_usage_example() {
+<<<<<<< HEAD
     let telemetry: TelemetryMap = HashMap::from([
         ("nodeA".into(), telemetry_entry(100_000_i64, 1.2, 99.9, 0.42)),
         ("nodeB".into(), telemetry_entry(100_080_i64, 0.9, 99.8, 0.38)),
         ("nodeC".into(), telemetry_entry(100_030_i64, 2.1, 98.9, 0.45)),
+=======
+    let telemetry: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
+        ("nodeA".into(), (100_000, fp(1.2), fp(99.9), fp(0.42))),
+        ("nodeB".into(), (100_080, fp(0.9), fp(99.8), fp(0.38))),
+        ("nodeC".into(), (100_030, fp(2.1), fp(98.9), fp(0.45))),
+>>>>>>> 695f092e (Fix deterministic GBDT tests and normalization)
     ]);
 
     let ippan_time_median = 100_050_i64;
