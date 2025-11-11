@@ -68,12 +68,12 @@ All static analysis and security check failures have been resolved. This include
 - No proper handling of npm cache
 
 **Fix:**
-- Added Swatinem/rust-cache@v2 to security.yml workflow
+- Added Swatinem/rust-cache@v2 to security-suite.yml workflow
 - Improved cache configuration for faster scans
 - **Result**: Security scans run faster and more reliably
 
 **Files Modified:**
-- `/workspace/.github/workflows/security.yml`
+- `/workspace/.github/workflows/security-suite.yml`
 
 ### 5. SBOM Generation & Dependency Graph ✅
 
@@ -141,7 +141,7 @@ All security-related workflows are now configured and ready:
 | Workflow | Status | Purpose |
 |----------|--------|---------|
 | `codeql.yml` | ✅ Enhanced | Static analysis for Rust & JavaScript |
-| `security.yml` | ✅ Improved | Dependency & vulnerability scanning |
+| `security-suite.yml` | ✅ Improved | Dependency & vulnerability scanning |
 | `sbom-generation.yml` | ✅ New | SBOM generation & dependency tracking |
 
 ---
@@ -217,7 +217,7 @@ All security-related workflows are now configured and ready:
 - `deny.toml` - Updated license allowlist
 - `apps/unified-ui/package.json` - Security updates
 - `.github/workflows/codeql.yml` - Enhanced configuration
-- `.github/workflows/security.yml` - Added caching
+- `.github/workflows/security-suite.yml` - Added caching
 
 ### Created Files (1)
 - `.github/workflows/sbom-generation.yml` - New SBOM workflow

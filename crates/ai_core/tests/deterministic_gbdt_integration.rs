@@ -9,6 +9,7 @@ use ippan_ai_core::deterministic_gbdt::{
     compute_scores, create_test_model, normalize_features, DeterministicGBDT,
 };
 use ippan_ai_core::Fixed;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
@@ -248,4 +249,49 @@ fn test_model_hash_certificate_generation() {
 
     println!("Model hash for round {}: {}", round_hash_1, hash_1);
     println!("Model hash for round {}: {}", round_hash_2, hash_2);
+}
+
+fn sample_consensus_digest() -> String {
+    let model = create_test_model();
+    let telemetry: TelemetryMap = HashMap::from([
+        (
+            "validator_alpha".to_string(),
+            telemetry_entry(100_000_i64, 0.5, 99.9, 0.8),
+        ),
+        (
+            "validator_beta".to_string(),
+            telemetry_entry(100_020_i64, 1.2, 98.5, 0.6),
+        ),
+        (
+            "validator_gamma".to_string(),
+            telemetry_entry(100_100_i64, 3.0, 85.0, 0.3),
+        ),
+    ]);
+
+    let features = normalize_features(&telemetry, 100_000_i64);
+    let scores = compute_scores(&model, &features, "aarch64_digest_round");
+
+    let mut sorted: Vec<_> = scores
+        .into_iter()
+        .map(|(node, score)| (node, score.to_micro()))
+        .collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut hasher = Sha256::new();
+    for (node, score_micro) in sorted {
+        hasher.update(node.as_bytes());
+        hasher.update(score_micro.to_le_bytes());
+    }
+
+    format!("{:x}", hasher.finalize())
+}
+
+#[test]
+fn test_prediction_digest_matches_golden_reference() {
+    let digest = sample_consensus_digest();
+    println!("Deterministic prediction digest: {digest}");
+    assert_eq!(
+        digest, "646f0b3e4b9379e90eb0a787eb0e7b8532263738a0c1be4d52c2ac3fa9842efd",
+        "Consensus digest has changed; update golden reference if intentional."
+    );
 }

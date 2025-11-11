@@ -16,7 +16,7 @@ Operational runbook for releasing, deploying, and validating the IPPAN network. 
 |----------|------|---------|------------|
 | CI | `.github/workflows/ci.yml` | Push/PR to `main` and `develop` | Rust fmt/check/build/clippy/test, AI core determinism, DLC consensus tests, Gateway lint/build, Unified UI lint/type-check/build |
 | Build Matrix | `.github/workflows/build.yml` | Nightly schedule, manual | Compiles workspace across toolchains/targets, caches artifacts for deployment |
-| Test Matrix | `.github/workflows/test.yml` | Nightly schedule, manual | Runs long-form integration and stress tests before release tagging |
+| Test Matrix | `.github/workflows/test-suite.yml` | Nightly schedule, manual | Runs long-form integration and stress tests before release tagging |
 | Deploy (staging/prod) | `.github/workflows/deploy.yml`, `deploy-ippan-full-stack.yml`, `prod-deploy.yml` | Push to `main`, manual promotion | Builds Docker images, publishes to GHCR, SSH deploys to servers, executes health probes |
 | Release | `.github/workflows/release.yml` | Tag push or manual dispatch | Creates changelog, publishes release notes, pushes production images |
 
@@ -24,7 +24,7 @@ Operational runbook for releasing, deploying, and validating the IPPAN network. 
 
 - Every workflow above must succeed for the same commit before production deployments are approved.
 - Release promotion requires a successful CI run on the tagged commit and completion of the applicable deploy workflow.
-- Security (`security.yml`) and governance (`metaagent-governance.yml`) workflows run in parallel; any failure blocks release until resolved.
+- Security (`security-suite.yml`) and governance (`metaagent-governance.yml`) workflows run in parallel; any failure blocks release until resolved.
 
 ## Deployment Promotion Flow
 

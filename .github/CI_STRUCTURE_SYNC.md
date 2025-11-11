@@ -70,25 +70,22 @@ Implemented consistent caching across all Rust workflows:
 ```
 .github/workflows/
 ├── ai-determinism.yml       # AI reproducibility tests
-├── ai-service.yml           # AI service CI/CD (NEW)
-├── android-ci.yml           # Android wallet CI (UPDATED)
-├── android-wallet-release.yml
+├── ai-service.yml           # AI service CI/CD
 ├── auto-pr-cleanup.yml
 ├── build.yml                # Docker image builds
 ├── check-nodes.yml
-├── ci.yml                   # Main Rust checks
-├── codeql.yml              # Security scanning
+├── ci.yml                   # Main Rust & Node CI gate
 ├── dependabot.yml
-├── deploy-fix.yml
 ├── deploy-ippan-full-stack.yml
 ├── deploy.yml
 ├── dlc-consensus.yml        # DLC consensus validation
-├── metaagent-governance.yml # Agent orchestration
-├── prod-deploy.yml
+├── governance.yml
+├── ippan-ci-diagnostics.yml # Manual diagnostics suite
+├── mobile.yml               # Android wallet CI
 ├── release.yml
-├── security.yml             # Dependency & vuln scanning
-├── test.yml                 # Test suite
-└── unified-ui.yml           # Unified UI CI (NEW)
+├── security-suite.yml       # Dependency & vuln scanning
+├── test-suite.yml           # Nightly & comprehensive tests
+└── unified-ui.yml           # Unified UI CI
 ```
 
 ## Code Structure Alignment
@@ -125,7 +122,7 @@ All crates are now properly covered by CI:
 - ✅ `crates/validator_resolution` - Tested in `ci.yml`
 
 **Security & Wallet**:
-- ✅ `crates/security` - Tested in `ci.yml` + `security.yml`
+- ✅ `crates/security` - Tested in `ci.yml` + `security-suite.yml`
 - ✅ `crates/wallet` - Tested in `ci.yml`
 
 **DLC Consensus**:
@@ -141,7 +138,7 @@ All crates are now properly covered by CI:
 - ✅ `apps/unified-ui` - Tested in `unified-ui.yml` (NEW)
 
 **Mobile Apps**:
-- ✅ `apps/mobile/android-wallet` - Tested in `android-ci.yml`
+- ✅ `apps/mobile/android-wallet` - Tested in `mobile.yml`
 
 ## Path-Based Triggers
 
@@ -164,12 +161,12 @@ This prevents unnecessary CI runs and improves performance.
 
 | Component | Unit Tests | Integration Tests | E2E Tests | Security Scan |
 |-----------|------------|-------------------|-----------|---------------|
-| Rust Core | ✅ ci.yml | ✅ test.yml | ✅ test.yml | ✅ security.yml |
+| Rust Core | ✅ ci.yml | ✅ test-suite.yml | ✅ test-suite.yml | ✅ security-suite.yml |
 | AI Crates | ✅ ai-service.yml | ✅ ai-determinism.yml | - | ✅ ai-service.yml |
 | DLC Consensus | ✅ dlc-consensus.yml | ✅ dlc-consensus.yml | - | - |
-| Gateway | ✅ ci.yml | ✅ test.yml | - | ✅ security.yml |
+| Gateway | ✅ ci.yml | ✅ test-suite.yml | - | ✅ security-suite.yml |
 | Unified UI | ✅ unified-ui.yml | - | - | ✅ unified-ui.yml |
-| Android | ✅ android-ci.yml | - | - | ✅ android-ci.yml |
+| Android | ✅ mobile.yml | - | - | ✅ mobile.yml |
 
 ## Key Improvements
 

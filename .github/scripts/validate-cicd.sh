@@ -6,13 +6,15 @@ echo "🔍 Validating CI/CD Pipeline Configuration..."
 # Check if all required workflows exist
 REQUIRED_WORKFLOWS=(
   "ci.yml"
-  "test.yml"
+  "test-suite.yml"
   "build.yml"
   "security-suite.yml"
+  "ai-determinism.yml"
+  "ai-service.yml"
+  "unified-ui.yml"
+  "mobile.yml"
   "release.yml"
   "check-nodes.yml"
-  "prod-deploy.yml"
-  "deploy-fix.yml"
   "dependabot.yml"
 )
 

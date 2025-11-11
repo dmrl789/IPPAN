@@ -408,6 +408,116 @@ async fn test_reputation_good_standing() {
     assert!(!reputation.can_participate("val2"));
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_long_run_consensus_simulation_stability() {
+    const TOTAL_ROUNDS: u64 = 256;
+    const VALIDATOR_COUNT: usize = 32;
+
+    init_dlc();
+
+    let mut config = DlcConfig::default();
+    config.validators_per_round = 11;
+    config.unstaking_lock_rounds = 256;
+    config.min_reputation = 2500;
+
+    let validators_per_round = config.validators_per_round;
+    let mut consensus = DlcConsensus::new(config);
+
+    for i in 0..VALIDATOR_COUNT {
+        let uptime = 0.94 + ((i % 7) as f64) * 0.005;
+        let latency = 0.01 + ((i % 5) as f64) * 0.002;
+        let honesty = 0.92 + ((i % 9) as f64) * 0.006;
+        let metrics = ValidatorMetrics::new(
+            uptime.min(0.999),
+            latency,
+            honesty.min(0.999),
+            50 + (i as u64 * 3),
+            150 + (i as u64 * 5),
+            Amount::from_micro_ipn(5_000_000 + (i as u64 * 125_000)),
+            200 + i as u64,
+        );
+
+        let stake = Amount::from_ipn(10 + (i as u64 % 5));
+        consensus
+            .register_validator(format!("sim-validator-{i:02}"), stake, metrics)
+            .expect("validator registration succeeds");
+    }
+
+    let mut total_blocks: u64 = 0;
+    let mut total_emission: u128 = 0;
+    let mut reward_history = Vec::with_capacity(TOTAL_ROUNDS as usize);
+
+    for round in 1..=TOTAL_ROUNDS {
+        // Feed the DAG with a new block proposal before processing the round
+        let parent_ids = consensus
+            .dag
+            .get_tips()
+            .into_iter()
+            .map(|block| block.id.clone())
+            .collect();
+        let proposer = format!("sim-validator-{:02}", (round as usize % VALIDATOR_COUNT));
+        let mut block = Block::new(
+            parent_ids,
+            HashTimer::for_round(round),
+            vec![round as u8],
+            proposer,
+        );
+        block.sign(vec![1u8; 64]);
+        consensus
+            .dag
+            .insert(block)
+            .expect("pending block should insert");
+
+        let result = consensus
+            .process_round()
+            .await
+            .unwrap_or_else(|e| panic!("round {round} failed: {e}"));
+
+        assert_eq!(result.round, round);
+        total_blocks += result.blocks_processed as u64;
+        total_emission += (result.block_reward as u128) * (result.blocks_processed as u128);
+        reward_history.push(result.block_reward);
+
+        if round % 32 == 0 {
+            let stats = consensus.stats();
+            assert_eq!(stats.current_round, round);
+            assert!(
+                stats.emission_stats.current_supply <= emission::SUPPLY_CAP,
+                "supply should respect cap"
+            );
+            assert!(
+                stats.reputation_stats.active_validators >= validators_per_round,
+                "enough validators remain active"
+            );
+            assert!(
+                stats.reward_stats.pending_validator_count <= VALIDATOR_COUNT,
+                "reward tracker should not grow unbounded"
+            );
+        }
+    }
+
+    assert!(total_blocks > 0, "simulation must produce blocks");
+
+    let stats = consensus.stats();
+    assert_eq!(stats.current_round, TOTAL_ROUNDS);
+    assert!(
+        stats.reputation_stats.total_validators >= VALIDATOR_COUNT,
+        "all validators remain registered"
+    );
+    assert_eq!(
+        stats.emission_stats.emitted_supply as u128, total_emission,
+        "emission accounting must match expected totals"
+    );
+
+    if let Some((&first_reward, _)) = reward_history.split_first() {
+        let last_reward = *reward_history.last().unwrap();
+        assert!(
+            last_reward <= first_reward,
+            "block reward should not increase over time"
+        );
+    }
+}
+
 #[tokio::test]
 async fn test_emission_inflation_reduction() {
     let mut emission = EmissionSchedule::default();

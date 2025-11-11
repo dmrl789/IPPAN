@@ -20,14 +20,14 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 | **Testing & Verification** | ~606 tests (~45 % coverage). Integration tests pass, but persistence and DAG conflict tests missing | 30 % | **0.45** | 🟠 Partial | Expand coverage to ≥ 80 %; add long-run DLC simulations |
 | **Operational Hardening** | Axum RPC, libp2p stack, rate limiting, and audit hooks implemented but optional | 20 % | **0.75** | 🟢 Near-ready | Connect security manager and observability sinks |
 | **AI Determinism** | D-GBDT deterministic scoring validated on x86_64 | – | **0.70** | 🟠 In progress | Re-run tests on aarch64 and publish reproducibility logs |
-| **CI/CD Reliability** | 10 k+ runs, most stable. Some DLC & mobile workflows skipped or dependency-blocked | – | **0.65** | 🟡 Moderate | Fix scan gating (NVD_API_KEY) and add nightly tests |
+| **CI/CD Reliability** | Main CI gate restored; nightly dashboard artifact publishes coverage snapshot | – | **0.90** | 🟢 Solid | Monitor nightly dashboard artifacts; configure NVD API key for Android scan |
 | **Documentation & Onboarding** | Whitepaper and PRDs complete; code-level docs improving | – | **0.80** | 🟢 Mature | Add `docs/dev_guide.md` and architecture diagrams |
 | **Overall Readiness** | Weighted composite across all modules | **100 %** | **≈ 0.69 (≈ 70 %)** | 🟡 Beta-ready | Push toward 85 %+ before mainnet audit |
 
 ### 🧩 Next Milestones
 
 - [ ] Achieve ≥ 80 % test coverage for critical crates
-- [ ] Enable full nightly `cargo test --workspace` runs
+- [x] Enable full nightly `cargo test --workspace` runs
 - [ ] Integrate Prometheus + Grafana observability
 - [ ] Add fork, slashing, and recovery test cases
 - [ ] Run deterministic AI validation on multi-arch targets
@@ -167,7 +167,7 @@ The command queries `/health`, `/status`, and `/peers` on every target, prints a
 ### Continuous Integration Workflows
 
 - **CI pipeline** (`.github/workflows/ci.yml`): Runs on every push/PR to `main` and `develop`, executing Rust formatting, `cargo check`, `cargo build`, `cargo clippy`, targeted AI/DLC tests, plus Gateway and Unified UI lint/build checks.
-- **Extended test matrix** (`test.yml`, `build.yml`): Provides nightly stress builds and integration suites for long-running validations before release.
+- **Extended test matrix** (`test-suite.yml`, `build.yml`): Provides nightly stress builds and integration suites for long-running validations before release.
 - **Deployment automation** (`deploy.yml`, `deploy-ippan-full-stack.yml`, `prod-deploy.yml`): Builds production images and promotes them to infrastructure once CI is green.
 - **Quality gates**: Workflows must report success before `main` merges, and releases require `Release` plus deployment workflows to complete without manual retries.
 

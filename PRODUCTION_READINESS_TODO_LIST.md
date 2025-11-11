@@ -542,8 +542,8 @@ cargo tarpaulin --workspace --out Html --output-dir coverage/
 - metaagent-governance.yml
 - prod-deploy.yml
 - release.yml
-- security.yml
-- test.yml
+- security-suite.yml
+- test-suite.yml
 
 ---
 
