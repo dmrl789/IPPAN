@@ -24,6 +24,17 @@ fn fp(value: f64) -> Fixed {
     Fixed::from_f64(value)
 }
 
+type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
+
+fn telemetry_entry(time_us: i64, latency_ms: f64, uptime_pct: f64, entropy: f64) -> (i64, Fixed, Fixed, Fixed) {
+    (
+        time_us,
+        fp(latency_ms),
+        fp(uptime_pct),
+        fp(entropy),
+    )
+}
+
 const EXPECTED_CANONICAL_TEST_MODEL_JSON: &str = r#"{
   "learning_rate": 100000,
   "trees": [
@@ -107,10 +118,19 @@ fn test_deterministic_prediction_consistency() {
 /// Test IPPAN Time normalization
 #[test]
 fn test_ippan_time_normalization() {
-    let mut telemetry = HashMap::new();
-    telemetry.insert("node1".to_string(), (100_000, fp(1.2), fp(99.9), fp(0.42)));
-    telemetry.insert("node2".to_string(), (100_080, fp(0.9), fp(99.8), fp(0.38)));
-    telemetry.insert("node3".to_string(), (99_950, fp(2.1), fp(98.9), fp(0.45)));
+    let mut telemetry: TelemetryMap = HashMap::new();
+    telemetry.insert(
+        "node1".to_string(),
+        telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+    );
+    telemetry.insert(
+        "node2".to_string(),
+        telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+    );
+    telemetry.insert(
+        "node3".to_string(),
+        telemetry_entry(99_950_i64, 2.1, 98.9, 0.45),
+    );
 
     let ippan_time_median = 100_050;
     let features = normalize_features(&telemetry, ippan_time_median);
@@ -134,21 +154,21 @@ fn test_ippan_time_normalization() {
 /// Normalization should depend on relative IPPAN time only
 #[test]
 fn test_normalize_features_clock_offset_invariance() {
-    let telemetry_a = HashMap::from([
-        ("nodeA".into(), (100_000, fp(1.2), fp(99.9), fp(0.42))),
-        ("nodeB".into(), (100_080, fp(0.9), fp(99.8), fp(0.38))),
-        ("nodeC".into(), (100_030, fp(2.1), fp(98.9), fp(0.45))),
+    let telemetry_a: TelemetryMap = HashMap::from([
+        ("nodeA".into(), telemetry_entry(100_000_i64, 1.2, 99.9, 0.42)),
+        ("nodeB".into(), telemetry_entry(100_080_i64, 0.9, 99.8, 0.38)),
+        ("nodeC".into(), telemetry_entry(100_030_i64, 2.1, 98.9, 0.45)),
     ]);
-    let telemetry_b = HashMap::from([
-        ("nodeA".into(), (105_000, fp(1.2), fp(99.9), fp(0.42))),
-        ("nodeB".into(), (105_080, fp(0.9), fp(99.8), fp(0.38))),
-        ("nodeC".into(), (105_030, fp(2.1), fp(98.9), fp(0.45))),
+    let telemetry_b: TelemetryMap = HashMap::from([
+        ("nodeA".into(), telemetry_entry(105_000_i64, 1.2, 99.9, 0.42)),
+        ("nodeB".into(), telemetry_entry(105_080_i64, 0.9, 99.8, 0.38)),
+        ("nodeC".into(), telemetry_entry(105_030_i64, 2.1, 98.9, 0.45)),
     ]);
 
     let features_a = normalize_features(&telemetry_a, 100_050);
     let features_b = normalize_features(&telemetry_b, 105_050);
 
-    let map = |features: Vec<ValidatorFeatures>| -> HashMap<String, (i64, Fixed, Fixed, Fixed)> {
+    let map = |features: Vec<ValidatorFeatures>| -> TelemetryMap {
         features
             .into_iter()
             .map(|f| {
@@ -167,15 +187,15 @@ fn test_normalize_features_clock_offset_invariance() {
 #[test]
 fn test_validator_scoring_scenarios() {
     let model = create_test_model();
-    let mut telemetry_good = HashMap::new();
+    let mut telemetry_good: TelemetryMap = HashMap::new();
     telemetry_good.insert(
         "good_node".to_string(),
-        (100_000, fp(0.5), fp(99.9), fp(0.8)),
+        telemetry_entry(100_000_i64, 0.5, 99.9, 0.8),
     );
-    let mut telemetry_poor = HashMap::new();
+    let mut telemetry_poor: TelemetryMap = HashMap::new();
     telemetry_poor.insert(
         "poor_node".to_string(),
-        (100_000, fp(5.0), fp(85.0), fp(0.2)),
+        telemetry_entry(100_000_i64, 5.0, 85.0, 0.2),
     );
 
     let ippan_time_median = 100_000;

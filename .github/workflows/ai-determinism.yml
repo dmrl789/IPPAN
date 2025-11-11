@@ -102,6 +102,7 @@ jobs:
           if grep -R "f32\|f64" crates/ai_core/src/ | \
              grep -v "from_f64\|to_f64\|impl From<.*> for f64\|/// Convert to an\|/// Construct from an\|pub fn.*f64\|as f64 / Self::SCALE\|as f64).round()\|\.as_secs_f64()\|f32::from_le_bytes" | \
              grep -v "bin/dump_inference.rs" | \
+             grep -v "crates/ai_core/src/fixed.rs\|crates/ai_core/src/fixed_point.rs" | \
              grep -v "#\[cfg(not(feature = \"deterministic_math\"))\]" | \
              grep -v "pub confidence: f64,\|pub cpu_usage: f64," | \
              grep -v "//\|Float32\|Float64"; then

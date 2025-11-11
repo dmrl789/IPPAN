@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{collections::HashMap, fs, path::Path};
 use tracing::{info, warn};
-
 /// Normalized validator telemetry (anchored to IPPAN Time)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorFeatures {
@@ -199,20 +198,23 @@ impl DeterministicGBDT {
 // Feature normalization & scoring
 // ---------------------------------------------------------------------
 
-pub fn normalize_features(
-    telemetry: &HashMap<String, (i64, Fixed, Fixed, Fixed)>,
+pub fn normalize_features<T>(
+    telemetry: &HashMap<String, (i64, T, T, T)>,
     ippan_time_median: i64,
-) -> Vec<ValidatorFeatures> {
+) -> Vec<ValidatorFeatures>
+where
+    T: Copy + Into<Fixed>,
+{
     telemetry
         .iter()
-        .map(|(node_id, (local_time_us, latency, uptime, entropy))| {
+        .map(|(node_id, &(local_time_us, latency, uptime, entropy))| {
             let delta_time_us = local_time_us - ippan_time_median;
             ValidatorFeatures {
                 node_id: node_id.clone(),
                 delta_time_us,
-                latency_ms: *latency,
-                uptime_pct: *uptime,
-                peer_entropy: *entropy,
+                latency_ms: latency.into(),
+                uptime_pct: uptime.into(),
+                peer_entropy: entropy.into(),
                 cpu_usage: None,
                 memory_usage: None,
                 network_reliability: None,

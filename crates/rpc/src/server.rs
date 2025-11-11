@@ -1565,10 +1565,7 @@ mod tests {
             .expect("account");
         state.storage.store_transaction(tx.clone()).expect("tx1");
         let tx2 = sample_transaction([6u8; 32], account.address, 2);
-        state
-            .storage
-            .store_transaction(tx2.clone())
-            .expect("tx2");
+        state.storage.store_transaction(tx2.clone()).expect("tx2");
 
         let ok = handle_get_account(
             State(state.clone()),
@@ -1735,7 +1732,11 @@ mod tests {
         let rejected = handle_submit_tx(
             State(fail_state),
             ConnectInfo(addr),
-            Json(sample_transaction([7u8; 32], sample_public_key([8u8; 32]), 12)),
+            Json(sample_transaction(
+                [7u8; 32],
+                sample_public_key([8u8; 32]),
+                12,
+            )),
         )
         .await;
         assert_eq!(rejected.0, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1816,7 +1817,7 @@ mod tests {
             message_timeout: Duration::from_millis(5),
             ..P2PConfig::default()
         };
-        let mut raw_network =
+        let raw_network =
             HttpP2PNetwork::new(config, "http://127.0.0.1:9700".into()).expect("network");
         let mut events = raw_network.take_incoming_events().expect("event receiver");
         let network = Arc::new(raw_network);

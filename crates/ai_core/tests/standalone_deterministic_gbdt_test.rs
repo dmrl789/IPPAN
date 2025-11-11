@@ -8,6 +8,17 @@ fn fp(value: f64) -> Fixed {
     Fixed::from_f64(value)
 }
 
+type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
+
+fn telemetry_entry(time_us: i64, latency_ms: f64, uptime_pct: f64, entropy: f64) -> (i64, Fixed, Fixed, Fixed) {
+    (
+        time_us,
+        fp(latency_ms),
+        fp(uptime_pct),
+        fp(entropy),
+    )
+}
+
 #[test]
 fn test_deterministic_gbdt_basic_functionality() {
     let model = deterministic_gbdt::create_test_model();
@@ -27,11 +38,17 @@ fn test_deterministic_gbdt_basic_functionality() {
 
 #[test]
 fn test_ippan_time_normalization() {
-    let mut telemetry = HashMap::new();
-    telemetry.insert("node1".to_string(), (100_000, fp(1.2), fp(99.9), fp(0.42)));
-    telemetry.insert("node2".to_string(), (100_080, fp(0.9), fp(99.8), fp(0.38)));
+    let mut telemetry: TelemetryMap = HashMap::new();
+    telemetry.insert(
+        "node1".to_string(),
+        telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+    );
+    telemetry.insert(
+        "node2".to_string(),
+        telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+    );
 
-    let ippan_time_median = 100_050;
+    let ippan_time_median = 100_050_i64;
     let features = deterministic_gbdt::normalize_features(&telemetry, ippan_time_median);
 
     assert_eq!(features.len(), 2);
@@ -47,13 +64,13 @@ fn test_ippan_time_normalization() {
 #[test]
 fn test_validator_scoring() {
     let model = deterministic_gbdt::create_test_model();
-    let mut telemetry = HashMap::new();
+    let mut telemetry: TelemetryMap = HashMap::new();
     telemetry.insert(
         "test_node".to_string(),
-        (100_000, fp(1.0), fp(99.0), fp(0.5)),
+        telemetry_entry(100_000_i64, 1.0, 99.0, 0.5),
     );
 
-    let ippan_time_median = 100_000;
+    let ippan_time_median = 100_000_i64;
     let round_hash = "test_round";
 
     let features = deterministic_gbdt::normalize_features(&telemetry, ippan_time_median);
@@ -91,13 +108,13 @@ fn test_cross_platform_determinism() {
 
 #[test]
 fn test_usage_example() {
-    let telemetry: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
-        ("nodeA".into(), (100_000, fp(1.2), fp(99.9), fp(0.42))),
-        ("nodeB".into(), (100_080, fp(0.9), fp(99.8), fp(0.38))),
-        ("nodeC".into(), (100_030, fp(2.1), fp(98.9), fp(0.45))),
+    let telemetry: TelemetryMap = HashMap::from([
+        ("nodeA".into(), telemetry_entry(100_000_i64, 1.2, 99.9, 0.42)),
+        ("nodeB".into(), telemetry_entry(100_080_i64, 0.9, 99.8, 0.38)),
+        ("nodeC".into(), telemetry_entry(100_030_i64, 2.1, 98.9, 0.45)),
     ]);
 
-    let ippan_time_median = 100_050;
+    let ippan_time_median = 100_050_i64;
     let round_hash_timer = "4b2e18f2fa7c...";
 
     let model = deterministic_gbdt::create_test_model();
