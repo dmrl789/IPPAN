@@ -238,7 +238,7 @@ jobs:
           envs: IMAGE_TAG,GITHUB_REPOSITORY
           timeout: 300s
           script: |
-          set -euo pipefail
+            set -euo pipefail
 
             BRANCH=main
             APP_DIR=/opt/ippan
@@ -304,7 +304,7 @@ jobs:
           envs: IMAGE_TAG,GITHUB_REPOSITORY
           timeout: 300s
           script: |
-          set -euo pipefail
+            set -euo pipefail
 
             BRANCH=main
             APP_DIR=/opt/ippan
@@ -435,7 +435,7 @@ jobs:
           fingerprint: ${{ env.PRIMARY_FINGERPRINT }}
           timeout: 300s
           script: |
-          set -euo pipefail
+            set -euo pipefail
 
             echo "🔧 Repairing primary node services..."
 
@@ -480,7 +480,7 @@ jobs:
           fingerprint: ${{ env.SECONDARY_FINGERPRINT }}
           timeout: 300s
           script: |
-          set -euo pipefail
+            set -euo pipefail
 
             echo "🔧 Repairing secondary node..."
 
