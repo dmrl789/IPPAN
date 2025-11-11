@@ -113,6 +113,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 log = "0.4"
 
+  # --------------------------
+  # Observability
+  # --------------------------
+  metrics = "0.23"
+  metrics-exporter-prometheus = "0.13"
+
 # --------------------------
 # Cryptography
 # --------------------------
