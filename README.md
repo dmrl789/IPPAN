@@ -215,6 +215,100 @@ Environment variables:
 - `IPPAN_NETWORK`: Network type (mainnet/testnet)
 - `IPPAN_DATA_DIR`: Data directory path
 
+## 🔐 IPPAN Secrets Configuration Guide
+
+### 📘 Overview
+
+IPPAN’s GitHub Actions workflows and runtime environments depend on several **secrets** and **environment variables**. None of them are stored in the repository — only placeholders exist in `.env.example` files. Each developer or CI environment must set them explicitly.
+
+### 🧩 Required Secrets
+
+| Secret name                                         | Used by                            | Description                                         | Example value                          | Location                              |
+| --------------------------------------------------- | ---------------------------------- | --------------------------------------------------- | -------------------------------------- | ------------------------------------- |
+| **`LLM_API_KEY`** *(or `IPPAN_SECRET_LLM_API_KEY`)* | `ai_service`, AI determinism tests | API key for LLM inference (e.g., OpenAI, Anthropic) | `sk-xxxx`                              | GitHub → Settings → Secrets → Actions |
+| **`PROMETHEUS_ENDPOINT`**                           | Node telemetry exporter            | URL endpoint for Prometheus metrics                 | `https://metrics.yourdomain.net`       | `.env` or K8s secret                  |
+| **`JSON_EXPORTER_ENDPOINT`**                        | AI & consensus telemetry           | Endpoint for JSON metrics push                      | `https://exporter.yourdomain.net/json` | `.env` or K8s config                  |
+| **`GHCR_PAT`**                                      | Docker image build/push            | Personal access token for GitHub Container Registry | `ghp_XXXX`                             | GitHub Actions secret                 |
+| **`DOCKERHUB_USERNAME`**                            | Docker build jobs                  | Docker Hub username                                 | `ippanbuildbot`                        | GitHub Actions secret                 |
+| **`DOCKERHUB_TOKEN`**                               | Docker build jobs                  | Docker Hub access token                             | `ghp_XXXX`                             | GitHub Actions secret                 |
+| **`NVD_API_KEY`**                                   | Security / dependency scan         | API key for CVE database                            | `<uuid>`                               | GitHub Actions secret                 |
+
+### 🪜 Steps to Add or Update Secrets in GitHub
+
+1. Go to your repo → **Settings → Secrets and variables → Actions**
+2. Click **“New repository secret”**
+3. Add each secret with its value
+4. Repeat for all in the table above
+5. Rerun workflows from the **Actions** tab once added
+
+### ⚙️ Local Development (Optional)
+
+Create a file named `.env` at the project root (not committed to git):
+
+```bash
+LLM_API_KEY=sk-your-real-key
+PROMETHEUS_ENDPOINT=http://localhost:9090/metrics
+JSON_EXPORTER_ENDPOINT=http://localhost:9091/json
+```
+
+Use it for local runs (`docker-compose`, `cargo run`, etc.). **Never push this file.**
+
+## 🤖 Cursor Instructions for Secret Validation
+
+You can have **Cursor Web** automatically verify and manage secrets with the following prompts.
+
+### 🔍 1. Check what secrets are referenced
+
+Paste in Cursor chat:
+
+```
+@cursor
+Scan all .github/workflows/*.yml files.
+List every ${{ secrets.* }} reference.
+Show which ones are documented in .env.example files and which are missing.
+```
+
+### 🧠 2. Auto-add safety guards
+
+If a secret is optional or not yet configured:
+
+```
+@cursor
+For any step using a secret that may be missing, wrap the step in:
+if: env.SECRET_NAME != ''
+so the job is skipped safely if the secret isn’t set.
+```
+
+### 🧰 3. Update documentation
+
+```
+@cursor
+Update README.md’s “IPPAN Secrets Configuration Guide” section to include any new secrets found in workflows.
+```
+
+### 🧪 4. Validate existence (read-only)
+
+```
+@cursor
+Check the repository settings (Settings → Secrets → Actions) to confirm if these secrets exist, and list missing ones.
+```
+
+*(Cursor will output the list, but won’t reveal secret values.)*
+
+### ✅ Commit Message Template
+
+Once Cursor finishes:
+
+```
+git add README.md .github/workflows/
+git commit -m "docs(secrets): update IPPAN secrets setup and CI guard conditions"
+git push
+```
+
+---
+
+Would you like me to extend this with a **Cursor automation snippet** that periodically re-checks secret references in workflows (e.g., weekly GitHub Action)?
+
 ## 📈 Performance
 
 - **Time Precision**: Microsecond accuracy
