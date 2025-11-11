@@ -95,24 +95,23 @@ jobs:
         run: |
           echo "MetaAgent initialized at $(date -u)" >> $META_AGENT_LOG_DIR/assignments.log
           if [ ! -f "$META_AGENT_LOG_DIR/agent-registry.json" ]; then
-            cat > $META_AGENT_LOG_DIR/agent-registry.json <<'EOF'
-{
-  "agents": {
-    "codex": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "testsprite": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "security-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "infra-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "release-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "docs-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "ui-coach": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "gw-sre": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "legal": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null}
-  },
-  "locks": {},
-  "conflicts": [],
-  "last_quota_reset": "$(date -u +%Y-%m-%d)"
-}
-EOF
+            RESET_DATE=$(date -u +%Y-%m-%d)
+            echo '{
+              "agents": {
+                "codex": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "testsprite": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "security-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "infra-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "release-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "docs-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "ui-coach": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "gw-sre": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "legal": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null}
+              },
+              "locks": {},
+              "conflicts": [],
+              "last_quota_reset": ""
+            }' | jq --arg date "$RESET_DATE" '.last_quota_reset = $date' > $META_AGENT_LOG_DIR/agent-registry.json
           fi
 
       # ============================================================
@@ -174,11 +173,11 @@ EOF
       # ============================================================
       # 3. MERGE VALIDATION
       # ============================================================
-        - name: ✅ Approve Merge if Checks Pass
-          if: github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened' || github.event.action == 'ready_for_review')
-          env:
-            GITHUB_REPOSITORY: ${{ github.repository }}
-          run: |
+      - name: ✅ Approve Merge if Checks Pass
+        if: github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened' || github.event.action == 'ready_for_review')
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
             pr_number=${{ github.event.pull_request.number }}
             sleep 30
             owner="${GITHUB_REPOSITORY%%/*}"

@@ -72,11 +72,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-    dependency-scan:
-      name: Dependency Vulnerability Scan
-      if: github.event_name == 'pull_request'
-      runs-on: ubuntu-latest
-      steps:
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
         - name: Checkout
           uses: actions/checkout@v4
           with:
