@@ -118,7 +118,6 @@ fn test_deterministic_prediction_consistency() {
 /// Test IPPAN Time normalization
 #[test]
 fn test_ippan_time_normalization() {
-<<<<<<< HEAD
     let mut telemetry: TelemetryMap = HashMap::new();
     telemetry.insert(
         "node1".to_string(),
@@ -132,12 +131,6 @@ fn test_ippan_time_normalization() {
         "node3".to_string(),
         telemetry_entry(99_950_i64, 2.1, 98.9, 0.45),
     );
-=======
-    let mut telemetry = HashMap::new();
-    telemetry.insert("node1".to_string(), (100_000, fp(1.2), fp(99.9), fp(0.42)));
-    telemetry.insert("node2".to_string(), (100_080, fp(0.9), fp(99.8), fp(0.38)));
-    telemetry.insert("node3".to_string(), (99_950, fp(2.1), fp(98.9), fp(0.45)));
->>>>>>> 695f092e (Fix deterministic GBDT tests and normalization)
 
     let ippan_time_median = 100_050;
     let features = normalize_features(&telemetry, ippan_time_median);
@@ -161,7 +154,6 @@ fn test_ippan_time_normalization() {
 /// Normalization should depend on relative IPPAN time only
 #[test]
 fn test_normalize_features_clock_offset_invariance() {
-<<<<<<< HEAD
     let telemetry_a: TelemetryMap = HashMap::from([
         ("nodeA".into(), telemetry_entry(100_000_i64, 1.2, 99.9, 0.42)),
         ("nodeB".into(), telemetry_entry(100_080_i64, 0.9, 99.8, 0.38)),
@@ -171,17 +163,6 @@ fn test_normalize_features_clock_offset_invariance() {
         ("nodeA".into(), telemetry_entry(105_000_i64, 1.2, 99.9, 0.42)),
         ("nodeB".into(), telemetry_entry(105_080_i64, 0.9, 99.8, 0.38)),
         ("nodeC".into(), telemetry_entry(105_030_i64, 2.1, 98.9, 0.45)),
-=======
-    let telemetry_a = HashMap::from([
-        ("nodeA".into(), (100_000, fp(1.2), fp(99.9), fp(0.42))),
-        ("nodeB".into(), (100_080, fp(0.9), fp(99.8), fp(0.38))),
-        ("nodeC".into(), (100_030, fp(2.1), fp(98.9), fp(0.45))),
-    ]);
-    let telemetry_b = HashMap::from([
-        ("nodeA".into(), (105_000, fp(1.2), fp(99.9), fp(0.42))),
-        ("nodeB".into(), (105_080, fp(0.9), fp(99.8), fp(0.38))),
-        ("nodeC".into(), (105_030, fp(2.1), fp(98.9), fp(0.45))),
->>>>>>> 695f092e (Fix deterministic GBDT tests and normalization)
     ]);
 
     let features_a = normalize_features(&telemetry_a, 100_050);
@@ -206,7 +187,6 @@ fn test_normalize_features_clock_offset_invariance() {
 #[test]
 fn test_validator_scoring_scenarios() {
     let model = create_test_model();
-<<<<<<< HEAD
     let mut telemetry_good: TelemetryMap = HashMap::new();
     telemetry_good.insert(
         "good_node".to_string(),
@@ -216,17 +196,6 @@ fn test_validator_scoring_scenarios() {
     telemetry_poor.insert(
         "poor_node".to_string(),
         telemetry_entry(100_000_i64, 5.0, 85.0, 0.2),
-=======
-    let mut telemetry_good = HashMap::new();
-    telemetry_good.insert(
-        "good_node".to_string(),
-        (100_000, fp(0.5), fp(99.9), fp(0.8)),
-    );
-    let mut telemetry_poor = HashMap::new();
-    telemetry_poor.insert(
-        "poor_node".to_string(),
-        (100_000, fp(5.0), fp(85.0), fp(0.2)),
->>>>>>> 695f092e (Fix deterministic GBDT tests and normalization)
     );
 
     let ippan_time_median = 100_000;
