@@ -1,0 +1,8 @@
+Category,Weight,Score,Status,Description,Key Actions
+Implementation Completeness,0.50,0.80,Green,Core crates fully implemented,Finalize fork resolution & treasury logic
+Testing & Verification,0.30,0.45,Orange,606 tests (~45% coverage),Expand to ≥80% coverage and add DLC simulations
+Operational Hardening,0.20,0.75,Green,Security/observability optional,Connect audit and monitoring sinks
+AI Determinism,-,0.70,Orange,Deterministic scoring validated on x86_64,Validate on aarch64 and log results
+CI/CD Reliability,-,0.65,Yellow,10k+ runs, some skipped,Fix dependency scan gating and add nightly tests
+Documentation & Onboarding,-,0.80,Green,Whitepaper & PRDs complete,Add dev guide and diagrams
+Overall Readiness,1.00,0.69,Yellow,Beta-ready,Push to 85% before mainnet audit
