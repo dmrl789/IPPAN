@@ -14,14 +14,11 @@ import kotlin.test.assertTrue
 @RunWith(JUnit4::class)
 class CryptoUtilsTest {
     
-    companion object {
-        @JvmStatic
-        @BeforeClass
-        fun setupClass() {
-            // Register BouncyCastle provider for cryptographic operations
-            if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
-                Security.addProvider(BouncyCastleProvider())
-            }
+    init {
+        // Register BouncyCastle provider for cryptographic operations
+        // Using init block instead of @BeforeClass to ensure it runs for JUnit4
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+            Security.addProvider(BouncyCastleProvider())
         }
     }
     
