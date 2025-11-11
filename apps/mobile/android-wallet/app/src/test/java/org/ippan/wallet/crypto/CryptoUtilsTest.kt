@@ -1,8 +1,11 @@
 package org.ippan.wallet.crypto
 
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
+import java.security.Security
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -10,6 +13,17 @@ import kotlin.test.assertTrue
 
 @RunWith(JUnit4::class)
 class CryptoUtilsTest {
+    
+    companion object {
+        @JvmStatic
+        @BeforeClass
+        fun setupClass() {
+            // Register BouncyCastle provider for cryptographic operations
+            if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+                Security.addProvider(BouncyCastleProvider())
+            }
+        }
+    }
     
     @Test
     fun `generate key pair should create valid key pair`() {
