@@ -89,17 +89,17 @@ fn deterministic_prediction_same_features() {
 #[test]
 fn normalize_features_clock_offset_cancels_when_median_also_offset() {
     // Simulate two observers with +5000µs clock offset, both using IPPAN median also +5000µs
-    let telemetry_a: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("nodeA".into(), (100_000, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), (100_080, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), (100_030, 2.1, 98.9, 0.45)),
+    let telemetry_a: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
+        ("nodeA".into(), (100_000, fp(1.2), fp(99.9), fp(0.42))),
+        ("nodeB".into(), (100_080, fp(0.9), fp(99.8), fp(0.38))),
+        ("nodeC".into(), (100_030, fp(2.1), fp(98.9), fp(0.45))),
     ]);
     let median_a = 100_050_i64;
 
-    let telemetry_b: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("nodeA".into(), (105_000, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), (105_080, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), (105_030, 2.1, 98.9, 0.45)),
+    let telemetry_b: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
+        ("nodeA".into(), (105_000, fp(1.2), fp(99.9), fp(0.42))),
+        ("nodeB".into(), (105_080, fp(0.9), fp(99.8), fp(0.38))),
+        ("nodeC".into(), (105_030, fp(2.1), fp(98.9), fp(0.45))),
     ]);
     let median_b = 105_050_i64;
 
@@ -137,10 +137,10 @@ fn compute_scores_and_certificate_consistency() {
     let model_a = build_simple_model();
     let model_b = build_simple_model();
 
-    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("nodeA".into(), (100_000, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), (100_080, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), (100_030, 2.1, 98.9, 0.45)),
+    let telemetry: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
+        ("nodeA".into(), (100_000, fp(1.2), fp(99.9), fp(0.42))),
+        ("nodeB".into(), (100_080, fp(0.9), fp(99.8), fp(0.38))),
+        ("nodeC".into(), (100_030, fp(2.1), fp(98.9), fp(0.45))),
     ]);
     let median = 100_050_i64;
 
@@ -163,9 +163,9 @@ fn compute_scores_and_certificate_consistency() {
 fn cross_node_consensus_scores_identical() {
     // All nodes compute identical scores given same telemetry + HashTimer
     let model = build_simple_model();
-    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("val1".into(), (10_000_050, 1.2, 99.9, 0.95)),
-        ("val2".into(), (10_000_100, 2.5, 98.5, 0.85)),
+    let telemetry: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
+        ("val1".into(), (10_000_050, fp(1.2), fp(99.9), fp(0.95))),
+        ("val2".into(), (10_000_100, fp(2.5), fp(98.5), fp(0.85))),
     ]);
     let median = 10_000_000_i64;
     let round_ht = "round_42_hashtimer_abc123";
@@ -209,9 +209,9 @@ fn fixed_point_prediction_stable() {
 #[test]
 fn normalize_features_produces_expected_dimensions() {
     let median = 5_000_000;
-    let telemetry: HashMap<String, (i64, f64, f64, f64)> = HashMap::from([
-        ("validator1".into(), (5_000_100, 1.0, 99.5, 0.9)),
-        ("validator2".into(), (4_999_900, 2.5, 98.0, 0.7)),
+    let telemetry: HashMap<String, (i64, Fixed, Fixed, Fixed)> = HashMap::from([
+        ("validator1".into(), (5_000_100, fp(1.0), fp(99.5), fp(0.9))),
+        ("validator2".into(), (4_999_900, fp(2.5), fp(98.0), fp(0.7))),
     ]);
 
     let feats = normalize_features(&telemetry, median);

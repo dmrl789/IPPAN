@@ -6,71 +6,23 @@
 use crate::fixed::Fixed;
 use crate::serialization::canonical_json_string;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sha3::{Digest, Sha3_256};
 use std::{collections::HashMap, fs, path::Path};
 use tracing::{info, warn};
-
-fn deserialize_fixed<'de, D>(deserializer: D) -> Result<Fixed, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let value = Value::deserialize(deserializer)?;
-    value_to_fixed(&value).map_err(D::Error::custom)
-}
-
-fn deserialize_option_fixed<'de, D>(deserializer: D) -> Result<Option<Fixed>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let value = Option::<Value>::deserialize(deserializer)?;
-    match value {
-        Some(val) => value_to_fixed(&val).map(Some).map_err(D::Error::custom),
-        None => Ok(None),
-    }
-}
-
-fn value_to_fixed(value: &Value) -> Result<Fixed, String> {
-    match value {
-        Value::Number(num) => {
-            if let Some(int) = num.as_i64() {
-                Ok(Fixed::from_int(int))
-            } else if let Some(uint) = num.as_u64() {
-                if uint > i64::MAX as u64 {
-                    Err(format!("numeric value {num} exceeds i64 range"))
-                } else {
-                    Ok(Fixed::from_int(uint as i64))
-                }
-            } else {
-                Fixed::from_decimal_str(&num.to_string())
-                    .ok_or_else(|| format!("unable to parse decimal {num}"))
-            }
-        }
-        Value::String(s) => {
-            Fixed::from_decimal_str(s).ok_or_else(|| format!("unable to parse decimal string {s}"))
-        }
-        _ => Err(format!("expected number, found {value}")),
-    }
-}
 
 /// Normalized validator telemetry (anchored to IPPAN Time)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorFeatures {
     pub node_id: String,
     pub delta_time_us: i64, // deviation from IPPAN Time median (µs)
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub latency_ms: Fixed,
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub uptime_pct: Fixed,
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub peer_entropy: Fixed,
-    #[serde(default, deserialize_with = "deserialize_option_fixed")]
+    #[serde(default)]
     pub cpu_usage: Option<Fixed>,
-    #[serde(default, deserialize_with = "deserialize_option_fixed")]
+    #[serde(default)]
     pub memory_usage: Option<Fixed>,
-    #[serde(default, deserialize_with = "deserialize_option_fixed")]
+    #[serde(default)]
     pub network_reliability: Option<Fixed>,
 }
 
@@ -78,11 +30,10 @@ pub struct ValidatorFeatures {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DecisionNode {
     pub feature: usize,
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub threshold: Fixed,
     pub left: Option<usize>,
     pub right: Option<usize>,
-    #[serde(default, deserialize_with = "deserialize_option_fixed")]
+    #[serde(default)]
     pub value: Option<Fixed>,
 }
 
@@ -96,7 +47,6 @@ pub struct GBDTTree {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DeterministicGBDT {
     pub trees: Vec<GBDTTree>,
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub learning_rate: Fixed,
 }
 
@@ -300,7 +250,7 @@ pub fn compute_scores(
 // Test helpers
 // ---------------------------------------------------------------------
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "deterministic_math", feature = "enable-tests"))]
 impl DeterministicGBDT {
     /// Creates a deterministic test model for use in integration tests and examples.
     pub fn create_test_model() -> Self {
@@ -337,7 +287,7 @@ impl DeterministicGBDT {
     }
 }
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "deterministic_math", feature = "enable-tests"))]
 pub fn create_test_model() -> DeterministicGBDT {
     DeterministicGBDT::create_test_model()
 }

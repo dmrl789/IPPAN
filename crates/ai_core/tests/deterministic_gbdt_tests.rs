@@ -108,9 +108,9 @@ fn test_deterministic_prediction_consistency() {
 #[test]
 fn test_ippan_time_normalization() {
     let mut telemetry = HashMap::new();
-    telemetry.insert("node1".to_string(), (100_000, 1.2, 99.9, 0.42));
-    telemetry.insert("node2".to_string(), (100_080, 0.9, 99.8, 0.38));
-    telemetry.insert("node3".to_string(), (99_950, 2.1, 98.9, 0.45));
+    telemetry.insert("node1".to_string(), (100_000, fp(1.2), fp(99.9), fp(0.42)));
+    telemetry.insert("node2".to_string(), (100_080, fp(0.9), fp(99.8), fp(0.38)));
+    telemetry.insert("node3".to_string(), (99_950, fp(2.1), fp(98.9), fp(0.45)));
 
     let ippan_time_median = 100_050;
     let features = normalize_features(&telemetry, ippan_time_median);
@@ -135,14 +135,14 @@ fn test_ippan_time_normalization() {
 #[test]
 fn test_normalize_features_clock_offset_invariance() {
     let telemetry_a = HashMap::from([
-        ("nodeA".into(), (100_000, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), (100_080, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), (100_030, 2.1, 98.9, 0.45)),
+        ("nodeA".into(), (100_000, fp(1.2), fp(99.9), fp(0.42))),
+        ("nodeB".into(), (100_080, fp(0.9), fp(99.8), fp(0.38))),
+        ("nodeC".into(), (100_030, fp(2.1), fp(98.9), fp(0.45))),
     ]);
     let telemetry_b = HashMap::from([
-        ("nodeA".into(), (105_000, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), (105_080, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), (105_030, 2.1, 98.9, 0.45)),
+        ("nodeA".into(), (105_000, fp(1.2), fp(99.9), fp(0.42))),
+        ("nodeB".into(), (105_080, fp(0.9), fp(99.8), fp(0.38))),
+        ("nodeC".into(), (105_030, fp(2.1), fp(98.9), fp(0.45))),
     ]);
 
     let features_a = normalize_features(&telemetry_a, 100_050);
@@ -168,9 +168,15 @@ fn test_normalize_features_clock_offset_invariance() {
 fn test_validator_scoring_scenarios() {
     let model = create_test_model();
     let mut telemetry_good = HashMap::new();
-    telemetry_good.insert("good_node".to_string(), (100_000, 0.5, 99.9, 0.8));
+    telemetry_good.insert(
+        "good_node".to_string(),
+        (100_000, fp(0.5), fp(99.9), fp(0.8)),
+    );
     let mut telemetry_poor = HashMap::new();
-    telemetry_poor.insert("poor_node".to_string(), (100_000, 5.0, 85.0, 0.2));
+    telemetry_poor.insert(
+        "poor_node".to_string(),
+        (100_000, fp(5.0), fp(85.0), fp(0.2)),
+    );
 
     let ippan_time_median = 100_000;
     let round_hash = "test_round_123";
