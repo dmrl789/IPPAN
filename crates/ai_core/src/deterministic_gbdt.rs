@@ -16,8 +16,12 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::de::Error;
-    let value = Value::deserialize(deserializer)?;
-    value_to_fixed(&value).map_err(D::Error::custom)
+    if deserializer.is_human_readable() {
+        let value = Value::deserialize(deserializer)?;
+        value_to_fixed(&value).map_err(D::Error::custom)
+    } else {
+        Fixed::deserialize(deserializer)
+    }
 }
 
 fn deserialize_option_fixed<'de, D>(deserializer: D) -> Result<Option<Fixed>, D::Error>
@@ -25,10 +29,15 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::de::Error;
-    let value = Option::<Value>::deserialize(deserializer)?;
-    match value {
-        Some(val) => value_to_fixed(&val).map(Some).map_err(D::Error::custom),
-        None => Ok(None),
+    if deserializer.is_human_readable() {
+        let value = Option::<Value>::deserialize(deserializer)?;
+        match value {
+            Some(val) => value_to_fixed(&val).map(Some).map_err(D::Error::custom),
+            None => Ok(None),
+        }
+    } else {
+        Option::<Fixed>::deserialize(deserializer)
+            .map_err(|e| D::Error::custom(format!("failed to deserialize fixed-point option: {e}")))
     }
 }
 
@@ -36,12 +45,12 @@ fn value_to_fixed(value: &Value) -> Result<Fixed, String> {
     match value {
         Value::Number(num) => {
             if let Some(int) = num.as_i64() {
-                Ok(Fixed::from_int(int))
+                Ok(Fixed::from_micro(int))
             } else if let Some(uint) = num.as_u64() {
                 if uint > i64::MAX as u64 {
                     Err(format!("numeric value {num} exceeds i64 range"))
                 } else {
-                    Ok(Fixed::from_int(uint as i64))
+                    Ok(Fixed::from_micro(uint as i64))
                 }
             } else {
                 Fixed::from_decimal_str(&num.to_string())
