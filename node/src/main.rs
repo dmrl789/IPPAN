@@ -14,6 +14,8 @@ use ippan_storage::{SledStorage, Storage};
 use ippan_types::{
     ippan_time_init, ippan_time_now, Block, HashTimer, IppanTimeMicros, Transaction,
 };
+use metrics::describe_gauge;
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -76,6 +78,9 @@ struct AppConfig {
 
     // Security
     enable_security: bool,
+
+    // Observability
+    prometheus_enabled: bool,
 
     // Logging
     log_level: String,
@@ -249,6 +254,7 @@ impl AppConfig {
             p2p_external_ip_services: external_ip_services,
             unified_ui_dist_dir,
             enable_security: config.get_bool("ENABLE_SECURITY").unwrap_or(true),
+            prometheus_enabled: config.get_bool("PROMETHEUS_ENABLED").unwrap_or(true),
             log_level: config
                 .get_string("LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
@@ -308,6 +314,9 @@ async fn main() -> Result<()> {
 
     // Initialize logging
     init_logging(&config)?;
+
+    // Initialize metrics exporter
+    let prometheus_handle = init_metrics(&config);
 
     // Initialize IPPAN Time service
     ippan_time_init();
@@ -514,6 +523,7 @@ async fn main() -> Result<()> {
         unified_ui_dist: config.unified_ui_dist_dir.clone(),
         req_count: Arc::new(AtomicUsize::new(0)),
         security,
+        metrics: prometheus_handle.clone(),
     };
 
     let rpc_host = &config.rpc_host;
@@ -678,6 +688,33 @@ fn persist_transaction_from_peer(
     }
 
     Ok(())
+}
+
+fn init_metrics(config: &AppConfig) -> Option<PrometheusHandle> {
+    if !config.prometheus_enabled {
+        info!("Prometheus metrics exporter disabled via configuration");
+        return None;
+    }
+
+    match PrometheusBuilder::new().install_recorder() {
+        Ok(handle) => {
+            info!("Prometheus metrics exporter registered");
+            describe_gauge!("node_health", "Overall node health indicator (1 = healthy)");
+            describe_gauge!(
+                "consensus_round",
+                "Current consensus round number observed by the node"
+            );
+            describe_gauge!(
+                "mempool_size",
+                "Current number of transactions pending in the mempool"
+            );
+            Some(handle)
+        }
+        Err(err) => {
+            warn!("Failed to install Prometheus metrics exporter: {}", err);
+            None
+        }
+    }
 }
 
 fn init_logging(config: &AppConfig) -> Result<()> {
