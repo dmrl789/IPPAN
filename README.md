@@ -10,6 +10,37 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - **Web Explorer**: Hosted blockchain explorer at https://ippan.com/explorer for transaction and block visibility
 - **Production Ready**: Docker, systemd, and CI/CD configurations
 
+## 🧭 IPPAN Codebase Readiness Dashboard
+
+*(Snapshot: November 2025)*
+
+| Category | Description | Weight | Score | Status | Key Actions |
+|-----------|--------------|--------|--------|----------|--------------|
+| **Implementation Completeness** | Core crates (consensus, mempool, storage, RPC, crypto) implemented and wired across workspace | 50 % | **0.80** | 🟢 Solid | Finalize fork resolution & treasury distribution logic |
+| **Testing & Verification** | ~606 tests (~45 % coverage). Integration tests pass, but persistence and DAG conflict tests missing | 30 % | **0.45** | 🟠 Partial | Expand coverage to ≥ 80 %; add long-run DLC simulations |
+| **Operational Hardening** | Axum RPC, libp2p stack, rate limiting, and audit hooks implemented but optional | 20 % | **0.75** | 🟢 Near-ready | Connect security manager and observability sinks |
+| **AI Determinism** | D-GBDT deterministic scoring validated on x86_64 | – | **0.70** | 🟠 In progress | Re-run tests on aarch64 and publish reproducibility logs |
+| **CI/CD Reliability** | 10 k+ runs, most stable. Some DLC & mobile workflows skipped or dependency-blocked | – | **0.65** | 🟡 Moderate | Fix scan gating (NVD_API_KEY) and add nightly tests |
+| **Documentation & Onboarding** | Whitepaper and PRDs complete; code-level docs improving | – | **0.80** | 🟢 Mature | Add `docs/dev_guide.md` and architecture diagrams |
+| **Overall Readiness** | Weighted composite across all modules | **100 %** | **≈ 0.69 (≈ 70 %)** | 🟡 Beta-ready | Push toward 85 %+ before mainnet audit |
+
+### 🧩 Next Milestones
+
+- [ ] Achieve ≥ 80 % test coverage for critical crates
+- [ ] Enable full nightly `cargo test --workspace` runs
+- [ ] Integrate Prometheus + Grafana observability
+- [ ] Add fork, slashing, and recovery test cases
+- [ ] Run deterministic AI validation on multi-arch targets
+
+### 🧰 Useful Commands
+
+```bash
+cargo check
+cargo test --workspace --all-features -- --nocapture
+cargo tarpaulin --out Html
+cargo bench --workspace
+```
+
 ## 🏗️ Architecture
 
 ### Core Components
@@ -210,10 +241,35 @@ let round_hashtimer = HashTimer::now_round("consensus", payload, nonce, node_id)
 
 ## 🔧 Configuration
 
-Environment variables:
+### Environment Variables
+
+For comprehensive documentation of all environment variables and secrets, see:
+
+📖 **[Secrets and Environment Variables Guide](docs/SECRETS_AND_ENVIRONMENT_VARIABLES.md)**
+
+Quick reference for common variables:
+
 - `RUST_LOG`: Logging level (default: info)
 - `IPPAN_NETWORK`: Network type (mainnet/testnet)
 - `IPPAN_DATA_DIR`: Data directory path
+- `BOOTSTRAP_NODES`: Comma-separated peer URLs
+- `NODE_ID`: Unique node identifier
+- `VALIDATOR_ID`: 64-character hex validator ID
+
+### Configuration Files
+
+Example configurations are provided:
+
+- **Node**: `config/ippan.env.example` → Copy to `config/ippan.env`
+- **Gateway**: `apps/gateway/.env.example` → Copy to `apps/gateway/.env`
+- **UI**: `apps/unified-ui/.env.example` → Copy to `apps/unified-ui/.env.local`
+- **Deployment**: `deploy/.env.example` → Copy to `deploy/.env`
+
+### GitHub Secrets Setup
+
+For CI/CD deployments, configure GitHub secrets following:
+
+📖 **[GitHub Secrets Setup Guide](docs/GITHUB_SECRETS_SETUP.md)**
 
 ## 🔐 IPPAN Secrets Configuration Guide
 

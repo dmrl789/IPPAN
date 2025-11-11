@@ -34,6 +34,8 @@ igd = { workspace = true }
 local-ip-address = { workspace = true }
 blake3 = { workspace = true }
 bincode = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }

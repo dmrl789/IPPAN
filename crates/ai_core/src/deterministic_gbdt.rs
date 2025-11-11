@@ -69,14 +69,17 @@ fn value_to_fixed(value: &Value) -> Result<Fixed, String> {
 pub struct ValidatorFeatures {
     pub node_id: String,
     pub delta_time_us: i64, // deviation from IPPAN Time median (µs)
+    #[serde(deserialize_with = "deserialize_fixed")]
     pub latency_ms: Fixed,
+    #[serde(deserialize_with = "deserialize_fixed")]
     pub uptime_pct: Fixed,
+    #[serde(deserialize_with = "deserialize_fixed")]
     pub peer_entropy: Fixed,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_option_fixed")]
     pub cpu_usage: Option<Fixed>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_option_fixed")]
     pub memory_usage: Option<Fixed>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_option_fixed")]
     pub network_reliability: Option<Fixed>,
 }
 
@@ -84,10 +87,11 @@ pub struct ValidatorFeatures {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DecisionNode {
     pub feature: usize,
+    #[serde(deserialize_with = "deserialize_fixed")]
     pub threshold: Fixed,
     pub left: Option<usize>,
     pub right: Option<usize>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_option_fixed")]
     pub value: Option<Fixed>,
 }
 
@@ -101,6 +105,7 @@ pub struct GBDTTree {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DeterministicGBDT {
     pub trees: Vec<GBDTTree>,
+    #[serde(deserialize_with = "deserialize_fixed")]
     pub learning_rate: Fixed,
 }
 

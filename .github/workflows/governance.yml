@@ -221,6 +221,10 @@ jobs:
                 fi
               fi
             fi
+            gh pr review $pr_number --approve --body "✅ MetaAgent auto-approval: All required checks are green. Proceeding with merge readiness."
+          else
+            echo "CI status for PR #$pr_number is $ci_status. Skipping auto-approval."
+          fi
       # ============================================================
       # 4. LOCK MANAGEMENT
       # ============================================================

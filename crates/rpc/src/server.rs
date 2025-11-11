@@ -1,12 +1,19 @@
+use std::convert::Infallible;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
+use axum::body::Body;
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
+use axum::http::header::{HeaderValue, CONTENT_TYPE};
 use axum::http::StatusCode;
+use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::PoAConsensus;
@@ -15,8 +22,13 @@ use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, Storage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
+use metrics::gauge;
+use metrics_exporter_prometheus::PrometheusHandle;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex};
+use tower::limit::RateLimitLayer;
+use tower::Layer;
+use tower::Service;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -25,6 +37,10 @@ use tracing::{debug, error, info, warn};
 use hex::encode as hex_encode;
 
 use crate::{HttpP2PNetwork, NetworkMessage};
+
+const RATE_LIMIT_PER_SECOND: u64 = 200;
+const CIRCUIT_BREAKER_FAILURE_THRESHOLD: usize = 5;
+const CIRCUIT_BREAKER_OPEN_SECS: u64 = 30;
 
 /// Layer 2 configuration
 #[derive(Clone, Debug, Serialize)]
@@ -51,6 +67,7 @@ pub struct AppState {
     pub unified_ui_dist: Option<PathBuf>,
     pub req_count: Arc<AtomicUsize>,
     pub security: Option<Arc<SecurityManager>>,
+    pub metrics: Option<PrometheusHandle>,
 }
 
 /// Consensus handle abstraction
@@ -157,6 +174,12 @@ fn build_router(state: Arc<AppState>) -> Router {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
+    let rate_limit = RateLimitLayer::new(RATE_LIMIT_PER_SECOND, Duration::from_secs(1));
+    let circuit_breaker = CircuitBreakerLayer::new(
+        CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+        Duration::from_secs(CIRCUIT_BREAKER_OPEN_SECS),
+    );
+
     let mut router = Router::new()
         .route("/health", get(handle_health))
         .route("/status", get(handle_status))
@@ -191,6 +214,8 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     router
         .layer(cors)
+        .layer(rate_limit)
+        .layer(circuit_breaker)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -280,6 +305,7 @@ async fn deny_request(
 // -----------------------------------------------------------------------------
 
 async fn handle_health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    gauge!("node_health", 1.0);
     Json(serde_json::json!({
         "status": "healthy",
         "timestamp": ippan_time_now(),
@@ -293,14 +319,20 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     let uptime_seconds = state.start_time.elapsed().as_secs();
     let peer_count = state.peer_count.load(Ordering::Relaxed);
     let requests_served = state.req_count.load(Ordering::Relaxed);
+    let mempool_size = state.mempool.size();
+    gauge!("mempool_size", mempool_size as f64);
+    let mut consensus_round_metric = 0.0;
 
     let consensus_view = if let Some(consensus) = &state.consensus {
         match consensus.snapshot().await {
-            Ok(view) => Some(serde_json::json!({
-                "round": view.round,
-                "validator_count": view.validators.len(),
-                "validators": view.validators,
-            })),
+            Ok(view) => {
+                consensus_round_metric = view.round as f64;
+                Some(serde_json::json!({
+                    "round": view.round,
+                    "validator_count": view.validators.len(),
+                    "validators": view.validators,
+                }))
+            }
             Err(err) => {
                 warn!("Failed to snapshot consensus state: {}", err);
                 None
@@ -309,6 +341,7 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     } else {
         None
     };
+    gauge!("consensus_round", consensus_round_metric);
 
     Json(serde_json::json!({
         "status": "ok",
@@ -318,7 +351,8 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
         "uptime_seconds": uptime_seconds,
         "requests_served": requests_served,
         "network_active": state.p2p_network.is_some(),
-        "consensus": consensus_view
+        "consensus": consensus_view,
+        "mempool_size": mempool_size
     }))
 }
 
@@ -335,11 +369,20 @@ async fn handle_version() -> Json<serde_json::Value> {
     }))
 }
 
-async fn handle_metrics() -> (StatusCode, &'static str) {
-    (
-        StatusCode::OK,
-        "# HELP ippan_peer_count Connected peers\nippan_peer_count 0\n",
-    )
+async fn handle_metrics(State(state): State<Arc<AppState>>) -> Response {
+    if let Some(handle) = &state.metrics {
+        let mut response = Response::new(Body::from(handle.render()));
+        *response.status_mut() = StatusCode::OK;
+        response.headers_mut().insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; version=0.0.4"),
+        );
+        response
+    } else {
+        let mut response = Response::new(Body::from("Prometheus metrics disabled"));
+        *response.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+        response
+    }
 }
 
 async fn handle_submit_tx(
@@ -923,6 +966,139 @@ fn account_to_response(account: Account, transactions: Vec<Transaction>) -> Acco
     }
 }
 
+#[derive(Clone)]
+struct CircuitBreakerLayer {
+    state: Arc<CircuitBreakerState>,
+    failure_threshold: usize,
+    open_duration: Duration,
+}
+
+impl CircuitBreakerLayer {
+    fn new(failure_threshold: usize, open_duration: Duration) -> Self {
+        Self {
+            state: Arc::new(CircuitBreakerState::new()),
+            failure_threshold,
+            open_duration,
+        }
+    }
+}
+
+impl<S> Layer<S> for CircuitBreakerLayer {
+    type Service = CircuitBreaker<S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        CircuitBreaker {
+            inner: service,
+            state: Arc::clone(&self.state),
+            failure_threshold: self.failure_threshold,
+            open_duration: self.open_duration,
+        }
+    }
+}
+
+struct CircuitBreaker<S> {
+    inner: S,
+    state: Arc<CircuitBreakerState>,
+    failure_threshold: usize,
+    open_duration: Duration,
+}
+
+impl<S, Request> Service<Request> for CircuitBreaker<S>
+where
+    S: Service<Request, Response = Response, Error = Infallible> + Send + 'static,
+    S::Future: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = Infallible;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: Request) -> Self::Future {
+        if self.state.is_open() {
+            let response = Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(Body::from("Circuit breaker open"))
+                .expect("failed to build circuit breaker response");
+            return Box::pin(async move { Ok(response) });
+        }
+
+        let state = Arc::clone(&self.state);
+        let failure_threshold = self.failure_threshold;
+        let open_duration = self.open_duration;
+
+        let future = self.inner.call(request);
+        Box::pin(async move {
+            let response = future.await?;
+            if response.status().is_server_error() {
+                if state.record_failure(failure_threshold, open_duration) {
+                    warn!(
+                        "Circuit breaker opened after {} consecutive failures; blocking traffic for {:?}",
+                        failure_threshold, open_duration
+                    );
+                }
+            } else {
+                state.record_success();
+            }
+            Ok(response)
+        })
+    }
+}
+
+struct CircuitBreakerState {
+    failures: AtomicUsize,
+    open_until: std::sync::Mutex<Option<Instant>>,
+}
+
+impl CircuitBreakerState {
+    fn new() -> Self {
+        Self {
+            failures: AtomicUsize::new(0),
+            open_until: std::sync::Mutex::new(None),
+        }
+    }
+
+    fn is_open(&self) -> bool {
+        let mut guard = self
+            .open_until
+            .lock()
+            .expect("circuit breaker mutex poisoned");
+        if let Some(until) = *guard {
+            if Instant::now() < until {
+                return true;
+            }
+            *guard = None;
+        }
+        false
+    }
+
+    fn record_failure(&self, threshold: usize, open_duration: Duration) -> bool {
+        let current = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
+        if current >= threshold {
+            let mut guard = self
+                .open_until
+                .lock()
+                .expect("circuit breaker mutex poisoned");
+            *guard = Some(Instant::now() + open_duration);
+            self.failures.store(0, Ordering::Relaxed);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn record_success(&self) {
+        self.failures.store(0, Ordering::Relaxed);
+        let mut guard = self
+            .open_until
+            .lock()
+            .expect("circuit breaker mutex poisoned");
+        *guard = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -969,6 +1145,7 @@ mod tests {
             unified_ui_dist: None,
             req_count: Arc::new(AtomicUsize::new(0)),
             security: None,
+            metrics: None,
         });
 
         let response = handle_health(State(app_state)).await;
@@ -1000,6 +1177,7 @@ mod tests {
             unified_ui_dist,
             req_count: Arc::new(AtomicUsize::new(0)),
             security,
+            metrics: None,
         })
     }
 
@@ -2101,8 +2279,8 @@ mod tests {
             version.0.get("version"),
             Some(&serde_json::json!(env!("CARGO_PKG_VERSION")))
         );
-        let metrics = handle_metrics().await;
-        assert_eq!(metrics.0, StatusCode::OK);
+        let metrics_response = handle_metrics(State(make_app_state())).await;
+        assert_eq!(metrics_response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]
@@ -2215,6 +2393,7 @@ mod tests {
             unified_ui_dist: None,
             req_count: Arc::new(AtomicUsize::new(0)),
             security: None,
+            metrics: None,
         });
 
         let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();
