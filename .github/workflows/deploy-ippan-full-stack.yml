@@ -118,8 +118,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}/ippan-node:${{ env.IMAGE_TAG }}
             ${{ env.IMAGE_PREFIX }}/ippan-node:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=fullstack-node-v2
+          cache-to: type=gha,mode=max,scope=fullstack-node-v2
 
       - name: Build and push IPPAN UI
         uses: docker/build-push-action@v5
@@ -130,8 +130,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}/ippan-ui:${{ env.IMAGE_TAG }}
             ${{ env.IMAGE_PREFIX }}/ippan-ui:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=fullstack-ui-v2
+          cache-to: type=gha,mode=max,scope=fullstack-ui-v2
 
       - name: Build and push IPPAN Gateway
         uses: docker/build-push-action@v5
@@ -142,8 +142,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}/ippan-gateway:${{ env.IMAGE_TAG }}
             ${{ env.IMAGE_PREFIX }}/ippan-gateway:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=fullstack-gateway-v2
+          cache-to: type=gha,mode=max,scope=fullstack-gateway-v2
 
       - name: Set image tag output
         id: image_tag
