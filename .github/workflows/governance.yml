@@ -171,55 +171,58 @@ EOF
             done
           fi
 
-      # ============================================================
-      # 3. MERGE VALIDATION
-      # ============================================================
-        - name: ✅ Approve Merge if Checks Pass
-          if: github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened' || github.event.action == 'ready_for_review')
-          env:
-            GITHUB_REPOSITORY: ${{ github.repository }}
-          run: |
-            pr_number=${{ github.event.pull_request.number }}
-            sleep 30
-            owner="${GITHUB_REPOSITORY%%/*}"
-            repo="${GITHUB_REPOSITORY##*/}"
-            ci_status=$(gh api graphql \
-              -F owner="$owner" \
-              -F name="$repo" \
-              -F number="$pr_number" \
-              -f query='query($owner:String!, $name:String!, $number:Int!){
-                repository(owner:$owner, name:$name){
-                  pullRequest(number:$number){
-                    statusCheckRollup{ state }
-                  }
+        # ============================================================
+        # 3. MERGE VALIDATION
+        # ============================================================
+      - name: ✅ Approve Merge if Checks Pass
+        if: github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened' || github.event.action == 'ready_for_review')
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          pr_number=${{ github.event.pull_request.number }}
+          sleep 30
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY##*/}"
+          ci_status=$(gh api graphql \
+            -F owner="$owner" \
+            -F name="$repo" \
+            -F number="$pr_number" \
+            -f query='query($owner:String!, $name:String!, $number:Int!){
+              repository(owner:$owner, name:$name){
+                pullRequest(number:$number){
+                  statusCheckRollup{ state }
                 }
-              }' \
-              --jq '.data.repository.pullRequest.statusCheckRollup.state // "PENDING"' \
-              2>/dev/null || echo "PENDING")
-            if [ -z "$ci_status" ] || [ "${ci_status^^}" = "PENDING" ]; then
-              ci_states_json=$(gh pr checks $pr_number --json state --jq '[.[].state]' 2>/dev/null || echo '[]')
-              ci_status=$(echo "$ci_states_json" | jq -r '
-                if length == 0 then
-                  "PENDING"
-                elif all(. == "SUCCESS") then
-                  "SUCCESS"
-                elif any(. == "FAILURE" or . == "ERROR" or . == "CANCELLED") then
-                  "FAILURE"
-                else
-                  "PENDING"
-                end
-              ')
-            fi
-            if [ "${ci_status^^}" = "SUCCESS" ]; then
-              pr_title="${{ github.event.pull_request.title }}"
-              pr_body="${{ github.event.pull_request.body }}"
-              if echo "$pr_title" | grep -qE "^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+"; then
-                if echo "$pr_body" | grep -qE "(closes|fixes|resolves) #[0-9]+"; then
-                  gh pr add-labels $pr_number "${{ env.META_APPROVAL_LABEL }}"
-                  echo "$(date -u): Approved PR #$pr_number" >> $META_AGENT_LOG_DIR/approvals.log
-                fi
+              }
+            }' \
+            --jq '.data.repository.pullRequest.statusCheckRollup.state // "PENDING"' \
+            2>/dev/null || echo "PENDING")
+          if [ -z "$ci_status" ] || [ "${ci_status^^}" = "PENDING" ]; then
+            ci_states_json=$(gh pr checks $pr_number --json state --jq '[.[].state]' 2>/dev/null || echo '[]')
+            ci_status=$(echo "$ci_states_json" | jq -r '
+              if length == 0 then
+                "PENDING"
+              elif all(. == "SUCCESS") then
+                "SUCCESS"
+              elif any(. == "FAILURE" or . == "ERROR" or . == "CANCELLED") then
+                "FAILURE"
+              else
+                "PENDING"
+              end
+            ')
+          fi
+          if [ "${ci_status^^}" = "SUCCESS" ]; then
+            pr_title="${{ github.event.pull_request.title }}"
+            pr_body="${{ github.event.pull_request.body }}"
+            if echo "$pr_title" | grep -qE "^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+"; then
+              if echo "$pr_body" | grep -qE "(closes|fixes|resolves) #[0-9]+"; then
+                gh pr add-labels $pr_number "${{ env.META_APPROVAL_LABEL }}"
+                echo "$(date -u): Approved PR #$pr_number" >> $META_AGENT_LOG_DIR/approvals.log
               fi
             fi
+            gh pr review $pr_number --approve --body "✅ MetaAgent auto-approval: All required checks are green. Proceeding with merge readiness."
+          else
+            echo "CI status for PR #$pr_number is $ci_status. Skipping auto-approval."
+          fi
       # ============================================================
       # 4. LOCK MANAGEMENT
       # ============================================================
