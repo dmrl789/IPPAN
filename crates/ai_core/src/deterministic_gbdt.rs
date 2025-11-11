@@ -16,8 +16,13 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::de::Error;
-    let value = Value::deserialize(deserializer)?;
-    value_to_fixed(&value).map_err(D::Error::custom)
+    if deserializer.is_human_readable() {
+        let value = Value::deserialize(deserializer)?;
+        value_to_fixed(&value).map_err(D::Error::custom)
+    } else {
+        let micro = i64::deserialize(deserializer)?;
+        Ok(Fixed::from_micro(micro))
+    }
 }
 
 fn deserialize_option_fixed<'de, D>(deserializer: D) -> Result<Option<Fixed>, D::Error>
@@ -25,10 +30,16 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::de::Error;
-    let value = Option::<Value>::deserialize(deserializer)?;
-    match value {
-        Some(val) => value_to_fixed(&val).map(Some).map_err(D::Error::custom),
-        None => Ok(None),
+    if deserializer.is_human_readable() {
+        let value = Option::<Value>::deserialize(deserializer)?;
+        match value {
+            Some(val) => value_to_fixed(&val).map(Some).map_err(D::Error::custom),
+            None => Ok(None),
+        }
+    } else {
+        Option::<i64>::deserialize(deserializer)
+            .map(|opt| opt.map(Fixed::from_micro))
+            .map_err(D::Error::custom)
     }
 }
 
@@ -36,12 +47,12 @@ fn value_to_fixed(value: &Value) -> Result<Fixed, String> {
     match value {
         Value::Number(num) => {
             if let Some(int) = num.as_i64() {
-                Ok(Fixed::from_int(int))
+                Ok(Fixed::from_micro(int))
             } else if let Some(uint) = num.as_u64() {
                 if uint > i64::MAX as u64 {
                     Err(format!("numeric value {num} exceeds i64 range"))
                 } else {
-                    Ok(Fixed::from_int(uint as i64))
+                    Ok(Fixed::from_micro(uint as i64))
                 }
             } else {
                 Fixed::from_decimal_str(&num.to_string())
@@ -249,20 +260,23 @@ impl DeterministicGBDT {
 // Feature normalization & scoring
 // ---------------------------------------------------------------------
 
-pub fn normalize_features(
-    telemetry: &HashMap<String, (i64, Fixed, Fixed, Fixed)>,
+pub fn normalize_features<T>(
+    telemetry: &HashMap<String, (i64, T, T, T)>,
     ippan_time_median: i64,
-) -> Vec<ValidatorFeatures> {
+) -> Vec<ValidatorFeatures>
+where
+    T: Copy + Into<Fixed>,
+{
     telemetry
         .iter()
-        .map(|(node_id, (local_time_us, latency, uptime, entropy))| {
+        .map(|(node_id, &(local_time_us, latency, uptime, entropy))| {
             let delta_time_us = local_time_us - ippan_time_median;
             ValidatorFeatures {
                 node_id: node_id.clone(),
                 delta_time_us,
-                latency_ms: *latency,
-                uptime_pct: *uptime,
-                peer_entropy: *entropy,
+                latency_ms: latency.into(),
+                uptime_pct: uptime.into(),
+                peer_entropy: entropy.into(),
                 cpu_usage: None,
                 memory_usage: None,
                 network_reliability: None,
@@ -300,7 +314,7 @@ pub fn compute_scores(
 // Test helpers
 // ---------------------------------------------------------------------
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
 impl DeterministicGBDT {
     /// Creates a deterministic test model for use in integration tests and examples.
     pub fn create_test_model() -> Self {
@@ -337,7 +351,7 @@ impl DeterministicGBDT {
     }
 }
 
-#[cfg(any(test, feature = "enable-tests"))]
+#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
 pub fn create_test_model() -> DeterministicGBDT {
     DeterministicGBDT::create_test_model()
 }
