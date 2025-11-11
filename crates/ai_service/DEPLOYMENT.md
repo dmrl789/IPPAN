@@ -46,15 +46,25 @@ docker-compose -f docker-compose.prod.yml ps
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `IPPAN_ENV` | Environment (production/staging/development) | development | Yes |
-| `LLM_API_KEY` | LLM API key | - | Yes |
-| `LLM_MODEL` | LLM model name | gpt-4 | No |
-| `ENABLE_LLM` | Enable LLM features | true | No |
-| `ENABLE_ANALYTICS` | Enable analytics | true | No |
-| `ENABLE_SMART_CONTRACTS` | Enable smart contract analysis | true | No |
-| `ENABLE_MONITORING` | Enable monitoring | true | No |
-| `LOG_LEVEL` | Log level | info | No |
-| `LOG_FORMAT` | Log format (json/pretty) | pretty | No |
+| `IPPAN_ENV` | Environment (`development`, `staging`, `production`, `testing`) | `development` | Yes |
+| `LLM_API_KEY` | LLM API key (may also be provided as `IPPAN_SECRET_LLM_API_KEY`) | - | Yes |
+| `LLM_API_ENDPOINT` | LLM provider URL | `https://api.openai.com/v1` | No |
+| `LLM_MODEL` | LLM model name | `gpt-4` | No |
+| `LLM_MAX_TOKENS` | Maximum tokens per completion | `4000` | No |
+| `LLM_TEMPERATURE` | Sampling temperature | `0.7` | No |
+| `LLM_TIMEOUT` | LLM request timeout (seconds) | `30` | No |
+| `ENABLE_LLM` | Enable LLM features | `true` | No |
+| `ENABLE_ANALYTICS` | Enable analytics | `true` | No |
+| `ENABLE_SMART_CONTRACTS` | Enable smart contract analysis | `true` | No |
+| `ENABLE_MONITORING` | Enable monitoring | `true` | No |
+| `MONITORING_INTERVAL` | Metrics emission interval (seconds) | `30` | No |
+| `PROMETHEUS_ENDPOINT` | Prometheus remote write endpoint (required for production metrics) | `http://prometheus:9090/api/v1/write` | Yes (production) |
+| `JSON_EXPORTER_ENDPOINT` | JSON exporter URL | `http://localhost:8080/metrics` | No |
+| `HEALTH_PORT` | Health server port | `8080` | No |
+| `LOG_LEVEL` | Log level | `info` | No |
+| `LOG_FORMAT` | Log format (`json`/`pretty`) | `pretty` | No |
+
+For local deployments, copy `.env.example` to `.env` and fill in the required values before starting the service.
 
 ### Configuration Files
 

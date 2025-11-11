@@ -50,6 +50,24 @@ env:
   IMAGE_NAMESPACE: ghcr.io/dmrl789
   IMAGE_SUITE: ghcr.io/dmrl789/ippan
   DOCKER_BUILDKIT: 1
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN || '' }}
+  DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || '' }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER || '' }}
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '' }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '' }}
+  DEPLOY_FINGERPRINT: ${{ secrets.DEPLOY_FINGERPRINT || '' }}
+  SERVER1_HOST: ${{ secrets.SERVER1_HOST || '' }}
+  SERVER1_USER: ${{ secrets.SERVER1_USER || '' }}
+  SERVER1_SSH_KEY: ${{ secrets.SERVER1_SSH_KEY || '' }}
+  SERVER1_PORT: ${{ secrets.SERVER1_PORT || '' }}
+  SERVER1_FINGERPRINT: ${{ secrets.SERVER1_FINGERPRINT || '' }}
+  SERVER2_HOST: ${{ secrets.SERVER2_HOST || '' }}
+  SERVER2_USER: ${{ secrets.SERVER2_USER || '' }}
+  SERVER2_SSH_KEY: ${{ secrets.SERVER2_SSH_KEY || '' }}
+  SERVER2_PORT: ${{ secrets.SERVER2_PORT || '' }}
+  SECONDARY_HOST: ${{ secrets.SECONDARY_HOST || '' }}
+  SECONDARY_PORT: ${{ secrets.SECONDARY_PORT || '' }}
+  SECONDARY_FINGERPRINT: ${{ secrets.SECONDARY_FINGERPRINT || '' }}
 
 jobs:
   build:
@@ -88,15 +106,15 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
-        if: steps.decision.outputs.run_build == 'true'
+        if: steps.decision.outputs.run_build == 'true' && env.GITHUB_TOKEN != ''
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ env.GITHUB_TOKEN }}
 
       - name: Build & Push Node image
-        if: steps.decision.outputs.run_build == 'true'
+        if: steps.decision.outputs.run_build == 'true' && env.GITHUB_TOKEN != ''
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -107,12 +125,12 @@ jobs:
             ${{ env.IMAGE_SUITE }}/ippan-node:latest
             ${{ env.IMAGE_NAMESPACE }}/ippan-node:${{ github.sha }}
             ${{ env.IMAGE_NAMESPACE }}/ippan-node:latest
-          cache-from: type=gha,scope=node
-          cache-to: type=gha,mode=max,scope=node
+          cache-from: type=gha,scope=node-v2
+          cache-to: type=gha,mode=max,scope=node-v2
           no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
 
       - name: Build & Push Gateway image
-        if: steps.decision.outputs.run_build == 'true'
+        if: steps.decision.outputs.run_build == 'true' && env.GITHUB_TOKEN != ''
         uses: docker/build-push-action@v5
         with:
           context: ./apps/gateway
@@ -125,12 +143,12 @@ jobs:
             ${{ env.IMAGE_SUITE }}/gateway:latest
             ${{ env.IMAGE_NAMESPACE }}/ippan-gateway:${{ github.sha }}
             ${{ env.IMAGE_NAMESPACE }}/ippan-gateway:latest
-          cache-from: type=gha,scope=gateway
-          cache-to: type=gha,mode=max,scope=gateway
+          cache-from: type=gha,scope=gateway-v2
+          cache-to: type=gha,mode=max,scope=gateway-v2
           no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
 
       - name: Build & Push Unified UI image
-        if: steps.decision.outputs.run_build == 'true'
+        if: steps.decision.outputs.run_build == 'true' && env.GITHUB_TOKEN != ''
         uses: docker/build-push-action@v5
         with:
           context: ./apps/unified-ui
@@ -143,8 +161,8 @@ jobs:
             ${{ env.IMAGE_NAMESPACE }}/unified-ui:latest
             ${{ env.IMAGE_SUITE }}/ippan-ui:${{ github.sha }}
             ${{ env.IMAGE_SUITE }}/ippan-ui:latest
-          cache-from: type=gha,scope=unified-ui
-          cache-to: type=gha,mode=max,scope=unified-ui
+          cache-from: type=gha,scope=unified-ui-v2
+          cache-to: type=gha,mode=max,scope=unified-ui-v2
           no-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_rebuild == 'true' }}
 
       - id: image_tag
@@ -169,72 +187,54 @@ jobs:
        github.event.inputs.environment == 'production')
     env:
       IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
-      PRIMARY_PORT: ${{ secrets.SERVER1_PORT && secrets.SERVER1_PORT || secrets.DEPLOY_PORT && secrets.DEPLOY_PORT || '22' }}
-      SECONDARY_PORT: ${{ secrets.SERVER2_PORT && secrets.SERVER2_PORT || secrets.SECONDARY_PORT && secrets.SECONDARY_PORT || secrets.DEPLOY_PORT && secrets.DEPLOY_PORT || '22' }}
-    steps:
-      - name: Validate deployment secrets
-        run: |
-          set -euo pipefail
-          missing=0
+      PRIMARY_HOST: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST || '' }}
+      PRIMARY_USER: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER || '' }}
+      PRIMARY_KEY: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY || '' }}
+      PRIMARY_FINGERPRINT: ${{ secrets.SERVER1_FINGERPRINT || secrets.DEPLOY_FINGERPRINT || '' }}
+      PRIMARY_PORT: ${{ secrets.SERVER1_PORT || secrets.DEPLOY_PORT || '22' }}
+      SECONDARY_HOST: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST || '' }}
+      SECONDARY_USER: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER || '' }}
+      SECONDARY_KEY: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY || '' }}
+      SECONDARY_FINGERPRINT: ${{ secrets.SECONDARY_FINGERPRINT || '' }}
+      SECONDARY_PORT: ${{ secrets.SERVER2_PORT || secrets.SECONDARY_PORT || secrets.DEPLOY_PORT || '22' }}
+      steps:
+        - name: Warn missing deployment secrets
+          if: env.PRIMARY_HOST == '' || env.PRIMARY_USER == '' || env.PRIMARY_KEY == '' || env.SECONDARY_HOST == '' || env.SECONDARY_USER == '' || env.SECONDARY_KEY == ''
+          run: |
+            missing=()
+            for var in PRIMARY_HOST PRIMARY_USER PRIMARY_KEY SECONDARY_HOST SECONDARY_USER SECONDARY_KEY; do
+              if [ -z "${!var:-}" ]; then
+                missing+=("$var")
+              fi
+            done
+            printf '::warning::Missing deployment secret(s): %s\n' "$(IFS=', '; echo "${missing[*]}")"
 
-          primary_host="${PRIMARY_HOST:-}"
-          primary_user="${PRIMARY_USER:-}"
-          primary_key="${PRIMARY_KEY:-}"
-          secondary_host="${SECONDARY_HOST:-}"
-          secondary_user="${SECONDARY_USER:-}"
-          secondary_key="${SECONDARY_KEY:-}"
+        - name: Validate deployment secrets
+          if: env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != '' && env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
+          run: |
+            set -euo pipefail
+            missing=0
 
-          if [ -z "$primary_host" ]; then
-            echo "::error::Missing primary host secret (SERVER1_HOST or DEPLOY_HOST)"
-            missing=1
-          fi
+            for var in PRIMARY_HOST PRIMARY_USER PRIMARY_KEY SECONDARY_HOST SECONDARY_USER SECONDARY_KEY; do
+              if [ -z "${!var}" ]; then
+                echo "::error::Missing secret: $var"
+                missing=1
+              fi
+            done
 
-          if [ -z "$primary_user" ]; then
-            echo "::error::Missing primary user secret (SERVER1_USER or DEPLOY_USER)"
-            missing=1
-          fi
+            if [ "$missing" -ne 0 ]; then
+              exit 1
+            fi
 
-          if [ -z "$primary_key" ]; then
-            echo "::error::Missing primary SSH key (SERVER1_SSH_KEY or DEPLOY_SSH_KEY)"
-            missing=1
-          fi
-
-          if [ -z "$secondary_host" ]; then
-            echo "::error::Missing secondary host secret (SERVER2_HOST or SECONDARY_HOST)"
-            missing=1
-          fi
-
-          if [ -z "$secondary_user" ]; then
-            echo "::error::Missing secondary user secret (SERVER2_USER or DEPLOY_USER)"
-            missing=1
-          fi
-
-          if [ -z "$secondary_key" ]; then
-            echo "::error::Missing secondary SSH key (SERVER2_SSH_KEY or DEPLOY_SSH_KEY)"
-            missing=1
-          fi
-
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
-        env:
-          PRIMARY_HOST: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
-          PRIMARY_USER: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
-          PRIMARY_KEY: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          PRIMARY_PORT: ${{ secrets.SERVER1_PORT || secrets.DEPLOY_PORT }}
-          SECONDARY_HOST: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
-          SECONDARY_USER: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
-          SECONDARY_KEY: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          SECONDARY_PORT: ${{ secrets.SERVER2_PORT || secrets.DEPLOY_PORT }}
-
-      - name: Deploy to Primary Server
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
-          port: ${{ env.PRIMARY_PORT }}
-          username: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
-          key: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          fingerprint: ${{ secrets.SERVER1_FINGERPRINT || secrets.DEPLOY_FINGERPRINT }}
+        - name: Deploy to Primary Server
+          if: env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != ''
+          uses: appleboy/ssh-action@v1.2.0
+          with:
+            host: ${{ env.PRIMARY_HOST }}
+            port: ${{ env.PRIMARY_PORT }}
+            username: ${{ env.PRIMARY_USER }}
+            key: ${{ env.PRIMARY_KEY }}
+            fingerprint: ${{ env.PRIMARY_FINGERPRINT }}
           timeout: 300s
           envs: IMAGE_TAG,GITHUB_REPOSITORY
           script: |
@@ -292,14 +292,15 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
           GITHUB_REPOSITORY: ${{ github.repository }}
 
-      - name: Deploy to Secondary Server
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
-          port: ${{ env.SECONDARY_PORT }}
-          username: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
-          key: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          fingerprint: ${{ secrets.SECONDARY_FINGERPRINT }}
+        - name: Deploy to Secondary Server
+          if: env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
+          uses: appleboy/ssh-action@v1.2.0
+          with:
+            host: ${{ env.SECONDARY_HOST }}
+            port: ${{ env.SECONDARY_PORT }}
+            username: ${{ env.SECONDARY_USER }}
+            key: ${{ env.SECONDARY_KEY }}
+            fingerprint: ${{ env.SECONDARY_FINGERPRINT }}
           timeout: 300s
           envs: IMAGE_TAG,GITHUB_REPOSITORY
           script: |
@@ -348,26 +349,27 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
           GITHUB_REPOSITORY: ${{ github.repository }}
 
-      - name: Verify P2P Connectivity
-        run: |
-          set -euo pipefail
+        - name: Verify P2P Connectivity
+          if: env.PRIMARY_HOST != '' && env.SECONDARY_HOST != ''
+          run: |
+            set -euo pipefail
 
-          primary="${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}"
-          secondary="${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}"
+            primary="$PRIMARY_HOST"
+            secondary="$SECONDARY_HOST"
 
-          echo "Testing primary node P2P on ${primary}:9000"
-          timeout 10 bash -c "</dev/tcp/${primary}/9000" || {
-            echo "::error::Primary P2P port 9000 unreachable"
-            exit 1
-          }
+            echo "Testing primary node P2P on ${primary}:9000"
+            timeout 10 bash -c "</dev/tcp/${primary}/9000" || {
+              echo "::error::Primary P2P port 9000 unreachable"
+              exit 1
+            }
 
-          echo "Testing secondary node P2P on ${secondary}:9001"
-          timeout 10 bash -c "</dev/tcp/${secondary}/9001" || {
-            echo "::error::Secondary P2P port 9001 unreachable"
-            exit 1
-          }
+            echo "Testing secondary node P2P on ${secondary}:9001"
+            timeout 10 bash -c "</dev/tcp/${secondary}/9001" || {
+              echo "::error::Secondary P2P port 9001 unreachable"
+              exit 1
+            }
 
-          echo "🎉 Production deployment validated."
+            echo "🎉 Production deployment validated."
 
   repair:
     name: Repair Production Nodes
@@ -378,52 +380,58 @@ jobs:
       (github.event.inputs.restart_nodes == 'true' ||
        github.event.inputs.fix_secondary == 'true')
     env:
-      PRIMARY_PORT: ${{ secrets.SERVER1_PORT && secrets.SERVER1_PORT || secrets.DEPLOY_PORT && secrets.DEPLOY_PORT || '22' }}
-      SECONDARY_PORT: ${{ secrets.SERVER2_PORT && secrets.SERVER2_PORT || secrets.SECONDARY_PORT && secrets.SECONDARY_PORT || secrets.DEPLOY_PORT && secrets.DEPLOY_PORT || '22' }}
+      PRIMARY_HOST: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST || '' }}
+      PRIMARY_USER: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER || '' }}
+      PRIMARY_KEY: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY || '' }}
+      PRIMARY_FINGERPRINT: ${{ secrets.SERVER1_FINGERPRINT || secrets.DEPLOY_FINGERPRINT || '' }}
+      PRIMARY_PORT: ${{ secrets.SERVER1_PORT || secrets.DEPLOY_PORT || '22' }}
+      SECONDARY_HOST: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST || '' }}
+      SECONDARY_USER: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER || '' }}
+      SECONDARY_KEY: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY || '' }}
+      SECONDARY_FINGERPRINT: ${{ secrets.SECONDARY_FINGERPRINT || '' }}
+      SECONDARY_PORT: ${{ secrets.SERVER2_PORT || secrets.SECONDARY_PORT || secrets.DEPLOY_PORT || '22' }}
     steps:
-      - name: Validate repair secrets
-        run: |
-          set -euo pipefail
-          missing=0
+        - name: Validate repair secrets
+          run: |
+            set -euo pipefail
+            missing=0
 
-          if [ "${RESTART_NODES}" = "true" ]; then
-            if [ -z "${PRIMARY_HOST}" ] || [ -z "${PRIMARY_USER}" ] || [ -z "${PRIMARY_KEY}" ]; then
-              echo "::error::Missing primary server secrets (SERVER1_* or DEPLOY_*)"
-              missing=1
+            if [ "${RESTART_NODES}" = "true" ]; then
+              if [ -z "${PRIMARY_HOST}" ] || [ -z "${PRIMARY_USER}" ] || [ -z "${PRIMARY_KEY}" ]; then
+                echo "::warning::Missing primary server secrets (SERVER1_* or DEPLOY_*)"
+                missing=1
+              fi
             fi
-          fi
 
-          if [ "${FIX_SECONDARY}" = "true" ]; then
-            if [ -z "${SECONDARY_HOST}" ] || [ -z "${SECONDARY_USER}" ] || [ -z "${SECONDARY_KEY}" ]; then
-              echo "::error::Missing secondary server secrets (SERVER2_* or SECONDARY_*)"
-              missing=1
+            if [ "${FIX_SECONDARY}" = "true" ]; then
+              if [ -z "${SECONDARY_HOST}" ] || [ -z "${SECONDARY_USER}" ] || [ -z "${SECONDARY_KEY}" ]; then
+                echo "::warning::Missing secondary server secrets (SERVER2_* or SECONDARY_*)"
+                missing=1
+              fi
             fi
-          fi
 
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
-        env:
-          RESTART_NODES: ${{ github.event.inputs.restart_nodes }}
-          FIX_SECONDARY: ${{ github.event.inputs.fix_secondary }}
-          PRIMARY_HOST: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
-          PRIMARY_USER: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
-          PRIMARY_KEY: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          PRIMARY_PORT: ${{ secrets.SERVER1_PORT || secrets.DEPLOY_PORT }}
-          SECONDARY_HOST: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
-          SECONDARY_USER: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
-          SECONDARY_KEY: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          SECONDARY_PORT: ${{ secrets.SERVER2_PORT || secrets.DEPLOY_PORT }}
+            if [ "$missing" -ne 0 ]; then
+              echo "::warning::Repair steps will be skipped for missing secret sets."
+            fi
+          env:
+            RESTART_NODES: ${{ github.event.inputs.restart_nodes }}
+            FIX_SECONDARY: ${{ github.event.inputs.fix_secondary }}
+            PRIMARY_HOST: ${{ env.PRIMARY_HOST }}
+            PRIMARY_USER: ${{ env.PRIMARY_USER }}
+            PRIMARY_KEY: ${{ env.PRIMARY_KEY }}
+            SECONDARY_HOST: ${{ env.SECONDARY_HOST }}
+            SECONDARY_USER: ${{ env.SECONDARY_USER }}
+            SECONDARY_KEY: ${{ env.SECONDARY_KEY }}
 
       - name: Repair primary server
-        if: github.event.inputs.restart_nodes == 'true'
+        if: github.event.inputs.restart_nodes == 'true' && env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != ''
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
+          host: ${{ env.PRIMARY_HOST }}
           port: ${{ env.PRIMARY_PORT }}
-          username: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
-          key: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          fingerprint: ${{ secrets.SERVER1_FINGERPRINT || secrets.DEPLOY_FINGERPRINT }}
+          username: ${{ env.PRIMARY_USER }}
+          key: ${{ env.PRIMARY_KEY }}
+          fingerprint: ${{ env.PRIMARY_FINGERPRINT }}
           timeout: 300s
           script: |
             set -euo pipefail
@@ -461,14 +469,14 @@ jobs:
             echo "✅ Primary server repair completed."
 
       - name: Repair secondary server
-        if: github.event.inputs.fix_secondary == 'true'
+        if: github.event.inputs.fix_secondary == 'true' && env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
+          host: ${{ env.SECONDARY_HOST }}
           port: ${{ env.SECONDARY_PORT }}
-          username: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
-          key: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          fingerprint: ${{ secrets.SECONDARY_FINGERPRINT }}
+          username: ${{ env.SECONDARY_USER }}
+          key: ${{ env.SECONDARY_KEY }}
+          fingerprint: ${{ env.SECONDARY_FINGERPRINT }}
           timeout: 300s
           script: |
             set -euo pipefail
@@ -506,14 +514,14 @@ jobs:
             echo "✅ Secondary server repair completed."
 
       - name: Verify primary node health
-        if: github.event.inputs.restart_nodes == 'true'
+        if: github.event.inputs.restart_nodes == 'true' && env.PRIMARY_HOST != '' && env.PRIMARY_USER != '' && env.PRIMARY_KEY != ''
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}
+          host: ${{ env.PRIMARY_HOST }}
           port: ${{ env.PRIMARY_PORT }}
-          username: ${{ secrets.SERVER1_USER || secrets.DEPLOY_USER }}
-          key: ${{ secrets.SERVER1_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          fingerprint: ${{ secrets.SERVER1_FINGERPRINT || secrets.DEPLOY_FINGERPRINT }}
+          username: ${{ env.PRIMARY_USER }}
+          key: ${{ env.PRIMARY_KEY }}
+          fingerprint: ${{ env.PRIMARY_FINGERPRINT }}
           timeout: 300s
           script: |
             set -euo pipefail
@@ -521,14 +529,14 @@ jobs:
             echo "✅ Primary node reports healthy status."
 
       - name: Verify secondary node health
-        if: github.event.inputs.fix_secondary == 'true'
+        if: github.event.inputs.fix_secondary == 'true' && env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}
+          host: ${{ env.SECONDARY_HOST }}
           port: ${{ env.SECONDARY_PORT }}
-          username: ${{ secrets.SERVER2_USER || secrets.DEPLOY_USER }}
-          key: ${{ secrets.SERVER2_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
-          fingerprint: ${{ secrets.SECONDARY_FINGERPRINT }}
+          username: ${{ env.SECONDARY_USER }}
+          key: ${{ env.SECONDARY_KEY }}
+          fingerprint: ${{ env.SECONDARY_FINGERPRINT }}
           timeout: 300s
           script: |
             set -euo pipefail
@@ -536,22 +544,21 @@ jobs:
             echo "✅ Secondary node reports healthy status."
 
       - name: Verify P2P connectivity after repair
+        if: (github.event.inputs.restart_nodes == 'true' && env.PRIMARY_HOST != '') || (github.event.inputs.fix_secondary == 'true' && env.SECONDARY_HOST != '')
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event.inputs.restart_nodes }}" = "true" ]; then
-            primary="${{ secrets.SERVER1_HOST || secrets.DEPLOY_HOST }}"
-            echo "Testing primary node P2P on ${primary}:9000"
-            timeout 10 bash -c "</dev/tcp/${primary}/9000" || {
+          if [ "${{ github.event.inputs.restart_nodes }}" = "true" ] && [ -n "$PRIMARY_HOST" ]; then
+            echo "Testing primary node P2P on ${PRIMARY_HOST}:9000"
+            timeout 10 bash -c "</dev/tcp/${PRIMARY_HOST}/9000" || {
               echo "::error::Primary P2P port 9000 closed"
               exit 1
             }
           fi
 
-          if [ "${{ github.event.inputs.fix_secondary }}" = "true" ]; then
-            secondary="${{ secrets.SERVER2_HOST || secrets.SECONDARY_HOST }}"
-            echo "Testing secondary node P2P on ${secondary}:9001"
-            timeout 10 bash -c "</dev/tcp/${secondary}/9001" || {
+          if [ "${{ github.event.inputs.fix_secondary }}" = "true" ] && [ -n "$SECONDARY_HOST" ]; then
+            echo "Testing secondary node P2P on ${SECONDARY_HOST}:9001"
+            timeout 10 bash -c "</dev/tcp/${SECONDARY_HOST}/9001" || {
               echo "::error::Secondary P2P port 9001 closed"
               exit 1
             }

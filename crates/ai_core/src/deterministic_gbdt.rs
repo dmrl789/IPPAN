@@ -37,9 +37,8 @@ where
             None => Ok(None),
         }
     } else {
-        Option::<i64>::deserialize(deserializer)
-            .map(|opt| opt.map(Fixed::from_micro))
-            .map_err(D::Error::custom)
+        let micro = Option::<i64>::deserialize(deserializer)?;
+        Ok(micro.map(Fixed::from_micro))
     }
 }
 
@@ -65,23 +64,19 @@ fn value_to_fixed(value: &Value) -> Result<Fixed, String> {
         _ => Err(format!("expected number, found {value}")),
     }
 }
-
 /// Normalized validator telemetry (anchored to IPPAN Time)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorFeatures {
     pub node_id: String,
     pub delta_time_us: i64, // deviation from IPPAN Time median (µs)
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub latency_ms: Fixed,
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub uptime_pct: Fixed,
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub peer_entropy: Fixed,
-    #[serde(default, deserialize_with = "deserialize_option_fixed")]
+    #[serde(default)]
     pub cpu_usage: Option<Fixed>,
-    #[serde(default, deserialize_with = "deserialize_option_fixed")]
+    #[serde(default)]
     pub memory_usage: Option<Fixed>,
-    #[serde(default, deserialize_with = "deserialize_option_fixed")]
+    #[serde(default)]
     pub network_reliability: Option<Fixed>,
 }
 
@@ -89,11 +84,10 @@ pub struct ValidatorFeatures {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DecisionNode {
     pub feature: usize,
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub threshold: Fixed,
     pub left: Option<usize>,
     pub right: Option<usize>,
-    #[serde(default, deserialize_with = "deserialize_option_fixed")]
+    #[serde(default)]
     pub value: Option<Fixed>,
 }
 
@@ -107,7 +101,6 @@ pub struct GBDTTree {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DeterministicGBDT {
     pub trees: Vec<GBDTTree>,
-    #[serde(deserialize_with = "deserialize_fixed")]
     pub learning_rate: Fixed,
 }
 
@@ -314,7 +307,7 @@ pub fn compute_scores(
 // Test helpers
 // ---------------------------------------------------------------------
 
-#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
+#[cfg(any(test, feature = "deterministic_math", feature = "enable-tests"))]
 impl DeterministicGBDT {
     /// Creates a deterministic test model for use in integration tests and examples.
     pub fn create_test_model() -> Self {
@@ -351,7 +344,7 @@ impl DeterministicGBDT {
     }
 }
 
-#[cfg(any(test, feature = "enable-tests", feature = "deterministic_math"))]
+#[cfg(any(test, feature = "deterministic_math", feature = "enable-tests"))]
 pub fn create_test_model() -> DeterministicGBDT {
     DeterministicGBDT::create_test_model()
 }
@@ -363,6 +356,7 @@ pub fn create_test_model() -> DeterministicGBDT {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_model_hash_consistency_fixed() {
@@ -381,5 +375,28 @@ mod tests {
         let h1 = model.model_hash("round1").unwrap();
         let h2 = model.model_hash("round1").unwrap();
         assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_json_integers_are_treated_as_micro_units() {
+        let data = json!({
+            "node_id": "validator-alpha",
+            "delta_time_us": 0,
+            "latency_ms": 1_500, // 1.5 ms expressed in micro-units
+            "uptime_pct": 999_000, // 99.9% expressed in micro-units
+            "peer_entropy": 500_000,
+            "cpu_usage": 250_000,
+        });
+
+        let features: ValidatorFeatures =
+            serde_json::from_value(data).expect("valid features json");
+
+        assert_eq!(features.latency_ms, Fixed::from_micro(1_500));
+        assert_eq!(features.uptime_pct, Fixed::from_micro(999_000));
+        assert_eq!(features.peer_entropy, Fixed::from_micro(500_000));
+        assert_eq!(
+            features.cpu_usage.expect("cpu_usage should be present"),
+            Fixed::from_micro(250_000)
+        );
     }
 }
