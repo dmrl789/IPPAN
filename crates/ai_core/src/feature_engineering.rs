@@ -228,8 +228,8 @@ impl FeatureEngineeringPipeline {
             }
 
             if row.len() < n {
-                for idx in row.len()..n {
-                    missing[idx] += 1;
+                for count in missing.iter_mut().skip(row.len()) {
+                    *count += 1;
                 }
             }
         }
@@ -305,7 +305,7 @@ impl FeatureEngineeringPipeline {
         }
 
         for score in &mut variances {
-            *score = *score / total;
+            *score /= total;
         }
 
         let mut selected: Vec<usize> = variances
@@ -591,7 +591,7 @@ fn fixed_sqrt(value: Fixed) -> Fixed {
         return Fixed::ZERO;
     }
     let raw = value.to_micro() as i128;
-    let scaled = (raw as i128) * (SCALE as i128);
+    let scaled = raw * (SCALE as i128);
     let sqrt = integer_sqrt_u128(scaled.max(0) as u128);
     Fixed::from_micro(sqrt as i64)
 }
