@@ -48,10 +48,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          key: v20251111-${{ runner.os }}-cargo-${{ matrix.toolchain }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.toolchain }}-
-            ${{ runner.os }}-cargo-
+            v20251111-${{ runner.os }}-cargo-${{ matrix.toolchain }}-
+            v20251111-${{ runner.os }}-cargo-
 
       - name: Show tool versions
         run: |
@@ -195,8 +195,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-coverage-
+          key: v20251111-${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: v20251111-${{ runner.os }}-cargo-coverage-
 
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
