@@ -95,7 +95,7 @@ pub struct ModelPackage {
     /// Model metadata
     pub metadata: ModelMetadata,
     /// Model structure (GBDT trees, etc.)
-    pub model: crate::gbdt::GBDTModel,
+    pub model: crate::gbdt_legacy::GBDTModel,
 }
 
 /// Model loading errors
@@ -144,7 +144,7 @@ pub fn verify_model_hash(package: &ModelPackage) -> Result<(), ModelError> {
 }
 
 /// Compute deterministic hash of model structure
-fn compute_model_hash(model: &crate::gbdt::GBDTModel) -> [u8; MODEL_HASH_SIZE] {
+fn compute_model_hash(model: &crate::gbdt_legacy::GBDTModel) -> [u8; MODEL_HASH_SIZE] {
     #[derive(Serialize)]
     struct HashableMetadata<'a> {
         version: &'a str,
@@ -158,12 +158,12 @@ fn compute_model_hash(model: &crate::gbdt::GBDTModel) -> [u8; MODEL_HASH_SIZE] {
 
     #[derive(Serialize)]
     struct HashableModel<'a> {
-        trees: &'a [crate::gbdt::Tree],
+        trees: &'a [crate::gbdt_legacy::Tree],
         bias: i32,
         scale: i32,
         metadata: HashableMetadata<'a>,
-        feature_normalization: &'a Option<crate::gbdt::FeatureNormalization>,
-        security_constraints: &'a crate::gbdt::SecurityConstraints,
+        feature_normalization: &'a Option<crate::gbdt_legacy::FeatureNormalization>,
+        security_constraints: &'a crate::gbdt_legacy::SecurityConstraints,
     }
 
     let hashable = HashableModel {
@@ -193,7 +193,7 @@ fn compute_model_hash(model: &crate::gbdt::GBDTModel) -> [u8; MODEL_HASH_SIZE] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gbdt::{GBDTModel, Node, Tree};
+    use crate::gbdt_legacy::{GBDTModel, Node, Tree};
 
     fn create_test_model() -> GBDTModel {
         GBDTModel::new(

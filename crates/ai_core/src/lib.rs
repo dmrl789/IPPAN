@@ -31,6 +31,7 @@ pub mod features;
 pub mod fixed;
 pub mod fixed_point;
 pub mod gbdt;
+pub mod gbdt_legacy;
 pub mod health;
 pub mod log;
 pub mod model;
@@ -40,6 +41,7 @@ pub mod monitoring;
 pub mod production_config;
 pub mod security;
 pub mod serialization;
+pub mod serde_canon;
 pub mod tests;
 pub mod types;
 pub mod validation;
@@ -67,10 +69,18 @@ pub use deterministic_gbdt::{
 };
 pub use fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
 pub use fixed_point::FixedPoint;
-pub use gbdt::{
+
+// New deterministic GBDT inference engine (phase 2)
+pub use gbdt::{Model as GBDTInferenceModel, ModelError as GBDTInferenceError, Node as GBDTNode, Tree as GBDTInferenceTree, SCALE as GBDT_SCALE};
+
+// Legacy GBDT module (maintained for backward compatibility)
+pub use gbdt_legacy::{
     eval_gbdt, FeatureNormalization, GBDTError, GBDTMetrics, GBDTModel, GBDTResult,
     ModelMetadata as GBDTModelMetadata, Node, SecurityConstraints, Tree,
 };
+
+// Canonical serialization utilities
+pub use serde_canon::{hash_canonical, hash_canonical_hex, to_canonical_json, CanonicalError};
 
 // Feature pipeline & model management
 pub use feature_engineering::{

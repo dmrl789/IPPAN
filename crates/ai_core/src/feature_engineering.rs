@@ -5,7 +5,7 @@
 
 use crate::{
     fixed::{Fixed, SCALE},
-    gbdt::{FeatureNormalization, GBDTError},
+    gbdt_legacy::{FeatureNormalization, GBDTError},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
