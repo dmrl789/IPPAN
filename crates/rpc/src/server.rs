@@ -1045,10 +1045,7 @@ impl RateLimiterState {
 
     fn allow(&self, max_requests: u64, window: Duration) -> bool {
         let now = Instant::now();
-        let mut guard = self
-            .window
-            .lock()
-            .expect("rate limiter mutex poisoned");
+        let mut guard = self.window.lock().expect("rate limiter mutex poisoned");
 
         if now.duration_since(guard.start) >= window {
             guard.start = now;
