@@ -95,24 +95,24 @@ jobs:
         run: |
           echo "MetaAgent initialized at $(date -u)" >> $META_AGENT_LOG_DIR/assignments.log
           if [ ! -f "$META_AGENT_LOG_DIR/agent-registry.json" ]; then
-            cat > $META_AGENT_LOG_DIR/agent-registry.json <<'EOF'
-{
-  "agents": {
-    "codex": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "testsprite": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "security-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "infra-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "release-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "docs-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "ui-coach": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "gw-sre": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "legal": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null}
-  },
-  "locks": {},
-  "conflicts": [],
-  "last_quota_reset": "$(date -u +%Y-%m-%d)"
-}
-EOF
+            cat > $META_AGENT_LOG_DIR/agent-registry.json <<'JSONEOF'
+          {
+            "agents": {
+              "codex": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+              "testsprite": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+              "security-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+              "infra-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+              "release-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+              "docs-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+              "ui-coach": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+              "gw-sre": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+              "legal": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null}
+            },
+            "locks": {},
+            "conflicts": [],
+            "last_quota_reset": "$(date -u +%Y-%m-%d)"
+          }
+          JSONEOF
           fi
 
       # ============================================================

@@ -288,11 +288,8 @@ jobs:
 
             sudo ufw allow 9000/tcp || true
             sudo ufw reload || true
-        env:
-          IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
 
-        - name: Deploy to Secondary Server
+      - name: Deploy to Secondary Server
           if: env.SECONDARY_HOST != '' && env.SECONDARY_USER != '' && env.SECONDARY_KEY != ''
           uses: appleboy/ssh-action@v1.2.0
           with:
