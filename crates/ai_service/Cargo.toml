@@ -33,6 +33,7 @@ ippan-consensus = { path = "../consensus", optional = true }
 # ippan-governance = { path = "../governance" }
 ippan-types = { path = "../types" }
 ippan-crypto = { path = "../crypto" }
+ippan-security = { path = "../security" }
 
 # Async runtime
 tokio = { workspace = true }

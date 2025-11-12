@@ -87,24 +87,21 @@ All Rust workflows now use consistent caching:
 
 ### Core Rust Workflows
 - ✅ **ci.yml** - Main Rust checks (fmt, clippy, build, test)
-- ✅ **test.yml** - Comprehensive test suite
+- ✅ **test-suite.yml** - Comprehensive nightly test suite
 - ✅ **build.yml** - Docker image builds for node & gateway
-- ✅ **security.yml** - Dependency scanning (cargo-deny, npm audit)
-- ✅ **codeql.yml** - Static security analysis
+- ✅ **security-suite.yml** - Dependency scanning (cargo audit, npm audit)
+- ✅ **ippan-ci-diagnostics.yml** - Manual diagnostic sweep
 
 ### Specialized Workflows
 - ✅ **ai-determinism.yml** - AI reproducibility tests (cross-platform)
 - ✅ **ai-service.yml** - AI service CI/CD (NEW)
 - ✅ **dlc-consensus.yml** - DLC consensus validation
 - ✅ **unified-ui.yml** - Next.js UI testing (NEW)
-- ✅ **android-ci.yml** - Android wallet CI (UPDATED)
-- ✅ **android-wallet-release.yml** - Release APK builds
+- ✅ **mobile.yml** - Android wallet CI (UPDATED)
 
 ### Deployment Workflows
 - ✅ **deploy.yml** - General deployment
 - ✅ **deploy-ippan-full-stack.yml** - Multi-server deployment
-- ✅ **prod-deploy.yml** - Production deployment
-- ✅ **deploy-fix.yml** - Emergency fixes
 - ✅ **release.yml** - Version releases
 
 ### Maintenance Workflows
@@ -121,20 +118,20 @@ All Rust workflows now use consistent caching:
 
 | Crate | Primary Workflow | Additional Coverage |
 |-------|-----------------|-------------------|
-| `types` | ci.yml | test.yml |
-| `crypto` | ci.yml | security.yml |
-| `storage` | ci.yml | test.yml |
-| `network` | ci.yml | test.yml |
-| `p2p` | ci.yml | test.yml |
-| `mempool` | ci.yml | test.yml |
+| `types` | ci.yml | test-suite.yml |
+| `crypto` | ci.yml | security-suite.yml |
+| `storage` | ci.yml | test-suite.yml |
+| `network` | ci.yml | test-suite.yml |
+| `p2p` | ci.yml | test-suite.yml |
+| `mempool` | ci.yml | test-suite.yml |
 | `consensus` | ci.yml | dlc-consensus.yml |
 | `consensus_dlc` | dlc-consensus.yml | - |
-| `rpc` | ci.yml | test.yml |
-| `core` | ci.yml | test.yml |
+| `rpc` | ci.yml | test-suite.yml |
+| `core` | ci.yml | test-suite.yml |
 | `time` | ci.yml | - |
 | `ai_core` | ai-service.yml | ai-determinism.yml |
 | `ai_registry` | ai-service.yml | - |
-| `ai_service` | ai-service.yml | security.yml |
+| `ai_service` | ai-service.yml | security-suite.yml |
 | `governance` | ci.yml | - |
 | `economics` | ci.yml | - |
 | `ippan_economics` | ci.yml | - |
@@ -143,7 +140,7 @@ All Rust workflows now use consistent caching:
 | `l2_handle_registry` | ci.yml | - |
 | `l1_handle_anchors` | ci.yml | - |
 | `validator_resolution` | ci.yml | - |
-| `security` | ci.yml | security.yml |
+| `security` | ci.yml | security-suite.yml |
 | `wallet` | ci.yml | - |
 | `node` | ci.yml | build.yml |
 
@@ -153,7 +150,7 @@ All Rust workflows now use consistent caching:
 |-------------|----------|----------|
 | `apps/gateway` | ci.yml, build.yml | ✅ Tests, lint, build, security |
 | `apps/unified-ui` | unified-ui.yml | ✅ Type-check, lint, build, security |
-| `apps/mobile/android-wallet` | android-ci.yml | ✅ Tests, lint, APK builds, security |
+| `apps/mobile/android-wallet` | mobile.yml | ✅ Tests, lint, APK builds, security |
 
 ---
 

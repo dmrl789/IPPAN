@@ -84,7 +84,85 @@ pub fn get_emission_details(
 
 #[cfg(test)]
 mod tests {
-    // Tests temporarily disabled - awaiting implementation of emission functions
-    // use super::*;
-    // use crate::types::{EconomicsParams, Participation, Role};
+    use super::*;
+    use crate::types::EconomicsParams;
+
+    #[test]
+    fn emission_respects_halving_schedule() {
+        let mut params = EconomicsParams::default();
+        params.initial_round_reward_micro = 128;
+        params.halving_interval_rounds = 2;
+
+        assert_eq!(emission_for_round(0, &params), 0);
+        assert_eq!(emission_for_round(1, &params), 128);
+        assert_eq!(emission_for_round(2, &params), 128);
+        assert_eq!(emission_for_round(3, &params), 64);
+        assert_eq!(emission_for_round(4, &params), 64);
+        assert_eq!(emission_for_round(5, &params), 32);
+    }
+
+    #[test]
+    fn capped_emission_honors_remaining_supply() {
+        let mut params = EconomicsParams::default();
+        params.initial_round_reward_micro = 1_000;
+        params.max_supply_micro = 10_000;
+
+        let emission = emission_for_round_capped(1, 5_000, &params).unwrap();
+        assert_eq!(emission, 1_000);
+
+        // Remaining supply smaller than emission → clamp
+        let emission = emission_for_round_capped(2, 9_500, &params).unwrap();
+        assert_eq!(emission, 500);
+
+        // Remaining supply exhausted
+        let emission = emission_for_round_capped(3, 10_000, &params).unwrap();
+        assert_eq!(emission, 0);
+    }
+
+    #[test]
+    fn capped_emission_errors_when_supply_exceeded() {
+        let params = EconomicsParams::default();
+        let err = emission_for_round_capped(1, params.max_supply_micro + 1, &params)
+            .expect_err("should error when supply exceeded");
+
+        match err {
+            EconomicsError::SupplyCapExceeded { cap, issued } => {
+                assert_eq!(cap, params.max_supply_micro);
+                assert_eq!(issued, params.max_supply_micro + 1);
+            }
+            _ => panic!("unexpected error variant"),
+        }
+    }
+
+    #[test]
+    fn project_total_supply_matches_manual_summation() {
+        let mut params = EconomicsParams::default();
+        params.initial_round_reward_micro = 100;
+        params.halving_interval_rounds = 3;
+
+        // Manual summation for first 6 rounds: 100 + 100 + 100 + 50 + 50 + 50 = 450
+        assert_eq!(project_total_supply(0, &params), 0);
+        assert_eq!(project_total_supply(6, &params), 450);
+    }
+
+    #[test]
+    fn emission_details_reports_remaining_supply() {
+        let mut params = EconomicsParams::default();
+        params.initial_round_reward_micro = 1_000;
+        params.halving_interval_rounds = 4;
+        params.max_supply_micro = 5_000;
+
+        let result = get_emission_details(3, 2_000, &params).unwrap();
+        assert_eq!(result.round, 3);
+        assert_eq!(result.emission_micro, 1_000);
+        assert_eq!(result.total_issued_micro, 3_000);
+        assert_eq!(result.remaining_cap_micro, 2_000);
+        assert_eq!(result.halving_epoch, 0);
+
+        let result = get_emission_details(5, 4_500, &params).unwrap();
+        assert_eq!(result.emission_micro, 500); // clamped to remaining supply
+        assert_eq!(result.total_issued_micro, 5_000);
+        assert_eq!(result.remaining_cap_micro, 0);
+        assert_eq!(result.halving_epoch, 1);
+    }
 }

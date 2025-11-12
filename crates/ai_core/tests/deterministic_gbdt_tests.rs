@@ -26,13 +26,13 @@ fn fp(value: f64) -> Fixed {
 
 type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
 
-fn telemetry_entry(time_us: i64, latency_ms: f64, uptime_pct: f64, entropy: f64) -> (i64, Fixed, Fixed, Fixed) {
-    (
-        time_us,
-        fp(latency_ms),
-        fp(uptime_pct),
-        fp(entropy),
-    )
+fn telemetry_entry(
+    time_us: i64,
+    latency_ms: f64,
+    uptime_pct: f64,
+    entropy: f64,
+) -> (i64, Fixed, Fixed, Fixed) {
+    (time_us, fp(latency_ms), fp(uptime_pct), fp(entropy))
 }
 
 const EXPECTED_CANONICAL_TEST_MODEL_JSON: &str = r#"{
@@ -155,14 +155,32 @@ fn test_ippan_time_normalization() {
 #[test]
 fn test_normalize_features_clock_offset_invariance() {
     let telemetry_a: TelemetryMap = HashMap::from([
-        ("nodeA".into(), telemetry_entry(100_000_i64, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), telemetry_entry(100_080_i64, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), telemetry_entry(100_030_i64, 2.1, 98.9, 0.45)),
+        (
+            "nodeA".into(),
+            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+        ),
+        (
+            "nodeB".into(),
+            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+        ),
+        (
+            "nodeC".into(),
+            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+        ),
     ]);
     let telemetry_b: TelemetryMap = HashMap::from([
-        ("nodeA".into(), telemetry_entry(105_000_i64, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), telemetry_entry(105_080_i64, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), telemetry_entry(105_030_i64, 2.1, 98.9, 0.45)),
+        (
+            "nodeA".into(),
+            telemetry_entry(105_000_i64, 1.2, 99.9, 0.42),
+        ),
+        (
+            "nodeB".into(),
+            telemetry_entry(105_080_i64, 0.9, 99.8, 0.38),
+        ),
+        (
+            "nodeC".into(),
+            telemetry_entry(105_030_i64, 2.1, 98.9, 0.45),
+        ),
     ]);
 
     let features_a = normalize_features(&telemetry_a, 100_050);
@@ -364,6 +382,8 @@ fn test_deterministic_golden_model_hash_matches_reference_on_x86_64() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let model_path = manifest_dir.join("../../models/deterministic_gbdt_model.json");
     let golden_path = manifest_dir.join("../../models/deterministic_gbdt_model.x86_64.sha256");
+    let golden_path_aarch64 =
+        manifest_dir.join("../../models/deterministic_gbdt_model.aarch64.sha256");
 
     let model =
         DeterministicGBDT::from_json_file(&model_path).expect("Failed to load deterministic model");
@@ -378,20 +398,32 @@ fn test_deterministic_golden_model_hash_matches_reference_on_x86_64() {
         .trim()
         .to_string();
 
-    println!("Computed model hash: {}", computed_hash);
-    println!("Golden hash        : {}", golden_hash);
+    let golden_hash_aarch64 = fs::read_to_string(&golden_path_aarch64)
+        .expect("Missing aarch64 golden hash file")
+        .trim()
+        .to_string();
 
-    if computed_hash != golden_hash {
-        if std::env::var("IPPAN_UPDATE_GOLDEN_HASH").as_deref() == Ok("1") {
-            fs::write(&golden_path, format!("{}\n", computed_hash))
-                .expect("Failed to update golden hash");
-            println!("Updated golden hash file.");
-        } else {
-            panic!(
-                "Deterministic model hash mismatch. Expected {}, got {}. 
-                Re-run with IPPAN_UPDATE_GOLDEN_HASH=1 to refresh the reference.",
-                golden_hash, computed_hash
-            );
+    println!("Computed model hash : {}", computed_hash);
+    println!("Golden hash (x86_64): {}", golden_hash);
+    println!("Golden hash (aarch64): {}", golden_hash_aarch64);
+
+    let update_requested = std::env::var("IPPAN_UPDATE_GOLDEN_HASH").as_deref() == Ok("1");
+    for (arch, expected, path) in [
+        ("x86_64", &golden_hash, &golden_path),
+        ("aarch64", &golden_hash_aarch64, &golden_path_aarch64),
+    ] {
+        if &computed_hash != expected {
+            if update_requested {
+                fs::write(path, format!("{}\n", computed_hash))
+                    .unwrap_or_else(|e| panic!("Failed to update {arch} golden hash: {e}"));
+                println!("Updated {arch} golden hash file.");
+            } else {
+                panic!(
+                    "Deterministic model hash mismatch for {arch}. Expected {}, got {}. \
+                     Re-run with IPPAN_UPDATE_GOLDEN_HASH=1 to refresh the reference.",
+                    expected, computed_hash
+                );
+            }
         }
     }
 }

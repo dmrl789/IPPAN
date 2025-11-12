@@ -140,6 +140,16 @@ let score = model.score(&metrics);
 println!("Validator score: {}", score);
 ```
 
+### Long-Run Simulation Harness
+
+Run the deterministic long-run simulation (1,024 rounds, 48 validators) and stream periodic metrics:
+
+```bash
+cargo run -p ippan-consensus-dlc --example long_run_simulation
+```
+
+The harness emits supply, inflation, and reward statistics every 128 rounds and concludes with a summary table, making it suitable for CI dashboards and regression analysis.
+
 ### Validator Bonding
 
 ```rust

@@ -346,7 +346,10 @@ impl Fixed {
 
 impl From<f64> for Fixed {
     fn from(value: f64) -> Self {
-        debug_assert!(value.is_finite(), "non-finite value cannot be converted to Fixed");
+        debug_assert!(
+            value.is_finite(),
+            "non-finite value cannot be converted to Fixed"
+        );
         Fixed::from_f64(value)
     }
 }

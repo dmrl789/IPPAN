@@ -42,3 +42,4 @@ ippan-crypto = { path = "../crypto" }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
+rand = { workspace = true }

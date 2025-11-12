@@ -10,13 +10,13 @@ fn fp(value: f64) -> Fixed {
 
 type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
 
-fn telemetry_entry(time_us: i64, latency_ms: f64, uptime_pct: f64, entropy: f64) -> (i64, Fixed, Fixed, Fixed) {
-    (
-        time_us,
-        fp(latency_ms),
-        fp(uptime_pct),
-        fp(entropy),
-    )
+fn telemetry_entry(
+    time_us: i64,
+    latency_ms: f64,
+    uptime_pct: f64,
+    entropy: f64,
+) -> (i64, Fixed, Fixed, Fixed) {
+    (time_us, fp(latency_ms), fp(uptime_pct), fp(entropy))
 }
 
 #[test]
@@ -109,9 +109,18 @@ fn test_cross_platform_determinism() {
 #[test]
 fn test_usage_example() {
     let telemetry: TelemetryMap = HashMap::from([
-        ("nodeA".into(), telemetry_entry(100_000_i64, 1.2, 99.9, 0.42)),
-        ("nodeB".into(), telemetry_entry(100_080_i64, 0.9, 99.8, 0.38)),
-        ("nodeC".into(), telemetry_entry(100_030_i64, 2.1, 98.9, 0.45)),
+        (
+            "nodeA".into(),
+            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+        ),
+        (
+            "nodeB".into(),
+            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+        ),
+        (
+            "nodeC".into(),
+            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+        ),
     ]);
 
     let ippan_time_median = 100_050_i64;

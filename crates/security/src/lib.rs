@@ -13,7 +13,7 @@ pub mod validation;
 
 pub use audit::{AuditEvent, AuditLogger, SecurityEvent};
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState};
-pub use rate_limiter::{RateLimitConfig, RateLimitError, RateLimiter};
+pub use rate_limiter::{RateLimitConfig, RateLimitError, RateLimitStatsSnapshot, RateLimiter};
 pub use validation::{InputValidator, ValidationError, ValidationRule};
 
 use anyhow::Result;
@@ -236,14 +236,14 @@ impl SecurityManager {
     }
 
     /// Get security statistics
-    pub fn get_stats(&self) -> SecurityStats {
+    pub async fn get_stats(&self) -> SecurityStats {
         let blocked_ips = self.failed_attempts.read().len();
         let circuit_breaker_state = self.circuit_breaker.get_state();
 
         SecurityStats {
             blocked_ips,
             circuit_breaker_state,
-            rate_limit_stats: self.rate_limiter.get_stats(),
+            rate_limit_stats: self.rate_limiter.get_stats_json().await,
         }
     }
 }

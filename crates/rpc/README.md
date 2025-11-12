@@ -114,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unified_ui_dist: None,
         req_count: Arc::new(AtomicUsize::new(0)),
         security: None,
+        metrics: None,
     };
 
     start_server(state, "0.0.0.0:9000").await?;
