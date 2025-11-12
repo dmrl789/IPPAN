@@ -85,10 +85,10 @@ impl GbdtTrainer {
             trees.push(tree);
         }
 
-        // Create metadata
+        // Create metadata (use fixed timestamp for determinism)
         let metadata = ModelMetadata {
             version: "1.0.0".to_string(),
-            created_at: chrono::Utc::now().timestamp() as u64,
+            created_at: 0, // Fixed timestamp for deterministic output
             feature_count,
             tree_count: trees.len(),
             max_depth: self.config.max_depth,
