@@ -20,17 +20,17 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-fn fp(value: f64) -> Fixed {
-    Fixed::from_f64(value)
+fn fp(value: &str) -> Fixed {
+    Fixed::from_decimal_str(value).expect("valid decimal string")
 }
 
 type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
 
 fn telemetry_entry(
     time_us: i64,
-    latency_ms: f64,
-    uptime_pct: f64,
-    entropy: f64,
+    latency_ms: &str,
+    uptime_pct: &str,
+    entropy: &str,
 ) -> (i64, Fixed, Fixed, Fixed) {
     (time_us, fp(latency_ms), fp(uptime_pct), fp(entropy))
 }
@@ -121,15 +121,15 @@ fn test_ippan_time_normalization() {
     let mut telemetry: TelemetryMap = HashMap::new();
     telemetry.insert(
         "node1".to_string(),
-        telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+        telemetry_entry(100_000_i64, "1.2", "99.9", "0.42"),
     );
     telemetry.insert(
         "node2".to_string(),
-        telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+        telemetry_entry(100_080_i64, "0.9", "99.8", "0.38"),
     );
     telemetry.insert(
         "node3".to_string(),
-        telemetry_entry(99_950_i64, 2.1, 98.9, 0.45),
+        telemetry_entry(99_950_i64, "2.1", "98.9", "0.45"),
     );
 
     let ippan_time_median = 100_050;
@@ -146,9 +146,9 @@ fn test_ippan_time_normalization() {
     assert_eq!(by_id["node2"].delta_time_us, 30);
     assert_eq!(by_id["node3"].delta_time_us, -100);
 
-    assert_eq!(by_id["node1"].latency_ms, fp(1.2));
-    assert_eq!(by_id["node1"].uptime_pct, fp(99.9));
-    assert_eq!(by_id["node1"].peer_entropy, fp(0.42));
+    assert_eq!(by_id["node1"].latency_ms, fp("1.2"));
+    assert_eq!(by_id["node1"].uptime_pct, fp("99.9"));
+    assert_eq!(by_id["node1"].peer_entropy, fp("0.42"));
 }
 
 /// Normalization should depend on relative IPPAN time only
@@ -157,29 +157,29 @@ fn test_normalize_features_clock_offset_invariance() {
     let telemetry_a: TelemetryMap = HashMap::from([
         (
             "nodeA".into(),
-            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+            telemetry_entry(100_000_i64, "1.2", "99.9", "0.42"),
         ),
         (
             "nodeB".into(),
-            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+            telemetry_entry(100_080_i64, "0.9", "99.8", "0.38"),
         ),
         (
             "nodeC".into(),
-            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+            telemetry_entry(100_030_i64, "2.1", "98.9", "0.45"),
         ),
     ]);
     let telemetry_b: TelemetryMap = HashMap::from([
         (
             "nodeA".into(),
-            telemetry_entry(105_000_i64, 1.2, 99.9, 0.42),
+            telemetry_entry(105_000_i64, "1.2", "99.9", "0.42"),
         ),
         (
             "nodeB".into(),
-            telemetry_entry(105_080_i64, 0.9, 99.8, 0.38),
+            telemetry_entry(105_080_i64, "0.9", "99.8", "0.38"),
         ),
         (
             "nodeC".into(),
-            telemetry_entry(105_030_i64, 2.1, 98.9, 0.45),
+            telemetry_entry(105_030_i64, "2.1", "98.9", "0.45"),
         ),
     ]);
 
@@ -208,12 +208,12 @@ fn test_validator_scoring_scenarios() {
     let mut telemetry_good: TelemetryMap = HashMap::new();
     telemetry_good.insert(
         "good_node".to_string(),
-        telemetry_entry(100_000_i64, 0.5, 99.9, 0.8),
+        telemetry_entry(100_000_i64, "0.5", "99.9", "0.8"),
     );
     let mut telemetry_poor: TelemetryMap = HashMap::new();
     telemetry_poor.insert(
         "poor_node".to_string(),
-        telemetry_entry(100_000_i64, 5.0, 85.0, 0.2),
+        telemetry_entry(100_000_i64, "5.0", "85.0", "0.2"),
     );
 
     let ippan_time_median = 100_000;
@@ -252,7 +252,7 @@ fn test_model_hash_consistency() {
 fn test_model_validation_invalid_structures() {
     let empty_model = DeterministicGBDT {
         trees: vec![],
-        learning_rate: fp(0.1),
+        learning_rate: fp("0.1"),
     };
     assert!(empty_model.validate().is_err());
 
@@ -270,13 +270,13 @@ fn test_model_validation_invalid_structures() {
                 threshold: Fixed::ZERO,
                 left: None,
                 right: None,
-                value: Some(fp(0.1)),
+                value: Some(fp("0.1")),
             },
         ],
     };
     let invalid_model = DeterministicGBDT {
         trees: vec![invalid_tree],
-        learning_rate: fp(0.1),
+        learning_rate: fp("0.1"),
     };
     assert!(invalid_model.validate().is_err());
 }
@@ -285,7 +285,7 @@ fn test_model_validation_invalid_structures() {
 #[test]
 fn test_cross_platform_determinism_simulation() {
     let model = create_test_model();
-    let features = vec![fp(1.5), fp(2.5), fp(3.5), fp(4.5)];
+    let features = vec![fp("1.5"), fp("2.5"), fp("3.5"), fp("4.5")];
     let round_hash = "deterministic_round";
 
     let r1 = model.predict(&features);

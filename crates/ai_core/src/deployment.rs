@@ -395,9 +395,9 @@ impl ProductionDeployment {
 
     pub async fn get_resource_usage(&self) -> HashMap<String, Fixed> {
         HashMap::from([
-            ("memory_percent".into(), Fixed::from_f64(45.0)),
-            ("cpu_percent".into(), Fixed::from_f64(23.0)),
-            ("disk_percent".into(), Fixed::from_f64(12.0)),
+            ("memory_percent".into(), Fixed::from_int(45)),
+            ("cpu_percent".into(), Fixed::from_int(23)),
+            ("disk_percent".into(), Fixed::from_int(12)),
         ])
     }
 }

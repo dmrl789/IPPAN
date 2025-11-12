@@ -63,10 +63,10 @@ pub struct AlertThresholds {
 impl Default for AlertThresholds {
     fn default() -> Self {
         Self {
-            cpu_usage: Fixed::from_f64(80.0),
-            memory_usage: Fixed::from_f64(85.0),
+            cpu_usage: Fixed::from_int(80),
+            memory_usage: Fixed::from_int(85),
             execution_time_ms: 5000,
-            error_rate: Fixed::from_f64(5.0),
+            error_rate: Fixed::from_int(5),
         }
     }
 }
@@ -216,14 +216,10 @@ mod tests {
     #[test]
     fn test_alert_detection() {
         let mut monitor = MonitoringSystem::new(MonitoringConfig::default());
-        monitor.record_metric(
-            "cpu_usage".to_string(),
-            Fixed::from_f64(90.0),
-            HashMap::new(),
-        );
+        monitor.record_metric("cpu_usage".to_string(), Fixed::from_int(90), HashMap::new());
         monitor.record_metric(
             "error_rate".to_string(),
-            Fixed::from_f64(10.0),
+            Fixed::from_int(10),
             HashMap::new(),
         );
 
@@ -240,7 +236,7 @@ mod tests {
         let mut tags = HashMap::new();
         tags.insert("node".to_string(), "validator1".to_string());
 
-        monitor.record_metric("cpu_usage".to_string(), Fixed::from_f64(50.0), tags.clone());
+        monitor.record_metric("cpu_usage".to_string(), Fixed::from_int(50), tags.clone());
         monitor.cleanup_old_metrics();
 
         assert_eq!(monitor.metrics_count(), 1);

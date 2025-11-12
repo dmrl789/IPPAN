@@ -1,3 +1,6 @@
+#![deny(clippy::float_arithmetic)]
+#![deny(clippy::cast_precision_loss)]
+
 //! Deterministic AI Core for L1 Blockchain Operations
 //!
 //! Provides integer-only deterministic AI evaluation for validator reputation,

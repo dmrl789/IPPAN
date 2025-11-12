@@ -274,11 +274,6 @@ impl DeterministicRng {
         Fixed::from_micro(scaled as i64)
     }
 
-    /// Temporary float helper for legacy callers. Prefer `next_fixed`.
-    pub fn next_f64(&mut self) -> f64 {
-        self.next_fixed().to_f64()
-    }
-
     pub fn reset(&mut self) {
         self.state = self.seed;
     }

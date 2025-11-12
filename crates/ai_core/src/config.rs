@@ -161,8 +161,8 @@ impl Default for HealthConfig {
             enabled: true,
             check_interval: Duration::from_secs(30),
             memory_threshold: 1_000_000_000, // 1GB
-            cpu_threshold: Fixed::from_f64(80.0),
-            max_failure_rate: Fixed::from_f64(0.1), // 10%
+            cpu_threshold: Fixed::from_int(80),
+            max_failure_rate: Fixed::from_ratio(1, 10), // 10%
             min_executions: 100,
         }
     }
@@ -217,7 +217,7 @@ impl Default for PerformanceConfig {
             metrics: true,
             metrics_interval: Duration::from_secs(60),
             profiling: false,
-            sample_rate: Fixed::from_f64(0.01), // 1%
+            sample_rate: Fixed::from_ratio(1, 100), // 1%
             tracing: true,
             trace_buffer_size: 10000,
         }

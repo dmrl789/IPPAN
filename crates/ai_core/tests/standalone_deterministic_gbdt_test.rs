@@ -4,17 +4,17 @@ use ippan_ai_core::deterministic_gbdt;
 use ippan_ai_core::Fixed;
 use std::collections::HashMap;
 
-fn fp(value: f64) -> Fixed {
-    Fixed::from_f64(value)
+fn fp(value: &str) -> Fixed {
+    Fixed::from_decimal_str(value).expect("valid decimal string")
 }
 
 type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
 
 fn telemetry_entry(
     time_us: i64,
-    latency_ms: f64,
-    uptime_pct: f64,
-    entropy: f64,
+    latency_ms: &str,
+    uptime_pct: &str,
+    entropy: &str,
 ) -> (i64, Fixed, Fixed, Fixed) {
     (time_us, fp(latency_ms), fp(uptime_pct), fp(entropy))
 }
@@ -23,7 +23,7 @@ fn telemetry_entry(
 fn test_deterministic_gbdt_basic_functionality() {
     let model = deterministic_gbdt::create_test_model();
     assert_eq!(model.trees.len(), 1);
-    assert_eq!(model.learning_rate, fp(0.1));
+    assert_eq!(model.learning_rate, fp("0.1"));
 
     let features = vec![
         Fixed::from_int(1),
@@ -41,11 +41,11 @@ fn test_ippan_time_normalization() {
     let mut telemetry: TelemetryMap = HashMap::new();
     telemetry.insert(
         "node1".to_string(),
-        telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+        telemetry_entry(100_000_i64, "1.2", "99.9", "0.42"),
     );
     telemetry.insert(
         "node2".to_string(),
-        telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+        telemetry_entry(100_080_i64, "0.9", "99.8", "0.38"),
     );
 
     let ippan_time_median = 100_050_i64;
@@ -67,7 +67,7 @@ fn test_validator_scoring() {
     let mut telemetry: TelemetryMap = HashMap::new();
     telemetry.insert(
         "test_node".to_string(),
-        telemetry_entry(100_000_i64, 1.0, 99.0, 0.5),
+        telemetry_entry(100_000_i64, "1.0", "99.0", "0.5"),
     );
 
     let ippan_time_median = 100_000_i64;
@@ -78,7 +78,7 @@ fn test_validator_scoring() {
 
     assert_eq!(scores.len(), 1);
     assert!(scores.contains_key("test_node"));
-    assert!(scores["test_node"].to_f64().is_finite());
+    assert!(scores["test_node"].to_micro() >= 0);
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn test_model_hash_consistency() {
 #[test]
 fn test_cross_platform_determinism() {
     let model = deterministic_gbdt::create_test_model();
-    let features = vec![fp(1.5), fp(2.5), fp(3.5), fp(4.5)];
+    let features = vec![fp("1.5"), fp("2.5"), fp("3.5"), fp("4.5")];
 
     let node1_result = model.predict(&features);
     let node2_result = model.predict(&features);
@@ -111,15 +111,15 @@ fn test_usage_example() {
     let telemetry: TelemetryMap = HashMap::from([
         (
             "nodeA".into(),
-            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+            telemetry_entry(100_000_i64, "1.2", "99.9", "0.42"),
         ),
         (
             "nodeB".into(),
-            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+            telemetry_entry(100_080_i64, "0.9", "99.8", "0.38"),
         ),
         (
             "nodeC".into(),
-            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+            telemetry_entry(100_030_i64, "2.1", "98.9", "0.45"),
         ),
     ]);
 
@@ -137,21 +137,13 @@ fn test_usage_example() {
 
     // All scores should be finite and within a bounded range
     let mut has_positive = false;
-    for (node_id, score) in &scores {
-        let value = score.to_f64();
+    for score in scores.values() {
+        let value_micro = score.to_micro();
         assert!(
-            value.is_finite(),
-            "Score for {} is not finite: {}",
-            node_id,
-            value
+            value_micro >= -500_000,
+            "Score fell below expected floor in micro units: {value_micro}"
         );
-        assert!(
-            value >= -0.5,
-            "Score for {} is below expected floor: {}",
-            node_id,
-            value
-        );
-        if value > 0.0 {
+        if value_micro > 0 {
             has_positive = true;
         }
     }

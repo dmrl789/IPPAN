@@ -1,14 +1,12 @@
-//! Deterministic Fixed-Point Arithmetic for AI Core
+//! Deterministic fixed-point utilities for AI core computations.
 //!
-//! Provides bit-for-bit reproducible numeric operations across all architectures
-//! (x86_64, aarch64, RISC-V) for consensus-critical AI scoring and telemetry.
-//!
-//! # Design
-//! - Uses 64-bit signed integers with micro-precision (1e-6)
-//! - All operations are deterministic and platform-independent
-//! - Serialization produces identical bytes on all platforms
-//! - No floating-point operations are ever used
+//! All arithmetic operates on 64-bit signed integers that represent values in
+//! micro precision (`1 unit == 10^-6`).  The helpers in this module avoid
+//! floating point usage entirely and clamp/validate intermediate results to
+//! guarantee reproducibility across platforms.
 
+use blake3::Hasher;
+use core::cmp::Ordering;
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
@@ -16,8 +14,121 @@ use serde::{
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-/// Fixed-point precision: 1 unit = 1e-6 (micro precision)
+/// Fixed-point precision: 1 unit = 1e-6 (micro precision).
 pub const SCALE: i64 = 1_000_000;
+
+const MAX_DECIMALS: u32 = 18;
+
+#[inline]
+fn pow10(decimals: u32) -> Option<i128> {
+    if decimals > MAX_DECIMALS {
+        return None;
+    }
+    let mut value: i128 = 1;
+    for _ in 0..decimals {
+        value = value.checked_mul(10)?;
+    }
+    Some(value)
+}
+
+/// Convert `x` that is encoded with `decimals` fractional digits into the
+/// micro-precision representation (`SCALE` is 1e-6).
+///
+/// Example: `to_fixed(12345, 2)` -> `123.45` -> `123_450_000` micro units.
+pub fn to_fixed(x: i64, decimals: u32) -> i64 {
+    let scale_factor = pow10(decimals).expect("too many decimals for to_fixed");
+    let numerator = i128::from(x)
+        .checked_mul(i128::from(SCALE))
+        .expect("overflow while scaling fixed-point numerator");
+    let result = numerator
+        .checked_div(scale_factor)
+        .expect("division by zero in to_fixed");
+    i64::try_from(result).expect("scaled value exceeds i64 range")
+}
+
+/// Panic on any attempt to ingest floats into deterministic paths.
+pub fn from_f64_lossy(_x: f64) -> ! {
+    panic!("floating-point inputs are forbidden in deterministic fixed-point math");
+}
+
+/// Checked addition of two fixed-point integers.
+pub fn add(a: i64, b: i64) -> i64 {
+    a.checked_add(b)
+        .expect("fixed-point addition overflowed i64 range")
+}
+
+/// Checked subtraction of two fixed-point integers.
+pub fn sub(a: i64, b: i64) -> i64 {
+    a.checked_sub(b)
+        .expect("fixed-point subtraction overflowed i64 range")
+}
+
+/// Multiply two fixed-point values, automatically rescaling by `SCALE`.
+fn mul_fixed_checked(a: i64, b: i64) -> Option<i64> {
+    if a == 0 || b == 0 {
+        return Some(0);
+    }
+    let product = i128::from(a).checked_mul(i128::from(b))?;
+    let scaled = product.checked_div(i128::from(SCALE))?;
+    if scaled < i128::from(i64::MIN) || scaled > i128::from(i64::MAX) {
+        None
+    } else {
+        Some(scaled as i64)
+    }
+}
+
+pub fn mul_fixed(a: i64, b: i64) -> i64 {
+    mul_fixed_checked(a, b).expect("fixed-point multiplication overflowed i64 range")
+}
+
+/// Divide two fixed-point values, automatically rescaling by `SCALE`.
+fn div_fixed_checked(a: i64, b: i64) -> Option<i64> {
+    if b == 0 {
+        return None;
+    }
+    if a == 0 {
+        return Some(0);
+    }
+    let numerator = i128::from(a).checked_mul(i128::from(SCALE))?;
+    let result = numerator.checked_div(i128::from(b))?;
+    if result < i128::from(i64::MIN) || result > i128::from(i64::MAX) {
+        None
+    } else {
+        Some(result as i64)
+    }
+}
+
+pub fn div_fixed(a: i64, b: i64) -> i64 {
+    div_fixed_checked(a, b).expect("fixed-point division overflowed i64 range or divided by zero")
+}
+
+/// Clamp an `i64` between the provided `[min, max]` bounds.
+pub fn clamp_i64(value: i64, min: i64, max: i64) -> i64 {
+    assert!(min <= max, "clamp_i64 requires min <= max");
+    value.max(min).min(max)
+}
+
+/// Quantise a value down to the nearest multiple of `step`.
+///
+/// The result is always rounded *towards negative infinity* (mathematical floor),
+/// matching deterministic rounding for both positive and negative inputs.
+pub fn quantize_i64(value: i64, step: i64) -> i64 {
+    assert!(step > 0, "quantize_i64 requires strictly positive step");
+    let remainder = value % step;
+    if remainder == 0 {
+        value
+    } else if value >= 0 {
+        value - remainder
+    } else {
+        value - (remainder + step)
+    }
+}
+
+/// Comparator helper for branchless comparisons on fixed-point integers.
+#[inline]
+pub fn cmp_fixed(a: i64, b: i64) -> Ordering {
+    a.cmp(&b)
+}
 
 /// Deterministic fixed-point number with micro-precision.
 /// Internally stored as `i64`, representing value * 1_000_000.
@@ -31,13 +142,11 @@ impl Default for Fixed {
     }
 }
 
-// Custom serialization to support both JSON floats and integers
 impl Serialize for Fixed {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        // Always serialize as integer for deterministic output
         serializer.serialize_i64(self.0)
     }
 }
@@ -53,9 +162,7 @@ impl<'de> Deserialize<'de> for Fixed {
             type Value = Fixed;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str(
-                    "a fixed-point value encoded as integer micro-units or decimal number",
-                )
+                formatter.write_str("a deterministic fixed-point value encoded as integer micro-units or decimal string")
             }
 
             fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
@@ -75,20 +182,13 @@ impl<'de> Deserialize<'de> for Fixed {
                 Ok(Fixed::from_micro(value as i64))
             }
 
-            #[allow(clippy::float_arithmetic)]
-            #[allow(clippy::cast_precision_loss)]
-            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+            fn visit_f64<E>(self, _value: f64) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                if !value.is_finite() {
-                    return Err(de::Error::custom("non-finite fixed-point value"));
-                }
-                let scaled = (value * SCALE as f64).round();
-                if scaled < i64::MIN as f64 || scaled > i64::MAX as f64 {
-                    return Err(de::Error::custom("fixed-point value out of range"));
-                }
-                Ok(Fixed::from_micro(scaled as i64))
+                Err(de::Error::custom(
+                    "floating-point deserialisation is forbidden for deterministic fixed-point values",
+                ))
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
@@ -99,7 +199,7 @@ impl<'de> Deserialize<'de> for Fixed {
                     return self.visit_i64(int_micro);
                 }
                 Fixed::from_decimal_str(value)
-                    .ok_or_else(|| de::Error::custom("invalid fixed-point string"))
+                    .ok_or_else(|| de::Error::custom("invalid fixed-point decimal string"))
             }
         }
 
@@ -118,33 +218,32 @@ impl Fixed {
     pub const MAX: Self = Fixed(i64::MAX);
     pub const MIN: Self = Fixed(i64::MIN);
 
-    /// Create a Fixed from raw micro units
     #[inline]
-    pub const fn zero() -> Self {
-        Fixed(0)
-    }
-
     pub const fn from_micro(micro: i64) -> Self {
         Fixed(micro)
     }
 
-    /// Return raw micro units
     #[inline]
     pub const fn to_micro(self) -> i64 {
         self.0
     }
 
-    /// Create from integer
     #[inline]
-    pub const fn from_int(val: i64) -> Self {
-        Fixed(val.saturating_mul(SCALE))
+    pub fn from_int(value: i64) -> Self {
+        Fixed(
+            value
+                .checked_mul(SCALE)
+                .expect("fixed-point integer conversion overflowed"),
+        )
     }
 
-    /// Create from a decimal string with up to 6 fractional digits.
-    ///
-    /// The parser accepts optional sign, optional decimal point, and truncates
-    /// or rounds fractional digits beyond micro precision.
+    /// Convert an integer that encodes `decimals` fractional digits.
     #[inline]
+    pub fn from_scaled_units(value: i64, decimals: u32) -> Self {
+        Fixed(to_fixed(value, decimals))
+    }
+
+    /// Parse from a decimal string (up to 6 fractional digits).
     pub fn from_decimal_str(value: &str) -> Option<Self> {
         let trimmed = value.trim();
         if trimmed.is_empty() {
@@ -195,67 +294,29 @@ impl Fixed {
         Some(Fixed(total_micro as i64))
     }
 
-    /// Convert to integer (truncating)
     #[inline]
     pub const fn to_int(self) -> i64 {
         self.0 / SCALE
     }
 
-    /// Create from f64 (for testing / debugging only)
-    #[inline]
-    #[allow(clippy::float_arithmetic)]
-    #[allow(clippy::cast_precision_loss)]
-    pub fn from_f64(val: f64) -> Self {
-        Fixed((val * SCALE as f64).round() as i64)
-    }
-
-    /// Convert to f64 (for display/debug only)
-    #[inline]
-    #[allow(clippy::float_arithmetic)]
-    #[allow(clippy::cast_precision_loss)]
-    pub fn to_f64(self) -> f64 {
-        (self.0 as f64) / SCALE as f64
-    }
-
-    /// Absolute value
     #[inline]
     pub const fn abs(self) -> Self {
         Fixed(self.0.abs())
     }
 
-    /// Checked multiplication
     #[inline]
     pub fn checked_mul(self, rhs: Self) -> Option<Self> {
-        let a = self.0 as i128;
-        let b = rhs.0 as i128;
-        let r = (a * b) / SCALE as i128;
-        if r > i64::MAX as i128 || r < i64::MIN as i128 {
-            None
-        } else {
-            Some(Fixed(r as i64))
-        }
+        mul_fixed_checked(self.0, rhs.0).map(Fixed)
     }
 
-    /// Checked division
     #[inline]
     pub fn checked_div(self, rhs: Self) -> Option<Self> {
-        if rhs.0 == 0 {
-            return None;
-        }
-        let a = self.0 as i128;
-        let b = rhs.0 as i128;
-        let r = (a * SCALE as i128) / b;
-        if r > i64::MAX as i128 || r < i64::MIN as i128 {
-            None
-        } else {
-            Some(Fixed(r as i64))
-        }
+        div_fixed_checked(self.0, rhs.0).map(Fixed)
     }
 
-    /// Saturating multiplication
     #[inline]
     pub fn saturating_mul(self, rhs: Self) -> Self {
-        self.checked_mul(rhs).unwrap_or({
+        self.checked_mul(rhs).unwrap_or_else(|| {
             if (self.0 < 0) == (rhs.0 < 0) {
                 Fixed::MAX
             } else {
@@ -264,17 +325,13 @@ impl Fixed {
         })
     }
 
-    /// Saturating division
     #[inline]
     pub fn saturating_div(self, rhs: Self) -> Self {
-        self.checked_div(rhs).unwrap_or({
-            if rhs.0 == 0 {
-                if self.0 >= 0 {
-                    Fixed::MAX
-                } else {
-                    Fixed::MIN
-                }
-            } else if (self.0 < 0) == (rhs.0 < 0) {
+        if rhs.0 == 0 {
+            return if self.0 >= 0 { Fixed::MAX } else { Fixed::MIN };
+        }
+        self.checked_div(rhs).unwrap_or_else(|| {
+            if (self.0 < 0) == (rhs.0 < 0) {
                 Fixed::MAX
             } else {
                 Fixed::MIN
@@ -282,14 +339,13 @@ impl Fixed {
         })
     }
 
-    /// Create Fixed from integer ratio
     #[inline]
-    pub fn from_ratio(num: i64, denom: i64) -> Self {
-        if denom == 0 {
+    pub fn from_ratio(numerator: i64, denominator: i64) -> Self {
+        if denominator == 0 {
             return Fixed::ZERO;
         }
-        let r = ((num as i128) * SCALE as i128) / denom as i128;
-        Fixed(r.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
+        let ratio = (i128::from(numerator) * i128::from(SCALE)) / i128::from(denominator);
+        Fixed(ratio.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64)
     }
 
     #[inline]
@@ -300,9 +356,10 @@ impl Fixed {
     #[inline]
     pub const fn div_int(self, rhs: i64) -> Self {
         if rhs == 0 {
-            return Fixed::ZERO;
+            Fixed::ZERO
+        } else {
+            Fixed(self.0 / rhs)
         }
-        Fixed(self.0 / rhs)
     }
 
     #[inline]
@@ -324,14 +381,8 @@ impl Fixed {
     }
 
     #[inline]
-    pub const fn clamp(self, min: Self, max: Self) -> Self {
-        if self.0 < min.0 {
-            min
-        } else if self.0 > max.0 {
-            max
-        } else {
-            self
-        }
+    pub fn clamp(self, min: Self, max: Self) -> Self {
+        Fixed(clamp_i64(self.0, min.0, max.0))
     }
 
     #[inline]
@@ -350,90 +401,73 @@ impl Fixed {
     }
 }
 
-impl From<f64> for Fixed {
-    #[allow(clippy::float_arithmetic)]
-    #[allow(clippy::cast_precision_loss)]
-    fn from(value: f64) -> Self {
-        debug_assert!(
-            value.is_finite(),
-            "non-finite value cannot be converted to Fixed"
-        );
-        Fixed::from_f64(value)
-    }
-}
-
-impl From<f32> for Fixed {
-    #[allow(clippy::float_arithmetic)]
-    #[allow(clippy::cast_precision_loss)]
-    fn from(value: f32) -> Self {
-        Fixed::from(value as f64)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Arithmetic traits
-// ---------------------------------------------------------------------------
-
 impl Add for Fixed {
     type Output = Self;
-    fn add(self, rhs: Self) -> Self {
-        Fixed(self.0.saturating_add(rhs.0))
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Fixed(add(self.0, rhs.0))
     }
 }
+
 impl Sub for Fixed {
     type Output = Self;
-    fn sub(self, rhs: Self) -> Self {
-        Fixed(self.0.saturating_sub(rhs.0))
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Fixed(sub(self.0, rhs.0))
     }
 }
+
 impl Mul for Fixed {
     type Output = Self;
-    fn mul(self, rhs: Self) -> Self {
-        let r = ((self.0 as i128) * (rhs.0 as i128)) / SCALE as i128;
-        Fixed(r.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Fixed(mul_fixed(self.0, rhs.0))
     }
 }
+
 impl Div for Fixed {
     type Output = Self;
-    fn div(self, rhs: Self) -> Self {
+
+    fn div(self, rhs: Self) -> Self::Output {
         if rhs.0 == 0 {
-            return Fixed::ZERO;
+            Fixed::ZERO
+        } else {
+            Fixed(div_fixed(self.0, rhs.0))
         }
-        let r = ((self.0 as i128) * SCALE as i128) / rhs.0 as i128;
-        Fixed(r.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
     }
 }
+
 impl Neg for Fixed {
     type Output = Self;
-    fn neg(self) -> Self {
-        Fixed(-self.0)
+
+    fn neg(self) -> Self::Output {
+        Fixed(self.0.saturating_neg())
     }
 }
 
 impl AddAssign for Fixed {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.saturating_add(rhs.0);
+        self.0 = add(self.0, rhs.0);
     }
 }
+
 impl SubAssign for Fixed {
     fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.saturating_sub(rhs.0);
+        self.0 = sub(self.0, rhs.0);
     }
 }
+
 impl MulAssign for Fixed {
     fn mul_assign(&mut self, rhs: Self) {
         *self = *self * rhs;
     }
 }
+
 impl DivAssign for Fixed {
     fn div_assign(&mut self, rhs: Self) {
         *self = *self / rhs;
     }
 }
-
-// ---------------------------------------------------------------------------
-// Display / Debug
-// ---------------------------------------------------------------------------
 
 impl fmt::Display for Fixed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -442,12 +476,6 @@ impl fmt::Display for Fixed {
         write!(f, "{}.{:06}", int_part, frac)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Deterministic Hashing
-// ---------------------------------------------------------------------------
-
-use blake3::Hasher;
 
 fn parse_fraction_component(part: &str) -> Option<(i64, bool)> {
     if part.is_empty() {
@@ -490,14 +518,14 @@ fn parse_fraction_component(part: &str) -> Option<(i64, bool)> {
     Some((micro, carry))
 }
 
-/// Deterministic Blake3 hash of a single fixed value
+/// Deterministic Blake3 hash of a single fixed value.
 pub fn hash_fixed(val: Fixed) -> [u8; 32] {
     let mut hasher = Hasher::new();
     hasher.update(&val.0.to_le_bytes());
     *hasher.finalize().as_bytes()
 }
 
-/// Deterministic Blake3 hash of multiple values
+/// Deterministic Blake3 hash of multiple values.
 pub fn hash_fixed_slice(values: &[Fixed]) -> [u8; 32] {
     let mut hasher = Hasher::new();
     for v in values {
@@ -506,154 +534,45 @@ pub fn hash_fixed_slice(values: &[Fixed]) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-// ---------------------------------------------------------------------------
-// Raw i64 Fixed-Point Operations (Alternative Interface)
-// ---------------------------------------------------------------------------
-
-/// Convert an integer with specified decimal places to fixed-point micro representation
-/// 
-/// # Arguments
-/// * `x` - The integer value
-/// * `decimals` - Number of decimal places (0-6 supported)
-/// 
-/// # Example
-/// ```
-/// use ippan_ai_core::fixed::to_fixed;
-/// assert_eq!(to_fixed(123, 0), 123_000_000); // 123.0
-/// assert_eq!(to_fixed(1234, 3), 1_234_000);  // 1.234
-/// ```
-#[inline]
-pub fn to_fixed(x: i64, decimals: u32) -> i64 {
-    if decimals == 0 {
-        x.saturating_mul(SCALE)
-    } else if decimals >= 6 {
-        x
-    } else {
-        let divisor = 10_i64.pow(decimals);
-        x.saturating_mul(SCALE / divisor)
-    }
-}
-
-/// This function intentionally panics to prevent accidental floating-point usage
-/// in consensus-critical code paths.
-/// 
-/// # Panics
-/// Always panics with a message directing to use integer-based conversion
-#[inline]
-pub fn from_f64_lossy(_x: f64) -> ! {
-    panic!("from_f64_lossy: Floating-point conversion is forbidden in runtime paths. Use to_fixed() or Fixed::from_int() instead.");
-}
-
-/// Add two fixed-point values (raw i64)
-#[inline]
-pub fn add(a: i64, b: i64) -> i64 {
-    a.saturating_add(b)
-}
-
-/// Subtract two fixed-point values (raw i64)
-#[inline]
-pub fn sub(a: i64, b: i64) -> i64 {
-    a.saturating_sub(b)
-}
-
-/// Multiply two fixed-point values with proper scaling
-/// Result = (a * b) / SCALE
-#[inline]
-pub fn mul_fixed(a: i64, b: i64) -> i64 {
-    let result = ((a as i128) * (b as i128)) / (SCALE as i128);
-    result.clamp(i64::MIN as i128, i64::MAX as i128) as i64
-}
-
-/// Divide two fixed-point values with proper scaling
-/// Result = (a * SCALE) / b
-#[inline]
-pub fn div_fixed(a: i64, b: i64) -> i64 {
-    if b == 0 {
-        return 0;
-    }
-    let result = ((a as i128) * (SCALE as i128)) / (b as i128);
-    result.clamp(i64::MIN as i128, i64::MAX as i128) as i64
-}
-
-/// Clamp an i64 value between min and max
-#[inline]
-pub fn clamp_i64(v: i64, min: i64, max: i64) -> i64 {
-    if v < min {
-        min
-    } else if v > max {
-        max
-    } else {
-        v
-    }
-}
-
-/// Quantize a value to the nearest step (floor rounding)
-/// 
-/// # Example
-/// ```
-/// use ippan_ai_core::fixed::{quantize_i64, SCALE};
-/// let step = SCALE / 10; // 0.1 steps
-/// assert_eq!(quantize_i64(1_234_567, step), 1_200_000); // 1.2
-/// ```
-#[inline]
-pub fn quantize_i64(v: i64, step: i64) -> i64 {
-    if step == 0 {
-        return v;
-    }
-    (v / step) * step
-}
-
-/// Compare two fixed-point values, returning their ordering
-/// Implements FixedOrd semantics for branch comparisons
-#[inline]
-pub fn cmp_fixed(a: i64, b: i64) -> core::cmp::Ordering {
-    a.cmp(&b)
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_basic_arithmetic() {
-        let a = Fixed::from_f64(1.5);
-        let b = Fixed::from_f64(2.25);
-        let c = a * b;
-        assert_eq!(c.to_micro(), 3_375_000);
-        assert_eq!((a + b).to_micro(), 3_750_000);
+    fn scaled_conversion_matches_expected() {
+        assert_eq!(to_fixed(12345, 2), 123_450_000);
+        assert_eq!(to_fixed(-5, 0), -5_000_000);
+        assert_eq!(to_fixed(1, 6), 1);
     }
 
     #[test]
-    fn test_ratio_and_roundtrip() {
-        let half = Fixed::from_ratio(1, 2);
-        assert!((half.to_f64() - 0.5).abs() < 1e-6);
-        let x = Fixed::from_f64(123.456789);
-        assert!((x.to_f64() - 123.456789).abs() < 1e-6);
+    fn fixed_arithmetic_matches_helpers() {
+        let a = Fixed::from_ratio(3, 2); // 1.5
+        let b = Fixed::from_ratio(9, 4); // 2.25
+        let product = a * b;
+        assert_eq!(product.to_micro(), mul_fixed(a.to_micro(), b.to_micro()));
+        let sum = a + b;
+        assert_eq!(sum.to_micro(), add(a.to_micro(), b.to_micro()));
     }
 
     #[test]
-    fn test_hash_determinism() {
-        let x = Fixed::from_f64(1.234567);
-        let h1 = hash_fixed(x);
-        let h2 = hash_fixed(x);
-        assert_eq!(h1, h2);
+    fn quantize_handles_negative_values() {
+        assert_eq!(quantize_i64(9_999_999, 1_000), 9_999_000);
+        assert_eq!(quantize_i64(-9_999_999, 1_000), -10_000_000);
     }
 
     #[test]
-    fn test_display_and_signs() {
-        assert_eq!(Fixed::from_int(5).to_string(), "5.000000");
-        assert_eq!(Fixed::from_int(-5).to_string(), "-5.000000");
+    fn cmp_fixed_orders_correctly() {
+        assert_eq!(cmp_fixed(1, 2), Ordering::Less);
+        assert_eq!(cmp_fixed(5, 5), Ordering::Equal);
+        assert_eq!(cmp_fixed(10, -10), Ordering::Greater);
     }
 
     #[test]
-    fn test_cross_platform_determinism() {
-        let vals = vec![Fixed::from_int(1), Fixed::from_int(2), Fixed::from_int(3)];
-        let s1 = serde_json::to_string(&vals).unwrap();
-        let s2 = serde_json::to_string(&vals).unwrap();
-        assert_eq!(s1, s2);
+    fn serialization_is_stable() {
+        let values = vec![Fixed::from_int(1), Fixed::from_ratio(1, 10)];
+        let encoded = serde_json::to_string(&values).unwrap();
+        let decoded: Vec<Fixed> = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(values, decoded);
     }
 }
