@@ -107,17 +107,18 @@ jobs:
 
       - name: Skip dependency scan (missing NVD API key)
         if: steps.nvd_key.outputs.configured == 'false'
-        run: echo "NVD API key not configured; skipping dependency check."
+        run: echo "⚠️ NVD API key not configured; skipping dependency check."
 
       - name: Run dependency check
-        if: steps.nvd_key.outputs.configured == 'true' && env.NVD_API_KEY != ''
+        if: steps.nvd_key.outputs.configured == 'true'
         working-directory: apps/mobile/android-wallet
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
           NVD_API_KEY: ${{ env.NVD_API_KEY }}
         run: ./gradlew dependencyCheckAnalyze --stacktrace -Pnvd.api.key="$NVD_API_KEY"
+
       - name: Upload dependency reports
-        if: steps.nvd_key.outputs.configured == 'true' && env.NVD_API_KEY != '' && always()
+        if: steps.nvd_key.outputs.configured == 'true' && always()
         uses: actions/upload-artifact@v4
         with:
           name: android-dependency-reports
