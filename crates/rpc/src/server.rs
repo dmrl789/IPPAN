@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::task::{Context as TaskContext, Poll};
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context as AnyhowContext, Result};
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::header::{HeaderValue, CONTENT_TYPE};
@@ -22,7 +22,6 @@ use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, Storage};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
-use metrics::gauge;
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex};
@@ -37,7 +36,7 @@ use hex::encode as hex_encode;
 
 use crate::{HttpP2PNetwork, NetworkMessage};
 
-const RATE_LIMIT_PER_SECOND: usize = 200;
+const RATE_LIMIT_PER_SECOND: u64 = 200;
 const CIRCUIT_BREAKER_FAILURE_THRESHOLD: usize = 5;
 const CIRCUIT_BREAKER_OPEN_SECS: u64 = 30;
 
@@ -173,7 +172,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    let rate_limit = RateLimiterLayer::new(RATE_LIMIT_PER_SECOND, Duration::from_secs(1));
+    let rate_limiter = RateLimiterLayer::new(RATE_LIMIT_PER_SECOND, Duration::from_secs(1));
     let circuit_breaker = CircuitBreakerLayer::new(
         CIRCUIT_BREAKER_FAILURE_THRESHOLD,
         Duration::from_secs(CIRCUIT_BREAKER_OPEN_SECS),
@@ -213,7 +212,7 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     router
         .layer(cors)
-        .layer(rate_limit)
+        .layer(rate_limiter)
         .layer(circuit_breaker)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -304,7 +303,7 @@ async fn deny_request(
 // -----------------------------------------------------------------------------
 
 async fn handle_health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    gauge!("node_health").set(1.0);
+    metrics::gauge!("node_health").set(1.0);
     Json(serde_json::json!({
         "status": "healthy",
         "timestamp": ippan_time_now(),
@@ -319,7 +318,7 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     let peer_count = state.peer_count.load(Ordering::Relaxed);
     let requests_served = state.req_count.load(Ordering::Relaxed);
     let mempool_size = state.mempool.size();
-    gauge!("mempool_size").set(mempool_size as f64);
+    metrics::gauge!("mempool_size").set(mempool_size as f64);
     let mut consensus_round_metric = 0.0;
 
     let consensus_view = if let Some(consensus) = &state.consensus {
@@ -340,7 +339,7 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     } else {
         None
     };
-    gauge!("consensus_round").set(consensus_round_metric);
+    metrics::gauge!("consensus_round").set(consensus_round_metric);
 
     Json(serde_json::json!({
         "status": "ok",
@@ -968,14 +967,16 @@ fn account_to_response(account: Account, transactions: Vec<Transaction>) -> Acco
 #[derive(Clone)]
 struct RateLimiterLayer {
     state: Arc<RateLimiterState>,
-    max_requests: usize,
+    max_requests: u64,
+    window: Duration,
 }
 
 impl RateLimiterLayer {
-    fn new(max_requests: usize, interval: Duration) -> Self {
+    fn new(max_requests: u64, window: Duration) -> Self {
         Self {
-            state: Arc::new(RateLimiterState::new(max_requests, interval)),
+            state: Arc::new(RateLimiterState::new()),
             max_requests,
+            window,
         }
     }
 }
@@ -988,6 +989,7 @@ impl<S> Layer<S> for RateLimiterLayer {
             inner: service,
             state: Arc::clone(&self.state),
             max_requests: self.max_requests,
+            window: self.window,
         }
     }
 }
@@ -996,7 +998,8 @@ impl<S> Layer<S> for RateLimiterLayer {
 struct RateLimiter<S> {
     inner: S,
     state: Arc<RateLimiterState>,
-    max_requests: usize,
+    max_requests: u64,
+    window: Duration,
 }
 
 impl<S, Request> Service<Request> for RateLimiter<S>
@@ -1013,59 +1016,57 @@ where
     }
 
     fn call(&mut self, request: Request) -> Self::Future {
-        if self.state.try_acquire(self.max_requests) {
-            let future = self.inner.call(request);
-            Box::pin(async move { future.await })
-        } else {
+        if !self.state.allow(self.max_requests, self.window) {
             let response = Response::builder()
                 .status(StatusCode::TOO_MANY_REQUESTS)
                 .body(Body::from("Rate limit exceeded"))
                 .expect("failed to build rate limit response");
-            Box::pin(async move { Ok(response) })
+            return Box::pin(async move { Ok(response) });
         }
+
+        let future = self.inner.call(request);
+        Box::pin(async move { future.await })
     }
 }
 
 struct RateLimiterState {
-    remaining: AtomicUsize,
-    next_reset: std::sync::Mutex<Instant>,
-    interval: Duration,
+    window: std::sync::Mutex<RateWindow>,
 }
 
 impl RateLimiterState {
-    fn new(max_requests: usize, interval: Duration) -> Self {
+    fn new() -> Self {
         Self {
-            remaining: AtomicUsize::new(max_requests),
-            next_reset: std::sync::Mutex::new(Instant::now() + interval),
-            interval,
+            window: std::sync::Mutex::new(RateWindow {
+                start: Instant::now(),
+                count: 0,
+            }),
         }
     }
 
-    fn try_acquire(&self, max_requests: usize) -> bool {
-        {
-            let mut next_reset = self.next_reset.lock().expect("rate limiter mutex poisoned");
-            let now = Instant::now();
-            if now >= *next_reset {
-                self.remaining.store(max_requests, Ordering::Relaxed);
-                *next_reset = now + self.interval;
-            }
+    fn allow(&self, max_requests: u64, window: Duration) -> bool {
+        let now = Instant::now();
+        let mut guard = self
+            .window
+            .lock()
+            .expect("rate limiter mutex poisoned");
+
+        if now.duration_since(guard.start) >= window {
+            guard.start = now;
+            guard.count = 0;
         }
 
-        loop {
-            let current = self.remaining.load(Ordering::Relaxed);
-            if current == 0 {
-                return false;
-            }
-
-            if self
-                .remaining
-                .compare_exchange(current, current - 1, Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-            {
-                return true;
-            }
+        if guard.count < max_requests {
+            guard.count += 1;
+            true
+        } else {
+            false
         }
     }
+}
+
+struct RateWindow {
+    start: Instant,
+    count: u64,
 }
 
 #[derive(Clone)]
@@ -1098,12 +1099,25 @@ impl<S> Layer<S> for CircuitBreakerLayer {
     }
 }
 
-#[derive(Clone)]
 struct CircuitBreaker<S> {
     inner: S,
     state: Arc<CircuitBreakerState>,
     failure_threshold: usize,
     open_duration: Duration,
+}
+
+impl<S> Clone for CircuitBreaker<S>
+where
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            state: Arc::clone(&self.state),
+            failure_threshold: self.failure_threshold,
+            open_duration: self.open_duration,
+        }
+    }
 }
 
 impl<S, Request> Service<Request> for CircuitBreaker<S>
