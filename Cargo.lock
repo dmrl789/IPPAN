@@ -2908,6 +2908,8 @@ dependencies = [
  "blake3",
  "chrono",
  "ed25519-dalek",
+ "ippan-ai-core",
+ "ippan-ai-registry",
  "ippan-crypto",
  "ippan-types",
  "log",

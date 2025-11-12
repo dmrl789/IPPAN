@@ -1,0 +1,90 @@
+{
+  "trees": [
+    {
+      "nodes": [
+        {
+          "feature_index": 0,
+          "threshold": 5000,
+          "left": 1,
+          "right": 2,
+          "value": null
+        },
+        {
+          "feature_index": 0,
+          "threshold": 0,
+          "left": 0,
+          "right": 0,
+          "value": 3000
+        },
+        {
+          "feature_index": 2,
+          "threshold": 7000,
+          "left": 3,
+          "right": 4,
+          "value": null
+        },
+        {
+          "feature_index": 0,
+          "threshold": 0,
+          "left": 0,
+          "right": 0,
+          "value": 6000
+        },
+        {
+          "feature_index": 0,
+          "threshold": 0,
+          "left": 0,
+          "right": 0,
+          "value": 9000
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "feature_index": 3,
+          "threshold": 3000,
+          "left": 1,
+          "right": 2,
+          "value": null
+        },
+        {
+          "feature_index": 0,
+          "threshold": 0,
+          "left": 0,
+          "right": 0,
+          "value": 4000
+        },
+        {
+          "feature_index": 0,
+          "threshold": 0,
+          "left": 0,
+          "right": 0,
+          "value": 7000
+        }
+      ]
+    }
+  ],
+  "bias": 1000,
+  "scale": 10000,
+  "metadata": {
+    "version": "1.0.0",
+    "created_at": 1699564800,
+    "feature_count": 7,
+    "tree_count": 2,
+    "max_depth": 3,
+    "model_hash": "abc123",
+    "training_data_hash": "def456",
+    "performance_metrics": {}
+  },
+  "feature_normalization": null,
+  "security_constraints": {
+    "max_evaluation_time_ms": 1000,
+    "max_feature_value": 100000,
+    "min_feature_value": -100000,
+    "max_tree_depth": 20,
+    "max_trees": 1000,
+    "enable_feature_validation": true,
+    "enable_security_logging": false
+  }
+}

@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+#[cfg(feature = "d_gbdt")]
+use crate::scoring::d_gbdt::{score_validators, ValidatorSnapshot};
+
 /// A set of verifiers for a consensus round
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VerifierSet {
@@ -76,6 +79,94 @@ impl VerifierSet {
                 }
             }
         }
+
+        Ok(Self {
+            primary,
+            shadows,
+            round,
+            seed: seed_string,
+        })
+    }
+
+    /// Select verifiers using D-GBDT scoring (when feature is enabled)
+    ///
+    /// This method uses the deterministic GBDT model from ai_core for validator
+    /// selection. Falls back to default PoA weights if no model is provided.
+    #[cfg(feature = "d_gbdt")]
+    pub fn select_with_d_gbdt(
+        gbdt_model: Option<&ippan_ai_core::gbdt::GBDTModel>,
+        validators: &HashMap<String, ValidatorMetrics>,
+        seed: impl Into<String>,
+        round: u64,
+        max_set_size: usize,
+    ) -> Result<Self> {
+        if validators.is_empty() {
+            return Err(DlcError::InvalidVerifierSet(
+                "No validators available".to_string(),
+            ));
+        }
+
+        let seed_string = seed.into();
+
+        // Convert ValidatorMetrics to ValidatorSnapshot for D-GBDT scoring
+        let snapshots: Vec<ValidatorSnapshot> = validators
+            .iter()
+            .map(|(id, metrics)| ValidatorSnapshot::from_metrics(id.clone(), metrics))
+            .collect();
+
+        // Score validators using D-GBDT
+        let scored = score_validators(&snapshots, gbdt_model)?;
+
+        if scored.is_empty() {
+            return Err(DlcError::InvalidVerifierSet(
+                "No validators scored".to_string(),
+            ));
+        }
+
+        // Apply additional entropy for tie-breaking
+        let mut sorted_validators: Vec<(String, i64)> = scored
+            .into_iter()
+            .map(|(id, score, _weight)| (id, score))
+            .collect();
+
+        sorted_validators.sort_by(|a, b| {
+            match b.1.cmp(&a.1) {
+                Ordering::Equal => Self::compare_with_entropy(&seed_string, round, &a.0, &b.0),
+                other => other,
+            }
+        });
+
+        let selection_count = max_set_size.max(1).min(sorted_validators.len());
+
+        let primary = sorted_validators
+            .first()
+            .map(|(id, _)| id.clone())
+            .ok_or_else(|| DlcError::InvalidVerifierSet("No primary validator".to_string()))?;
+
+        let rest: Vec<String> = sorted_validators
+            .iter()
+            .skip(1)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        let mut shadows = Vec::new();
+        if selection_count > 1 && !rest.is_empty() {
+            let rotation_offset = Self::selection_offset(&seed_string, round, rest.len());
+            for idx in 0..(selection_count - 1) {
+                let candidate_index = (rotation_offset + idx) % rest.len();
+                let candidate = rest[candidate_index].clone();
+                if !shadows.contains(&candidate) {
+                    shadows.push(candidate);
+                }
+            }
+        }
+
+        tracing::debug!(
+            "D-GBDT selection for round {}: primary={}, shadows={:?}",
+            round,
+            primary,
+            shadows
+        );
 
         Ok(Self {
             primary,
@@ -233,10 +324,13 @@ pub struct ValidatorSetManager {
     validators: HashMap<String, ValidatorMetrics>,
     /// Current verifier set
     current_verifiers: Option<VerifierSet>,
-    /// Fairness model for selection
+    /// Fairness model for selection (legacy)
     model: FairnessModel,
     /// Maximum number of verifiers to select each round
     max_set_size: usize,
+    /// Optional D-GBDT model for enhanced selection
+    #[cfg(feature = "d_gbdt")]
+    gbdt_model: Option<ippan_ai_core::gbdt::GBDTModel>,
 }
 
 impl ValidatorSetManager {
@@ -247,7 +341,23 @@ impl ValidatorSetManager {
             current_verifiers: None,
             model,
             max_set_size: max_set_size.max(1),
+            #[cfg(feature = "d_gbdt")]
+            gbdt_model: None,
         }
+    }
+
+    /// Set the D-GBDT model for enhanced validator selection
+    #[cfg(feature = "d_gbdt")]
+    pub fn set_gbdt_model(&mut self, model: ippan_ai_core::gbdt::GBDTModel) {
+        tracing::info!("D-GBDT model loaded for validator selection");
+        self.gbdt_model = Some(model);
+    }
+
+    /// Clear the D-GBDT model (fall back to legacy FairnessModel)
+    #[cfg(feature = "d_gbdt")]
+    pub fn clear_gbdt_model(&mut self) {
+        tracing::info!("D-GBDT model cleared, reverting to legacy FairnessModel");
+        self.gbdt_model = None;
     }
 
     /// Register a new validator
@@ -296,6 +406,26 @@ impl ValidatorSetManager {
 
     /// Select verifiers for a new round
     pub fn select_for_round(&mut self, seed: String, round: u64) -> Result<&VerifierSet> {
+        #[cfg(feature = "d_gbdt")]
+        {
+            // Use D-GBDT model if available
+            if self.gbdt_model.is_some() {
+                tracing::debug!("Using D-GBDT model for round {} selection", round);
+                let verifier_set = VerifierSet::select_with_d_gbdt(
+                    self.gbdt_model.as_ref(),
+                    &self.validators,
+                    seed,
+                    round,
+                    self.max_set_size,
+                )?;
+                self.current_verifiers = Some(verifier_set);
+                return Ok(self.current_verifiers.as_ref().unwrap());
+            } else {
+                tracing::debug!("No D-GBDT model available, using legacy FairnessModel");
+            }
+        }
+
+        // Default: use legacy FairnessModel
         let verifier_set = VerifierSet::select(
             &self.model,
             &self.validators,

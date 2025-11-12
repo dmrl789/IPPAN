@@ -46,6 +46,9 @@ pub mod hashtimer;
 pub mod reputation;
 pub mod verifier;
 
+#[cfg(feature = "d_gbdt")]
+pub mod scoring;
+
 #[cfg(test)]
 mod tests;
 

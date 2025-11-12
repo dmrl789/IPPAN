@@ -415,10 +415,12 @@ async fn test_long_run_consensus_simulation_stability() {
 
     init_dlc();
 
-    let mut config = DlcConfig::default();
-    config.validators_per_round = 11;
-    config.unstaking_lock_rounds = 256;
-    config.min_reputation = 2500;
+    let config = DlcConfig {
+        validators_per_round: 11,
+        unstaking_lock_rounds: 256,
+        min_reputation: 2500,
+        ..Default::default()
+    };
 
     let validators_per_round = config.validators_per_round;
     let mut consensus = DlcConsensus::new(config);
@@ -478,7 +480,7 @@ async fn test_long_run_consensus_simulation_stability() {
         total_emission += (result.block_reward as u128) * (result.blocks_processed as u128);
         reward_history.push(result.block_reward);
 
-        if round % 32 == 0 {
+        if round.is_multiple_of(32) {
             let stats = consensus.stats();
             assert_eq!(stats.current_round, round);
             assert!(
