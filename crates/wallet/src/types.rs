@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::{self, Value};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -191,9 +192,29 @@ impl WalletBackup {
     }
 
     fn calculate_checksum(state: &WalletState) -> String {
-        // Simple checksum for integrity verification
-        let data = serde_json::to_string(state).unwrap_or_default();
+        // Stable checksum for integrity verification
+        let value = serde_json::to_value(state).unwrap_or(Value::Null);
+        let canonical = Self::canonicalize_json(value);
+        let data = serde_json::to_string(&canonical).unwrap_or_default();
         blake3::hash(data.as_bytes()).to_hex()[..16].to_string()
+    }
+
+    fn canonicalize_json(value: Value) -> Value {
+        match value {
+            Value::Object(map) => {
+                let mut entries: Vec<_> = map.into_iter().collect();
+                entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+                let mut ordered = serde_json::Map::with_capacity(entries.len());
+                for (key, val) in entries {
+                    ordered.insert(key, Self::canonicalize_json(val));
+                }
+                Value::Object(ordered)
+            }
+            Value::Array(arr) => {
+                Value::Array(arr.into_iter().map(Self::canonicalize_json).collect())
+            }
+            other => other,
+        }
     }
 
     pub fn verify_checksum(&self) -> bool {

@@ -111,11 +111,38 @@ impl WalletStorage {
     where
         F: FnOnce(&mut WalletState) -> Result<()>,
     {
-        let mut state = self.wallet_state.write();
-        if let Some(ref mut wallet_state) = *state {
-            updater(wallet_state)?;
+        let should_save = {
+            let mut state = self.wallet_state.write();
+            if let Some(ref mut wallet_state) = *state {
+                updater(wallet_state)?;
+                true
+            } else {
+                false
+            }
+        };
+
+        if should_save {
             self.save_wallet()?;
         }
+
+        Ok(())
+    }
+
+    /// Ensure that the provided password matches the stored hash if the wallet is encrypted
+    pub fn ensure_password(&self, password: Option<&str>) -> Result<()> {
+        let stored_hash = {
+            let guard = self.password_hash.read();
+            guard.clone()
+        };
+
+        if let Some(hash) = stored_hash {
+            let provided = password
+                .ok_or_else(|| WalletError::WalletLocked("Password required".to_string()))?;
+            if !verify_password(provided, &hash)? {
+                return Err(WalletError::InvalidPassword);
+            }
+        }
+
         Ok(())
     }
 
