@@ -12,7 +12,7 @@ permissions:
 
 env:
   RUSTFLAGS: ""
-  CACHE_VERSION: v20251111
+  CACHE_VERSION: v20251112
 
 jobs:
   rust:

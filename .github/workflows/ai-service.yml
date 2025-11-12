@@ -53,10 +53,10 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: v20251111-${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
+        key: v20251112-${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          v20251111-${{ runner.os }}-cargo-ai-
-          v20251111-${{ runner.os }}-cargo-
+          v20251112-${{ runner.os }}-cargo-ai-
+          v20251112-${{ runner.os }}-cargo-
     
     - name: Run tests
       run: cargo test -p ippan-ai-service --verbose
@@ -116,10 +116,10 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: v20251111-${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
+        key: v20251112-${{ runner.os }}-cargo-ai-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          v20251111-${{ runner.os }}-cargo-ai-
-          v20251111-${{ runner.os }}-cargo-
+          v20251112-${{ runner.os }}-cargo-ai-
+          v20251112-${{ runner.os }}-cargo-
     
     - name: Build release
       run: cargo build -p ippan-ai-service --release

@@ -319,7 +319,7 @@ EOF
             ~/.cargo/bin
             ~/.cargo/registry
             ~/.cargo/git
-          key: v20251111-governance-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: v20251112-governance-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Install cargo-deny
         run: cargo install --locked --force cargo-deny
@@ -350,7 +350,7 @@ EOF
             ~/.cargo/bin
             ~/.cargo/registry
             ~/.cargo/git
-          key: v20251111-governance-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: v20251112-governance-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Install cargo-release
         run: cargo install --locked --force cargo-release
