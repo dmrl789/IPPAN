@@ -174,7 +174,7 @@ jobs:
       # ============================================================
       # 3. MERGE VALIDATION
       # ============================================================
-        - name: ✅ Approve Merge if Checks Pass
+      - name: ✅ Approve Merge if Checks Pass
           if: github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened' || github.event.action == 'ready_for_review')
           env:
             GITHUB_REPOSITORY: ${{ github.repository }}
