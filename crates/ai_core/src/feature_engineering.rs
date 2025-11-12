@@ -34,9 +34,9 @@ impl Default for FeatureEngineeringConfig {
             enable_scaling: true,
             enable_feature_selection: true,
             max_features: 1000,
-            feature_selection_threshold: Fixed::from_f64(0.01),
+            feature_selection_threshold: Fixed::from_micro(10_000),
             enable_outlier_detection: true,
-            outlier_threshold: Fixed::from_f64(3.0),
+            outlier_threshold: Fixed::from_int(3),
             enable_feature_interactions: false,
             max_interaction_depth: 2,
         }
@@ -560,7 +560,7 @@ mod tests {
     #[tokio::test]
     async fn test_feature_engineering_pipeline() {
         let mut pipeline = FeatureEngineeringPipeline::new(FeatureEngineeringConfig::default());
-        let raw = utils::generate_synthetic_data(100, 5, Fixed::from_f64(0.1));
+        let raw = utils::generate_synthetic_data(100, 5, Fixed::from_micro(100_000));
         pipeline.fit(&raw).await.unwrap();
         let processed = pipeline.transform(&raw).await.unwrap();
         assert_eq!(processed.features.len(), 100);
@@ -571,12 +571,12 @@ mod tests {
     async fn test_feature_selection() {
         let config = FeatureEngineeringConfig {
             enable_feature_selection: true,
-            feature_selection_threshold: Fixed::from_f64(0.1),
+            feature_selection_threshold: Fixed::from_micro(100_000),
             max_features: 3,
             ..Default::default()
         };
         let mut pipeline = FeatureEngineeringPipeline::new(config);
-        let raw = utils::generate_synthetic_data(100, 10, Fixed::from_f64(0.1));
+        let raw = utils::generate_synthetic_data(100, 10, Fixed::from_micro(100_000));
         pipeline.fit(&raw).await.unwrap();
         let processed = pipeline.transform(&raw).await.unwrap();
         assert!(processed.feature_names.len() <= 3);
@@ -588,7 +588,7 @@ mod tests {
             enable_normalization: true,
             ..Default::default()
         });
-        let raw = utils::generate_synthetic_data(100, 5, Fixed::from_f64(0.1));
+        let raw = utils::generate_synthetic_data(100, 5, Fixed::from_micro(100_000));
         pipeline.fit(&raw).await.unwrap();
         let processed = pipeline.transform(&raw).await.unwrap();
         assert!(processed.normalization.is_some());
