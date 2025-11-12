@@ -95,24 +95,23 @@ jobs:
         run: |
           echo "MetaAgent initialized at $(date -u)" >> $META_AGENT_LOG_DIR/assignments.log
           if [ ! -f "$META_AGENT_LOG_DIR/agent-registry.json" ]; then
-            cat > $META_AGENT_LOG_DIR/agent-registry.json <<'EOF'
-{
-  "agents": {
-    "codex": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "testsprite": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "security-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "infra-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "release-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "docs-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "ui-coach": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "gw-sre": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
-    "legal": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null}
-  },
-  "locks": {},
-  "conflicts": [],
-  "last_quota_reset": "$(date -u +%Y-%m-%d)"
-}
-EOF
+            RESET_DATE=$(date -u +%Y-%m-%d)
+            echo '{
+              "agents": {
+                "codex": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "testsprite": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "security-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "infra-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "release-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "docs-bot": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "ui-coach": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "gw-sre": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null},
+                "legal": {"active_tasks": 0, "max_tasks": 3, "last_assigned": null}
+              },
+              "locks": {},
+              "conflicts": [],
+              "last_quota_reset": ""
+            }' | jq --arg date "$RESET_DATE" '.last_quota_reset = $date' > $META_AGENT_LOG_DIR/agent-registry.json
           fi
 
       # ============================================================
@@ -211,8 +210,10 @@ EOF
             ')
           fi
           if [ "${ci_status^^}" = "SUCCESS" ]; then
-            pr_title="${{ github.event.pull_request.title }}"
-            pr_body="${{ github.event.pull_request.body }}"
+            # Fetch PR title and body safely using gh CLI
+            pr_title=$(gh pr view $pr_number --json title --jq '.title')
+            pr_body=$(gh pr view $pr_number --json body --jq '.body')
+            
             if echo "$pr_title" | grep -qE "^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+"; then
               if echo "$pr_body" | grep -qE "(closes|fixes|resolves) #[0-9]+"; then
                 gh pr add-labels $pr_number "${{ env.META_APPROVAL_LABEL }}"
