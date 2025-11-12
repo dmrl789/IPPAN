@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -59,6 +59,7 @@ impl WalletManager {
         label: Option<String>,
         password: Option<&str>,
     ) -> Result<String> {
+        self.storage.ensure_password(password)?;
         let (address, private_key, _) = generate_new_address()?;
 
         // Encrypt private key
@@ -301,47 +302,54 @@ impl WalletManager {
 
     /// Get transaction history for an address
     pub fn get_address_transactions(&self, address: &str) -> Result<Vec<WalletTransaction>> {
-        if let Some(ref rpc) = self.rpc_client {
-            let transactions = rpc.get_transactions_by_address(address)?;
-            let wallet_transactions = transactions
-                .into_iter()
-                .map(|tx| {
-                    let fee = self.estimate_fee(&tx);
-                    let amount_atomic = tx.amount.atomic();
-                    let amount = u64::try_from(amount_atomic).unwrap_or(u64::MAX);
-                    let micros = tx.timestamp.0;
-                    let seconds = (micros / 1_000_000) as i64;
-                    let nanos = ((micros % 1_000_000) * 1_000) as u32;
-                    let timestamp = chrono::Utc
-                        .timestamp_opt(seconds, nanos)
-                        .single()
-                        .unwrap_or_else(chrono::Utc::now);
+        let mut transactions = Vec::new();
+        let mut seen_hashes = HashSet::new();
 
-                    WalletTransaction {
-                        id: uuid::Uuid::new_v4(),
-                        tx_hash: hex::encode(tx.hash()),
-                        from_address: Some(encode_address(&tx.from)),
-                        to_address: Some(encode_address(&tx.to)),
-                        amount,
-                        fee,
-                        timestamp,
-                        status: TransactionStatus::Confirmed,
-                        label: None,
-                    }
-                })
-                .collect();
-            Ok(wallet_transactions)
-        } else {
-            let cache = self.transaction_cache.read();
-            Ok(cache
-                .values()
-                .filter(|tx| {
-                    tx.from_address.as_deref() == Some(address)
-                        || tx.to_address.as_deref() == Some(address)
-                })
-                .cloned()
-                .collect())
+        if let Some(ref rpc) = self.rpc_client {
+            let rpc_transactions = rpc.get_transactions_by_address(address)?;
+            for tx in rpc_transactions {
+                let fee = self.estimate_fee(&tx);
+                let amount_atomic = tx.amount.atomic();
+                let amount = u64::try_from(amount_atomic).unwrap_or(u64::MAX);
+                let micros = tx.timestamp.0;
+                let seconds = (micros / 1_000_000) as i64;
+                let nanos = ((micros % 1_000_000) * 1_000) as u32;
+                let timestamp = chrono::Utc
+                    .timestamp_opt(seconds, nanos)
+                    .single()
+                    .unwrap_or_else(chrono::Utc::now);
+
+                let tx_hash = hex::encode(tx.hash());
+                seen_hashes.insert(tx_hash.clone());
+
+                transactions.push(WalletTransaction {
+                    id: uuid::Uuid::new_v4(),
+                    tx_hash,
+                    from_address: Some(encode_address(&tx.from)),
+                    to_address: Some(encode_address(&tx.to)),
+                    amount,
+                    fee,
+                    timestamp,
+                    status: TransactionStatus::Confirmed,
+                    label: None,
+                });
+            }
         }
+
+        {
+            let cache = self.transaction_cache.read();
+            for tx in cache.values().filter(|tx| {
+                tx.from_address.as_deref() == Some(address)
+                    || tx.to_address.as_deref() == Some(address)
+            }) {
+                if seen_hashes.insert(tx.tx_hash.clone()) {
+                    transactions.push(tx.clone());
+                }
+            }
+        }
+
+        transactions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        Ok(transactions)
     }
 
     /// Get all wallet transactions
@@ -453,6 +461,7 @@ pub struct WalletStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ippan_types::address::is_valid_address;
     use tempfile::tempdir;
 
     #[allow(dead_code)]
@@ -500,8 +509,8 @@ mod tests {
         let address = wallet
             .generate_address(Some("Test Address".into()), Some("password123"))
             .unwrap();
-        assert!(address.starts_with('i'));
-        assert_eq!(address.len(), 65);
+        assert!(is_valid_address(&address));
+        assert!(!address.trim().is_empty());
     }
 
     #[test]
@@ -516,5 +525,6 @@ mod tests {
             .generate_addresses(5, Some("Test".into()), Some("password123"))
             .unwrap();
         assert_eq!(addresses.len(), 5);
+        assert!(addresses.iter().all(|addr| is_valid_address(addr)));
     }
 }

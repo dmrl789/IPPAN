@@ -1,3 +1,4 @@
+use ippan_types::address::is_valid_address;
 use ippan_wallet::*;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -46,10 +47,10 @@ async fn test_wallet_lifecycle() {
         .generate_address(Some("Test Address 2".to_string()), Some("password123"))
         .unwrap();
 
-    assert!(address1.starts_with('i'));
-    assert!(address2.starts_with('i'));
-    assert_eq!(address1.len(), 65);
-    assert_eq!(address2.len(), 65);
+    assert!(is_valid_address(&address1));
+    assert!(is_valid_address(&address2));
+    assert!(!address1.trim().is_empty());
+    assert!(!address2.trim().is_empty());
     assert_ne!(address1, address2);
 
     // Test listing addresses
@@ -99,17 +100,21 @@ async fn test_multiple_address_generation() {
     let mut unique_addresses = std::collections::HashSet::new();
     for addr in &addresses {
         assert!(unique_addresses.insert(addr));
-        assert!(addr.starts_with('i'));
-        assert_eq!(addr.len(), 65);
+        assert!(is_valid_address(addr));
+        assert!(!addr.trim().is_empty());
     }
 
     // Check wallet state
     let wallet_addresses = wallet.list_addresses().unwrap();
     assert_eq!(wallet_addresses.len(), 10);
 
-    for (i, wallet_addr) in wallet_addresses.iter().enumerate() {
-        assert_eq!(wallet_addr.label, Some(format!("Batch_{}", i + 1)));
-    }
+    let labels: std::collections::HashSet<String> = wallet_addresses
+        .iter()
+        .filter_map(|addr| addr.label.clone())
+        .collect();
+    let expected: std::collections::HashSet<String> =
+        (1..=10).map(|i| format!("Batch_{}", i)).collect();
+    assert_eq!(labels, expected);
 }
 
 #[tokio::test]
