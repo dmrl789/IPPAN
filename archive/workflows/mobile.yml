@@ -72,28 +72,28 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-    dependency-scan:
-      name: Dependency Vulnerability Scan
-      if: github.event_name == 'pull_request'
-      runs-on: ubuntu-latest
-      env:
-        NVD_API_KEY: ${{ secrets.NVD_API_KEY || '' }}
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v4
-          with:
-            lfs: true
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
 
-        - name: Set up JDK 17
-          uses: actions/setup-java@v4
-          with:
-            distribution: temurin
-            java-version: '17'
-            cache: gradle
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
-        - name: Grant Gradle wrapper permissions
-          working-directory: apps/mobile/android-wallet
-          run: chmod +x gradlew
+      - name: Grant Gradle wrapper permissions
+        working-directory: apps/mobile/android-wallet
+        run: chmod +x gradlew
 
       - name: Check for NVD API key
         id: nvd_key
