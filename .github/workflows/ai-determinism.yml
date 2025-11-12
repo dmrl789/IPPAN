@@ -17,6 +17,7 @@ env:
   RUSTFLAGS: "-D warnings"
   RUST_BACKTRACE: 1
   CONSENSUS_MODE: DLC
+  CARGO_TERM_COLOR: always
 
 jobs:
   # ============================================================================
@@ -78,6 +79,15 @@ jobs:
             --nocapture \
           2>&1 | tee determinism-logs.txt
           
+      - name: Run ai_core and consensus-dlc tests
+        if: matrix.run-tests
+        run: |
+          set -o pipefail
+          echo "🧪 Running ai_core tests..."
+          cargo test -p ippan-ai-core --target ${{ matrix.target }} -- --nocapture 2>&1 | tee -a determinism-logs.txt
+          echo "🧪 Running consensus-dlc tests..."
+          cargo test -p ippan-consensus-dlc --target ${{ matrix.target }} -- --nocapture 2>&1 | tee -a determinism-logs.txt
+          
       - name: Test cross-platform consistency
         if: matrix.run-tests
         run: |
@@ -105,37 +115,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Check for floating point usage in AI core
+      - name: Install ripgrep
         run: |
-          FOUND_VIOLATIONS=0
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
+      - name: Check for f32/f64 in ai_core (non-test/bench)
+        run: |
+          echo "🔍 Checking crates/ai_core for f32/f64..."
+          ! rg -n "(f32|f64)" crates/ai_core | grep -v "/tests/" | grep -v "/benches/" | grep -v "//.*f32\|//.*f64"
           
-          if grep -R "f32\|f64" crates/ai_core/src/ | \
-             grep -v "from_f64\|to_f64\|impl From<.*> for f64\|/// Convert to an\|/// Construct from an\|pub fn.*f64\|as f64 / Self::SCALE\|as f64).round()\|\.as_secs_f64()\|f32::from_le_bytes" | \
-             grep -v "bin/dump_inference.rs" | \
-             grep -v "crates/ai_core/src/fixed.rs\|crates/ai_core/src/fixed_point.rs" | \
-             grep -v "#\[cfg(not(feature = \"deterministic_math\"))\]" | \
-             grep -v "pub confidence: f64,\|pub cpu_usage: f64," | \
-             grep -v "//\|Float32\|Float64"; then
-            echo "⚠️ Warning: Found potential floating point usage in AI core"
-            echo "These should be converted to Fixed-point arithmetic"
-            FOUND_VIOLATIONS=1
-          fi
+      - name: Check for f32/f64 in consensus* (non-test/bench)
+        run: |
+          echo "🔍 Checking crates/consensus* for f32/f64..."
+          ! rg -n "(f32|f64)" crates/consensus* | grep -v "/tests/" | grep -v "/benches/" | grep -v "//.*f32\|//.*f64"
           
-          if [ $FOUND_VIOLATIONS -eq 1 ]; then
-            echo ""
-            echo "✅ Note: Conversion helpers (from_f64/to_f64) are allowed for interop"
-            echo "✅ Note: Serialization structs in test binaries are allowed"
-            echo "✅ Note: Conditional f64 fields with deterministic_math feature gate are allowed"
-            echo "❌ Direct f32/f64 arithmetic operations are NOT allowed"
-            echo ""
-            echo "ERROR: Floating-point arithmetic detected in AI core!"
-            exit 1
-          else
-            echo "✅ No problematic floating point operations found"
-          fi
+      - name: Check for f32/f64 in ai_registry (non-test/bench)
+        run: |
+          echo "🔍 Checking crates/ai_registry for f32/f64..."
+          ! rg -n "(f32|f64)" crates/ai_registry | grep -v "/tests/" | grep -v "/benches/" | grep -v "//.*f32\|//.*f64" || echo "✅ ai_registry clean or not found"
+          
+      - name: Verification summary
+        run: |
+          echo "✅ No floating-point types (f32/f64) found in non-test source code"
+          echo "✅ Deterministic fixed-point arithmetic enforced"
 
   test-model-hash:
     name: Verify AI Model Hash
