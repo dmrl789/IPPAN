@@ -1,0 +1,324 @@
+name: "\U0001F9EA IPPAN Test Suite"
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Test mode"
+        required: false
+        default: "full"
+        type: choice
+        options: [full, fast, deterministic-only]
+      run_explorer:
+        description: "Include Explorer/UI tests (node)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      run_android:
+        description: "Include Android tests (Gradle)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-suite-${{ github.ref }}-${{ github.event.inputs.mode || 'full' }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: "1"
+  CARGO_TERM_COLOR: always
+  # Optional: fail on warnings (disable if noisy)
+  # RUSTFLAGS: "-D warnings"
+
+jobs:
+  rust-workspace:
+    name: Rust Workspace (build & tests)
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.mode != 'deterministic-only' || github.event.inputs.mode == '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build (workspace)
+        run: cargo build --workspace --all-targets --verbose
+
+      - name: Unit & integration tests (workspace, full)
+        if: ${{ (github.event.inputs.mode == 'full') || (github.event.inputs.mode == '') }}
+        run: cargo test --workspace --all-targets --verbose -- --nocapture
+
+      - name: Fast tests (core crates)
+        if: ${{ github.event.inputs.mode == 'fast' }}
+        run: |
+          cargo test -p ippan-core -p ippan-crypto -p ippan-storage -- --nocapture
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-workspace-logs
+          path: |
+            target/debug/deps/**
+            target/.*
+          if-no-files-found: ignore
+
+  ai-determinism:
+    name: AI Determinism (ai_core)
+    runs-on: ubuntu-latest
+    # Always run in full and deterministic-only modes; skip in fast
+    if: ${{ github.event.inputs.mode != 'fast' || github.event.inputs.mode == '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build ai_core
+        run: cargo build -p ai_core --all-targets --verbose
+
+      - name: Determinism tests
+        run: cargo test -p ai_core --features deterministic-tests -- --nocapture
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-determinism-logs
+          path: |
+            target/debug/deps/**
+            target/.*
+          if-no-files-found: ignore
+
+  consensus-dlc:
+    name: Consensus DLC
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.mode != 'deterministic-only' || github.event.inputs.mode == '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build consensus
+        run: cargo build -p ippan-consensus-dlc --all-targets --verbose
+
+      - name: Tests
+        run: cargo test -p ippan-consensus-dlc -- --nocapture
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: consensus-dlc-logs
+          path: |
+            target/debug/deps/**
+            target/.*
+          if-no-files-found: ignore
+
+  p2p:
+    name: P2P Networking
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.mode != 'deterministic-only' || github.event.inputs.mode == '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates clang llvm protobuf-compiler
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build p2p
+        run: cargo build -p ippan-p2p --all-targets --verbose
+
+      - name: Tests
+        run: cargo test -p ippan-p2p -- --nocapture
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2p-logs
+          path: |
+            target/debug/deps/**
+            target/.*
+          if-no-files-found: ignore
+
+  explorer-ui:
+    name: Explorer / UI (Node)
+    runs-on: ubuntu-latest
+    if: ${{ (github.event.inputs.run_explorer == 'true') && (github.event.inputs.mode != 'deterministic-only' || github.event.inputs.mode == '') }}
+    defaults:
+      run:
+        working-directory: apps/explorer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint --if-present
+
+      - name: Unit tests
+        run: pnpm test --if-present -- --reporter=dot
+
+      - name: Upload UI artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: explorer-ui-logs
+          path: |
+            **/junit*.xml
+            **/coverage/**
+          if-no-files-found: ignore
+
+  android:
+    name: Android (Gradle)
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.run_android == 'true' && (github.event.inputs.mode != 'deterministic-only' || github.event.inputs.mode == '') }}
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Unit tests
+        run: ./gradlew test
+
+      - name: Upload Android reports (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: |
+            **/build/test-results/**
+            **/build/reports/tests/**
+          if-no-files-found: ignore
+
+  summary:
+    name: Suite Summary
+    runs-on: ubuntu-latest
+    needs:
+      - rust-workspace
+      - ai-determinism
+      - consensus-dlc
+      - p2p
+      # Conditionally wait for optional jobs (they'll be skipped if not run)
+      - explorer-ui
+      - android
+    if: always()
+    steps:
+      - name: Write summary
+        run: |
+          echo "### \U0001F9EA IPPAN Test Suite Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Mode: \`${{ github.event.inputs.mode || 'full' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Explorer: \`${{ github.event.inputs.run_explorer || 'false' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Android: \`${{ github.event.inputs.run_android || 'false' }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Jobs status**" >> $GITHUB_STEP_SUMMARY
+          echo "- Rust Workspace: ${{ needs.rust-workspace.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- AI Determinism: ${{ needs.ai-determinism.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Consensus DLC: ${{ needs.consensus-dlc.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- P2P: ${{ needs.p2p.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Explorer/UI: ${{ needs.explorer-ui.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Android: ${{ needs.android.result }}" >> $GITHUB_STEP_SUMMARY
