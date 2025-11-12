@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{Context as TaskContext, Poll};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
@@ -26,7 +26,6 @@ use metrics::gauge;
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex};
-use tower::limit::RateLimitLayer;
 use tower::Layer;
 use tower::Service;
 use tower_http::cors::{Any, CorsLayer};
@@ -38,7 +37,7 @@ use hex::encode as hex_encode;
 
 use crate::{HttpP2PNetwork, NetworkMessage};
 
-const RATE_LIMIT_PER_SECOND: u64 = 200;
+const RATE_LIMIT_PER_SECOND: usize = 200;
 const CIRCUIT_BREAKER_FAILURE_THRESHOLD: usize = 5;
 const CIRCUIT_BREAKER_OPEN_SECS: u64 = 30;
 
@@ -174,7 +173,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    let rate_limit = RateLimitLayer::new(RATE_LIMIT_PER_SECOND, Duration::from_secs(1));
+    let rate_limit = RateLimiterLayer::new(RATE_LIMIT_PER_SECOND, Duration::from_secs(1));
     let circuit_breaker = CircuitBreakerLayer::new(
         CIRCUIT_BREAKER_FAILURE_THRESHOLD,
         Duration::from_secs(CIRCUIT_BREAKER_OPEN_SECS),
@@ -305,7 +304,7 @@ async fn deny_request(
 // -----------------------------------------------------------------------------
 
 async fn handle_health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    gauge!("node_health", 1.0);
+    gauge!("node_health").set(1.0);
     Json(serde_json::json!({
         "status": "healthy",
         "timestamp": ippan_time_now(),
@@ -320,7 +319,7 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     let peer_count = state.peer_count.load(Ordering::Relaxed);
     let requests_served = state.req_count.load(Ordering::Relaxed);
     let mempool_size = state.mempool.size();
-    gauge!("mempool_size", mempool_size as f64);
+    gauge!("mempool_size").set(mempool_size as f64);
     let mut consensus_round_metric = 0.0;
 
     let consensus_view = if let Some(consensus) = &state.consensus {
@@ -341,7 +340,7 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     } else {
         None
     };
-    gauge!("consensus_round", consensus_round_metric);
+    gauge!("consensus_round").set(consensus_round_metric);
 
     Json(serde_json::json!({
         "status": "ok",
@@ -967,6 +966,109 @@ fn account_to_response(account: Account, transactions: Vec<Transaction>) -> Acco
 }
 
 #[derive(Clone)]
+struct RateLimiterLayer {
+    state: Arc<RateLimiterState>,
+    max_requests: usize,
+}
+
+impl RateLimiterLayer {
+    fn new(max_requests: usize, interval: Duration) -> Self {
+        Self {
+            state: Arc::new(RateLimiterState::new(max_requests, interval)),
+            max_requests,
+        }
+    }
+}
+
+impl<S> Layer<S> for RateLimiterLayer {
+    type Service = RateLimiter<S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        RateLimiter {
+            inner: service,
+            state: Arc::clone(&self.state),
+            max_requests: self.max_requests,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RateLimiter<S> {
+    inner: S,
+    state: Arc<RateLimiterState>,
+    max_requests: usize,
+}
+
+impl<S, Request> Service<Request> for RateLimiter<S>
+where
+    S: Service<Request, Response = Response, Error = Infallible> + Send + 'static,
+    S::Future: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = Infallible;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut TaskContext<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: Request) -> Self::Future {
+        if self.state.try_acquire(self.max_requests) {
+            let future = self.inner.call(request);
+            Box::pin(async move { future.await })
+        } else {
+            let response = Response::builder()
+                .status(StatusCode::TOO_MANY_REQUESTS)
+                .body(Body::from("Rate limit exceeded"))
+                .expect("failed to build rate limit response");
+            Box::pin(async move { Ok(response) })
+        }
+    }
+}
+
+struct RateLimiterState {
+    remaining: AtomicUsize,
+    next_reset: std::sync::Mutex<Instant>,
+    interval: Duration,
+}
+
+impl RateLimiterState {
+    fn new(max_requests: usize, interval: Duration) -> Self {
+        Self {
+            remaining: AtomicUsize::new(max_requests),
+            next_reset: std::sync::Mutex::new(Instant::now() + interval),
+            interval,
+        }
+    }
+
+    fn try_acquire(&self, max_requests: usize) -> bool {
+        {
+            let mut next_reset = self.next_reset.lock().expect("rate limiter mutex poisoned");
+            let now = Instant::now();
+            if now >= *next_reset {
+                self.remaining.store(max_requests, Ordering::Relaxed);
+                *next_reset = now + self.interval;
+            }
+        }
+
+        loop {
+            let current = self.remaining.load(Ordering::Relaxed);
+            if current == 0 {
+                return false;
+            }
+
+            if self
+                .remaining
+                .compare_exchange(current, current - 1, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                return true;
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 struct CircuitBreakerLayer {
     state: Arc<CircuitBreakerState>,
     failure_threshold: usize,
@@ -996,6 +1098,7 @@ impl<S> Layer<S> for CircuitBreakerLayer {
     }
 }
 
+#[derive(Clone)]
 struct CircuitBreaker<S> {
     inner: S,
     state: Arc<CircuitBreakerState>,
@@ -1012,7 +1115,7 @@ where
     type Error = Infallible;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut TaskContext<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
