@@ -22,7 +22,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build and Test
         run: |
-          cargo fmt -- --check
-          cargo clippy --all-targets --all-features
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features
           cargo build --all
           cargo test --all -- --nocapture

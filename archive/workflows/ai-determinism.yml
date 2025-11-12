@@ -1,30 +1,17 @@
-name: AI Determinism & DLC Consensus
+name: AI Determinism Tests
 
 on:
   push:
     branches: [ main, develop ]
-    paths:
-      - 'crates/ai_core/**'
-      - 'crates/ai_registry/**'
-      - 'crates/consensus/**'
-      - 'crates/consensus_dlc/**'
-      - 'models/**'
-      - 'config/dlc.toml'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 env:
   RUSTFLAGS: "-D warnings"
-  RUST_BACKTRACE: 1
-  CONSENSUS_MODE: DLC
 
 jobs:
-  # ============================================================================
-  # AI DETERMINISM TESTS
-  # ============================================================================
-  
   test-determinism:
-    name: AI Determinism (${{ matrix.target }})
+    name: Determinism checks (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,7 +51,6 @@ jobs:
       - name: Build AI core
         run: |
           cargo build --manifest-path crates/ai_core/Cargo.toml --target ${{ matrix.target }} --release
-          
       - name: Run determinism tests
         if: matrix.run-tests
         run: |
@@ -77,7 +63,6 @@ jobs:
             -- \
             --nocapture \
           2>&1 | tee determinism-logs.txt
-          
       - name: Test cross-platform consistency
         if: matrix.run-tests
         run: |
@@ -89,7 +74,6 @@ jobs:
             -- \
             --nocapture \
           2>&1 | tee -a determinism-logs.txt
-          
       - name: Upload determinism logs
         if: matrix.run-tests
         uses: actions/upload-artifact@v4
@@ -99,7 +83,6 @@ jobs:
           if-no-files-found: error
 
   test-no-float:
-    name: Verify No Floating-Point Operations
     runs-on: ubuntu-latest
 
     steps:
@@ -110,8 +93,12 @@ jobs:
 
       - name: Check for floating point usage in AI core
         run: |
+          # Allow conversion helpers (from_f64, to_f64, From<FixedPoint> for f64)
+          # Allow f64 in serialization structs and conditional compilation
+          # but block actual f32/f64 arithmetic operations
           FOUND_VIOLATIONS=0
           
+          # Look for f32/f64 declarations and operations, excluding allowed patterns
           if grep -R "f32\|f64" crates/ai_core/src/ | \
              grep -v "from_f64\|to_f64\|impl From<.*> for f64\|/// Convert to an\|/// Construct from an\|pub fn.*f64\|as f64 / Self::SCALE\|as f64).round()\|\.as_secs_f64()\|f32::from_le_bytes" | \
              grep -v "bin/dump_inference.rs" | \
@@ -138,7 +125,6 @@ jobs:
           fi
 
   test-model-hash:
-    name: Verify AI Model Hash
     runs-on: ubuntu-latest
 
     steps:
@@ -152,10 +138,9 @@ jobs:
           cd models
           sha256sum reputation_v1.json > model_hash.txt
           echo "Model hash: $(cat model_hash.txt)"
-          echo "✅ Model hash verification completed"
+          echo "Model hash verification completed"
 
   test-fee-caps:
-    name: Fee Cap & Validation Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -163,15 +148,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-fees-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run fee cap tests
         run: |
@@ -182,7 +158,7 @@ jobs:
           cargo test --manifest-path crates/consensus/Cargo.toml --release fuzz_fee_validation
 
   generate-inference-artifacts:
-    name: Cross-arch Inference (${{ matrix.arch }})
+    name: Cross-architecture inference (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     needs: test-determinism
     strategy:
@@ -218,9 +194,10 @@ jobs:
           if-no-files-found: error
 
   compare-inference-outputs:
-    name: Compare Cross-Architecture Inference
+    name: Compare inference outputs across architectures
     runs-on: ubuntu-24.04
-    needs: generate-inference-artifacts
+    needs:
+      - generate-inference-artifacts
 
     steps:
       - name: Download x86_64 artifact
@@ -270,7 +247,7 @@ jobs:
           if not (scores_equal and features_equal and hashes_equal):
               sys.exit("Inference outputs mismatch between architectures")
 
-          print("✅ Inference outputs are identical across architectures.")
+          print("Inference outputs are identical across architectures.")
           PY
 
       - name: Upload comparison artifact
@@ -283,121 +260,6 @@ jobs:
       - name: Publish comparison summary
         run: |
           {
-            echo "### ✅ Cross-architecture inference comparison";
+            echo "### Cross-architecture inference comparison";
             echo "* Outputs match across x86_64 and aarch64 runners.";
           } >> "$GITHUB_STEP_SUMMARY"
-
-  # ============================================================================
-  # DLC CONSENSUS TESTS
-  # ============================================================================
-
-  dlc-tests:
-    name: DLC Consensus Tests
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-dlc-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run DLC unit tests
-        run: |
-          cargo test -p ippan-consensus -- dlc --nocapture
-          cargo test -p ippan-consensus -- dgbdt --nocapture
-          cargo test -p ippan-consensus -- shadow_verifier --nocapture
-          cargo test -p ippan-consensus -- bonding --nocapture
-          cargo test -p ippan-consensus-dlc --all-features -- --nocapture
-
-      - name: Run DLC integration tests
-        run: |
-          cargo test -p ippan-consensus --test dlc_integration_tests -- --nocapture
-
-      - name: Test temporal finality
-        run: |
-          cargo test -p ippan-consensus -- temporal_finality --nocapture
-
-      - name: Test D-GBDT fairness
-        run: |
-          cargo test -p ippan-consensus -- dgbdt_reputation --nocapture
-          cargo test -p ippan-consensus -- selection_determinism --nocapture
-
-      - name: Test shadow verifiers
-        run: |
-          cargo test -p ippan-consensus -- shadow_verifier_parallel --nocapture
-
-      - name: Test validator bonding
-        run: |
-          cargo test -p ippan-consensus -- bonding_minimum --nocapture
-
-      - name: Verify no BFT imports
-        run: |
-          ! grep -r "use.*bft::" crates/consensus/src/ || (echo "ERROR: BFT imports found!" && exit 1)
-          ! grep -r "use.*pbft::" crates/consensus/src/ || (echo "ERROR: PBFT imports found!" && exit 1)
-          ! grep -r "use.*tendermint::" crates/consensus/src/ || (echo "ERROR: Tendermint imports found!" && exit 1)
-          ! grep -r "use.*bft::" crates/consensus_dlc/src/ || (echo "ERROR: BFT imports found in DLC crate!" && exit 1)
-          ! grep -r "use.*pbft::" crates/consensus_dlc/src/ || (echo "ERROR: PBFT imports found in DLC crate!" && exit 1)
-          ! grep -r "use.*tendermint::" crates/consensus_dlc/src/ || (echo "ERROR: Tendermint imports found in DLC crate!" && exit 1)
-          echo "✅ No BFT imports found - DLC migration complete"
-
-      - name: Check DLC configuration
-        run: |
-          test -f config/dlc.toml || (echo "ERROR: config/dlc.toml not found!" && exit 1)
-          grep "model = \"DLC\"" config/dlc.toml || (echo "ERROR: DLC not configured!" && exit 1)
-          echo "✅ DLC configuration valid"
-
-  dlc-validation:
-    name: DLC Specification Validation
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check DLC documentation
-        run: |
-          test -f docs/DLC_CONSENSUS.md || echo "⚠️ Warning: DLC_CONSENSUS.md not found"
-          test -f docs/MIGRATION_TO_DLC.md || echo "⚠️ Warning: MIGRATION_TO_DLC.md not found"
-          echo "✅ DLC documentation check complete"
-
-      - name: Validate temporal finality window
-        run: |
-          grep -q "temporal_finality_ms" config/dlc.toml || echo "⚠️ Warning: temporal_finality_ms not configured"
-          echo "✅ Temporal finality configuration checked"
-
-      - name: Validate shadow verifier count
-        run: |
-          grep -q "shadow_verifier_count" config/dlc.toml || echo "⚠️ Warning: shadow_verifier_count not configured"
-          echo "✅ Shadow verifiers configuration checked"
-
-      - name: Validate validator bonding
-        run: |
-          grep -q "require_validator_bond" config/dlc.toml || echo "⚠️ Warning: Validator bonding not configured"
-          grep -q "validator_bond_amount" config/dlc.toml || echo "⚠️ Warning: Bond amount not configured"
-          echo "✅ Validator bonding configuration checked"
-
-      - name: Final validation summary
-        run: |
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "✅ DLC Consensus Validation Complete"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
-          echo "✓ AI determinism verified across architectures"
-          echo "✓ No floating-point operations in AI core"
-          echo "✓ DLC consensus tests passing"
-          echo "✓ HashTimer temporal finality active"
-          echo "✓ D-GBDT fairness model enabled"
-          echo "✓ Shadow verifiers configured"
-          echo "✓ Validator bonding mechanism active"
-          echo ""
-          echo "🎉 IPPAN AI & DLC systems validated!"
