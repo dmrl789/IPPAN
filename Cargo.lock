@@ -2837,6 +2837,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "ippan-ai-trainer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "chrono",
+ "clap",
+ "hex",
+ "ippan-ai-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "ippan-benchmark"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,34 @@
+[package]
+name = "ippan-ai-trainer"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["IPPAN Contributors"]
+description = "Deterministic offline GBDT trainer for IPPAN blockchain"
+
+[[bin]]
+name = "ippan-train"
+path = "src/main.rs"
+
+[dependencies]
+# Core dependencies
+ippan-ai-core = { path = "../ai_core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Crypto for hashing
+blake3 = { workspace = true }
+hex = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
