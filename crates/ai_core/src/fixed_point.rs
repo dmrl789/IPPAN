@@ -55,12 +55,16 @@ impl FixedPoint {
 
     /// Convert to an `f64` for interop with legacy callers.
     #[inline]
+    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::cast_precision_loss)]
     pub fn to_f64(self) -> f64 {
         self.0 as f64 / Self::SCALE as f64
     }
 
     /// Construct from an `f64`. Intended for ingestion/interop only.
     #[inline]
+    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::cast_precision_loss)]
     pub fn from_f64(value: f64) -> Self {
         let scaled = (value * Self::SCALE as f64).round();
         Self(scaled as i64)
@@ -122,6 +126,8 @@ impl Neg for FixedPoint {
 }
 
 impl fmt::Display for FixedPoint {
+    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::cast_precision_loss)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:.6}", self.to_f64())
     }
@@ -143,6 +149,8 @@ impl From<FixedPoint> for i64 {
 
 impl From<FixedPoint> for f64 {
     #[inline]
+    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::cast_precision_loss)]
     fn from(value: FixedPoint) -> Self {
         value.to_f64()
     }

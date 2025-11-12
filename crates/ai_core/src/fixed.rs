@@ -75,6 +75,8 @@ impl<'de> Deserialize<'de> for Fixed {
                 Ok(Fixed::from_micro(value as i64))
             }
 
+            #[allow(clippy::float_arithmetic)]
+            #[allow(clippy::cast_precision_loss)]
             fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -201,12 +203,16 @@ impl Fixed {
 
     /// Create from f64 (for testing / debugging only)
     #[inline]
+    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::cast_precision_loss)]
     pub fn from_f64(val: f64) -> Self {
         Fixed((val * SCALE as f64).round() as i64)
     }
 
     /// Convert to f64 (for display/debug only)
     #[inline]
+    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::cast_precision_loss)]
     pub fn to_f64(self) -> f64 {
         (self.0 as f64) / SCALE as f64
     }
@@ -345,6 +351,8 @@ impl Fixed {
 }
 
 impl From<f64> for Fixed {
+    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::cast_precision_loss)]
     fn from(value: f64) -> Self {
         debug_assert!(
             value.is_finite(),
@@ -355,6 +363,8 @@ impl From<f64> for Fixed {
 }
 
 impl From<f32> for Fixed {
+    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::cast_precision_loss)]
     fn from(value: f32) -> Self {
         Fixed::from(value as f64)
     }
@@ -494,6 +504,110 @@ pub fn hash_fixed_slice(values: &[Fixed]) -> [u8; 32] {
         hasher.update(&v.0.to_le_bytes());
     }
     *hasher.finalize().as_bytes()
+}
+
+// ---------------------------------------------------------------------------
+// Raw i64 Fixed-Point Operations (Alternative Interface)
+// ---------------------------------------------------------------------------
+
+/// Convert an integer with specified decimal places to fixed-point micro representation
+/// 
+/// # Arguments
+/// * `x` - The integer value
+/// * `decimals` - Number of decimal places (0-6 supported)
+/// 
+/// # Example
+/// ```
+/// use ippan_ai_core::fixed::to_fixed;
+/// assert_eq!(to_fixed(123, 0), 123_000_000); // 123.0
+/// assert_eq!(to_fixed(1234, 3), 1_234_000);  // 1.234
+/// ```
+#[inline]
+pub fn to_fixed(x: i64, decimals: u32) -> i64 {
+    if decimals == 0 {
+        x.saturating_mul(SCALE)
+    } else if decimals >= 6 {
+        x
+    } else {
+        let divisor = 10_i64.pow(decimals);
+        x.saturating_mul(SCALE / divisor)
+    }
+}
+
+/// This function intentionally panics to prevent accidental floating-point usage
+/// in consensus-critical code paths.
+/// 
+/// # Panics
+/// Always panics with a message directing to use integer-based conversion
+#[inline]
+pub fn from_f64_lossy(_x: f64) -> ! {
+    panic!("from_f64_lossy: Floating-point conversion is forbidden in runtime paths. Use to_fixed() or Fixed::from_int() instead.");
+}
+
+/// Add two fixed-point values (raw i64)
+#[inline]
+pub fn add(a: i64, b: i64) -> i64 {
+    a.saturating_add(b)
+}
+
+/// Subtract two fixed-point values (raw i64)
+#[inline]
+pub fn sub(a: i64, b: i64) -> i64 {
+    a.saturating_sub(b)
+}
+
+/// Multiply two fixed-point values with proper scaling
+/// Result = (a * b) / SCALE
+#[inline]
+pub fn mul_fixed(a: i64, b: i64) -> i64 {
+    let result = ((a as i128) * (b as i128)) / (SCALE as i128);
+    result.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+}
+
+/// Divide two fixed-point values with proper scaling
+/// Result = (a * SCALE) / b
+#[inline]
+pub fn div_fixed(a: i64, b: i64) -> i64 {
+    if b == 0 {
+        return 0;
+    }
+    let result = ((a as i128) * (SCALE as i128)) / (b as i128);
+    result.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+}
+
+/// Clamp an i64 value between min and max
+#[inline]
+pub fn clamp_i64(v: i64, min: i64, max: i64) -> i64 {
+    if v < min {
+        min
+    } else if v > max {
+        max
+    } else {
+        v
+    }
+}
+
+/// Quantize a value to the nearest step (floor rounding)
+/// 
+/// # Example
+/// ```
+/// use ippan_ai_core::fixed::{quantize_i64, SCALE};
+/// let step = SCALE / 10; // 0.1 steps
+/// assert_eq!(quantize_i64(1_234_567, step), 1_200_000); // 1.2
+/// ```
+#[inline]
+pub fn quantize_i64(v: i64, step: i64) -> i64 {
+    if step == 0 {
+        return v;
+    }
+    (v / step) * step
+}
+
+/// Compare two fixed-point values, returning their ordering
+/// Implements FixedOrd semantics for branch comparisons
+#[inline]
+pub fn cmp_fixed(a: i64, b: i64) -> core::cmp::Ordering {
+    a.cmp(&b)
 }
 
 // ---------------------------------------------------------------------------
