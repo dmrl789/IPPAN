@@ -39,6 +39,7 @@
 //! ```
 
 pub mod activation;
+pub mod d_gbdt;
 pub mod errors;
 pub mod fees;
 pub mod governance;
@@ -51,6 +52,10 @@ pub mod types;
 
 // Re-export commonly used types
 pub use activation::ActivationManager;
+pub use d_gbdt::{
+    compute_model_hash, load_model_from_config, load_model_from_path, DGBDTRegistry,
+    HistoryEntry, StoredModel, MAX_HISTORY_VERSIONS,
+};
 pub use errors::{RegistryError, Result};
 pub use fees::{FeeCalculation, FeeManager, FeeStats};
 pub use governance::GovernanceManager;
