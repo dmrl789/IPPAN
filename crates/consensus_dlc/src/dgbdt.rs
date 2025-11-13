@@ -195,11 +195,11 @@ impl TreeNode {
     }
 }
 
-/// Fairness model using ensemble of decision trees
+/// Fairness model using ensemble of decision trees (deterministic, integer-only)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FairnessModel {
-    /// Feature weights for linear combination
-    pub weights: Vec<f64>,
+    /// Feature weights for linear combination (scaled integers, sum to 100 for percentage)
+    pub weights: Vec<i64>,
     /// Decision trees for GBDT
     pub trees: Vec<TreeNode>,
     /// Model bias
@@ -217,8 +217,8 @@ impl Default for FairnessModel {
 impl FairnessModel {
     /// Create a new default fairness model
     pub fn new_default() -> Self {
-        // Default weights: uptime, latency, honesty, proposal rate, verification rate, stake
-        let weights = vec![0.25, 0.15, 0.25, 0.15, 0.15, 0.05];
+        // Default weights (integers summing to 100): uptime, latency, honesty, proposal rate, verification rate, stake
+        let weights = vec![25, 15, 25, 15, 15, 5]; // Sum = 100
 
         // Create a simple default tree
         let default_tree = TreeNode::leaf(5000); // Neutral score
@@ -233,7 +233,7 @@ impl FairnessModel {
 
     /// Create a production-ready fairness model with multiple trees
     pub fn new_production() -> Self {
-        let weights = vec![0.25, 0.15, 0.25, 0.15, 0.15, 0.05];
+        let weights = vec![25, 15, 25, 15, 15, 5]; // Sum = 100
 
         // Tree 1: Focus on uptime and honesty
         let tree1 = TreeNode::internal(
@@ -282,9 +282,10 @@ impl FairnessModel {
         }
     }
 
-    /// Score validator using the fairness model
+    /// Score validator using the fairness model (deprecated - returns f64 for compatibility)
+    #[deprecated(note = "Use score_deterministic() for integer-only arithmetic")]
     pub fn score(&self, metrics: &ValidatorMetrics) -> f64 {
-        // Use integer arithmetic for determinism
+        // Use integer arithmetic for determinism, convert to f64 only for output
         let score_int = self.score_deterministic(metrics);
         score_int as f64 / self.scale as f64
     }
@@ -308,11 +309,12 @@ impl FairnessModel {
             score += tree.predict(&features);
         }
 
-        // Apply weights (linear combination)
+        // Apply weights (linear combination with integer arithmetic)
         let mut weighted_score = 0i64;
         for (i, &feature) in features.iter().enumerate() {
             if i < self.weights.len() {
-                weighted_score += ((feature as f64) * self.weights[i]) as i64;
+                // Integer multiplication: weights sum to 100, so divide by 100
+                weighted_score += (feature * self.weights[i]) / 100;
             }
         }
 
@@ -324,7 +326,8 @@ impl FairnessModel {
     }
 
     /// Train or update the model with new data (placeholder for future ML training)
-    pub fn update(&mut self, _training_data: &[(ValidatorMetrics, f64)]) {
+    #[deprecated(note = "Training interface not implemented - model is pre-trained")]
+    pub fn update(&mut self, _training_data: &[(ValidatorMetrics, i64)]) {
         // In production, this would update the model using gradient boosting
         // For now, we use the pre-trained model
         tracing::debug!("Model update requested (using pre-trained model)");
@@ -367,26 +370,29 @@ pub struct ModelMetadata {
     pub bias: i64,
 }
 
-/// Validator ranking result
+/// Validator ranking result (deterministic integer scoring)
 #[derive(Debug, Clone)]
 pub struct ValidatorRanking {
     pub validator_id: String,
-    pub score: f64,
+    pub score: i64, // Scaled integer score
     pub rank: usize,
 }
 
-/// Rank multiple validators using the fairness model
+/// Rank multiple validators using the fairness model (deterministic integer scoring)
 pub fn rank_validators(
     model: &FairnessModel,
     validators: HashMap<String, ValidatorMetrics>,
 ) -> Vec<ValidatorRanking> {
-    let mut rankings: Vec<(String, f64)> = validators
+    let mut rankings: Vec<(String, i64)> = validators
         .into_iter()
-        .map(|(id, metrics)| (id, model.score(&metrics)))
+        .map(|(id, metrics)| (id, model.score_deterministic(&metrics)))
         .collect();
 
-    // Sort by score (descending)
-    rankings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Sort by score (descending), then by ID for deterministic tie-breaking
+    rankings.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.cmp(&b.0))
+    });
 
     rankings
         .into_iter()
