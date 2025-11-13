@@ -4,14 +4,17 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Consensus metrics collector
+/// Scale factor for fixed-point confidence scores (10000 = 100.00%)
+const CONFIDENCE_SCALE: i64 = 10000;
+
+/// Consensus metrics collector (fully deterministic, integer-only)
 pub struct ConsensusMetrics {
     // AI Selection metrics
     ai_selection_total: Arc<Mutex<u64>>,
     ai_selection_success: Arc<Mutex<u64>>,
     ai_selection_fallback: Arc<Mutex<u64>>,
     ai_selection_latency_us: Arc<Mutex<Vec<u64>>>,
-    ai_confidence_scores: Arc<Mutex<Vec<f64>>>,
+    ai_confidence_scores: Arc<Mutex<Vec<i64>>>, // Scaled 0-10000
 
     // Validator selection distribution
     validator_selection_count: Arc<Mutex<HashMap<String, u64>>>,
@@ -31,8 +34,8 @@ pub struct ConsensusMetrics {
     blocks_proposed: Arc<Mutex<u64>>,
     blocks_validated: Arc<Mutex<u64>>,
 
-    // Reputation metrics
-    avg_reputation_score: Arc<Mutex<f64>>,
+    // Reputation metrics (scaled integers)
+    avg_reputation_score: Arc<Mutex<i64>>, // Scaled 0-10000
     min_reputation_score: Arc<Mutex<i32>>,
     max_reputation_score: Arc<Mutex<i32>>,
 }
@@ -55,7 +58,7 @@ impl ConsensusMetrics {
             rounds_finalized: Arc::new(Mutex::new(0)),
             blocks_proposed: Arc::new(Mutex::new(0)),
             blocks_validated: Arc::new(Mutex::new(0)),
-            avg_reputation_score: Arc::new(Mutex::new(0.0)),
+            avg_reputation_score: Arc::new(Mutex::new(0)),
             min_reputation_score: Arc::new(Mutex::new(10000)),
             max_reputation_score: Arc::new(Mutex::new(0)),
         }
@@ -67,7 +70,7 @@ impl ConsensusMetrics {
         *self.ai_selection_total.lock() += 1;
     }
 
-    pub fn record_ai_selection_success(&self, confidence_score: f64, latency_us: u64) {
+    pub fn record_ai_selection_success(&self, confidence_score: i64, latency_us: u64) {
         *self.ai_selection_success.lock() += 1;
         self.ai_confidence_scores.lock().push(confidence_score);
         self.ai_selection_latency_us.lock().push(latency_us);
@@ -144,8 +147,8 @@ impl ConsensusMetrics {
             return;
         }
 
-        let sum: i32 = scores.values().sum();
-        let avg = sum as f64 / scores.len() as f64;
+        let sum: i64 = scores.values().map(|&s| s as i64).sum();
+        let avg = sum / scores.len() as i64; // Integer average
         *self.avg_reputation_score.lock() = avg;
 
         if let Some(&min) = scores.values().min() {
@@ -176,6 +179,7 @@ impl ConsensusMetrics {
             return 0.0;
         }
         let success = *self.ai_selection_success.lock();
+        // Return as f64 for Prometheus compatibility
         success as f64 / total as f64
     }
 
@@ -184,7 +188,10 @@ impl ConsensusMetrics {
         if scores.is_empty() {
             return 0.0;
         }
-        scores.iter().sum::<f64>() / scores.len() as f64
+        // Integer average, then convert to f64 for Prometheus
+        let sum: i64 = scores.iter().sum();
+        let avg_scaled = sum / scores.len() as i64;
+        avg_scaled as f64 / CONFIDENCE_SCALE as f64
     }
 
     pub fn get_avg_ai_latency_us(&self) -> f64 {
@@ -192,7 +199,9 @@ impl ConsensusMetrics {
         if latencies.is_empty() {
             return 0.0;
         }
-        latencies.iter().sum::<u64>() as f64 / latencies.len() as f64
+        // Integer average, then convert to f64 for Prometheus
+        let sum: u64 = latencies.iter().sum();
+        (sum / latencies.len() as u64) as f64
     }
 
     pub fn get_validator_selection_distribution(&self) -> HashMap<String, u64> {
@@ -217,6 +226,7 @@ impl ConsensusMetrics {
             return 0.0;
         }
         let success = *self.model_reload_success.lock();
+        // Return as f64 for Prometheus compatibility
         success as f64 / total as f64
     }
 
@@ -237,7 +247,8 @@ impl ConsensusMetrics {
     }
 
     pub fn get_avg_reputation_score(&self) -> f64 {
-        *self.avg_reputation_score.lock()
+        // Convert from scaled integer to f64 for Prometheus
+        *self.avg_reputation_score.lock() as f64 / CONFIDENCE_SCALE as f64
     }
 
     pub fn get_min_reputation_score(&self) -> i32 {
