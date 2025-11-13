@@ -20,14 +20,15 @@ async fn main() -> Result<()> {
     let mut consensus = DlcConsensus::new(config);
 
     for i in 0..VALIDATOR_COUNT {
-        let uptime = 0.93 + ((i % 11) as f64) * 0.004;
-        let latency = 0.015 + ((i % 9) as f64) * 0.0015;
-        let honesty = 0.90 + ((i % 13) as f64) * 0.005;
+        // Use scaled integers (scaled by 10000): 9300 = 0.93, 150 = 0.015, etc.
+        let uptime = 9300 + ((i % 11) as i64 * 40);
+        let latency = 150 + ((i % 9) as i64 * 15);
+        let honesty = 9000 + ((i % 13) as i64 * 50);
 
-        let metrics = ValidatorMetrics::from_floats(
-            uptime.min(0.999),
+        let metrics = ValidatorMetrics::new(
+            uptime.min(9990),
             latency,
-            honesty.min(0.999),
+            honesty.min(9990),
             75 + (i as u64 * 4),
             190 + (i as u64 * 7),
             Amount::from_micro_ipn(6_000_000 + (i as u64 * 200_000)),
@@ -103,7 +104,7 @@ async fn main() -> Result<()> {
     );
     println!(
         "Emission progress: {:.2}%",
-        stats.emission_stats.emission_progress
+        stats.emission_stats.emission_progress_bps as f64 / 100.0 // Convert BPS to percentage
     );
     println!(
         "Tracked reward entries: {}",

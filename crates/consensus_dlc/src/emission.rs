@@ -140,13 +140,14 @@ impl EmissionSchedule {
     pub fn stats(&self) -> EmissionStats {
         let emitted = self.current_supply.saturating_sub(self.initial_supply);
         let remaining = self.max_supply.saturating_sub(self.current_supply);
-        let progress = (self.current_supply as f64 / self.max_supply as f64) * 100.0;
+        // Integer arithmetic: (supply * 10000) / max_supply for basis points
+        let progress_bps = ((self.current_supply as u128 * 10000) / self.max_supply as u128) as u32;
 
         EmissionStats {
             current_supply: self.current_supply,
             emitted_supply: emitted,
             remaining_supply: remaining,
-            emission_progress: progress,
+            emission_progress_bps: progress_bps,
             current_inflation_bps: self.current_inflation_bps,
             current_block_reward: self.current_block_reward,
         }
@@ -159,7 +160,8 @@ pub struct EmissionStats {
     pub current_supply: u64,
     pub emitted_supply: u64,
     pub remaining_supply: u64,
-    pub emission_progress: f64,
+    /// Emission progress in basis points (0-10000 = 0%-100%)
+    pub emission_progress_bps: u32,
     pub current_inflation_bps: u64,
     pub current_block_reward: u64,
 }
@@ -424,7 +426,7 @@ mod tests {
         let schedule = EmissionSchedule::default();
         let stats = schedule.stats();
 
-        assert!(stats.emission_progress >= 0.0);
+        assert!(stats.emission_progress_bps <= 10000); // Max 100%
         assert!(stats.remaining_supply > 0);
     }
 

@@ -107,12 +107,12 @@ impl ValidatorMetrics {
             latency_inv: (10000 - self.latency.min(10000)).max(0), // Invert latency
             honesty: self.honesty, // Already scaled
             proposal_rate: if self.rounds_active > 0 {
-                ((self.blocks_proposed as i64 * 10000) / self.rounds_active as i64)
+                (self.blocks_proposed as i64 * 10000) / self.rounds_active as i64
             } else {
                 0
             },
             verification_rate: if self.rounds_active > 0 {
-                ((self.blocks_verified as i64 * 10000) / self.rounds_active as i64)
+                (self.blocks_verified as i64 * 10000) / self.rounds_active as i64
             } else {
                 0
             },
