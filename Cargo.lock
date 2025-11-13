@@ -2797,8 +2797,10 @@ dependencies = [
  "serde_json",
  "sha2",
  "sled",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "toml",
  "tracing",
  "uuid",
 ]

@@ -50,6 +50,9 @@ slash_penalty = 0.10
 performance = 0.10
 stake = 0.05
 
+# Path to the D-GBDT model file
+d_gbdt_model_path = "config/models/d_gbdt_v1.json"
+
 [shadow_verifiers]
 # Maximum number of parallel shadow verifiers
 max_verifiers = 5
