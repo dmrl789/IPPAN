@@ -135,7 +135,7 @@ impl RoundExecutor {
 
         info!(
             target: "round_executor",
-            "Round {} executed → emission={} μIPN (≈ {:.6} IPN), {} participants, total payouts={}",
+            "Round {} executed → emission={} μIPN (≈ {} IPN), {} participants, total payouts={}",
             round,
             result.emission_micro,
             result.emission_micro / 1_000_000, // Convert to IPN (rounded)

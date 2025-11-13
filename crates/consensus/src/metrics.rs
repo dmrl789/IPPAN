@@ -318,7 +318,7 @@ impl ConsensusMetrics {
         );
         output.push_str("# TYPE ippan_ai_latency_avg_us gauge\n");
         output.push_str(&format!(
-            "ippan_ai_latency_avg_us {:.2}\n",
+            "ippan_ai_latency_avg_us {}\n",
             self.get_avg_ai_latency_us()
         ));
 
@@ -446,9 +446,9 @@ mod tests {
 
         assert_eq!(metrics.get_ai_selection_total(), 1);
         assert_eq!(metrics.get_ai_selection_success(), 1);
-        assert_eq!(metrics.get_ai_selection_success_rate(), 1.0);
-        assert!(metrics.get_avg_ai_confidence() > 0.8);
-        assert!(metrics.get_avg_ai_latency_us() > 1000.0);
+        assert_eq!(metrics.get_ai_selection_success_rate_scaled(), 10000); // 100%
+        assert!(metrics.get_avg_ai_confidence_scaled() > 8000); // > 80%
+        assert!(metrics.get_avg_ai_latency_us() > 1000);
     }
 
     #[test]
@@ -460,7 +460,7 @@ mod tests {
 
         assert_eq!(metrics.get_ai_selection_total(), 1);
         assert_eq!(metrics.get_ai_selection_fallback(), 1);
-        assert_eq!(metrics.get_ai_selection_success_rate(), 0.0);
+        assert_eq!(metrics.get_ai_selection_success_rate_scaled(), 0); // 0%
     }
 
     #[test]
@@ -490,8 +490,9 @@ mod tests {
 
         metrics.record_reputation_scores(&scores);
 
-        assert!(metrics.get_avg_reputation_score() > 7000.0);
-        assert!(metrics.get_avg_reputation_score() < 8000.0);
+        let avg = metrics.get_avg_reputation_score_scaled();
+        assert!(avg > 7000); // > 70%
+        assert!(avg < 8000); // < 80%
         assert_eq!(metrics.get_min_reputation_score(), 6000);
         assert_eq!(metrics.get_max_reputation_score(), 9000);
     }
