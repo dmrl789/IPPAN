@@ -53,9 +53,9 @@ pub enum ProposalStatus {
 pub struct ProposalManager {
     /// Active proposals
     proposals: HashMap<String, (AiModelProposal, ProposalStatus)>,
-    /// Voting threshold (percentage of stake required)
+    /// Voting threshold as scaled integer (0-10000 = 0%-100%)
     #[allow(dead_code)]
-    voting_threshold: f64,
+    voting_threshold: i64,
     /// Minimum stake required to propose
     min_proposal_stake: u64,
     /// Base registration fee (in micro-IPN)
@@ -66,7 +66,8 @@ pub struct ProposalManager {
 
 impl ProposalManager {
     /// Create a new proposal manager
-    pub fn new(voting_threshold: f64, min_proposal_stake: u64) -> Self {
+    /// voting_threshold: scaled by 10000 (e.g., 6667 = 66.67%)
+    pub fn new(voting_threshold: i64, min_proposal_stake: u64) -> Self {
         Self {
             proposals: HashMap::new(),
             voting_threshold,
@@ -77,8 +78,9 @@ impl ProposalManager {
     }
 
     /// Create with custom fee parameters
+    /// voting_threshold: scaled by 10000 (e.g., 6667 = 66.67%)
     pub fn with_fees(
-        voting_threshold: f64,
+        voting_threshold: i64,
         min_proposal_stake: u64,
         base_registration_fee: u64,
         fee_per_mb: u64,
