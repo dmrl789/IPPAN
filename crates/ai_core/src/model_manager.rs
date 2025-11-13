@@ -6,7 +6,7 @@
 //! - Secure storage with hash checking and rollback capability
 
 use crate::fixed::Fixed;
-use crate::gbdt::{GBDTError, GBDTModel};
+use crate::gbdt_legacy::{GBDTError, GBDTModel};
 use crate::model::ModelPackage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

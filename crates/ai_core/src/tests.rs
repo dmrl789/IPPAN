@@ -9,7 +9,7 @@
 use crate::feature_engineering::{
     FeatureEngineeringConfig, FeatureEngineeringPipeline, RawFeatureData,
 };
-use crate::gbdt::{GBDTModel, Node, Tree};
+use crate::gbdt_legacy::{GBDTModel, Node, Tree};
 use crate::monitoring::{MonitoringConfig, MonitoringSystem};
 use crate::production_config::{Environment, ProductionConfig, ProductionConfigManager};
 use crate::security::{SecurityConfig, SecuritySeverity, SecuritySystem};

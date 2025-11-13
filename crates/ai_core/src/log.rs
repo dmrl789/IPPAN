@@ -1,4 +1,4 @@
-use crate::gbdt::GBDTModel as Model;
+use crate::gbdt_legacy::GBDTModel as Model;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -133,7 +133,7 @@ pub fn create_hashtimer_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gbdt::{GBDTModel as Model, Node, Tree};
+    use crate::gbdt_legacy::{GBDTModel as Model, Node, Tree};
 
     fn create_test_model() -> Model {
         Model::new(

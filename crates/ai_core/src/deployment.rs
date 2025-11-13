@@ -7,7 +7,7 @@
 //! - Service discovery hooks
 //! - Rolling updates, rollback, and validation
 
-use crate::gbdt::{GBDTError, GBDTModel};
+use crate::gbdt_legacy::{GBDTError, GBDTModel};
 use crate::model_manager::ModelManager;
 use crate::monitoring::MonitoringSystem;
 use crate::production_config::ProductionConfigManager;
