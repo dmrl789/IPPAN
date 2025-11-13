@@ -35,17 +35,6 @@ sysinfo = "0.29"  # NEW: for memory monitoring
 
 **Conflict Location**: Lines 70-77 (Production dependencies)
 
-**Conflict Details (our branch)**:
-```toml
-warp = "0.3"
-sysinfo = "0.29"
-```
-
-**Conflict Details (origin/main)**:
-```toml
-warp = { workspace = true }
-```
-
 **Resolution**:
 ```toml
 warp = { workspace = true }
@@ -58,20 +47,7 @@ sysinfo = "0.29"
 
 ---
 
-**Conflict Details (our branch)**:
-```toml
-toml = "0.8"
-warp = "0.3"
-sysinfo = "0.29"
-```
-
-**Conflict Details (origin/main)**:
-```toml
-toml = { workspace = true }
-warp = { workspace = true }
-```
-
-**Resolution**:
+**Alternative Resolution**:
 ```toml
 toml = { workspace = true }  ← Use main's workspace version
 warp = { workspace = true }  ← Use main's workspace version
@@ -87,33 +63,6 @@ sysinfo = "0.29"             ← Keep our addition for memory monitoring
 ### 3. `crates/l2_handle_registry/Cargo.toml`
 
 **Conflict Location**: Lines 9-31 (Dependencies section)
-
-**Conflict Details (our branch)**:
-```toml
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.0", features = ["full"] }
-anyhow = "1.0"
-thiserror = "1.0"
-parking_lot = "0.12"
-sha2 = "0.10"
-hex = "0.4"
-futures = "0.3"
-ed25519-dalek = "2.1"
-```
-
-**Conflict Details (origin/main)**:
-```toml
-serde = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-parking_lot = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
-futures = { workspace = true }
-```
 
 **Resolution**:
 ```toml

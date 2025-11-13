@@ -1,8 +1,8 @@
 # Merge Conflict Resolution
 
-**Date**: 2025-11-11  
-**Branch**: cursor/run-local-act-simulation-for-failing-workflows-826e  
-**Base Branch**: fix/stabilize-2025-11-08  
+**Date**: 2025-11-11
+**Branch**: cursor/run-local-act-simulation-for-failing-workflows-826e
+**Base Branch**: fix/stabilize-2025-11-08
 **Merge Commit**: 6e6e5090
 
 ---
@@ -147,6 +147,6 @@ The PR is now ready for review and should have no merge conflicts with the base 
 
 ---
 
-**Status**: ✅ Conflict Resolved  
-**Validation**: ✅ All workflows pass act validation  
+**Status**: ✅ Conflict Resolved
+**Validation**: ✅ All workflows pass act validation
 **Ready for**: Review and merge

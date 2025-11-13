@@ -230,12 +230,19 @@ pub fn score_validator(
             let result_i64 = result as i64;
             let scale_i64 = m.scale as i64;
             
-            // Avoid overflow: (result * SCALE) / m.scale
-            // Rewrite as: result / (m.scale / SCALE) to maintain precision
-            if scale_i64 >= SCALE {
-                result_i64 / (scale_i64 / SCALE)
-            } else {
-                result_i64.saturating_mul(SCALE / scale_i64)
+            // Convert from model scale to SCALE: (result * SCALE) / m.scale
+            // Use checked operations to avoid overflow
+            // For typical values: result ~= 0-100000, SCALE = 10000, m.scale = 10000-100000
+            match result_i64.checked_mul(SCALE) {
+                Some(scaled) => scaled / scale_i64,
+                None => {
+                    // Overflow case: use i128 for intermediate calculation
+                    let result_i128 = result_i64 as i128;
+                    let scaled_i128 = result_i128 * (SCALE as i128);
+                    let final_score = scaled_i128 / (scale_i64 as i128);
+                    // Clamp to i64 range (should never overflow in practice)
+                    final_score.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+                }
             }
         }
         None => {

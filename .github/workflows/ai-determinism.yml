@@ -22,7 +22,7 @@ jobs:
   # ============================================================================
   # AI DETERMINISM TESTS
   # ============================================================================
-  
+
   test-determinism:
     name: AI Determinism (${{ matrix.target }})
     runs-on: ubuntu-latest
@@ -64,7 +64,7 @@ jobs:
       - name: Build AI core
         run: |
           cargo build --manifest-path crates/ai_core/Cargo.toml --target ${{ matrix.target }} --release
-          
+
       - name: Run determinism tests
         if: matrix.run-tests
         run: |
@@ -77,7 +77,7 @@ jobs:
             -- \
             --nocapture \
           2>&1 | tee determinism-logs.txt
-          
+
       - name: Test cross-platform consistency
         if: matrix.run-tests
         run: |
@@ -89,7 +89,7 @@ jobs:
             -- \
             --nocapture \
           2>&1 | tee -a determinism-logs.txt
-          
+
       - name: Upload determinism logs
         if: matrix.run-tests
         uses: actions/upload-artifact@v4
@@ -111,7 +111,7 @@ jobs:
       - name: Check for floating point usage in AI core
         run: |
           FOUND_VIOLATIONS=0
-          
+
           if grep -R "f32\|f64" crates/ai_core/src/ | \
              grep -v "from_f64\|to_f64\|impl From<.*> for f64\|/// Convert to an\|/// Construct from an\|pub fn.*f64\|as f64 / Self::SCALE\|as f64).round()\|\.as_secs_f64()\|f32::from_le_bytes" | \
              grep -v "bin/dump_inference.rs" | \
@@ -123,7 +123,7 @@ jobs:
             echo "These should be converted to Fixed-point arithmetic"
             FOUND_VIOLATIONS=1
           fi
-          
+
           if [ $FOUND_VIOLATIONS -eq 1 ]; then
             echo ""
             echo "✅ Note: Conversion helpers (from_f64/to_f64) are allowed for interop"
@@ -294,7 +294,7 @@ jobs:
   dlc-tests:
     name: DLC Consensus Tests
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -359,7 +359,7 @@ jobs:
   dlc-validation:
     name: DLC Specification Validation
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
