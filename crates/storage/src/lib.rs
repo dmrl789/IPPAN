@@ -98,6 +98,7 @@ pub trait Storage {
 }
 
 /// Validator telemetry for AI consensus
+/// All percentage/performance fields are scaled integers (0-10000 = 0%-100%)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorTelemetry {
     pub validator_id: [u8; 32],
@@ -109,9 +110,12 @@ pub struct ValidatorTelemetry {
     pub stake: u64,
     pub age_rounds: u64,
     pub last_active_round: u64,
-    pub uptime_percentage: f64,
-    pub recent_performance: f64,
-    pub network_contribution: f64,
+    /// Uptime percentage scaled by 100 (0-10000 = 0%-100%)
+    pub uptime_percentage_scaled: i64,
+    /// Recent performance scaled by 10000 (0-10000 = 0%-100%)
+    pub recent_performance_scaled: i64,
+    /// Network contribution scaled by 10000 (0-10000 = 0%-100%)
+    pub network_contribution_scaled: i64,
 }
 
 #[derive(Default, Clone)]

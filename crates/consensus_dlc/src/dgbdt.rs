@@ -65,27 +65,7 @@ impl ValidatorMetrics {
         }
     }
 
-    /// Create from floats (deprecated - for migration only)
-    #[deprecated(note = "Use new() with scaled i64 values")]
-    pub fn from_floats(
-        uptime: f64,
-        latency: f64,
-        honesty: f64,
-        blocks_proposed: u64,
-        blocks_verified: u64,
-        stake: Amount,
-        rounds_active: u64,
-    ) -> Self {
-        Self {
-            uptime: (uptime * 10000.0) as i64,
-            latency: (latency * 10000.0) as i64,
-            honesty: (honesty * 10000.0) as i64,
-            blocks_proposed,
-            blocks_verified,
-            stake,
-            rounds_active,
-        }
-    }
+    // from_floats() removed - use new() with scaled i64 values directly
 
     /// Update metrics with new data (scaled integer inputs)
     pub fn update(&mut self, uptime_delta: i64, latency_sample: i64, proposed: u64, verified: u64) {
@@ -282,13 +262,7 @@ impl FairnessModel {
         }
     }
 
-    /// Score validator using the fairness model (deprecated - returns f64 for compatibility)
-    #[deprecated(note = "Use score_deterministic() for integer-only arithmetic")]
-    pub fn score(&self, metrics: &ValidatorMetrics) -> f64 {
-        // Use integer arithmetic for determinism, convert to f64 only for output
-        let score_int = self.score_deterministic(metrics);
-        score_int as f64 / self.scale as f64
-    }
+    // score() removed - use score_deterministic() for integer-only arithmetic
 
     /// Deterministic integer-based scoring
     pub fn score_deterministic(&self, metrics: &ValidatorMetrics) -> i64 {
@@ -420,10 +394,10 @@ mod tests {
 
     #[test]
     fn test_metrics_normalization() {
-        let metrics = ValidatorMetrics::from_floats(
-            0.95,
-            0.1,
-            1.0,
+        let metrics = ValidatorMetrics::new(
+            9500,  // 0.95 * 10000
+            1000,  // 0.1 * 10000
+            10000, // 1.0 * 10000
             100,
             500,
             Amount::from_micro_ipn(10_000_000),
@@ -440,8 +414,8 @@ mod tests {
         let model = FairnessModel::new_default();
         let metrics = ValidatorMetrics::default();
 
-        let score = model.score(&metrics);
-        assert!((0.0..=1.0).contains(&score));
+        let score = model.score_deterministic(&metrics);
+        assert!(score >= 0 && score <= 10000); // Score is scaled 0-10000
     }
 
     #[test]
@@ -466,10 +440,10 @@ mod tests {
 
         validators.insert(
             "val1".to_string(),
-            ValidatorMetrics::from_floats(
-                0.99,
-                0.05,
-                1.0,
+            ValidatorMetrics::new(
+                9900,  // 0.99 * 10000
+                500,   // 0.05 * 10000
+                10000, // 1.0 * 10000
                 100,
                 500,
                 Amount::from_micro_ipn(10_000_000),
@@ -478,10 +452,10 @@ mod tests {
         );
         validators.insert(
             "val2".to_string(),
-            ValidatorMetrics::from_floats(
-                0.95,
-                0.15,
-                0.98,
+            ValidatorMetrics::new(
+                9500,  // 0.95 * 10000
+                1500,  // 0.15 * 10000
+                9800,  // 0.98 * 10000
                 80,
                 400,
                 Amount::from_micro_ipn(5_000_000),
@@ -497,10 +471,10 @@ mod tests {
     #[test]
     fn test_deterministic_scoring() {
         let model = FairnessModel::new_production();
-        let metrics = ValidatorMetrics::from_floats(
-            0.99,
-            0.1,
-            1.0,
+        let metrics = ValidatorMetrics::new(
+            9900,  // 0.99 * 10000
+            1000,  // 0.1 * 10000
+            10000, // 1.0 * 10000
             100,
             500,
             Amount::from_micro_ipn(10_000_000),

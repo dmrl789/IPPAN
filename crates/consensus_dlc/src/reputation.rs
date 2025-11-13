@@ -60,12 +60,6 @@ impl ReputationScore {
         (self.total * 10000) / 100_000
     }
 
-    /// Get normalized reputation (0.0 to 1.0) - deprecated, use normalized_scaled()
-    #[deprecated(note = "Use normalized_scaled() for deterministic integer arithmetic")]
-    pub fn normalized(&self) -> f64 {
-        self.normalized_scaled() as f64 / 10000.0
-    }
-
     /// Check if reputation is good standing (above threshold)
     pub fn is_good_standing(&self, threshold: i64) -> bool {
         self.total >= threshold
@@ -80,11 +74,6 @@ impl ReputationScore {
         (self.positive_actions as i64 * 10000) / total_actions as i64
     }
 
-    /// Calculate reputation trend (positive/negative ratio) - deprecated, use trend_scaled()
-    #[deprecated(note = "Use trend_scaled() for deterministic integer arithmetic")]
-    pub fn trend(&self) -> f64 {
-        self.trend_scaled() as f64 / 10000.0
-    }
 }
 
 /// Reputation database for all validators
