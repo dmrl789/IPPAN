@@ -303,7 +303,7 @@ impl ProposalManager {
 
 impl Default for ProposalManager {
     fn default() -> Self {
-        Self::new(0.67, 1_000_000) // 67% threshold, 1M minimum stake
+        Self::new(6700, 1_000_000) // 6700 = 67% threshold (scaled by 10000), 1M minimum stake
     }
 }
 
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_proposal_submission() {
-        let mut manager = ProposalManager::new(0.67, 1000000);
+        let mut manager = ProposalManager::new(6700, 1000000); // 6700 = 67%
         let proposal = create_test_proposal();
 
         assert!(manager.submit_proposal(proposal, 2000000).is_ok());
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_insufficient_stake() {
-        let mut manager = ProposalManager::new(0.67, 1000000);
+        let mut manager = ProposalManager::new(6700, 1000000); // 6700 = 67%
         let proposal = create_test_proposal();
 
         assert!(manager.submit_proposal(proposal, 500000).is_err());
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_duplicate_proposal() {
-        let mut manager = ProposalManager::new(0.67, 1000000);
+        let mut manager = ProposalManager::new(6700, 1000000); // 6700 = 67%
         let proposal1 = create_test_proposal();
         let mut proposal2 = create_test_proposal();
         proposal2.proposal_id = "proposal_1".to_string(); // Same ID
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn test_custom_fee_parameters() {
         // Custom fees: base=2M, per_mb=200K
-        let manager = ProposalManager::with_fees(0.67, 1_000_000, 2_000_000, 200_000);
+        let manager = ProposalManager::with_fees(6700, 1_000_000, 2_000_000, 200_000); // 6700 = 67%
 
         assert_eq!(
             manager.calculate_registration_fee(1_000_000),
