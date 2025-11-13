@@ -48,7 +48,8 @@ pub mod emission_tracker;
 pub mod fees;
 
 // AI and selection modules
-pub mod l1_ai_consensus;
+// REMOVED: l1_ai_consensus (contained f64, external API only)
+// pub mod l1_ai_consensus;
 
 // Telemetry and metrics
 pub mod metrics;

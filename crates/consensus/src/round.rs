@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 pub struct ValidatorTelemetry {
     pub validator_id: [u8; 32],
     pub block_production_rate_scaled: i64, // Scaled by 10000
-    pub avg_block_size: u64,
+    pub avg_block_size_scaled: i64, // Scaled by 10000
     pub uptime_scaled: i64, // Scaled by 10000
     pub network_latency_scaled: i64, // Scaled by 10000  
     pub validation_accuracy_scaled: i64, // Scaled by 10000
@@ -41,7 +41,7 @@ pub mod features {
     pub fn from_telemetry(telemetry: &ValidatorTelemetry) -> Result<Vec<i64>> {
         Ok(vec![
             telemetry.block_production_rate_scaled,
-            telemetry.avg_block_size as i64,
+            telemetry.avg_block_size_scaled,
             telemetry.uptime_scaled,
             telemetry.network_latency_scaled,
             telemetry.validation_accuracy_scaled,
@@ -372,11 +372,11 @@ mod tests {
             #[cfg(not(feature = "ai_l1"))]
             let telemetry = ValidatorTelemetry {
                 validator_id: *validator,
-                block_production_rate: 1.0 + idx as f64,
-                avg_block_size: 2.0 + idx as f64,
-                uptime: 99.0 - idx as f64,
-                network_latency: 0.2 + idx as f64 * 0.01,
-                validation_accuracy: 0.95,
+                block_production_rate_scaled: 10000 + (idx as i64 * 10000), // 1.0 -> 10000
+                avg_block_size_scaled: 20000 + (idx as i64 * 10000),         // 2.0 -> 20000
+                uptime_scaled: 990000 - (idx as i64 * 10000),                // 99.0 -> 990000
+                network_latency_scaled: 2000 + (idx as i64 * 100),           // 0.2 -> 2000, 0.01 -> 100
+                validation_accuracy_scaled: 950000,                           // 0.95 -> 950000
                 stake: 1_000 + idx as u64 * 500,
                 slashing_events: idx as u32,
                 last_activity: 123_456 + idx as u64,

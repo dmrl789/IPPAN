@@ -173,35 +173,37 @@ impl ConsensusMetrics {
         *self.ai_selection_fallback.lock()
     }
 
-    pub fn get_ai_selection_success_rate(&self) -> f64 {
+    /// Get AI selection success rate as scaled integer (0-10000 = 0%-100%)
+    pub fn get_ai_selection_success_rate_scaled(&self) -> i64 {
         let total = *self.ai_selection_total.lock();
         if total == 0 {
-            return 0.0;
+            return 0;
         }
         let success = *self.ai_selection_success.lock();
-        // Return as f64 for Prometheus compatibility
-        success as f64 / total as f64
+        // Return as scaled integer
+        (success as i64 * 10000) / total as i64
     }
 
-    pub fn get_avg_ai_confidence(&self) -> f64 {
+    /// Get average AI confidence as scaled integer (0-10000 = 0%-100%)
+    pub fn get_avg_ai_confidence_scaled(&self) -> i64 {
         let scores = self.ai_confidence_scores.lock();
         if scores.is_empty() {
-            return 0.0;
+            return 0;
         }
-        // Integer average, then convert to f64 for Prometheus
+        // Integer average (already scaled)
         let sum: i64 = scores.iter().sum();
-        let avg_scaled = sum / scores.len() as i64;
-        avg_scaled as f64 / CONFIDENCE_SCALE as f64
+        sum / scores.len() as i64
     }
 
-    pub fn get_avg_ai_latency_us(&self) -> f64 {
+    /// Get average AI latency in microseconds
+    pub fn get_avg_ai_latency_us(&self) -> u64 {
         let latencies = self.ai_selection_latency_us.lock();
         if latencies.is_empty() {
-            return 0.0;
+            return 0;
         }
-        // Integer average, then convert to f64 for Prometheus
+        // Integer average in microseconds
         let sum: u64 = latencies.iter().sum();
-        (sum / latencies.len() as u64) as f64
+        sum / latencies.len() as u64
     }
 
     pub fn get_validator_selection_distribution(&self) -> HashMap<String, u64> {
@@ -220,14 +222,15 @@ impl ConsensusMetrics {
         *self.model_reload_total.lock()
     }
 
-    pub fn get_model_reload_success_rate(&self) -> f64 {
+    /// Get model reload success rate as scaled integer (0-10000 = 0%-100%)
+    pub fn get_model_reload_success_rate_scaled(&self) -> i64 {
         let total = *self.model_reload_total.lock();
         if total == 0 {
-            return 0.0;
+            return 0;
         }
         let success = *self.model_reload_success.lock();
-        // Return as f64 for Prometheus compatibility
-        success as f64 / total as f64
+        // Return as scaled integer
+        (success as i64 * 10000) / total as i64
     }
 
     pub fn get_model_validation_errors(&self) -> u64 {
@@ -246,9 +249,10 @@ impl ConsensusMetrics {
         *self.blocks_validated.lock()
     }
 
-    pub fn get_avg_reputation_score(&self) -> f64 {
-        // Convert from scaled integer to f64 for Prometheus
-        *self.avg_reputation_score.lock() as f64 / CONFIDENCE_SCALE as f64
+    /// Get average reputation score as scaled integer (0-10000 = 0%-100%)
+    pub fn get_avg_reputation_score_scaled(&self) -> i64 {
+        // Already scaled by CONFIDENCE_SCALE (10000)
+        *self.avg_reputation_score.lock()
     }
 
     pub fn get_min_reputation_score(&self) -> i32 {
@@ -295,16 +299,18 @@ impl ConsensusMetrics {
             "# HELP ippan_ai_selection_success_rate Success rate of AI validator selections\n",
         );
         output.push_str("# TYPE ippan_ai_selection_success_rate gauge\n");
+        let rate_scaled = self.get_ai_selection_success_rate_scaled();
         output.push_str(&format!(
-            "ippan_ai_selection_success_rate {:.4}\n",
-            self.get_ai_selection_success_rate()
+            "ippan_ai_selection_success_rate {}.{}\n",
+            rate_scaled / 10000, (rate_scaled % 10000) / 100
         ));
 
         output.push_str("# HELP ippan_ai_confidence_avg Average AI confidence score (0-1)\n");
         output.push_str("# TYPE ippan_ai_confidence_avg gauge\n");
+        let conf_scaled = self.get_avg_ai_confidence_scaled();
         output.push_str(&format!(
-            "ippan_ai_confidence_avg {:.4}\n",
-            self.get_avg_ai_confidence()
+            "ippan_ai_confidence_avg {}.{}\n",
+            conf_scaled / 10000, (conf_scaled % 10000) / 100
         ));
 
         output.push_str(
@@ -354,9 +360,10 @@ impl ConsensusMetrics {
 
         output.push_str("# HELP ippan_model_reload_success_rate Success rate of model reloads\n");
         output.push_str("# TYPE ippan_model_reload_success_rate gauge\n");
+        let reload_rate_scaled = self.get_model_reload_success_rate_scaled();
         output.push_str(&format!(
-            "ippan_model_reload_success_rate {:.4}\n",
-            self.get_model_reload_success_rate()
+            "ippan_model_reload_success_rate {}.{}\n",
+            reload_rate_scaled / 10000, (reload_rate_scaled % 10000) / 100
         ));
 
         output.push_str(
@@ -395,9 +402,10 @@ impl ConsensusMetrics {
             "# HELP ippan_reputation_score_avg Average validator reputation score (0-10000)\n",
         );
         output.push_str("# TYPE ippan_reputation_score_avg gauge\n");
+        let rep_scaled = self.get_avg_reputation_score_scaled();
         output.push_str(&format!(
-            "ippan_reputation_score_avg {:.2}\n",
-            self.get_avg_reputation_score()
+            "ippan_reputation_score_avg {}.{}\n",
+            rep_scaled / 10000, (rep_scaled % 10000) / 100
         ));
 
         output.push_str("# HELP ippan_reputation_score_min Minimum validator reputation score\n");
