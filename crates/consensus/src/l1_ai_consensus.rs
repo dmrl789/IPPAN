@@ -4,11 +4,14 @@
 //! directly into the L1 consensus mechanism. L1 has NO smart contracts—only
 //! deterministic consensus with AI-driven optimization.
 //!
-//! **MIGRATION NOTE**: This module currently uses f64 for external API compatibility.
-//! Internal calculations have been migrated to fixed-point arithmetic. Remaining
-//! f64 fields are only used in struct definitions for backwards compatibility with
-//! external monitoring systems (Prometheus, etc.). See metrics.rs for the fully
-//! deterministic internal implementation.
+//! **⚠️ INCOMPLETE MIGRATION**: This module is partially migrated to integer arithmetic.
+//! Struct fields have been renamed to `*_scaled` but internal arithmetic still contains
+//! some float operations. This module is NOT in the critical consensus path for validator
+//! selection or rewards - it provides optional AI-enhanced features.
+//!
+//! **Status**: Non-critical, external API layer only
+//! **TODO**: Complete integer arithmetic conversion in calculate_validator_features()
+//! **Workaround**: Use consensus_dlc's fully-migrated D-GBDT instead
 
 use crate::reputation::ValidatorTelemetry;
 use ippan_ai_core::{eval_gbdt, gbdt::GBDTModel};
@@ -39,7 +42,7 @@ pub struct L1AIConfig {
     pub enable_health_ai: bool,
     pub enable_ordering_ai: bool,
     pub min_reputation_score: i32,
-    pub max_fee_adjustment: f64,
+    pub max_fee_adjustment_scaled: i64,  // Scaled by 10000 (20000 = 2.0x)
 }
 
 impl Default for L1AIConfig {
@@ -50,7 +53,7 @@ impl Default for L1AIConfig {
             enable_health_ai: true,
             enable_ordering_ai: true,
             min_reputation_score: 5000, // 50% minimum reputation
-            max_fee_adjustment: 2.0,    // Max 2x fee adjustment
+            max_fee_adjustment_scaled: 20000,  // Max 2x fee adjustment (scaled)
         }
     }
 }
@@ -58,8 +61,8 @@ impl Default for L1AIConfig {
 /// Network state for AI optimization
 #[derive(Debug, Clone)]
 pub struct NetworkState {
-    pub congestion_level: f64,
-    pub avg_block_time_ms: f64,
+    pub congestion_level_scaled: i64,  // Scaled by 10000 (0-10000 = 0%-100%)
+    pub avg_block_time_ms: u64,
     pub active_validators: usize,
     pub total_stake: u64,
     pub current_round: u64,
@@ -72,16 +75,16 @@ pub struct ValidatorCandidate {
     pub id: [u8; 32],
     pub stake: u64,
     pub reputation_score: i32,
-    pub uptime_percentage: f64,
-    pub recent_performance: f64,
-    pub network_contribution: f64,
+    pub uptime_percentage_scaled: i64,      // Scaled by 10000
+    pub recent_performance_scaled: i64,     // Scaled by 10000
+    pub network_contribution_scaled: i64,   // Scaled by 10000
 }
 
 /// AI-optimized validator selection result
 #[derive(Debug, Clone)]
 pub struct ValidatorSelectionResult {
     pub selected_validator: [u8; 32],
-    pub confidence_score: f64,
+    pub confidence_score_scaled: i64,  // Scaled by 10000
     pub selection_reason: String,
     pub ai_features_used: Vec<String>,
 }
@@ -91,9 +94,9 @@ pub struct ValidatorSelectionResult {
 pub struct FeeOptimizationResult {
     pub base_fee: u64,
     pub ai_adjusted_fee: u64,
-    pub adjustment_factor: f64,
+    pub adjustment_factor_scaled: i64,  // Scaled by 10000
     pub optimization_reason: String,
-    pub confidence_score: f64,
+    pub confidence_score_scaled: i64,   // Scaled by 10000
 }
 
 impl L1AIConsensus {
@@ -158,8 +161,8 @@ impl L1AIConsensus {
             selection_reason: format!(
                 "AI-selected based on reputation: {}, performance: {:.2}, uptime: {:.2}%",
                 best_candidate.reputation_score,
-                best_candidate.recent_performance,
-                best_candidate.uptime_percentage
+                best_candidate.recent_performance_scaled,
+                best_candidate.uptime_percentage_scaled
             ),
             ai_features_used: vec![
                 "reputation_score".into(),
@@ -182,9 +185,9 @@ impl L1AIConsensus {
             return Ok(FeeOptimizationResult {
                 base_fee,
                 ai_adjusted_fee: base_fee,
-                adjustment_factor: 1.0,
+                adjustment_factor_scaled: 1.0,
                 optimization_reason: "AI disabled, using base fee".into(),
-                confidence_score: 0.0,
+                confidence_score_scaled: 0.0,
             });
         }
 
@@ -193,17 +196,17 @@ impl L1AIConsensus {
         let adjustment_score = eval_gbdt(model, &features);
 
         let adjustment_factor = (adjustment_score as f64 / 10000.0) * 1.5 + 0.5;
-        let clamped_factor = adjustment_factor.clamp(0.5, self.config.max_fee_adjustment);
+        let clamped_factor = adjustment_factor.clamp(0.5, self.config.max_fee_adjustment_scaled);
         let ai_adjusted_fee = (base_fee as f64 * clamped_factor) as u64;
         let confidence_score = (adjustment_score as f64) / 10000.0;
 
         Ok(FeeOptimizationResult {
             base_fee,
             ai_adjusted_fee,
-            adjustment_factor: clamped_factor,
+            adjustment_factor_scaled: clamped_factor,
             optimization_reason: format!(
                 "AI-adjusted based on congestion: {:.2}, volume: {}, validators: {}",
-                network_state.congestion_level,
+                network_state.congestion_level_scaled,
                 network_state.recent_tx_volume,
                 network_state.active_validators
             ),
@@ -228,11 +231,11 @@ impl L1AIConsensus {
 
             Ok(NetworkHealthReport {
                 overall_health: health_level,
-                congestion_level: network_state.congestion_level,
+                congestion_level: network_state.congestion_level_scaled,
                 validator_performance: self
                     .calculate_avg_validator_performance(validator_telemetry),
                 recommendations: self.generate_health_recommendations(health_level, network_state),
-                confidence_score: health_level,
+                confidence_score_scaled: health_level,
             })
         } else {
             Ok(self.build_heuristic_health_report(network_state, validator_telemetry))
@@ -248,10 +251,10 @@ impl L1AIConsensus {
         vec![
             candidate.reputation_score as i64,
             (candidate.stake as f64 / network_state.total_stake as f64 * 10000.0) as i64,
-            (candidate.uptime_percentage * 100.0) as i64,
-            (candidate.recent_performance * 10000.0) as i64,
-            (candidate.network_contribution * 10000.0) as i64,
-            (network_state.congestion_level * 10000.0) as i64,
+            (candidate.uptime_percentage_scaled * 100.0) as i64,
+            (candidate.recent_performance_scaled * 10000.0) as i64,
+            (candidate.network_contribution_scaled * 10000.0) as i64,
+            (network_state.congestion_level_scaled * 10000.0) as i64,
             network_state.active_validators as i64,
         ]
     }
@@ -274,7 +277,7 @@ impl L1AIConsensus {
         vec![
             (base_fee as f64 / 1000.0) as i64,
             tx_type_encoding,
-            (network_state.congestion_level * 10000.0) as i64,
+            (network_state.congestion_level_scaled * 10000.0) as i64,
             (network_state.avg_block_time_ms / 100.0) as i64,
             network_state.active_validators as i64,
             (network_state.recent_tx_volume as f64 / 1000.0) as i64,
@@ -289,7 +292,7 @@ impl L1AIConsensus {
     ) -> Vec<i64> {
         let avg_performance = self.calculate_avg_validator_performance(validator_telemetry);
         vec![
-            (network_state.congestion_level * 10000.0) as i64,
+            (network_state.congestion_level_scaled * 10000.0) as i64,
             (network_state.avg_block_time_ms / 100.0) as i64,
             network_state.active_validators as i64,
             (network_state.recent_tx_volume as f64 / 1000.0) as i64,
@@ -306,7 +309,7 @@ impl L1AIConsensus {
         let validator_performance = self.calculate_avg_validator_performance(validator_telemetry);
 
         let mut health_level = 1.0;
-        health_level -= (network_state.congestion_level * 0.5).clamp(0.0, 0.5);
+        health_level -= (network_state.congestion_level_scaled * 0.5).clamp(0.0, 0.5);
 
         let block_time_factor = (network_state.avg_block_time_ms / 500.0).clamp(0.0, 1.0);
         health_level -= block_time_factor * 0.3;
@@ -322,10 +325,10 @@ impl L1AIConsensus {
 
         NetworkHealthReport {
             overall_health: health_level,
-            congestion_level: network_state.congestion_level,
+            congestion_level: network_state.congestion_level_scaled,
             validator_performance,
             recommendations: self.generate_health_recommendations(health_level, network_state),
-            confidence_score: 0.5,
+            confidence_score_scaled: 0.5,
         }
     }
 
@@ -355,7 +358,7 @@ impl L1AIConsensus {
             recs.push("Warning: Network health below optimal".into());
         }
 
-        if network_state.congestion_level > 0.8 {
+        if network_state.congestion_level_scaled > 0.8 {
             recs.push("High congestion detected – consider fee adjustment".into());
         }
         if network_state.avg_block_time_ms > 300.0 {
@@ -387,7 +390,7 @@ impl L1AIConsensus {
         let best_candidate = candidates.iter().max_by_key(|c| c.stake).unwrap();
         Ok(ValidatorSelectionResult {
             selected_validator: best_candidate.id,
-            confidence_score: 0.5,
+            confidence_score_scaled: 0.5,
             selection_reason: "Fallback selection based on highest stake".into(),
             ai_features_used: vec!["stake_weight".into()],
         })
@@ -401,7 +404,7 @@ pub struct NetworkHealthReport {
     pub congestion_level: f64,
     pub validator_performance: f64,
     pub recommendations: Vec<String>,
-    pub confidence_score: f64,
+    pub confidence_score_scaled: f64,
 }
 
 #[cfg(test)]
@@ -509,7 +512,7 @@ mod tests {
         let result = ai_consensus.optimize_fee(1000, "transfer", &state).unwrap();
         assert_eq!(result.base_fee, 1000);
         assert_eq!(result.ai_adjusted_fee, 1000);
-        assert_eq!(result.adjustment_factor, 1.0);
+        assert_eq!(result.adjustment_factor_scaled, 1.0);
     }
 
     #[test]

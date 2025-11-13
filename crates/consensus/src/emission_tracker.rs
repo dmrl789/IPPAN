@@ -31,13 +31,13 @@ pub struct EmissionAuditRecord {
     pub timestamp: u64,
 }
 
-/// Validator contribution to a round
+/// Validator contribution to a round (deterministic, scaled integers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorContribution {
     pub validator_id: [u8; 32],
     pub blocks_proposed: u32,
     pub blocks_verified: u32,
-    pub reputation_score: f64,
+    pub reputation_score: i64,  // Scaled by 10000 (0-10000 = 0%-100%)
 }
 
 /// Tracks emission state across rounds
@@ -154,7 +154,7 @@ impl EmissionTracker {
         for contribution in contributions {
             let mut weight = (contribution.blocks_proposed as u128 * 5)
                 + (contribution.blocks_verified as u128 * 3)
-                + contribution.reputation_score.round() as u128;
+                + contribution.reputation_score as u128;  // Already scaled integer
             if weight == 0 {
                 weight = 1;
             }
