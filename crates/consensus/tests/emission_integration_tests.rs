@@ -253,13 +253,13 @@ fn test_emission_tracker_integration() {
                 validator_id: [1u8; 32],
                 blocks_proposed: 5,
                 blocks_verified: 10,
-                reputation_score: 10000.0,
+                reputation_score: 10000,
             },
             TrackerValidatorContribution {
                 validator_id: [2u8; 32],
                 blocks_proposed: 3,
                 blocks_verified: 8,
-                reputation_score: 9000.0,
+                reputation_score: 9000,
             },
         ];
 
@@ -293,19 +293,19 @@ fn test_emission_with_varying_participation() {
                     validator_id: [1u8; 32],
                     blocks_proposed: 10,
                     blocks_verified: 20,
-                    reputation_score: 10000.0,
+                    reputation_score: 10000,
                 },
                 TrackerValidatorContribution {
                     validator_id: [2u8; 32],
                     blocks_proposed: 8,
                     blocks_verified: 15,
-                    reputation_score: 9500.0,
+                    reputation_score: 9500,
                 },
                 TrackerValidatorContribution {
                     validator_id: [3u8; 32],
                     blocks_proposed: 5,
                     blocks_verified: 12,
-                    reputation_score: 9000.0,
+                    reputation_score: 9000,
                 },
             ]
         } else if round % 2 == 0 {
@@ -314,7 +314,7 @@ fn test_emission_with_varying_participation() {
                 validator_id: [1u8; 32],
                 blocks_proposed: 5,
                 blocks_verified: 10,
-                reputation_score: 10000.0,
+                reputation_score: 10000,
             }]
         } else {
             // Low/no participation
@@ -502,7 +502,7 @@ fn test_audit_trail_creation() {
         validator_id: [1u8; 32],
         blocks_proposed: 5,
         blocks_verified: 10,
-        reputation_score: 10000.0,
+        reputation_score: 10000,
     }];
 
     // Process 250 rounds (should create 2 audit checkpoints)

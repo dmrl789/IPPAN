@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use anyhow::Result;
 use ippan_consensus_dlc::{
     bond,
@@ -538,7 +540,7 @@ fn random_metrics(rng: &mut StdRng, stake_micro: u64) -> ValidatorMetrics {
     let blocks_verified = rng.gen_range(blocks_proposed..=(blocks_proposed + 200));
     let rounds_active = rng.gen_range(32..=1_024);
 
-    ValidatorMetrics::new(
+    ValidatorMetrics::from_floats(
         uptime,
         latency,
         honesty,
@@ -567,7 +569,10 @@ fn drift_validator_metrics(consensus: &mut DlcConsensus, rng: &mut StdRng) {
             let latency_sample = rng.gen_range(0.01..=0.25);
             let proposed_delta = rng.gen_range(0..=2);
             let verified_delta = rng.gen_range(0..=3);
-            updated.update(uptime_delta, latency_sample, proposed_delta, verified_delta);
+            // Convert to scaled integers for update
+            let uptime_delta_scaled = (uptime_delta * 10000.0) as i64;
+            let latency_sample_scaled = (latency_sample * 10000.0) as i64;
+            updated.update(uptime_delta_scaled, latency_sample_scaled, proposed_delta, verified_delta);
             let _ = consensus.validators.update_validator(id, updated);
         }
     }

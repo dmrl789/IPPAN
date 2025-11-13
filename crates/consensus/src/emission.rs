@@ -75,13 +75,13 @@ pub enum ValidatorRole {
     AIService,
 }
 
-/// Validator participation.
+/// Validator participation (deterministic, scaled integers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorParticipation {
     pub validator_id: [u8; 32],
     pub role: ValidatorRole,
     pub block_count: usize,
-    pub uptime_weight: f64,
+    pub uptime_weight: i64,  // Scaled by 10000 (0-10000 = 0%-100%)
     pub reputation_score: u16,
     pub stake_weight: u64,
 }
@@ -99,7 +99,7 @@ pub struct RoundEmission {
     pub halvings_applied: u32,
 }
 
-/// Validator reward summary.
+/// Validator reward summary (deterministic, scaled integers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorReward {
     pub validator_id: [u8; 32],
@@ -108,8 +108,8 @@ pub struct ValidatorReward {
     pub tx_fee_reward: u128,
     pub ai_commission_reward: u128,
     pub network_pool_dividend: u128,
-    pub role_multiplier: f64,
-    pub participation_score: f64,
+    pub role_multiplier: i64,        // Scaled by 10000
+    pub participation_score: i64,    // Scaled by 10000
 }
 
 /// Compute per-round reward using halving schedule.
@@ -148,12 +148,36 @@ pub fn calculate_round_emission(round: u64, params: &DAGEmissionParams) -> Round
 }
 
 /// Compute validator participation score.
-fn calculate_participation_score(p: &ValidatorParticipation) -> f64 {
-    let block_score = p.block_count as f64;
-    let uptime_score = p.uptime_weight;
-    let reputation_score = p.reputation_score as f64 / 10_000.0;
-    let stake_score = (p.stake_weight as f64).ln_1p();
-    block_score * 0.4 + uptime_score * 0.3 + reputation_score * 0.2 + stake_score * 0.1
+/// Calculate participation score using integer arithmetic (scaled by 10000)
+fn calculate_participation_score(p: &ValidatorParticipation) -> i64 {
+    // All scores scaled to 0-10000 range
+    let block_score = (p.block_count as i64).min(10000);  // Cap at 10000
+    let uptime_score = p.uptime_weight;  // Already scaled 0-10000
+    let reputation_score = (p.reputation_score as i64 * 10000) / 10000;  // Normalize to 0-10000
+    
+    // Stake score: use sqrt approximation instead of ln (deterministic)
+    // sqrt(stake_weight) scaled to 0-10000 range
+    let stake_score = if p.stake_weight > 0 {
+        let sqrt_approx = integer_sqrt(p.stake_weight);
+        (sqrt_approx.min(10000) * 10000) / 10000
+    } else {
+        0
+    };
+    
+    // Weighted combination: 40% blocks, 30% uptime, 20% reputation, 10% stake
+    (block_score * 4000 + uptime_score * 3000 + reputation_score * 2000 + stake_score * 1000) / 10000
+}
+
+/// Integer square root for deterministic stake scoring
+fn integer_sqrt(n: u64) -> i64 {
+    if n == 0 { return 0; }
+    let mut x = n / 2 + 1;
+    let mut y = (x + n / x) / 2;
+    while y < x {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    x as i64
 }
 
 /// DAG-Fair reward distribution.
@@ -170,34 +194,36 @@ pub fn distribute_dag_fair_rewards(
     }
 
     let effective_fees = collected_fees.min(Amount::from_atomic(round_emission.fee_cap_limit));
-    let total_score: f64 = participations
+    let total_score: i64 = participations
         .iter()
         .map(calculate_participation_score)
         .sum();
-    if total_score == 0.0 {
+    if total_score == 0 {
         return Ok(vec![]);
     }
 
     let mut rewards = Vec::new();
     for p in participations {
         let score = calculate_participation_score(p);
-        let ratio = score / total_score;
+        // Calculate ratio as basis points (score * 10000 / total_score)
+        let ratio_bps = (score * 10000) / total_score;
         let multiplier = match p.role {
-            ValidatorRole::Proposer => 1.2,
-            ValidatorRole::Verifier => 1.0,
-            ValidatorRole::AIService => 1.1,
+            ValidatorRole::Proposer => 12000,  // 1.2x scaled by 10000
+            ValidatorRole::Verifier => 10000,  // 1.0x scaled by 10000
+            ValidatorRole::AIService => 11000, // 1.1x scaled by 10000
         };
 
-        let base =
-            Amount::from_atomic(round_emission.base_emission).percentage((ratio * 1000.0) as u16);
-        let tx = effective_fees.percentage((ratio * 1000.0) as u16);
+        // Convert ratio_bps to percentage for Amount::percentage() (which takes u16 bps)
+        let ratio_u16 = ratio_bps.min(10000) as u16;
+        let base = Amount::from_atomic(round_emission.base_emission).percentage(ratio_u16);
+        let tx = effective_fees.percentage(ratio_u16);
         let ai = if p.role == ValidatorRole::AIService {
-            ai_commissions.percentage((ratio * 1000.0) as u16)
+            ai_commissions.percentage(ratio_u16)
         } else {
             Amount::zero()
         };
         let pool = Amount::from_atomic(round_emission.network_pool_portion)
-            .percentage((1000.0 / participations.len() as f64) as u16);
+            .percentage((10000 / participations.len() as u64).min(10000) as u16);
 
         let total = base + tx + ai + pool;
 

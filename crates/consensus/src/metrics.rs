@@ -4,14 +4,17 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Consensus metrics collector
+/// Scale factor for fixed-point confidence scores (10000 = 100.00%)
+const CONFIDENCE_SCALE: i64 = 10000;
+
+/// Consensus metrics collector (fully deterministic, integer-only)
 pub struct ConsensusMetrics {
     // AI Selection metrics
     ai_selection_total: Arc<Mutex<u64>>,
     ai_selection_success: Arc<Mutex<u64>>,
     ai_selection_fallback: Arc<Mutex<u64>>,
     ai_selection_latency_us: Arc<Mutex<Vec<u64>>>,
-    ai_confidence_scores: Arc<Mutex<Vec<f64>>>,
+    ai_confidence_scores: Arc<Mutex<Vec<i64>>>, // Scaled 0-10000
 
     // Validator selection distribution
     validator_selection_count: Arc<Mutex<HashMap<String, u64>>>,
@@ -31,8 +34,8 @@ pub struct ConsensusMetrics {
     blocks_proposed: Arc<Mutex<u64>>,
     blocks_validated: Arc<Mutex<u64>>,
 
-    // Reputation metrics
-    avg_reputation_score: Arc<Mutex<f64>>,
+    // Reputation metrics (scaled integers)
+    avg_reputation_score: Arc<Mutex<i64>>, // Scaled 0-10000
     min_reputation_score: Arc<Mutex<i32>>,
     max_reputation_score: Arc<Mutex<i32>>,
 }
@@ -55,7 +58,7 @@ impl ConsensusMetrics {
             rounds_finalized: Arc::new(Mutex::new(0)),
             blocks_proposed: Arc::new(Mutex::new(0)),
             blocks_validated: Arc::new(Mutex::new(0)),
-            avg_reputation_score: Arc::new(Mutex::new(0.0)),
+            avg_reputation_score: Arc::new(Mutex::new(0)),
             min_reputation_score: Arc::new(Mutex::new(10000)),
             max_reputation_score: Arc::new(Mutex::new(0)),
         }
@@ -67,7 +70,7 @@ impl ConsensusMetrics {
         *self.ai_selection_total.lock() += 1;
     }
 
-    pub fn record_ai_selection_success(&self, confidence_score: f64, latency_us: u64) {
+    pub fn record_ai_selection_success(&self, confidence_score: i64, latency_us: u64) {
         *self.ai_selection_success.lock() += 1;
         self.ai_confidence_scores.lock().push(confidence_score);
         self.ai_selection_latency_us.lock().push(latency_us);
@@ -144,8 +147,8 @@ impl ConsensusMetrics {
             return;
         }
 
-        let sum: i32 = scores.values().sum();
-        let avg = sum as f64 / scores.len() as f64;
+        let sum: i64 = scores.values().map(|&s| s as i64).sum();
+        let avg = sum / scores.len() as i64; // Integer average
         *self.avg_reputation_score.lock() = avg;
 
         if let Some(&min) = scores.values().min() {
@@ -170,29 +173,37 @@ impl ConsensusMetrics {
         *self.ai_selection_fallback.lock()
     }
 
-    pub fn get_ai_selection_success_rate(&self) -> f64 {
+    /// Get AI selection success rate as scaled integer (0-10000 = 0%-100%)
+    pub fn get_ai_selection_success_rate_scaled(&self) -> i64 {
         let total = *self.ai_selection_total.lock();
         if total == 0 {
-            return 0.0;
+            return 0;
         }
         let success = *self.ai_selection_success.lock();
-        success as f64 / total as f64
+        // Return as scaled integer
+        (success as i64 * 10000) / total as i64
     }
 
-    pub fn get_avg_ai_confidence(&self) -> f64 {
+    /// Get average AI confidence as scaled integer (0-10000 = 0%-100%)
+    pub fn get_avg_ai_confidence_scaled(&self) -> i64 {
         let scores = self.ai_confidence_scores.lock();
         if scores.is_empty() {
-            return 0.0;
+            return 0;
         }
-        scores.iter().sum::<f64>() / scores.len() as f64
+        // Integer average (already scaled)
+        let sum: i64 = scores.iter().sum();
+        sum / scores.len() as i64
     }
 
-    pub fn get_avg_ai_latency_us(&self) -> f64 {
+    /// Get average AI latency in microseconds
+    pub fn get_avg_ai_latency_us(&self) -> u64 {
         let latencies = self.ai_selection_latency_us.lock();
         if latencies.is_empty() {
-            return 0.0;
+            return 0;
         }
-        latencies.iter().sum::<u64>() as f64 / latencies.len() as f64
+        // Integer average in microseconds
+        let sum: u64 = latencies.iter().sum();
+        sum / latencies.len() as u64
     }
 
     pub fn get_validator_selection_distribution(&self) -> HashMap<String, u64> {
@@ -211,13 +222,15 @@ impl ConsensusMetrics {
         *self.model_reload_total.lock()
     }
 
-    pub fn get_model_reload_success_rate(&self) -> f64 {
+    /// Get model reload success rate as scaled integer (0-10000 = 0%-100%)
+    pub fn get_model_reload_success_rate_scaled(&self) -> i64 {
         let total = *self.model_reload_total.lock();
         if total == 0 {
-            return 0.0;
+            return 0;
         }
         let success = *self.model_reload_success.lock();
-        success as f64 / total as f64
+        // Return as scaled integer
+        (success as i64 * 10000) / total as i64
     }
 
     pub fn get_model_validation_errors(&self) -> u64 {
@@ -236,7 +249,9 @@ impl ConsensusMetrics {
         *self.blocks_validated.lock()
     }
 
-    pub fn get_avg_reputation_score(&self) -> f64 {
+    /// Get average reputation score as scaled integer (0-10000 = 0%-100%)
+    pub fn get_avg_reputation_score_scaled(&self) -> i64 {
+        // Already scaled by CONFIDENCE_SCALE (10000)
         *self.avg_reputation_score.lock()
     }
 
@@ -284,16 +299,18 @@ impl ConsensusMetrics {
             "# HELP ippan_ai_selection_success_rate Success rate of AI validator selections\n",
         );
         output.push_str("# TYPE ippan_ai_selection_success_rate gauge\n");
+        let rate_scaled = self.get_ai_selection_success_rate_scaled();
         output.push_str(&format!(
-            "ippan_ai_selection_success_rate {:.4}\n",
-            self.get_ai_selection_success_rate()
+            "ippan_ai_selection_success_rate {}.{}\n",
+            rate_scaled / 10000, (rate_scaled % 10000) / 100
         ));
 
         output.push_str("# HELP ippan_ai_confidence_avg Average AI confidence score (0-1)\n");
         output.push_str("# TYPE ippan_ai_confidence_avg gauge\n");
+        let conf_scaled = self.get_avg_ai_confidence_scaled();
         output.push_str(&format!(
-            "ippan_ai_confidence_avg {:.4}\n",
-            self.get_avg_ai_confidence()
+            "ippan_ai_confidence_avg {}.{}\n",
+            conf_scaled / 10000, (conf_scaled % 10000) / 100
         ));
 
         output.push_str(
@@ -301,7 +318,7 @@ impl ConsensusMetrics {
         );
         output.push_str("# TYPE ippan_ai_latency_avg_us gauge\n");
         output.push_str(&format!(
-            "ippan_ai_latency_avg_us {:.2}\n",
+            "ippan_ai_latency_avg_us {}\n",
             self.get_avg_ai_latency_us()
         ));
 
@@ -343,9 +360,10 @@ impl ConsensusMetrics {
 
         output.push_str("# HELP ippan_model_reload_success_rate Success rate of model reloads\n");
         output.push_str("# TYPE ippan_model_reload_success_rate gauge\n");
+        let reload_rate_scaled = self.get_model_reload_success_rate_scaled();
         output.push_str(&format!(
-            "ippan_model_reload_success_rate {:.4}\n",
-            self.get_model_reload_success_rate()
+            "ippan_model_reload_success_rate {}.{}\n",
+            reload_rate_scaled / 10000, (reload_rate_scaled % 10000) / 100
         ));
 
         output.push_str(
@@ -384,9 +402,10 @@ impl ConsensusMetrics {
             "# HELP ippan_reputation_score_avg Average validator reputation score (0-10000)\n",
         );
         output.push_str("# TYPE ippan_reputation_score_avg gauge\n");
+        let rep_scaled = self.get_avg_reputation_score_scaled();
         output.push_str(&format!(
-            "ippan_reputation_score_avg {:.2}\n",
-            self.get_avg_reputation_score()
+            "ippan_reputation_score_avg {}.{}\n",
+            rep_scaled / 10000, (rep_scaled % 10000) / 100
         ));
 
         output.push_str("# HELP ippan_reputation_score_min Minimum validator reputation score\n");
@@ -423,13 +442,13 @@ mod tests {
 
         // Record some AI selections
         metrics.record_ai_selection_attempt();
-        metrics.record_ai_selection_success(0.85, 1500);
+        metrics.record_ai_selection_success(8500, 1500); // 85% as scaled integer
 
         assert_eq!(metrics.get_ai_selection_total(), 1);
         assert_eq!(metrics.get_ai_selection_success(), 1);
-        assert_eq!(metrics.get_ai_selection_success_rate(), 1.0);
-        assert!(metrics.get_avg_ai_confidence() > 0.8);
-        assert!(metrics.get_avg_ai_latency_us() > 1000.0);
+        assert_eq!(metrics.get_ai_selection_success_rate_scaled(), 10000); // 100%
+        assert!(metrics.get_avg_ai_confidence_scaled() > 8000); // > 80%
+        assert!(metrics.get_avg_ai_latency_us() > 1000);
     }
 
     #[test]
@@ -441,7 +460,7 @@ mod tests {
 
         assert_eq!(metrics.get_ai_selection_total(), 1);
         assert_eq!(metrics.get_ai_selection_fallback(), 1);
-        assert_eq!(metrics.get_ai_selection_success_rate(), 0.0);
+        assert_eq!(metrics.get_ai_selection_success_rate_scaled(), 0); // 0%
     }
 
     #[test]
@@ -471,8 +490,9 @@ mod tests {
 
         metrics.record_reputation_scores(&scores);
 
-        assert!(metrics.get_avg_reputation_score() > 7000.0);
-        assert!(metrics.get_avg_reputation_score() < 8000.0);
+        let avg = metrics.get_avg_reputation_score_scaled();
+        assert!(avg > 7000); // > 70%
+        assert!(avg < 8000); // < 80%
         assert_eq!(metrics.get_min_reputation_score(), 6000);
         assert_eq!(metrics.get_max_reputation_score(), 9000);
     }
@@ -482,7 +502,7 @@ mod tests {
         let metrics = ConsensusMetrics::new();
 
         metrics.record_ai_selection_attempt();
-        metrics.record_ai_selection_success(0.9, 1200);
+        metrics.record_ai_selection_success(9000, 1200); // 90% as scaled integer
         metrics.record_block_proposed();
         metrics.record_round_finalized();
 

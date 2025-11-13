@@ -44,13 +44,13 @@ impl VerifierSet {
         let seed_string = seed.into();
 
         // Score all validators deterministically
-        let mut scored: Vec<(String, f64)> = validators
+        let mut scored: Vec<(String, i64)> = validators
             .iter()
-            .map(|(id, metrics)| (id.clone(), model.score(metrics)))
+            .map(|(id, metrics)| (id.clone(), model.score_deterministic(metrics)))
             .collect();
 
         scored.sort_by(
-            |a, b| match b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal) {
+            |a, b| match b.1.cmp(&a.1) {
                 Ordering::Equal => Self::compare_with_entropy(&seed_string, round, &a.0, &b.0),
                 other => other,
             },
@@ -335,6 +335,7 @@ impl ValidatorSetManager {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::hashtimer::HashTimer;
@@ -345,7 +346,7 @@ mod tests {
 
         validators.insert(
             "val1".to_string(),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.99,
                 0.05,
                 1.0,
@@ -357,7 +358,7 @@ mod tests {
         );
         validators.insert(
             "val2".to_string(),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.95,
                 0.15,
                 0.98,
@@ -369,7 +370,7 @@ mod tests {
         );
         validators.insert(
             "val3".to_string(),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.97,
                 0.10,
                 0.99,

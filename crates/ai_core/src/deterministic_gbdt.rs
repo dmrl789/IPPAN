@@ -330,21 +330,21 @@ impl DeterministicGBDT {
                     threshold: Fixed::ZERO,
                     left: None,
                     right: None,
-                    value: Some(Fixed::from_f64(0.1)),
+                    value: Some(Fixed::from_ratio(1, 10)),
                 },
                 DecisionNode {
                     feature: 0,
                     threshold: Fixed::ZERO,
                     left: None,
                     right: None,
-                    value: Some(Fixed::from_f64(-0.05)),
+                    value: Some(Fixed::from_ratio(-1, 20)),
                 },
             ],
         };
 
         Self {
             trees: vec![tree],
-            learning_rate: Fixed::from_f64(0.1),
+            learning_rate: Fixed::from_ratio(1, 10),
         }
     }
 }
@@ -372,10 +372,10 @@ mod tests {
                     threshold: Fixed::ZERO,
                     left: None,
                     right: None,
-                    value: Some(Fixed::from_f64(0.1)),
+                    value: Some(Fixed::from_ratio(1, 10)),
                 }],
             }],
-            learning_rate: Fixed::from_f64(0.1),
+            learning_rate: Fixed::from_ratio(1, 10),
         };
         let h1 = model.model_hash("round1").unwrap();
         let h2 = model.model_hash("round1").unwrap();

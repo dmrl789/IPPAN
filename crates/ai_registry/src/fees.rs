@@ -160,7 +160,14 @@ impl FeeManager {
                 } else {
                     self.calculate_units(fee_type, model_metadata, additional_data.clone())?
                 };
-                let log_units = (calculated_units as f64).ln().max(1.0) as u64;
+                // Integer approximation of ln(x) using bit length
+                // ln(x) ≈ log2(x) * 0.693147 ≈ log2(x) * 693 / 1000
+                let log_units = if calculated_units <= 1 {
+                    1
+                } else {
+                    let bit_len = (64 - calculated_units.leading_zeros()) as u64;
+                    (bit_len * 693 / 1000).max(1)
+                };
                 let unit_fee = fee_structure.unit_fee * log_units;
                 (fee_structure.base_fee + unit_fee, calculated_units)
             }

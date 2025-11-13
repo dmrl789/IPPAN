@@ -66,9 +66,9 @@ impl TelemetryManager {
                         stake: stakes.get(&id).copied().unwrap_or(0),
                         age_rounds: 1,
                         last_active_round: current_round,
-                        uptime_percentage: 100.0,
-                        recent_performance: 1.0,
-                        network_contribution: 0.5,
+                        uptime_percentage_scaled: 10000, // 100%
+                        recent_performance_scaled: 10000, // 100%
+                        network_contribution_scaled: 5000, // 50%
                     }
                 });
                 (id, telemetry)
@@ -93,14 +93,15 @@ impl TelemetryManager {
                 stake: 0,
                 age_rounds: 1,
                 last_active_round: current_round,
-                uptime_percentage: 100.0,
-                recent_performance: 1.0,
-                network_contribution: 0.5,
+                uptime_percentage_scaled: 10000,
+                recent_performance_scaled: 10000,
+                network_contribution_scaled: 5000,
             });
 
         telemetry.blocks_proposed += 1;
         telemetry.last_active_round = current_round;
-        telemetry.recent_performance = (telemetry.recent_performance * 0.9 + 0.1).min(1.0);
+        // recent_performance = old * 0.9 + 0.1 = (old * 9000 + 1000) / 10000
+        telemetry.recent_performance_scaled = (telemetry.recent_performance_scaled * 9000 + 1000) / 10000;
 
         // Persist to storage
         self.storage
@@ -130,9 +131,9 @@ impl TelemetryManager {
                 stake: 0,
                 age_rounds: 1,
                 last_active_round: current_round,
-                uptime_percentage: 100.0,
-                recent_performance: 1.0,
-                network_contribution: 0.5,
+                uptime_percentage_scaled: 10000,
+                recent_performance_scaled: 10000,
+                network_contribution_scaled: 5000,
             });
 
         telemetry.blocks_verified += 1;
@@ -158,13 +159,15 @@ impl TelemetryManager {
             telemetry.age_rounds = telemetry.age_rounds.saturating_add(1);
 
             if rounds_since_active > 0 {
-                // Adjust uptime percentage based on inactivity
-                let activity_rate = 1.0 / (rounds_since_active + 1) as f64;
-                telemetry.uptime_percentage =
-                    (telemetry.uptime_percentage * 0.95 + activity_rate * 5.0).min(100.0);
+                // Adjust uptime percentage based on inactivity (using integer math)
+                // activity_rate = 10000 / (rounds_since_active + 1) scaled by 10000
+                let activity_rate_scaled = (10000 / (rounds_since_active + 1)) as i64;
+                // uptime = old_uptime * 0.95 + activity_rate * 0.05
+                // = (old_uptime * 9500 + activity_rate_scaled * 5) / 10000
+                telemetry.uptime_percentage_scaled = ((telemetry.uptime_percentage_scaled * 9500 + activity_rate_scaled * 5) / 10000).min(10000);
 
-                // Decay recent performance
-                telemetry.recent_performance = (telemetry.recent_performance * 0.9).max(0.0);
+                // Decay recent performance: perf = perf * 0.9
+                telemetry.recent_performance_scaled = ((telemetry.recent_performance_scaled * 9000) / 10000).max(0);
             }
 
             // Persist updates
@@ -204,7 +207,8 @@ impl TelemetryManager {
         let mut cache = self.cache.write();
         if let Some(telemetry) = cache.get_mut(validator_id) {
             telemetry.slash_count += 1;
-            telemetry.recent_performance = (telemetry.recent_performance * 0.5).max(0.0);
+            // Slash penalty: recent_performance = recent_performance * 0.5
+            telemetry.recent_performance_scaled = ((telemetry.recent_performance_scaled * 5000) / 10000).max(0);
             self.storage
                 .store_validator_telemetry(validator_id, telemetry)?;
             warn!(

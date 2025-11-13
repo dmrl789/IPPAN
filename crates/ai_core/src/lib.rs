@@ -1,3 +1,6 @@
+#![deny(clippy::float_arithmetic)]
+#![deny(clippy::cast_precision_loss)]
+
 //! Deterministic AI Core for L1 Blockchain Operations
 //!
 //! Provides integer-only deterministic AI evaluation for validator reputation,
@@ -19,6 +22,17 @@
 //! - `security`: Model integrity and constraint enforcement
 //! - `log`: Evaluation and audit logging utilities
 //! - `tests`: Deterministic test harness and benchmarking
+
+// ---------------------------------------------------------------------------
+// Compiler-Enforced Determinism: Forbid Floating-Point Arithmetic
+// ---------------------------------------------------------------------------
+// These lints ensure that no floating-point arithmetic is accidentally
+// introduced in consensus-critical code paths. All numeric operations must
+// use fixed-point arithmetic (fixed.rs) or integer types.
+#![deny(clippy::float_arithmetic)]
+#![deny(clippy::cast_precision_loss)]
+// Note: f32/f64 types are still allowed for deserialization and testing,
+// but arithmetic operations on them will cause compilation errors.
 
 pub mod config;
 pub mod deployment;
@@ -65,7 +79,10 @@ pub use deterministic_gbdt::{
     compute_scores, DecisionNode, DeterministicGBDT, DeterministicGBDTError, GBDTTree,
     ValidatorFeatures,
 };
-pub use fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
+pub use fixed::{
+    add, clamp_i64, cmp_fixed, div_fixed, from_f64_lossy, hash_fixed, hash_fixed_slice, mul_fixed,
+    quantize_i64, sub, to_fixed, Fixed, SCALE as FIXED_SCALE,
+};
 pub use fixed_point::FixedPoint;
 pub use gbdt::{
     eval_gbdt, FeatureNormalization, GBDTError, GBDTMetrics, GBDTModel, GBDTResult,

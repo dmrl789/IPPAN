@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Comprehensive integration tests for DLC consensus
 
 use super::*;
@@ -22,7 +23,7 @@ async fn test_validator_registration() {
     let config = DlcConfig::default();
     let mut consensus = DlcConsensus::new(config);
 
-    let metrics = ValidatorMetrics::new(
+    let metrics = ValidatorMetrics::from_floats(
         0.99,
         0.05,
         1.0,
@@ -46,7 +47,7 @@ async fn test_consensus_round_processing() {
 
     // Register validators
     for i in 1..=3 {
-        let metrics = ValidatorMetrics::new(
+        let metrics = ValidatorMetrics::from_floats(
             0.99,
             0.05,
             1.0,
@@ -96,7 +97,7 @@ async fn test_verifier_selection_determinism() {
     for i in 1..=5 {
         validators.insert(
             format!("val{}", i),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.99,
                 0.05,
                 1.0,
@@ -246,7 +247,7 @@ async fn test_fairness_model_scoring() {
     let model = FairnessModel::new_production();
 
     // High-quality validator
-    let good_metrics = ValidatorMetrics::new(
+    let good_metrics = ValidatorMetrics::from_floats(
         0.99,
         0.05,
         1.0,
@@ -258,7 +259,7 @@ async fn test_fairness_model_scoring() {
     let good_score = model.score_deterministic(&good_metrics);
 
     // Low-quality validator
-    let bad_metrics = ValidatorMetrics::new(
+    let bad_metrics = ValidatorMetrics::from_floats(
         0.80,
         0.30,
         0.70,
@@ -324,9 +325,9 @@ async fn test_full_consensus_cycle() {
     // Register 5 validators
     for i in 1..=5 {
         let metrics = ValidatorMetrics::new(
-            0.99 - (i as f64 * 0.01),
-            0.05 + (i as f64 * 0.01),
-            1.0 - (i as f64 * 0.01),
+            9900 - (i as i64 * 100),  // 0.99 -> 9900, decrement by 100
+            500 + (i as i64 * 100),    // 0.05 -> 500, increment by 100
+            10000 - (i as i64 * 100),  // 1.0 -> 10000, decrement by 100
             100 * i,
             500 * i,
             Amount::from_micro_ipn(10_000_000 * i),
@@ -424,10 +425,10 @@ async fn test_long_run_consensus_simulation_stability() {
     let mut consensus = DlcConsensus::new(config);
 
     for i in 0..VALIDATOR_COUNT {
-        let uptime = 0.94 + ((i % 7) as f64) * 0.005;
-        let latency = 0.01 + ((i % 5) as f64) * 0.002;
-        let honesty = 0.92 + ((i % 9) as f64) * 0.006;
-        let metrics = ValidatorMetrics::new(
+        let uptime = 9400 + ((i % 7) as i64) * 50;   // 0.94 -> 9400, 0.005 -> 50
+        let latency = 100 + ((i % 5) as i64) * 20;  // 0.01 -> 100, 0.002 -> 20
+        let honesty = 9200 + ((i % 9) as i64) * 60; // 0.92 -> 9200, 0.006 -> 60
+        let metrics = ValidatorMetrics::from_floats(
             uptime.min(0.999),
             latency,
             honesty.min(0.999),

@@ -16,15 +16,15 @@ type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
 
 fn telemetry_entry(
     time_us: i64,
-    latency_ms: f64,
-    uptime_pct: f64,
-    entropy: f64,
+    latency_ms: &str,
+    uptime_pct: &str,
+    entropy: &str,
 ) -> (i64, Fixed, Fixed, Fixed) {
     (
         time_us,
-        Fixed::from_f64(latency_ms),
-        Fixed::from_f64(uptime_pct),
-        Fixed::from_f64(entropy),
+        Fixed::from_decimal_str(latency_ms).expect("valid latency"),
+        Fixed::from_decimal_str(uptime_pct).expect("valid uptime"),
+        Fixed::from_decimal_str(entropy).expect("valid entropy"),
     )
 }
 
@@ -38,15 +38,15 @@ fn test_deterministic_gbdt_usage_example() {
     let telemetry: TelemetryMap = HashMap::from([
         (
             "nodeA".into(),
-            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+            telemetry_entry(100_000_i64, "1.2", "99.9", "0.42"),
         ),
         (
             "nodeB".into(),
-            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+            telemetry_entry(100_080_i64, "0.9", "99.8", "0.38"),
         ),
         (
             "nodeC".into(),
-            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+            telemetry_entry(100_030_i64, "2.1", "98.9", "0.45"),
         ),
     ]);
 
@@ -69,15 +69,9 @@ fn test_deterministic_gbdt_usage_example() {
     // All scores must be finite and within a reasonable range
     // (values can be negative depending on leaf weights, but no NaN/Inf allowed)
     let mut has_positive = false;
-    for (node_id, score) in &scores {
-        let value = score.to_f64();
-        assert!(
-            value.is_finite(),
-            "Score for {} is not finite: {}",
-            node_id,
-            value
-        );
-        if value > 0.0 {
+    for score in scores.values() {
+        let value_micro = score.to_micro();
+        if value_micro > 0 {
             has_positive = true;
         }
     }
@@ -110,7 +104,7 @@ fn test_with_actual_model_file() {
             let mut telemetry: TelemetryMap = HashMap::new();
             telemetry.insert(
                 "test_node".to_string(),
-                telemetry_entry(100_000_i64, 1.0, 99.0, 0.5),
+                telemetry_entry(100_000_i64, "1.0", "99.0", "0.5"),
             );
 
             let ippan_time_median = 100_000_i64;
@@ -138,9 +132,18 @@ fn test_cross_node_determinism_simulation() {
 
     // Simulate the same telemetry being processed by different nodes
     let telemetry: TelemetryMap = HashMap::from([
-        ("node1".into(), telemetry_entry(100_000_i64, 1.0, 99.0, 0.5)),
-        ("node2".into(), telemetry_entry(100_050_i64, 1.5, 98.5, 0.6)),
-        ("node3".into(), telemetry_entry(99_950_i64, 0.8, 99.5, 0.4)),
+        (
+            "node1".into(),
+            telemetry_entry(100_000_i64, "1.0", "99.0", "0.5"),
+        ),
+        (
+            "node2".into(),
+            telemetry_entry(100_050_i64, "1.5", "98.5", "0.6"),
+        ),
+        (
+            "node3".into(),
+            telemetry_entry(99_950_i64, "0.8", "99.5", "0.4"),
+        ),
     ]);
 
     let ippan_time_median = 100_000_i64;
@@ -176,25 +179,25 @@ fn test_realistic_validator_scenarios() {
     // High-performance validator
     telemetry.insert(
         "validator_alpha".to_string(),
-        telemetry_entry(100_000_i64, 0.5, 99.9, 0.8),
+        telemetry_entry(100_000_i64, "0.5", "99.9", "0.8"),
     );
 
     // Average validator
     telemetry.insert(
         "validator_beta".to_string(),
-        telemetry_entry(100_020_i64, 1.2, 98.5, 0.6),
+        telemetry_entry(100_020_i64, "1.2", "98.5", "0.6"),
     );
 
     // Poor validator
     telemetry.insert(
         "validator_gamma".to_string(),
-        telemetry_entry(100_100_i64, 3.0, 85.0, 0.3),
+        telemetry_entry(100_100_i64, "3.0", "85.0", "0.3"),
     );
 
     // New validator (recently joined)
     telemetry.insert(
         "validator_delta".to_string(),
-        telemetry_entry(99_980_i64, 2.5, 95.0, 0.4),
+        telemetry_entry(99_980_i64, "2.5", "95.0", "0.4"),
     );
 
     let ippan_time_median = 100_000_i64;
@@ -208,13 +211,6 @@ fn test_realistic_validator_scenarios() {
 
     // All scores should be finite
     for (validator, score) in &scores {
-        let value = score.to_f64();
-        assert!(
-            value.is_finite(),
-            "Score for {} is not finite: {}",
-            validator,
-            value
-        );
         println!("{}: {}", validator, score);
     }
 
@@ -256,15 +252,15 @@ fn sample_consensus_digest() -> String {
     let telemetry: TelemetryMap = HashMap::from([
         (
             "validator_alpha".to_string(),
-            telemetry_entry(100_000_i64, 0.5, 99.9, 0.8),
+            telemetry_entry(100_000_i64, "0.5", "99.9", "0.8"),
         ),
         (
             "validator_beta".to_string(),
-            telemetry_entry(100_020_i64, 1.2, 98.5, 0.6),
+            telemetry_entry(100_020_i64, "1.2", "98.5", "0.6"),
         ),
         (
             "validator_gamma".to_string(),
-            telemetry_entry(100_100_i64, 3.0, 85.0, 0.3),
+            telemetry_entry(100_100_i64, "3.0", "85.0", "0.3"),
         ),
     ]);
 

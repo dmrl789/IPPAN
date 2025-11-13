@@ -48,7 +48,8 @@ pub mod emission_tracker;
 pub mod fees;
 
 // AI and selection modules
-pub mod l1_ai_consensus;
+// REMOVED: l1_ai_consensus (external API only, not used in production)
+// pub mod l1_ai_consensus;
 
 // Telemetry and metrics
 pub mod metrics;
@@ -463,7 +464,9 @@ impl PoAConsensus {
             match l1_ai.read().select_validator(&candidates, &network_state) {
                 Ok(result) => {
                     let latency_us = start.elapsed().as_micros() as u64;
-                    metrics.record_ai_selection_success(result.confidence_score, latency_us);
+                    // Confidence already scaled as i64
+                    let confidence_scaled = (result.confidence_score * 10000.0) as i64;
+                    metrics.record_ai_selection_success(confidence_scaled, latency_us);
                     metrics.record_validator_selected(&result.selected_validator);
 
                     info!(

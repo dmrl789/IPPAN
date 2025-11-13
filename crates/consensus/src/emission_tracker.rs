@@ -7,7 +7,7 @@ use blake3::Hasher;
 use ippan_economics::{
     scheduled_round_reward, EmissionParams, RoundRewardDistribution, ValidatorId, ValidatorReward,
 };
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -31,13 +31,13 @@ pub struct EmissionAuditRecord {
     pub timestamp: u64,
 }
 
-/// Validator contribution to a round
+/// Validator contribution to a round (deterministic, scaled integers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorContribution {
     pub validator_id: [u8; 32],
     pub blocks_proposed: u32,
     pub blocks_verified: u32,
-    pub reputation_score: f64,
+    pub reputation_score: i64,  // Scaled by 10000 (0-10000 = 0%-100%)
 }
 
 /// Tracks emission state across rounds
@@ -134,14 +134,16 @@ impl EmissionTracker {
         }
 
         let base_reward = self.compute_base_reward(round);
-        let fee_fraction = self
+        // Convert Decimal to integer basis points (0-10000) for deterministic arithmetic
+        let fee_fraction_bps = self
             .params
             .fee_cap_fraction
-            .to_f64()
-            .unwrap_or(0.0)
-            .clamp(0.0, 1.0);
+            .checked_mul(Decimal::from(10000))
+            .and_then(|d| d.to_u64())
+            .unwrap_or(0)
+            .min(10000); // Clamp to 100%
         let transaction_fees_capped = transaction_fees.min(u64::MAX as u128) as u64;
-        let fee_cap_limit = (base_reward as f64 * fee_fraction) as u64;
+        let fee_cap_limit = (base_reward as u128 * fee_fraction_bps as u128 / 10000) as u64;
         let capped_fees = transaction_fees_capped.min(fee_cap_limit);
         let excess_burned = transaction_fees_capped.saturating_sub(capped_fees);
 
@@ -154,7 +156,7 @@ impl EmissionTracker {
         for contribution in contributions {
             let mut weight = (contribution.blocks_proposed as u128 * 5)
                 + (contribution.blocks_verified as u128 * 3)
-                + contribution.reputation_score.round() as u128;
+                + contribution.reputation_score as u128;  // Already scaled integer
             if weight == 0 {
                 weight = 1;
             }
@@ -223,11 +225,14 @@ impl EmissionTracker {
                     .saturating_add(ai_share);
 
                 let validator_id = ValidatorId::new(hex::encode(validator_raw));
+                // Use integer-scaled Decimal creation (scale 18 for precision)
                 let weight_ratio = if total_weight > 0 {
-                    Decimal::from_f64((*weight as f64) / (total_weight as f64))
-                        .unwrap_or(Decimal::ZERO)
+                    let numerator = (*weight as u128) * 1_000_000_000_000_000_000u128; // Scale by 10^18
+                    let ratio_scaled = numerator / (total_weight as u128);
+                    Decimal::from_i128_with_scale(ratio_scaled as i128, 18)
                 } else {
-                    Decimal::from_f64(1.0 / validators_count as f64).unwrap_or(Decimal::ZERO)
+                    let equal_share_scaled = 1_000_000_000_000_000_000u128 / validators_count as u128;
+                    Decimal::from_i128_with_scale(equal_share_scaled as i128, 18)
                 };
 
                 validator_rewards.insert(
@@ -406,8 +411,8 @@ impl EmissionTracker {
             cumulative_supply: self.cumulative_supply,
             supply_cap: self.params.max_supply_micro as u128,
             percentage_emitted: if self.params.max_supply_micro > 0 {
-                ((self.cumulative_supply as f64 / self.params.max_supply_micro as f64) * 10000.0)
-                    as u32
+                // Integer arithmetic: (supply * 10000) / max_supply
+                ((self.cumulative_supply * 10000) / self.params.max_supply_micro as u128) as u32
             } else {
                 0
             },
@@ -489,7 +494,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 5,
             blocks_verified: 10,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         let result = tracker.process_round(1, &contributions, 1000, 500);
@@ -512,7 +517,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process 10 rounds
@@ -535,7 +540,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process round 1
@@ -569,7 +574,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process 100 rounds
@@ -592,7 +597,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process 20 rounds (should create 2 checkpoints)
@@ -615,13 +620,13 @@ mod tests {
                 validator_id: [1u8; 32],
                 blocks_proposed: 5,
                 blocks_verified: 10,
-                reputation_score: 10_000.0,
+                reputation_score: 10000,
             },
             ValidatorContribution {
                 validator_id: [2u8; 32],
                 blocks_proposed: 3,
                 blocks_verified: 8,
-                reputation_score: 9_000.0,
+                reputation_score: 9000,
             },
         ];
 
@@ -649,19 +654,19 @@ mod tests {
                 validator_id: [1u8; 32],
                 blocks_proposed: 10,
                 blocks_verified: 5,
-                reputation_score: 10_000.0,
+                reputation_score: 10000,
             },
             ValidatorContribution {
                 validator_id: [2u8; 32],
                 blocks_proposed: 3,
                 blocks_verified: 8,
-                reputation_score: 9_000.0,
+                reputation_score: 9000,
             },
             ValidatorContribution {
                 validator_id: [3u8; 32],
                 blocks_proposed: 1,
                 blocks_verified: 2,
-                reputation_score: 8_000.0,
+                reputation_score: 8000,
             },
         ];
 
@@ -693,7 +698,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 100,
             blocks_verified: 100,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process rounds until we hit the cap

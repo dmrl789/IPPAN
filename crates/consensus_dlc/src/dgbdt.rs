@@ -9,15 +9,16 @@ use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Validator metrics used for fairness scoring
+/// Validator metrics used for fairness scoring (deterministic, scaled integers)
+/// All percentage/ratio fields are scaled by 10000 (e.g., 10000 = 100%)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorMetrics {
-    /// Uptime percentage (0.0 to 1.0)
-    pub uptime: f64,
-    /// Average latency in seconds
-    pub latency: f64,
-    /// Honesty score (0.0 to 1.0)
-    pub honesty: f64,
+    /// Uptime percentage scaled (0-10000 = 0%-100%)
+    pub uptime: i64,
+    /// Average latency scaled (scaled by 10000)
+    pub latency: i64,
+    /// Honesty score scaled (0-10000 = 0%-100%)
+    pub honesty: i64,
     /// Number of blocks proposed
     pub blocks_proposed: u64,
     /// Number of blocks verified
@@ -31,9 +32,9 @@ pub struct ValidatorMetrics {
 impl Default for ValidatorMetrics {
     fn default() -> Self {
         Self {
-            uptime: 1.0,
-            latency: 0.0,
-            honesty: 1.0,
+            uptime: 10000,  // 100%
+            latency: 0,
+            honesty: 10000, // 100%
             blocks_proposed: 0,
             blocks_verified: 0,
             stake: Amount::zero(),
@@ -43,11 +44,11 @@ impl Default for ValidatorMetrics {
 }
 
 impl ValidatorMetrics {
-    /// Create new validator metrics
+    /// Create new validator metrics (scaled integers)
     pub fn new(
-        uptime: f64,
-        latency: f64,
-        honesty: f64,
+        uptime: i64,
+        latency: i64,
+        honesty: i64,
         blocks_proposed: u64,
         blocks_verified: u64,
         stake: Amount,
@@ -64,13 +65,15 @@ impl ValidatorMetrics {
         }
     }
 
-    /// Update metrics with new data
-    pub fn update(&mut self, uptime_delta: f64, latency_sample: f64, proposed: u64, verified: u64) {
-        // Exponential moving average for uptime
-        self.uptime = 0.9 * self.uptime + 0.1 * uptime_delta;
+    // from_floats() removed - use new() with scaled i64 values directly
 
-        // Exponential moving average for latency
-        self.latency = 0.9 * self.latency + 0.1 * latency_sample;
+    /// Update metrics with new data (scaled integer inputs)
+    pub fn update(&mut self, uptime_delta: i64, latency_sample: i64, proposed: u64, verified: u64) {
+        // Exponential moving average for uptime (integer math)
+        self.uptime = (9000 * self.uptime + 1000 * uptime_delta) / 10000;
+
+        // Exponential moving average for latency (integer math)
+        self.latency = (9000 * self.latency + 1000 * latency_sample) / 10000;
 
         self.blocks_proposed += proposed;
         self.blocks_verified += verified;
@@ -80,16 +83,16 @@ impl ValidatorMetrics {
     /// Normalize metrics to 0-10000 range (integer arithmetic)
     pub fn to_normalized(&self) -> NormalizedMetrics {
         NormalizedMetrics {
-            uptime: (self.uptime * 10000.0) as i64,
-            latency_inv: ((1.0 - self.latency.min(1.0)) * 10000.0) as i64,
-            honesty: (self.honesty * 10000.0) as i64,
+            uptime: self.uptime, // Already scaled
+            latency_inv: (10000 - self.latency.min(10000)).max(0), // Invert latency
+            honesty: self.honesty, // Already scaled
             proposal_rate: if self.rounds_active > 0 {
-                ((self.blocks_proposed as f64 / self.rounds_active as f64) * 10000.0) as i64
+                (self.blocks_proposed as i64 * 10000) / self.rounds_active as i64
             } else {
                 0
             },
             verification_rate: if self.rounds_active > 0 {
-                ((self.blocks_verified as f64 / self.rounds_active as f64) * 10000.0) as i64
+                (self.blocks_verified as i64 * 10000) / self.rounds_active as i64
             } else {
                 0
             },
@@ -172,11 +175,11 @@ impl TreeNode {
     }
 }
 
-/// Fairness model using ensemble of decision trees
+/// Fairness model using ensemble of decision trees (deterministic, integer-only)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FairnessModel {
-    /// Feature weights for linear combination
-    pub weights: Vec<f64>,
+    /// Feature weights for linear combination (scaled integers, sum to 100 for percentage)
+    pub weights: Vec<i64>,
     /// Decision trees for GBDT
     pub trees: Vec<TreeNode>,
     /// Model bias
@@ -194,8 +197,8 @@ impl Default for FairnessModel {
 impl FairnessModel {
     /// Create a new default fairness model
     pub fn new_default() -> Self {
-        // Default weights: uptime, latency, honesty, proposal rate, verification rate, stake
-        let weights = vec![0.25, 0.15, 0.25, 0.15, 0.15, 0.05];
+        // Default weights (integers summing to 100): uptime, latency, honesty, proposal rate, verification rate, stake
+        let weights = vec![25, 15, 25, 15, 15, 5]; // Sum = 100
 
         // Create a simple default tree
         let default_tree = TreeNode::leaf(5000); // Neutral score
@@ -210,7 +213,7 @@ impl FairnessModel {
 
     /// Create a production-ready fairness model with multiple trees
     pub fn new_production() -> Self {
-        let weights = vec![0.25, 0.15, 0.25, 0.15, 0.15, 0.05];
+        let weights = vec![25, 15, 25, 15, 15, 5]; // Sum = 100
 
         // Tree 1: Focus on uptime and honesty
         let tree1 = TreeNode::internal(
@@ -259,12 +262,7 @@ impl FairnessModel {
         }
     }
 
-    /// Score validator using the fairness model
-    pub fn score(&self, metrics: &ValidatorMetrics) -> f64 {
-        // Use integer arithmetic for determinism
-        let score_int = self.score_deterministic(metrics);
-        score_int as f64 / self.scale as f64
-    }
+    // score() removed - use score_deterministic() for integer-only arithmetic
 
     /// Deterministic integer-based scoring
     pub fn score_deterministic(&self, metrics: &ValidatorMetrics) -> i64 {
@@ -285,11 +283,12 @@ impl FairnessModel {
             score += tree.predict(&features);
         }
 
-        // Apply weights (linear combination)
+        // Apply weights (linear combination with integer arithmetic)
         let mut weighted_score = 0i64;
         for (i, &feature) in features.iter().enumerate() {
             if i < self.weights.len() {
-                weighted_score += ((feature as f64) * self.weights[i]) as i64;
+                // Integer multiplication: weights sum to 100, so divide by 100
+                weighted_score += (feature * self.weights[i]) / 100;
             }
         }
 
@@ -301,7 +300,8 @@ impl FairnessModel {
     }
 
     /// Train or update the model with new data (placeholder for future ML training)
-    pub fn update(&mut self, _training_data: &[(ValidatorMetrics, f64)]) {
+    #[deprecated(note = "Training interface not implemented - model is pre-trained")]
+    pub fn update(&mut self, _training_data: &[(ValidatorMetrics, i64)]) {
         // In production, this would update the model using gradient boosting
         // For now, we use the pre-trained model
         tracing::debug!("Model update requested (using pre-trained model)");
@@ -344,26 +344,29 @@ pub struct ModelMetadata {
     pub bias: i64,
 }
 
-/// Validator ranking result
+/// Validator ranking result (deterministic integer scoring)
 #[derive(Debug, Clone)]
 pub struct ValidatorRanking {
     pub validator_id: String,
-    pub score: f64,
+    pub score: i64, // Scaled integer score
     pub rank: usize,
 }
 
-/// Rank multiple validators using the fairness model
+/// Rank multiple validators using the fairness model (deterministic integer scoring)
 pub fn rank_validators(
     model: &FairnessModel,
     validators: HashMap<String, ValidatorMetrics>,
 ) -> Vec<ValidatorRanking> {
-    let mut rankings: Vec<(String, f64)> = validators
+    let mut rankings: Vec<(String, i64)> = validators
         .into_iter()
-        .map(|(id, metrics)| (id, model.score(&metrics)))
+        .map(|(id, metrics)| (id, model.score_deterministic(&metrics)))
         .collect();
 
-    // Sort by score (descending)
-    rankings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Sort by score (descending), then by ID for deterministic tie-breaking
+    rankings.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.cmp(&b.0))
+    });
 
     rankings
         .into_iter()
@@ -377,6 +380,7 @@ pub fn rank_validators(
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use ippan_types::Amount;
@@ -384,16 +388,16 @@ mod tests {
     #[test]
     fn test_validator_metrics() {
         let metrics = ValidatorMetrics::default();
-        assert_eq!(metrics.uptime, 1.0);
-        assert_eq!(metrics.honesty, 1.0);
+        assert_eq!(metrics.uptime, 10000); // 100% scaled
+        assert_eq!(metrics.honesty, 10000); // 100% scaled
     }
 
     #[test]
     fn test_metrics_normalization() {
         let metrics = ValidatorMetrics::new(
-            0.95,
-            0.1,
-            1.0,
+            9500,  // 0.95 * 10000
+            1000,  // 0.1 * 10000
+            10000, // 1.0 * 10000
             100,
             500,
             Amount::from_micro_ipn(10_000_000),
@@ -410,8 +414,8 @@ mod tests {
         let model = FairnessModel::new_default();
         let metrics = ValidatorMetrics::default();
 
-        let score = model.score(&metrics);
-        assert!((0.0..=1.0).contains(&score));
+        let score = model.score_deterministic(&metrics);
+        assert!(score >= 0 && score <= 10000); // Score is scaled 0-10000
     }
 
     #[test]
@@ -437,9 +441,9 @@ mod tests {
         validators.insert(
             "val1".to_string(),
             ValidatorMetrics::new(
-                0.99,
-                0.05,
-                1.0,
+                9900,  // 0.99 * 10000
+                500,   // 0.05 * 10000
+                10000, // 1.0 * 10000
                 100,
                 500,
                 Amount::from_micro_ipn(10_000_000),
@@ -449,9 +453,9 @@ mod tests {
         validators.insert(
             "val2".to_string(),
             ValidatorMetrics::new(
-                0.95,
-                0.15,
-                0.98,
+                9500,  // 0.95 * 10000
+                1500,  // 0.15 * 10000
+                9800,  // 0.98 * 10000
                 80,
                 400,
                 Amount::from_micro_ipn(5_000_000),
@@ -468,9 +472,9 @@ mod tests {
     fn test_deterministic_scoring() {
         let model = FairnessModel::new_production();
         let metrics = ValidatorMetrics::new(
-            0.99,
-            0.1,
-            1.0,
+            9900,  // 0.99 * 10000
+            1000,  // 0.1 * 10000
+            10000, // 1.0 * 10000
             100,
             500,
             Amount::from_micro_ipn(10_000_000),

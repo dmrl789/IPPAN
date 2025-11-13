@@ -135,10 +135,10 @@ impl RoundExecutor {
 
         info!(
             target: "round_executor",
-            "Round {} executed → emission={} μIPN (≈ {:.6} IPN), {} participants, total payouts={}",
+            "Round {} executed → emission={} μIPN (≈ {} IPN), {} participants, total payouts={}",
             round,
             result.emission_micro,
-            (result.emission_micro as f64) / 1_000_000.0, // Convert to IPN
+            result.emission_micro / 1_000_000, // Convert to IPN (rounded)
             participants.len(),
             result.total_payouts
         );
@@ -185,9 +185,10 @@ impl RoundExecutor {
 }
 
 /// Create participation set from validator tuples.
-/// Format: `(stake, id, blocks_proposed, reputation)`
+/// Format: `(stake, id, blocks_proposed, reputation_scaled)`
+/// Note: reputation_scaled is i64 (scaled by 10000), but not currently used
 pub fn create_participation_set(
-    validators: &[(u64, [u8; 32], u64, f64)],
+    validators: &[(u64, [u8; 32], u64, i64)],
     proposer_id: [u8; 32],
 ) -> ParticipationSet {
     let mut parts: ParticipationSet = HashMap::new();
@@ -210,8 +211,10 @@ pub fn create_participation_set(
 }
 
 /// Create participation set including both proposer and verifier roles.
+/// Format: `(stake, id, blocks_proposed, blocks_verified, reputation_scaled)`
+/// Note: reputation_scaled is i64 (scaled by 10000), but not currently used
 pub fn create_full_participation_set(
-    validators: &[(u64, [u8; 32], u32, u32, f64)],
+    validators: &[(u64, [u8; 32], u32, u32, i64)],
     proposer_id: [u8; 32],
 ) -> ParticipationSet {
     let mut parts: ParticipationSet = HashMap::new();
@@ -282,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_create_participation_set() {
-        let validators = vec![(1000, [1u8; 32], 1, 1.0), (2000, [2u8; 32], 0, 1.2)];
+        let validators = vec![(1000, [1u8; 32], 1, 10000), (2000, [2u8; 32], 0, 12000)];
         let proposer_id = [1u8; 32];
         let parts = create_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
@@ -298,7 +301,7 @@ mod tests {
 
     #[test]
     fn test_create_full_participation_set() {
-        let validators = vec![(1000, [1u8; 32], 1, 2, 1.0), (2000, [2u8; 32], 0, 3, 1.2)];
+        let validators = vec![(1000, [1u8; 32], 1, 2, 10000), (2000, [2u8; 32], 0, 3, 12000)];
         let proposer_id = [1u8; 32];
         let parts = create_full_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);
@@ -318,7 +321,7 @@ mod tests {
         let ledger = Box::new(MockAccountLedger::new());
         let mut executor = RoundExecutor::new(params, ledger);
         let mut state = ChainState::new();
-        let participants = create_participation_set(&[(1000, [1u8; 32], 1, 1.0)], [1u8; 32]);
+        let participants = create_participation_set(&[(1000, [1u8; 32], 1, 10000)], [1u8; 32]);
         let result = executor
             .execute_round(1, &mut state, participants, 1000)
             .unwrap();
