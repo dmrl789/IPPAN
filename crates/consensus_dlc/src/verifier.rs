@@ -44,13 +44,13 @@ impl VerifierSet {
         let seed_string = seed.into();
 
         // Score all validators deterministically
-        let mut scored: Vec<(String, f64)> = validators
+        let mut scored: Vec<(String, i64)> = validators
             .iter()
-            .map(|(id, metrics)| (id.clone(), model.score(metrics)))
+            .map(|(id, metrics)| (id.clone(), model.score_deterministic(metrics)))
             .collect();
 
         scored.sort_by(
-            |a, b| match b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal) {
+            |a, b| match b.1.cmp(&a.1) {
                 Ordering::Equal => Self::compare_with_entropy(&seed_string, round, &a.0, &b.0),
                 other => other,
             },
