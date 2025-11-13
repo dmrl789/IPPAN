@@ -434,7 +434,7 @@ mod tests {
 
         // Record some AI selections
         metrics.record_ai_selection_attempt();
-        metrics.record_ai_selection_success(0.85, 1500);
+        metrics.record_ai_selection_success(8500, 1500); // 85% as scaled integer
 
         assert_eq!(metrics.get_ai_selection_total(), 1);
         assert_eq!(metrics.get_ai_selection_success(), 1);
@@ -493,7 +493,7 @@ mod tests {
         let metrics = ConsensusMetrics::new();
 
         metrics.record_ai_selection_attempt();
-        metrics.record_ai_selection_success(0.9, 1200);
+        metrics.record_ai_selection_success(9000, 1200); // 90% as scaled integer
         metrics.record_block_proposed();
         metrics.record_round_finalized();
 
