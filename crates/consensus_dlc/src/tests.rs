@@ -22,7 +22,8 @@ async fn test_validator_registration() {
     let config = DlcConfig::default();
     let mut consensus = DlcConsensus::new(config);
 
-    let metrics = ValidatorMetrics::new(
+    let metrics = 
+            ValidatorMetrics::from_floats(
         0.99,
         0.05,
         1.0,
@@ -46,7 +47,8 @@ async fn test_consensus_round_processing() {
 
     // Register validators
     for i in 1..=3 {
-        let metrics = ValidatorMetrics::new(
+        let metrics = 
+            ValidatorMetrics::from_floats(
             0.99,
             0.05,
             1.0,
@@ -96,7 +98,8 @@ async fn test_verifier_selection_determinism() {
     for i in 1..=5 {
         validators.insert(
             format!("val{}", i),
-            ValidatorMetrics::new(
+            
+            ValidatorMetrics::from_floats(
                 0.99,
                 0.05,
                 1.0,
@@ -246,7 +249,8 @@ async fn test_fairness_model_scoring() {
     let model = FairnessModel::new_production();
 
     // High-quality validator
-    let good_metrics = ValidatorMetrics::new(
+    let good_metrics = 
+            ValidatorMetrics::from_floats(
         0.99,
         0.05,
         1.0,
@@ -258,7 +262,8 @@ async fn test_fairness_model_scoring() {
     let good_score = model.score_deterministic(&good_metrics);
 
     // Low-quality validator
-    let bad_metrics = ValidatorMetrics::new(
+    let bad_metrics = 
+            ValidatorMetrics::from_floats(
         0.80,
         0.30,
         0.70,
@@ -323,7 +328,8 @@ async fn test_full_consensus_cycle() {
 
     // Register 5 validators
     for i in 1..=5 {
-        let metrics = ValidatorMetrics::new(
+        let metrics = 
+            ValidatorMetrics::from_floats(
             0.99 - (i as f64 * 0.01),
             0.05 + (i as f64 * 0.01),
             1.0 - (i as f64 * 0.01),
@@ -429,7 +435,8 @@ async fn test_long_run_consensus_simulation_stability() {
         let uptime = 0.94 + ((i % 7) as f64) * 0.005;
         let latency = 0.01 + ((i % 5) as f64) * 0.002;
         let honesty = 0.92 + ((i % 9) as f64) * 0.006;
-        let metrics = ValidatorMetrics::new(
+        let metrics = 
+            ValidatorMetrics::from_floats(
             uptime.min(0.999),
             latency,
             honesty.min(0.999),

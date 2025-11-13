@@ -46,18 +46,18 @@ impl VerifierSet {
 
         let seed_string = seed.into();
 
-        // Score all validators deterministically
-        let mut scored: Vec<(String, f64)> = validators
+        // Score all validators deterministically (using integer scores)
+        let mut scored: Vec<(String, i64)> = validators
             .iter()
             .map(|(id, metrics)| (id.clone(), model.score(metrics)))
             .collect();
 
-        scored.sort_by(
-            |a, b| match b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal) {
+        scored.sort_by(|a, b| {
+            match b.1.cmp(&a.1) {
                 Ordering::Equal => Self::compare_with_entropy(&seed_string, round, &a.0, &b.0),
                 other => other,
-            },
-        );
+            }
+        });
 
         let selection_count = max_set_size.max(1).min(scored.len());
 
@@ -475,7 +475,8 @@ mod tests {
 
         validators.insert(
             "val1".to_string(),
-            ValidatorMetrics::new(
+            #[allow(deprecated)]
+            ValidatorMetrics::from_floats(
                 0.99,
                 0.05,
                 1.0,
@@ -487,7 +488,8 @@ mod tests {
         );
         validators.insert(
             "val2".to_string(),
-            ValidatorMetrics::new(
+            #[allow(deprecated)]
+            ValidatorMetrics::from_floats(
                 0.95,
                 0.15,
                 0.98,
@@ -499,7 +501,8 @@ mod tests {
         );
         validators.insert(
             "val3".to_string(),
-            ValidatorMetrics::new(
+            #[allow(deprecated)]
+            ValidatorMetrics::from_floats(
                 0.97,
                 0.10,
                 0.99,

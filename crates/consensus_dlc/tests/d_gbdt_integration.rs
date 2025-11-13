@@ -4,6 +4,7 @@
 //! into the validator selection mechanism.
 
 #![cfg(feature = "d_gbdt")]
+#![allow(deprecated)] // Allow use of from_floats() for backward compatibility
 
 use ippan_consensus_dlc::{
     dgbdt::{FairnessModel, ValidatorMetrics},
@@ -153,7 +154,8 @@ fn test_verifier_set_selection_with_d_gbdt() {
     // Create validators with metrics
     validators.insert(
         "validator_excellent".to_string(),
-        ValidatorMetrics::new(
+        
+            ValidatorMetrics::from_floats(
             0.99,
             0.1,
             1.0,
@@ -165,7 +167,8 @@ fn test_verifier_set_selection_with_d_gbdt() {
     );
     validators.insert(
         "validator_good".to_string(),
-        ValidatorMetrics::new(
+        
+            ValidatorMetrics::from_floats(
             0.95,
             0.2,
             0.98,
@@ -177,7 +180,8 @@ fn test_verifier_set_selection_with_d_gbdt() {
     );
     validators.insert(
         "validator_medium".to_string(),
-        ValidatorMetrics::new(
+        
+            ValidatorMetrics::from_floats(
             0.85,
             0.5,
             0.95,
@@ -210,7 +214,8 @@ fn test_verifier_set_selection_deterministic() {
 
     validators.insert(
         "val1".to_string(),
-        ValidatorMetrics::new(
+        
+            ValidatorMetrics::from_floats(
             0.99,
             0.1,
             1.0,
@@ -222,7 +227,8 @@ fn test_verifier_set_selection_deterministic() {
     );
     validators.insert(
         "val2".to_string(),
-        ValidatorMetrics::new(
+        
+            ValidatorMetrics::from_floats(
             0.95,
             0.2,
             0.98,
@@ -265,7 +271,8 @@ fn test_validator_set_manager_with_gbdt_model() {
     manager
         .register_validator(
             "val1".to_string(),
-            ValidatorMetrics::new(
+            
+            ValidatorMetrics::from_floats(
                 0.99,
                 0.1,
                 1.0,
@@ -280,7 +287,8 @@ fn test_validator_set_manager_with_gbdt_model() {
     manager
         .register_validator(
             "val2".to_string(),
-            ValidatorMetrics::new(
+            
+            ValidatorMetrics::from_floats(
                 0.95,
                 0.2,
                 0.98,
@@ -345,7 +353,8 @@ fn test_mini_round_with_d_gbdt() {
         manager
             .register_validator(
                 name.to_string(),
-                ValidatorMetrics::new(
+                
+            ValidatorMetrics::from_floats(
                     uptime,
                     latency,
                     honesty,

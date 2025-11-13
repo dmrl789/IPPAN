@@ -80,10 +80,19 @@ pub struct ValidatorSnapshot {
 impl ValidatorSnapshot {
     /// Convert from existing ValidatorMetrics (legacy compatibility)
     pub fn from_metrics(validator_id: String, metrics: &ValidatorMetrics) -> Self {
-        // Convert f64 metrics to deterministic integers
-        let uptime_ms = ((metrics.uptime * 86400.0 * 1000.0) as u64).min(86400000);
+        // Convert scaled integer metrics to snapshot values
+        // ValidatorMetrics now uses i64 scaled to 10000 (METRICS_SCALE)
+        const METRICS_SCALE: i64 = 10000;
+        
+        // Uptime: 0-10000 scale to ms (assuming full day = 86400000ms)
+        let uptime_ms = ((metrics.uptime as u64 * 86400000) / METRICS_SCALE as u64).min(86400000);
+        
+        // Estimate missed rounds from activity
         let missed_rounds = (metrics.rounds_active / 10).saturating_sub(metrics.blocks_proposed);
-        let response_ms_p50 = ((metrics.latency * 1000.0) as u64).min(10000);
+        
+        // Latency: 0-10000 scale to ms (assuming 10000 = 1 second = 1000ms)
+        let response_ms_p50 = ((metrics.latency as u64 * 1000) / METRICS_SCALE as u64).min(10000);
+        
         let stake_i64_scaled = (metrics.stake.atomic() / 1_000_000) as u64;
         let slash_count = 0; // Not tracked in legacy metrics
         let last_24h_blocks = metrics.blocks_proposed;
