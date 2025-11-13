@@ -335,6 +335,7 @@ impl ValidatorSetManager {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::hashtimer::HashTimer;
@@ -345,7 +346,7 @@ mod tests {
 
         validators.insert(
             "val1".to_string(),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.99,
                 0.05,
                 1.0,
@@ -357,7 +358,7 @@ mod tests {
         );
         validators.insert(
             "val2".to_string(),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.95,
                 0.15,
                 0.98,
@@ -369,7 +370,7 @@ mod tests {
         );
         validators.insert(
             "val3".to_string(),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.97,
                 0.10,
                 0.99,

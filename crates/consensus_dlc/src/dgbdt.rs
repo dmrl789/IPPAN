@@ -400,6 +400,7 @@ pub fn rank_validators(
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use ippan_types::Amount;
@@ -407,13 +408,13 @@ mod tests {
     #[test]
     fn test_validator_metrics() {
         let metrics = ValidatorMetrics::default();
-        assert_eq!(metrics.uptime, 1.0);
-        assert_eq!(metrics.honesty, 1.0);
+        assert_eq!(metrics.uptime, 10000); // 100% scaled
+        assert_eq!(metrics.honesty, 10000); // 100% scaled
     }
 
     #[test]
     fn test_metrics_normalization() {
-        let metrics = ValidatorMetrics::new(
+        let metrics = ValidatorMetrics::from_floats(
             0.95,
             0.1,
             1.0,
@@ -459,7 +460,7 @@ mod tests {
 
         validators.insert(
             "val1".to_string(),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.99,
                 0.05,
                 1.0,
@@ -471,7 +472,7 @@ mod tests {
         );
         validators.insert(
             "val2".to_string(),
-            ValidatorMetrics::new(
+            ValidatorMetrics::from_floats(
                 0.95,
                 0.15,
                 0.98,
@@ -490,7 +491,7 @@ mod tests {
     #[test]
     fn test_deterministic_scoring() {
         let model = FairnessModel::new_production();
-        let metrics = ValidatorMetrics::new(
+        let metrics = ValidatorMetrics::from_floats(
             0.99,
             0.1,
             1.0,
