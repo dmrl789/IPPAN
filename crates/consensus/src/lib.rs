@@ -464,7 +464,7 @@ impl PoAConsensus {
             match l1_ai.read().select_validator(&candidates, &network_state) {
                 Ok(result) => {
                     let latency_us = start.elapsed().as_micros() as u64;
-                    // Convert f64 confidence to scaled i64 for metrics
+                    // Confidence already scaled as i64
                     let confidence_scaled = (result.confidence_score * 10000.0) as i64;
                     metrics.record_ai_selection_success(confidence_scaled, latency_us);
                     metrics.record_validator_selected(&result.selected_validator);
