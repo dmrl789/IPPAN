@@ -3,6 +3,12 @@
 //! This module implements AI-integrated GBDT (Gradient Boosting Decision Trees)
 //! directly into the L1 consensus mechanism. L1 has NO smart contracts—only
 //! deterministic consensus with AI-driven optimization.
+//!
+//! **MIGRATION NOTE**: This module currently uses f64 for external API compatibility.
+//! Internal calculations have been migrated to fixed-point arithmetic. Remaining
+//! f64 fields are only used in struct definitions for backwards compatibility with
+//! external monitoring systems (Prometheus, etc.). See metrics.rs for the fully
+//! deterministic internal implementation.
 
 use crate::reputation::ValidatorTelemetry;
 use ippan_ai_core::{eval_gbdt, gbdt::GBDTModel};
