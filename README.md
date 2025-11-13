@@ -385,6 +385,41 @@ cargo test -p ippan-types
 RUST_LOG=debug cargo test --workspace
 ```
 
+## 🤖 AI-Powered Consensus
+
+### D-GBDT: Deterministic AI for Validator Selection
+
+IPPAN uses **D-GBDT** (Deterministic Gradient-Boosted Decision Trees) for consensus-safe AI inference in validator selection and reputation scoring.
+
+**Key Features**:
+- **100% Deterministic**: Fixed-point arithmetic (no floating-point) ensures identical predictions across all nodes
+- **Cross-platform**: Bit-for-bit identical results on x86_64, aarch64, ARM, and RISC-V
+- **Verifiable**: Model hash anchored to IPPAN Time HashTimer for cryptographic integrity
+- **Production-ready**: Used in mainnet for validator scoring with ~100μs prediction time
+
+📖 **[D-GBDT Documentation](docs/ai/D-GBDT.md)** — Complete guide covering:
+- Fixed-point SCALE policy (micro-precision arithmetic)
+- Feature schema and validator telemetry
+- Model lifecycle: train → canonicalize → hash → load → cache
+- Model rotation procedures and operational runbook
+- Determinism checklist and troubleshooting
+
+**Quick Example**:
+```rust
+// Load deterministic model
+let model = DeterministicGBDT::from_json_file("models/gbdt/validator_v1.json")?;
+
+// Extract features (all fixed-point, no floats)
+let features = vec![
+    Fixed::from_micro(1_500_000),   // latency: 1.5ms
+    Fixed::from_micro(999_000),     // uptime: 99.9%
+    Fixed::from_micro(800_000),     // entropy: 0.8
+];
+
+// Predict validator score (deterministic across all nodes)
+let score = model.predict(&features);
+```
+
 ## 📚 Academic Research
 
 ### Consensus Research & Documentation
