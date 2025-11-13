@@ -43,6 +43,9 @@ impl FixedPoint {
     #[inline]
     pub fn from_ratio(numerator: i64, denominator: i64) -> Self {
         debug_assert!(denominator != 0, "denominator must be non-zero");
+        if denominator == 0 {
+            return Self::zero();
+        }
         let scaled = (i128::from(numerator) * i128::from(Self::SCALE)) / i128::from(denominator);
         Self(scaled as i64)
     }
@@ -51,19 +54,6 @@ impl FixedPoint {
     #[inline]
     pub fn to_integer(self) -> i64 {
         self.0 / Self::SCALE
-    }
-
-    /// Convert to an `f64` for interop with legacy callers.
-    #[inline]
-    pub fn to_f64(self) -> f64 {
-        self.0 as f64 / Self::SCALE as f64
-    }
-
-    /// Construct from an `f64`. Intended for ingestion/interop only.
-    #[inline]
-    pub fn from_f64(value: f64) -> Self {
-        let scaled = (value * Self::SCALE as f64).round();
-        Self(scaled as i64)
     }
 }
 
@@ -123,7 +113,9 @@ impl Neg for FixedPoint {
 
 impl fmt::Display for FixedPoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.6}", self.to_f64())
+        let int_part = self.0 / Self::SCALE;
+        let frac = (self.0 % Self::SCALE).abs();
+        write!(f, "{}.{:06}", int_part, frac)
     }
 }
 
@@ -138,13 +130,6 @@ impl From<FixedPoint> for i64 {
     #[inline]
     fn from(value: FixedPoint) -> Self {
         value.to_integer()
-    }
-}
-
-impl From<FixedPoint> for f64 {
-    #[inline]
-    fn from(value: FixedPoint) -> Self {
-        value.to_f64()
     }
 }
 

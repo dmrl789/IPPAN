@@ -1,3 +1,6 @@
+#![deny(clippy::float_arithmetic)]
+#![deny(clippy::cast_precision_loss)]
+
 //! Deterministic Learning Consensus (DLC)
 //!
 //! A production-ready consensus engine combining HashTimer™, BlockDAG,

@@ -433,7 +433,9 @@ fn get_load_average() -> Result<Fixed> {
     use sysinfo::{System, SystemExt};
     let sys = System::new();
     let load = sys.load_average();
-    Ok(Fixed::from_f64(load.one))
+    let formatted = format!("{:.6}", load.one);
+    let fixed = Fixed::from_decimal_str(&formatted).unwrap_or(Fixed::ZERO);
+    Ok(fixed)
 }
 
 #[cfg(test)]
@@ -455,7 +457,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_execution_checker() {
-        let checker = ModelExecutionChecker::new(Fixed::from_f64(0.1), 10);
+        let checker = ModelExecutionChecker::new(Fixed::from_ratio(1, 10), 10);
         let result = checker.check().unwrap();
         assert_eq!(result.name, "model_execution");
     }
@@ -469,7 +471,7 @@ mod tests {
         );
         monitor.register_check(
             "execution".into(),
-            Box::new(ModelExecutionChecker::new(Fixed::from_f64(0.1), 10)),
+            Box::new(ModelExecutionChecker::new(Fixed::from_ratio(1, 10), 10)),
         );
 
         let health = monitor.run_health_checks().await;

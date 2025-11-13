@@ -40,7 +40,7 @@ impl Default for TestConfig {
         Self {
             test_timeout: Duration::from_secs(30),
             max_memory_mb: 512,
-            max_cpu_percent: Fixed::from_f64(50.0),
+            max_cpu_percent: Fixed::from_int(50),
             enable_stress_tests: true,
             enable_performance_tests: true,
             enable_security_tests: true,
@@ -362,7 +362,7 @@ impl BenchmarkSuite {
         for _ in 0..iterations {
             monitoring.record_metric(
                 "eval_time_ms".to_string(),
-                Fixed::from_f64(10.0),
+                Fixed::from_int(10),
                 HashMap::new(),
             );
         }

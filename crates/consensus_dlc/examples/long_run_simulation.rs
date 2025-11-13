@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
         let latency = 0.015 + ((i % 9) as f64) * 0.0015;
         let honesty = 0.90 + ((i % 13) as f64) * 0.005;
 
-        let metrics = ValidatorMetrics::new(
+        let metrics = ValidatorMetrics::from_floats(
             uptime.min(0.999),
             latency,
             honesty.min(0.999),

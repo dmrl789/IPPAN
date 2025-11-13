@@ -11,17 +11,17 @@ use ippan_ai_core::deterministic_gbdt::{
 use ippan_ai_core::Fixed;
 use std::collections::HashMap;
 
-fn fp(value: f64) -> Fixed {
-    Fixed::from_f64(value)
+fn fp(value: &str) -> Fixed {
+    Fixed::from_decimal_str(value).expect("valid decimal string")
 }
 
 type TelemetryMap = HashMap<String, (i64, Fixed, Fixed, Fixed)>;
 
 fn telemetry_entry(
     time_us: i64,
-    latency_ms: f64,
-    uptime_pct: f64,
-    entropy: f64,
+    latency_ms: &str,
+    uptime_pct: &str,
+    entropy: &str,
 ) -> (i64, Fixed, Fixed, Fixed) {
     (time_us, fp(latency_ms), fp(uptime_pct), fp(entropy))
 }
@@ -42,14 +42,14 @@ fn build_simple_model() -> DeterministicGBDT {
                 threshold: Fixed::ZERO,
                 left: None,
                 right: None,
-                value: Some(fp(1.5)),
+                value: Some(fp("1.5")),
             },
             DecisionNode {
                 feature: 0,
                 threshold: Fixed::ZERO,
                 left: None,
                 right: None,
-                value: Some(fp(-0.5)),
+                value: Some(fp("-0.5")),
             },
         ],
     };
@@ -68,28 +68,28 @@ fn build_simple_model() -> DeterministicGBDT {
                 threshold: Fixed::ZERO,
                 left: None,
                 right: None,
-                value: Some(fp(0.25)),
+                value: Some(fp("0.25")),
             },
             DecisionNode {
                 feature: 1,
                 threshold: Fixed::ZERO,
                 left: None,
                 right: None,
-                value: Some(fp(0.75)),
+                value: Some(fp("0.75")),
             },
         ],
     };
 
     DeterministicGBDT {
         trees: vec![tree1, tree2],
-        learning_rate: fp(0.1),
+        learning_rate: fp("0.1"),
     }
 }
 
 #[test]
 fn deterministic_prediction_same_features() {
     let model = build_simple_model();
-    let features = vec![Fixed::ZERO, fp(0.5), fp(99.9), fp(0.42)];
+    let features = vec![Fixed::ZERO, fp("0.5"), fp("99.9"), fp("0.42")];
 
     let y1 = model.predict(&features);
     let y2 = model.predict(&features);
@@ -103,15 +103,15 @@ fn normalize_features_clock_offset_cancels_when_median_also_offset() {
     let telemetry_a: TelemetryMap = HashMap::from([
         (
             "nodeA".into(),
-            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+            telemetry_entry(100_000_i64, "1.2", "99.9", "0.42"),
         ),
         (
             "nodeB".into(),
-            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+            telemetry_entry(100_080_i64, "0.9", "99.8", "0.38"),
         ),
         (
             "nodeC".into(),
-            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+            telemetry_entry(100_030_i64, "2.1", "98.9", "0.45"),
         ),
     ]);
     let median_a = 100_050_i64;
@@ -119,15 +119,15 @@ fn normalize_features_clock_offset_cancels_when_median_also_offset() {
     let telemetry_b: TelemetryMap = HashMap::from([
         (
             "nodeA".into(),
-            telemetry_entry(105_000_i64, 1.2, 99.9, 0.42),
+            telemetry_entry(105_000_i64, "1.2", "99.9", "0.42"),
         ),
         (
             "nodeB".into(),
-            telemetry_entry(105_080_i64, 0.9, 99.8, 0.38),
+            telemetry_entry(105_080_i64, "0.9", "99.8", "0.38"),
         ),
         (
             "nodeC".into(),
-            telemetry_entry(105_030_i64, 2.1, 98.9, 0.45),
+            telemetry_entry(105_030_i64, "2.1", "98.9", "0.45"),
         ),
     ]);
     let median_b = 105_050_i64;
@@ -169,15 +169,15 @@ fn compute_scores_and_certificate_consistency() {
     let telemetry: TelemetryMap = HashMap::from([
         (
             "nodeA".into(),
-            telemetry_entry(100_000_i64, 1.2, 99.9, 0.42),
+            telemetry_entry(100_000_i64, "1.2", "99.9", "0.42"),
         ),
         (
             "nodeB".into(),
-            telemetry_entry(100_080_i64, 0.9, 99.8, 0.38),
+            telemetry_entry(100_080_i64, "0.9", "99.8", "0.38"),
         ),
         (
             "nodeC".into(),
-            telemetry_entry(100_030_i64, 2.1, 98.9, 0.45),
+            telemetry_entry(100_030_i64, "2.1", "98.9", "0.45"),
         ),
     ]);
     let median = 100_050_i64;
@@ -204,11 +204,11 @@ fn cross_node_consensus_scores_identical() {
     let telemetry: TelemetryMap = HashMap::from([
         (
             "val1".into(),
-            telemetry_entry(10_000_050_i64, 1.2, 99.9, 0.95),
+            telemetry_entry(10_000_050_i64, "1.2", "99.9", "0.95"),
         ),
         (
             "val2".into(),
-            telemetry_entry(10_000_100_i64, 2.5, 98.5, 0.85),
+            telemetry_entry(10_000_100_i64, "2.5", "98.5", "0.85"),
         ),
     ]);
     let median = 10_000_000_i64;
@@ -256,11 +256,11 @@ fn normalize_features_produces_expected_dimensions() {
     let telemetry: TelemetryMap = HashMap::from([
         (
             "validator1".into(),
-            telemetry_entry(5_000_100_i64, 1.0, 99.5, 0.9),
+            telemetry_entry(5_000_100_i64, "1.0", "99.5", "0.9"),
         ),
         (
             "validator2".into(),
-            telemetry_entry(4_999_900_i64, 2.5, 98.0, 0.7),
+            telemetry_entry(4_999_900_i64, "2.5", "98.0", "0.7"),
         ),
     ]);
 
