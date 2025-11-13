@@ -489,7 +489,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 5,
             blocks_verified: 10,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         let result = tracker.process_round(1, &contributions, 1000, 500);
@@ -512,7 +512,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process 10 rounds
@@ -535,7 +535,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process round 1
@@ -569,7 +569,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process 100 rounds
@@ -592,7 +592,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 1,
             blocks_verified: 1,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process 20 rounds (should create 2 checkpoints)
@@ -615,13 +615,13 @@ mod tests {
                 validator_id: [1u8; 32],
                 blocks_proposed: 5,
                 blocks_verified: 10,
-                reputation_score: 10_000.0,
+                reputation_score: 10000,
             },
             ValidatorContribution {
                 validator_id: [2u8; 32],
                 blocks_proposed: 3,
                 blocks_verified: 8,
-                reputation_score: 9_000.0,
+                reputation_score: 9000,
             },
         ];
 
@@ -649,19 +649,19 @@ mod tests {
                 validator_id: [1u8; 32],
                 blocks_proposed: 10,
                 blocks_verified: 5,
-                reputation_score: 10_000.0,
+                reputation_score: 10000,
             },
             ValidatorContribution {
                 validator_id: [2u8; 32],
                 blocks_proposed: 3,
                 blocks_verified: 8,
-                reputation_score: 9_000.0,
+                reputation_score: 9000,
             },
             ValidatorContribution {
                 validator_id: [3u8; 32],
                 blocks_proposed: 1,
                 blocks_verified: 2,
-                reputation_score: 8_000.0,
+                reputation_score: 8000,
             },
         ];
 
@@ -693,7 +693,7 @@ mod tests {
             validator_id: [1u8; 32],
             blocks_proposed: 100,
             blocks_verified: 100,
-            reputation_score: 10_000.0,
+            reputation_score: 10000,
         }];
 
         // Process rounds until we hit the cap
