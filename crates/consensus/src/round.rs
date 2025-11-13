@@ -10,19 +10,22 @@ use ippan_ai_core::{compute_validator_score, gbdt::GBDTModel};
 #[cfg(not(feature = "ai_l1"))]
 use serde::{Deserialize, Serialize};
 
+// NOTE: This fallback struct is ONLY compiled when feature "ai_l1" is disabled.
+// In production, ai_l1 feature is enabled and the integer version from ai_core is used.
 #[cfg(not(feature = "ai_l1"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(note = "Fallback only - production uses ai_core::ValidatorTelemetry with integers")]
 pub struct ValidatorTelemetry {
     pub validator_id: [u8; 32],
-    pub block_production_rate: f64,
-    pub avg_block_size: f64,
-    pub uptime: f64,
-    pub network_latency: f64,
-    pub validation_accuracy: f64,
+    pub block_production_rate_scaled: i64, // Scaled by 10000
+    pub avg_block_size: u64,
+    pub uptime_scaled: i64, // Scaled by 10000
+    pub network_latency_scaled: i64, // Scaled by 10000  
+    pub validation_accuracy_scaled: i64, // Scaled by 10000
     pub stake: u64,
     pub slashing_events: u32,
     pub last_activity: u64,
-    pub custom_metrics: HashMap<String, f64>,
+    pub custom_metrics: HashMap<String, i64>, // All scaled by 10000
 }
 
 #[cfg(not(feature = "ai_l1"))]
@@ -34,16 +37,17 @@ pub mod features {
     use super::ValidatorTelemetry;
     use anyhow::Result;
 
-    pub fn from_telemetry(telemetry: &ValidatorTelemetry) -> Result<Vec<f64>> {
+    #[allow(deprecated)]
+    pub fn from_telemetry(telemetry: &ValidatorTelemetry) -> Result<Vec<i64>> {
         Ok(vec![
-            telemetry.block_production_rate,
-            telemetry.avg_block_size,
-            telemetry.uptime,
-            telemetry.network_latency,
-            telemetry.validation_accuracy,
-            telemetry.stake as f64,
-            telemetry.slashing_events as f64,
-            telemetry.last_activity as f64,
+            telemetry.block_production_rate_scaled,
+            telemetry.avg_block_size as i64,
+            telemetry.uptime_scaled,
+            telemetry.network_latency_scaled,
+            telemetry.validation_accuracy_scaled,
+            telemetry.stake as i64,
+            telemetry.slashing_events as i64,
+            telemetry.last_activity as i64,
         ])
     }
 }
@@ -66,7 +70,7 @@ pub struct ValidatorSelection {
     pub proposer: [u8; 32],
     pub verifiers: Vec<[u8; 32]>,
     pub reputation_scores: HashMap<[u8; 32], i32>,
-    pub selection_weights: HashMap<[u8; 32], f64>,
+    pub selection_weights: HashMap<[u8; 32], i64>, // Scaled by 10000
 }
 
 impl RoundConsensus {
@@ -132,9 +136,10 @@ impl RoundConsensus {
             let reputation = self.calculate_reputation_score(validator).unwrap_or(5000);
             reputation_scores.insert(*validator, reputation);
 
-            let stake_weight = stake_weights.get(validator).copied().unwrap_or(0) as f64;
-            let reputation_weight = (reputation as f64) / 10_000.0;
-            let combined_weight = stake_weight * 0.7 + reputation_weight * 1_000_000.0 * 0.3;
+            let stake_weight = stake_weights.get(validator).copied().unwrap_or(0) as i64;
+            let reputation_weight = reputation as i64;
+            // Combined weight: 70% stake, 30% reputation (scaled integer math)
+            let combined_weight = (stake_weight * 7000) / 10000 + (reputation_weight * 3000) / 10000;
             selection_weights.insert(*validator, combined_weight);
         }
 
@@ -145,7 +150,7 @@ impl RoundConsensus {
             .copied()
             .collect();
 
-        let verifier_weights: HashMap<[u8; 32], f64> = verifier_candidates
+        let verifier_weights: HashMap<[u8; 32], i64> = verifier_candidates
             .iter()
             .filter_map(|v| selection_weights.get(v).map(|&w| (*v, w)))
             .collect();
@@ -164,7 +169,7 @@ impl RoundConsensus {
     fn deterministic_weighted_selection(
         &self,
         candidates: &[[u8; 32]],
-        weights: &HashMap<[u8; 32], f64>,
+        weights: &HashMap<[u8; 32], i64>,
         salt: u64,
     ) -> Result<[u8; 32]> {
         if candidates.is_empty() {
@@ -174,12 +179,12 @@ impl RoundConsensus {
         let mut ordered: Vec<[u8; 32]> = candidates.to_vec();
         ordered.sort();
 
-        let total_weight: f64 = ordered
+        let total_weight: i64 = ordered
             .iter()
-            .map(|id| *weights.get(id).unwrap_or(&0.0))
-            .filter(|w| *w > 0.0)
+            .map(|id| *weights.get(id).unwrap_or(&0))
+            .filter(|w| *w > 0)
             .sum();
-        if total_weight <= 0.0 {
+        if total_weight <= 0 {
             return Err(anyhow::anyhow!("Total weight must be positive"));
         }
 
@@ -189,17 +194,17 @@ impl RoundConsensus {
         hasher.update(&salt.to_be_bytes());
         for id in &ordered {
             hasher.update(id);
-            hasher.update(&weights.get(id).unwrap_or(&0.0).to_be_bytes());
+            hasher.update(&weights.get(id).unwrap_or(&0).to_be_bytes());
         }
         let selection_hash = hasher.finalize();
 
         let mut selection_bytes = [0u8; 8];
         selection_bytes.copy_from_slice(&selection_hash.as_bytes()[..8]);
-        let mut target = (u64::from_be_bytes(selection_bytes) as f64) % total_weight;
+        let mut target = (u64::from_be_bytes(selection_bytes) as i64) % total_weight;
 
         for candidate in ordered.iter() {
-            let weight = *weights.get(candidate).unwrap_or(&0.0);
-            if weight <= 0.0 {
+            let weight = *weights.get(candidate).unwrap_or(&0);
+            if weight <= 0 {
                 continue;
             }
             if target < weight {
@@ -210,14 +215,14 @@ impl RoundConsensus {
 
         ordered
             .into_iter()
-            .find(|id| *weights.get(id).unwrap_or(&0.0) > 0.0)
+            .find(|id| *weights.get(id).unwrap_or(&0) > 0)
             .ok_or_else(|| anyhow::anyhow!("No candidates with positive weight"))
     }
 
     fn select_multiple_weighted(
         &self,
         candidates: &[[u8; 32]],
-        weights: &HashMap<[u8; 32], f64>,
+        weights: &HashMap<[u8; 32], i64>,
         count: usize,
     ) -> Result<Vec<[u8; 32]>> {
         let mut selected = Vec::new();

@@ -55,9 +55,15 @@ impl ReputationScore {
         self.last_updated = chrono::Utc::now();
     }
 
-    /// Get normalized reputation (0.0 to 1.0)
+    /// Get normalized reputation as scaled integer (0-10000 = 0%-100%)
+    pub fn normalized_scaled(&self) -> i64 {
+        (self.total * 10000) / 100_000
+    }
+
+    /// Get normalized reputation (0.0 to 1.0) - deprecated, use normalized_scaled()
+    #[deprecated(note = "Use normalized_scaled() for deterministic integer arithmetic")]
     pub fn normalized(&self) -> f64 {
-        (self.total as f64) / 100_000.0
+        self.normalized_scaled() as f64 / 10000.0
     }
 
     /// Check if reputation is good standing (above threshold)
@@ -65,14 +71,19 @@ impl ReputationScore {
         self.total >= threshold
     }
 
-    /// Calculate reputation trend (positive/negative ratio)
-    pub fn trend(&self) -> f64 {
+    /// Calculate reputation trend as scaled integer (0-10000 = 0%-100% positive ratio)
+    pub fn trend_scaled(&self) -> i64 {
         let total_actions = self.positive_actions + self.negative_actions;
         if total_actions == 0 {
-            return 0.0;
+            return 0;
         }
+        (self.positive_actions as i64 * 10000) / total_actions as i64
+    }
 
-        (self.positive_actions as f64) / (total_actions as f64)
+    /// Calculate reputation trend (positive/negative ratio) - deprecated, use trend_scaled()
+    #[deprecated(note = "Use trend_scaled() for deterministic integer arithmetic")]
+    pub fn trend(&self) -> f64 {
+        self.trend_scaled() as f64 / 10000.0
     }
 }
 

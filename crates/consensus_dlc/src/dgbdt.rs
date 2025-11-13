@@ -9,15 +9,16 @@ use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Validator metrics used for fairness scoring
+/// Validator metrics used for fairness scoring (deterministic, scaled integers)
+/// All percentage/ratio fields are scaled by 10000 (e.g., 10000 = 100%)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ValidatorMetrics {
-    /// Uptime percentage (0.0 to 1.0)
-    pub uptime: f64,
-    /// Average latency in seconds
-    pub latency: f64,
-    /// Honesty score (0.0 to 1.0)
-    pub honesty: f64,
+    /// Uptime percentage scaled (0-10000 = 0%-100%)
+    pub uptime: i64,
+    /// Average latency scaled (scaled by 10000)
+    pub latency: i64,
+    /// Honesty score scaled (0-10000 = 0%-100%)
+    pub honesty: i64,
     /// Number of blocks proposed
     pub blocks_proposed: u64,
     /// Number of blocks verified
@@ -31,9 +32,9 @@ pub struct ValidatorMetrics {
 impl Default for ValidatorMetrics {
     fn default() -> Self {
         Self {
-            uptime: 1.0,
-            latency: 0.0,
-            honesty: 1.0,
+            uptime: 10000,  // 100%
+            latency: 0,
+            honesty: 10000, // 100%
             blocks_proposed: 0,
             blocks_verified: 0,
             stake: Amount::zero(),
@@ -43,11 +44,11 @@ impl Default for ValidatorMetrics {
 }
 
 impl ValidatorMetrics {
-    /// Create new validator metrics
+    /// Create new validator metrics (scaled integers)
     pub fn new(
-        uptime: f64,
-        latency: f64,
-        honesty: f64,
+        uptime: i64,
+        latency: i64,
+        honesty: i64,
         blocks_proposed: u64,
         blocks_verified: u64,
         stake: Amount,
@@ -64,13 +65,35 @@ impl ValidatorMetrics {
         }
     }
 
-    /// Update metrics with new data
-    pub fn update(&mut self, uptime_delta: f64, latency_sample: f64, proposed: u64, verified: u64) {
-        // Exponential moving average for uptime
-        self.uptime = 0.9 * self.uptime + 0.1 * uptime_delta;
+    /// Create from floats (deprecated - for migration only)
+    #[deprecated(note = "Use new() with scaled i64 values")]
+    pub fn from_floats(
+        uptime: f64,
+        latency: f64,
+        honesty: f64,
+        blocks_proposed: u64,
+        blocks_verified: u64,
+        stake: Amount,
+        rounds_active: u64,
+    ) -> Self {
+        Self {
+            uptime: (uptime * 10000.0) as i64,
+            latency: (latency * 10000.0) as i64,
+            honesty: (honesty * 10000.0) as i64,
+            blocks_proposed,
+            blocks_verified,
+            stake,
+            rounds_active,
+        }
+    }
 
-        // Exponential moving average for latency
-        self.latency = 0.9 * self.latency + 0.1 * latency_sample;
+    /// Update metrics with new data (scaled integer inputs)
+    pub fn update(&mut self, uptime_delta: i64, latency_sample: i64, proposed: u64, verified: u64) {
+        // Exponential moving average for uptime (integer math)
+        self.uptime = (9000 * self.uptime + 1000 * uptime_delta) / 10000;
+
+        // Exponential moving average for latency (integer math)
+        self.latency = (9000 * self.latency + 1000 * latency_sample) / 10000;
 
         self.blocks_proposed += proposed;
         self.blocks_verified += verified;
@@ -80,16 +103,16 @@ impl ValidatorMetrics {
     /// Normalize metrics to 0-10000 range (integer arithmetic)
     pub fn to_normalized(&self) -> NormalizedMetrics {
         NormalizedMetrics {
-            uptime: (self.uptime * 10000.0) as i64,
-            latency_inv: ((1.0 - self.latency.min(1.0)) * 10000.0) as i64,
-            honesty: (self.honesty * 10000.0) as i64,
+            uptime: self.uptime, // Already scaled
+            latency_inv: (10000 - self.latency.min(10000)).max(0), // Invert latency
+            honesty: self.honesty, // Already scaled
             proposal_rate: if self.rounds_active > 0 {
-                ((self.blocks_proposed as f64 / self.rounds_active as f64) * 10000.0) as i64
+                ((self.blocks_proposed as i64 * 10000) / self.rounds_active as i64)
             } else {
                 0
             },
             verification_rate: if self.rounds_active > 0 {
-                ((self.blocks_verified as f64 / self.rounds_active as f64) * 10000.0) as i64
+                ((self.blocks_verified as i64 * 10000) / self.rounds_active as i64)
             } else {
                 0
             },
