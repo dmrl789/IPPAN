@@ -24,6 +24,8 @@
 
 **D-GBDT** (Deterministic Gradient-Boosted Decision Trees) is IPPAN's consensus-critical AI inference engine used for validator selection and reputation scoring. Unlike traditional ML systems that use floating-point arithmetic, D-GBDT guarantees **bit-for-bit identical** predictions across all architectures (x86_64, aarch64, ARM, RISC-V) and compiler versions.
 
+> **Note**: This documentation reflects the consolidated `main` branch as of November 2025. All development now occurs on `main` as the primary working branch.
+
 ### Key Properties
 
 - **Deterministic**: All operations use 64-bit fixed-point integers (micro-precision: 10⁻⁶)
