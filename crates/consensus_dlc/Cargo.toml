@@ -38,6 +38,8 @@ tracing = { workspace = true }
 # IPPAN crates
 ippan-types = { path = "../types" }
 ippan-crypto = { path = "../crypto" }
+ippan-ai-core = { path = "../ai_core" }
+ippan-ai-registry = { path = "../ai_registry" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

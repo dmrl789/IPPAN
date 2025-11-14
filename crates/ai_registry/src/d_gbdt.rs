@@ -30,9 +30,7 @@
 //! ```
 
 use anyhow::{Context, Result};
-use blake3::Hasher;
-use ippan_ai_core::model::Model;
-use ippan_ai_core::serialization::canonical_json_string;
+use ippan_ai_core::gbdt::Model;
 use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::path::Path;
@@ -205,9 +203,9 @@ pub fn load_model_from_path(path: &Path) -> Result<(Model, String)> {
     let hash_hex = compute_model_hash(&model)?;
 
     info!(
-        "Successfully loaded model: version={}, features={}, trees={}, hash={}",
+        "Successfully loaded model: version={}, scale={}, trees={}, hash={}",
         model.version,
-        model.feature_count,
+        model.scale,
         model.trees.len(),
         hash_hex
     );
@@ -219,16 +217,9 @@ pub fn load_model_from_path(path: &Path) -> Result<(Model, String)> {
 ///
 /// This ensures that the hash is deterministic and identical across all nodes
 pub fn compute_model_hash(model: &Model) -> Result<String> {
-    // Serialize to canonical JSON
-    let canonical_json = canonical_json_string(model)
-        .context("Failed to serialize model to canonical JSON")?;
-
-    // Compute BLAKE3 hash
-    let mut hasher = Hasher::new();
-    hasher.update(canonical_json.as_bytes());
-    let hash = hasher.finalize();
-
-    Ok(hash.to_hex().to_string())
+    // Use the model's built-in hash_hex method which already does canonical JSON + BLAKE3
+    model.hash_hex()
+        .map_err(|e| anyhow::anyhow!("Failed to compute model hash: {}", e))
 }
 
 /// Get current Unix timestamp in seconds
@@ -274,52 +265,26 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_ai_core::gbdt::{Node, Tree};
     use tempfile::TempDir;
 
     fn create_test_model() -> Model {
-        Model::new(
-            1,
-            3,
-            100,
-            10_000,
+        use ippan_ai_core::gbdt::{Node, Tree, SCALE};
+        
+        let tree1 = Tree::new(
             vec![
-                Tree {
-                    nodes: vec![
-                        Node {
-                            feature_index: 0,
-                            threshold: 5000,
-                            left: 1,
-                            right: 2,
-                            value: None,
-                        },
-                        Node {
-                            feature_index: 0,
-                            threshold: 0,
-                            left: 0,
-                            right: 0,
-                            value: Some(100),
-                        },
-                        Node {
-                            feature_index: 0,
-                            threshold: 0,
-                            left: 0,
-                            right: 0,
-                            value: Some(200),
-                        },
-                    ],
-                },
-                Tree {
-                    nodes: vec![Node {
-                        feature_index: 1,
-                        threshold: 0,
-                        left: 0,
-                        right: 0,
-                        value: Some(50),
-                    }],
-                },
+                Node::internal(0, 0, 5000, 1, 2),
+                Node::leaf(1, 100),
+                Node::leaf(2, 200),
             ],
-        )
+            SCALE,
+        );
+        
+        let tree2 = Tree::new(
+            vec![Node::leaf(0, 50)],
+            SCALE,
+        );
+        
+        Model::new(vec![tree1, tree2], 0)
     }
 
     fn create_test_registry() -> (DGBDTRegistry, TempDir) {
@@ -368,7 +333,6 @@ mod tests {
         let (retrieved_model, retrieved_hash) = retrieved.unwrap();
         assert_eq!(retrieved_hash, hash);
         assert_eq!(retrieved_model.version, model.version);
-        assert_eq!(retrieved_model.feature_count, model.feature_count);
         assert_eq!(retrieved_model.bias, model.bias);
         assert_eq!(retrieved_model.scale, model.scale);
         assert_eq!(retrieved_model.trees.len(), model.trees.len());
@@ -383,13 +347,17 @@ mod tests {
 
     #[test]
     fn test_version_history_ring_buffer() {
+        use ippan_ai_core::gbdt::{Node, Tree, SCALE};
+        
         let (mut registry, _temp_dir) = create_test_registry();
-        let model = create_test_model();
 
         // Store more than MAX_HISTORY_VERSIONS models
         for i in 0..(MAX_HISTORY_VERSIONS + 3) {
-            let mut test_model = model.clone();
-            test_model.version = i as u32;
+            let tree = Tree::new(
+                vec![Node::leaf(0, (i as i64) * 1000)],
+                SCALE,
+            );
+            let test_model = Model::new(vec![tree], i as i64);
             let hash = compute_model_hash(&test_model).unwrap();
             registry.store_active_model(test_model, hash).unwrap();
         }
@@ -401,13 +369,17 @@ mod tests {
 
     #[test]
     fn test_history_ordering() {
+        use ippan_ai_core::gbdt::{Node, Tree, SCALE};
+        
         let (mut registry, _temp_dir) = create_test_registry();
-        let model = create_test_model();
 
         let mut hashes = Vec::new();
         for i in 0..3 {
-            let mut test_model = model.clone();
-            test_model.version = i;
+            let tree = Tree::new(
+                vec![Node::leaf(0, (i as i64) * 1000)],
+                SCALE,
+            );
+            let test_model = Model::new(vec![tree], i as i64);
             let hash = compute_model_hash(&test_model).unwrap();
             hashes.push(hash.clone());
             registry.store_active_model(test_model, hash).unwrap();
@@ -437,14 +409,23 @@ mod tests {
         let (loaded_model, hash) = load_model_from_path(&model_path).unwrap();
         
         assert_eq!(loaded_model.version, model.version);
-        assert_eq!(loaded_model.feature_count, model.feature_count);
+        assert_eq!(loaded_model.scale, model.scale);
         assert_eq!(hash.len(), 64); // BLAKE3 hash hex length
     }
 
     #[test]
     fn test_model_validation() {
-        // Create an invalid model (zero features)
-        let invalid_model = Model::new(1, 0, 100, 10_000, vec![]);
+        use ippan_ai_core::gbdt::{Node, Tree, SCALE};
+        
+        // Create an invalid tree (invalid node references)
+        let invalid_tree = Tree::new(
+            vec![
+                Node::internal(0, 0, 5000, 10, 20), // Invalid child indices
+            ],
+            SCALE,
+        );
+        
+        let invalid_model = Model::new(vec![invalid_tree], 0);
         let json = serde_json::to_string(&invalid_model).unwrap();
         
         let temp_dir = TempDir::new().unwrap();

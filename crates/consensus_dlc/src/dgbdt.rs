@@ -8,6 +8,7 @@ use ippan_types::currency::denominations;
 use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Validator metrics used for fairness scoring (deterministic, scaled integers)
 /// All percentage/ratio fields are scaled by 10000 (e.g., 10000 = 100%)
@@ -186,6 +187,9 @@ pub struct FairnessModel {
     pub bias: i64,
     /// Output scale factor
     pub scale: i64,
+    /// Optional loaded D-GBDT model from ai_core
+    #[serde(skip)]
+    pub d_gbdt_model: Option<ippan_ai_core::gbdt::Model>,
 }
 
 impl Default for FairnessModel {
@@ -195,6 +199,23 @@ impl Default for FairnessModel {
 }
 
 impl FairnessModel {
+    /// Load a D-GBDT model from a file path
+    pub fn from_d_gbdt_file(path: &Path) -> Result<Self> {
+        use ippan_ai_registry::d_gbdt::load_model_from_path;
+        
+        let (model, _hash) = load_model_from_path(path)
+            .map_err(|e| DlcError::Model(format!("Failed to load D-GBDT model: {}", e)))?;
+        
+        Ok(Self::from_d_gbdt_model(model))
+    }
+    
+    /// Create a FairnessModel from a loaded D-GBDT model
+    pub fn from_d_gbdt_model(model: ippan_ai_core::gbdt::Model) -> Self {
+        let mut fairness = Self::new_default();
+        fairness.d_gbdt_model = Some(model);
+        fairness
+    }
+
     /// Create a new default fairness model
     pub fn new_default() -> Self {
         // Default weights (integers summing to 100): uptime, latency, honesty, proposal rate, verification rate, stake
@@ -208,6 +229,7 @@ impl FairnessModel {
             trees: vec![default_tree],
             bias: 0,
             scale: 10000,
+            d_gbdt_model: None,
         }
     }
 
@@ -259,6 +281,7 @@ impl FairnessModel {
             trees: vec![tree1, tree2, tree3],
             bias: 1000,
             scale: 10000,
+            d_gbdt_model: None,
         }
     }
 
@@ -266,6 +289,28 @@ impl FairnessModel {
 
     /// Deterministic integer-based scoring
     pub fn score_deterministic(&self, metrics: &ValidatorMetrics) -> i64 {
+        // If we have a loaded D-GBDT model, use it directly
+        if let Some(ref model) = self.d_gbdt_model {
+            let normalized = metrics.to_normalized();
+            let features = vec![
+                normalized.uptime,
+                normalized.latency_inv,
+                normalized.honesty,
+                normalized.proposal_rate,
+                normalized.verification_rate,
+                normalized.stake_weight,
+            ];
+            
+            // Use the D-GBDT model for deterministic scoring
+            let raw_score = model.score(&features);
+            
+            // Normalize to 0-10000 range
+            let normalized_score = (raw_score.abs() / 1000).min(10000);
+            
+            return normalized_score;
+        }
+        
+        // Fall back to built-in simple model
         let normalized = metrics.to_normalized();
         let features = vec![
             normalized.uptime,
