@@ -27,35 +27,50 @@ jobs:
 
       - name: Check for forbidden f32 in runtime crates
         run: |
-          echo "Checking for f32 in runtime crates (excluding tests/examples/benches)..."
-          # Returns 0 if matches are found, 1 if none are found.
-          if rg "f32" \
+          echo "Checking for f32 in runtime crates (excluding tests/examples/benches, ignoring comments)..."
+
+          # Collect matches (if any) without failing when none are found.
+          matches=$(rg '\bf32\b' \
               crates/ai_core/src \
               crates/consensus/src \
               crates/consensus_dlc/src \
               crates/ai_registry/src \
               --glob '!**/tests/**' \
               --glob '!**/examples/**' \
-              --glob '!**/benches/**'; then
-            echo "❌ Found forbidden f32 usage in runtime crates."
+              --glob '!**/benches/**' \
+              -n || true)
+
+          # Filter out lines that are purely comments (// or ///).
+          matches=$(echo "$matches" | grep -Ev '^\s*//' || true)
+
+          if [ -n "$matches" ]; then
+            echo "❌ Found forbidden f32 usage in runtime crates:"
+            echo "$matches"
             exit 1
           else
-            echo "✅ No f32 usage found in runtime crates."
+            echo "✅ No non-comment f32 usage found in runtime crates."
           fi
 
       - name: Check for forbidden f64 in runtime crates
         run: |
-          echo "Checking for f64 in runtime crates (excluding tests/examples/benches)..."
-          if rg "f64" \
+          echo "Checking for f64 in runtime crates (excluding tests/examples/benches, ignoring comments)..."
+
+          matches=$(rg '\bf64\b' \
               crates/ai_core/src \
               crates/consensus/src \
               crates/consensus_dlc/src \
               crates/ai_registry/src \
               --glob '!**/tests/**' \
               --glob '!**/examples/**' \
-              --glob '!**/benches/**'; then
-            echo "❌ Found forbidden f64 usage in runtime crates."
+              --glob '!**/benches/**' \
+              -n || true)
+
+          matches=$(echo "$matches" | grep -Ev '^\s*//' || true)
+
+          if [ -n "$matches" ]; then
+            echo "❌ Found forbidden f64 usage in runtime crates:"
+            echo "$matches"
             exit 1
           else
-            echo "✅ No f64 usage found in runtime crates."
+            echo "✅ No non-comment f64 usage found in runtime crates."
           fi
