@@ -2,9 +2,9 @@ name: 🧮 No Floats in Runtime
 
 on:
   push:
-    branches: [ main, develop, fix/stabilize-2025-11-08 ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop, fix/stabilize-2025-11-08 ]
+    branches: [ main ]
 
 permissions:
   contents: read
