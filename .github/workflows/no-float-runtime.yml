@@ -1,0 +1,61 @@
+name: 🧮 No Floats in Runtime
+
+on:
+  push:
+    branches: [ main, develop, fix/stabilize-2025-11-08 ]
+  pull_request:
+    branches: [ main, develop, fix/stabilize-2025-11-08 ]
+
+permissions:
+  contents: read
+
+jobs:
+  test-no-float-runtime:
+    name: Ensure runtime crates have no f32/f64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ripgrep
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ripgrep
+          fi
+
+      - name: Check for forbidden f32 in runtime crates
+        run: |
+          echo "Checking for f32 in runtime crates (excluding tests/examples/benches)..."
+          # Returns 0 if matches are found, 1 if none are found.
+          if rg "f32" \
+              crates/ai_core/src \
+              crates/consensus/src \
+              crates/consensus_dlc/src \
+              crates/ai_registry/src \
+              --glob '!**/tests/**' \
+              --glob '!**/examples/**' \
+              --glob '!**/benches/**'; then
+            echo "❌ Found forbidden f32 usage in runtime crates."
+            exit 1
+          else
+            echo "✅ No f32 usage found in runtime crates."
+          fi
+
+      - name: Check for forbidden f64 in runtime crates
+        run: |
+          echo "Checking for f64 in runtime crates (excluding tests/examples/benches)..."
+          if rg "f64" \
+              crates/ai_core/src \
+              crates/consensus/src \
+              crates/consensus_dlc/src \
+              crates/ai_registry/src \
+              --glob '!**/tests/**' \
+              --glob '!**/examples/**' \
+              --glob '!**/benches/**'; then
+            echo "❌ Found forbidden f64 usage in runtime crates."
+            exit 1
+          else
+            echo "✅ No f64 usage found in runtime crates."
+          fi
