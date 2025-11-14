@@ -2,6 +2,8 @@
 
 A real blockchain implementation with **IPPAN Time** and **HashTimer** systems for temporal ordering and validation.
 
+> **Development Workflow**: IPPAN uses trunk-based development on `main`. See [MAIN_BRANCH_DEVELOPMENT.md](MAIN_BRANCH_DEVELOPMENT.md) for complete guidelines.
+
 ## 🚀 Features
 
 - **IPPAN Time**: Monotonic microsecond precision time service with peer synchronization
