@@ -540,10 +540,10 @@ fn random_metrics(rng: &mut StdRng, stake_micro: u64) -> ValidatorMetrics {
     let blocks_verified = rng.gen_range(blocks_proposed..=(blocks_proposed + 200));
     let rounds_active = rng.gen_range(32..=1_024);
 
-    ValidatorMetrics::from_floats(
-        uptime,
-        latency,
-        honesty,
+    ValidatorMetrics::new(
+        (uptime * 10000.0) as i64,   // Scale 0-1 to 0-10000
+        (latency * 10000.0) as i64,  // Scale 0-1 to 0-10000
+        (honesty * 10000.0) as i64,  // Scale 0-1 to 0-10000
         blocks_proposed,
         blocks_verified,
         Amount::from_micro_ipn(stake_micro),

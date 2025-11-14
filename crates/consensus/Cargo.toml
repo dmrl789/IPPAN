@@ -20,6 +20,7 @@ ippan-mempool = { path = "../mempool" }
 ippan_economics = { path = "../ippan_economics" }
 ippan-treasury = { path = "../treasury" }
 ippan-governance = { path = "../governance" }
+ippan-consensus-dlc = { path = "../consensus_dlc" }
 ippan-ai-core = { path = "../ai_core", optional = true }
 ippan-ai-registry = { path = "../ai_registry", optional = true }
 

@@ -4,7 +4,7 @@
 //! and exact-greedy CART splits.
 
 use anyhow::Result;
-use ippan_ai_core::gbdt::{GBDTModel, ModelMetadata, SecurityConstraints, Tree};
+use ippan_ai_core::{GBDTModel, gbdt_legacy::{Tree, ModelMetadata}, SecurityConstraints};
 use std::collections::HashMap;
 
 use crate::cart::{CartBuilder, TreeConfig};

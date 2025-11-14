@@ -23,10 +23,10 @@ async fn test_validator_registration() {
     let config = DlcConfig::default();
     let mut consensus = DlcConsensus::new(config);
 
-    let metrics = ValidatorMetrics::from_floats(
-        0.99,
-        0.05,
-        1.0,
+    let metrics = ValidatorMetrics::new(
+        9900,  // 99% uptime (scaled by 10000)
+        500,   // 5% latency (scaled by 10000)
+        10000, // 100% honesty (scaled by 10000)
         100,
         500,
         Amount::from_micro_ipn(10_000_000),
@@ -47,10 +47,10 @@ async fn test_consensus_round_processing() {
 
     // Register validators
     for i in 1..=3 {
-        let metrics = ValidatorMetrics::from_floats(
-            0.99,
-            0.05,
-            1.0,
+        let metrics = ValidatorMetrics::new(
+            9900,  // 99% uptime (scaled by 10000)
+            500,   // 5% latency (scaled by 10000)
+            10000, // 100% honesty (scaled by 10000)
             100,
             500,
             Amount::from_micro_ipn(10_000_000),
@@ -97,10 +97,10 @@ async fn test_verifier_selection_determinism() {
     for i in 1..=5 {
         validators.insert(
             format!("val{}", i),
-            ValidatorMetrics::from_floats(
-                0.99,
-                0.05,
-                1.0,
+            ValidatorMetrics::new(
+                9900,  // 99% uptime (scaled by 10000)
+                500,   // 5% latency (scaled by 10000)
+                10000, // 100% honesty (scaled by 10000)
                 100,
                 500,
                 Amount::from_micro_ipn(10_000_000),
@@ -247,10 +247,10 @@ async fn test_fairness_model_scoring() {
     let model = FairnessModel::new_production();
 
     // High-quality validator
-    let good_metrics = ValidatorMetrics::from_floats(
-        0.99,
-        0.05,
-        1.0,
+    let good_metrics = ValidatorMetrics::new(
+        9900,  // 99% uptime (scaled by 10000)
+        500,   // 5% latency (scaled by 10000)
+        10000, // 100% honesty (scaled by 10000)
         1000,
         5000,
         Amount::from_micro_ipn(100_000_000),
@@ -259,10 +259,10 @@ async fn test_fairness_model_scoring() {
     let good_score = model.score_deterministic(&good_metrics);
 
     // Low-quality validator
-    let bad_metrics = ValidatorMetrics::from_floats(
-        0.80,
-        0.30,
-        0.70,
+    let bad_metrics = ValidatorMetrics::new(
+        8000,  // 80% uptime (scaled by 10000)
+        3000,  // 30% latency (scaled by 10000)
+        7000,  // 70% honesty (scaled by 10000)
         10,
         50,
         Amount::from_micro_ipn(1_000_000),
@@ -428,10 +428,10 @@ async fn test_long_run_consensus_simulation_stability() {
         let uptime = 9400 + ((i % 7) as i64) * 50;   // 0.94 -> 9400, 0.005 -> 50
         let latency = 100 + ((i % 5) as i64) * 20;  // 0.01 -> 100, 0.002 -> 20
         let honesty = 9200 + ((i % 9) as i64) * 60; // 0.92 -> 9200, 0.006 -> 60
-        let metrics = ValidatorMetrics::from_floats(
-            uptime.min(0.999),
+        let metrics = ValidatorMetrics::new(
+            uptime.min(9990),  // Already scaled, so 9990 = 99.9%
             latency,
-            honesty.min(0.999),
+            honesty.min(9990), // Already scaled, so 9990 = 99.9%
             50 + (i as u64 * 3),
             150 + (i as u64 * 5),
             Amount::from_micro_ipn(5_000_000 + (i as u64 * 125_000)),

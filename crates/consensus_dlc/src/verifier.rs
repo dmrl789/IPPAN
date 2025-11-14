@@ -346,10 +346,10 @@ mod tests {
 
         validators.insert(
             "val1".to_string(),
-            ValidatorMetrics::from_floats(
-                0.99,
-                0.05,
-                1.0,
+            ValidatorMetrics::new(
+                9900,  // 99% uptime (scaled by 10000)
+                500,   // 5% latency (scaled by 10000)
+                10000, // 100% honesty (scaled by 10000)
                 100,
                 500,
                 Amount::from_micro_ipn(10_000_000),
@@ -358,10 +358,10 @@ mod tests {
         );
         validators.insert(
             "val2".to_string(),
-            ValidatorMetrics::from_floats(
-                0.95,
-                0.15,
-                0.98,
+            ValidatorMetrics::new(
+                9500,  // 95% uptime (scaled by 10000)
+                1500,  // 15% latency (scaled by 10000)
+                9800,  // 98% honesty (scaled by 10000)
                 80,
                 400,
                 Amount::from_micro_ipn(5_000_000),
@@ -370,10 +370,10 @@ mod tests {
         );
         validators.insert(
             "val3".to_string(),
-            ValidatorMetrics::from_floats(
-                0.97,
-                0.10,
-                0.99,
+            ValidatorMetrics::new(
+                9700,  // 97% uptime (scaled by 10000)
+                1000,  // 10% latency (scaled by 10000)
+                9900,  // 99% honesty (scaled by 10000)
                 90,
                 450,
                 Amount::from_micro_ipn(8_000_000),

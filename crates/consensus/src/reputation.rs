@@ -141,7 +141,7 @@ mod tests {
     #[cfg(feature = "ai_l1")]
     #[test]
     fn test_calculate_reputation_with_model() {
-        use ippan_ai_core::gbdt::{GBDTModel, Node, Tree};
+        use ippan_ai_core::{GBDTModel, gbdt_legacy::{Node, Tree}};
 
         let model = GBDTModel::new(
             vec![Tree {

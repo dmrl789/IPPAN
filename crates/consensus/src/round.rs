@@ -5,7 +5,7 @@ use std::collections::HashMap;
 #[cfg(feature = "ai_l1")]
 pub use ippan_ai_core::features::ValidatorTelemetry;
 #[cfg(feature = "ai_l1")]
-use ippan_ai_core::{compute_validator_score, gbdt::GBDTModel};
+use ippan_ai_core::{compute_validator_score, GBDTModel};
 
 #[cfg(not(feature = "ai_l1"))]
 use serde::{Deserialize, Serialize};
@@ -298,7 +298,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[cfg(feature = "ai_l1")]
-    use ippan_ai_core::gbdt::{Node, Tree};
+    use ippan_ai_core::gbdt_legacy::{Node, Tree};
 
     #[cfg(feature = "ai_l1")]
     fn create_test_model() -> GBDTModel {
