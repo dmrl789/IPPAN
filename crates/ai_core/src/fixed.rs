@@ -7,6 +7,7 @@
 
 use blake3::Hasher;
 use core::cmp::Ordering;
+use num_traits::float::Float;
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
@@ -47,7 +48,7 @@ pub fn to_fixed(x: i64, decimals: u32) -> i64 {
 }
 
 /// Panic on any attempt to ingest floats into deterministic paths.
-pub fn from_f64_lossy(_x: f64) -> ! {
+pub fn reject_float_input<T: Float>(_x: T) -> ! {
     panic!("floating-point inputs are forbidden in deterministic fixed-point math");
 }
 
@@ -180,15 +181,6 @@ impl<'de> Deserialize<'de> for Fixed {
                     return Err(de::Error::custom("fixed-point value out of range"));
                 }
                 Ok(Fixed::from_micro(value as i64))
-            }
-
-            fn visit_f64<E>(self, _value: f64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Err(de::Error::custom(
-                    "floating-point deserialisation is forbidden for deterministic fixed-point values",
-                ))
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
