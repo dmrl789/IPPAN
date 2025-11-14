@@ -418,6 +418,8 @@ curl -X POST http://localhost:8080/admin/reload-model \
 
 ### CI Badges
 
+> _2025-11-14 update_: All AI determinism, no-float runtime, and main CI workflows now run exclusively on `main`, with `fix/stabilize-2025-11-08` retained only as an archived snapshot.
+
 | Test Suite | Status | Description |
 |------------|--------|-------------|
 | **Deterministic GBDT** | ![CI](https://github.com/ippan/ippan/workflows/CI/badge.svg) | Core D-GBDT inference tests |
