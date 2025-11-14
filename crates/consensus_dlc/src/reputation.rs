@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn test_reputation_normalization() {
         let score = ReputationScore::new(50000);
-        assert_eq!(score.normalized(), 0.5);
+        assert_eq!(score.normalized_scaled(), 5000); // 0.5 scaled by 10000
     }
 
     #[test]

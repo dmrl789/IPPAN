@@ -2901,6 +2901,7 @@ dependencies = [
  "hex",
  "ippan-ai-core",
  "ippan-ai-registry",
+ "ippan-consensus-dlc",
  "ippan-crypto",
  "ippan-governance",
  "ippan-mempool",

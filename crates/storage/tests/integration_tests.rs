@@ -120,9 +120,9 @@ fn create_test_validator_telemetry(validator_id: [u8; 32]) -> ValidatorTelemetry
         stake: 10000,
         age_rounds: 100,
         last_active_round: 5,
-        uptime_percentage: 99.5,
-        recent_performance: 0.98,
-        network_contribution: 0.95,
+        uptime_percentage_scaled: 9950,
+        recent_performance_scaled: 9800,
+        network_contribution_scaled: 9500,
     }
 }
 
@@ -430,7 +430,7 @@ fn test_validator_telemetry_storage<S: Storage>(storage: &S) {
     assert!(non_existent.is_none());
 
     let telemetry_map = storage.get_all_validator_telemetry().unwrap();
-    assert_eq!(telemetry_map[&val2_id].network_contribution, 0.95);
+    assert_eq!(telemetry_map[&val2_id].network_contribution_scaled, 9500);
 }
 
 // ============================================================================
@@ -615,7 +615,7 @@ fn sled_storage_validator_telemetry_persistence() {
         let storage = SledStorage::new(&path).unwrap();
         let telemetry = storage.get_validator_telemetry(&validator_id).unwrap();
         assert!(telemetry.is_some());
-        assert_eq!(telemetry.unwrap().uptime_percentage, 99.5);
+        assert_eq!(telemetry.unwrap().uptime_percentage_scaled, 9950);
     }
 }
 

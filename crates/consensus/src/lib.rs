@@ -48,8 +48,7 @@ pub mod emission_tracker;
 pub mod fees;
 
 // AI and selection modules
-// REMOVED: l1_ai_consensus (external API only, not used in production)
-// pub mod l1_ai_consensus;
+// Legacy l1_ai_consensus removed - using DLC fairness model instead
 
 // Telemetry and metrics
 pub mod metrics;
@@ -92,11 +91,6 @@ pub use emission_tracker::{
 };
 pub use fees::{classify_transaction, validate_fee, FeeCapConfig, FeeCollector, FeeError, TxKind};
 pub use ippan_economics::{EmissionEngine, EmissionParams, RewardAmount, RoundIndex, RoundRewards};
-#[cfg(feature = "ai_l1")]
-pub use l1_ai_consensus::{
-    FeeOptimizationResult, L1AIConfig, L1AIConsensus, NetworkHealthReport, NetworkState,
-    ValidatorCandidate, ValidatorSelectionResult,
-};
 pub use ordering::order_round;
 pub use parallel_dag::{
     DagError, DagSnapshot, InsertionOutcome, ParallelDag, ParallelDagConfig, ParallelDagEngine,
@@ -200,11 +194,9 @@ pub struct PoAConsensus {
     pub finalization_interval: Duration,
     pub round_consensus: Arc<RwLock<RoundConsensus>>,
     pub fee_collector: Arc<RwLock<FeeCollector>>,
-    #[cfg(feature = "ai_l1")]
-    pub l1_ai_consensus: Arc<RwLock<L1AIConsensus>>,
+    pub dgbdt_engine: Arc<RwLock<DGBDTEngine>>,
     pub emission_tracker: Arc<RwLock<EmissionTracker>>,
     pub telemetry_manager: Arc<telemetry::TelemetryManager>,
-    #[cfg(feature = "ai_l1")]
     pub model_reloader: Option<Arc<model_reload::ModelReloader>>,
     pub metrics: Arc<metrics::ConsensusMetrics>,
 }
@@ -239,11 +231,7 @@ impl PoAConsensus {
         let audit_interval = 6_048_000; // ~1 week at 100ms
         let emission_tracker = EmissionTracker::new(emission_params, audit_interval);
 
-        #[cfg(feature = "ai_l1")]
-        let l1_ai_consensus = {
-            let ai_config = L1AIConfig::default();
-            L1AIConsensus::new(ai_config)
-        };
+        let dgbdt_engine = DGBDTEngine::new();
 
         let telemetry_manager = Arc::new(telemetry::TelemetryManager::new(storage.clone()));
         // Load existing telemetry from storage
@@ -265,11 +253,9 @@ impl PoAConsensus {
             ),
             round_consensus: Arc::new(RwLock::new(RoundConsensus::new())),
             fee_collector: Arc::new(RwLock::new(FeeCollector::new())),
-            #[cfg(feature = "ai_l1")]
-            l1_ai_consensus: Arc::new(RwLock::new(l1_ai_consensus)),
+            dgbdt_engine: Arc::new(RwLock::new(dgbdt_engine)),
             emission_tracker: Arc::new(RwLock::new(emission_tracker)),
             telemetry_manager,
-            #[cfg(feature = "ai_l1")]
             model_reloader: None,
             metrics,
         }
@@ -307,6 +293,7 @@ impl PoAConsensus {
             fee_collector,
             telemetry_manager,
             metrics,
+            dgbdt_engine,
         ) = (
             self.is_running.clone(),
             self.current_slot.clone(),
@@ -320,10 +307,8 @@ impl PoAConsensus {
             self.fee_collector.clone(),
             self.telemetry_manager.clone(),
             self.metrics.clone(),
+            self.dgbdt_engine.clone(),
         );
-
-        #[cfg(feature = "ai_l1")]
-        let l1_ai_consensus = self.l1_ai_consensus.clone();
 
         let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
         tokio::spawn(async move {
@@ -343,17 +328,14 @@ impl PoAConsensus {
                 }
 
                 let slot = *current_slot.read();
-                #[cfg(feature = "ai_l1")]
                 let maybe_proposer = Self::select_proposer(
                     &config,
                     &round_consensus,
                     slot,
-                    &l1_ai_consensus,
+                    &dgbdt_engine,
                     &telemetry_manager,
                     &metrics,
                 );
-                #[cfg(not(feature = "ai_l1"))]
-                let maybe_proposer = Self::select_proposer_no_ai(&config, &round_consensus, slot);
 
                 if let Some(proposer) = maybe_proposer {
                     if proposer == validator_id {
@@ -394,12 +376,11 @@ impl PoAConsensus {
     // Proposer selection
     // -----------------------------------------------------------------
 
-    #[cfg(feature = "ai_l1")]
     fn select_proposer(
         config: &PoAConfig,
         _round_consensus: &Arc<RwLock<RoundConsensus>>,
         slot: u64,
-        l1_ai: &Arc<RwLock<L1AIConsensus>>,
+        dgbdt_engine: &Arc<RwLock<DGBDTEngine>>,
         telemetry_manager: &Arc<telemetry::TelemetryManager>,
         metrics: &Arc<metrics::ConsensusMetrics>,
     ) -> Option<[u8; 32]> {
@@ -424,118 +405,61 @@ impl PoAConsensus {
             // Load real telemetry from storage (with defaults for missing validators)
             let all_telemetry = telemetry_manager.get_all_telemetry_with_defaults(&active, &stakes);
 
-            let candidates: Vec<ValidatorCandidate> = config
-                .validators
-                .iter()
-                .filter(|v| v.is_active)
-                .map(|v| {
-                    let telemetry = all_telemetry.get(&v.id).unwrap();
+            // Convert telemetry to ValidatorMetrics for DGBDT
+            let mut validator_metrics: HashMap<[u8; 32], dgbdt::ValidatorMetrics> = HashMap::new();
+            
+            for validator in &config.validators {
+                if !validator.is_active {
+                    continue;
+                }
+                
+                let telemetry = all_telemetry.get(&validator.id).unwrap();
+                
+                validator_metrics.insert(
+                    validator.id,
+                    dgbdt::ValidatorMetrics {
+                        blocks_proposed: telemetry.blocks_proposed,
+                        blocks_verified: telemetry.blocks_verified,
+                        rounds_active: telemetry.rounds_active,
+                        avg_latency_us: telemetry.avg_latency_us,
+                        uptime_percentage: (telemetry.uptime_percentage_scaled as i64 * 1_000_000) / 10000,
+                        slash_count: telemetry.slash_count,
+                        recent_performance: (telemetry.recent_performance_scaled as i64 * 1_000_000) / 10000,
+                        network_contribution: (telemetry.network_contribution_scaled as i64 * 1_000_000) / 10000,
+                        stake_amount: validator.stake,
+                    },
+                );
+            }
 
-                    // Calculate reputation score from telemetry
-                    let reputation_score = Self::calculate_reputation_from_telemetry(telemetry);
-
-                    ValidatorCandidate {
-                        id: v.id,
-                        stake: v.stake,
-                        reputation_score,
-                        uptime_percentage: telemetry.uptime_percentage,
-                        recent_performance: telemetry.recent_performance,
-                        network_contribution: telemetry.network_contribution,
-                    }
-                })
-                .collect();
-
-            // Record reputation scores
-            let reputation_scores: HashMap<[u8; 32], i32> = candidates
-                .iter()
-                .map(|c| (c.id, c.reputation_score))
-                .collect();
-            metrics.record_reputation_scores(&reputation_scores);
-
-            let network_state = NetworkState {
-                congestion_level: 0.3,
-                avg_block_time_ms: 200.0,
-                active_validators: active.len(),
-                total_stake: config.validators.iter().map(|v| v.stake).sum(),
-                current_round: slot,
-                recent_tx_volume: 1000,
-            };
-
-            match l1_ai.read().select_validator(&candidates, &network_state) {
-                Ok(result) => {
+            // Use DGBDT engine for fair selection
+            let engine = dgbdt_engine.read();
+            match engine.select_verifiers(slot, &validator_metrics, 0, 0) {
+                Ok(selection) => {
                     let latency_us = start.elapsed().as_micros() as u64;
-                    // Confidence already scaled as i64
-                    let confidence_scaled = (result.confidence_score * 10000.0) as i64;
-                    metrics.record_ai_selection_success(confidence_scaled, latency_us);
-                    metrics.record_validator_selected(&result.selected_validator);
+                    
+                    // Record metrics
+                    let reputation_scores: HashMap<[u8; 32], i32> = selection
+                        .selection_scores
+                        .iter()
+                        .map(|(id, score)| (*id, *score))
+                        .collect();
+                    metrics.record_reputation_scores(&reputation_scores);
+                    metrics.record_ai_selection_success(8000, latency_us); // Default confidence
+                    metrics.record_validator_selected(&selection.primary);
 
                     info!(
-                        "L1 AI selected validator: {} (confidence: {:.2}, latency: {}µs)",
-                        hex::encode(result.selected_validator),
-                        result.confidence_score,
+                        "DGBDT selected validator: {} (latency: {}µs)",
+                        hex::encode(selection.primary),
                         latency_us
                     );
-                    Some(result.selected_validator)
+                    Some(selection.primary)
                 }
                 Err(e) => {
                     metrics.record_ai_selection_fallback();
-                    warn!("L1 AI selection failed: {e}, falling back to simple selection");
+                    warn!("DGBDT selection failed: {e}, falling back to round-robin");
                     Self::fallback_proposer(&active, slot)
                 }
             }
-        } else {
-            Self::fallback_proposer(&active, slot)
-        }
-    }
-
-    /// Calculate reputation score (0-10000) from telemetry data
-    #[cfg(feature = "ai_l1")]
-    fn calculate_reputation_from_telemetry(telemetry: &ippan_storage::ValidatorTelemetry) -> i32 {
-        // Calculate based on various factors
-        let proposal_rate = if telemetry.rounds_active > 0 {
-            (telemetry.blocks_proposed * 10000 / telemetry.rounds_active).min(10000) as i32
-        } else {
-            5000
-        };
-
-        let verification_rate = if telemetry.rounds_active > 0 {
-            (telemetry.blocks_verified * 1000 / telemetry.rounds_active).min(10000) as i32
-        } else {
-            5000
-        };
-
-        let latency_score =
-            ((200_000 - telemetry.avg_latency_us.min(200_000)) * 10000 / 200_000) as i32;
-        let slash_penalty = 10000 - (telemetry.slash_count * 1000).min(10000) as i32;
-        let uptime_score = (telemetry.uptime_percentage * 100.0) as i32;
-        let performance_score = (telemetry.recent_performance * 10000.0) as i32;
-
-        // Weighted average
-        let score = (proposal_rate * 25
-            + verification_rate * 20
-            + latency_score * 15
-            + slash_penalty * 20
-            + uptime_score * 10
-            + performance_score * 10)
-            / 100;
-
-        score.clamp(0, 10000)
-    }
-
-    #[cfg(not(feature = "ai_l1"))]
-    fn select_proposer_no_ai(
-        config: &PoAConfig,
-        _round_consensus: &Arc<RwLock<RoundConsensus>>,
-        slot: u64,
-    ) -> Option<[u8; 32]> {
-        let active: Vec<_> = config
-            .validators
-            .iter()
-            .filter(|v| v.is_active)
-            .map(|v| v.id)
-            .collect();
-        if active.is_empty() {
-            None
         } else {
             Self::fallback_proposer(&active, slot)
         }
@@ -739,17 +663,14 @@ impl PoAConsensus {
 
     pub fn get_state(&self) -> ConsensusState {
         let slot = *self.current_slot.read();
-        #[cfg(feature = "ai_l1")]
         let proposer = Self::select_proposer(
             &self.config,
             &self.round_consensus,
             slot,
-            &self.l1_ai_consensus,
+            &self.dgbdt_engine,
             &self.telemetry_manager,
             &self.metrics,
         );
-        #[cfg(not(feature = "ai_l1"))]
-        let proposer = Self::select_proposer_no_ai(&self.config, &self.round_consensus, slot);
 
         ConsensusState {
             current_slot: slot,
@@ -781,110 +702,10 @@ impl PoAConsensus {
         info!("Removed validator {}", hex::encode(id));
     }
 
-    #[cfg(feature = "ai_l1")]
-    pub fn load_ai_models(
-        &self,
-        validator_model: Option<ippan_ai_core::GBDTModel>,
-        fee_model: Option<ippan_ai_core::GBDTModel>,
-        health_model: Option<ippan_ai_core::GBDTModel>,
-        ordering_model: Option<ippan_ai_core::GBDTModel>,
-    ) -> Result<(), String> {
-        self.l1_ai_consensus.write().load_models(
-            validator_model,
-            fee_model,
-            health_model,
-            ordering_model,
-        )
-    }
-
-    #[cfg(feature = "ai_l1")]
-    pub fn get_ai_config(&self) -> L1AIConfig {
-        self.l1_ai_consensus.read().config.clone()
-    }
-
-    #[cfg(feature = "ai_l1")]
-    pub fn update_ai_config(&self, config: L1AIConfig) {
-        self.l1_ai_consensus.write().config = config;
-        info!("L1 AI consensus configuration updated");
-    }
-
-    /// Enable hot-reload for GBDT models
-    ///
-    /// Starts a background watcher that monitors model files and reloads them when changed.
-    /// Models are checked every `check_interval`.
-    #[cfg(feature = "ai_l1")]
-    pub fn enable_model_hot_reload(
-        &mut self,
-        validator_model_path: Option<std::path::PathBuf>,
-        fee_model_path: Option<std::path::PathBuf>,
-        health_model_path: Option<std::path::PathBuf>,
-        ordering_model_path: Option<std::path::PathBuf>,
-        check_interval: Duration,
-    ) -> Result<()> {
-        let l1_ai = self.l1_ai_consensus.clone();
-
-        let reloader = Arc::new(model_reload::ModelReloader::new(move |update| {
-            match update {
-                model_reload::ModelUpdate::Validator(model) => {
-                    l1_ai.write().validator_selection_model = Some(model);
-                    info!("Hot-reloaded validator selection model");
-                }
-                model_reload::ModelUpdate::Fee(model) => {
-                    l1_ai.write().fee_optimization_model = Some(model);
-                    info!("Hot-reloaded fee optimization model");
-                }
-                model_reload::ModelUpdate::Health(model) => {
-                    l1_ai.write().network_health_model = Some(model);
-                    info!("Hot-reloaded network health model");
-                }
-                model_reload::ModelUpdate::Ordering(model) => {
-                    l1_ai.write().block_ordering_model = Some(model);
-                    info!("Hot-reloaded block ordering model");
-                }
-            }
-            Ok(())
-        }));
-
-        // Configure paths
-        let mut reloader_mut = Arc::try_unwrap(reloader).unwrap_or_else(|arc| (*arc).clone());
-
-        if let Some(path) = validator_model_path {
-            reloader_mut.set_validator_model_path(path);
-        }
-        if let Some(path) = fee_model_path {
-            reloader_mut.set_fee_model_path(path);
-        }
-        if let Some(path) = health_model_path {
-            reloader_mut.set_health_model_path(path);
-        }
-        if let Some(path) = ordering_model_path {
-            reloader_mut.set_ordering_model_path(path);
-        }
-
-        let reloader = Arc::new(reloader_mut);
-
-        // Start the watcher
-        reloader.clone().start_watcher(check_interval);
-
-        self.model_reloader = Some(reloader);
-
-        info!(
-            "Model hot-reload enabled with check interval: {:?}",
-            check_interval
-        );
-        Ok(())
-    }
-
-    /// Manually trigger a reload of all models
-    #[cfg(feature = "ai_l1")]
-    pub async fn reload_models_now(&self) -> Result<()> {
-        if let Some(reloader) = &self.model_reloader {
-            reloader.force_reload_all().await?;
-            info!("Manually triggered model reload");
-        } else {
-            warn!("Model hot-reload is not enabled");
-        }
-        Ok(())
+    /// Update DGBDT model weights (for adaptive learning)
+    pub fn update_dgbdt_weights(&self, factor: &str, new_weight: i64) {
+        self.dgbdt_engine.write().update_weights(factor, new_weight);
+        info!("DGBDT model weights updated: {} = {}", factor, new_weight);
     }
 }
 

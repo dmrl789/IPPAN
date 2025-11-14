@@ -11,7 +11,7 @@ use tokio::time::interval;
 use tracing::{error, info, warn};
 
 #[cfg(feature = "ai_l1")]
-use ippan_ai_core::gbdt::GBDTModel;
+use ippan_ai_core::GBDTModel;
 
 /// Model reloader watches for model file changes and hot-reloads them
 #[cfg(feature = "ai_l1")]
@@ -236,7 +236,7 @@ impl ModelReloader {
 #[cfg(feature = "ai_l1")]
 mod tests {
     use super::*;
-    use ippan_ai_core::gbdt::{Node, Tree};
+    use ippan_ai_core::{GBDTModel, gbdt_legacy::{Node, Tree}};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
     use tokio::fs::write;

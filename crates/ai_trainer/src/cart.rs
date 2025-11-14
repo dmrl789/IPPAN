@@ -3,7 +3,7 @@
 //! Implements deterministic exact-greedy decision tree construction
 //! with fixed-point arithmetic only.
 
-use ippan_ai_core::gbdt::{Node, Tree};
+use ippan_ai_core::gbdt_legacy::{Node, Tree};
 use std::collections::BTreeMap;
 
 use crate::deterministic::SplitTieBreaker;
@@ -137,12 +137,12 @@ impl CartBuilder {
             None => {
                 // No valid split, create leaf
                 nodes.push(Node {
-                    feature_index: 0,
-                    threshold: 0,
-                    left: 0,
-                    right: 0,
-                    value: Some(leaf_value),
-                });
+                feature_index: 0,
+                threshold: 0,
+                left: 0,
+                right: 0,
+                value: Some(leaf_value),
+            });
                 return current_idx;
             }
         };
