@@ -80,7 +80,7 @@ pub enum DataType {
     Binary,
     /// Structured JSON
     Json,
-    /// Generic numeric type (e.g., f32)
+    /// Generic numeric type (e.g., 32-bit float)
     Numeric,
     /// 32-bit integer
     Int32,

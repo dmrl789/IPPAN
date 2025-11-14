@@ -31,8 +31,9 @@
 // use fixed-point arithmetic (fixed.rs) or integer types.
 #![deny(clippy::float_arithmetic)]
 #![deny(clippy::cast_precision_loss)]
-// Note: f32/f64 types are still allowed for deserialization and testing,
-// but arithmetic operations on them will cause compilation errors.
+// Note: 32-bit and 64-bit floating primitives are still allowed for
+// deserialization and testing, but arithmetic operations on them will cause
+// compilation errors.
 
 pub mod config;
 pub mod deployment;
@@ -82,8 +83,8 @@ pub use deterministic_gbdt::{
     ValidatorFeatures,
 };
 pub use fixed::{
-    add, clamp_i64, cmp_fixed, div_fixed, from_f64_lossy, hash_fixed, hash_fixed_slice, mul_fixed,
-    quantize_i64, sub, to_fixed, Fixed, SCALE as FIXED_SCALE,
+    add, clamp_i64, cmp_fixed, div_fixed, hash_fixed, hash_fixed_slice, mul_fixed, quantize_i64, sub,
+    to_fixed, reject_float_input, Fixed, SCALE as FIXED_SCALE,
 };
 pub use fixed_point::FixedPoint;
 

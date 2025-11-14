@@ -1,8 +1,8 @@
 #![cfg(feature = "deterministic_math")]
 
 use ippan_ai_core::{
-    clamp_i64, cmp_fixed, div_fixed, from_f64_lossy, mul_fixed, quantize_i64, sub, to_fixed, Fixed,
-    FIXED_SCALE,
+    clamp_i64, cmp_fixed, div_fixed, mul_fixed, quantize_i64, reject_float_input, sub, to_fixed,
+    Fixed, FIXED_SCALE,
 };
 use std::cmp::Ordering;
 
@@ -46,8 +46,8 @@ fn cmp_fixed_orders_values() {
 
 #[test]
 #[should_panic(expected = "floating-point inputs are forbidden")]
-fn from_f64_lossy_panics() {
-    let _ = from_f64_lossy(1.23);
+fn reject_float_input_panics() {
+    let _ = reject_float_input(1.23);
 }
 
 #[test]
