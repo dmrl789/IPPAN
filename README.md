@@ -12,6 +12,8 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - **Web Explorer**: Hosted blockchain explorer at https://ippan.com/explorer for transaction and block visibility
 - **Production Ready**: Docker, systemd, and CI/CD configurations
 
+> **Single-branch development**: All day-to-day work lands directly on `main`. Temporary topic branches should remain short-lived and are deleted after their changes fast-forward onto `main`.
+
 ## 🧭 IPPAN Codebase Readiness Dashboard
 
 *(Snapshot: November 2025)*
@@ -162,13 +164,13 @@ The command queries `/health`, `/status`, and `/peers` on every target, prints a
 ### Versioning & Release Channels
 
 - **Semantic versioning**: Production releases are tagged as `vMAJOR.MINOR.PATCH` and published through `.github/workflows/release.yml`.
-- **Branch policy**: Feature work lands on topic branches → `develop`; `main` is always releasable and only updated through reviewed pull requests once CI passes.
+- **Branch policy**: All development lands directly on `main`. Temporary topic branches are allowed only for short experiments and must be merged via fast-forward updates to `main` after CI succeeds.
 - **Promotion flow**: Dispatching the `Release` workflow with the target tag builds images, signs artifacts, and pushes signed tags back to the repository and GHCR.
-- **Hotfixes**: Apply critical fixes from `hotfix/*` directly to `main`, tag a patch release, then back-merge to `develop`.
+- **Hotfixes**: Apply critical fixes from `hotfix/*` directly to `main`, tag a patch release, and communicate follow-up tasks via issues/CHANGELOG (no `develop` back-merges).
 
 ### Continuous Integration Workflows
 
-- **CI pipeline** (`.github/workflows/ci.yml`): Runs on every push/PR to `main` and `develop`, executing Rust formatting, `cargo check`, `cargo build`, `cargo clippy`, targeted AI/DLC tests, plus Gateway and Unified UI lint/build checks.
+- **CI pipeline** (`.github/workflows/ci.yml`): Runs on every push/PR to `main`, executing Rust formatting, `cargo check`, `cargo build`, `cargo clippy`, targeted AI/DLC tests, plus Gateway and Unified UI lint/build checks.
 - **Extended test matrix** (`test-suite.yml`, `build.yml`): Provides nightly stress builds and integration suites for long-running validations before release.
 - **Deployment automation** (`deploy.yml`, `deploy-ippan-full-stack.yml`, `prod-deploy.yml`): Builds production images and promotes them to infrastructure once CI is green.
 - **Quality gates**: Workflows must report success before `main` merges, and releases require `Release` plus deployment workflows to complete without manual retries.
