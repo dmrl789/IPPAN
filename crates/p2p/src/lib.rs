@@ -15,6 +15,7 @@
 //!
 //! Used by IPPAN RPC services, gateway nodes, and consensus layers.
 
+pub mod ipndht;
 pub mod libp2p_network;
 pub mod parallel_gossip;
 
@@ -22,6 +23,7 @@ pub use libp2p_network::{
     Libp2pCommand, Libp2pConfig, Libp2pEvent, Libp2pNetwork, DEFAULT_GOSSIP_TOPICS,
 };
 
+pub use ipndht::IpnDhtService;
 pub use parallel_gossip::{
     DagVertexAnnouncement, GossipConfig, GossipError, GossipMessage, GossipMetricsSnapshot,
     GossipPayload, GossipTopic, ParallelGossipNetwork,
