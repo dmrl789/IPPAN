@@ -2,9 +2,11 @@
 //!
 //! A comprehensive CLI tool for interacting with IPPAN nodes.
 
-use anyhow::Result;
-use clap::{Parser, Subcommand};
-use serde_json::Value;
+use anyhow::{Context, Result};
+use clap::{Args, Parser, Subcommand};
+use serde_json::{Map, Value};
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "ippan-cli")]
@@ -46,6 +48,8 @@ enum Commands {
         #[command(subcommand)]
         action: ValidatorCommands,
     },
+    /// Send an L1 payment via the node RPC
+    Pay(PayCommand),
 }
 
 #[derive(Subcommand)]
@@ -129,6 +133,34 @@ enum ValidatorCommands {
     },
 }
 
+#[derive(Args)]
+struct PayCommand {
+    /// Sender address (Base58Check or hex)
+    #[arg(long)]
+    from: String,
+    /// Recipient address
+    #[arg(long)]
+    to: String,
+    /// Amount in atomic IPN units (yocto-IPN)
+    #[arg(long)]
+    amount: u128,
+    /// Signing key hex string (32 bytes)
+    #[arg(long, conflicts_with = "key_file", value_name = "HEX")]
+    signing_key_hex: Option<String>,
+    /// Path to file containing the signing key hex
+    #[arg(long, value_name = "PATH")]
+    key_file: Option<PathBuf>,
+    /// Optional fee limit (atomic units)
+    #[arg(long)]
+    fee: Option<u128>,
+    /// Explicit nonce (otherwise fetched from node)
+    #[arg(long)]
+    nonce: Option<u64>,
+    /// Optional memo/topic
+    #[arg(long)]
+    memo: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -141,6 +173,7 @@ async fn main() -> Result<()> {
         Commands::Transaction { action } => handle_tx_commands(action, &cli.rpc_url).await,
         Commands::Query { action } => handle_query_commands(action, &cli.rpc_url).await,
         Commands::Validator { action } => handle_validator_commands(action, &cli.rpc_url).await,
+        Commands::Pay(cmd) => handle_pay_command(cmd, &cli.rpc_url).await,
     }
 }
 
@@ -321,4 +354,79 @@ async fn handle_validator_commands(cmd: ValidatorCommands, rpc_url: &str) -> Res
     }
 
     Ok(())
+}
+
+async fn handle_pay_command(cmd: PayCommand, rpc_url: &str) -> Result<()> {
+    let PayCommand {
+        from,
+        to,
+        amount,
+        signing_key_hex,
+        key_file,
+        fee,
+        nonce,
+        memo,
+    } = cmd;
+
+    let signing_key = if let Some(hex) = signing_key_hex {
+        hex
+    } else if let Some(path) = key_file {
+        fs::read_to_string(&path)
+            .with_context(|| format!("failed to read signing key file {}", path.display()))?
+            .trim()
+            .to_string()
+    } else {
+        anyhow::bail!("either --signing-key-hex or --key-file must be provided");
+    };
+
+    let mut payload = Map::new();
+    payload.insert("from".into(), Value::String(from));
+    payload.insert("to".into(), Value::String(to));
+    payload.insert("amount".into(), Value::String(amount.to_string()));
+    payload.insert(
+        "signing_key".into(),
+        Value::String(signing_key.trim().to_string()),
+    );
+
+    if let Some(fee_limit) = fee {
+        payload.insert("fee".into(), Value::String(fee_limit.to_string()));
+    }
+    if let Some(nonce_value) = nonce {
+        payload.insert(
+            "nonce".into(),
+            Value::Number(serde_json::Number::from(nonce_value)),
+        );
+    }
+    if let Some(memo_value) = memo {
+        payload.insert("memo".into(), Value::String(memo_value));
+    }
+    let payload_value = Value::Object(payload);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/tx/payment", rpc_url))
+        .json(&payload_value)
+        .send()
+        .await?;
+
+    let status = response.status();
+    let body = response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| Value::Null);
+
+    if status.is_success() {
+        if let Some(tx_hash) = body.get("tx_hash").and_then(|v| v.as_str()) {
+            println!("Payment accepted: {}", tx_hash);
+        } else {
+            println!("{}", serde_json::to_string_pretty(&body)?);
+        }
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "payment rejected (status {}): {}",
+            status,
+            serde_json::to_string_pretty(&body)?
+        )
+    }
 }

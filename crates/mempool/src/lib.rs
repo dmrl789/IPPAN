@@ -146,7 +146,7 @@ impl Mempool {
             validate_confidential_transaction(&tx)?;
         }
 
-        let fee = self.calculate_transaction_fee(&tx);
+        let fee = Self::estimate_fee(&tx);
         if fee > MAX_FEE_PER_TX {
             return Err(anyhow!(
                 "transaction fee {} exceeds maximum allowed {}",
@@ -446,7 +446,7 @@ impl Mempool {
         self.broadcast.write().remove(tx_hash);
     }
 
-    fn calculate_transaction_fee(&self, tx: &Transaction) -> u64 {
+    pub fn estimate_fee(tx: &Transaction) -> u64 {
         let base_fee = 1000;
         let mut size = 32 * 3
             + 8 * 2

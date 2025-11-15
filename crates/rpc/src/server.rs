@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -20,10 +21,13 @@ use ippan_consensus::PoAConsensus;
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, Storage};
+use ippan_types::address::{decode_address, encode_address};
 use ippan_types::time_service::ippan_time_now;
-use ippan_types::{Block, L2Commit, L2ExitRecord, L2Network, Transaction};
+use ippan_types::{Amount, Block, L2Commit, L2ExitRecord, L2Network, Transaction};
 use metrics_exporter_prometheus::PrometheusHandle;
+use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
 use tower::Layer;
 use tower::Service;
@@ -39,6 +43,10 @@ use crate::{HttpP2PNetwork, NetworkMessage};
 const RATE_LIMIT_PER_SECOND: u64 = 200;
 const CIRCUIT_BREAKER_FAILURE_THRESHOLD: usize = 5;
 const CIRCUIT_BREAKER_OPEN_SECS: u64 = 30;
+const MAX_MEMO_BYTES: usize = 256;
+const DEFAULT_PAYMENT_HISTORY_LIMIT: usize = 25;
+const MAX_PAYMENT_HISTORY_LIMIT: usize = 200;
+const PAYMENT_ENDPOINT: &str = "/tx/payment";
 
 /// Layer 2 configuration
 #[derive(Clone, Debug, Serialize)]
@@ -133,6 +141,319 @@ struct AccountResponse {
     balance: u64,
     nonce: u64,
     transactions: Vec<TransactionEnvelope>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    payments: Vec<PaymentView>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PaymentRequest {
+    from: String,
+    to: String,
+    #[serde(deserialize_with = "deserialize_u128_from_any")]
+    amount: u128,
+    #[serde(default, deserialize_with = "deserialize_option_u128_from_any")]
+    fee: Option<u128>,
+    #[serde(default)]
+    nonce: Option<u64>,
+    #[serde(default)]
+    memo: Option<String>,
+    #[serde(default)]
+    signing_key: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PaymentResponse {
+    tx_hash: String,
+    status: PaymentStatus,
+    from: String,
+    to: String,
+    nonce: u64,
+    amount_atomic: String,
+    fee_atomic: String,
+    timestamp: u64,
+    memo: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PaymentStatus {
+    AcceptedToMempool,
+    Finalized,
+}
+
+#[derive(Debug, Serialize)]
+struct PaymentView {
+    hash: String,
+    from: String,
+    to: String,
+    direction: PaymentDirection,
+    amount_atomic: String,
+    fee_atomic: String,
+    nonce: u64,
+    timestamp: u64,
+    memo: Option<String>,
+    status: PaymentStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum PaymentDirection {
+    Incoming,
+    Outgoing,
+    SelfTransfer,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PaymentHistoryQuery {
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct ApiError {
+    code: &'static str,
+    message: String,
+}
+
+impl ApiError {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+enum PaymentError {
+    #[error("signing key is required to submit a payment")]
+    MissingSigningKey,
+    #[error("invalid signing key: {0}")]
+    InvalidSigningKey(String),
+    #[error("invalid account address: {0}")]
+    InvalidAddress(String),
+    #[error("memo exceeds {0} bytes")]
+    MemoTooLong(usize),
+    #[error("amount must be greater than zero")]
+    ZeroAmount,
+    #[error("account not found")]
+    AccountNotFound,
+    #[error("failed to load account data: {0}")]
+    StorageFailure(String),
+    #[error("failed to derive nonce: {0}")]
+    NonceLookupFailed(String),
+    #[error("required fee {required} exceeds provided limit {provided}")]
+    FeeTooLow { required: u64, provided: u128 },
+    #[error("consensus not active")]
+    ConsensusUnavailable,
+    #[error("transaction signing failed: {0}")]
+    SigningFailed(String),
+    #[error("transaction submission failed: {0}")]
+    SubmissionFailed(String),
+}
+
+impl PaymentError {
+    fn status_and_code(&self) -> (StatusCode, &'static str) {
+        match self {
+            PaymentError::MissingSigningKey => (StatusCode::BAD_REQUEST, "missing_signing_key"),
+            PaymentError::InvalidSigningKey(_) => (StatusCode::BAD_REQUEST, "invalid_signing_key"),
+            PaymentError::InvalidAddress(_) => (StatusCode::BAD_REQUEST, "invalid_address"),
+            PaymentError::MemoTooLong(_) => (StatusCode::BAD_REQUEST, "memo_too_long"),
+            PaymentError::ZeroAmount => (StatusCode::BAD_REQUEST, "invalid_amount"),
+            PaymentError::AccountNotFound => (StatusCode::NOT_FOUND, "account_not_found"),
+            PaymentError::StorageFailure(_) => (StatusCode::INTERNAL_SERVER_ERROR, "storage_error"),
+            PaymentError::NonceLookupFailed(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "nonce_lookup_failed")
+            }
+            PaymentError::FeeTooLow { .. } => (StatusCode::BAD_REQUEST, "fee_too_low"),
+            PaymentError::ConsensusUnavailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, "consensus_unavailable")
+            }
+            PaymentError::SigningFailed(_) => (StatusCode::BAD_REQUEST, "signing_failed"),
+            PaymentError::SubmissionFailed(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "submission_failed")
+            }
+        }
+    }
+}
+
+struct BuiltPayment {
+    transaction: Transaction,
+    amount_atomic: u128,
+    fee_atomic: u64,
+    memo: Option<String>,
+    from: [u8; 32],
+    to: [u8; 32],
+}
+
+fn deserialize_u128_from_any<'de, D>(deserializer: D) -> Result<u128, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct U128Visitor;
+
+    impl<'de> Visitor<'de> for U128Visitor {
+        type Value = u128;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("an integer encoded as a number or string")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value as u128)
+        }
+
+        fn visit_u128<E>(self, value: u128) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            value
+                .trim()
+                .parse::<u128>()
+                .map_err(|err| de::Error::custom(format!("invalid integer: {err}")))
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_str(&value)
+        }
+    }
+
+    deserializer.deserialize_any(U128Visitor)
+}
+
+fn deserialize_option_u128_from_any<'de, D>(deserializer: D) -> Result<Option<u128>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct OptionVisitor;
+
+    impl<'de> Visitor<'de> for OptionVisitor {
+        type Value = Option<u128>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("an optional integer encoded as a number or string")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserialize_u128_from_any(deserializer).map(Some)
+        }
+    }
+
+    deserializer.deserialize_option(OptionVisitor)
+}
+
+fn format_atomic(value: u128) -> String {
+    value.to_string()
+}
+
+fn format_fee(value: u64) -> String {
+    format_atomic(value as u128)
+}
+
+fn clamp_history_limit(limit: Option<usize>) -> usize {
+    let requested = limit.unwrap_or(DEFAULT_PAYMENT_HISTORY_LIMIT);
+    requested.clamp(1, MAX_PAYMENT_HISTORY_LIMIT)
+}
+
+fn parse_signing_key_hex(raw: &str) -> Result<[u8; 32], PaymentError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(PaymentError::MissingSigningKey);
+    }
+    let normalized = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    let bytes =
+        hex::decode(normalized).map_err(|err| PaymentError::InvalidSigningKey(err.to_string()))?;
+    if bytes.len() != 32 {
+        return Err(PaymentError::InvalidSigningKey(format!(
+            "expected 32-byte key, got {} bytes",
+            bytes.len()
+        )));
+    }
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&bytes);
+    Ok(key)
+}
+
+fn normalize_memo(memo: Option<String>) -> Result<Option<String>, PaymentError> {
+    if let Some(raw) = memo {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        if trimmed.len() > MAX_MEMO_BYTES {
+            return Err(PaymentError::MemoTooLong(MAX_MEMO_BYTES));
+        }
+        return Ok(Some(trimmed.to_string()));
+    }
+    Ok(None)
+}
+
+impl PaymentView {
+    fn from_transaction(
+        tx: &Transaction,
+        perspective: Option<&[u8; 32]>,
+        status: PaymentStatus,
+    ) -> Self {
+        let hash = hex::encode(tx.hash());
+        let from = encode_address(&tx.from);
+        let to = encode_address(&tx.to);
+        let memo = tx.topics.first().cloned();
+        let direction = perspective
+            .map(|addr| PaymentDirection::from_perspective(tx, addr))
+            .unwrap_or(PaymentDirection::Outgoing);
+        let fee_atomic = format_fee(Mempool::estimate_fee(tx));
+
+        Self {
+            hash,
+            from,
+            to,
+            direction,
+            amount_atomic: format_atomic(tx.amount.atomic()),
+            fee_atomic,
+            nonce: tx.nonce,
+            timestamp: tx.timestamp.0,
+            memo,
+            status,
+        }
+    }
+}
+
+impl PaymentDirection {
+    fn from_perspective(tx: &Transaction, perspective: &[u8; 32]) -> Self {
+        if tx.from == tx.to {
+            PaymentDirection::SelfTransfer
+        } else if tx.from == *perspective {
+            PaymentDirection::Outgoing
+        } else if tx.to == *perspective {
+            PaymentDirection::Incoming
+        } else {
+            PaymentDirection::Outgoing
+        }
+    }
 }
 
 /// Optional filter parameters for L2 endpoints.
@@ -185,9 +506,14 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/version", get(handle_version))
         .route("/metrics", get(handle_metrics))
         .route("/tx", post(handle_submit_tx))
+        .route("/tx/payment", post(handle_payment_tx))
         .route("/tx/:hash", get(handle_get_transaction))
         .route("/block/:id", get(handle_get_block))
         .route("/account/:address", get(handle_get_account))
+        .route(
+            "/account/:address/payments",
+            get(handle_get_account_payments),
+        )
         .route("/peers", get(handle_get_peers))
         .route("/p2p/peers", get(handle_get_p2p_peers))
         .route("/p2p/blocks", post(handle_p2p_blocks))
@@ -406,6 +732,131 @@ async fn handle_submit_tx(
     }
 }
 
+async fn handle_payment_tx(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(request): Json<PaymentRequest>,
+) -> Result<Json<PaymentResponse>, (StatusCode, Json<ApiError>)> {
+    if let Err(err) = guard_request(&state, &addr, PAYMENT_ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, PAYMENT_ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    let built = match build_payment_transaction(&state, request) {
+        Ok(tx) => tx,
+        Err(err) => return Err(payment_error_response(&state, &addr, err).await),
+    };
+
+    let response = payment_response_from_built(&built);
+    let tx_for_consensus = built.transaction.clone();
+
+    if let Some(consensus) = &state.consensus {
+        if let Err(err) = consensus.submit_transaction(tx_for_consensus) {
+            return Err(payment_error_response(
+                &state,
+                &addr,
+                PaymentError::SubmissionFailed(err.to_string()),
+            )
+            .await);
+        }
+    } else {
+        return Err(
+            payment_error_response(&state, &addr, PaymentError::ConsensusUnavailable).await,
+        );
+    }
+
+    record_security_success(&state, &addr, PAYMENT_ENDPOINT).await;
+    Ok(Json(response))
+}
+
+fn build_payment_transaction(
+    state: &Arc<AppState>,
+    request: PaymentRequest,
+) -> Result<BuiltPayment, PaymentError> {
+    let from_bytes = decode_address(&request.from)
+        .map_err(|err| PaymentError::InvalidAddress(format!("from: {err}")))?;
+    let to_bytes = decode_address(&request.to)
+        .map_err(|err| PaymentError::InvalidAddress(format!("to: {err}")))?;
+
+    if request.amount == 0 {
+        return Err(PaymentError::ZeroAmount);
+    }
+
+    let memo = normalize_memo(request.memo)?;
+    let amount_atomic = request.amount;
+    let amount = Amount::from_atomic(amount_atomic);
+    let signing_key = request
+        .signing_key
+        .ok_or(PaymentError::MissingSigningKey)
+        .and_then(|key| parse_signing_key_hex(&key))?;
+
+    let nonce = if let Some(nonce) = request.nonce {
+        nonce
+    } else {
+        derive_next_nonce(state, &from_bytes)?
+    };
+
+    let mut tx = Transaction::new(from_bytes, to_bytes, amount, nonce);
+    if let Some(memo_value) = memo.clone() {
+        tx.set_topics(vec![memo_value.clone()]);
+    }
+
+    tx.sign(&signing_key)
+        .map_err(|err| PaymentError::SigningFailed(err))?;
+
+    let fee_atomic = Mempool::estimate_fee(&tx);
+    if let Some(limit) = request.fee {
+        if fee_atomic as u128 > limit {
+            return Err(PaymentError::FeeTooLow {
+                required: fee_atomic,
+                provided: limit,
+            });
+        }
+    }
+
+    Ok(BuiltPayment {
+        transaction: tx,
+        amount_atomic,
+        fee_atomic,
+        memo,
+        from: from_bytes,
+        to: to_bytes,
+    })
+}
+
+fn payment_response_from_built(built: &BuiltPayment) -> PaymentResponse {
+    PaymentResponse {
+        tx_hash: hex::encode(built.transaction.hash()),
+        status: PaymentStatus::AcceptedToMempool,
+        from: encode_address(&built.from),
+        to: encode_address(&built.to),
+        nonce: built.transaction.nonce,
+        amount_atomic: format_atomic(built.amount_atomic),
+        fee_atomic: format_fee(built.fee_atomic),
+        timestamp: built.transaction.timestamp.0,
+        memo: built.memo.clone(),
+    }
+}
+
+fn derive_next_nonce(state: &Arc<AppState>, address: &[u8; 32]) -> Result<u64, PaymentError> {
+    match state.storage.get_account(address) {
+        Ok(Some(account)) => Ok(account.nonce.saturating_add(1)),
+        Ok(None) => Err(PaymentError::AccountNotFound),
+        Err(err) => Err(PaymentError::StorageFailure(err.to_string())),
+    }
+}
+
+async fn payment_error_response(
+    state: &Arc<AppState>,
+    addr: &SocketAddr,
+    err: PaymentError,
+) -> (StatusCode, Json<ApiError>) {
+    let (status, code) = err.status_and_code();
+    let message = err.to_string();
+    record_security_failure(state, addr, PAYMENT_ENDPOINT, &message).await;
+    (status, Json(ApiError::new(code, message)))
+}
+
 async fn handle_get_transaction(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -542,6 +993,63 @@ async fn handle_get_account(
             error!("Failed fetching account {} for {}: {}", address, addr, err);
             record_security_failure(&state, &addr, "/account/:address", &err.to_string()).await;
             Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load account"))
+        }
+    }
+}
+
+async fn handle_get_account_payments(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(address): AxumPath<String>,
+    Query(query): Query<PaymentHistoryQuery>,
+) -> Result<Json<Vec<PaymentView>>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/account/:address/payments";
+
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    let address_bytes = match parse_hex_32(&address) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!(
+                "Invalid account address for payments from {}: {} ({})",
+                addr, address, err
+            );
+            record_security_failure(&state, &addr, ENDPOINT, "Invalid account address").await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid account address"));
+        }
+    };
+
+    let limit = clamp_history_limit(query.limit);
+
+    match state.storage.get_transactions_by_address(&address_bytes) {
+        Ok(mut transactions) => {
+            transactions.sort_by(|a, b| b.timestamp.0.cmp(&a.timestamp.0));
+            transactions.truncate(limit);
+            let views = transactions
+                .iter()
+                .map(|tx| {
+                    PaymentView::from_transaction(
+                        tx,
+                        Some(&address_bytes),
+                        PaymentStatus::Finalized,
+                    )
+                })
+                .collect();
+            record_security_success(&state, &addr, ENDPOINT).await;
+            Ok(Json(views))
+        }
+        Err(err) => {
+            error!(
+                "Failed fetching transactions for account payments {} ({}): {}",
+                address, addr, err
+            );
+            record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load account transactions",
+            ))
         }
     }
 }
@@ -948,6 +1456,7 @@ fn parse_block_identifier(input: &str) -> Option<BlockIdentifier> {
 }
 
 fn account_to_response(account: Account, transactions: Vec<Transaction>) -> AccountResponse {
+    let payments = build_payment_views(&transactions, &account.address);
     let transactions = transactions
         .into_iter()
         .map(|tx| TransactionEnvelope {
@@ -961,7 +1470,17 @@ fn account_to_response(account: Account, transactions: Vec<Transaction>) -> Acco
         balance: account.balance,
         nonce: account.nonce,
         transactions,
+        payments,
     }
+}
+
+fn build_payment_views(transactions: &[Transaction], perspective: &[u8; 32]) -> Vec<PaymentView> {
+    let mut views: Vec<_> = transactions
+        .iter()
+        .map(|tx| PaymentView::from_transaction(tx, Some(perspective), PaymentStatus::Finalized))
+        .collect();
+    views.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    views
 }
 
 #[derive(Clone)]
@@ -1226,7 +1745,8 @@ mod tests {
     use ippan_security::{SecurityConfig, SecurityManager};
     use ippan_storage::{ChainState, MemoryStorage, ValidatorTelemetry};
     use ippan_types::{
-        Amount, L2ExitStatus, L2NetworkStatus, RoundCertificate, RoundFinalizationRecord, RoundId,
+        address::encode_address, Amount, L2ExitStatus, L2NetworkStatus, RoundCertificate,
+        RoundFinalizationRecord, RoundId,
     };
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -1868,6 +2388,7 @@ mod tests {
         .expect("account ok");
         assert_eq!(ok.0.balance, 500);
         assert_eq!(ok.0.transactions.len(), 2);
+        assert_eq!(ok.0.payments.len(), 2);
 
         let missing = handle_get_account(
             State(state.clone()),
@@ -1886,6 +2407,125 @@ mod tests {
         .await
         .expect_err("bad request");
         assert_eq!(bad.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_payment_tx_success_path() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = PoAConfig::default();
+        config.validators.push(Validator {
+            id: sample_public_key([14u8; 32]),
+            address: sample_public_key([15u8; 32]),
+            stake: 1_000,
+            is_active: true,
+        });
+
+        let poa = PoAConsensus::new(config, storage.clone(), sample_public_key([16u8; 32]));
+        let mempool = poa.mempool();
+        let consensus = Arc::new(Mutex::new(poa));
+
+        let (tx_sender, mut rx) = mpsc::unbounded_channel();
+        let handle = ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool.clone());
+
+        let mut app_state = (*build_app_state(None, None)).clone();
+        app_state.storage = storage.clone();
+        app_state.consensus = Some(handle);
+        app_state.tx_sender = Some(tx_sender);
+        app_state.mempool = mempool.clone();
+        let state = Arc::new(app_state);
+
+        let signer = sample_private_key([42u8; 32]);
+        let from_public = signer.verifying_key().to_bytes();
+        state
+            .storage
+            .update_account(Account {
+                address: from_public,
+                balance: 10_000,
+                nonce: 3,
+            })
+            .expect("account");
+
+        let to_public = sample_public_key([43u8; 32]);
+        let request = PaymentRequest {
+            from: encode_address(&from_public),
+            to: encode_address(&to_public),
+            amount: 1_000,
+            fee: None,
+            nonce: None,
+            memo: Some("integration".into()),
+            signing_key: Some(hex::encode(signer.to_bytes())),
+        };
+
+        let addr: SocketAddr = "127.0.0.1:9400".parse().unwrap();
+        let response =
+            handle_payment_tx(State(state.clone()), ConnectInfo(addr), Json(request)).await;
+        let json = response.expect("payment ok").0;
+        assert_eq!(json.status, PaymentStatus::AcceptedToMempool);
+        assert_eq!(json.nonce, 4);
+        assert_eq!(json.memo.as_deref(), Some("integration"));
+
+        let dispatched = rx.recv().await.expect("consensus dispatch");
+        assert_eq!(dispatched.nonce, 4);
+    }
+
+    #[tokio::test]
+    async fn test_handle_payment_tx_missing_signing_key() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9401".parse().unwrap();
+        let request = PaymentRequest {
+            from: encode_address(&sample_public_key([30u8; 32])),
+            to: encode_address(&sample_public_key([31u8; 32])),
+            amount: 1,
+            fee: None,
+            nonce: Some(1),
+            memo: None,
+            signing_key: None,
+        };
+
+        let err = handle_payment_tx(State(state), ConnectInfo(addr), Json(request))
+            .await
+            .expect_err("missing key");
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_account_payments_endpoint() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9402".parse().unwrap();
+        let account_address = sample_public_key([60u8; 32]);
+        state
+            .storage
+            .update_account(Account {
+                address: account_address,
+                balance: 1_000,
+                nonce: 1,
+            })
+            .expect("account");
+
+        let outgoing = sample_transaction(account_address, sample_public_key([61u8; 32]), 1);
+        let incoming = sample_transaction(sample_public_key([62u8; 32]), account_address, 2);
+        state
+            .storage
+            .store_transaction(outgoing.clone())
+            .expect("outgoing");
+        state
+            .storage
+            .store_transaction(incoming.clone())
+            .expect("incoming");
+
+        let response = handle_get_account_payments(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryQuery { limit: Some(1) }),
+        )
+        .await
+        .expect("payments");
+        assert_eq!(response.0.len(), 1);
+        assert!(
+            response.0[0].hash == hex::encode(outgoing.hash())
+                || response.0[0].hash == hex::encode(incoming.hash())
+        );
     }
 
     #[tokio::test]
