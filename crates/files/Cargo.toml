@@ -1,0 +1,21 @@
+[package]
+name = "ippan-files"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+blake3 = "1.5"
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+parking_lot = "0.12"
+
+# IPPAN dependencies
+ippan-types = { path = "../types" }
+ippan-time = { path = "../time" }
+ippan-crypto = { path = "../crypto" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }

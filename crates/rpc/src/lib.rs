@@ -3,6 +3,11 @@
 //! helper plus shared types for peer snapshots consumed by explorers and tooling.
 //!
 pub mod server;
+pub mod files;
+
+#[cfg(test)]
+mod files_tests;
+
 pub use server::{start_server, AppState, L2Config};
 
 // Re-export types from ippan_p2p for convenience

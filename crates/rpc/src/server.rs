@@ -44,6 +44,9 @@ use hex::encode as hex_encode;
 
 use crate::{HttpP2PNetwork, NetworkMessage};
 
+// File descriptor types (imported for AppState)
+use ippan_files::{FileDhtService, FileStorage};
+
 const RATE_LIMIT_PER_SECOND: u64 = 200;
 const CIRCUIT_BREAKER_FAILURE_THRESHOLD: usize = 5;
 const CIRCUIT_BREAKER_OPEN_SECS: u64 = 30;
@@ -78,6 +81,10 @@ pub struct AppState {
     pub req_count: Arc<AtomicUsize>,
     pub security: Option<Arc<SecurityManager>>,
     pub metrics: Option<PrometheusHandle>,
+    /// File descriptor storage
+    pub file_storage: Option<Arc<dyn FileStorage>>,
+    /// File DHT service
+    pub file_dht: Option<Arc<dyn FileDhtService>>,
 }
 
 /// Consensus handle abstraction
@@ -570,7 +577,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/l2/config", get(handle_get_l2_config))
         .route("/l2/networks", get(handle_list_l2_networks))
         .route("/l2/commits", get(handle_list_l2_commits))
-        .route("/l2/exits", get(handle_list_l2_exits));
+        .route("/l2/exits", get(handle_list_l2_exits))
+        .route("/files/publish", post(crate::files::handle_publish_file))
+        .route("/files/:id", get(crate::files::handle_get_file));
 
     if let Some(static_root) = &state.unified_ui_dist {
         if Path::new(static_root).exists() {
