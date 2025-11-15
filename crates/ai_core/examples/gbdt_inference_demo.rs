@@ -3,8 +3,10 @@
 //! This example demonstrates the deterministic GBDT inference engine
 //! with zero floating-point operations.
 
-use ippan_ai_core::gbdt::{model::SCALE, Model, Node, Tree};
-use std::io::Write;
+use ippan_ai_core::{
+    fixed::Fixed,
+    gbdt::{model::SCALE, Model, Node, Tree},
+};
 use tempfile::NamedTempFile;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -45,11 +47,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (features, label) in test_cases {
         let score = model.score(&features);
+        let normalized = Fixed::from_micro(score);
         println!(
-            "   {} -> Score: {} (unscaled: {:.2})",
-            label,
-            score,
-            score as f64 / SCALE as f64
+            "   {} -> Score: {} (normalized: {})",
+            label, score, normalized
         );
     }
 

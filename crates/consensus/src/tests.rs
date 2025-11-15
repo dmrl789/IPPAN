@@ -292,6 +292,8 @@ async fn test_round_finalization() {
         consensus.finalization_interval,
         &consensus.config,
         &consensus.fee_collector,
+        &consensus.payment_engine,
+        &consensus.metrics,
     )
     .unwrap();
 
