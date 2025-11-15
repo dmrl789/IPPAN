@@ -18,12 +18,16 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::PoAConsensus;
+use ippan_l1_fees::FeePolicy;
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, Storage};
 use ippan_types::address::{decode_address, encode_address};
 use ippan_types::time_service::ippan_time_now;
-use ippan_types::{Amount, Block, L2Commit, L2ExitRecord, L2Network, Transaction};
+use ippan_types::{
+    Amount, Block, L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord,
+    RoundWindow, Transaction,
+};
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
@@ -134,6 +138,36 @@ struct TransactionEnvelope {
     transaction: Transaction,
 }
 
+#[derive(Debug, Serialize)]
+struct BlockWithFees {
+    block: Block,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fee_summary: Option<RoundFeeSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct RoundFeeSummary {
+    round: u64,
+    total_fees_atomic: String,
+    treasury_fees_atomic: String,
+    applied_payments: u64,
+    rejected_payments: u64,
+}
+
+impl RoundFeeSummary {
+    fn from_record(record: &RoundFinalizationRecord) -> Option<Self> {
+        let total = record.total_fees_atomic?;
+        let treasury = record.treasury_fees_atomic.unwrap_or(0);
+        Some(Self {
+            round: record.round,
+            total_fees_atomic: format_atomic(total),
+            treasury_fees_atomic: format_atomic(treasury),
+            applied_payments: record.applied_payments.unwrap_or(0),
+            rejected_payments: record.rejected_payments.unwrap_or(0),
+        })
+    }
+}
+
 /// Account lookup response payload with recent transaction history.
 #[derive(Debug, Serialize)]
 struct AccountResponse {
@@ -190,6 +224,8 @@ struct PaymentView {
     direction: PaymentDirection,
     amount_atomic: String,
     fee_atomic: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    total_cost_atomic: Option<String>,
     nonce: u64,
     timestamp: u64,
     memo: Option<String>,
@@ -425,7 +461,15 @@ impl PaymentView {
         let direction = perspective
             .map(|addr| PaymentDirection::from_perspective(tx, addr))
             .unwrap_or(PaymentDirection::Outgoing);
-        let fee_atomic = format_fee(Mempool::estimate_fee(tx));
+        let fee_required = FeePolicy::default().required_fee(tx);
+        let fee_atomic = format_fee(fee_required);
+        let fee_required_u128 = fee_required as u128;
+        let total_cost_atomic = match direction {
+            PaymentDirection::Outgoing | PaymentDirection::SelfTransfer => Some(format_atomic(
+                tx.amount.atomic().saturating_add(fee_required_u128),
+            )),
+            PaymentDirection::Incoming => None,
+        };
 
         Self {
             hash,
@@ -434,6 +478,7 @@ impl PaymentView {
             direction,
             amount_atomic: format_atomic(tx.amount.atomic()),
             fee_atomic,
+            total_cost_atomic,
             nonce: tx.nonce,
             timestamp: tx.timestamp.0,
             memo,
@@ -804,13 +849,13 @@ fn build_payment_transaction(
     tx.sign(&signing_key)
         .map_err(|err| PaymentError::SigningFailed(err))?;
 
-    let fee_atomic = Mempool::estimate_fee(&tx);
-    if let Some(limit) = request.fee {
-        if fee_atomic as u128 > limit {
-            return Err(PaymentError::FeeTooLow {
-                required: fee_atomic,
-                provided: limit,
-            });
+    let fee_policy = FeePolicy::default();
+    let fee_atomic = fee_policy.required_fee(&tx);
+    if let Err(err) = fee_policy.enforce_fee_limit(request.fee, fee_atomic) {
+        if let ippan_l1_fees::FeePolicyError::FeeBelowMinimum { required, provided } = err {
+            return Err(PaymentError::FeeTooLow { required, provided });
+        } else {
+            return Err(PaymentError::SubmissionFailed(err.to_string()));
         }
     }
 
@@ -903,7 +948,7 @@ async fn handle_get_block(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     AxumPath(id): AxumPath<String>,
-) -> Result<Json<Block>, (StatusCode, &'static str)> {
+) -> Result<Json<BlockWithFees>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/block/:id").await {
         return Err(deny_request(&state, &addr, "/block/:id", err).await);
     }
@@ -925,7 +970,8 @@ async fn handle_get_block(
     match block_result {
         Ok(Some(block)) => {
             record_security_success(&state, &addr, "/block/:id").await;
-            Ok(Json(block))
+            let response = block_with_fee_summary(&state.storage, block);
+            Ok(Json(response))
         }
         Ok(None) => {
             record_security_success(&state, &addr, "/block/:id").await;
@@ -1472,6 +1518,14 @@ fn account_to_response(account: Account, transactions: Vec<Transaction>) -> Acco
         transactions,
         payments,
     }
+}
+
+fn block_with_fee_summary(storage: &Arc<dyn Storage + Send + Sync>, block: Block) -> BlockWithFees {
+    let fee_summary = match storage.get_round_finalization(block.header.round) {
+        Ok(Some(record)) => RoundFeeSummary::from_record(&record),
+        _ => None,
+    };
+    BlockWithFees { block, fee_summary }
 }
 
 fn build_payment_views(transactions: &[Transaction], perspective: &[u8; 32]) -> Vec<PaymentView> {
@@ -2339,7 +2393,8 @@ mod tests {
         )
         .await
         .expect("block by hash");
-        assert_eq!(by_hash.0.header.round, 5);
+        assert_eq!(by_hash.0.block.header.round, 5);
+        assert!(by_hash.0.fee_summary.is_none());
 
         let by_height = handle_get_block(
             State(state.clone()),
@@ -2348,7 +2403,8 @@ mod tests {
         )
         .await
         .expect("block by height");
-        assert_eq!(by_height.0.header.round, 5);
+        assert_eq!(by_height.0.block.header.round, 5);
+        assert!(by_height.0.fee_summary.is_none());
 
         let bad = handle_get_block(
             State(state.clone()),
@@ -2358,6 +2414,56 @@ mod tests {
         .await
         .expect_err("bad identifier");
         assert_eq!(bad.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_block_includes_fee_summary() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9100".parse().unwrap();
+        let block = Block::new(vec![], vec![], 8, [4u8; 32]);
+        let block_hash = block.hash();
+        state
+            .storage
+            .store_block(block.clone())
+            .expect("store block");
+        let record = RoundFinalizationRecord {
+            round: 8,
+            window: RoundWindow {
+                id: 8,
+                start_us: IppanTimeMicros(0),
+                end_us: IppanTimeMicros(1),
+            },
+            ordered_tx_ids: vec![],
+            fork_drops: vec![],
+            state_root: [0u8; 32],
+            proof: RoundCertificate {
+                round: 8,
+                block_ids: vec![block_hash],
+                agg_sig: vec![],
+            },
+            total_fees_atomic: Some(5000),
+            treasury_fees_atomic: Some(2000),
+            applied_payments: Some(2),
+            rejected_payments: Some(1),
+        };
+        state
+            .storage
+            .store_round_finalization(record)
+            .expect("store record");
+
+        let response = handle_get_block(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(block_hash)),
+        )
+        .await
+        .expect("block");
+        let summary = response.0.fee_summary.expect("fee summary");
+        assert_eq!(summary.round, 8);
+        assert_eq!(summary.total_fees_atomic, format_atomic(5000));
+        assert_eq!(summary.treasury_fees_atomic, format_atomic(2000));
+        assert_eq!(summary.applied_payments, 2);
+        assert_eq!(summary.rejected_payments, 1);
     }
 
     #[tokio::test]
@@ -2526,6 +2632,20 @@ mod tests {
             response.0[0].hash == hex::encode(outgoing.hash())
                 || response.0[0].hash == hex::encode(incoming.hash())
         );
+    }
+
+    #[test]
+    fn payment_view_includes_total_cost_for_outgoing() {
+        let tx = sample_transaction([70u8; 32], sample_public_key([71u8; 32]), 3);
+        let outgoing = PaymentView::from_transaction(&tx, Some(&tx.from), PaymentStatus::Finalized);
+        let fee = FeePolicy::default().required_fee(&tx) as u128;
+        assert_eq!(
+            outgoing.total_cost_atomic.as_deref(),
+            Some(&format_atomic(tx.amount.atomic().saturating_add(fee)))
+        );
+
+        let incoming = PaymentView::from_transaction(&tx, Some(&tx.to), PaymentStatus::Finalized);
+        assert!(incoming.total_cost_atomic.is_none());
     }
 
     #[tokio::test]

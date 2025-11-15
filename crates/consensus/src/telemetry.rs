@@ -66,8 +66,8 @@ impl TelemetryManager {
                         stake: stakes.get(&id).copied().unwrap_or(0),
                         age_rounds: 1,
                         last_active_round: current_round,
-                        uptime_percentage_scaled: 10000, // 100%
-                        recent_performance_scaled: 10000, // 100%
+                        uptime_percentage_scaled: 10000,   // 100%
+                        recent_performance_scaled: 10000,  // 100%
                         network_contribution_scaled: 5000, // 50%
                     }
                 });
@@ -101,7 +101,8 @@ impl TelemetryManager {
         telemetry.blocks_proposed += 1;
         telemetry.last_active_round = current_round;
         // recent_performance = old * 0.9 + 0.1 = (old * 9000 + 1000) / 10000
-        telemetry.recent_performance_scaled = (telemetry.recent_performance_scaled * 9000 + 1000) / 10000;
+        telemetry.recent_performance_scaled =
+            (telemetry.recent_performance_scaled * 9000 + 1000) / 10000;
 
         // Persist to storage
         self.storage
@@ -164,10 +165,14 @@ impl TelemetryManager {
                 let activity_rate_scaled = (10000 / (rounds_since_active + 1)) as i64;
                 // uptime = old_uptime * 0.95 + activity_rate * 0.05
                 // = (old_uptime * 9500 + activity_rate_scaled * 5) / 10000
-                telemetry.uptime_percentage_scaled = ((telemetry.uptime_percentage_scaled * 9500 + activity_rate_scaled * 5) / 10000).min(10000);
+                telemetry.uptime_percentage_scaled = ((telemetry.uptime_percentage_scaled * 9500
+                    + activity_rate_scaled * 5)
+                    / 10000)
+                    .min(10000);
 
                 // Decay recent performance: perf = perf * 0.9
-                telemetry.recent_performance_scaled = ((telemetry.recent_performance_scaled * 9000) / 10000).max(0);
+                telemetry.recent_performance_scaled =
+                    ((telemetry.recent_performance_scaled * 9000) / 10000).max(0);
             }
 
             // Persist updates
@@ -208,7 +213,8 @@ impl TelemetryManager {
         if let Some(telemetry) = cache.get_mut(validator_id) {
             telemetry.slash_count += 1;
             // Slash penalty: recent_performance = recent_performance * 0.5
-            telemetry.recent_performance_scaled = ((telemetry.recent_performance_scaled * 5000) / 10000).max(0);
+            telemetry.recent_performance_scaled =
+                ((telemetry.recent_performance_scaled * 5000) / 10000).max(0);
             self.storage
                 .store_validator_telemetry(validator_id, telemetry)?;
             warn!(

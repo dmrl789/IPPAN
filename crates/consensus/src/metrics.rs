@@ -1,11 +1,9 @@
 //! Prometheus metrics for consensus and AI operations
 
+use crate::payments::{PaymentApplyErrorKind, PaymentRoundStats};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-/// Scale factor for fixed-point confidence scores (10000 = 100.00%)
-const CONFIDENCE_SCALE: i64 = 10000;
 
 /// Consensus metrics collector (fully deterministic, integer-only)
 pub struct ConsensusMetrics {
@@ -34,6 +32,12 @@ pub struct ConsensusMetrics {
     blocks_proposed: Arc<Mutex<u64>>,
     blocks_validated: Arc<Mutex<u64>>,
 
+    // Fee metrics
+    fee_total_atomic: Arc<Mutex<u128>>,
+    fee_treasury_atomic: Arc<Mutex<u128>>,
+    fee_validator_fees: Arc<Mutex<HashMap<String, u128>>>,
+    fee_failure_counts: Arc<Mutex<HashMap<PaymentApplyErrorKind, u64>>>,
+
     // Reputation metrics (scaled integers)
     avg_reputation_score: Arc<Mutex<i64>>, // Scaled 0-10000
     min_reputation_score: Arc<Mutex<i32>>,
@@ -58,6 +62,10 @@ impl ConsensusMetrics {
             rounds_finalized: Arc::new(Mutex::new(0)),
             blocks_proposed: Arc::new(Mutex::new(0)),
             blocks_validated: Arc::new(Mutex::new(0)),
+            fee_total_atomic: Arc::new(Mutex::new(0)),
+            fee_treasury_atomic: Arc::new(Mutex::new(0)),
+            fee_validator_fees: Arc::new(Mutex::new(HashMap::new())),
+            fee_failure_counts: Arc::new(Mutex::new(HashMap::new())),
             avg_reputation_score: Arc::new(Mutex::new(0)),
             min_reputation_score: Arc::new(Mutex::new(10000)),
             max_reputation_score: Arc::new(Mutex::new(0)),
@@ -138,6 +146,37 @@ impl ConsensusMetrics {
 
     pub fn record_block_validated(&self) {
         *self.blocks_validated.lock() += 1;
+    }
+
+    pub fn record_fee_stats(&self, stats: &PaymentRoundStats) {
+        if stats.applied == 0 && stats.rejected == 0 {
+            return;
+        }
+
+        {
+            let mut total = self.fee_total_atomic.lock();
+            *total = total.saturating_add(stats.total_fees);
+        }
+        {
+            let mut treasury = self.fee_treasury_atomic.lock();
+            *treasury = treasury.saturating_add(stats.treasury_total);
+        }
+
+        {
+            let mut per_validator = self.fee_validator_fees.lock();
+            for (validator, amount) in &stats.validator_fees {
+                let key = hex::encode(validator);
+                let entry = per_validator.entry(key).or_insert(0);
+                *entry = entry.saturating_add(*amount);
+            }
+        }
+
+        {
+            let mut failures = self.fee_failure_counts.lock();
+            for (kind, count) in &stats.failure_counts {
+                *failures.entry(*kind).or_insert(0) += *count as u64;
+            }
+        }
     }
 
     // Reputation metrics
@@ -249,9 +288,25 @@ impl ConsensusMetrics {
         *self.blocks_validated.lock()
     }
 
+    pub fn get_total_fees_atomic(&self) -> u128 {
+        *self.fee_total_atomic.lock()
+    }
+
+    pub fn get_treasury_fees_atomic(&self) -> u128 {
+        *self.fee_treasury_atomic.lock()
+    }
+
+    pub fn get_fee_validator_distribution(&self) -> HashMap<String, u128> {
+        self.fee_validator_fees.lock().clone()
+    }
+
+    pub fn get_fee_failure_counts(&self) -> HashMap<PaymentApplyErrorKind, u64> {
+        self.fee_failure_counts.lock().clone()
+    }
+
     /// Get average reputation score as scaled integer (0-10000 = 0%-100%)
     pub fn get_avg_reputation_score_scaled(&self) -> i64 {
-        // Already scaled by CONFIDENCE_SCALE (10000)
+        // Already scaled by 10000
         *self.avg_reputation_score.lock()
     }
 
@@ -302,7 +357,8 @@ impl ConsensusMetrics {
         let rate_scaled = self.get_ai_selection_success_rate_scaled();
         output.push_str(&format!(
             "ippan_ai_selection_success_rate {}.{}\n",
-            rate_scaled / 10000, (rate_scaled % 10000) / 100
+            rate_scaled / 10000,
+            (rate_scaled % 10000) / 100
         ));
 
         output.push_str("# HELP ippan_ai_confidence_avg Average AI confidence score (0-1)\n");
@@ -310,7 +366,8 @@ impl ConsensusMetrics {
         let conf_scaled = self.get_avg_ai_confidence_scaled();
         output.push_str(&format!(
             "ippan_ai_confidence_avg {}.{}\n",
-            conf_scaled / 10000, (conf_scaled % 10000) / 100
+            conf_scaled / 10000,
+            (conf_scaled % 10000) / 100
         ));
 
         output.push_str(
@@ -363,7 +420,8 @@ impl ConsensusMetrics {
         let reload_rate_scaled = self.get_model_reload_success_rate_scaled();
         output.push_str(&format!(
             "ippan_model_reload_success_rate {}.{}\n",
-            reload_rate_scaled / 10000, (reload_rate_scaled % 10000) / 100
+            reload_rate_scaled / 10000,
+            (reload_rate_scaled % 10000) / 100
         ));
 
         output.push_str(
@@ -397,6 +455,47 @@ impl ConsensusMetrics {
             self.get_blocks_validated()
         ));
 
+        // Fee metrics
+        output.push_str(
+            "# HELP ippan_fees_total_atomic Total L1 payment fees applied (atomic units)\n",
+        );
+        output.push_str("# TYPE ippan_fees_total_atomic counter\n");
+        output.push_str(&format!(
+            "ippan_fees_total_atomic {}\n",
+            self.get_total_fees_atomic()
+        ));
+
+        output.push_str(
+            "# HELP ippan_fees_treasury_atomic Total L1 fees routed to treasury (atomic units)\n",
+        );
+        output.push_str("# TYPE ippan_fees_treasury_atomic counter\n");
+        output.push_str(&format!(
+            "ippan_fees_treasury_atomic {}\n",
+            self.get_treasury_fees_atomic()
+        ));
+
+        output.push_str(
+            "# HELP ippan_fee_validator_total Fees earned by validators from L1 payments (atomic units)\n",
+        );
+        output.push_str("# TYPE ippan_fee_validator_total counter\n");
+        for (validator, amount) in self.get_fee_validator_distribution() {
+            output.push_str(&format!(
+                "ippan_fee_validator_total{{validator=\"{}\"}} {}\n",
+                validator, amount
+            ));
+        }
+
+        output.push_str(
+            "# HELP ippan_fee_application_failures_total Failed L1 fee applications grouped by reason\n",
+        );
+        output.push_str("# TYPE ippan_fee_application_failures_total counter\n");
+        for (reason, count) in self.get_fee_failure_counts() {
+            output.push_str(&format!(
+                "ippan_fee_application_failures_total{{reason=\"{:?}\"}} {}\n",
+                reason, count
+            ));
+        }
+
         // Reputation metrics
         output.push_str(
             "# HELP ippan_reputation_score_avg Average validator reputation score (0-10000)\n",
@@ -405,7 +504,8 @@ impl ConsensusMetrics {
         let rep_scaled = self.get_avg_reputation_score_scaled();
         output.push_str(&format!(
             "ippan_reputation_score_avg {}.{}\n",
-            rep_scaled / 10000, (rep_scaled % 10000) / 100
+            rep_scaled / 10000,
+            (rep_scaled % 10000) / 100
         ));
 
         output.push_str("# HELP ippan_reputation_score_min Minimum validator reputation score\n");

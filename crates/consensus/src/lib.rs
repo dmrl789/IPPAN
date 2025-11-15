@@ -11,6 +11,7 @@
 use anyhow::Result;
 use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
+use ippan_l1_fees::FeePolicy;
 use ippan_mempool::Mempool;
 use ippan_storage::Storage;
 use ippan_types::{
@@ -40,6 +41,7 @@ pub mod dgbdt;
 pub mod dlc;
 pub mod dlc_integration;
 pub mod hashtimer_integration;
+pub mod payments;
 pub mod shadow_verifier;
 
 // Economic and emission modules
@@ -199,6 +201,7 @@ pub struct PoAConsensus {
     pub telemetry_manager: Arc<telemetry::TelemetryManager>,
     pub model_reloader: Option<Arc<model_reload::ModelReloader>>,
     pub metrics: Arc<metrics::ConsensusMetrics>,
+    pub payment_engine: Arc<payments::PaymentApplier>,
 }
 
 impl PoAConsensus {
@@ -258,6 +261,10 @@ impl PoAConsensus {
             telemetry_manager,
             model_reloader: None,
             metrics,
+            payment_engine: Arc::new(payments::PaymentApplier::new(
+                FeePolicy::default(),
+                payments::TREASURY_ACCOUNT,
+            )),
         }
     }
 
@@ -294,6 +301,7 @@ impl PoAConsensus {
             telemetry_manager,
             metrics,
             dgbdt_engine,
+            payment_engine,
         ) = (
             self.is_running.clone(),
             self.current_slot.clone(),
@@ -308,6 +316,7 @@ impl PoAConsensus {
             self.telemetry_manager.clone(),
             self.metrics.clone(),
             self.dgbdt_engine.clone(),
+            self.payment_engine.clone(),
         );
 
         let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
@@ -323,6 +332,8 @@ impl PoAConsensus {
                     finalization_interval,
                     &config,
                     &fee_collector,
+                    &payment_engine,
+                    &metrics,
                 ) {
                     error!("Round finalization error: {e}");
                 }
@@ -407,14 +418,14 @@ impl PoAConsensus {
 
             // Convert telemetry to ValidatorMetrics for DGBDT
             let mut validator_metrics: HashMap<[u8; 32], dgbdt::ValidatorMetrics> = HashMap::new();
-            
+
             for validator in &config.validators {
                 if !validator.is_active {
                     continue;
                 }
-                
+
                 let telemetry = all_telemetry.get(&validator.id).unwrap();
-                
+
                 validator_metrics.insert(
                     validator.id,
                     dgbdt::ValidatorMetrics {
@@ -422,10 +433,15 @@ impl PoAConsensus {
                         blocks_verified: telemetry.blocks_verified,
                         rounds_active: telemetry.rounds_active,
                         avg_latency_us: telemetry.avg_latency_us,
-                        uptime_percentage: (telemetry.uptime_percentage_scaled as i64 * 1_000_000) / 10000,
+                        uptime_percentage: (telemetry.uptime_percentage_scaled as i64 * 1_000_000)
+                            / 10000,
                         slash_count: telemetry.slash_count,
-                        recent_performance: (telemetry.recent_performance_scaled as i64 * 1_000_000) / 10000,
-                        network_contribution: (telemetry.network_contribution_scaled as i64 * 1_000_000) / 10000,
+                        recent_performance: (telemetry.recent_performance_scaled as i64
+                            * 1_000_000)
+                            / 10000,
+                        network_contribution: (telemetry.network_contribution_scaled as i64
+                            * 1_000_000)
+                            / 10000,
                         stake_amount: validator.stake,
                     },
                 );
@@ -436,7 +452,7 @@ impl PoAConsensus {
             match engine.select_verifiers(slot, &validator_metrics, 0, 0) {
                 Ok(selection) => {
                     let latency_us = start.elapsed().as_micros() as u64;
-                    
+
                     // Record metrics
                     let reputation_scores: HashMap<[u8; 32], i32> = selection
                         .selection_scores
@@ -541,7 +557,9 @@ impl PoAConsensus {
         tracker: &Arc<RwLock<RoundTracker>>,
         interval: Duration,
         config: &PoAConfig,
-        _fee_collector: &Arc<RwLock<FeeCollector>>,
+        fee_collector: &Arc<RwLock<FeeCollector>>,
+        payment_engine: &Arc<payments::PaymentApplier>,
+        metrics: &Arc<metrics::ConsensusMetrics>,
     ) -> Result<()> {
         let (round_id, block_ids, start, end) = {
             let mut t = tracker.write();
@@ -595,6 +613,36 @@ impl PoAConsensus {
             |txid| conflicts.push(*txid),
         );
 
+        let mut tx_lookup = HashMap::new();
+        for block in &blocks {
+            for tx in &block.transactions {
+                tx_lookup.insert(tx.hash(), (tx.clone(), block.header.creator));
+            }
+        }
+
+        let mut payment_stats = payments::PaymentRoundStats::new(round_id);
+        for tx_id in &ordered {
+            if let Some((tx, proposer)) = tx_lookup.get(tx_id) {
+                match payment_engine.apply(storage, tx, proposer) {
+                    Ok(split) => payment_stats.record_success(tx, *proposer, split),
+                    Err(err) => {
+                        payment_stats.record_failure(&err);
+                        warn!(
+                            "Round {}: failed to apply payment {} due to {:?}",
+                            round_id,
+                            hex::encode(tx_id),
+                            err.kind()
+                        );
+                    }
+                }
+            }
+        }
+
+        if payment_stats.total_fees > 0 {
+            let mut collector = fee_collector.write();
+            collector.collect(ippan_types::Amount::from_atomic(payment_stats.total_fees));
+        }
+
         let cert = RoundCertificate {
             round: round_id,
             block_ids: block_ids.clone(),
@@ -635,6 +683,12 @@ impl PoAConsensus {
             fork_drops: conflicts,
             state_root,
             proof: cert.clone(),
+            total_fees_atomic: (payment_stats.total_fees > 0).then_some(payment_stats.total_fees),
+            treasury_fees_atomic: (payment_stats.treasury_total > 0)
+                .then_some(payment_stats.treasury_total),
+            applied_payments: (payment_stats.applied > 0).then_some(payment_stats.applied as u64),
+            rejected_payments: (payment_stats.rejected > 0)
+                .then_some(payment_stats.rejected as u64),
         };
         storage.store_round_finalization(record)?;
         info!(
@@ -642,6 +696,18 @@ impl PoAConsensus {
             round_id,
             hex::encode(state_root)
         );
+        if payment_stats.applied > 0 || payment_stats.rejected > 0 {
+            info!(
+                target: "fees",
+                round = round_id,
+                applied = payment_stats.applied,
+                rejected = payment_stats.rejected,
+                total_fees = payment_stats.total_fees,
+                treasury = payment_stats.treasury_total,
+                "Applied L1 payment fees"
+            );
+        }
+        metrics.record_fee_stats(&payment_stats);
 
         // DAG-Fair Emission
         if config.enable_dag_fair_emission {

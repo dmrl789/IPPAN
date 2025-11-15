@@ -11,6 +11,7 @@ integration-tests = []
 [dependencies]
 ippan-types = { path = "../types" }
 ippan-crypto = { path = "../crypto" }
+ippan-l1-fees = { path = "../l1_fees" }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }
 hex = { workspace = true }

@@ -236,7 +236,10 @@ impl ModelReloader {
 #[cfg(feature = "ai_l1")]
 mod tests {
     use super::*;
-    use ippan_ai_core::{GBDTModel, gbdt_legacy::{Node, Tree}};
+    use ippan_ai_core::{
+        gbdt_legacy::{Node, Tree},
+        GBDTModel,
+    };
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
     use tokio::fs::write;

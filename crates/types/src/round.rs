@@ -29,4 +29,12 @@ pub struct RoundFinalizationRecord {
     pub fork_drops: Vec<[u8; 32]>,
     pub state_root: [u8; 32],
     pub proof: RoundCertificate,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_fees_atomic: Option<u128>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub treasury_fees_atomic: Option<u128>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied_payments: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected_payments: Option<u64>,
 }

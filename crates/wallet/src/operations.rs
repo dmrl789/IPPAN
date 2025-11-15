@@ -8,6 +8,7 @@ use crate::errors::*;
 use crate::storage::WalletStorage;
 use crate::types::*;
 use chrono::TimeZone;
+use ippan_l1_fees::FeePolicy;
 use ippan_types::address::{decode_address, encode_address};
 use ippan_types::{Amount, Transaction};
 use std::convert::TryFrom;
@@ -264,40 +265,7 @@ impl WalletManager {
 
     /// Estimate a transaction fee consistent with mempool admission rules
     fn estimate_fee(&self, tx: &Transaction) -> u64 {
-        let base_fee = 1000u64;
-        let mut estimated_size = 0usize;
-
-        estimated_size += 32 + 32 + 32 + 8 + 8 + 64;
-        estimated_size += std::mem::size_of_val(&tx.hashtimer.timestamp_us);
-        estimated_size += tx.hashtimer.entropy.len();
-        estimated_size += std::mem::size_of_val(&tx.timestamp.0);
-        estimated_size += tx.topics.iter().map(|t| t.len()).sum::<usize>();
-
-        if let Some(env) = &tx.confidential {
-            estimated_size += env.enc_algo.len() + env.iv.len() + env.ciphertext.len();
-            estimated_size += env
-                .access_keys
-                .iter()
-                .map(|k| k.recipient_pub.len() + k.enc_key.len())
-                .sum::<usize>();
-        }
-
-        if let Some(proof) = &tx.zk_proof {
-            estimated_size += proof.proof.len();
-            estimated_size += proof
-                .public_inputs
-                .iter()
-                .map(|(k, v)| k.len() + v.len())
-                .sum::<usize>();
-        }
-
-        let size_fee = (estimated_size as u64).saturating_mul(10);
-        let mut fee = base_fee.saturating_add(size_fee);
-        const MAX_FEE_PER_TX: u64 = 10_000_000;
-        if fee > MAX_FEE_PER_TX {
-            fee = MAX_FEE_PER_TX;
-        }
-        fee
+        FeePolicy::default().required_fee(tx)
     }
 
     /// Get transaction history for an address

@@ -49,12 +49,10 @@ impl VerifierSet {
             .map(|(id, metrics)| (id.clone(), model.score_deterministic(metrics)))
             .collect();
 
-        scored.sort_by(
-            |a, b| match b.1.cmp(&a.1) {
-                Ordering::Equal => Self::compare_with_entropy(&seed_string, round, &a.0, &b.0),
-                other => other,
-            },
-        );
+        scored.sort_by(|a, b| match b.1.cmp(&a.1) {
+            Ordering::Equal => Self::compare_with_entropy(&seed_string, round, &a.0, &b.0),
+            other => other,
+        });
 
         let selection_count = max_set_size.max(1).min(scored.len());
 
@@ -359,9 +357,9 @@ mod tests {
         validators.insert(
             "val2".to_string(),
             ValidatorMetrics::new(
-                9500,  // 95% uptime (scaled by 10000)
-                1500,  // 15% latency (scaled by 10000)
-                9800,  // 98% honesty (scaled by 10000)
+                9500, // 95% uptime (scaled by 10000)
+                1500, // 15% latency (scaled by 10000)
+                9800, // 98% honesty (scaled by 10000)
                 80,
                 400,
                 Amount::from_micro_ipn(5_000_000),
@@ -371,9 +369,9 @@ mod tests {
         validators.insert(
             "val3".to_string(),
             ValidatorMetrics::new(
-                9700,  // 97% uptime (scaled by 10000)
-                1000,  // 10% latency (scaled by 10000)
-                9900,  // 99% honesty (scaled by 10000)
+                9700, // 97% uptime (scaled by 10000)
+                1000, // 10% latency (scaled by 10000)
+                9900, // 99% honesty (scaled by 10000)
                 90,
                 450,
                 Amount::from_micro_ipn(8_000_000),

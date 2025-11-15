@@ -18,10 +18,10 @@ use serde::{Deserialize, Serialize};
 pub struct ValidatorTelemetry {
     pub validator_id: [u8; 32],
     pub block_production_rate_scaled: i64, // Scaled by 10000
-    pub avg_block_size_scaled: i64, // Scaled by 10000
-    pub uptime_scaled: i64, // Scaled by 10000
-    pub network_latency_scaled: i64, // Scaled by 10000  
-    pub validation_accuracy_scaled: i64, // Scaled by 10000
+    pub avg_block_size_scaled: i64,        // Scaled by 10000
+    pub uptime_scaled: i64,                // Scaled by 10000
+    pub network_latency_scaled: i64,       // Scaled by 10000
+    pub validation_accuracy_scaled: i64,   // Scaled by 10000
     pub stake: u64,
     pub slashing_events: u32,
     pub last_activity: u64,
@@ -139,7 +139,8 @@ impl RoundConsensus {
             let stake_weight = stake_weights.get(validator).copied().unwrap_or(0) as i64;
             let reputation_weight = reputation as i64;
             // Combined weight: 70% stake, 30% reputation (scaled integer math)
-            let combined_weight = (stake_weight * 7000) / 10000 + (reputation_weight * 3000) / 10000;
+            let combined_weight =
+                (stake_weight * 7000) / 10000 + (reputation_weight * 3000) / 10000;
             selection_weights.insert(*validator, combined_weight);
         }
 
@@ -373,10 +374,10 @@ mod tests {
             let telemetry = ValidatorTelemetry {
                 validator_id: *validator,
                 block_production_rate_scaled: 10000 + (idx as i64 * 10000), // 1.0 -> 10000
-                avg_block_size_scaled: 20000 + (idx as i64 * 10000),         // 2.0 -> 20000
-                uptime_scaled: 990000 - (idx as i64 * 10000),                // 99.0 -> 990000
-                network_latency_scaled: 2000 + (idx as i64 * 100),           // 0.2 -> 2000, 0.01 -> 100
-                validation_accuracy_scaled: 950000,                           // 0.95 -> 950000
+                avg_block_size_scaled: 20000 + (idx as i64 * 10000),        // 2.0 -> 20000
+                uptime_scaled: 990000 - (idx as i64 * 10000),               // 99.0 -> 990000
+                network_latency_scaled: 2000 + (idx as i64 * 100), // 0.2 -> 2000, 0.01 -> 100
+                validation_accuracy_scaled: 950000,                // 0.95 -> 950000
                 stake: 1_000 + idx as u64 * 500,
                 slashing_events: idx as u32,
                 last_activity: 123_456 + idx as u64,

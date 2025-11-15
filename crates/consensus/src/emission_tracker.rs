@@ -37,7 +37,7 @@ pub struct ValidatorContribution {
     pub validator_id: [u8; 32],
     pub blocks_proposed: u32,
     pub blocks_verified: u32,
-    pub reputation_score: i64,  // Scaled by 10000 (0-10000 = 0%-100%)
+    pub reputation_score: i64, // Scaled by 10000 (0-10000 = 0%-100%)
 }
 
 /// Tracks emission state across rounds
@@ -156,7 +156,7 @@ impl EmissionTracker {
         for contribution in contributions {
             let mut weight = (contribution.blocks_proposed as u128 * 5)
                 + (contribution.blocks_verified as u128 * 3)
-                + contribution.reputation_score as u128;  // Already scaled integer
+                + contribution.reputation_score as u128; // Already scaled integer
             if weight == 0 {
                 weight = 1;
             }
@@ -231,7 +231,8 @@ impl EmissionTracker {
                     let ratio_scaled = numerator / (total_weight as u128);
                     Decimal::from_i128_with_scale(ratio_scaled as i128, 18)
                 } else {
-                    let equal_share_scaled = 1_000_000_000_000_000_000u128 / validators_count as u128;
+                    let equal_share_scaled =
+                        1_000_000_000_000_000_000u128 / validators_count as u128;
                     Decimal::from_i128_with_scale(equal_share_scaled as i128, 18)
                 };
 

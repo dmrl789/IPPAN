@@ -301,7 +301,10 @@ mod tests {
 
     #[test]
     fn test_create_full_participation_set() {
-        let validators = vec![(1000, [1u8; 32], 1, 2, 10000), (2000, [2u8; 32], 0, 3, 12000)];
+        let validators = vec![
+            (1000, [1u8; 32], 1, 2, 10000),
+            (2000, [2u8; 32], 0, 3, 12000),
+        ];
         let proposer_id = [1u8; 32];
         let parts = create_full_participation_set(&validators, proposer_id);
         assert_eq!(parts.len(), 2);

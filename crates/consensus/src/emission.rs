@@ -81,7 +81,7 @@ pub struct ValidatorParticipation {
     pub validator_id: [u8; 32],
     pub role: ValidatorRole,
     pub block_count: usize,
-    pub uptime_weight: i64,  // Scaled by 10000 (0-10000 = 0%-100%)
+    pub uptime_weight: i64, // Scaled by 10000 (0-10000 = 0%-100%)
     pub reputation_score: u16,
     pub stake_weight: u64,
 }
@@ -108,8 +108,8 @@ pub struct ValidatorReward {
     pub tx_fee_reward: u128,
     pub ai_commission_reward: u128,
     pub network_pool_dividend: u128,
-    pub role_multiplier: i64,        // Scaled by 10000
-    pub participation_score: i64,    // Scaled by 10000
+    pub role_multiplier: i64,     // Scaled by 10000
+    pub participation_score: i64, // Scaled by 10000
 }
 
 /// Compute per-round reward using halving schedule.
@@ -151,10 +151,10 @@ pub fn calculate_round_emission(round: u64, params: &DAGEmissionParams) -> Round
 /// Calculate participation score using integer arithmetic (scaled by 10000)
 fn calculate_participation_score(p: &ValidatorParticipation) -> i64 {
     // All scores scaled to 0-10000 range
-    let block_score = (p.block_count as i64).min(10000);  // Cap at 10000
-    let uptime_score = p.uptime_weight;  // Already scaled 0-10000
-    let reputation_score = (p.reputation_score as i64 * 10000) / 10000;  // Normalize to 0-10000
-    
+    let block_score = (p.block_count as i64).min(10000); // Cap at 10000
+    let uptime_score = p.uptime_weight; // Already scaled 0-10000
+    let reputation_score = (p.reputation_score as i64 * 10000) / 10000; // Normalize to 0-10000
+
     // Stake score: use sqrt approximation instead of ln (deterministic)
     // sqrt(stake_weight) scaled to 0-10000 range
     let stake_score = if p.stake_weight > 0 {
@@ -163,14 +163,17 @@ fn calculate_participation_score(p: &ValidatorParticipation) -> i64 {
     } else {
         0
     };
-    
+
     // Weighted combination: 40% blocks, 30% uptime, 20% reputation, 10% stake
-    (block_score * 4000 + uptime_score * 3000 + reputation_score * 2000 + stake_score * 1000) / 10000
+    (block_score * 4000 + uptime_score * 3000 + reputation_score * 2000 + stake_score * 1000)
+        / 10000
 }
 
 /// Integer square root for deterministic stake scoring
 fn integer_sqrt(n: u64) -> i64 {
-    if n == 0 { return 0; }
+    if n == 0 {
+        return 0;
+    }
     let mut x = n / 2 + 1;
     let mut y = (x + n / x) / 2;
     while y < x {

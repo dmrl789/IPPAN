@@ -260,9 +260,9 @@ async fn test_fairness_model_scoring() {
 
     // Low-quality validator
     let bad_metrics = ValidatorMetrics::new(
-        8000,  // 80% uptime (scaled by 10000)
-        3000,  // 30% latency (scaled by 10000)
-        7000,  // 70% honesty (scaled by 10000)
+        8000, // 80% uptime (scaled by 10000)
+        3000, // 30% latency (scaled by 10000)
+        7000, // 70% honesty (scaled by 10000)
         10,
         50,
         Amount::from_micro_ipn(1_000_000),
@@ -326,8 +326,8 @@ async fn test_full_consensus_cycle() {
     for i in 1..=5 {
         let metrics = ValidatorMetrics::new(
             9900 - (i as i64 * 100),  // 0.99 -> 9900, decrement by 100
-            500 + (i as i64 * 100),    // 0.05 -> 500, increment by 100
-            10000 - (i as i64 * 100),  // 1.0 -> 10000, decrement by 100
+            500 + (i as i64 * 100),   // 0.05 -> 500, increment by 100
+            10000 - (i as i64 * 100), // 1.0 -> 10000, decrement by 100
             100 * i,
             500 * i,
             Amount::from_micro_ipn(10_000_000 * i),
@@ -425,11 +425,11 @@ async fn test_long_run_consensus_simulation_stability() {
     let mut consensus = DlcConsensus::new(config);
 
     for i in 0..VALIDATOR_COUNT {
-        let uptime = 9400 + ((i % 7) as i64) * 50;   // 0.94 -> 9400, 0.005 -> 50
-        let latency = 100 + ((i % 5) as i64) * 20;  // 0.01 -> 100, 0.002 -> 20
+        let uptime = 9400 + ((i % 7) as i64) * 50; // 0.94 -> 9400, 0.005 -> 50
+        let latency = 100 + ((i % 5) as i64) * 20; // 0.01 -> 100, 0.002 -> 20
         let honesty = 9200 + ((i % 9) as i64) * 60; // 0.92 -> 9200, 0.006 -> 60
         let metrics = ValidatorMetrics::new(
-            uptime.min(9990),  // Already scaled, so 9990 = 99.9%
+            uptime.min(9990), // Already scaled, so 9990 = 99.9%
             latency,
             honesty.min(9990), // Already scaled, so 9990 = 99.9%
             50 + (i as u64 * 3),

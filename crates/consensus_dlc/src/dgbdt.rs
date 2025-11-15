@@ -33,7 +33,7 @@ pub struct ValidatorMetrics {
 impl Default for ValidatorMetrics {
     fn default() -> Self {
         Self {
-            uptime: 10000,  // 100%
+            uptime: 10000, // 100%
             latency: 0,
             honesty: 10000, // 100%
             blocks_proposed: 0,
@@ -84,9 +84,9 @@ impl ValidatorMetrics {
     /// Normalize metrics to 0-10000 range (integer arithmetic)
     pub fn to_normalized(&self) -> NormalizedMetrics {
         NormalizedMetrics {
-            uptime: self.uptime, // Already scaled
+            uptime: self.uptime,                                   // Already scaled
             latency_inv: (10000 - self.latency.min(10000)).max(0), // Invert latency
-            honesty: self.honesty, // Already scaled
+            honesty: self.honesty,                                 // Already scaled
             proposal_rate: if self.rounds_active > 0 {
                 (self.blocks_proposed as i64 * 10000) / self.rounds_active as i64
             } else {
@@ -202,13 +202,13 @@ impl FairnessModel {
     /// Load a D-GBDT model from a file path
     pub fn from_d_gbdt_file(path: &Path) -> Result<Self> {
         use ippan_ai_registry::d_gbdt::load_model_from_path;
-        
+
         let (model, _hash) = load_model_from_path(path)
             .map_err(|e| DlcError::Model(format!("Failed to load D-GBDT model: {}", e)))?;
-        
+
         Ok(Self::from_d_gbdt_model(model))
     }
-    
+
     /// Create a FairnessModel from a loaded D-GBDT model
     pub fn from_d_gbdt_model(model: ippan_ai_core::gbdt::Model) -> Self {
         let mut fairness = Self::new_default();
@@ -300,16 +300,16 @@ impl FairnessModel {
                 normalized.verification_rate,
                 normalized.stake_weight,
             ];
-            
+
             // Use the D-GBDT model for deterministic scoring
             let raw_score = model.score(&features);
-            
+
             // Normalize to 0-10000 range
             let normalized_score = (raw_score.abs() / 1000).min(10000);
-            
+
             return normalized_score;
         }
-        
+
         // Fall back to built-in simple model
         let normalized = metrics.to_normalized();
         let features = vec![
@@ -408,10 +408,7 @@ pub fn rank_validators(
         .collect();
 
     // Sort by score (descending), then by ID for deterministic tie-breaking
-    rankings.sort_by(|a, b| {
-        b.1.cmp(&a.1)
-            .then_with(|| a.0.cmp(&b.0))
-    });
+    rankings.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
     rankings
         .into_iter()
@@ -498,9 +495,9 @@ mod tests {
         validators.insert(
             "val2".to_string(),
             ValidatorMetrics::new(
-                9500,  // 0.95 * 10000
-                1500,  // 0.15 * 10000
-                9800,  // 0.98 * 10000
+                9500, // 0.95 * 10000
+                1500, // 0.15 * 10000
+                9800, // 0.98 * 10000
                 80,
                 400,
                 Amount::from_micro_ipn(5_000_000),

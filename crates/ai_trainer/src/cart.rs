@@ -118,9 +118,7 @@ impl CartBuilder {
         let leaf_value = self.calculate_leaf_value(indices);
 
         // Check stopping conditions
-        if depth >= self.config.max_depth
-            || indices.len() < 2 * self.config.min_samples_leaf
-        {
+        if depth >= self.config.max_depth || indices.len() < 2 * self.config.min_samples_leaf {
             nodes.push(Node {
                 feature_index: 0,
                 threshold: 0,
@@ -137,18 +135,19 @@ impl CartBuilder {
             None => {
                 // No valid split, create leaf
                 nodes.push(Node {
-                feature_index: 0,
-                threshold: 0,
-                left: 0,
-                right: 0,
-                value: Some(leaf_value),
-            });
+                    feature_index: 0,
+                    threshold: 0,
+                    left: 0,
+                    right: 0,
+                    value: Some(leaf_value),
+                });
                 return current_idx;
             }
         };
 
         // Split samples
-        let (left_indices, right_indices) = self.split_samples(indices, split.feature_idx, split.threshold);
+        let (left_indices, right_indices) =
+            self.split_samples(indices, split.feature_idx, split.threshold);
 
         if left_indices.len() < self.config.min_samples_leaf
             || right_indices.len() < self.config.min_samples_leaf
@@ -193,7 +192,8 @@ impl CartBuilder {
             let thresholds = self.get_quantized_thresholds(indices, feature_idx);
 
             for threshold in thresholds {
-                let (left_indices, right_indices) = self.split_samples(indices, feature_idx, threshold);
+                let (left_indices, right_indices) =
+                    self.split_samples(indices, feature_idx, threshold);
 
                 if left_indices.len() < self.config.min_samples_leaf
                     || right_indices.len() < self.config.min_samples_leaf
@@ -228,7 +228,7 @@ impl CartBuilder {
     fn get_quantized_thresholds(&self, indices: &[usize], feature_idx: usize) -> Vec<i64> {
         // Collect unique quantized values
         let mut values = BTreeMap::new();
-        
+
         for &idx in indices {
             let val = self.samples[idx].features[feature_idx];
             let quantized = (val / self.config.quant_step) * self.config.quant_step;
@@ -239,7 +239,12 @@ impl CartBuilder {
     }
 
     /// Split samples based on threshold
-    fn split_samples(&self, indices: &[usize], feature_idx: usize, threshold: i64) -> (Vec<usize>, Vec<usize>) {
+    fn split_samples(
+        &self,
+        indices: &[usize],
+        feature_idx: usize,
+        threshold: i64,
+    ) -> (Vec<usize>, Vec<usize>) {
         let mut left = Vec::new();
         let mut right = Vec::new();
 
@@ -280,7 +285,9 @@ impl CartBuilder {
             0
         };
 
-        gain_left.saturating_add(gain_right).saturating_sub(gain_parent)
+        gain_left
+            .saturating_add(gain_right)
+            .saturating_sub(gain_parent)
     }
 
     /// Sum gradients and hessians for a set of samples

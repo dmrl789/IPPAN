@@ -21,8 +21,7 @@ impl Dataset {
     /// Expected format: feature1,feature2,...,target
     /// All values must be integers (pre-scaled)
     pub fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let content = std::fs::read_to_string(path.as_ref())
-            .context("Failed to read CSV file")?;
+        let content = std::fs::read_to_string(path.as_ref()).context("Failed to read CSV file")?;
 
         let mut features = Vec::new();
         let mut targets = Vec::new();
@@ -52,12 +51,14 @@ impl Dataset {
 
             let mut row_features = Vec::with_capacity(feature_count);
             for (i, part) in parts.iter().take(feature_count).enumerate() {
-                let val = part.parse::<i64>()
-                    .with_context(|| format!("Line {}, column {}: invalid integer", line_idx + 1, i + 1))?;
+                let val = part.parse::<i64>().with_context(|| {
+                    format!("Line {}, column {}: invalid integer", line_idx + 1, i + 1)
+                })?;
                 row_features.push(val);
             }
 
-            let target = parts[feature_count].parse::<i64>()
+            let target = parts[feature_count]
+                .parse::<i64>()
                 .with_context(|| format!("Line {}: invalid target", line_idx + 1))?;
 
             features.push(row_features);
@@ -78,7 +79,7 @@ impl Dataset {
     /// Deterministically shuffle the dataset using seed
     pub fn shuffle(&mut self, seed: i64) {
         let n = self.features.len();
-        
+
         // Create index array with deterministic hash-based ordering
         let mut indices: Vec<(i64, usize)> = (0..n)
             .map(|i| {

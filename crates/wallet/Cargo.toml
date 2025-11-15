@@ -20,6 +20,7 @@ hex = { workspace = true }
 ippan-types = { path = "../types" }
 ippan-storage = { path = "../storage" }
 ippan-crypto = { path = "../crypto" }
+ippan-l1-fees = { path = "../l1_fees" }
 chrono = { workspace = true }
 uuid = { workspace = true }
 argon2 = { workspace = true }

@@ -23,6 +23,7 @@ ippan-governance = { path = "../governance" }
 ippan-consensus-dlc = { path = "../consensus_dlc" }
 ippan-ai-core = { path = "../ai_core", optional = true }
 ippan-ai-registry = { path = "../ai_registry", optional = true }
+ippan-l1-fees = { path = "../l1_fees" }
 
 anyhow = { workspace = true }
 thiserror = { workspace = true }

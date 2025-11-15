@@ -105,6 +105,10 @@ fn create_test_round_finalization(round: u64) -> RoundFinalizationRecord {
         fork_drops: vec![],
         state_root: [3u8; 32],
         proof: create_test_round_cert(round),
+        total_fees_atomic: None,
+        treasury_fees_atomic: None,
+        applied_payments: None,
+        rejected_payments: None,
     }
 }
 

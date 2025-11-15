@@ -73,7 +73,6 @@ impl ReputationScore {
         }
         (self.positive_actions as i64 * 10000) / total_actions as i64
     }
-
 }
 
 /// Reputation database for all validators

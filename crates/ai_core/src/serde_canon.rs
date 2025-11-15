@@ -14,7 +14,7 @@ use thiserror::Error;
 pub enum CanonicalError {
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    
+
     #[error("Invalid JSON structure: {0}")]
     InvalidStructure(String),
 }
@@ -24,11 +24,10 @@ pub fn to_canonical_json<T: Serialize>(value: &T) -> Result<String, CanonicalErr
     // First serialize to a serde_json::Value to normalize structure
     let json_value = serde_json::to_value(value)
         .map_err(|e| CanonicalError::SerializationError(e.to_string()))?;
-    
+
     // Then canonicalize and serialize
     let canonical = canonicalize_value(&json_value);
-    serde_json::to_string(&canonical)
-        .map_err(|e| CanonicalError::SerializationError(e.to_string()))
+    serde_json::to_string(&canonical).map_err(|e| CanonicalError::SerializationError(e.to_string()))
 }
 
 /// Canonicalize a JSON value by sorting all object keys recursively
@@ -80,13 +79,13 @@ mod tests {
             a_field: 1,
             z_field: "test".to_string(),
         };
-        
+
         let json = to_canonical_json(&data).unwrap();
         // Keys should be sorted alphabetically
         assert!(json.contains(r#""a_field":1"#));
         assert!(json.contains(r#""b_field":2"#));
         assert!(json.contains(r#""z_field":"test""#));
-        
+
         // Check order: a comes before b comes before z
         let a_pos = json.find("a_field").unwrap();
         let b_pos = json.find("b_field").unwrap();
@@ -102,7 +101,7 @@ mod tests {
             a_field: 1,
             z_field: "test".to_string(),
         };
-        
+
         let json = to_canonical_json(&data).unwrap();
         // No newlines or extra spaces
         assert!(!json.contains('\n'));
@@ -121,13 +120,13 @@ mod tests {
             b_field: 2,
             z_field: "test".to_string(),
         };
-        
+
         let hash1 = hash_canonical_hex(&data1).unwrap();
         let hash2 = hash_canonical_hex(&data2).unwrap();
-        
+
         // Same data, different field order -> same hash
         assert_eq!(hash1, hash2);
-        
+
         // Hash should be 64 hex chars (32 bytes)
         assert_eq!(hash1.len(), 64);
     }
@@ -144,10 +143,10 @@ mod tests {
             b_field: 3, // Different value
             z_field: "test".to_string(),
         };
-        
+
         let hash1 = hash_canonical_hex(&data1).unwrap();
         let hash2 = hash_canonical_hex(&data2).unwrap();
-        
+
         assert_ne!(hash1, hash2);
     }
 
@@ -158,20 +157,26 @@ mod tests {
             outer_b: Inner,
             outer_a: Inner,
         }
-        
+
         #[derive(Serialize)]
         struct Inner {
             inner_z: i64,
             inner_a: i64,
         }
-        
+
         let data = Nested {
-            outer_b: Inner { inner_z: 2, inner_a: 1 },
-            outer_a: Inner { inner_z: 4, inner_a: 3 },
+            outer_b: Inner {
+                inner_z: 2,
+                inner_a: 1,
+            },
+            outer_a: Inner {
+                inner_z: 4,
+                inner_a: 3,
+            },
         };
-        
+
         let json = to_canonical_json(&data).unwrap();
-        
+
         // Check outer keys are sorted
         let outer_a_pos = json.find("outer_a").unwrap();
         let outer_b_pos = json.find("outer_b").unwrap();

@@ -55,8 +55,8 @@ pub mod models;
 pub mod monitoring;
 pub mod production_config;
 pub mod security;
-pub mod serialization;
 pub mod serde_canon;
+pub mod serialization;
 pub mod tests;
 pub mod types;
 pub mod validation;
@@ -83,13 +83,16 @@ pub use deterministic_gbdt::{
     ValidatorFeatures,
 };
 pub use fixed::{
-    add, clamp_i64, cmp_fixed, div_fixed, hash_fixed, hash_fixed_slice, mul_fixed, quantize_i64, sub,
-    to_fixed, reject_float_input, Fixed, SCALE as FIXED_SCALE,
+    add, clamp_i64, cmp_fixed, div_fixed, hash_fixed, hash_fixed_slice, mul_fixed, quantize_i64,
+    reject_float_input, sub, to_fixed, Fixed, SCALE as FIXED_SCALE,
 };
 pub use fixed_point::FixedPoint;
 
 // New deterministic GBDT inference engine (phase 2)
-pub use gbdt::{Model as GBDTInferenceModel, ModelError as GBDTInferenceError, Node as GBDTNode, Tree as GBDTInferenceTree, SCALE as GBDT_SCALE};
+pub use gbdt::{
+    Model as GBDTInferenceModel, ModelError as GBDTInferenceError, Node as GBDTNode,
+    Tree as GBDTInferenceTree, SCALE as GBDT_SCALE,
+};
 
 // Legacy GBDT module (maintained for backward compatibility)
 pub use gbdt_legacy::{

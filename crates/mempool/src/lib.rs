@@ -12,6 +12,7 @@
 
 use anyhow::{anyhow, Result};
 use ippan_crypto::validate_confidential_transaction;
+use ippan_l1_fees::FeePolicy;
 use ippan_types::Transaction;
 use parking_lot::RwLock;
 use std::cmp::Ordering;
@@ -74,8 +75,6 @@ impl BroadcastState {
     }
 }
 
-const MAX_FEE_PER_TX: u64 = 10_000_000;
-
 /// Candidate for block inclusion
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BlockCandidate {
@@ -109,6 +108,7 @@ pub struct Mempool {
     expiration_duration: Duration,
     last_cleanup: RwLock<Instant>,
     broadcast: RwLock<BroadcastState>,
+    fee_policy: FeePolicy,
 }
 
 impl Mempool {
@@ -120,6 +120,7 @@ impl Mempool {
             expiration_duration: Duration::from_secs(300),
             last_cleanup: RwLock::new(Instant::now()),
             broadcast: RwLock::new(BroadcastState::default()),
+            fee_policy: FeePolicy::default(),
         }
     }
 
@@ -131,6 +132,7 @@ impl Mempool {
             expiration_duration,
             last_cleanup: RwLock::new(Instant::now()),
             broadcast: RwLock::new(BroadcastState::default()),
+            fee_policy: FeePolicy::default(),
         }
     }
 
@@ -146,14 +148,7 @@ impl Mempool {
             validate_confidential_transaction(&tx)?;
         }
 
-        let fee = Self::estimate_fee(&tx);
-        if fee > MAX_FEE_PER_TX {
-            return Err(anyhow!(
-                "transaction fee {} exceeds maximum allowed {}",
-                fee,
-                MAX_FEE_PER_TX
-            ));
-        }
+        let fee = self.fee_policy.required_fee(&tx);
 
         let tx_hash = hex::encode(tx.hash());
         let sender = hex::encode(tx.from);
@@ -446,34 +441,9 @@ impl Mempool {
         self.broadcast.write().remove(tx_hash);
     }
 
+    /// Deterministic fee estimate used by external callers (wallet/RPC).
     pub fn estimate_fee(tx: &Transaction) -> u64 {
-        let base_fee = 1000;
-        let mut size = 32 * 3
-            + 8 * 2
-            + 64
-            + std::mem::size_of_val(&tx.hashtimer.timestamp_us)
-            + tx.hashtimer.entropy.len()
-            + std::mem::size_of_val(&tx.timestamp.0);
-        size += tx.topics.iter().map(|t| t.len()).sum::<usize>();
-
-        if let Some(env) = &tx.confidential {
-            size += env.enc_algo.len() + env.iv.len() + env.ciphertext.len();
-            size += env
-                .access_keys
-                .iter()
-                .map(|k| k.recipient_pub.len() + k.enc_key.len())
-                .sum::<usize>();
-        }
-        if let Some(proof) = &tx.zk_proof {
-            size += proof.proof.len();
-            size += proof
-                .public_inputs
-                .iter()
-                .map(|(k, v)| k.len() + v.len())
-                .sum::<usize>();
-        }
-
-        base_fee + (size as u64 * 10)
+        FeePolicy::default().required_fee(tx)
     }
 
     fn make_space_for_transaction(

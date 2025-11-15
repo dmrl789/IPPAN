@@ -19,19 +19,19 @@ use serde::{Deserialize, Serialize};
 pub struct Node {
     /// Node ID (for reference, not used in traversal)
     pub id: i32,
-    
+
     /// Left child index (-1 for leaf nodes)
     pub left: i32,
-    
+
     /// Right child index (-1 for leaf nodes)
     pub right: i32,
-    
+
     /// Feature index to split on (-1 for leaf nodes)
     pub feature: i32,
-    
+
     /// Threshold value for split (fixed-point integer)
     pub threshold: i64,
-    
+
     /// Leaf value (Some for leaf nodes, None for internal nodes)
     pub leaf: Option<i64>,
 }
@@ -48,7 +48,7 @@ impl Node {
             leaf: None,
         }
     }
-    
+
     /// Create a new leaf node
     pub fn leaf(id: i32, value: i64) -> Self {
         Self {
@@ -60,12 +60,12 @@ impl Node {
             leaf: Some(value),
         }
     }
-    
+
     /// Check if this node is a leaf
     pub fn is_leaf(&self) -> bool {
         self.feature == -1 || self.leaf.is_some()
     }
-    
+
     /// Get the leaf value if this is a leaf node
     pub fn leaf_value(&self) -> Option<i64> {
         self.leaf
@@ -77,7 +77,7 @@ impl Node {
 pub struct Tree {
     /// Tree nodes (node 0 is the root)
     pub nodes: Vec<Node>,
-    
+
     /// Tree weight for ensemble aggregation (fixed-point integer)
     pub weight: i64,
 }
@@ -87,7 +87,7 @@ impl Tree {
     pub fn new(nodes: Vec<Node>, weight: i64) -> Self {
         Self { nodes, weight }
     }
-    
+
     /// Evaluate this tree on a feature vector
     ///
     /// Uses FixedOrd-style comparison (integer <= comparison)
@@ -95,29 +95,29 @@ impl Tree {
         if self.nodes.is_empty() {
             return 0;
         }
-        
+
         let mut idx = 0usize;
-        
+
         loop {
             if idx >= self.nodes.len() {
                 return 0; // Invalid tree structure
             }
-            
+
             let node = &self.nodes[idx];
-            
+
             // Check if leaf
             if node.is_leaf() {
                 return node.leaf_value().unwrap_or(0);
             }
-            
+
             // Internal node - compare feature value
             let feature_idx = node.feature as usize;
             if feature_idx >= features.len() {
                 return 0; // Invalid feature index
             }
-            
+
             let feature_value = features[feature_idx];
-            
+
             // FixedOrd comparison: go left if feature <= threshold
             idx = if feature_value <= node.threshold {
                 if node.left < 0 || node.left as usize >= self.nodes.len() {
@@ -132,29 +132,26 @@ impl Tree {
             };
         }
     }
-    
+
     /// Get the root node
     pub fn root(&self) -> Option<&Node> {
         self.nodes.first()
     }
-    
+
     /// Validate tree structure
     pub fn validate(&self) -> Result<(), String> {
         if self.nodes.is_empty() {
             return Err("Tree has no nodes".to_string());
         }
-        
+
         // Validate each node
         for (i, node) in self.nodes.iter().enumerate() {
             if !node.is_leaf() {
                 // Check left child
                 if node.left < 0 || node.left as usize >= self.nodes.len() {
-                    return Err(format!(
-                        "Node {} has invalid left child: {}",
-                        i, node.left
-                    ));
+                    return Err(format!("Node {} has invalid left child: {}", i, node.left));
                 }
-                
+
                 // Check right child
                 if node.right < 0 || node.right as usize >= self.nodes.len() {
                     return Err(format!(
@@ -162,7 +159,7 @@ impl Tree {
                         i, node.right
                     ));
                 }
-                
+
                 // Check feature index is valid (>= 0 for internal nodes)
                 if node.feature < 0 {
                     return Err(format!(
@@ -177,7 +174,7 @@ impl Tree {
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -185,7 +182,7 @@ impl Tree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_node_creation() {
         let internal = Node::internal(0, 3, 12345, 1, 2);
@@ -195,14 +192,14 @@ mod tests {
         assert_eq!(internal.left, 1);
         assert_eq!(internal.right, 2);
         assert!(!internal.is_leaf());
-        
+
         let leaf = Node::leaf(1, -234);
         assert_eq!(leaf.id, 1);
         assert_eq!(leaf.feature, -1);
         assert!(leaf.is_leaf());
         assert_eq!(leaf.leaf_value(), Some(-234));
     }
-    
+
     #[test]
     fn test_tree_evaluation() {
         // Simple tree: if feature[0] <= 50, return 100, else return 200
@@ -214,12 +211,12 @@ mod tests {
             ],
             1_000_000,
         );
-        
+
         assert_eq!(tree.evaluate(&[30]), 100);
         assert_eq!(tree.evaluate(&[50]), 100); // Equal goes left
         assert_eq!(tree.evaluate(&[60]), 200);
     }
-    
+
     #[test]
     fn test_tree_validation() {
         let valid_tree = Tree::new(
@@ -231,7 +228,7 @@ mod tests {
             1_000_000,
         );
         assert!(valid_tree.validate().is_ok());
-        
+
         // Invalid tree: left child out of bounds
         let invalid_tree = Tree::new(
             vec![
@@ -243,7 +240,7 @@ mod tests {
         );
         assert!(invalid_tree.validate().is_err());
     }
-    
+
     #[test]
     fn test_deterministic_traversal() {
         let tree = Tree::new(
@@ -254,14 +251,14 @@ mod tests {
             ],
             1_000_000,
         );
-        
+
         let features = vec![30, 40, 50];
-        
+
         // Same input should always give same output
         let result1 = tree.evaluate(&features);
         let result2 = tree.evaluate(&features);
         let result3 = tree.evaluate(&features);
-        
+
         assert_eq!(result1, result2);
         assert_eq!(result2, result3);
     }

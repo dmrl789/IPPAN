@@ -4,7 +4,10 @@
 //! and exact-greedy CART splits.
 
 use anyhow::Result;
-use ippan_ai_core::{GBDTModel, gbdt_legacy::{Tree, ModelMetadata}, SecurityConstraints};
+use ippan_ai_core::{
+    gbdt_legacy::{ModelMetadata, Tree},
+    GBDTModel, SecurityConstraints,
+};
 use std::collections::HashMap;
 
 use crate::cart::{CartBuilder, TreeConfig};
@@ -67,7 +70,8 @@ impl GbdtTrainer {
             tracing::info!("Training tree {}/{}", tree_idx + 1, self.config.num_trees);
 
             // Calculate gradients and hessians
-            let (gradients, hessians) = self.calculate_gradients_hessians(&dataset.targets, &predictions);
+            let (gradients, hessians) =
+                self.calculate_gradients_hessians(&dataset.targets, &predictions);
 
             // Build tree
             let tree_config = TreeConfig {
@@ -127,7 +131,11 @@ impl GbdtTrainer {
     /// Calculate gradients and hessians for regression (MSE loss)
     /// gradient = prediction - target
     /// hessian = 1 (constant for MSE)
-    fn calculate_gradients_hessians(&self, targets: &[i64], predictions: &[i64]) -> (Vec<i64>, Vec<i64>) {
+    fn calculate_gradients_hessians(
+        &self,
+        targets: &[i64],
+        predictions: &[i64],
+    ) -> (Vec<i64>, Vec<i64>) {
         let n = targets.len();
         let mut gradients = Vec::with_capacity(n);
         let mut hessians = Vec::with_capacity(n);
@@ -149,10 +157,11 @@ impl GbdtTrainer {
     fn update_predictions(&self, tree: &Tree, features: &[Vec<i64>], predictions: &mut [i64]) {
         for (i, feature_vec) in features.iter().enumerate() {
             let tree_value = self.evaluate_tree(tree, feature_vec);
-            
+
             // Apply learning rate: value * learning_rate / 1_000_000
-            let scaled_value = ((tree_value as i128 * self.config.learning_rate as i128) / 1_000_000) as i64;
-            
+            let scaled_value =
+                ((tree_value as i128 * self.config.learning_rate as i128) / 1_000_000) as i64;
+
             predictions[i] = predictions[i].saturating_add(scaled_value);
         }
     }
@@ -230,7 +239,7 @@ mod tests {
         let trainer = GbdtTrainer::new(GbdtConfig::default());
         let targets = vec![1_000_000, 2_000_000, 3_000_000];
         let bias = trainer.calculate_bias(&targets);
-        
+
         // Mean should be 2_000_000
         assert_eq!(bias, 2_000_000);
     }
@@ -249,14 +258,14 @@ mod tests {
 
         let trainer = GbdtTrainer::new(config.clone());
         let model1 = trainer.train(&dataset)?;
-        
+
         let trainer2 = GbdtTrainer::new(config);
         let model2 = trainer2.train(&dataset)?;
 
         // Models should be identical
         assert_eq!(model1.bias, model2.bias);
         assert_eq!(model1.trees.len(), model2.trees.len());
-        
+
         for (t1, t2) in model1.trees.iter().zip(model2.trees.iter()) {
             assert_eq!(t1.nodes.len(), t2.nodes.len());
         }

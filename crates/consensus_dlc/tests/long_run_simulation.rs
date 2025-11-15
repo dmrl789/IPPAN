@@ -541,9 +541,9 @@ fn random_metrics(rng: &mut StdRng, stake_micro: u64) -> ValidatorMetrics {
     let rounds_active = rng.gen_range(32..=1_024);
 
     ValidatorMetrics::new(
-        (uptime * 10000.0) as i64,   // Scale 0-1 to 0-10000
-        (latency * 10000.0) as i64,  // Scale 0-1 to 0-10000
-        (honesty * 10000.0) as i64,  // Scale 0-1 to 0-10000
+        (uptime * 10000.0) as i64,  // Scale 0-1 to 0-10000
+        (latency * 10000.0) as i64, // Scale 0-1 to 0-10000
+        (honesty * 10000.0) as i64, // Scale 0-1 to 0-10000
         blocks_proposed,
         blocks_verified,
         Amount::from_micro_ipn(stake_micro),
@@ -572,7 +572,12 @@ fn drift_validator_metrics(consensus: &mut DlcConsensus, rng: &mut StdRng) {
             // Convert to scaled integers for update
             let uptime_delta_scaled = (uptime_delta * 10000.0) as i64;
             let latency_sample_scaled = (latency_sample * 10000.0) as i64;
-            updated.update(uptime_delta_scaled, latency_sample_scaled, proposed_delta, verified_delta);
+            updated.update(
+                uptime_delta_scaled,
+                latency_sample_scaled,
+                proposed_delta,
+                verified_delta,
+            );
             let _ = consensus.validators.update_validator(id, updated);
         }
     }

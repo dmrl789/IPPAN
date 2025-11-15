@@ -79,13 +79,15 @@ fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .context("Failed to set tracing subscriber")?;
 
-    info!("IPPAN Deterministic GBDT Trainer v{}", env!("CARGO_PKG_VERSION"));
+    info!(
+        "IPPAN Deterministic GBDT Trainer v{}",
+        env!("CARGO_PKG_VERSION")
+    );
     info!("═══════════════════════════════════════════");
 
     // Load dataset
     info!("Loading dataset from: {}", args.input.display());
-    let mut dataset = Dataset::from_csv(&args.input)
-        .context("Failed to load dataset")?;
+    let mut dataset = Dataset::from_csv(&args.input).context("Failed to load dataset")?;
 
     info!(
         "Loaded {} samples with {} features",
@@ -136,18 +138,15 @@ fn main() -> Result<()> {
     info!("  Model hash: {}", model.metadata.model_hash);
 
     // Create output directory
-    std::fs::create_dir_all(&args.output)
-        .context("Failed to create output directory")?;
+    std::fs::create_dir_all(&args.output).context("Failed to create output directory")?;
 
     // Save model as canonical JSON
     let model_path = args.output.join("active.json");
     info!("Saving model to: {}", model_path.display());
 
-    let canonical_json = canonical_json_string(&model)
-        .context("Failed to serialize model")?;
+    let canonical_json = canonical_json_string(&model).context("Failed to serialize model")?;
 
-    std::fs::write(&model_path, &canonical_json)
-        .context("Failed to write model file")?;
+    std::fs::write(&model_path, &canonical_json).context("Failed to write model file")?;
 
     // Calculate and save BLAKE3 hash
     let hash = blake3::hash(canonical_json.as_bytes());
@@ -155,8 +154,7 @@ fn main() -> Result<()> {
 
     let hash_path = args.output.join("active.hash");
     info!("Saving hash to: {}", hash_path.display());
-    std::fs::write(&hash_path, &hash_hex)
-        .context("Failed to write hash file")?;
+    std::fs::write(&hash_path, &hash_hex).context("Failed to write hash file")?;
 
     info!("═══════════════════════════════════════════");
     info!("✓ Training completed successfully");

@@ -86,8 +86,8 @@ impl DGBDTRegistry {
             stored_at: current_timestamp(),
         };
 
-        let serialized = bincode::serialize(&stored)
-            .context("Failed to serialize model for storage")?;
+        let serialized =
+            bincode::serialize(&stored).context("Failed to serialize model for storage")?;
 
         self.db
             .insert(ACTIVE_MODEL_KEY, serialized)
@@ -113,8 +113,8 @@ impl DGBDTRegistry {
             }
         };
 
-        let stored: StoredModel = bincode::deserialize(&data)
-            .context("Failed to deserialize stored model")?;
+        let stored: StoredModel =
+            bincode::deserialize(&data).context("Failed to deserialize stored model")?;
 
         debug!("Retrieved active model with hash: {}", stored.hash_hex);
 
@@ -128,8 +128,8 @@ impl DGBDTRegistry {
             None => return Ok(Vec::new()),
         };
 
-        let history: Vec<HistoryEntry> = bincode::deserialize(&data)
-            .context("Failed to deserialize history")?;
+        let history: Vec<HistoryEntry> =
+            bincode::deserialize(&data).context("Failed to deserialize history")?;
 
         Ok(history)
     }
@@ -149,8 +149,7 @@ impl DGBDTRegistry {
             history.drain(0..(history.len() - MAX_HISTORY_VERSIONS));
         }
 
-        let serialized = bincode::serialize(&history)
-            .context("Failed to serialize history")?;
+        let serialized = bincode::serialize(&history).context("Failed to serialize history")?;
 
         self.db
             .insert(HISTORY_KEY, serialized)
@@ -196,7 +195,8 @@ pub fn load_model_from_path(path: &Path) -> Result<(Model, String)> {
         .with_context(|| format!("Failed to parse model JSON from: {}", path.display()))?;
 
     // Validate model structure
-    model.validate()
+    model
+        .validate()
         .with_context(|| format!("Model validation failed for: {}", path.display()))?;
 
     // Compute canonical hash
@@ -218,7 +218,8 @@ pub fn load_model_from_path(path: &Path) -> Result<(Model, String)> {
 /// This ensures that the hash is deterministic and identical across all nodes
 pub fn compute_model_hash(model: &Model) -> Result<String> {
     // Use the model's built-in hash_hex method which already does canonical JSON + BLAKE3
-    model.hash_hex()
+    model
+        .hash_hex()
         .map_err(|e| anyhow::anyhow!("Failed to compute model hash: {}", e))
 }
 
@@ -237,8 +238,8 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
     let config_content = std::fs::read_to_string(config_path)
         .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
 
-    let config: toml::Value = toml::from_str(&config_content)
-        .context("Failed to parse config TOML")?;
+    let config: toml::Value =
+        toml::from_str(&config_content).context("Failed to parse config TOML")?;
 
     let model_path_str = config
         .get("dgbdt")
@@ -247,13 +248,14 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
         .context("Missing 'dgbdt.d_gbdt_model_path' in config")?;
 
     let model_path = Path::new(model_path_str);
-    
+
     // Make path relative to workspace root if not absolute
     let full_path = if model_path.is_absolute() {
         model_path.to_path_buf()
     } else {
         // Assume config is in workspace/config/
-        config_path.parent()
+        config_path
+            .parent()
             .and_then(|p| p.parent())
             .unwrap_or_else(|| Path::new("."))
             .join(model_path)
@@ -269,7 +271,7 @@ mod tests {
 
     fn create_test_model() -> Model {
         use ippan_ai_core::gbdt::{Node, Tree, SCALE};
-        
+
         let tree1 = Tree::new(
             vec![
                 Node::internal(0, 0, 5000, 1, 2),
@@ -278,12 +280,9 @@ mod tests {
             ],
             SCALE,
         );
-        
-        let tree2 = Tree::new(
-            vec![Node::leaf(0, 50)],
-            SCALE,
-        );
-        
+
+        let tree2 = Tree::new(vec![Node::leaf(0, 50)], SCALE);
+
         Model::new(vec![tree1, tree2], 0)
     }
 
@@ -297,10 +296,10 @@ mod tests {
     fn test_compute_model_hash() {
         let model = create_test_model();
         let hash = compute_model_hash(&model).unwrap();
-        
+
         // Hash should be 64 hex characters (32 bytes)
         assert_eq!(hash.len(), 64);
-        
+
         // Hash should be deterministic
         let hash2 = compute_model_hash(&model).unwrap();
         assert_eq!(hash, hash2);
@@ -310,11 +309,14 @@ mod tests {
     fn test_hash_determinism() {
         let model1 = create_test_model();
         let model2 = create_test_model();
-        
+
         let hash1 = compute_model_hash(&model1).unwrap();
         let hash2 = compute_model_hash(&model2).unwrap();
-        
-        assert_eq!(hash1, hash2, "Identical models should have identical hashes");
+
+        assert_eq!(
+            hash1, hash2,
+            "Identical models should have identical hashes"
+        );
     }
 
     #[test]
@@ -324,7 +326,9 @@ mod tests {
         let hash = compute_model_hash(&model).unwrap();
 
         // Store model
-        registry.store_active_model(model.clone(), hash.clone()).unwrap();
+        registry
+            .store_active_model(model.clone(), hash.clone())
+            .unwrap();
 
         // Retrieve model
         let retrieved = registry.get_active_model().unwrap();
@@ -348,15 +352,12 @@ mod tests {
     #[test]
     fn test_version_history_ring_buffer() {
         use ippan_ai_core::gbdt::{Node, Tree, SCALE};
-        
+
         let (mut registry, _temp_dir) = create_test_registry();
 
         // Store more than MAX_HISTORY_VERSIONS models
         for i in 0..(MAX_HISTORY_VERSIONS + 3) {
-            let tree = Tree::new(
-                vec![Node::leaf(0, (i as i64) * 1000)],
-                SCALE,
-            );
+            let tree = Tree::new(vec![Node::leaf(0, (i as i64) * 1000)], SCALE);
             let test_model = Model::new(vec![tree], i as i64);
             let hash = compute_model_hash(&test_model).unwrap();
             registry.store_active_model(test_model, hash).unwrap();
@@ -370,27 +371,24 @@ mod tests {
     #[test]
     fn test_history_ordering() {
         use ippan_ai_core::gbdt::{Node, Tree, SCALE};
-        
+
         let (mut registry, _temp_dir) = create_test_registry();
 
         let mut hashes = Vec::new();
         for i in 0..3 {
-            let tree = Tree::new(
-                vec![Node::leaf(0, (i as i64) * 1000)],
-                SCALE,
-            );
+            let tree = Tree::new(vec![Node::leaf(0, (i as i64) * 1000)], SCALE);
             let test_model = Model::new(vec![tree], i as i64);
             let hash = compute_model_hash(&test_model).unwrap();
             hashes.push(hash.clone());
             registry.store_active_model(test_model, hash).unwrap();
-            
+
             // Sleep briefly to ensure different timestamps
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
         let history = registry.get_history().unwrap();
         assert_eq!(history.len(), 3);
-        
+
         // Check that hashes are in the order they were added
         for (i, entry) in history.iter().enumerate() {
             assert_eq!(entry.hash_hex, hashes[i]);
@@ -401,13 +399,13 @@ mod tests {
     fn test_load_model_from_path() {
         let model = create_test_model();
         let json = serde_json::to_string_pretty(&model).unwrap();
-        
+
         let temp_dir = TempDir::new().unwrap();
         let model_path = temp_dir.path().join("test_model.json");
         std::fs::write(&model_path, json).unwrap();
 
         let (loaded_model, hash) = load_model_from_path(&model_path).unwrap();
-        
+
         assert_eq!(loaded_model.version, model.version);
         assert_eq!(loaded_model.scale, model.scale);
         assert_eq!(hash.len(), 64); // BLAKE3 hash hex length
@@ -416,7 +414,7 @@ mod tests {
     #[test]
     fn test_model_validation() {
         use ippan_ai_core::gbdt::{Node, Tree, SCALE};
-        
+
         // Create an invalid tree (invalid node references)
         let invalid_tree = Tree::new(
             vec![
@@ -424,10 +422,10 @@ mod tests {
             ],
             SCALE,
         );
-        
+
         let invalid_model = Model::new(vec![invalid_tree], 0);
         let json = serde_json::to_string(&invalid_model).unwrap();
-        
+
         let temp_dir = TempDir::new().unwrap();
         let model_path = temp_dir.path().join("invalid_model.json");
         std::fs::write(&model_path, json).unwrap();
@@ -445,7 +443,10 @@ mod tests {
         let hash1 = compute_model_hash(&model1).unwrap();
         let hash2 = compute_model_hash(&model2).unwrap();
 
-        assert_ne!(hash1, hash2, "Different models should have different hashes");
+        assert_ne!(
+            hash1, hash2,
+            "Different models should have different hashes"
+        );
     }
 
     #[test]

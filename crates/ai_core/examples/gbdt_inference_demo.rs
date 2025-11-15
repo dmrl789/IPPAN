@@ -111,10 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let original_hash = model.hash_hex()?;
     let loaded_hash = loaded.hash_hex()?;
-    println!(
-        "   Hashes match: {}",
-        original_hash == loaded_hash
-    );
+    println!("   Hashes match: {}", original_hash == loaded_hash);
 
     // 7. Demonstrate exact integer arithmetic
     println!("\n7. Exact integer arithmetic demonstration...");
@@ -133,10 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("   Input: [-100] -> Score: {} (expected: -500)", neg_score);
     println!("   Input: [100]  -> Score: {} (expected: 2500)", pos_score);
-    println!(
-        "   Exact match: {}",
-        neg_score == -500 && pos_score == 2500
-    );
+    println!("   Exact match: {}", neg_score == -500 && pos_score == 2500);
 
     // 8. Model validation
     println!("\n8. Model validation...");
