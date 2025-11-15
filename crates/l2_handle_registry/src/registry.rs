@@ -15,6 +15,20 @@ use std::time::SystemTime;
 ///
 /// Stores human-readable handle mappings and metadata on L2.
 /// L1 only stores ownership anchors pointing to this registry.
+///
+/// **Current implementation:**
+/// - In-memory storage (not persisted across restarts)
+/// - Local-only lookups (no network distribution)
+/// - Signature-verified registration, updates, and transfers
+///
+/// **Future enhancements (see `docs/ipndht/ipndht_hardening_plan.md`):**
+/// - DHT-based handle distribution (PUT/GET via Kademlia)
+/// - Cross-node handle synchronization
+/// - Persistent storage with disk-backed cache
+/// - Handle expiration and automatic renewal
+///
+/// For distributed @handle resolution across the network, see Phase D3 of the
+/// IPNDHT hardening plan.
 #[derive(Debug)]
 pub struct L2HandleRegistry {
     /// Handle → metadata mapping
