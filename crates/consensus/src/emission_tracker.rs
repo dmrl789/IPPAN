@@ -227,8 +227,8 @@ impl EmissionTracker {
                 let validator_id = ValidatorId::new(hex::encode(validator_raw));
                 // Use integer-scaled Decimal creation (scale 18 for precision)
                 let weight_ratio = if total_weight > 0 {
-                    let numerator = (*weight as u128) * 1_000_000_000_000_000_000u128; // Scale by 10^18
-                    let ratio_scaled = numerator / (total_weight as u128);
+                    let numerator = *weight * 1_000_000_000_000_000_000u128; // Scale by 10^18
+                    let ratio_scaled = numerator / total_weight;
                     Decimal::from_i128_with_scale(ratio_scaled as i128, 18)
                 } else {
                     let equal_share_scaled =

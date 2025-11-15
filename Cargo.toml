@@ -11,6 +11,7 @@ members = [
   "crates/rpc",
   "crates/core",
   "crates/time",
+  "crates/files",
 
   # AI and deterministic intelligence
   "crates/ai_core",

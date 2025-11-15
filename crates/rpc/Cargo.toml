@@ -16,6 +16,7 @@ ippan-consensus = { path = "../consensus" }
 ippan-mempool = { path = "../mempool" }
 ippan-l1-fees = { path = "../l1_fees" }
 ippan-security = { path = "../security" }
+ippan-files = { path = "../files" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

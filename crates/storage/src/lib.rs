@@ -3,10 +3,10 @@
 //! mempool, and AI telemetry pipelines. Handles blocks, accounts, L2 anchors,
 //! and validator telemetry with deterministic serialization.
 //!
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use ippan_types::{
-    Block, L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord, RoundId,
-    Transaction,
+    Address, Block, FileDescriptor, FileDescriptorId, L2Commit, L2ExitRecord, L2Network,
+    RoundCertificate, RoundFinalizationRecord, RoundId, Transaction,
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -95,6 +95,11 @@ pub trait Storage {
         validator_id: &[u8; 32],
     ) -> Result<Option<ValidatorTelemetry>>;
     fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>>;
+
+    /// File descriptor metadata (off-chain file hash registry)
+    fn store_file_descriptor(&self, descriptor: FileDescriptor) -> Result<()>;
+    fn get_file_descriptor(&self, id: &FileDescriptorId) -> Result<Option<FileDescriptor>>;
+    fn list_file_descriptors_by_owner(&self, owner: &Address) -> Result<Vec<FileDescriptor>>;
 }
 
 /// Validator telemetry for AI consensus
@@ -138,6 +143,8 @@ struct MemoryStorageInner {
     chain_state: RwLock<ChainState>,
     latest_height: RwLock<u64>,
     latest_finalized_round: RwLock<Option<RoundId>>,
+    file_descriptors: RwLock<HashMap<FileDescriptorId, FileDescriptor>>,
+    files_by_owner: RwLock<HashMap<[u8; 32], Vec<FileDescriptorId>>>,
 }
 
 impl MemoryStorage {
@@ -338,6 +345,45 @@ impl Storage for MemoryStorage {
     fn get_all_validator_telemetry(&self) -> Result<HashMap<[u8; 32], ValidatorTelemetry>> {
         Ok(self.inner.validator_telemetry.read().clone())
     }
+
+    fn store_file_descriptor(&self, descriptor: FileDescriptor) -> Result<()> {
+        let mut descriptors = self.inner.file_descriptors.write();
+        if descriptors.contains_key(&descriptor.id) {
+            return Err(anyhow!(
+                "file descriptor already exists: {}",
+                descriptor.id.to_hex()
+            ));
+        }
+        let owner_key = descriptor.owner.clone().0;
+        descriptors.insert(descriptor.id, descriptor.clone());
+        self.inner
+            .files_by_owner
+            .write()
+            .entry(owner_key)
+            .or_default()
+            .push(descriptor.id);
+        Ok(())
+    }
+
+    fn get_file_descriptor(&self, id: &FileDescriptorId) -> Result<Option<FileDescriptor>> {
+        Ok(self.inner.file_descriptors.read().get(id).cloned())
+    }
+
+    fn list_file_descriptors_by_owner(&self, owner: &Address) -> Result<Vec<FileDescriptor>> {
+        let owner_key = owner.clone().0;
+        let ids = self
+            .inner
+            .files_by_owner
+            .read()
+            .get(&owner_key)
+            .cloned()
+            .unwrap_or_default();
+        let descriptors = self.inner.file_descriptors.read();
+        Ok(ids
+            .iter()
+            .filter_map(|id| descriptors.get(id).cloned())
+            .collect())
+    }
 }
 
 /// Sled-backed implementation
@@ -353,6 +399,8 @@ pub struct SledStorage {
     round_certificates: Tree,
     round_finalizations: Tree,
     validator_telemetry: Tree,
+    file_descriptors: Tree,
+    file_owner_index: Tree,
     chain_state: Arc<RwLock<ChainState>>,
 }
 
@@ -369,6 +417,8 @@ impl SledStorage {
         let round_certificates = db.open_tree("round_certificates")?;
         let validator_telemetry = db.open_tree("validator_telemetry")?;
         let round_finalizations = db.open_tree("round_finalizations")?;
+        let file_descriptors = db.open_tree("file_descriptors")?;
+        let file_owner_index = db.open_tree("file_owner_index")?;
 
         let chain_state = if let Some(v) = metadata.get(b"chain_state")? {
             serde_json::from_slice(&v).unwrap_or_default()
@@ -388,6 +438,8 @@ impl SledStorage {
             round_certificates,
             round_finalizations,
             validator_telemetry,
+            file_descriptors,
+            file_owner_index,
             chain_state: Arc::new(RwLock::new(chain_state)),
         })
     }
@@ -654,6 +706,56 @@ impl Storage for SledStorage {
         }
         Ok(telemetry)
     }
+
+    fn store_file_descriptor(&self, descriptor: FileDescriptor) -> Result<()> {
+        let key = descriptor.id.to_bytes();
+        if self.file_descriptors.contains_key(&key[..])? {
+            return Err(anyhow!(
+                "file descriptor already exists: {}",
+                descriptor.id.to_hex()
+            ));
+        }
+        let data = serde_json::to_vec(&descriptor)?;
+        self.file_descriptors.insert(&key[..], data)?;
+        let owner_key = descriptor.owner.clone().0;
+        let index_key = build_owner_index_key(&owner_key, &key);
+        self.file_owner_index.insert(index_key, key.to_vec())?;
+        Ok(())
+    }
+
+    fn get_file_descriptor(&self, id: &FileDescriptorId) -> Result<Option<FileDescriptor>> {
+        self.file_descriptors
+            .get(id.as_bytes())?
+            .map(|v| serde_json::from_slice(&v))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    fn list_file_descriptors_by_owner(&self, owner: &Address) -> Result<Vec<FileDescriptor>> {
+        let owner_key = owner.clone().0;
+        let mut descriptors = Vec::new();
+        for entry in self.file_owner_index.scan_prefix(owner_key) {
+            let (_key, value) = entry?;
+            if value.len() != 32 {
+                continue;
+            }
+            let mut id_bytes = [0u8; 32];
+            id_bytes.copy_from_slice(&value);
+            if let Some(descriptor) =
+                self.get_file_descriptor(&FileDescriptorId::from_bytes(id_bytes))?
+            {
+                descriptors.push(descriptor);
+            }
+        }
+        Ok(descriptors)
+    }
+}
+
+fn build_owner_index_key(owner: &[u8; 32], descriptor: &[u8; 32]) -> Vec<u8> {
+    let mut key = Vec::with_capacity(64);
+    key.extend_from_slice(owner);
+    key.extend_from_slice(descriptor);
+    key
 }
 
 // =====================================================================
@@ -663,7 +765,7 @@ impl Storage for SledStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{BlockId, RoundCertificate, RoundId};
+    use ippan_types::{BlockId, HashTimer, IppanTimeMicros, RoundCertificate, RoundId};
     use tempfile::tempdir;
 
     fn sample_cert(round: RoundId) -> RoundCertificate {
@@ -701,5 +803,69 @@ mod tests {
 
         let missing = storage.get_round_certificate(99).unwrap();
         assert!(missing.is_none());
+    }
+
+    fn sample_descriptor(seed: u8) -> FileDescriptor {
+        let owner = Address([seed; 32]);
+        let time = IppanTimeMicros(1_000 + seed as u64);
+        let domain = [seed; 8];
+        let payload = [seed; 16];
+        let nonce = [seed; 32];
+        let node = [seed.wrapping_add(1); 32];
+        let hashtimer = HashTimer::derive("file", time, &domain, &payload, &nonce, &node);
+        FileDescriptor::new(
+            hashtimer,
+            owner,
+            [seed; 32],
+            2048,
+            Some("application/test".into()),
+            vec!["tag".into()],
+        )
+    }
+
+    #[test]
+    fn memory_file_descriptor_round_trip() {
+        let storage = MemoryStorage::new();
+        let descriptor = sample_descriptor(7);
+        storage
+            .store_file_descriptor(descriptor.clone())
+            .expect("store descriptor");
+
+        let fetched = storage
+            .get_file_descriptor(&descriptor.id)
+            .expect("fetch descriptor")
+            .expect("descriptor exists");
+        assert_eq!(fetched.owner, descriptor.owner);
+        assert_eq!(fetched.content_hash, descriptor.content_hash);
+
+        let owner_files = storage
+            .list_file_descriptors_by_owner(&descriptor.owner)
+            .expect("list by owner");
+        assert_eq!(owner_files.len(), 1);
+        assert_eq!(owner_files[0].id, descriptor.id);
+    }
+
+    #[test]
+    fn sled_file_descriptor_round_trip() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("init");
+
+        let descriptor = sample_descriptor(9);
+        storage
+            .store_file_descriptor(descriptor.clone())
+            .expect("store descriptor");
+
+        let fetched = storage
+            .get_file_descriptor(&descriptor.id)
+            .expect("fetch descriptor")
+            .expect("descriptor exists");
+        assert_eq!(fetched.owner, descriptor.owner);
+
+        let owner_files = storage
+            .list_file_descriptors_by_owner(&descriptor.owner)
+            .expect("list owner");
+        assert_eq!(owner_files.len(), 1);
+        assert_eq!(owner_files[0].id, descriptor.id);
     }
 }

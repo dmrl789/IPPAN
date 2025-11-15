@@ -147,7 +147,7 @@ fn parse_output_path() -> Result<PathBuf> {
         }
     }
 
-    Ok(output.unwrap_or_else(|| PathBuf::from("determinism-output.json")))
+    Ok(output.unwrap_or(PathBuf::from("determinism-output.json")))
 }
 
 fn sample_telemetry() -> Vec<TelemetryRecord> {

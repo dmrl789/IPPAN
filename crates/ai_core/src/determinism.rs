@@ -91,9 +91,10 @@ impl DeterminismManager {
             execution_id
         );
 
-        let seed = self
-            .get_seed(execution_id)
-            .unwrap_or_else(|| self.generate_deterministic_seed(execution_id, model_id, input));
+        let seed = match self.get_seed(execution_id) {
+            Some(seed) => seed,
+            None => self.generate_deterministic_seed(execution_id, model_id, input),
+        };
 
         let input_hash = self.compute_input_hash(input)?;
 
