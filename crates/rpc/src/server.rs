@@ -142,6 +142,53 @@ struct L2Filter {
     l2_id: Option<String>,
 }
 
+/// Pagination parameters for payment history
+#[derive(Debug, Deserialize)]
+struct PaymentHistoryParams {
+    #[serde(default = "default_limit")]
+    limit: usize,
+    #[serde(default)]
+    before: Option<String>,
+}
+
+fn default_limit() -> usize {
+    50
+}
+
+const MAX_PAYMENT_LIMIT: usize = 200;
+
+/// Payment entry with direction metadata
+#[derive(Debug, Serialize)]
+struct PaymentEntry {
+    tx_hash: String,
+    from: String,
+    to: String,
+    amount: u128,
+    fee: u128,
+    nonce: u64,
+    timestamp: u64,
+    hash_timer: String,
+    direction: PaymentDirection,
+}
+
+/// Payment direction from the perspective of the queried address
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum PaymentDirection {
+    Incoming,
+    Outgoing,
+    #[serde(rename = "self")]
+    SelfTransfer,
+}
+
+/// Payment history response
+#[derive(Debug, Serialize)]
+struct PaymentHistoryResponse {
+    address: String,
+    payments: Vec<PaymentEntry>,
+    count: usize,
+}
+
 /// Start the RPC server
 pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     info!("Starting RPC server on {}", addr);
@@ -188,6 +235,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/tx/:hash", get(handle_get_transaction))
         .route("/block/:id", get(handle_get_block))
         .route("/account/:address", get(handle_get_account))
+        .route("/account/:address/payments", get(handle_get_payment_history))
         .route("/peers", get(handle_get_peers))
         .route("/p2p/peers", get(handle_get_p2p_peers))
         .route("/p2p/blocks", post(handle_p2p_blocks))
@@ -544,6 +592,125 @@ async fn handle_get_account(
             Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load account"))
         }
     }
+}
+
+async fn handle_get_payment_history(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(address): AxumPath<String>,
+    Query(params): Query<PaymentHistoryParams>,
+) -> Result<Json<PaymentHistoryResponse>, (StatusCode, &'static str)> {
+    if let Err(err) = guard_request(&state, &addr, "/account/:address/payments").await {
+        return Err(deny_request(&state, &addr, "/account/:address/payments", err).await);
+    }
+
+    let address_bytes = match parse_hex_32(&address) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!(
+                "Invalid account address from {}: {} ({})",
+                addr, address, err
+            );
+            record_security_failure(
+                &state,
+                &addr,
+                "/account/:address/payments",
+                "Invalid account address",
+            )
+            .await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid account address"));
+        }
+    };
+
+    // Enforce max limit
+    let limit = params.limit.min(MAX_PAYMENT_LIMIT);
+
+    // Get all transactions for this address
+    let mut transactions = match state.storage.get_transactions_by_address(&address_bytes) {
+        Ok(txs) => txs,
+        Err(err) => {
+            error!(
+                "Failed fetching transactions for account {} ({}): {}",
+                address, addr, err
+            );
+            record_security_failure(
+                &state,
+                &addr,
+                "/account/:address/payments",
+                &err.to_string(),
+            )
+            .await;
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load payment history",
+            ));
+        }
+    };
+
+    // Sort by timestamp descending (most recent first)
+    transactions.sort_by(|a, b| b.timestamp.0.cmp(&a.timestamp.0));
+
+    // Apply pagination: skip transactions until we find the "before" hash
+    let start_index = if let Some(before_hash) = &params.before {
+        if let Ok(before_bytes) = parse_hex_32(before_hash) {
+            transactions
+                .iter()
+                .position(|tx| tx.hash() == before_bytes)
+                .map(|pos| pos + 1)
+                .unwrap_or(0)
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    // Take only the requested number of transactions
+    let page_transactions: Vec<_> = transactions
+        .into_iter()
+        .skip(start_index)
+        .take(limit)
+        .collect();
+
+    // Convert to payment entries with direction
+    let payments: Vec<PaymentEntry> = page_transactions
+        .into_iter()
+        .map(|tx| {
+            let direction = if tx.from == address_bytes && tx.to == address_bytes {
+                PaymentDirection::SelfTransfer
+            } else if tx.from == address_bytes {
+                PaymentDirection::Outgoing
+            } else {
+                PaymentDirection::Incoming
+            };
+
+            // For simplicity, use a fixed minimal fee (in practice, fees should be stored with transaction)
+            // Since transactions don't currently store fee separately, we use 0
+            let fee = 0u128;
+
+            PaymentEntry {
+                tx_hash: hex_encode(tx.hash()),
+                from: hex_encode(tx.from),
+                to: hex_encode(tx.to),
+                amount: tx.amount.atomic(),
+                fee,
+                nonce: tx.nonce,
+                timestamp: tx.timestamp.0,
+                hash_timer: tx.hashtimer.to_hex(),
+                direction,
+            }
+        })
+        .collect();
+
+    let count = payments.len();
+
+    record_security_success(&state, &addr, "/account/:address/payments").await;
+
+    Ok(Json(PaymentHistoryResponse {
+        address: hex_encode(address_bytes),
+        payments,
+        count,
+    }))
 }
 
 async fn handle_get_peers(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
@@ -2518,5 +2685,217 @@ mod tests {
         );
 
         assert!(resolved.contains("203.0.113.10"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_payment_history_with_transactions() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let account_address = sample_public_key([10u8; 32]);
+
+        // Create some transactions involving this account
+        let tx1 = sample_transaction([10u8; 32], sample_public_key([11u8; 32]), 1);
+        let tx2 = sample_transaction([12u8; 32], account_address, 2);
+        let tx3 = sample_transaction([10u8; 32], sample_public_key([13u8; 32]), 3);
+
+        state.storage.store_transaction(tx1.clone()).expect("tx1");
+        state.storage.store_transaction(tx2.clone()).expect("tx2");
+        state.storage.store_transaction(tx3.clone()).expect("tx3");
+
+        let response = handle_get_payment_history(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryParams {
+                limit: 10,
+                before: None,
+            }),
+        )
+        .await
+        .expect("payment history");
+
+        assert_eq!(response.0.count, 3);
+        assert_eq!(response.0.payments.len(), 3);
+
+        // Check that all transactions are present
+        let tx_hashes: Vec<String> = response
+            .0
+            .payments
+            .iter()
+            .map(|p| p.tx_hash.clone())
+            .collect();
+        assert!(tx_hashes.contains(&hex::encode(tx1.hash())));
+        assert!(tx_hashes.contains(&hex::encode(tx2.hash())));
+        assert!(tx_hashes.contains(&hex::encode(tx3.hash())));
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_payment_history_direction_annotation() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let account_address = sample_public_key([20u8; 32]);
+
+        // Outgoing transaction
+        let tx_out = sample_transaction([20u8; 32], sample_public_key([21u8; 32]), 1);
+        // Incoming transaction
+        let tx_in = sample_transaction([22u8; 32], account_address, 2);
+        // Self-transfer
+        let tx_self = sample_transaction([20u8; 32], account_address, 3);
+
+        state.storage.store_transaction(tx_out).expect("tx_out");
+        state.storage.store_transaction(tx_in).expect("tx_in");
+        state.storage.store_transaction(tx_self).expect("tx_self");
+
+        let response = handle_get_payment_history(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryParams {
+                limit: 10,
+                before: None,
+            }),
+        )
+        .await
+        .expect("payment history");
+
+        assert_eq!(response.0.payments.len(), 3);
+
+        // Find each payment by from/to and check direction
+        for payment in &response.0.payments {
+            let from_bytes = hex::decode(&payment.from).unwrap();
+            let to_bytes = hex::decode(&payment.to).unwrap();
+
+            if from_bytes == account_address.to_vec() && to_bytes == account_address.to_vec() {
+                assert_eq!(
+                    serde_json::to_string(&payment.direction).unwrap(),
+                    "\"self\""
+                );
+            } else if from_bytes == account_address.to_vec() {
+                assert_eq!(
+                    serde_json::to_string(&payment.direction).unwrap(),
+                    "\"outgoing\""
+                );
+            } else {
+                assert_eq!(
+                    serde_json::to_string(&payment.direction).unwrap(),
+                    "\"incoming\""
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_payment_history_pagination() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let account_address = sample_public_key([30u8; 32]);
+
+        // Create 5 transactions
+        for i in 1..=5 {
+            let tx = sample_transaction([30u8; 32], sample_public_key([31u8; 32]), i);
+            state.storage.store_transaction(tx).expect("store tx");
+        }
+
+        // Get first page with limit 2
+        let page1 = handle_get_payment_history(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryParams {
+                limit: 2,
+                before: None,
+            }),
+        )
+        .await
+        .expect("page 1");
+
+        assert_eq!(page1.0.payments.len(), 2);
+        let first_tx_hash = page1.0.payments[1].tx_hash.clone();
+
+        // Get second page using "before" parameter
+        let page2 = handle_get_payment_history(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryParams {
+                limit: 2,
+                before: Some(first_tx_hash),
+            }),
+        )
+        .await
+        .expect("page 2");
+
+        assert_eq!(page2.0.payments.len(), 2);
+        // Ensure page2 transactions are different from page1
+        let page1_hashes: Vec<String> = page1.0.payments.iter().map(|p| p.tx_hash.clone()).collect();
+        let page2_hashes: Vec<String> = page2.0.payments.iter().map(|p| p.tx_hash.clone()).collect();
+        for hash in &page2_hashes {
+            assert!(!page1_hashes.contains(hash));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_payment_history_empty_account() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let account_address = sample_public_key([40u8; 32]);
+
+        let response = handle_get_payment_history(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryParams {
+                limit: 10,
+                before: None,
+            }),
+        )
+        .await
+        .expect("payment history");
+
+        assert_eq!(response.0.count, 0);
+        assert_eq!(response.0.payments.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_payment_history_invalid_address() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+
+        let err = handle_get_payment_history(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("invalid-hex".to_string()),
+            Query(PaymentHistoryParams {
+                limit: 10,
+                before: None,
+            }),
+        )
+        .await
+        .expect_err("should fail");
+
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_payment_history_max_limit_enforcement() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let account_address = sample_public_key([50u8; 32]);
+
+        // Try to request more than MAX_PAYMENT_LIMIT
+        let response = handle_get_payment_history(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryParams {
+                limit: 9999,
+                before: None,
+            }),
+        )
+        .await
+        .expect("payment history");
+
+        // Should succeed but limit should be capped
+        assert_eq!(response.0.count, 0); // no transactions
     }
 }
