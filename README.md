@@ -159,6 +159,8 @@ The command queries `/health`, `/status`, and `/peers` on every target, prints a
 - `GET /account/{address}` - Get account info
 - `GET /time` - Get current IPPAN Time
 
+Need a concrete example flow? See [`docs/payments/demo_end_to_end_payment.md`](docs/payments/demo_end_to_end_payment.md).
+
 ## 🔄 Releases & CI Automation
 
 ### Versioning & Release Channels

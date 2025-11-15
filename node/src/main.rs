@@ -524,7 +524,7 @@ async fn main() -> Result<()> {
         req_count: Arc::new(AtomicUsize::new(0)),
         security,
         metrics: prometheus_handle.clone(),
-        ipndht: None,
+        dev_mode: config.dev_mode,
     };
 
     let rpc_host = &config.rpc_host;
