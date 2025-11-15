@@ -59,6 +59,10 @@ pub struct Libp2pConfig {
     pub protocol_version: String,
     /// Agent version identifier.
     pub agent_version: String,
+    /// Bootstrap retry interval (for cold-start recovery).
+    pub bootstrap_retry_interval: Duration,
+    /// Maximum bootstrap retry attempts (0 = infinite).
+    pub bootstrap_max_retries: usize,
 }
 
 impl Default for Libp2pConfig {
@@ -78,6 +82,8 @@ impl Default for Libp2pConfig {
             identity_keypair: None,
             protocol_version: "/ippan/1.0.0".to_string(),
             agent_version: format!("ippan-p2p/{}", env!("CARGO_PKG_VERSION")),
+            bootstrap_retry_interval: Duration::from_secs(30),
+            bootstrap_max_retries: 0, // infinite retries by default
         }
     }
 }
@@ -363,11 +369,50 @@ impl Libp2pNetwork {
             .filter_map(|addr| extract_peer_id(addr).ok().flatten())
             .collect();
 
+        // Bootstrap retry logic for cold-start recovery
+        let bootstrap_peers_for_retry = config
+            .bootstrap_peers
+            .iter()
+            .chain(config.relay_servers.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        let bootstrap_retry_interval = config.bootstrap_retry_interval;
+        let bootstrap_max_retries = config.bootstrap_max_retries;
+
         let listen_task = listen_addresses.clone();
         let events_tx_task = event_tx.clone();
         let task = tokio::spawn(async move {
+            let mut bootstrap_ticker = tokio::time::interval(bootstrap_retry_interval);
+            bootstrap_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut retry_count = 0;
+
             loop {
                 tokio::select! {
+                    _ = bootstrap_ticker.tick() => {
+                        // Retry bootstrap if we have no peers and retries are not exhausted
+                        if !bootstrap_peers_for_retry.is_empty() {
+                            let connected_peers = swarm.connected_peers().count();
+                            if connected_peers == 0 {
+                                if bootstrap_max_retries == 0 || retry_count < bootstrap_max_retries {
+                                    retry_count += 1;
+                                    debug!("Bootstrap retry attempt {} (connected peers: {})", retry_count, connected_peers);
+                                    for addr in &bootstrap_peers_for_retry {
+                                        if let Err(err) = swarm.dial(addr.clone()) {
+                                            debug!("Bootstrap retry dial failed for {}: {}", addr, err);
+                                        }
+                                    }
+                                } else {
+                                    debug!("Bootstrap retry exhausted (max: {})", bootstrap_max_retries);
+                                }
+                            } else {
+                                // Reset retry count if we have peers
+                                if retry_count > 0 {
+                                    debug!("Bootstrap successful, resetting retry count");
+                                    retry_count = 0;
+                                }
+                            }
+                        }
+                    }
                     swarm_event = swarm.select_next_some() => {
                         handle_swarm_event(swarm_event, &mut swarm, &events_tx_task, &listen_task, &relay_peer_ids);
                     }
@@ -625,6 +670,8 @@ mod tests {
             identity_keypair: None,
             protocol_version: "/ippan/test".to_string(),
             agent_version: "ippan-test/0.0.1".to_string(),
+            bootstrap_retry_interval: Duration::from_secs(30),
+            bootstrap_max_retries: 0,
         };
 
         let network = Libp2pNetwork::new(config).expect("expected network to initialise");
