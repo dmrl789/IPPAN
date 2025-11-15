@@ -5,6 +5,7 @@ IPPAN's IPNDHT (InterPlanetary Named Data Hash Table) system provides content-ad
 ## Core Documents
 
 - [File Descriptors](./file-descriptors.md) - Metadata tracking and DHT-based file publishing/lookup
+- [Resilience Model](./resilience.md) - Multi-node resilience, cold-start recovery, and partition tolerance
 
 ## Overview
 
@@ -36,11 +37,13 @@ IPNDHT extends IPPAN's DHT capabilities with:
 ## Status
 
 - **Phase 1** (Current): Metadata tracking, local storage, stub DHT
-- **Phase 2** (Planned): Full Kademlia integration with libp2p
-- **Phase 3** (Planned): Content storage integration (IPFS/similar)
+- **Phase 2** (Implemented): Full Kademlia integration with libp2p, resilience layer
+- **Phase 3** (Planned): Content storage integration (IPFS/similar), DHT record persistence
 
 ## See Also
 
 - [File Descriptor API](./file-descriptors.md#rpc-endpoints)
 - [ID Generation](./file-descriptors.md#id-generation)
 - [Integration Guide](./file-descriptors.md#integration)
+- [Resilience Model](./resilience.md)
+- [Testing Guide](./resilience.md#testing-and-validation)
