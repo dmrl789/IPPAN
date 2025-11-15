@@ -103,6 +103,18 @@ impl DGBDTRegistry {
         Ok(())
     }
 
+    /// Load a model referenced in the provided config file, activate it, and
+    /// return the `(Model, hash)` tuple.
+    pub fn load_and_activate_from_config<P: AsRef<Path>>(
+        &mut self,
+        config_path: P,
+    ) -> Result<(Model, String)> {
+        let (model, hash) = load_model_from_config(config_path.as_ref())?;
+        let activated_model = model.clone();
+        self.store_active_model(model, hash.clone())?;
+        Ok((activated_model, hash))
+    }
+
     /// Get the currently active model with its hash
     pub fn get_active_model(&self) -> Result<Option<(Model, String)>> {
         let data = match self.db.get(ACTIVE_MODEL_KEY)? {
@@ -447,6 +459,37 @@ mod tests {
             hash1, hash2,
             "Different models should have different hashes"
         );
+    }
+
+    #[test]
+    fn test_load_and_activate_from_config() {
+        let (mut registry, temp_dir) = create_test_registry();
+        let root = temp_dir.path();
+
+        let config_dir = root.join("config");
+        let models_dir = root.join("models");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(&models_dir).unwrap();
+
+        let model = create_test_model();
+        let model_path = models_dir.join("model.json");
+        std::fs::write(&model_path, serde_json::to_string(&model).unwrap()).unwrap();
+
+        let config_path = config_dir.join("dlc.toml");
+        let config_contents = r#"
+[dgbdt]
+d_gbdt_model_path = "models/model.json"
+"#;
+        std::fs::write(&config_path, config_contents).unwrap();
+
+        let (activated_model, hash) = registry
+            .load_and_activate_from_config(&config_path)
+            .unwrap();
+        assert_eq!(activated_model.trees.len(), model.trees.len());
+
+        let stored = registry.get_active_model().unwrap().unwrap();
+        assert_eq!(stored.1, hash);
+        assert_eq!(stored.0.trees.len(), model.trees.len());
     }
 
     #[test]

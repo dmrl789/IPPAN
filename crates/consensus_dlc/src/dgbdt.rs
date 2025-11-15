@@ -4,11 +4,17 @@
 //! selection and reputation scoring using integer-only arithmetic.
 
 use crate::error::{DlcError, Result};
+use ippan_ai_registry::d_gbdt::DGBDTRegistry;
 use ippan_types::currency::denominations;
 use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
+use sled;
 use std::collections::HashMap;
-use std::path::Path;
+use std::env;
+use std::path::{Path, PathBuf};
+
+const REGISTRY_ENV_KEY: &str = "IPPAN_DGBDT_REGISTRY_PATH";
+const DEFAULT_REGISTRY_PATH: &str = "data/dgbdt_registry";
 
 /// Validator metrics used for fairness scoring (deterministic, scaled integers)
 /// All percentage/ratio fields are scaled by 10000 (e.g., 10000 = 100%)
@@ -214,6 +220,36 @@ impl FairnessModel {
         let mut fairness = Self::new_default();
         fairness.d_gbdt_model = Some(model);
         fairness
+    }
+
+    /// Build a fairness model from the active registry entry.
+    pub fn from_registry(registry: &mut DGBDTRegistry) -> Result<(Self, String)> {
+        let (model, hash) = registry
+            .get_active_model()
+            .map_err(|e| DlcError::Model(format!("Failed to read active D-GBDT model: {e}")))?
+            .ok_or_else(|| DlcError::Model("No active D-GBDT model in registry".to_string()))?;
+        let fairness = FairnessModel::from_d_gbdt_model(model);
+        Ok((fairness, hash))
+    }
+
+    /// Load a fairness model from a registry database located at `path`.
+    pub fn from_registry_path<P: AsRef<Path>>(path: P) -> Result<(Self, String)> {
+        let db_path = path.as_ref();
+        let db = sled::open(db_path).map_err(|e| {
+            DlcError::Model(format!(
+                "Failed to open D-GBDT registry at {}: {}",
+                db_path.display(),
+                e
+            ))
+        })?;
+        let mut registry = DGBDTRegistry::new(db);
+        Self::from_registry(&mut registry)
+    }
+
+    /// Load a fairness model using the configured registry environment variable.
+    pub fn load_from_env_registry() -> Result<(Self, String)> {
+        let path = env::var(REGISTRY_ENV_KEY).unwrap_or_else(|_| DEFAULT_REGISTRY_PATH.to_string());
+        Self::from_registry_path(PathBuf::from(path))
     }
 
     /// Create a new default fairness model
@@ -425,7 +461,9 @@ pub fn rank_validators(
 #[allow(deprecated)]
 mod tests {
     use super::*;
+    use ippan_ai_registry::d_gbdt::compute_model_hash;
     use ippan_types::Amount;
+    use tempfile::TempDir;
 
     #[test]
     fn test_validator_metrics() {
@@ -528,5 +566,32 @@ mod tests {
         let score2 = model.score_deterministic(&metrics);
 
         assert_eq!(score1, score2);
+    }
+
+    #[test]
+    fn test_load_from_registry_path() {
+        use ippan_ai_core::gbdt::{Node as DNode, Tree as DTree, SCALE};
+
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("registry");
+        let db = sled::open(&db_path).unwrap();
+        let mut registry = DGBDTRegistry::new(db);
+
+        let tree = DTree::new(
+            vec![
+                DNode::internal(0, 0, 50 * SCALE, 1, 2),
+                DNode::leaf(1, 100 * SCALE),
+                DNode::leaf(2, 200 * SCALE),
+            ],
+            SCALE,
+        );
+        let model = ippan_ai_core::gbdt::Model::new(vec![tree], 0);
+        let hash = compute_model_hash(&model).unwrap();
+        registry.store_active_model(model, hash.clone()).unwrap();
+        drop(registry);
+
+        let (fairness, loaded_hash) = FairnessModel::from_registry_path(&db_path).unwrap();
+        assert_eq!(loaded_hash, hash);
+        assert!(fairness.d_gbdt_model.is_some());
     }
 }

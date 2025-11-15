@@ -26,7 +26,9 @@
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Initialize consensus components
 //!     let mut dag = dag::BlockDAG::new();
-//!     let fairness_model = dgbdt::FairnessModel::new_production();
+//!     let fairness_model = dgbdt::FairnessModel::load_from_env_registry()
+//!         .map(|(model, _)| model)
+//!         .unwrap_or_else(|_| dgbdt::FairnessModel::new_production());
 //!     
 //!     // Process a consensus round
 //!     let result = process_round(
@@ -126,7 +128,23 @@ pub struct DlcConsensus {
 impl DlcConsensus {
     /// Create a new DLC consensus instance
     pub fn new(config: DlcConfig) -> Self {
-        let model = FairnessModel::new_production();
+        let model = match FairnessModel::load_from_env_registry() {
+            Ok((model, hash)) => {
+                tracing::info!(
+                    target: "consensus_dlc::dgbdt",
+                    hash = %hash,
+                    "Loaded D-GBDT fairness model from registry"
+                );
+                model
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "consensus_dlc::dgbdt",
+                    "Falling back to built-in fairness model: {err}"
+                );
+                FairnessModel::new_production()
+            }
+        };
 
         Self {
             dag: BlockDAG::new(),

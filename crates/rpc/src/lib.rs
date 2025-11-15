@@ -2,8 +2,8 @@
 //! state, networking (`ippan_p2p`), and L2 configuration. Provides the `start_server`
 //! helper plus shared types for peer snapshots consumed by explorers and tooling.
 //!
-pub mod server;
 pub mod files;
+pub mod server;
 
 #[cfg(test)]
 mod files_tests;

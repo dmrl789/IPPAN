@@ -69,6 +69,12 @@ DLC combines multiple innovative technologies to provide a fair, secure, and eff
 
 ## Usage
 
+> **Note:** `DlcConsensus::new` automatically loads the active D-GBDT fairness model
+> from the AI registry. Set `IPPAN_DGBDT_REGISTRY_PATH` if your registry database
+> is not in `data/dgbdt_registry`, and make sure to activate a model via
+> `ippan_ai_registry::d_gbdt::DGBDTRegistry::load_and_activate_from_config` before
+> starting consensus.
+
 ### Basic Example
 
 ```rust
@@ -122,8 +128,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use ippan_consensus_dlc::dgbdt::*;
 use ippan_types::Amount;
 
-// Create a custom fairness model
-let model = FairnessModel::new_production();
+// Load the active registry model (fallback to built-in default if missing)
+let (model, _hash) = FairnessModel::load_from_env_registry()
+    .unwrap_or_else(|_| (FairnessModel::new_production(), String::new()));
 
 // Score a validator
 let metrics = ValidatorMetrics::new(

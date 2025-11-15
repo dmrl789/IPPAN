@@ -33,10 +33,12 @@ impl FileId {
     /// Parse from hex string.
     pub fn from_hex(hex_str: &str) -> Result<Self, String> {
         if hex_str.len() != 64 {
-            return Err(format!("FileId hex must be 64 characters, got {}", hex_str.len()));
+            return Err(format!(
+                "FileId hex must be 64 characters, got {}",
+                hex_str.len()
+            ));
         }
-        let bytes = hex::decode(hex_str)
-            .map_err(|e| format!("Invalid hex: {}", e))?;
+        let bytes = hex::decode(hex_str).map_err(|e| format!("Invalid hex: {}", e))?;
         if bytes.len() != 32 {
             return Err("FileId must be 32 bytes".to_string());
         }
@@ -75,10 +77,12 @@ impl ContentHash {
     /// Parse from hex string.
     pub fn from_hex(hex_str: &str) -> Result<Self, String> {
         if hex_str.len() != 64 {
-            return Err(format!("ContentHash hex must be 64 characters, got {}", hex_str.len()));
+            return Err(format!(
+                "ContentHash hex must be 64 characters, got {}",
+                hex_str.len()
+            ));
         }
-        let bytes = hex::decode(hex_str)
-            .map_err(|e| format!("Invalid hex: {}", e))?;
+        let bytes = hex::decode(hex_str).map_err(|e| format!("Invalid hex: {}", e))?;
         if bytes.len() != 32 {
             return Err("ContentHash must be 32 bytes".to_string());
         }
@@ -89,30 +93,30 @@ impl ContentHash {
 }
 
 /// File descriptor metadata record.
-/// 
+///
 /// This structure contains all metadata about a file without storing the actual content.
 /// IDs are deterministically generated using HashTimer + content hash for uniqueness.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileDescriptor {
     /// Unique identifier derived from HashTimer + content hash.
     pub id: FileId,
-    
+
     /// BLAKE3 hash of file content.
     pub content_hash: ContentHash,
-    
+
     /// Owner's address (32-byte).
     pub owner: [u8; 32],
-    
+
     /// File size in bytes.
     pub size_bytes: u64,
-    
+
     /// Creation timestamp (microseconds, HashTimer-based).
     pub created_at_us: u64,
-    
+
     /// Optional MIME type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
-    
+
     /// Optional tags for categorization.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
@@ -120,7 +124,7 @@ pub struct FileDescriptor {
 
 impl FileDescriptor {
     /// Create a new file descriptor with deterministic ID.
-    /// 
+    ///
     /// The ID is computed from: HashTimer.derive(context="file", time, content_hash, owner).
     /// This ensures uniqueness while maintaining determinism and time-ordering.
     pub fn new(
@@ -147,14 +151,14 @@ impl FileDescriptor {
         let timer = HashTimer::derive(
             "file",
             time,
-            content_hash.as_bytes(),  // domain
-            &owner,                    // payload
-            &[0u8; 32],               // nonce (deterministic, use zero)
-            &owner,                    // node_id (use owner for consistency)
+            content_hash.as_bytes(), // domain
+            &owner,                  // payload
+            &[0u8; 32],              // nonce (deterministic, use zero)
+            &owner,                  // node_id (use owner for consistency)
         );
-        
+
         let id = FileId::from_hashtimer(&timer);
-        
+
         Self {
             id,
             content_hash,
@@ -171,23 +175,23 @@ impl FileDescriptor {
         if self.size_bytes == 0 {
             return Err("File size cannot be zero".to_string());
         }
-        
+
         if let Some(mime) = &self.mime_type {
             if mime.len() > 128 {
                 return Err("MIME type too long (max 128 chars)".to_string());
             }
         }
-        
+
         if self.tags.len() > 32 {
             return Err("Too many tags (max 32)".to_string());
         }
-        
+
         for tag in &self.tags {
             if tag.is_empty() || tag.len() > 64 {
                 return Err("Tag must be 1-64 characters".to_string());
             }
         }
-        
+
         Ok(())
     }
 }
@@ -201,14 +205,10 @@ mod tests {
         let content_hash = ContentHash::from_data(b"test content");
         let owner = [1u8; 32];
         let time = IppanTimeMicros(1000000);
-        
-        let desc1 = FileDescriptor::new_at_time(
-            content_hash, owner, 100, time, None, vec![]
-        );
-        let desc2 = FileDescriptor::new_at_time(
-            content_hash, owner, 100, time, None, vec![]
-        );
-        
+
+        let desc1 = FileDescriptor::new_at_time(content_hash, owner, 100, time, None, vec![]);
+        let desc2 = FileDescriptor::new_at_time(content_hash, owner, 100, time, None, vec![]);
+
         assert_eq!(desc1.id, desc2.id, "IDs must be deterministic");
         assert_eq!(desc1.created_at_us, 1000000);
     }
@@ -219,11 +219,14 @@ mod tests {
         let content2 = ContentHash::from_data(b"content2");
         let owner = [1u8; 32];
         let time = IppanTimeMicros(1000000);
-        
+
         let desc1 = FileDescriptor::new_at_time(content1, owner, 100, time, None, vec![]);
         let desc2 = FileDescriptor::new_at_time(content2, owner, 100, time, None, vec![]);
-        
-        assert_ne!(desc1.id, desc2.id, "Different content must have different IDs");
+
+        assert_ne!(
+            desc1.id, desc2.id,
+            "Different content must have different IDs"
+        );
     }
 
     #[test]
@@ -231,10 +234,10 @@ mod tests {
         let content_hash = ContentHash::from_data(b"test");
         let owner = [7u8; 32];
         let desc = FileDescriptor::new(content_hash, owner, 42, None, vec![]);
-        
+
         let hex = desc.id.to_hex();
         assert_eq!(hex.len(), 64);
-        
+
         let parsed = FileId::from_hex(&hex).unwrap();
         assert_eq!(parsed, desc.id);
     }
@@ -244,7 +247,7 @@ mod tests {
         let data = b"hello world";
         let hash1 = ContentHash::from_data(data);
         let hash2 = ContentHash::from_data(data);
-        
+
         assert_eq!(hash1, hash2, "Hash must be deterministic");
         assert_ne!(hash1.0, [0u8; 32], "Hash must not be zero");
     }
@@ -253,16 +256,16 @@ mod tests {
     fn test_descriptor_validation() {
         let content_hash = ContentHash::from_data(b"test");
         let owner = [1u8; 32];
-        
+
         // Valid descriptor
         let desc = FileDescriptor::new(content_hash, owner, 100, None, vec![]);
         assert!(desc.validate().is_ok());
-        
+
         // Zero size - invalid
         let mut desc_zero_size = desc.clone();
         desc_zero_size.size_bytes = 0;
         assert!(desc_zero_size.validate().is_err());
-        
+
         // Too many tags
         let desc_many_tags = FileDescriptor::new(
             content_hash,
@@ -272,15 +275,10 @@ mod tests {
             (0..33).map(|i| format!("tag{}", i)).collect(),
         );
         assert!(desc_many_tags.validate().is_err());
-        
+
         // Long MIME type
-        let desc_long_mime = FileDescriptor::new(
-            content_hash,
-            owner,
-            100,
-            Some("a".repeat(200)),
-            vec![],
-        );
+        let desc_long_mime =
+            FileDescriptor::new(content_hash, owner, 100, Some("a".repeat(200)), vec![]);
         assert!(desc_long_mime.validate().is_err());
     }
 
@@ -289,7 +287,7 @@ mod tests {
         let content_hash = ContentHash::from_data(b"image data");
         let owner = [5u8; 32];
         let tags = vec!["image".to_string(), "test".to_string()];
-        
+
         let desc = FileDescriptor::new(
             content_hash,
             owner,
@@ -297,7 +295,7 @@ mod tests {
             Some("image/png".to_string()),
             tags.clone(),
         );
-        
+
         assert_eq!(desc.size_bytes, 1024);
         assert_eq!(desc.mime_type, Some("image/png".to_string()));
         assert_eq!(desc.tags, tags);

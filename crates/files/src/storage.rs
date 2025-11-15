@@ -10,16 +10,16 @@ use std::sync::Arc;
 pub trait FileStorage: Send + Sync {
     /// Store a file descriptor.
     fn store(&self, descriptor: FileDescriptor) -> Result<()>;
-    
+
     /// Retrieve a file descriptor by ID.
     fn get(&self, id: &FileId) -> Result<Option<FileDescriptor>>;
-    
+
     /// List file descriptors by owner.
     fn list_by_owner(&self, owner: &[u8; 32]) -> Result<Vec<FileDescriptor>>;
-    
+
     /// Count total descriptors.
     fn count(&self) -> Result<u64>;
-    
+
     /// List all descriptors (paginated).
     fn list(&self, offset: usize, limit: usize) -> Result<Vec<FileDescriptor>>;
 }
@@ -33,10 +33,10 @@ pub struct MemoryFileStorage {
 struct MemoryFileStorageInner {
     /// Primary index: ID -> Descriptor
     descriptors: RwLock<HashMap<FileId, FileDescriptor>>,
-    
+
     /// Secondary index: Owner -> [FileId]
     by_owner: RwLock<HashMap<[u8; 32], Vec<FileId>>>,
-    
+
     /// Ordered index for pagination (by creation time)
     by_time: RwLock<BTreeMap<u64, FileId>>,
 }
@@ -63,85 +63,86 @@ impl Default for MemoryFileStorage {
 impl FileStorage for MemoryFileStorage {
     fn store(&self, descriptor: FileDescriptor) -> Result<()> {
         // Validate before storing
-        descriptor.validate()
+        descriptor
+            .validate()
             .map_err(|e| anyhow::anyhow!("Validation failed: {}", e))?;
-        
+
         let id = descriptor.id;
         let owner = descriptor.owner;
         let created_at = descriptor.created_at_us;
-        
+
         // Store in primary index
         {
             let mut descriptors = self.inner.descriptors.write();
             descriptors.insert(id, descriptor);
         }
-        
+
         // Update owner index
         {
             let mut by_owner = self.inner.by_owner.write();
             by_owner.entry(owner).or_insert_with(Vec::new).push(id);
         }
-        
+
         // Update time index
         {
             let mut by_time = self.inner.by_time.write();
             by_time.insert(created_at, id);
         }
-        
+
         Ok(())
     }
-    
+
     fn get(&self, id: &FileId) -> Result<Option<FileDescriptor>> {
         let descriptors = self.inner.descriptors.read();
         Ok(descriptors.get(id).cloned())
     }
-    
+
     fn list_by_owner(&self, owner: &[u8; 32]) -> Result<Vec<FileDescriptor>> {
         let by_owner = self.inner.by_owner.read();
         let descriptors = self.inner.descriptors.read();
-        
+
         let ids = match by_owner.get(owner) {
             Some(ids) => ids.clone(),
             None => return Ok(Vec::new()),
         };
-        
+
         let mut results = Vec::new();
         for id in ids {
             if let Some(desc) = descriptors.get(&id) {
                 results.push(desc.clone());
             }
         }
-        
+
         // Sort by creation time (newest first)
         results.sort_by(|a, b| b.created_at_us.cmp(&a.created_at_us));
-        
+
         Ok(results)
     }
-    
+
     fn count(&self) -> Result<u64> {
         let descriptors = self.inner.descriptors.read();
         Ok(descriptors.len() as u64)
     }
-    
+
     fn list(&self, offset: usize, limit: usize) -> Result<Vec<FileDescriptor>> {
         let by_time = self.inner.by_time.read();
         let descriptors = self.inner.descriptors.read();
-        
+
         let ids: Vec<FileId> = by_time
             .values()
-            .rev()  // Newest first
+            .rev() // Newest first
             .skip(offset)
             .take(limit)
             .copied()
             .collect();
-        
+
         let mut results = Vec::new();
         for id in ids {
             if let Some(desc) = descriptors.get(&id) {
                 results.push(desc.clone());
             }
         }
-        
+
         Ok(results)
     }
 }
@@ -157,12 +158,12 @@ mod tests {
         let storage = MemoryFileStorage::new();
         let content_hash = ContentHash::from_data(b"test content");
         let owner = [1u8; 32];
-        
+
         let desc = FileDescriptor::new(content_hash, owner, 100, None, vec![]);
         let id = desc.id;
-        
+
         storage.store(desc.clone()).unwrap();
-        
+
         let retrieved = storage.get(&id).unwrap();
         assert_eq!(retrieved, Some(desc));
     }
@@ -172,7 +173,7 @@ mod tests {
         let storage = MemoryFileStorage::new();
         let owner1 = [1u8; 32];
         let owner2 = [2u8; 32];
-        
+
         // Store files for owner1
         for i in 0..3 {
             let content = format!("content{}", i);
@@ -180,7 +181,7 @@ mod tests {
             let desc = FileDescriptor::new(hash, owner1, 100 + i as u64, None, vec![]);
             storage.store(desc).unwrap();
         }
-        
+
         // Store files for owner2
         for i in 0..2 {
             let content = format!("other{}", i);
@@ -188,13 +189,13 @@ mod tests {
             let desc = FileDescriptor::new(hash, owner2, 200 + i as u64, None, vec![]);
             storage.store(desc).unwrap();
         }
-        
+
         let owner1_files = storage.list_by_owner(&owner1).unwrap();
         assert_eq!(owner1_files.len(), 3);
-        
+
         let owner2_files = storage.list_by_owner(&owner2).unwrap();
         assert_eq!(owner2_files.len(), 2);
-        
+
         // All files for owner1
         for desc in &owner1_files {
             assert_eq!(desc.owner, owner1);
@@ -204,16 +205,16 @@ mod tests {
     #[test]
     fn test_count() {
         let storage = MemoryFileStorage::new();
-        
+
         assert_eq!(storage.count().unwrap(), 0);
-        
+
         for i in 0..5 {
             let content = format!("file{}", i);
             let hash = ContentHash::from_data(content.as_bytes());
             let desc = FileDescriptor::new(hash, [1u8; 32], 100, None, vec![]);
             storage.store(desc).unwrap();
         }
-        
+
         assert_eq!(storage.count().unwrap(), 5);
     }
 
@@ -221,7 +222,7 @@ mod tests {
     fn test_pagination() {
         let storage = MemoryFileStorage::new();
         let owner = [1u8; 32];
-        
+
         // Create 10 files at different times
         for i in 0..10 {
             let content = format!("file{}", i);
@@ -230,18 +231,18 @@ mod tests {
             let desc = FileDescriptor::new_at_time(hash, owner, 100, time, None, vec![]);
             storage.store(desc).unwrap();
         }
-        
+
         // First page (5 items)
         let page1 = storage.list(0, 5).unwrap();
         assert_eq!(page1.len(), 5);
-        
+
         // Second page
         let page2 = storage.list(5, 5).unwrap();
         assert_eq!(page2.len(), 5);
-        
+
         // Verify order (newest first)
         assert!(page1[0].created_at_us > page1[4].created_at_us);
-        
+
         // No overlap
         assert_ne!(page1[0].id, page2[0].id);
     }
@@ -251,11 +252,11 @@ mod tests {
         let storage = MemoryFileStorage::new();
         let content_hash = ContentHash::from_data(b"test");
         let owner = [1u8; 32];
-        
+
         // Invalid descriptor (zero size)
         let mut invalid_desc = FileDescriptor::new(content_hash, owner, 0, None, vec![]);
         invalid_desc.size_bytes = 0;
-        
+
         let result = storage.store(invalid_desc);
         assert!(result.is_err());
     }
@@ -264,7 +265,7 @@ mod tests {
     fn test_get_nonexistent() {
         let storage = MemoryFileStorage::new();
         let nonexistent_id = FileId::from_bytes([99u8; 32]);
-        
+
         let result = storage.get(&nonexistent_id).unwrap();
         assert_eq!(result, None);
     }

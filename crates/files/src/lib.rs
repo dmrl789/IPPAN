@@ -5,12 +5,12 @@
 //! owner information, and metadata without storing the actual file content.
 
 pub mod descriptor;
-pub mod storage;
 pub mod dht;
+pub mod storage;
 
 pub use descriptor::{FileDescriptor, FileId};
+pub use dht::{DhtLookupResult, DhtPublishResult, FileDhtService};
 pub use storage::{FileStorage, MemoryFileStorage};
-pub use dht::{FileDhtService, DhtPublishResult, DhtLookupResult};
 
 #[cfg(test)]
 mod tests;

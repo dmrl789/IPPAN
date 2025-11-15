@@ -64,10 +64,7 @@ impl DhtTestNode {
             listen_addresses: config.listen_addresses.clone(),
             bootstrap_peers: config.bootstrap_peers.clone(),
             relay_servers: Vec::new(),
-            gossip_topics: vec![
-                "ippan/files".to_string(),
-                "ippan/handles".to_string(),
-            ],
+            gossip_topics: vec!["ippan/files".to_string(), "ippan/handles".to_string()],
             enable_mdns: config.enable_mdns,
             enable_relay: config.enable_relay,
             identity_keypair: None,
@@ -80,7 +77,7 @@ impl DhtTestNode {
         let network = Libp2pNetwork::new(libp2p_config)?;
         let peer_id = network.peer_id();
         let listen_addresses = network.listen_addresses();
-        
+
         info!(
             "[{}] Node spawned: peer_id={}, listen_addrs={:?}",
             config.node_id, peer_id, listen_addresses
@@ -89,11 +86,11 @@ impl DhtTestNode {
         let events = Arc::new(RwLock::new(Vec::new()));
         let events_clone = events.clone();
         let node_id = config.node_id.clone();
-        
+
         let mut event_receiver = network
             .take_event_receiver()
             .expect("event receiver available");
-        
+
         // Spawn background task to collect events
         let event_task = tokio::spawn(async move {
             while let Some(event) = event_receiver.recv().await {
@@ -163,9 +160,10 @@ impl DhtTestNode {
         let start = std::time::Instant::now();
         while start.elapsed() < timeout_duration {
             let events = self.events.read();
-            if events.iter().any(|e| {
-                matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &peer_id)
-            }) {
+            if events
+                .iter()
+                .any(|e| matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &peer_id))
+            {
                 return Ok(());
             }
             drop(events);
@@ -263,23 +261,20 @@ pub async fn spawn_test_nodes(count: usize) -> anyhow::Result<Vec<DhtTestNode>> 
 }
 
 /// Connect node B to node A (B bootstraps from A)
-pub async fn connect_nodes(
-    node_a: &DhtTestNode,
-    node_b: &DhtTestNode,
-) -> anyhow::Result<()> {
+pub async fn connect_nodes(node_a: &DhtTestNode, node_b: &DhtTestNode) -> anyhow::Result<()> {
     if let Some(addr) = node_a.dial_address() {
         info!(
             "[{}] Dialing [{}] at {}",
             node_b.config.node_id, node_a.config.node_id, addr
         );
         node_b.dial(addr)?;
-        
+
         // Wait for connection establishment
         node_b
             .wait_for_peer_connected(node_a.peer_id, Duration::from_secs(5))
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
-        
+
         info!(
             "[{}] Successfully connected to [{}]",
             node_b.config.node_id, node_a.config.node_id
@@ -299,7 +294,7 @@ pub async fn wait_for_full_mesh(
     timeout_duration: Duration,
 ) -> Result<(), String> {
     let start = std::time::Instant::now();
-    
+
     loop {
         if start.elapsed() > timeout_duration {
             return Err("Timeout waiting for full mesh connectivity".to_string());
@@ -348,9 +343,9 @@ pub async fn wait_for_full_mesh(
 #[ignore] // Run with --ignored flag due to network timing sensitivity
 async fn test_minimal_2_node_discovery() {
     tracing_subscriber::fmt::init();
-    
+
     info!("=== Test: Minimal 2-Node Discovery ===");
-    
+
     // Spawn Node A
     let node_a = DhtTestNode::spawn(DhtNodeConfig {
         node_id: "node-a".to_string(),
@@ -358,9 +353,9 @@ async fn test_minimal_2_node_discovery() {
     })
     .await
     .expect("spawn node A");
-    
+
     info!("Node A spawned: peer_id={}", node_a.peer_id);
-    
+
     // Spawn Node B with A as bootstrap
     let bootstrap_addr = node_a.dial_address().expect("node A dial address");
     let node_b = DhtTestNode::spawn(DhtNodeConfig {
@@ -370,39 +365,39 @@ async fn test_minimal_2_node_discovery() {
     })
     .await
     .expect("spawn node B");
-    
+
     info!("Node B spawned: peer_id={}", node_b.peer_id);
-    
+
     // Wait for B to discover and connect to A
     node_b
         .wait_for_peer_connected(node_a.peer_id, Duration::from_secs(10))
         .await
         .expect("Node B connects to Node A");
-    
+
     info!("✓ Node B successfully connected to Node A");
-    
+
     // Verify reciprocal discovery: A should eventually discover B
     node_a
         .wait_for_peer_connected(node_b.peer_id, Duration::from_secs(10))
         .await
         .expect("Node A discovers Node B reciprocally");
-    
+
     info!("✓ Node A reciprocally discovered Node B");
-    
+
     // Verify both nodes have each other in routing table
     let a_events = node_a.get_events();
     let b_events = node_b.get_events();
-    
-    let a_has_b = a_events.iter().any(|e| {
-        matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &node_b.peer_id)
-    });
-    let b_has_a = b_events.iter().any(|e| {
-        matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &node_a.peer_id)
-    });
-    
+
+    let a_has_b = a_events
+        .iter()
+        .any(|e| matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &node_b.peer_id));
+    let b_has_a = b_events
+        .iter()
+        .any(|e| matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &node_a.peer_id));
+
     assert!(a_has_b, "Node A routing table contains Node B");
     assert!(b_has_a, "Node B routing table contains Node A");
-    
+
     info!("✓ Both nodes have each other in routing tables");
     info!("=== Test PASSED: Minimal 2-Node Discovery ===");
 }
@@ -411,9 +406,9 @@ async fn test_minimal_2_node_discovery() {
 #[ignore]
 async fn test_cold_start_recovery() {
     tracing_subscriber::fmt::init();
-    
+
     info!("=== Test: Cold Start Recovery ===");
-    
+
     // Node A starts alone (no bootstrap peers)
     let node_a = DhtTestNode::spawn(DhtNodeConfig {
         node_id: "node-a-cold".to_string(),
@@ -421,12 +416,12 @@ async fn test_cold_start_recovery() {
     })
     .await
     .expect("spawn node A");
-    
+
     info!("Node A spawned alone: peer_id={}", node_a.peer_id);
-    
+
     // Wait a bit to simulate cold start
     sleep(Duration::from_secs(1)).await;
-    
+
     // Node B starts and announces itself
     let node_b = DhtTestNode::spawn(DhtNodeConfig {
         node_id: "node-b".to_string(),
@@ -434,31 +429,31 @@ async fn test_cold_start_recovery() {
     })
     .await
     .expect("spawn node B");
-    
+
     info!("Node B spawned: peer_id={}", node_b.peer_id);
-    
+
     // Manually connect A to B (simulating retry bootstrap logic)
     if let Some(b_addr) = node_b.dial_address() {
         info!("Node A attempting to dial Node B at {}", b_addr);
         node_a.dial(b_addr).expect("dial B from A");
-        
+
         // Wait for connection
         node_a
             .wait_for_peer_connected(node_b.peer_id, Duration::from_secs(10))
             .await
             .expect("Node A connects to Node B after cold start");
-        
+
         info!("✓ Node A successfully recovered from cold start and connected to Node B");
     } else {
         panic!("Node B has no dial address");
     }
-    
+
     // Verify connection is bidirectional
     node_b
         .wait_for_peer_connected(node_a.peer_id, Duration::from_secs(5))
         .await
         .expect("Node B sees Node A connection");
-    
+
     info!("✓ Bidirectional connection established after cold start");
     info!("=== Test PASSED: Cold Start Recovery ===");
 }
@@ -467,22 +462,22 @@ async fn test_cold_start_recovery() {
 #[ignore]
 async fn test_file_descriptor_propagation() {
     tracing_subscriber::fmt::init();
-    
+
     info!("=== Test: File Descriptor Propagation ===");
-    
+
     // Spawn 3 nodes
     let nodes = spawn_test_nodes(3).await.expect("spawn 3 nodes");
     let node_a = &nodes[0];
     let node_b = &nodes[1];
     let node_c = &nodes[2];
-    
+
     // Connect nodes in a chain: A <-> B <-> C
     connect_nodes(node_a, node_b).await.expect("connect A to B");
     connect_nodes(node_b, node_c).await.expect("connect B to C");
-    
+
     // Wait for mesh to stabilize
     sleep(Duration::from_secs(2)).await;
-    
+
     // Node A publishes a file descriptor
     let file_data = b"test file content";
     let file_hash = blake3::hash(file_data);
@@ -493,44 +488,44 @@ async fn test_file_descriptor_propagation() {
         "size": file_data.len(),
         "owner": hex::encode([1u8; 32]),
     });
-    
+
     let file_msg_bytes = serde_json::to_vec(&file_descriptor_msg).unwrap();
-    
+
     info!("[{}] Publishing file descriptor", node_a.config.node_id);
     node_a
         .publish("ippan/files", file_msg_bytes.clone())
         .expect("publish file descriptor from A");
-    
+
     // Node B should receive the file descriptor via gossip
     let b_received = node_b
         .wait_for_gossip("ippan/files", Duration::from_secs(10))
         .await
         .expect("Node B receives file descriptor");
-    
+
     info!("✓ Node B received file descriptor gossip");
-    
+
     let b_msg: serde_json::Value = serde_json::from_slice(&b_received).unwrap();
     assert_eq!(
         b_msg["content_hash"].as_str().unwrap(),
         file_hash_hex,
         "Node B received correct file hash"
     );
-    
+
     // Node C should also receive it (propagation through B)
     let c_received = node_c
         .wait_for_gossip("ippan/files", Duration::from_secs(10))
         .await
         .expect("Node C receives file descriptor");
-    
+
     info!("✓ Node C received file descriptor gossip");
-    
+
     let c_msg: serde_json::Value = serde_json::from_slice(&c_received).unwrap();
     assert_eq!(
         c_msg["content_hash"].as_str().unwrap(),
         file_hash_hex,
         "Node C received correct file hash"
     );
-    
+
     info!("✓ File descriptor successfully propagated across all 3 nodes");
     info!("=== Test PASSED: File Descriptor Propagation ===");
 }
@@ -539,19 +534,19 @@ async fn test_file_descriptor_propagation() {
 #[ignore]
 async fn test_handle_propagation() {
     tracing_subscriber::fmt::init();
-    
+
     info!("=== Test: Handle Propagation (Stub) ===");
-    
+
     // Spawn 2 nodes
     let nodes = spawn_test_nodes(2).await.expect("spawn 2 nodes");
     let node_a = &nodes[0];
     let node_b = &nodes[1];
-    
+
     // Connect nodes
     connect_nodes(node_a, node_b).await.expect("connect A to B");
-    
+
     sleep(Duration::from_millis(500)).await;
-    
+
     // Node A publishes a handle registration
     let handle_msg = serde_json::json!({
         "type": "handle_register",
@@ -559,29 +554,29 @@ async fn test_handle_propagation() {
         "owner": hex::encode([2u8; 32]),
         "public_key": hex::encode([3u8; 32]),
     });
-    
+
     let handle_msg_bytes = serde_json::to_vec(&handle_msg).unwrap();
-    
+
     info!("[{}] Publishing handle registration", node_a.config.node_id);
     node_a
         .publish("ippan/handles", handle_msg_bytes.clone())
         .expect("publish handle from A");
-    
+
     // Node B should receive the handle via gossip
     let b_received = node_b
         .wait_for_gossip("ippan/handles", Duration::from_secs(10))
         .await
         .expect("Node B receives handle registration");
-    
+
     info!("✓ Node B received handle registration gossip");
-    
+
     let b_msg: serde_json::Value = serde_json::from_slice(&b_received).unwrap();
     assert_eq!(
         b_msg["handle"].as_str().unwrap(),
         "@alice.ipn",
         "Node B received correct handle"
     );
-    
+
     info!("✓ Handle propagation pathway verified (stub-based)");
     info!("=== Test PASSED: Handle Propagation ===");
 }
@@ -590,48 +585,51 @@ async fn test_handle_propagation() {
 #[ignore]
 async fn test_partition_recovery() {
     tracing_subscriber::fmt::init();
-    
+
     info!("=== Test: Partition and Recovery ===");
-    
+
     // Spawn 3 nodes: A, B, C
     let nodes = spawn_test_nodes(3).await.expect("spawn 3 nodes");
     let node_a = &nodes[0];
     let node_b = &nodes[1];
     let node_c = &nodes[2];
-    
+
     // Connect all nodes: A <-> B, B <-> C, A <-> C
     connect_nodes(node_a, node_b).await.expect("connect A to B");
     connect_nodes(node_b, node_c).await.expect("connect B to C");
     connect_nodes(node_a, node_c).await.expect("connect A to C");
-    
+
     sleep(Duration::from_secs(1)).await;
-    
+
     info!("✓ Initial full mesh established");
-    
+
     // Simulate partition: disconnect B by shutting it down
-    info!("[{}] Simulating partition (shutdown)", node_b.config.node_id);
+    info!(
+        "[{}] Simulating partition (shutdown)",
+        node_b.config.node_id
+    );
     node_b.shutdown();
-    
+
     sleep(Duration::from_millis(500)).await;
-    
+
     // A and C should maintain connectivity
     let a_events = node_a.get_events();
     let c_events = node_c.get_events();
-    
-    let a_connected_to_c = a_events.iter().any(|e| {
-        matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &node_c.peer_id)
-    });
-    let c_connected_to_a = c_events.iter().any(|e| {
-        matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &node_a.peer_id)
-    });
-    
+
+    let a_connected_to_c = a_events
+        .iter()
+        .any(|e| matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &node_c.peer_id));
+    let c_connected_to_a = c_events
+        .iter()
+        .any(|e| matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &node_a.peer_id));
+
     assert!(
         a_connected_to_c && c_connected_to_a,
         "A and C maintain connectivity during B partition"
     );
-    
+
     info!("✓ A and C maintained connectivity during partition");
-    
+
     // Reconnect B (spawn new instance with same peer)
     let node_b_reconnect = DhtTestNode::spawn(DhtNodeConfig {
         node_id: "node-b-reconnect".to_string(),
@@ -639,36 +637,39 @@ async fn test_partition_recovery() {
     })
     .await
     .expect("respawn node B");
-    
-    info!("[{}] Reconnecting to network", node_b_reconnect.config.node_id);
-    
+
+    info!(
+        "[{}] Reconnecting to network",
+        node_b_reconnect.config.node_id
+    );
+
     // Reconnect B to A
     connect_nodes(node_a, &node_b_reconnect)
         .await
         .expect("reconnect B to A");
-    
+
     // Reconnect B to C
     connect_nodes(node_c, &node_b_reconnect)
         .await
         .expect("reconnect B to C");
-    
+
     sleep(Duration::from_millis(500)).await;
-    
+
     info!("✓ Node B successfully rejoined the network");
-    
+
     // Verify gossip works after recovery
     let test_msg = b"test message after recovery";
     node_a
         .publish("ippan/files", test_msg.to_vec())
         .expect("publish from A");
-    
+
     let b_recv = node_b_reconnect
         .wait_for_gossip("ippan/files", Duration::from_secs(10))
         .await
         .expect("B receives gossip after recovery");
-    
+
     assert_eq!(b_recv, test_msg, "Gossip works after partition recovery");
-    
+
     info!("✓ Gossip functionality restored after recovery");
     info!("=== Test PASSED: Partition and Recovery ===");
 }
@@ -677,11 +678,11 @@ async fn test_partition_recovery() {
 #[ignore]
 async fn test_3_node_full_mesh() {
     tracing_subscriber::fmt::init();
-    
+
     info!("=== Test: 3-Node Full Mesh ===");
-    
+
     let nodes = spawn_test_nodes(3).await.expect("spawn 3 nodes");
-    
+
     // Connect nodes in a ring: A -> B -> C -> A
     for i in 0..nodes.len() {
         let next = (i + 1) % nodes.len();
@@ -689,20 +690,20 @@ async fn test_3_node_full_mesh() {
             .await
             .expect(&format!("connect node {} to {}", i, next));
     }
-    
+
     // Wait for full mesh
     wait_for_full_mesh(&nodes, Duration::from_secs(15))
         .await
         .expect("full mesh established");
-    
+
     info!("✓ 3-node full mesh established");
-    
+
     // Verify all nodes can gossip
     let test_msg = b"broadcast test";
     nodes[0]
         .publish("ippan/files", test_msg.to_vec())
         .expect("publish from node 0");
-    
+
     for (i, node) in nodes.iter().enumerate().skip(1) {
         let received = node
             .wait_for_gossip("ippan/files", Duration::from_secs(10))
@@ -710,7 +711,7 @@ async fn test_3_node_full_mesh() {
             .expect(&format!("node {} receives gossip", i));
         assert_eq!(received, test_msg, "node {} received correct message", i);
     }
-    
+
     info!("✓ All nodes received broadcast message");
     info!("=== Test PASSED: 3-Node Full Mesh ===");
 }
