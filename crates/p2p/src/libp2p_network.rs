@@ -6,6 +6,7 @@
 //! workspace can drive the swarm without importing libp2p directly.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,7 +20,7 @@ use libp2p::dcutr;
 use libp2p::gossipsub;
 use libp2p::identify;
 use libp2p::identity;
-use libp2p::kad;
+use libp2p::kad::{self, Quorum, Record, RecordKey};
 use libp2p::multiaddr::Protocol;
 use libp2p::noise;
 use libp2p::ping;
@@ -30,7 +31,7 @@ use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{mdns, Multiaddr, PeerId, Transport};
 use parking_lot::{Mutex, RwLock};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, trace, warn};
 
@@ -83,7 +84,6 @@ impl Default for Libp2pConfig {
 }
 
 /// Commands used to control the background swarm task.
-#[derive(Debug)]
 pub enum Libp2pCommand {
     Publish {
         topic: String,
@@ -100,7 +100,49 @@ pub enum Libp2pCommand {
         peer_id: PeerId,
         address: Option<Multiaddr>,
     },
+    PutRecord {
+        key: Vec<u8>,
+        value: Vec<u8>,
+    },
+    GetRecord {
+        key: Vec<u8>,
+        respond_to: oneshot::Sender<Option<Vec<u8>>>,
+    },
+    StartProviding {
+        key: Vec<u8>,
+    },
+    GetProviders {
+        key: Vec<u8>,
+        respond_to: oneshot::Sender<Vec<PeerId>>,
+    },
     Shutdown,
+}
+
+impl fmt::Debug for Libp2pCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Libp2pCommand::Publish { topic, .. } => f
+                .debug_struct("Publish")
+                .field("topic", topic)
+                .finish_non_exhaustive(),
+            Libp2pCommand::Dial { address } => {
+                f.debug_struct("Dial").field("address", address).finish()
+            }
+            Libp2pCommand::AddExplicitPeer { peer_id, .. } => f
+                .debug_struct("AddExplicitPeer")
+                .field("peer_id", peer_id)
+                .finish_non_exhaustive(),
+            Libp2pCommand::RemoveExplicitPeer { peer_id, .. } => f
+                .debug_struct("RemoveExplicitPeer")
+                .field("peer_id", peer_id)
+                .finish_non_exhaustive(),
+            Libp2pCommand::PutRecord { .. } => f.write_str("PutRecord"),
+            Libp2pCommand::GetRecord { .. } => f.write_str("GetRecord"),
+            Libp2pCommand::StartProviding { .. } => f.write_str("StartProviding"),
+            Libp2pCommand::GetProviders { .. } => f.write_str("GetProviders"),
+            Libp2pCommand::Shutdown => f.write_str("Shutdown"),
+        }
+    }
 }
 
 /// Events produced by the libp2p network.
@@ -261,6 +303,34 @@ impl From<dcutr::Event> for ComposedEvent {
     }
 }
 
+#[derive(Default)]
+struct DhtQueryBook {
+    record_queries: Mutex<HashMap<kad::QueryId, oneshot::Sender<Option<Vec<u8>>>>>,
+    provider_queries: Mutex<HashMap<kad::QueryId, oneshot::Sender<Vec<PeerId>>>>,
+}
+
+impl DhtQueryBook {
+    fn insert_record_query(&self, id: kad::QueryId, sender: oneshot::Sender<Option<Vec<u8>>>) {
+        self.record_queries.lock().insert(id, sender);
+    }
+
+    fn complete_record_query(&self, id: kad::QueryId, value: Option<Vec<u8>>) {
+        if let Some(sender) = self.record_queries.lock().remove(&id) {
+            let _ = sender.send(value);
+        }
+    }
+
+    fn insert_provider_query(&self, id: kad::QueryId, sender: oneshot::Sender<Vec<PeerId>>) {
+        self.provider_queries.lock().insert(id, sender);
+    }
+
+    fn complete_provider_query(&self, id: kad::QueryId, peers: Vec<PeerId>) {
+        if let Some(sender) = self.provider_queries.lock().remove(&id) {
+            let _ = sender.send(peers);
+        }
+    }
+}
+
 /// Main libp2p network controller.
 pub struct Libp2pNetwork {
     peer_id: PeerId,
@@ -307,6 +377,7 @@ impl Libp2pNetwork {
         let (event_tx, events_rx) = mpsc::unbounded_channel::<Libp2pEvent>();
         let events_rx = Arc::new(Mutex::new(Some(events_rx)));
         let listen_addresses = Arc::new(RwLock::new(HashSet::<Multiaddr>::new()));
+        let dht_queries = Arc::new(DhtQueryBook::default());
 
         let mut topic_map: HashMap<String, gossipsub::IdentTopic> = HashMap::new();
         let mut combined = HashSet::new();
@@ -352,11 +423,20 @@ impl Libp2pNetwork {
 
         let listen_task = listen_addresses.clone();
         let events_tx_task = event_tx.clone();
+        let dht_queries_for_events = dht_queries.clone();
+        let dht_queries_for_commands = dht_queries;
         let task = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     swarm_event = swarm.select_next_some() => {
-                        handle_swarm_event(swarm_event, &mut swarm, &events_tx_task, &listen_task, &relay_peer_ids);
+                        handle_swarm_event(
+                            swarm_event,
+                            &mut swarm,
+                            &events_tx_task,
+                            &listen_task,
+                            &relay_peer_ids,
+                            &dht_queries_for_events
+                        );
                     }
                     cmd = command_rx.recv() => {
                         match cmd {
@@ -365,7 +445,9 @@ impl Libp2pNetwork {
                                 break;
                             }
                             Some(other) => {
-                                if let Err(e) = handle_command(other, &mut swarm, &mut topic_map) {
+                                if let Err(e) =
+                                    handle_command(other, &mut swarm, &mut topic_map, &dht_queries_for_commands)
+                                {
                                     warn!("Failed to handle libp2p command: {e}");
                                 }
                             }
@@ -425,6 +507,42 @@ impl Libp2pNetwork {
             .map_err(|_| anyhow!("libp2p command channel closed"))
     }
 
+    pub fn put_dht_record(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        self.command_tx
+            .send(Libp2pCommand::PutRecord { key, value })
+            .map_err(|_| anyhow!("libp2p command channel closed"))
+    }
+
+    pub fn start_providing_record(&self, key: Vec<u8>) -> Result<()> {
+        self.command_tx
+            .send(Libp2pCommand::StartProviding { key })
+            .map_err(|_| anyhow!("libp2p command channel closed"))
+    }
+
+    pub async fn get_dht_record(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx
+            .send(Libp2pCommand::GetRecord {
+                key,
+                respond_to: tx,
+            })
+            .map_err(|_| anyhow!("libp2p command channel closed"))?;
+        rx.await
+            .map_err(|_| anyhow!("libp2p DHT record query channel dropped"))
+    }
+
+    pub async fn get_dht_providers(&self, key: Vec<u8>) -> Result<Vec<PeerId>> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx
+            .send(Libp2pCommand::GetProviders {
+                key,
+                respond_to: tx,
+            })
+            .map_err(|_| anyhow!("libp2p command channel closed"))?;
+        rx.await
+            .map_err(|_| anyhow!("libp2p DHT providers query channel dropped"))
+    }
+
     pub fn shutdown(&self) {
         let _ = self.command_tx.send(Libp2pCommand::Shutdown);
     }
@@ -442,6 +560,7 @@ fn handle_swarm_event(
     event_tx: &mpsc::UnboundedSender<Libp2pEvent>,
     listen_addresses: &Arc<RwLock<HashSet<Multiaddr>>>,
     relay_peers: &HashSet<PeerId>,
+    dht_queries: &Arc<DhtQueryBook>,
 ) {
     match event {
         SwarmEvent::Behaviour(ComposedEvent::Gossipsub(event)) => {
@@ -464,9 +583,37 @@ fn handle_swarm_event(
         SwarmEvent::Behaviour(ComposedEvent::Ping(event)) => {
             trace!("Received ping event: {:?}", event);
         }
-        SwarmEvent::Behaviour(ComposedEvent::Kademlia(event)) => {
-            trace!("Received Kademlia event: {:?}", event);
-        }
+        SwarmEvent::Behaviour(ComposedEvent::Kademlia(event)) => match event {
+            kad::Event::OutboundQueryProgressed { id, result, .. } => match result {
+                kad::QueryResult::GetRecord(Ok(kad::GetRecordOk::FoundRecord(record))) => {
+                    dht_queries.complete_record_query(id, Some(record.record.value.clone()));
+                }
+                kad::QueryResult::GetRecord(Ok(
+                    kad::GetRecordOk::FinishedWithNoAdditionalRecord { .. },
+                ))
+                | kad::QueryResult::GetRecord(Err(_)) => {
+                    dht_queries.complete_record_query(id, None);
+                }
+                kad::QueryResult::GetProviders(Ok(kad::GetProvidersOk::FoundProviders {
+                    providers,
+                    ..
+                })) => {
+                    dht_queries.complete_provider_query(id, providers.into_iter().collect());
+                }
+                kad::QueryResult::GetProviders(Ok(
+                    kad::GetProvidersOk::FinishedWithNoAdditionalRecord { closest_peers },
+                )) => {
+                    dht_queries.complete_provider_query(id, closest_peers);
+                }
+                kad::QueryResult::GetProviders(Err(_)) => {
+                    dht_queries.complete_provider_query(id, Vec::new());
+                }
+                _ => {}
+            },
+            _ => {
+                trace!("Received Kademlia event: {:?}", event);
+            }
+        },
         SwarmEvent::Behaviour(ComposedEvent::Mdns(event)) => match event {
             mdns::Event::Discovered(discovered) => {
                 let mut aggregate: HashMap<PeerId, Vec<Multiaddr>> = HashMap::new();
@@ -539,6 +686,7 @@ fn handle_command(
     command: Libp2pCommand,
     swarm: &mut Swarm<ComposedBehaviour>,
     topic_map: &mut HashMap<String, gossipsub::IdentTopic>,
+    dht_queries: &Arc<DhtQueryBook>,
 ) -> Result<()> {
     match command {
         Libp2pCommand::Publish { topic, data } => {
@@ -575,6 +723,40 @@ fn handle_command(
             } else {
                 swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
             }
+        }
+        Libp2pCommand::PutRecord { key, value } => {
+            let record = Record {
+                key: RecordKey::new(&key),
+                value,
+                publisher: None,
+                expires: None,
+            };
+            swarm
+                .behaviour_mut()
+                .kademlia
+                .put_record(record, Quorum::One)
+                .map_err(|e| anyhow!("failed to put DHT record: {e}"))?;
+        }
+        Libp2pCommand::GetRecord { key, respond_to } => {
+            let query_id = swarm
+                .behaviour_mut()
+                .kademlia
+                .get_record(RecordKey::new(&key));
+            dht_queries.insert_record_query(query_id, respond_to);
+        }
+        Libp2pCommand::StartProviding { key } => {
+            swarm
+                .behaviour_mut()
+                .kademlia
+                .start_providing(RecordKey::new(&key))
+                .map_err(|e| anyhow!("failed to start providing record: {e}"))?;
+        }
+        Libp2pCommand::GetProviders { key, respond_to } => {
+            let query_id = swarm
+                .behaviour_mut()
+                .kademlia
+                .get_providers(RecordKey::new(&key));
+            dht_queries.insert_provider_query(query_id, respond_to);
         }
         Libp2pCommand::Shutdown => {}
     }

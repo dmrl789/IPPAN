@@ -22,11 +22,12 @@ use ippan_l1_fees::FeePolicy;
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, Storage};
-use ippan_types::address::{decode_address, encode_address};
+use ippan_types::address::{decode_address, encode_address, Address};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
-    Amount, Block, L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord,
-    RoundWindow, Transaction,
+    random_nonce, Amount, Block, FileDescriptor, FileDescriptorId, HashTimer, IppanTimeMicros,
+    L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord, RoundWindow,
+    Transaction,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::de::{self, Deserializer, Visitor};
@@ -42,7 +43,7 @@ use tracing::{debug, error, info, warn};
 
 use hex::encode as hex_encode;
 
-use crate::{HttpP2PNetwork, NetworkMessage};
+use crate::{HttpP2PNetwork, IpnDhtService, NetworkMessage};
 
 const RATE_LIMIT_PER_SECOND: u64 = 200;
 const CIRCUIT_BREAKER_FAILURE_THRESHOLD: usize = 5;
@@ -51,6 +52,11 @@ const MAX_MEMO_BYTES: usize = 256;
 const DEFAULT_PAYMENT_HISTORY_LIMIT: usize = 25;
 const MAX_PAYMENT_HISTORY_LIMIT: usize = 200;
 const PAYMENT_ENDPOINT: &str = "/tx/payment";
+const FILES_PUBLISH_ENDPOINT: &str = "/files/publish";
+const FILES_LOOKUP_ENDPOINT: &str = "/files/:id";
+const MAX_FILE_TAGS: usize = 16;
+const MAX_FILE_TAG_LENGTH: usize = 64;
+const MAX_MIME_TYPE_LENGTH: usize = 128;
 
 /// Layer 2 configuration
 #[derive(Clone, Debug, Serialize)]
@@ -78,6 +84,7 @@ pub struct AppState {
     pub req_count: Arc<AtomicUsize>,
     pub security: Option<Arc<SecurityManager>>,
     pub metrics: Option<PrometheusHandle>,
+    pub ipndht: Option<Arc<IpnDhtService>>,
 }
 
 /// Consensus handle abstraction
@@ -244,6 +251,23 @@ enum PaymentDirection {
 struct PaymentHistoryQuery {
     #[serde(default)]
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FilePublishRequest {
+    owner: String,
+    content_hash: String,
+    size_bytes: u64,
+    #[serde(default)]
+    mime_type: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct FilePublishResponse {
+    descriptor: FileDescriptor,
 }
 
 #[derive(Debug, Serialize)]
@@ -448,6 +472,36 @@ fn normalize_memo(memo: Option<String>) -> Result<Option<String>, PaymentError> 
     Ok(None)
 }
 
+fn sanitize_mime_type(input: Option<String>) -> Option<String> {
+    input.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.chars().take(MAX_MIME_TYPE_LENGTH).collect())
+        }
+    })
+}
+
+fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for tag in tags {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let value: String = trimmed.chars().take(MAX_FILE_TAG_LENGTH).collect();
+        if value.is_empty() {
+            continue;
+        }
+        normalized.push(value);
+        if normalized.len() >= MAX_FILE_TAGS {
+            break;
+        }
+    }
+    normalized
+}
+
 impl PaymentView {
     fn from_transaction(
         tx: &Transaction,
@@ -570,7 +624,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/l2/config", get(handle_get_l2_config))
         .route("/l2/networks", get(handle_list_l2_networks))
         .route("/l2/commits", get(handle_list_l2_commits))
-        .route("/l2/exits", get(handle_list_l2_exits));
+        .route("/l2/exits", get(handle_list_l2_exits))
+        .route("/files/publish", post(handle_publish_file))
+        .route("/files/:id", get(handle_get_file));
 
     if let Some(static_root) = &state.unified_ui_dist {
         if Path::new(static_root).exists() {
@@ -900,6 +956,216 @@ async fn payment_error_response(
     let message = err.to_string();
     record_security_failure(state, addr, PAYMENT_ENDPOINT, &message).await;
     (status, Json(ApiError::new(code, message)))
+}
+
+async fn handle_publish_file(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(request): Json<FilePublishRequest>,
+) -> Result<Json<FilePublishResponse>, (StatusCode, Json<ApiError>)> {
+    if let Err(err) = guard_request(&state, &addr, FILES_PUBLISH_ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, FILES_PUBLISH_ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    let FilePublishRequest {
+        owner,
+        content_hash,
+        size_bytes,
+        mime_type,
+        tags,
+    } = request;
+
+    if size_bytes == 0 {
+        record_security_failure(
+            &state,
+            &addr,
+            FILES_PUBLISH_ENDPOINT,
+            "size_bytes must be > 0",
+        )
+        .await;
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new(
+                "invalid_size",
+                "size_bytes must be greater than zero",
+            )),
+        ));
+    }
+
+    let owner_address = match Address::try_from(owner.clone()) {
+        Ok(address) => address,
+        Err(err) => {
+            let message = format!("invalid owner address: {err}");
+            record_security_failure(&state, &addr, FILES_PUBLISH_ENDPOINT, &message).await;
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("invalid_owner", message)),
+            ));
+        }
+    };
+
+    let hash_bytes = match parse_hex_32(&content_hash) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            let message = format!("invalid content_hash: {err}");
+            record_security_failure(&state, &addr, FILES_PUBLISH_ENDPOINT, &message).await;
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("invalid_content_hash", message)),
+            ));
+        }
+    };
+
+    let mime_type = sanitize_mime_type(mime_type);
+    let tags = normalize_tags(tags);
+    let time = IppanTimeMicros(ippan_time_now());
+    let nonce = random_nonce();
+    let hashtimer = HashTimer::derive(
+        "files",
+        time,
+        b"files/publish",
+        &hash_bytes,
+        &nonce,
+        state.node_id.as_bytes(),
+    );
+
+    let descriptor = FileDescriptor::new(
+        hashtimer,
+        owner_address,
+        hash_bytes,
+        size_bytes,
+        mime_type,
+        tags,
+    );
+
+    match state.storage.store_file_descriptor(descriptor.clone()) {
+        Ok(()) => {}
+        Err(err) => {
+            let message = err.to_string();
+            if message.contains("already exists") {
+                record_security_failure(&state, &addr, FILES_PUBLISH_ENDPOINT, &message).await;
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(ApiError::new(
+                        "file_exists",
+                        "file descriptor already published",
+                    )),
+                ));
+            }
+            error!(
+                "Failed to store file descriptor {} from {}: {}",
+                descriptor.id.to_hex(),
+                addr,
+                message
+            );
+            record_security_failure(&state, &addr, FILES_PUBLISH_ENDPOINT, &message).await;
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::new(
+                    "storage_error",
+                    "failed to store file descriptor",
+                )),
+            ));
+        }
+    }
+
+    if let Some(dht) = &state.ipndht {
+        if let Err(err) = dht.publish_file(&descriptor).await {
+            warn!(
+                "Failed to publish descriptor {} to DHT: {}",
+                descriptor.id.to_hex(),
+                err
+            );
+        }
+    }
+
+    record_security_success(&state, &addr, FILES_PUBLISH_ENDPOINT).await;
+    Ok(Json(FilePublishResponse { descriptor }))
+}
+
+async fn handle_get_file(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(id_hex): AxumPath<String>,
+) -> Result<Json<FilePublishResponse>, (StatusCode, Json<ApiError>)> {
+    if let Err(err) = guard_request(&state, &addr, FILES_LOOKUP_ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, FILES_LOOKUP_ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    let descriptor_id = match FileDescriptorId::try_from(id_hex.clone()) {
+        Ok(id) => id,
+        Err(err) => {
+            let message = format!("invalid file id: {err}");
+            record_security_failure(&state, &addr, FILES_LOOKUP_ENDPOINT, &message).await;
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("invalid_file_id", message)),
+            ));
+        }
+    };
+
+    match state.storage.get_file_descriptor(&descriptor_id) {
+        Ok(Some(descriptor)) => {
+            record_security_success(&state, &addr, FILES_LOOKUP_ENDPOINT).await;
+            return Ok(Json(FilePublishResponse { descriptor }));
+        }
+        Ok(None) => {}
+        Err(err) => {
+            let message = err.to_string();
+            error!(
+                "Failed to load descriptor {} for {}: {}",
+                descriptor_id.to_hex(),
+                addr,
+                message
+            );
+            record_security_failure(&state, &addr, FILES_LOOKUP_ENDPOINT, &message).await;
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::new(
+                    "storage_error",
+                    "failed to load file descriptor",
+                )),
+            ));
+        }
+    }
+
+    if let Some(dht) = &state.ipndht {
+        match dht.find_file(&descriptor_id).await {
+            Ok(Some(descriptor)) => {
+                if let Err(err) = state.storage.store_file_descriptor(descriptor.clone()) {
+                    let message = err.to_string();
+                    if !message.contains("already exists") {
+                        warn!(
+                            "Failed to cache descriptor {} from DHT: {}",
+                            descriptor.id.to_hex(),
+                            message
+                        );
+                    }
+                }
+                record_security_success(&state, &addr, FILES_LOOKUP_ENDPOINT).await;
+                return Ok(Json(FilePublishResponse { descriptor }));
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!(
+                    "DHT lookup for descriptor {} failed: {}",
+                    descriptor_id.to_hex(),
+                    err
+                );
+            }
+        }
+    }
+
+    record_security_success(&state, &addr, FILES_LOOKUP_ENDPOINT).await;
+    Err((
+        StatusCode::NOT_FOUND,
+        Json(ApiError::new(
+            "file_not_found",
+            format!("file {id_hex} not found"),
+        )),
+    ))
 }
 
 async fn handle_get_transaction(
@@ -1834,6 +2100,7 @@ mod tests {
             req_count: Arc::new(AtomicUsize::new(0)),
             security: None,
             metrics: None,
+            ipndht: None,
         });
 
         let response = handle_health(State(app_state)).await;
@@ -1866,6 +2133,7 @@ mod tests {
             req_count: Arc::new(AtomicUsize::new(0)),
             security,
             metrics: None,
+            ipndht: None,
         })
     }
 
@@ -2152,6 +2420,30 @@ mod tests {
                 self.inner.get_all_validator_telemetry()
             }
         }
+
+        fn store_file_descriptor(&self, descriptor: FileDescriptor) -> Result<()> {
+            if self.should_fail("store_file_descriptor") {
+                Err(anyhow!("forced failure: store_file_descriptor"))
+            } else {
+                self.inner.store_file_descriptor(descriptor)
+            }
+        }
+
+        fn get_file_descriptor(&self, id: &FileDescriptorId) -> Result<Option<FileDescriptor>> {
+            if self.should_fail("get_file_descriptor") {
+                Err(anyhow!("forced failure: get_file_descriptor"))
+            } else {
+                self.inner.get_file_descriptor(id)
+            }
+        }
+
+        fn list_file_descriptors_by_owner(&self, owner: &Address) -> Result<Vec<FileDescriptor>> {
+            if self.should_fail("list_file_descriptors_by_owner") {
+                Err(anyhow!("forced failure: list_file_descriptors_by_owner"))
+            } else {
+                self.inner.list_file_descriptors_by_owner(owner)
+            }
+        }
     }
 
     #[test]
@@ -2373,6 +2665,96 @@ mod tests {
         .await
         .expect_err("denied");
         assert_eq!(err.0, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_publish_file_endpoint_stores_descriptor() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9400".parse().unwrap();
+        let owner = encode_address(&sample_public_key([7u8; 32]));
+        let request = FilePublishRequest {
+            owner: owner.clone(),
+            content_hash: hex::encode([3u8; 32]),
+            size_bytes: 512,
+            mime_type: Some("text/plain".into()),
+            tags: vec!["test".into()],
+        };
+        let response = handle_publish_file(State(state.clone()), ConnectInfo(addr), Json(request))
+            .await
+            .expect("publish file");
+
+        let id = response.0.descriptor.id;
+        let stored = state
+            .storage
+            .get_file_descriptor(&id)
+            .expect("storage")
+            .expect("descriptor stored");
+        assert_eq!(stored.owner, response.0.descriptor.owner);
+        assert_eq!(stored.size_bytes, 512);
+    }
+
+    #[tokio::test]
+    async fn test_get_file_endpoint_returns_descriptor() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9410".parse().unwrap();
+        let owner = encode_address(&sample_public_key([8u8; 32]));
+        let request = FilePublishRequest {
+            owner,
+            content_hash: hex::encode([4u8; 32]),
+            size_bytes: 1024,
+            mime_type: None,
+            tags: vec![],
+        };
+        let publish = handle_publish_file(State(state.clone()), ConnectInfo(addr), Json(request))
+            .await
+            .expect("publish file");
+
+        let id_hex = publish.0.descriptor.id.to_hex();
+        let fetched = handle_get_file(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(id_hex.clone()),
+        )
+        .await
+        .expect("get file");
+        assert_eq!(fetched.0.descriptor.id, publish.0.descriptor.id);
+    }
+
+    #[tokio::test]
+    async fn test_get_file_endpoint_uses_dht_cache() {
+        let mut base = (*build_app_state(None, None)).clone();
+        base.ipndht = Some(Arc::new(IpnDhtService::new(None)));
+        let state = Arc::new(base);
+        let addr: SocketAddr = "127.0.0.1:9420".parse().unwrap();
+
+        let owner = Address(sample_public_key([9u8; 32]));
+        let hash = [5u8; 32];
+        let nonce = random_nonce();
+        let hashtimer = HashTimer::derive(
+            "files",
+            IppanTimeMicros(ippan_time_now()),
+            b"files/publish",
+            &hash,
+            &nonce,
+            b"dht-test",
+        );
+        let descriptor = FileDescriptor::new(hashtimer, owner, hash, 2048, None, vec![]);
+        state
+            .ipndht
+            .as_ref()
+            .unwrap()
+            .publish_file(&descriptor)
+            .await
+            .expect("publish to dht");
+
+        let result = handle_get_file(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(descriptor.id.to_hex()),
+        )
+        .await
+        .expect("get from dht");
+        assert_eq!(result.0.descriptor.id, descriptor.id);
     }
 
     #[tokio::test]
@@ -3268,6 +3650,7 @@ mod tests {
             req_count: Arc::new(AtomicUsize::new(0)),
             security: None,
             metrics: None,
+            ipndht: None,
         });
 
         let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();

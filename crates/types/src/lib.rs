@@ -7,6 +7,7 @@ pub mod address;
 pub mod block;
 pub mod chain_state;
 pub mod currency;
+pub mod file_descriptor;
 pub mod l2;
 pub mod receipt;
 pub mod round;
@@ -27,6 +28,9 @@ pub use chain_state::*;
 
 // Currency and amount types
 pub use currency::{denominations, Amount, AtomicIPN, ATOMIC_PER_IPN, IPN_DECIMALS, SUPPLY_CAP};
+
+// File descriptor metadata
+pub use file_descriptor::*;
 
 // HashTimer from ippan-time for unified implementation
 pub use ippan_time::{random_nonce, HashTimer, IppanTimeMicros};

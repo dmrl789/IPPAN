@@ -433,11 +433,9 @@ impl PoAConsensus {
                         blocks_verified: telemetry.blocks_verified,
                         rounds_active: telemetry.rounds_active,
                         avg_latency_us: telemetry.avg_latency_us,
-                        uptime_percentage: (telemetry.uptime_percentage_scaled * 1_000_000)
-                            / 10000,
+                        uptime_percentage: (telemetry.uptime_percentage_scaled * 1_000_000) / 10000,
                         slash_count: telemetry.slash_count,
-                        recent_performance: (telemetry.recent_performance_scaled
-                            * 1_000_000)
+                        recent_performance: (telemetry.recent_performance_scaled * 1_000_000)
                             / 10000,
                         network_contribution: (telemetry.network_contribution_scaled as i64
                             * 1_000_000)
