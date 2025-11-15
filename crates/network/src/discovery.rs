@@ -40,7 +40,23 @@ impl Default for DiscoveryConfig {
     }
 }
 
-/// Peer discovery service
+/// Peer discovery service for IPPAN network.
+///
+/// Handles automatic peer discovery, peer exchange, and network topology management.
+/// Currently operates independently from DHT-based discovery; future enhancements
+/// will integrate with Kademlia DHT for distributed peer routing.
+///
+/// **Current capabilities:**
+/// - Bootstrap peer management
+/// - Peer exchange protocol
+/// - Stale peer cleanup
+/// - Reputation tracking
+///
+/// **Planned enhancements (see `docs/ipndht/ipndht_hardening_plan.md`):**
+/// - DNS seed resolution
+/// - Cold-start recovery with peer cache
+/// - Minimum peer validation (2+ nodes)
+/// - DHT-based peer advertising
 pub struct PeerDiscovery {
     config: DiscoveryConfig,
     known_peers: Arc<RwLock<HashMap<String, DiscoveredPeer>>>,
