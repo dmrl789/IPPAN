@@ -136,12 +136,25 @@ pub enum Libp2pEvent {
 }
 
 /// Combined behaviour of libp2p protocols.
+///
+/// This struct integrates all libp2p protocols used by IPPAN:
+/// - **Kademlia DHT**: Peer discovery and routing table maintenance. Currently used for
+///   node discovery only; IPNDHT-specific features (handle lookup, file/hash listing)
+///   are planned but not yet implemented.
+/// - **GossipSub**: Efficient pub/sub for blocks and transactions.
+/// - **mDNS**: Zero-config local network peer discovery.
+/// - **Relay + DCUtR**: NAT traversal for connectivity behind firewalls.
+/// - **Identify**: Automatic peer information exchange.
+/// - **Ping**: Connection health monitoring.
+///
+/// See `docs/ipndht/ipndht_hardening_plan.md` for future DHT enhancements.
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "ComposedEvent")]
 struct ComposedBehaviour {
     gossipsub: gossipsub::Behaviour,
     identify: identify::Behaviour,
     ping: ping::Behaviour,
+    /// Kademlia DHT for peer routing and future IPNDHT features (handle lookup, content addressing).
     kademlia: kad::Behaviour<kad::store::MemoryStore>,
     mdns: Toggle<mdns::tokio::Behaviour>,
     relay: Toggle<relay::client::Behaviour>,
