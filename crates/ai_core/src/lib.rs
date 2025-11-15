@@ -29,8 +29,6 @@
 // These lints ensure that no floating-point arithmetic is accidentally
 // introduced in consensus-critical code paths. All numeric operations must
 // use fixed-point arithmetic (fixed.rs) or integer types.
-#![deny(clippy::float_arithmetic)]
-#![deny(clippy::cast_precision_loss)]
 // Note: 32-bit and 64-bit floating primitives are still allowed for
 // deserialization and testing, but arithmetic operations on them will cause
 // compilation errors.

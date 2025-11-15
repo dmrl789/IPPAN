@@ -50,6 +50,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
+      - name: Configure cross linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+
       - name: Cache cargo dependencies
         uses: actions/cache@v4
         with:
@@ -123,17 +130,20 @@ jobs:
       - name: Check for f32/f64 in ai_core (non-test/bench)
         run: |
           echo "🔍 Checking crates/ai_core for f32/f64..."
-          ! rg -n "(f32|f64)" crates/ai_core | grep -v "/tests/" | grep -v "/benches/" | grep -v "//.*f32\|//.*f64"
+          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/benches/**' "(f32|f64)" crates/ai_core \
+            | grep -v "//.*f32\|//.*f64"
           
       - name: Check for f32/f64 in consensus* (non-test/bench)
         run: |
           echo "🔍 Checking crates/consensus* for f32/f64..."
-          ! rg -n "(f32|f64)" crates/consensus* | grep -v "/tests/" | grep -v "/benches/" | grep -v "//.*f32\|//.*f64"
+          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/benches/**' "(f32|f64)" crates/consensus* \
+            | grep -v "//.*f32\|//.*f64"
           
       - name: Check for f32/f64 in ai_registry (non-test/bench)
         run: |
           echo "🔍 Checking crates/ai_registry for f32/f64..."
-          ! rg -n "(f32|f64)" crates/ai_registry | grep -v "/tests/" | grep -v "/benches/" | grep -v "//.*f32\|//.*f64" || echo "✅ ai_registry clean or not found"
+          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/benches/**' "(f32|f64)" crates/ai_registry \
+            | grep -v "//.*f32\|//.*f64" || echo "✅ ai_registry clean or not found"
           
       - name: Verification summary
         run: |

@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn apply_payment_updates_balances() {
-        let storage = Arc::new(MemoryStorage::new());
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::new());
         let sender_account = Account {
             address: [1u8; 32],
             balance: 10_000,
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn apply_payment_detects_insufficient_balance() {
-        let storage = Arc::new(MemoryStorage::new());
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::new());
         let sender_account = Account {
             address: [1u8; 32],
             balance: 10,

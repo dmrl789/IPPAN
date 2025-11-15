@@ -308,13 +308,16 @@ impl Fixed {
 
     #[inline]
     pub fn saturating_mul(self, rhs: Self) -> Self {
-        self.checked_mul(rhs).unwrap_or_else(|| {
-            if (self.0 < 0) == (rhs.0 < 0) {
-                Fixed::MAX
-            } else {
-                Fixed::MIN
+        match self.checked_mul(rhs) {
+            Some(val) => val,
+            None => {
+                if (self.0 < 0) == (rhs.0 < 0) {
+                    Fixed::MAX
+                } else {
+                    Fixed::MIN
+                }
             }
-        })
+        }
     }
 
     #[inline]
@@ -322,13 +325,16 @@ impl Fixed {
         if rhs.0 == 0 {
             return if self.0 >= 0 { Fixed::MAX } else { Fixed::MIN };
         }
-        self.checked_div(rhs).unwrap_or_else(|| {
-            if (self.0 < 0) == (rhs.0 < 0) {
-                Fixed::MAX
-            } else {
-                Fixed::MIN
+        match self.checked_div(rhs) {
+            Some(val) => val,
+            None => {
+                if (self.0 < 0) == (rhs.0 < 0) {
+                    Fixed::MAX
+                } else {
+                    Fixed::MIN
+                }
             }
-        })
+        }
     }
 
     #[inline]
