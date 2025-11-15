@@ -3020,6 +3020,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ippan-files"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "hex",
+ "ippan-crypto",
+ "ippan-time",
+ "ippan-types",
+ "parking_lot 0.12.5",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "ippan-governance"
 version = "0.1.0"
 dependencies = [
@@ -3218,6 +3235,7 @@ dependencies = [
  "hex",
  "igd",
  "ippan-consensus",
+ "ippan-files",
  "ippan-l1-fees",
  "ippan-mempool",
  "ippan-p2p",
@@ -6413,6 +6431,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
+ "parking_lot 0.12.5",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2 0.6.1",
