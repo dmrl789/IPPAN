@@ -6,9 +6,9 @@ _Generated: 2025-11-15_
 - [x] Hardened payment pipeline (`crates/consensus/src/payments.rs`) applies fees/anti-double-spend inside round finalization with stats + tests.
 - [x] Unit tests cover happy-path, insufficient balance, fee distribution (treasury + proposer) in `crates/consensus/src/payments.rs`.
 - [x] CLI `ippan pay` surface exists (`crates/cli/src/main.rs`, `PayCommand` posts to `/tx/payment`).
-- [ ] RPC `POST /tx/payment` handler/router (server-side) — `crates/rpc/src/server.rs` is empty so no route registration; CLI call has no backing endpoint.
-- [ ] Payment history `GET /account/:address/payments` missing in RPC/router and storage.
-- [ ] End-to-end payment demo docs/scripts (`docs/payments/demo_end_to_end_payment.md`, `scripts/demo_payment_flow.sh`) not present in repo.
+- [x] RPC `POST /tx/payment` handler + router wiring live in `crates/rpc/src/server.rs`, so the CLI call has an axum endpoint to hit.
+- [x] Payment history `GET /account/:address/payments` exists in `crates/rpc/src/server.rs` and surfaces storage-backed history/pagination.
+- [x] End-to-end payment demo docs/scripts (`docs/payments/demo_end_to_end_payment.md`, `scripts/demo_payment_flow.sh`) are committed and current.
 
 ## 2. Fees
 - [x] Centralized integer-only fee logic via `ippan_l1_fees::FeePolicy` (`crates/l1_fees/src/lib.rs`).
@@ -32,7 +32,7 @@ _Generated: 2025-11-15_
 ## 5. IPNDHT Network Layer
 - [x] Libp2p network stack + DHT helper (`crates/p2p/src/lib.rs`, `crates/p2p/src/ipndht.rs`) provide publish/find APIs with caching.
 - [ ] No dedicated `DhtConfig`; bootstrap/NAT settings live in `P2PConfig` and there is no config layer that drives DHT behavior independently.
-- [ ] Node startup (`node/src/main.rs`) never constructs or wires an `IpnDhtService`; RPC `AppState` fields `file_dht`/`file_storage` cannot be populated anywhere.
+- [ ] Node startup (`node/src/main.rs`) still never constructs or wires an `IpnDhtService`, so the RPC `AppState` fields intended for `file_dht`/`file_storage` cannot be populated anywhere.
 - [x] Multi-node/discovery tests exist (ignored by default) under `crates/p2p/tests/ipndht_resilience.rs`.
 - [x] Docs available: `docs/ipndht/ipndht_hardening_plan.md`, `docs/ipndht/file-descriptors.md`, `IPNDHT_FILE_IMPLEMENTATION_SUMMARY.md`.
 
@@ -46,16 +46,15 @@ _Generated: 2025-11-15_
 ## 7. File Descriptors & DHT
 - [x] FileDescriptor model + indices implemented (`crates/files/src/descriptor.rs`, `crates/files/src/storage.rs`, and `crates/types/src/file_descriptor.rs`).
 - [x] RPC handler logic for `POST /files/publish` + `GET /files/{id}` exists in `crates/rpc/src/files.rs` with coverage tests (`files_tests.rs`).
-- [ ] `AppState`/server wiring is missing entirely (`crates/rpc/src/server.rs` is empty), so the file endpoints are never registered or reachable.
-- [ ] DHT integration is stubbed: `StubFileDhtService` works, but the `Libp2pFileDhtService` implementation is just a placeholder behind an unused feature flag, and `node` never instantiates any `FileDhtService`.
+- [ ] `crates/rpc/src/files.rs` handlers are not wired into the `Router` in `crates/rpc/src/server.rs`, and `AppState` still lacks the `file_dht`/`file_storage` plumbing needed to serve them.
+- [ ] DHT integration is stubbed: `StubFileDhtService` works, but the `Libp2pFileDhtService` implementation is just a placeholder behind an unused feature flag, and `node` never instantiates any `FileDhtService` to expose via RPC.
 - [x] Documentation covers file descriptors/DHT hooks (`docs/ipndht/file-descriptors.md`, `IPNDHT_FILE_IMPLEMENTATION_SUMMARY.md`).
 
 ## 8. Payment API Docs & CLI
 - [x] CLI `pay` command documented in code and uses integer atomic units (`crates/cli/src/main.rs`).
-- [ ] Payment API guide (`docs/PAYMENT_API_GUIDE.md`) and endpoint-level docs for `/tx/payment` + `/account/:address/payments` are absent.
-- [ ] `/tx/payment` route itself is missing on the RPC server, so the documented CLI call cannot succeed.
-- [ ] `/account/:address/payments` history endpoint and pagination/direction support are not implemented anywhere in RPC or storage.
-- [ ] No docs/scripts describing an end-to-end payment demo exist in repo.
+- [x] Payment API guide (`docs/PAYMENT_API_GUIDE.md`) now documents `/tx/payment` and `/account/:address/payments` in detail.
+- [x] RPC `/tx/payment` + `/account/:address/payments` endpoints exist in `crates/rpc/src/server.rs` and only accept integer (`u128`) currency amounts.
+- [x] Demo docs/scripts describing the payment flow exist (`docs/payments/demo_end_to_end_payment.md`, `scripts/demo_payment_flow.sh`).
 
 ## Optional Test Runs
 - `cargo test -p ippan-rpc -- --nocapture` → **fails** (expected) due to missing OpenSSL headers in the environment; no additional compiler errors observed before the toolchain check halted.
