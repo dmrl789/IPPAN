@@ -156,6 +156,29 @@ fn tx_serialized_size(tx: &Transaction) -> usize {
             .sum::<usize>();
     }
 
+    if let Some(handle_op) = tx.handle_operation() {
+        size += 1; // presence flag
+        match handle_op {
+            ippan_types::HandleOperation::Register(data) => {
+                size += 1; // variant discriminator
+                size += data.handle.len();
+                size += data.owner.len();
+                size += 1; // expiry flag
+                if data.expires_at.is_some() {
+                    size += std::mem::size_of::<u64>();
+                }
+                size += std::mem::size_of::<u32>(); // metadata len prefix
+                for (key, value) in data.metadata.iter() {
+                    size += std::mem::size_of::<u32>() + key.len();
+                    size += std::mem::size_of::<u32>() + value.len();
+                }
+                size += std::mem::size_of::<u32>() + data.signature.len();
+            }
+        }
+    } else {
+        size += 1; // absence flag
+    }
+
     size
 }
 

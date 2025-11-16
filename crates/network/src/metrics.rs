@@ -353,9 +353,6 @@ mod tests {
         };
         assert_eq!(snap.messages_per_second(), 15);
         assert_eq!(snap.bytes_per_second(), 150);
-        assert_eq!(
-            snap.success_rate(),
-            ratio_from_parts(100, 110)
-        );
+        assert_eq!(snap.success_rate(), ratio_from_parts(100, 110));
     }
 }

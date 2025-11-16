@@ -7,6 +7,8 @@ use ippan_consensus::{
 };
 use ippan_consensus_dlc::{DlcConfig as AiDlcConfig, DlcConsensus};
 use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
+use ippan_l1_handle_anchors::L1HandleAnchorStorage;
+use ippan_l2_handle_registry::L2HandleRegistry;
 use ippan_mempool::Mempool;
 use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};
 use ippan_rpc::server::ConsensusHandle;
@@ -338,6 +340,9 @@ async fn main() -> Result<()> {
     storage.initialize()?;
     info!("Storage initialized at {}", config.db_path);
 
+    let handle_registry = Arc::new(L2HandleRegistry::new());
+    let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
+
     // Initialize consensus
     let consensus_config = PoAConfig {
         slot_duration_ms: config.slot_duration_ms,
@@ -363,10 +368,12 @@ async fn main() -> Result<()> {
         info!("Starting DLC consensus mode");
 
         // Create base PoA consensus
-        let poa_instance = PoAConsensus::new(
+        let poa_instance = PoAConsensus::with_handle_services(
             consensus_config.clone(),
             storage.clone(),
             config.validator_id,
+            handle_registry.clone(),
+            handle_anchors.clone(),
         );
 
         // Create DLC configuration
@@ -414,8 +421,13 @@ async fn main() -> Result<()> {
         info!("  - Validator bonding: {}", config.require_validator_bond);
     } else {
         info!("Starting PoA consensus mode");
-        let consensus_instance =
-            PoAConsensus::new(consensus_config, storage.clone(), config.validator_id);
+        let consensus_instance = PoAConsensus::with_handle_services(
+            consensus_config,
+            storage.clone(),
+            config.validator_id,
+            handle_registry.clone(),
+            handle_anchors.clone(),
+        );
         tx_sender = consensus_instance.get_tx_sender();
         mempool = consensus_instance.mempool();
         consensus = Arc::new(Mutex::new(consensus_instance));
@@ -536,6 +548,8 @@ async fn main() -> Result<()> {
         file_storage: Some(file_storage),
         file_dht: Some(file_dht),
         dev_mode: config.dev_mode,
+        handle_registry: handle_registry.clone(),
+        handle_anchors: handle_anchors.clone(),
     };
 
     let rpc_host = &config.rpc_host;

@@ -23,8 +23,8 @@ pub use parameters::{EconomicsParameterManager, EconomicsParameterProposal};
 // Re-export commonly used types
 pub use types::{
     DistributionResult, EconomicsParams, EmissionResult, MicroIPN, Participation, ParticipationSet,
-    Payouts, Role, RoundId, ValidatorId, MICRO_PER_IPN, REPUTATION_SCORE_MAX,
-    REPUTATION_SCORE_MIN, REPUTATION_SCORE_SCALE,
+    Payouts, Role, RoundId, ValidatorId, MICRO_PER_IPN, REPUTATION_SCORE_MAX, REPUTATION_SCORE_MIN,
+    REPUTATION_SCORE_SCALE,
 };
 
 /// Module version for API introspection

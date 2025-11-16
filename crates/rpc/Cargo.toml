@@ -18,6 +18,8 @@ ippan-mempool = { path = "../mempool" }
 ippan-l1-fees = { path = "../l1_fees" }
 ippan-security = { path = "../security" }
 ippan-files = { path = "../files" }
+ippan-l2-handle-registry = { path = "../l2_handle_registry" }
+ippan-l1-handle-anchors = { path = "../l1_handle_anchors" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -39,6 +41,8 @@ blake3 = { workspace = true }
 bincode = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }

@@ -75,7 +75,10 @@ impl VotingPowerCalculator {
         if self.total_stake == 0 {
             0
         } else {
-            ratio_from_parts(self.get_voting_power(validator) as u128, self.total_stake as u128)
+            ratio_from_parts(
+                self.get_voting_power(validator) as u128,
+                self.total_stake as u128,
+            )
         }
     }
 }
@@ -101,11 +104,7 @@ pub struct VotingSession {
 
 impl VotingSession {
     /// Create a new voting session
-    pub fn new(
-        proposal_id: String,
-        duration_seconds: u64,
-        threshold_micros: RatioMicros,
-    ) -> Self {
+    pub fn new(proposal_id: String, duration_seconds: u64, threshold_micros: RatioMicros) -> Self {
         let start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -282,11 +281,8 @@ mod tests {
 
     #[test]
     fn test_voting_session() {
-        let mut session = VotingSession::new(
-            "proposal_1".to_string(),
-            3600,
-            ratio_from_parts(2, 3),
-        );
+        let mut session =
+            VotingSession::new("proposal_1".to_string(), 3600, ratio_from_parts(2, 3));
 
         let vote1 = create_test_vote("proposal_1", true);
         let vote2 = create_test_vote("proposal_1", false);
@@ -305,11 +301,8 @@ mod tests {
 
     #[test]
     fn test_duplicate_vote() {
-        let mut session = VotingSession::new(
-            "proposal_1".to_string(),
-            3600,
-            ratio_from_parts(2, 3),
-        );
+        let mut session =
+            VotingSession::new("proposal_1".to_string(), 3600, ratio_from_parts(2, 3));
 
         let vote = create_test_vote("proposal_1", true);
 

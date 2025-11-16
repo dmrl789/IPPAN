@@ -25,6 +25,8 @@ pub enum TxKind {
     Governance,
     /// Validator registration / staking operation
     Validator,
+    /// Handle registration or maintenance transaction
+    Handle,
 }
 
 /// L1 Fee cap configuration (values in atomic IPN units)
@@ -37,6 +39,7 @@ pub struct FeeCapConfig {
     pub cap_l2_exit: Amount,
     pub cap_governance: Amount,
     pub cap_validator: Amount,
+    pub cap_handle: Amount,
 }
 
 pub const DEFAULT_FEE_CAP_TRANSFER_MICRO_IPN: u64 = 100;
@@ -44,6 +47,7 @@ pub const DEFAULT_FEE_CAP_L2_ANCHOR_MICRO_IPN: u64 = 1_000;
 pub const DEFAULT_FEE_CAP_L2_EXIT_MICRO_IPN: u64 = 2_000;
 pub const DEFAULT_FEE_CAP_GOVERNANCE_MICRO_IPN: u64 = 10_000;
 pub const DEFAULT_FEE_CAP_VALIDATOR_MICRO_IPN: u64 = 10_000;
+pub const DEFAULT_FEE_CAP_HANDLE_MICRO_IPN: u64 = 5_000;
 
 pub const DEFAULT_FEE_CAP_TRANSFER: Amount =
     Amount::from_micro_ipn(DEFAULT_FEE_CAP_TRANSFER_MICRO_IPN);
@@ -55,6 +59,7 @@ pub const DEFAULT_FEE_CAP_GOVERNANCE: Amount =
     Amount::from_micro_ipn(DEFAULT_FEE_CAP_GOVERNANCE_MICRO_IPN);
 pub const DEFAULT_FEE_CAP_VALIDATOR: Amount =
     Amount::from_micro_ipn(DEFAULT_FEE_CAP_VALIDATOR_MICRO_IPN);
+pub const DEFAULT_FEE_CAP_HANDLE: Amount = Amount::from_micro_ipn(DEFAULT_FEE_CAP_HANDLE_MICRO_IPN);
 
 impl Default for FeeCapConfig {
     fn default() -> Self {
@@ -64,6 +69,7 @@ impl Default for FeeCapConfig {
             cap_l2_exit: DEFAULT_FEE_CAP_L2_EXIT,   // 0.002 IPN (L2 exit request)
             cap_governance: DEFAULT_FEE_CAP_GOVERNANCE, // 0.01 IPN
             cap_validator: DEFAULT_FEE_CAP_VALIDATOR, // 0.01 IPN
+            cap_handle: DEFAULT_FEE_CAP_HANDLE,     // 0.005 IPN handle ops
         }
     }
 }
@@ -77,6 +83,7 @@ impl FeeCapConfig {
             TxKind::L2Exit => self.cap_l2_exit,
             TxKind::Governance => self.cap_governance,
             TxKind::Validator => self.cap_validator,
+            TxKind::Handle => self.cap_handle,
         }
     }
 }
@@ -98,6 +105,9 @@ pub enum FeeError {
 ///
 /// L1 only handles basic operations - no smart contracts or AI calls
 pub fn classify_transaction(tx: &Transaction) -> TxKind {
+    if tx.handle_operation().is_some() {
+        return TxKind::Handle;
+    }
     if let Some(topic) = tx.topics.first() {
         match topic.as_str() {
             "l2_anchor" | "l2_commit" => TxKind::L2Anchor,
@@ -193,6 +203,7 @@ mod tests {
         assert_eq!(cfg.cap_l2_exit, DEFAULT_FEE_CAP_L2_EXIT);
         assert_eq!(cfg.cap_governance, DEFAULT_FEE_CAP_GOVERNANCE);
         assert_eq!(cfg.cap_validator, DEFAULT_FEE_CAP_VALIDATOR);
+        assert_eq!(cfg.cap_handle, DEFAULT_FEE_CAP_HANDLE);
     }
 
     fn tx_with_topic(topic: &str) -> Transaction {
@@ -223,6 +234,20 @@ mod tests {
             classify_transaction(&tx_with_topic("random_topic")),
             TxKind::Transfer
         );
+    }
+
+    #[test]
+    fn classify_handle_operation() {
+        let mut tx = Transaction::new([1u8; 32], [0u8; 32], Amount::zero(), 1);
+        let op = ippan_types::HandleRegisterOp {
+            handle: "@unit.ipn".to_string(),
+            owner: [1u8; 32],
+            metadata: std::collections::BTreeMap::new(),
+            expires_at: None,
+            signature: vec![0u8; 64],
+        };
+        tx.set_handle_operation(ippan_types::HandleOperation::Register(op));
+        assert_eq!(classify_transaction(&tx), TxKind::Handle);
     }
 
     #[test]

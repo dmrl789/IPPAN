@@ -154,9 +154,7 @@ impl ProposalManager {
                 ratio_from_parts(state.total_stake_for as u128, total_stake as u128);
             if approval_ratio >= self.threshold_micros {
                 state.status = ProposalStatus::Approved;
-            } else if approval_ratio
-                < RATIO_SCALE.saturating_sub(self.threshold_micros)
-            {
+            } else if approval_ratio < RATIO_SCALE.saturating_sub(self.threshold_micros) {
                 state.status = ProposalStatus::Rejected;
             }
         }
