@@ -79,6 +79,10 @@ Because the canonical JSON and BLAKE3 hash are identical on every machine, and r
 
 > **Tip:** Integration tests that do not have access to a sled registry can set `IPPAN_DGBDT_ALLOW_STUB=1` to fall back to the built-in deterministic fixture model.
 
+## Observability
+
+- The RPC service (`ippan-rpc`) now wires `/ai/status` directly to `DlcConsensus::ai_status()`, so operators can verify in real time whether the live validator selection engine is using the registry model or the deterministic stub and which BLAKE3 hash/version are active.
+
 ## Usage
 
 ### Basic Example

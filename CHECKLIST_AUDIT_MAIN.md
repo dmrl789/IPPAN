@@ -23,7 +23,7 @@ _Generated: 2025-11-15_
 - [x] `consensus_dlc` fairness pulls the active model from `ai_registry` (env `IPPAN_DGBDT_REGISTRY_PATH` fallback); built-in model is only a warning fallback.
 - [x] AI determinism workflow `.github/workflows/ai-determinism.yml` targets `main` and runs determinism/no-float jobs.
 - [x] `cargo test -p ippan-consensus-dlc -- --nocapture` compiles/runs (modulo expected OpenSSL env gaps) now that `ippan_ai_core` exports resolve.
-- [x] `/ai/status` RPC endpoint surfaces whether the deterministic model is enabled, whether a stub is active, plus the active BLAKE3 hash + version string (see `docs/AI_STATUS_API.md`).
+- [x] `/ai/status` RPC endpoint is backed by the live DLC consensus engine and surfaces whether the deterministic model is enabled, stub status, and the active BLAKE3 hash/version (see `docs/AI_STATUS_API.md`).
 
 Operators can now fetch the live AI model hash and stub/real status via RPC, making the deterministic pipeline observable.
 

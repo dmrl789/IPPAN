@@ -21,6 +21,7 @@ ippan-types = { path = "../crates/types" }
 ippan-storage = { path = "../crates/storage" }
 ippan-rpc = { path = "../crates/rpc" }
 ippan-consensus = { path = "../crates/consensus" }
+ippan-consensus-dlc = { path = "../crates/consensus_dlc" }
 ippan-p2p = { path = "../crates/p2p" }
 ippan-crypto = { path = "../crates/crypto" }
 ippan-mempool = { path = "../crates/mempool" }
