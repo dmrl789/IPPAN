@@ -4,6 +4,7 @@
 //! selection and reputation scoring using integer-only arithmetic.
 
 use crate::error::{DlcError, Result};
+use ippan_ai_core::gbdt::{Model as DgbdtModel, SCALE as DGBDT_SCALE};
 use ippan_ai_registry::d_gbdt::DGBDTRegistry;
 use ippan_types::currency::denominations;
 use ippan_types::Amount;
@@ -122,89 +123,19 @@ pub struct NormalizedMetrics {
     pub stake_weight: i64,
 }
 
-/// Decision tree node
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TreeNode {
-    /// Feature index to split on
-    pub feature_index: usize,
-    /// Threshold value (in normalized 0-10000 range)
-    pub threshold: i64,
-    /// Left child (if Some)
-    pub left: Option<Box<TreeNode>>,
-    /// Right child (if Some)
-    pub right: Option<Box<TreeNode>>,
-    /// Leaf value (if this is a leaf node)
-    pub value: Option<i64>,
-}
-
-impl TreeNode {
-    /// Create a leaf node
-    pub fn leaf(value: i64) -> Self {
-        Self {
-            feature_index: 0,
-            threshold: 0,
-            left: None,
-            right: None,
-            value: Some(value),
-        }
-    }
-
-    /// Create an internal node
-    pub fn internal(feature_index: usize, threshold: i64, left: TreeNode, right: TreeNode) -> Self {
-        Self {
-            feature_index,
-            threshold,
-            left: Some(Box::new(left)),
-            right: Some(Box::new(right)),
-            value: None,
-        }
-    }
-
-    /// Predict using this tree node
-    pub fn predict(&self, features: &[i64]) -> i64 {
-        if let Some(value) = self.value {
-            return value;
-        }
-
-        let feature_value = features.get(self.feature_index).copied().unwrap_or(0);
-
-        if feature_value < self.threshold {
-            if let Some(left) = &self.left {
-                left.predict(features)
-            } else {
-                0
-            }
-        } else if let Some(right) = &self.right {
-            right.predict(features)
-        } else {
-            0
-        }
-    }
-}
-
-/// Fairness model using ensemble of decision trees (deterministic, integer-only)
+/// Fairness model backed by deterministic GBDT inference.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FairnessModel {
-    /// Feature weights for linear combination (scaled integers, sum to 100 for percentage)
-    pub weights: Vec<i64>,
-    /// Decision trees for GBDT
-    pub trees: Vec<TreeNode>,
-    /// Model bias
-    pub bias: i64,
-    /// Output scale factor
-    pub scale: i64,
-    /// Optional loaded D-GBDT model from ai_core
+    #[serde(rename = "model")]
+    model: DgbdtModel,
     #[serde(skip)]
-    pub d_gbdt_model: Option<ippan_ai_core::gbdt::Model>,
-}
-
-impl Default for FairnessModel {
-    fn default() -> Self {
-        Self::new_default()
-    }
+    active_hash: Option<String>,
 }
 
 impl FairnessModel {
+    const FEATURE_SCALE_FACTOR: i64 = DGBDT_SCALE / 10_000;
+    const SCORE_MAX: i64 = 10_000;
+
     /// Load a D-GBDT model from a file path
     pub fn from_d_gbdt_file(path: &Path) -> Result<Self> {
         use ippan_ai_registry::d_gbdt::load_model_from_path;
@@ -216,19 +147,26 @@ impl FairnessModel {
     }
 
     /// Create a FairnessModel from a loaded D-GBDT model
-    pub fn from_d_gbdt_model(model: ippan_ai_core::gbdt::Model) -> Self {
-        let mut fairness = Self::new_default();
-        fairness.d_gbdt_model = Some(model);
-        fairness
+    pub fn from_d_gbdt_model(model: DgbdtModel) -> Self {
+        Self {
+            model,
+            active_hash: None,
+        }
+    }
+
+    fn with_hash(model: DgbdtModel, hash: Option<String>) -> Self {
+        Self {
+            model,
+            active_hash: hash,
+        }
     }
 
     /// Build a fairness model from the active registry entry.
     pub fn from_registry(registry: &mut DGBDTRegistry) -> Result<(Self, String)> {
         let (model, hash) = registry
             .get_active_model()
-            .map_err(|e| DlcError::Model(format!("Failed to read active D-GBDT model: {e}")))?
-            .ok_or_else(|| DlcError::Model("No active D-GBDT model in registry".to_string()))?;
-        let fairness = FairnessModel::from_d_gbdt_model(model);
+            .map_err(|e| DlcError::Model(format!("Failed to read active D-GBDT model: {e}")))?;
+        let fairness = FairnessModel::with_hash(model, Some(hash.clone()));
         Ok((fairness, hash))
     }
 
@@ -252,167 +190,81 @@ impl FairnessModel {
         Self::from_registry_path(PathBuf::from(path))
     }
 
-    /// Create a new default fairness model
-    pub fn new_default() -> Self {
-        // Default weights (integers summing to 100): uptime, latency, honesty, proposal rate, verification rate, stake
-        let weights = vec![25, 15, 25, 15, 15, 5]; // Sum = 100
-
-        // Create a simple default tree
-        let default_tree = TreeNode::leaf(5000); // Neutral score
-
-        Self {
-            weights,
-            trees: vec![default_tree],
-            bias: 0,
-            scale: 10000,
-            d_gbdt_model: None,
-        }
-    }
-
-    /// Create a production-ready fairness model with multiple trees
-    pub fn new_production() -> Self {
-        let weights = vec![25, 15, 25, 15, 15, 5]; // Sum = 100
-
-        // Tree 1: Focus on uptime and honesty
-        let tree1 = TreeNode::internal(
-            0, // uptime
-            7000,
-            TreeNode::leaf(3000), // Low uptime penalty
-            TreeNode::internal(
-                2, // honesty
-                8000,
-                TreeNode::leaf(6000), // Medium honesty
-                TreeNode::leaf(9000), // High honesty
-            ),
-        );
-
-        // Tree 2: Focus on performance (latency and proposal rate)
-        let tree2 = TreeNode::internal(
-            1, // latency_inv
-            6000,
-            TreeNode::leaf(4000), // High latency penalty
-            TreeNode::internal(
-                3, // proposal_rate
-                5000,
-                TreeNode::leaf(6000), // Medium proposal rate
-                TreeNode::leaf(8000), // High proposal rate
-            ),
-        );
-
-        // Tree 3: Focus on verification and stake
-        let tree3 = TreeNode::internal(
-            4, // verification_rate
-            5000,
-            TreeNode::leaf(5000), // Low verification
-            TreeNode::internal(
-                5, // stake_weight
-                3000,
-                TreeNode::leaf(7000), // Medium stake
-                TreeNode::leaf(8000), // High stake
-            ),
-        );
-
-        Self {
-            weights,
-            trees: vec![tree1, tree2, tree3],
-            bias: 1000,
-            scale: 10000,
-            d_gbdt_model: None,
-        }
-    }
-
-    // score() removed - use score_deterministic() for integer-only arithmetic
-
-    /// Deterministic integer-based scoring
+    /// Deterministic integer-based scoring via D-GBDT model.
     pub fn score_deterministic(&self, metrics: &ValidatorMetrics) -> i64 {
-        // If we have a loaded D-GBDT model, use it directly
-        if let Some(ref model) = self.d_gbdt_model {
-            let normalized = metrics.to_normalized();
-            let features = vec![
-                normalized.uptime,
-                normalized.latency_inv,
-                normalized.honesty,
-                normalized.proposal_rate,
-                normalized.verification_rate,
-                normalized.stake_weight,
-            ];
+        let features = self.scaled_features(metrics);
+        let raw_score = self.model.score(&features);
+        Self::quantize_score(raw_score)
+    }
 
-            // Use the D-GBDT model for deterministic scoring
-            let raw_score = model.score(&features);
-
-            // Normalize to 0-10000 range
-            let normalized_score = (raw_score.abs() / 1000).min(10000);
-
-            return normalized_score;
-        }
-
-        // Fall back to built-in simple model
+    fn scaled_features(&self, metrics: &ValidatorMetrics) -> [i64; 6] {
         let normalized = metrics.to_normalized();
-        let features = vec![
+        let scale = Self::feature_scale();
+        [
             normalized.uptime,
             normalized.latency_inv,
             normalized.honesty,
             normalized.proposal_rate,
             normalized.verification_rate,
             normalized.stake_weight,
-        ];
-
-        // GBDT prediction: sum of all tree predictions
-        let mut score = self.bias;
-
-        for tree in &self.trees {
-            score += tree.predict(&features);
-        }
-
-        // Apply weights (linear combination with integer arithmetic)
-        let mut weighted_score = 0i64;
-        for (i, &feature) in features.iter().enumerate() {
-            if i < self.weights.len() {
-                // Integer multiplication: weights sum to 100, so divide by 100
-                weighted_score += (feature * self.weights[i]) / 100;
-            }
-        }
-
-        // Combine tree predictions and weighted features
-        score = (score + weighted_score) / 2;
-
-        // Clamp to valid range [0, scale]
-        score.max(0).min(self.scale)
+        ]
+        .map(|value| value.saturating_mul(scale))
     }
 
-    /// Train or update the model with new data (placeholder for future ML training)
-    #[deprecated(note = "Training interface not implemented - model is pre-trained")]
-    pub fn update(&mut self, _training_data: &[(ValidatorMetrics, i64)]) {
-        // In production, this would update the model using gradient boosting
-        // For now, we use the pre-trained model
-        tracing::debug!("Model update requested (using pre-trained model)");
+    const fn feature_scale() -> i64 {
+        if Self::FEATURE_SCALE_FACTOR == 0 {
+            1
+        } else {
+            Self::FEATURE_SCALE_FACTOR
+        }
+    }
+
+    fn quantize_score(raw: i64) -> i64 {
+        let divisor = Self::feature_scale().max(1);
+        let normalized = raw / divisor;
+        normalized.clamp(0, Self::SCORE_MAX)
     }
 
     /// Validate model integrity
     pub fn validate(&self) -> Result<()> {
-        if self.weights.is_empty() {
-            return Err(DlcError::Model("Model has no weights".to_string()));
-        }
-
-        if self.trees.is_empty() {
-            return Err(DlcError::Model("Model has no trees".to_string()));
-        }
-
-        if self.scale <= 0 {
-            return Err(DlcError::Model("Invalid scale factor".to_string()));
-        }
-
-        Ok(())
+        self.model
+            .validate()
+            .map_err(|e| DlcError::Model(format!("Invalid D-GBDT model: {e}")))
     }
 
     /// Get model metadata
     pub fn metadata(&self) -> ModelMetadata {
         ModelMetadata {
-            num_trees: self.trees.len(),
-            num_features: self.weights.len(),
-            scale: self.scale,
-            bias: self.bias,
+            num_trees: self.model.trees.len(),
+            num_features: 6,
+            scale: self.model.scale,
+            bias: self.model.bias,
         }
+    }
+
+    /// Access the underlying model hash when loaded from a registry.
+    pub fn active_hash(&self) -> Option<&str> {
+        self.active_hash.as_deref()
+    }
+
+    pub fn testing_stub() -> Self {
+        use ippan_ai_core::gbdt::{Node as TestNode, Tree as TestTree};
+
+        let tree = TestTree::new(
+            vec![
+                TestNode::internal(0, 0, 50 * DGBDT_SCALE, 1, 2),
+                TestNode::leaf(1, 100 * DGBDT_SCALE),
+                TestNode::leaf(2, 200 * DGBDT_SCALE),
+            ],
+            DGBDT_SCALE,
+        );
+        Self::from_d_gbdt_model(DgbdtModel::new(vec![tree], 0))
+    }
+}
+
+impl Default for FairnessModel {
+    fn default() -> Self {
+        Self::testing_stub()
     }
 }
 
@@ -458,7 +310,6 @@ pub fn rank_validators(
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
     use ippan_ai_registry::d_gbdt::compute_model_hash;
@@ -491,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_fairness_model_scoring() {
-        let model = FairnessModel::new_default();
+        let model = FairnessModel::testing_stub();
         let metrics = ValidatorMetrics::default();
 
         let score = model.score_deterministic(&metrics);
@@ -499,23 +350,8 @@ mod tests {
     }
 
     #[test]
-    fn test_production_model() {
-        let model = FairnessModel::new_production();
-        assert!(model.validate().is_ok());
-        assert_eq!(model.trees.len(), 3);
-    }
-
-    #[test]
-    fn test_tree_prediction() {
-        let tree = TreeNode::internal(0, 5000, TreeNode::leaf(1000), TreeNode::leaf(9000));
-
-        assert_eq!(tree.predict(&[3000]), 1000);
-        assert_eq!(tree.predict(&[7000]), 9000);
-    }
-
-    #[test]
     fn test_validator_ranking() {
-        let model = FairnessModel::new_production();
+        let model = FairnessModel::testing_stub();
         let mut validators = HashMap::new();
 
         validators.insert(
@@ -550,7 +386,7 @@ mod tests {
 
     #[test]
     fn test_deterministic_scoring() {
-        let model = FairnessModel::new_production();
+        let model = FairnessModel::testing_stub();
         let metrics = ValidatorMetrics::new(
             9900,  // 0.99 * 10000
             1000,  // 0.1 * 10000
@@ -592,6 +428,6 @@ mod tests {
 
         let (fairness, loaded_hash) = FairnessModel::from_registry_path(&db_path).unwrap();
         assert_eq!(loaded_hash, hash);
-        assert!(fairness.d_gbdt_model.is_some());
+        assert_eq!(fairness.active_hash(), Some(loaded_hash.as_str()));
     }
 }

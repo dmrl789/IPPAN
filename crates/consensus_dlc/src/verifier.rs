@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_verifier_set_selection() {
-        let model = FairnessModel::new_production();
+        let model = FairnessModel::testing_stub();
         let validators = create_test_validators();
 
         let verifier_set =
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_deterministic_selection() {
-        let model = FairnessModel::new_production();
+        let model = FairnessModel::testing_stub();
         let validators = create_test_validators();
 
         let set1 =
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_block_validation() {
-        let model = FairnessModel::new_production();
+        let model = FairnessModel::testing_stub();
         let validators = create_test_validators();
         let verifier_set =
             VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_invalid_proposer() {
-        let model = FairnessModel::new_production();
+        let model = FairnessModel::testing_stub();
         let validators = create_test_validators();
         let verifier_set =
             VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn test_validator_set_manager() {
-        let model = FairnessModel::new_production();
+        let model = FairnessModel::testing_stub();
         let mut manager = ValidatorSetManager::new(model, 3);
 
         let metrics = ValidatorMetrics::default();
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn test_verifier_set_contains() {
-        let model = FairnessModel::new_production();
+        let model = FairnessModel::testing_stub();
         let validators = create_test_validators();
         let verifier_set =
             VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();

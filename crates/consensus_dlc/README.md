@@ -67,13 +67,19 @@ DLC combines multiple innovative technologies to provide a fair, secure, and eff
 └─────────────────────────────────────────────────┘
 ```
 
-## Usage
+## Deterministic Model Pipeline
 
-> **Note:** `DlcConsensus::new` automatically loads the active D-GBDT fairness model
-> from the AI registry. Set `IPPAN_DGBDT_REGISTRY_PATH` if your registry database
-> is not in `data/dgbdt_registry`, and make sure to activate a model via
-> `ippan_ai_registry::d_gbdt::DGBDTRegistry::load_and_activate_from_config` before
-> starting consensus.
+1. **Artifact Storage** – Train a D-GBDT model with integer weights, export canonical JSON, and persist it under `config/models/...`.
+2. **Canonical Hashing** – `ippan_ai_core::serialization::canonical_model_json` produces sorted-key JSON which is hashed with BLAKE3 (`model_hash_hex`) to obtain the model fingerprint.
+3. **Registry Activation** – `ippan_ai_registry::d_gbdt::DGBDTRegistry::load_and_activate_from_config` reads `config/dlc.toml`, loads the JSON via `ai_core::load_model_from_path`, stores the `(model, hash)` pair inside sled under `d_gbdt/active`, and records the activation history.
+4. **Consensus Bootstrap** – Every DLC node points `IPPAN_DGBDT_REGISTRY_PATH` at the same sled directory. `FairnessModel::load_from_env_registry` opens that database, retrieves the active model + hash, logs it, and wraps the `ai_core::gbdt::Model`.
+5. **Integer-Only Scoring** – `FairnessModel::score_deterministic` converts validator telemetry into fixed-point (`i64`) features scaled to the AI-core micro precision (1e6). The resulting score is deterministically normalized into `[0, 10_000]` and fed into selection logic.
+
+Because the canonical JSON and BLAKE3 hash are identical on every machine, and runtime arithmetic never uses floats, two nodes with the same registry contents and telemetry always produce the same rank order.
+
+> **Tip:** Integration tests that do not have access to a sled registry can set `IPPAN_DGBDT_ALLOW_STUB=1` to fall back to the built-in deterministic fixture model.
+
+## Usage
 
 ### Basic Example
 
@@ -92,13 +98,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Register validators
     let metrics = dgbdt::ValidatorMetrics::new(
-        0.99,  // uptime
-        0.05,  // latency
-        1.0,   // honesty
-        100,   // blocks_proposed
-        500,   // blocks_verified
+        9_900,  // uptime (scaled by 10_000)
+        500,    // latency (scaled by 10_000, lower is better)
+        10_000, // honesty (scaled by 10_000)
+        100,    // blocks_proposed
+        500,    // blocks_verified
         Amount::from_micro_ipn(10_000_000), // stake
-        100    // rounds_active
+        100     // rounds_active
     );
     
     consensus.register_validator(
@@ -128,21 +134,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use ippan_consensus_dlc::dgbdt::*;
 use ippan_types::Amount;
 
-// Load the active registry model (fallback to built-in default if missing)
+// Load the active registry model (deterministic across nodes)
 let (model, _hash) = FairnessModel::load_from_env_registry()
-    .unwrap_or_else(|_| (FairnessModel::new_production(), String::new()));
+    .expect("registry should contain an active D-GBDT model");
 
 // Score a validator
 let metrics = ValidatorMetrics::new(
-    0.99,
-    0.05,
-    1.0,
+    9_900,
+    500,
+    10_000,
     100,
     500,
     Amount::from_micro_ipn(10_000_000),
     100,
 );
-let score = model.score(&metrics);
+let score = model.score_deterministic(&metrics);
 
 println!("Validator score: {}", score);
 ```
@@ -197,9 +203,9 @@ Block DAG (Directed Acyclic Graph) implementation.
 Deterministic Gradient-Boosted Decision Trees for fairness.
 
 **Key Types:**
-- `FairnessModel`: ML model for validator scoring
+- `FairnessModel`: Wrapper around `ai_core::gbdt::Model` for deterministic scoring
 - `ValidatorMetrics`: Performance metrics
-- `TreeNode`: Decision tree node
+- `DGBDTRegistry`: Sled-backed storage for active model + hash
 
 ### `verifier`
 Verifier set selection and block validation.

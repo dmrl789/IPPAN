@@ -27,7 +27,8 @@ pub struct Node {
     pub right: i32,
 
     /// Feature index to split on (-1 for leaf nodes)
-    pub feature: i32,
+    #[serde(rename = "feature_idx", alias = "feature")]
+    pub feature_idx: i32,
 
     /// Threshold value for split (fixed-point integer)
     pub threshold: i64,
@@ -38,12 +39,12 @@ pub struct Node {
 
 impl Node {
     /// Create a new internal (split) node
-    pub fn internal(id: i32, feature: i32, threshold: i64, left: i32, right: i32) -> Self {
+    pub fn internal(id: i32, feature_idx: i32, threshold: i64, left: i32, right: i32) -> Self {
         Self {
             id,
             left,
             right,
-            feature,
+            feature_idx,
             threshold,
             leaf: None,
         }
@@ -55,7 +56,7 @@ impl Node {
             id,
             left: -1,
             right: -1,
-            feature: -1,
+            feature_idx: -1,
             threshold: 0,
             leaf: Some(value),
         }
@@ -63,7 +64,7 @@ impl Node {
 
     /// Check if this node is a leaf
     pub fn is_leaf(&self) -> bool {
-        self.feature == -1 || self.leaf.is_some()
+        self.feature_idx == -1 || self.leaf.is_some()
     }
 
     /// Get the leaf value if this is a leaf node
@@ -111,7 +112,7 @@ impl Tree {
             }
 
             // Internal node - compare feature value
-            let feature_idx = node.feature as usize;
+            let feature_idx = node.feature_idx as usize;
             if feature_idx >= features.len() {
                 return 0; // Invalid feature index
             }
@@ -161,10 +162,10 @@ impl Tree {
                 }
 
                 // Check feature index is valid (>= 0 for internal nodes)
-                if node.feature < 0 {
+                if node.feature_idx < 0 {
                     return Err(format!(
                         "Internal node {} has invalid feature index: {}",
-                        i, node.feature
+                        i, node.feature_idx
                     ));
                 }
             } else {
@@ -187,7 +188,7 @@ mod tests {
     fn test_node_creation() {
         let internal = Node::internal(0, 3, 12345, 1, 2);
         assert_eq!(internal.id, 0);
-        assert_eq!(internal.feature, 3);
+        assert_eq!(internal.feature_idx, 3);
         assert_eq!(internal.threshold, 12345);
         assert_eq!(internal.left, 1);
         assert_eq!(internal.right, 2);
@@ -195,7 +196,7 @@ mod tests {
 
         let leaf = Node::leaf(1, -234);
         assert_eq!(leaf.id, 1);
-        assert_eq!(leaf.feature, -1);
+        assert_eq!(leaf.feature_idx, -1);
         assert!(leaf.is_leaf());
         assert_eq!(leaf.leaf_value(), Some(-234));
     }

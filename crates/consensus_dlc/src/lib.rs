@@ -27,8 +27,7 @@
 //!     // Initialize consensus components
 //!     let mut dag = dag::BlockDAG::new();
 //!     let fairness_model = dgbdt::FairnessModel::load_from_env_registry()
-//!         .map(|(model, _)| model)
-//!         .unwrap_or_else(|_| dgbdt::FairnessModel::new_production());
+//!         .map(|(model, _)| model)?;
 //!     
 //!     // Process a consensus round
 //!     let result = process_round(
@@ -65,7 +64,9 @@ use verifier::{ValidatorSetManager, VerifiedBlock, VerifierSet};
 
 use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, env};
+
+const FAIRNESS_STUB_ENV: &str = "IPPAN_DGBDT_ALLOW_STUB";
 
 /// Initialize the DLC consensus engine
 pub fn init_dlc() {
@@ -138,11 +139,15 @@ impl DlcConsensus {
                 model
             }
             Err(err) => {
-                tracing::warn!(
-                    target: "consensus_dlc::dgbdt",
-                    "Falling back to built-in fairness model: {err}"
-                );
-                FairnessModel::new_production()
+                if cfg!(test) || env::var(FAIRNESS_STUB_ENV).is_ok() {
+                    tracing::warn!(
+                        target: "consensus_dlc::dgbdt",
+                        "Using stub fairness model because registry load failed: {err}"
+                    );
+                    FairnessModel::testing_stub()
+                } else {
+                    panic!("Failed to load D-GBDT fairness model: {err}");
+                }
             }
         };
 
