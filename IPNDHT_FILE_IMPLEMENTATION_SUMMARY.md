@@ -164,6 +164,8 @@ Router updated to include:
 - `.route("/files/publish", post(handle_publish_file))`
 - `.route("/files/:id", get(handle_get_file))`
 
+**Runtime wiring (Nov 2025 update):** `node/src/main.rs` now instantiates `MemoryFileStorage` and the stub `FileDhtService`, injecting both into `AppState` so the `/files/*` RPC endpoints run end-to-end even before the libp2p-backed service ships.
+
 ### 4. Test Coverage
 
 Comprehensive test suite with **17 tests**, all passing:

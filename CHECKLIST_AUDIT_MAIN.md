@@ -35,7 +35,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 ## 5. IPNDHT Network Layer
 - [x] Libp2p network stack + DHT helper (`crates/p2p/src/lib.rs`, `crates/p2p/src/ipndht.rs`) provide publish/find APIs with caching.
 - [ ] No dedicated `DhtConfig`; bootstrap/NAT settings live in `P2PConfig` and there is no config layer that drives DHT behavior independently.
-- [ ] Node startup (`node/src/main.rs`) still never constructs or wires an `IpnDhtService`, so the RPC `AppState` fields intended for `file_dht`/`file_storage` cannot be populated anywhere.
+- [x] Node startup (`node/src/main.rs`) now wires `MemoryFileStorage` + `StubFileDhtService` into the RPC `AppState`, giving `/files/*` endpoints live handles while the real libp2p-backed service is still pending.
 - [x] Multi-node/discovery tests exist (ignored by default) under `crates/p2p/tests/ipndht_resilience.rs`.
 - [x] Docs available: `docs/ipndht/ipndht_hardening_plan.md`, `docs/ipndht/file-descriptors.md`, `IPNDHT_FILE_IMPLEMENTATION_SUMMARY.md`.
 
@@ -49,8 +49,8 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 ## 7. File Descriptors & DHT
 - [x] FileDescriptor model + indices implemented (`crates/files/src/descriptor.rs`, `crates/files/src/storage.rs`, and `crates/types/src/file_descriptor.rs`).
 - [x] RPC handler logic for `POST /files/publish` + `GET /files/{id}` exists in `crates/rpc/src/files.rs` with coverage tests (`files_tests.rs`).
-- [ ] `crates/rpc/src/files.rs` handlers are not wired into the `Router` in `crates/rpc/src/server.rs`, and `AppState` still lacks the `file_dht`/`file_storage` plumbing needed to serve them.
-- [ ] DHT integration is stubbed: `StubFileDhtService` works, but the `Libp2pFileDhtService` implementation is just a placeholder behind an unused feature flag, and `node` never instantiates any `FileDhtService` to expose via RPC.
+- [x] `crates/rpc/src/files.rs` handlers are wired into the `Router`, and `AppState` now carries `file_storage`/`file_dht` handles so `ippan-rpc` builds with file RPC enabled (stub DHT still acceptable).
+- [ ] Real libp2p-backed `FileDhtService` remains unimplemented; runtime currently exposes the stub implementation so publish/find compile but provide no network propagation yet.
 - [x] Documentation covers file descriptors/DHT hooks (`docs/ipndht/file-descriptors.md`, `IPNDHT_FILE_IMPLEMENTATION_SUMMARY.md`).
 
 ## 8. Payment API Docs & CLI

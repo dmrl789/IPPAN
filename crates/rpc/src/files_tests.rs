@@ -2,23 +2,25 @@
 
 #[cfg(test)]
 mod tests {
-    use ippan_files::{ContentHash, FileDescriptor, FileId, MemoryFileStorage, StubFileDhtService};
+    use ippan_files::{
+        descriptor::ContentHash, dht::StubFileDhtService, FileDescriptor, FileDhtService,
+        FileStorage, MemoryFileStorage,
+    };
     use ippan_mempool::Mempool;
     use ippan_storage::MemoryStorage;
     use ippan_types::address::encode_address;
-    use parking_lot::RwLock;
     use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
     use std::time::Instant;
 
-    use crate::files::{FileDescriptorResponse, PublishFileRequest, PublishFileResponse};
+    use crate::files::{FileDescriptorResponse, PublishFileRequest};
     use crate::server::{AppState, L2Config};
 
     fn create_test_state() -> AppState {
         let storage = Arc::new(MemoryStorage::new());
-        let file_storage = Arc::new(MemoryFileStorage::new());
-        let file_dht = Arc::new(StubFileDhtService::new());
-        let mempool = Arc::new(Mempool::default());
+        let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
+        let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
+        let mempool = Arc::new(Mempool::new(1_000));
 
         AppState {
             storage,
@@ -43,6 +45,7 @@ mod tests {
             metrics: None,
             file_storage: Some(file_storage),
             file_dht: Some(file_dht),
+            dev_mode: true,
         }
     }
 

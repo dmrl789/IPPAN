@@ -6,9 +6,7 @@ use std::sync::Arc;
 use axum::extract::{ConnectInfo, Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::Json;
-use ippan_files::{
-    ContentHash, FileDescriptor, FileDhtService, FileId, FileStorage, StubFileDhtService,
-};
+use ippan_files::{descriptor::ContentHash, FileDescriptor, FileId};
 use ippan_types::address::{decode_address, encode_address};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
@@ -299,7 +297,6 @@ async fn guard_file_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_files::MemoryFileStorage;
 
     #[test]
     fn test_publish_request_parsing() {
