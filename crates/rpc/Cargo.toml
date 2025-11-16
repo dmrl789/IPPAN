@@ -13,6 +13,7 @@ ippan-types = { path = "../types" }
 ippan-storage = { path = "../storage" }
 ippan-p2p = { path = "../p2p" }
 ippan-consensus = { path = "../consensus" }
+ippan-consensus-dlc = { path = "../consensus_dlc" }
 ippan-mempool = { path = "../mempool" }
 ippan-l1-fees = { path = "../l1_fees" }
 ippan-security = { path = "../security" }

@@ -109,12 +109,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_sender: None,
         node_id: "node-1".into(),
         consensus: None,
+        ai_status: None,
         l2_config,
         mempool: Arc::new(/* mempool */),
         unified_ui_dist: None,
         req_count: Arc::new(AtomicUsize::new(0)),
         security: None,
         metrics: None,
+        dev_mode: false,
     };
 
     start_server(state, "0.0.0.0:9000").await?;

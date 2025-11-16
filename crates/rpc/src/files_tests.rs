@@ -28,6 +28,7 @@ mod tests {
             tx_sender: None,
             node_id: "test-node".to_string(),
             consensus: None,
+            ai_status: None,
             l2_config: L2Config {
                 max_commit_size: 1000,
                 min_epoch_gap_ms: 1000,

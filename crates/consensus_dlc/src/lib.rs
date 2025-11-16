@@ -106,6 +106,26 @@ impl Default for DlcConfig {
     }
 }
 
+/// AI model runtime status for consensus
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiConsensusStatus {
+    pub enabled: bool,
+    pub using_stub: bool,
+    pub model_hash: Option<String>,
+    pub model_version: Option<String>,
+}
+
+impl AiConsensusStatus {
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            using_stub: false,
+            model_hash: None,
+            model_version: None,
+        }
+    }
+}
+
 /// DLC consensus state
 pub struct DlcConsensus {
     /// Block DAG
@@ -124,11 +144,20 @@ pub struct DlcConsensus {
     pub config: DlcConfig,
     /// Current round number
     pub current_round: u64,
+    /// AI model status snapshot
+    ai_status: AiConsensusStatus,
 }
 
 impl DlcConsensus {
     /// Create a new DLC consensus instance
     pub fn new(config: DlcConfig) -> Self {
+        let mut ai_status = AiConsensusStatus {
+            enabled: true,
+            using_stub: false,
+            model_hash: None,
+            model_version: None,
+        };
+
         let model = match FairnessModel::load_from_env_registry() {
             Ok((model, hash)) => {
                 tracing::info!(
@@ -136,6 +165,8 @@ impl DlcConsensus {
                     hash = %hash,
                     "Loaded D-GBDT fairness model from registry"
                 );
+                ai_status.model_hash = Some(hash.clone());
+                ai_status.model_version = model.model_version();
                 model
             }
             Err(err) => {
@@ -144,7 +175,10 @@ impl DlcConsensus {
                         target: "consensus_dlc::dgbdt",
                         "Using stub fairness model because registry load failed: {err}"
                     );
-                    FairnessModel::testing_stub()
+                    ai_status.using_stub = true;
+                    let stub = FairnessModel::testing_stub();
+                    ai_status.model_version = stub.model_version();
+                    stub
                 } else {
                     panic!("Failed to load D-GBDT fairness model: {err}");
                 }
@@ -160,6 +194,7 @@ impl DlcConsensus {
             rewards: RewardDistributor::default(),
             config,
             current_round: 0,
+            ai_status,
         }
     }
 
@@ -290,6 +325,11 @@ impl DlcConsensus {
             emission_stats: self.emission.stats(),
             reward_stats: self.rewards.stats(),
         }
+    }
+
+    /// Snapshot the AI consensus status (thread-safe clone)
+    pub fn ai_status(&self) -> AiConsensusStatus {
+        self.ai_status.clone()
     }
 }
 

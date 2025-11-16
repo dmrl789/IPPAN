@@ -8,7 +8,7 @@ pub mod server;
 #[cfg(test)]
 mod files_tests;
 
-pub use server::{start_server, AppState, L2Config};
+pub use server::{start_server, AiStatusHandle, AppState, L2Config};
 
 // Re-export types from ippan_p2p for convenience
 pub use ippan_p2p::{HttpP2PNetwork, NetworkMessage, P2PConfig, P2PError, PeerInfo as P2PPeerInfo};
