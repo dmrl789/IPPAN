@@ -6,6 +6,7 @@ use ippan_consensus::{
     DLCConfig, DLCIntegratedConsensus, PoAConfig, PoAConsensus, Validator, VALIDATOR_BOND_AMOUNT,
 };
 use ippan_consensus_dlc::{DlcConfig as AiDlcConfig, DlcConsensus};
+use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
 use ippan_mempool::Mempool;
 use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};
 use ippan_rpc::server::ConsensusHandle;
@@ -514,6 +515,9 @@ async fn main() -> Result<()> {
         None
     };
 
+    let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
+    let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
+
     let app_state = AppState {
         storage: storage.clone(),
         start_time,
@@ -529,6 +533,8 @@ async fn main() -> Result<()> {
         req_count: Arc::new(AtomicUsize::new(0)),
         security,
         metrics: prometheus_handle.clone(),
+        file_storage: Some(file_storage),
+        file_dht: Some(file_dht),
         dev_mode: config.dev_mode,
     };
 

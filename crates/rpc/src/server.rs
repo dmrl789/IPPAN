@@ -19,6 +19,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::PoAConsensus;
 use ippan_consensus_dlc::AiConsensusStatus;
+use ippan_files::{FileDhtService, FileStorage};
 use ippan_l1_fees::FeePolicy;
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
@@ -26,8 +27,7 @@ use ippan_storage::{Account, Storage};
 use ippan_types::address::{decode_address, encode_address};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
-    Amount, Block, L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord,
-    RoundWindow, Transaction,
+    Amount, Block, L2Commit, L2ExitRecord, L2Network, RoundFinalizationRecord, Transaction,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::de::{self, Deserializer, Visitor};
@@ -43,7 +43,10 @@ use tracing::{debug, error, info, warn};
 
 use hex::encode as hex_encode;
 
-use crate::{HttpP2PNetwork, NetworkMessage};
+use crate::{
+    files::{handle_get_file, handle_publish_file},
+    HttpP2PNetwork, NetworkMessage,
+};
 
 const RATE_LIMIT_PER_SECOND: u64 = 200;
 const CIRCUIT_BREAKER_FAILURE_THRESHOLD: usize = 5;
@@ -80,6 +83,8 @@ pub struct AppState {
     pub req_count: Arc<AtomicUsize>,
     pub security: Option<Arc<SecurityManager>>,
     pub metrics: Option<PrometheusHandle>,
+    pub file_storage: Option<Arc<dyn FileStorage>>,
+    pub file_dht: Option<Arc<dyn FileDhtService>>,
     pub dev_mode: bool,
 }
 
@@ -287,7 +292,7 @@ struct PaymentResponse {
     memo: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum PaymentStatus {
     AcceptedToMempool,
@@ -334,13 +339,13 @@ struct PaymentHistoryQuery {
 }
 
 #[derive(Debug, Serialize)]
-struct ApiError {
+pub struct ApiError {
     code: &'static str,
     message: String,
 }
 
 impl ApiError {
-    fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -641,6 +646,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/tx", post(handle_submit_tx))
         .route("/tx/payment", post(handle_payment_tx))
         .route("/tx/:hash", get(handle_get_transaction))
+        .route("/files/publish", post(handle_publish_file))
+        .route("/files/:id", get(handle_get_file))
         .route("/block/:id", get(handle_get_block))
         .route("/account/:address", get(handle_get_account))
         .route(
@@ -1990,12 +1997,15 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use ippan_consensus::{PoAConfig, Validator};
     use ippan_consensus_dlc::{AiConsensusStatus, DlcConfig as AiDlcConfig, DlcConsensus};
+    use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
     use ippan_storage::{ChainState, MemoryStorage, ValidatorTelemetry};
     use ippan_types::{
-        address::encode_address, Amount, L2ExitStatus, L2NetworkStatus, RoundCertificate,
-        RoundFinalizationRecord, RoundId,
+        address::{encode_address, Address},
+        Amount, FileDescriptor as ChainFileDescriptor, FileDescriptorId, IppanTimeMicros,
+        L2ExitStatus, L2NetworkStatus, RoundCertificate, RoundFinalizationRecord, RoundId,
+        RoundWindow,
     };
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -2009,6 +2019,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_endpoint() {
+        let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::default());
+        let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
         let app_state = Arc::new(AppState {
             storage: Arc::new(MemoryStorage::default()),
             start_time: Instant::now(),
@@ -2030,6 +2042,8 @@ mod tests {
             req_count: Arc::new(AtomicUsize::new(0)),
             security: None,
             metrics: None,
+            file_storage: Some(file_storage),
+            file_dht: Some(file_dht),
             dev_mode: true,
         });
 
@@ -2067,6 +2081,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_ai_status_from_dlc_consensus() {
+        std::env::set_var("IPPAN_DGBDT_ALLOW_STUB", "1");
         let consensus = Arc::new(Mutex::new(DlcConsensus::new(AiDlcConfig::default())));
         let handle = AiStatusHandle::new({
             let consensus = consensus.clone();
@@ -2095,6 +2110,8 @@ mod tests {
         unified_ui_dist: Option<PathBuf>,
     ) -> Arc<AppState> {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
+        let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
         Arc::new(AppState {
             storage,
             start_time: Instant::now(),
@@ -2116,6 +2133,8 @@ mod tests {
             req_count: Arc::new(AtomicUsize::new(0)),
             security,
             metrics: None,
+            file_storage: Some(file_storage),
+            file_dht: Some(file_dht),
             dev_mode: true,
         })
     }
@@ -2401,6 +2420,36 @@ mod tests {
                 Err(anyhow!("forced failure: get_all_validator_telemetry"))
             } else {
                 self.inner.get_all_validator_telemetry()
+            }
+        }
+
+        fn store_file_descriptor(&self, descriptor: ChainFileDescriptor) -> Result<()> {
+            if self.should_fail("store_file_descriptor") {
+                Err(anyhow!("forced failure: store_file_descriptor"))
+            } else {
+                self.inner.store_file_descriptor(descriptor)
+            }
+        }
+
+        fn get_file_descriptor(
+            &self,
+            id: &FileDescriptorId,
+        ) -> Result<Option<ChainFileDescriptor>> {
+            if self.should_fail("get_file_descriptor") {
+                Err(anyhow!("forced failure: get_file_descriptor"))
+            } else {
+                self.inner.get_file_descriptor(id)
+            }
+        }
+
+        fn list_file_descriptors_by_owner(
+            &self,
+            owner: &Address,
+        ) -> Result<Vec<ChainFileDescriptor>> {
+            if self.should_fail("list_file_descriptors_by_owner") {
+                Err(anyhow!("forced failure: list_file_descriptors_by_owner"))
+            } else {
+                self.inner.list_file_descriptors_by_owner(owner)
             }
         }
     }
@@ -2941,8 +2990,8 @@ mod tests {
         let outgoing = PaymentView::from_transaction(&tx, Some(&tx.from), PaymentStatus::Finalized);
         let fee = FeePolicy::default().required_fee(&tx) as u128;
         assert_eq!(
-            outgoing.total_cost_atomic.as_deref(),
-            Some(&format_atomic(tx.amount.atomic().saturating_add(fee)))
+            outgoing.total_cost_atomic,
+            Some(format_atomic(tx.amount.atomic().saturating_add(fee)))
         );
 
         let incoming = PaymentView::from_transaction(&tx, Some(&tx.to), PaymentStatus::Finalized);
@@ -3549,6 +3598,8 @@ mod tests {
             .await
             .expect("add peer");
 
+        let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
+        let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
         let state = Arc::new(AppState {
             storage,
             start_time: Instant::now(),
@@ -3557,6 +3608,7 @@ mod tests {
             tx_sender: None,
             node_id: "test-node".into(),
             consensus: None,
+            ai_status: None,
             l2_config: L2Config {
                 max_commit_size: 512,
                 min_epoch_gap_ms: 1_000,
@@ -3569,6 +3621,8 @@ mod tests {
             req_count: Arc::new(AtomicUsize::new(0)),
             security: None,
             metrics: None,
+            file_storage: Some(file_storage),
+            file_dht: Some(file_dht),
             dev_mode: true,
         });
 

@@ -3181,6 +3181,7 @@ dependencies = [
  "ippan-consensus",
  "ippan-consensus-dlc",
  "ippan-crypto",
+ "ippan-files",
  "ippan-mempool",
  "ippan-p2p",
  "ippan-rpc",
