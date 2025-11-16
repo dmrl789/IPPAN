@@ -27,3 +27,18 @@ queries providers via `libp2p::kad::Behaviour`. The RPC handlers in
 The `/files/publish` and `/files/{id}` endpoints always use the configured DHT
 service through `AppState.file_dht`, so switching modes does not require API
 changes.
+
+## Handle records
+
+Handle registrations now reuse the same IPNDHT infrastructure through a
+dedicated `HandleDhtService` (stub and libp2p-backed implementations). The
+consensus handle pipeline publishes each accepted registration into the DHT so
+handles can be discovered by other nodes without querying the local registry.
+
+- Keys: `handle:` + `blake3(@handle.ipn)`, ensuring namespace separation from
+  file IDs.
+- Values: JSON-serialized `HandleDhtRecord { handle, owner, expires_at }`.
+- Runtime toggle: `IPPAN_HANDLE_DHT_MODE=stub|libp2p` (defaults to `stub`).
+
+When `libp2p` is selected the node shares a single `IpnDhtService` instance for
+both file and handle records so the Kademlia swarm only needs to boot once.

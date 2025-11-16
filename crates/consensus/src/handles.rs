@@ -1,5 +1,6 @@
 use ippan_l1_handle_anchors::{HandleAnchorError, HandleOwnershipAnchor, L1HandleAnchorStorage};
 use ippan_l2_handle_registry::{
+    dht::{HandleDhtRecord, HandleDhtService},
     Handle, HandleRegistration, HandleRegistryError, L2HandleRegistry, PublicKey,
 };
 use ippan_types::{HandleOperation, HandleRegisterOp, Transaction};
@@ -7,17 +8,31 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::runtime::Builder;
+use tracing::warn;
 
 /// Deterministic pipeline that applies handle transactions during round finalization.
-#[derive(Debug)]
 pub struct HandlePipeline {
     registry: Arc<L2HandleRegistry>,
     anchors: Arc<L1HandleAnchorStorage>,
+    handle_dht: Option<Arc<dyn HandleDhtService>>,
 }
 
 impl HandlePipeline {
     pub fn new(registry: Arc<L2HandleRegistry>, anchors: Arc<L1HandleAnchorStorage>) -> Self {
-        Self { registry, anchors }
+        Self::with_dht(registry, anchors, None)
+    }
+
+    pub fn with_dht(
+        registry: Arc<L2HandleRegistry>,
+        anchors: Arc<L1HandleAnchorStorage>,
+        handle_dht: Option<Arc<dyn HandleDhtService>>,
+    ) -> Self {
+        Self {
+            registry,
+            anchors,
+            handle_dht,
+        }
     }
 
     pub fn registry(&self) -> Arc<L2HandleRegistry> {
@@ -107,6 +122,9 @@ impl HandlePipeline {
             .store_anchor(anchor)
             .map_err(HandleApplyError::Anchor)?;
 
+        let dht_record = HandleDhtRecord::new(handle, PublicKey::new(op.owner), op.expires_at);
+        self.publish_to_dht(dht_record);
+
         Ok(())
     }
 
@@ -115,6 +133,32 @@ impl HandlePipeline {
         hasher.update(handle.as_bytes());
         hasher.update(owner);
         hasher.finalize().into()
+    }
+
+    fn publish_to_dht(&self, record: HandleDhtRecord) {
+        let Some(service) = &self.handle_dht else {
+            return;
+        };
+
+        let service = service.clone();
+        let handle_label = record.handle.as_str().to_string();
+        let future_label = handle_label.clone();
+        let future = async move {
+            if let Err(error) = service.publish_handle(&record).await {
+                warn!(handle = future_label, error = %error, "failed to publish handle to DHT");
+            }
+        };
+
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(future);
+        } else if let Ok(rt) = Builder::new_current_thread().enable_all().build() {
+            rt.block_on(future);
+        } else {
+            warn!(
+                handle = handle_label,
+                "failed to publish handle to DHT because no runtime was available"
+            );
+        }
     }
 }
 
@@ -140,8 +184,10 @@ pub enum HandleApplyError {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+    use ippan_l2_handle_registry::dht::StubHandleDhtService;
     use ippan_types::{Amount, HandleRegisterOp, Transaction};
     use std::collections::BTreeMap;
+    use tokio::task::yield_now;
 
     fn make_transaction(
         handle: &str,
@@ -179,8 +225,8 @@ mod tests {
         signing.sign(&digest).to_bytes().to_vec()
     }
 
-    #[test]
-    fn applies_registration_and_anchor() {
+    #[tokio::test]
+    async fn applies_registration_and_anchor() {
         let registry = Arc::new(L2HandleRegistry::new());
         let anchors = Arc::new(L1HandleAnchorStorage::new());
         let pipeline = HandlePipeline::new(registry.clone(), anchors.clone());
@@ -212,8 +258,8 @@ mod tests {
         assert!(anchors.get_anchor_by_handle("@demo.ipn").is_ok());
     }
 
-    #[test]
-    fn rejects_duplicate_handles() {
+    #[tokio::test]
+    async fn rejects_duplicate_handles() {
         let registry = Arc::new(L2HandleRegistry::new());
         let anchors = Arc::new(L1HandleAnchorStorage::new());
         let pipeline = HandlePipeline::new(registry.clone(), anchors);
@@ -246,8 +292,8 @@ mod tests {
         assert!(matches!(err, HandleApplyError::Registry(_)));
     }
 
-    #[test]
-    fn rejects_invalid_expiry() {
+    #[tokio::test]
+    async fn rejects_invalid_expiry() {
         let registry = Arc::new(L2HandleRegistry::new());
         let anchors = Arc::new(L1HandleAnchorStorage::new());
         let pipeline = HandlePipeline::new(registry, anchors);
@@ -265,5 +311,34 @@ mod tests {
         );
         let err = pipeline.apply(&tx, 1, 1).unwrap_err();
         assert!(matches!(err, HandleApplyError::Expired { .. }));
+    }
+
+    #[tokio::test]
+    async fn publishes_handle_records_into_dht() {
+        let registry = Arc::new(L2HandleRegistry::new());
+        let anchors = Arc::new(L1HandleAnchorStorage::new());
+        let dht = Arc::new(StubHandleDhtService::new());
+        let pipeline = HandlePipeline::with_dht(registry.clone(), anchors, Some(dht.clone()));
+
+        let signing = SigningKey::from_bytes(&[33u8; 32]);
+        let tx = make_transaction(
+            "@dht-demo.ipn",
+            &signing,
+            Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    + 30,
+            ),
+        );
+
+        pipeline.apply(&tx, 5, 5).expect("registration succeeds");
+        yield_now().await;
+
+        let record = dht
+            .get(&Handle::new("@dht-demo.ipn"))
+            .expect("record published");
+        assert_eq!(record.owner.as_bytes(), &signing.verifying_key().to_bytes());
     }
 }

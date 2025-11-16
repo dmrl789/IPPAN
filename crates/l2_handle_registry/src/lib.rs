@@ -6,11 +6,13 @@
 //! Layer 1 (L1) only stores the ownership anchors and root commitments,
 //! while Layer 2 (L2) manages the actual handle mappings, metadata, and renewals.
 
+pub mod dht;
 pub mod errors;
 pub mod registry;
 pub mod resolution;
 pub mod types;
 
+pub use dht::*;
 pub use errors::*;
 pub use registry::*;
 pub use resolution::*;

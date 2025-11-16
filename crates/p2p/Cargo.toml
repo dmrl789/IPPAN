@@ -11,6 +11,7 @@ integration-tests = []
 [dependencies]
 ippan-types = { path = "../types" }
 ippan-files = { path = "../files" }
+ippan-l2-handle-registry = { path = "../l2_handle_registry" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

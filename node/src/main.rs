@@ -8,11 +8,11 @@ use ippan_consensus::{
 use ippan_consensus_dlc::{DlcConfig as AiDlcConfig, DlcConsensus};
 use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
-use ippan_l2_handle_registry::L2HandleRegistry;
+use ippan_l2_handle_registry::{HandleDhtService, L2HandleRegistry, StubHandleDhtService};
 use ippan_mempool::Mempool;
 use ippan_p2p::{
-    HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService, Libp2pNetwork, Multiaddr,
-    NetworkEvent, P2PConfig,
+    HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService, Libp2pHandleDhtService,
+    Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig,
 };
 use ippan_rpc::server::ConsensusHandle;
 use ippan_rpc::{start_server, AiStatusHandle, AppState, L2Config};
@@ -44,6 +44,21 @@ impl FileDhtMode {
         match value.trim().to_lowercase().as_str() {
             "libp2p" => FileDhtMode::Libp2p,
             _ => FileDhtMode::Stub,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HandleDhtMode {
+    Stub,
+    Libp2p,
+}
+
+impl HandleDhtMode {
+    fn from_env(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "libp2p" => HandleDhtMode::Libp2p,
+            _ => HandleDhtMode::Stub,
         }
     }
 }
@@ -101,6 +116,7 @@ struct AppConfig {
     file_dht_mode: FileDhtMode,
     file_dht_listen_multiaddrs: Vec<String>,
     file_dht_bootstrap_multiaddrs: Vec<String>,
+    handle_dht_mode: HandleDhtMode,
 
     // Unified UI
     unified_ui_dist_dir: Option<PathBuf>,
@@ -161,6 +177,12 @@ impl AppConfig {
         let file_dht_mode = FileDhtMode::from_env(
             &config
                 .get_string("FILE_DHT_MODE")
+                .unwrap_or_else(|_| "stub".to_string()),
+        );
+
+        let handle_dht_mode = HandleDhtMode::from_env(
+            &config
+                .get_string("HANDLE_DHT_MODE")
                 .unwrap_or_else(|_| "stub".to_string()),
         );
 
@@ -309,6 +331,7 @@ impl AppConfig {
             file_dht_mode,
             file_dht_listen_multiaddrs,
             file_dht_bootstrap_multiaddrs,
+            handle_dht_mode,
             unified_ui_dist_dir,
             enable_security: config.get_bool("ENABLE_SECURITY").unwrap_or(true),
             prometheus_enabled: config.get_bool("PROMETHEUS_ENABLED").unwrap_or(true),
@@ -413,6 +436,80 @@ async fn main() -> Result<()> {
     let handle_registry = Arc::new(L2HandleRegistry::new());
     let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
 
+    let need_ipn_dht_network = matches!(config.file_dht_mode, FileDhtMode::Libp2p)
+        || matches!(config.handle_dht_mode, HandleDhtMode::Libp2p);
+    let ipn_dht_backend: Option<Arc<IpnDhtService>> = if need_ipn_dht_network {
+        let listen_multiaddrs =
+            parse_multiaddrs(&config.file_dht_listen_multiaddrs, "FILE_DHT_LIBP2P_LISTEN");
+        let bootstrap_multiaddrs = parse_multiaddrs(
+            &config.file_dht_bootstrap_multiaddrs,
+            "FILE_DHT_LIBP2P_BOOTSTRAP",
+        );
+        let mut libp2p_config = Libp2pConfig::default();
+        if !listen_multiaddrs.is_empty() {
+            libp2p_config.listen_addresses = listen_multiaddrs;
+        }
+        libp2p_config.bootstrap_peers = bootstrap_multiaddrs;
+        for topic in ["ippan/files", "ippan/handles"] {
+            if !libp2p_config
+                .gossip_topics
+                .iter()
+                .any(|existing| existing == topic)
+            {
+                libp2p_config.gossip_topics.push(topic.to_string());
+            }
+        }
+        match Libp2pNetwork::new(libp2p_config) {
+            Ok(network) => {
+                let network = Arc::new(network);
+                let addresses = network.listen_addresses();
+                info!("IPNDHT libp2p listening on {:?}", addresses);
+                Some(Arc::new(IpnDhtService::new(Some(network))))
+            }
+            Err(err) => {
+                warn!(
+                    "Failed to initialise libp2p IPNDHT (fallback to stub services): {}",
+                    err
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let file_dht: Arc<dyn FileDhtService> = match config.file_dht_mode {
+        FileDhtMode::Stub => {
+            info!("File DHT mode set to stub");
+            Arc::new(StubFileDhtService::new())
+        }
+        FileDhtMode::Libp2p => {
+            info!("File DHT mode set to libp2p");
+            if let Some(ipn) = ipn_dht_backend.clone() {
+                Arc::new(Libp2pFileDhtService::new(ipn))
+            } else {
+                warn!("IPNDHT backend unavailable; falling back to stub File DHT");
+                Arc::new(StubFileDhtService::new())
+            }
+        }
+    };
+
+    let handle_dht: Arc<dyn HandleDhtService> = match config.handle_dht_mode {
+        HandleDhtMode::Stub => {
+            info!("Handle DHT mode set to stub");
+            Arc::new(StubHandleDhtService::new())
+        }
+        HandleDhtMode::Libp2p => {
+            info!("Handle DHT mode set to libp2p");
+            if let Some(ipn) = ipn_dht_backend.clone() {
+                Arc::new(Libp2pHandleDhtService::new(ipn))
+            } else {
+                warn!("IPNDHT backend unavailable; falling back to stub Handle DHT");
+                Arc::new(StubHandleDhtService::new())
+            }
+        }
+    };
+
     // Initialize consensus
     let consensus_config = PoAConfig {
         slot_duration_ms: config.slot_duration_ms,
@@ -444,6 +541,7 @@ async fn main() -> Result<()> {
             config.validator_id,
             handle_registry.clone(),
             handle_anchors.clone(),
+            Some(handle_dht.clone()),
         );
 
         // Create DLC configuration
@@ -497,6 +595,7 @@ async fn main() -> Result<()> {
             config.validator_id,
             handle_registry.clone(),
             handle_anchors.clone(),
+            Some(handle_dht.clone()),
         );
         tx_sender = consensus_instance.get_tx_sender();
         mempool = consensus_instance.mempool();
@@ -598,49 +697,6 @@ async fn main() -> Result<()> {
     };
 
     let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
-    let file_dht: Arc<dyn FileDhtService> = match config.file_dht_mode {
-        FileDhtMode::Stub => {
-            info!("File DHT mode set to stub");
-            Arc::new(StubFileDhtService::new())
-        }
-        FileDhtMode::Libp2p => {
-            info!("File DHT mode set to libp2p");
-            let listen_multiaddrs =
-                parse_multiaddrs(&config.file_dht_listen_multiaddrs, "FILE_DHT_LIBP2P_LISTEN");
-            let bootstrap_multiaddrs = parse_multiaddrs(
-                &config.file_dht_bootstrap_multiaddrs,
-                "FILE_DHT_LIBP2P_BOOTSTRAP",
-            );
-            let mut libp2p_config = Libp2pConfig::default();
-            if !listen_multiaddrs.is_empty() {
-                libp2p_config.listen_addresses = listen_multiaddrs;
-            }
-            libp2p_config.bootstrap_peers = bootstrap_multiaddrs;
-            if !libp2p_config
-                .gossip_topics
-                .iter()
-                .any(|topic| topic == "ippan/files")
-            {
-                libp2p_config.gossip_topics.push("ippan/files".to_string());
-            }
-            match Libp2pNetwork::new(libp2p_config) {
-                Ok(network) => {
-                    let network = Arc::new(network);
-                    let addresses = network.listen_addresses();
-                    info!("File DHT libp2p listening on {:?}", addresses);
-                    let ipn_service = Arc::new(IpnDhtService::new(Some(network)));
-                    Arc::new(Libp2pFileDhtService::new(ipn_service))
-                }
-                Err(err) => {
-                    warn!(
-                        "Failed to initialise libp2p File DHT (fallback to stub): {}",
-                        err
-                    );
-                    Arc::new(StubFileDhtService::new())
-                }
-            }
-        }
-    };
 
     let app_state = AppState {
         storage: storage.clone(),
@@ -662,6 +718,7 @@ async fn main() -> Result<()> {
         dev_mode: config.dev_mode,
         handle_registry: handle_registry.clone(),
         handle_anchors: handle_anchors.clone(),
+        handle_dht: Some(handle_dht.clone()),
     };
 
     let rpc_host = &config.rpc_host;
