@@ -42,3 +42,7 @@ handles can be discovered by other nodes without querying the local registry.
 
 When `libp2p` is selected the node shares a single `IpnDhtService` instance for
 both file and handle records so the Kademlia swarm only needs to boot once.
+
+---
+
+See also: [End-to-End IPPAN Dev Demo](../demo_end_to_end_ippan.md)

@@ -238,3 +238,7 @@ println!("tx hash: {}", response.tx_hash);
 
 These snippets illustrate the required fields and integer-only payloads. Any additional
 metadata (fee caps, memo, nonce) can be added to the JSON body as described earlier.
+
+---
+
+See also: [End-to-End IPPAN Dev Demo](demo_end_to_end_ippan.md)
