@@ -1,8 +1,9 @@
 use crate::{
     AccessKey, Amount, Block, ConfidentialEnvelope, ConfidentialProof, ConfidentialProofType,
-    HashTimer, IppanTimeMicros, RoundCertificate, RoundFinalizationRecord, RoundWindow,
-    Transaction,
+    HandleOperation, HandleRegisterOp, HashTimer, IppanTimeMicros, RoundCertificate,
+    RoundFinalizationRecord, RoundWindow, Transaction,
 };
+use std::collections::BTreeMap;
 
 #[cfg(test)]
 mod type_tests {
@@ -69,6 +70,24 @@ mod type_tests {
         assert!(tx.is_valid());
         let invalid_tx = Transaction::new(from, [2u8; 32], Amount::zero(), 1);
         assert!(!invalid_tx.is_valid());
+    }
+
+    #[test]
+    fn test_handle_transaction_zero_amount() {
+        use ed25519_dalek::SigningKey;
+        let secret = SigningKey::from_bytes(&[21u8; 32]);
+        let from = secret.verifying_key().to_bytes();
+        let mut tx = Transaction::new(from, [0u8; 32], Amount::zero(), 1);
+        let op = HandleOperation::Register(HandleRegisterOp {
+            handle: "@alice.ipn".to_string(),
+            owner: from,
+            metadata: BTreeMap::new(),
+            expires_at: Some(1_700_000_000),
+            signature: vec![0u8; 64],
+        });
+        tx.set_handle_operation(op);
+        tx.sign(&secret.to_bytes()).unwrap();
+        assert!(tx.is_valid());
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use crate::currency::Amount;
+use crate::handle::HandleOperation;
 use crate::{HashTimer, IppanTimeMicros};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -99,6 +100,9 @@ pub struct Transaction {
     /// Optional cleartext topics/tags for routing or indexing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub topics: Vec<String>,
+    /// Optional embedded handle operation payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handle_op: Option<HandleOperation>,
     /// Optional confidential payload envelope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidential: Option<ConfidentialEnvelope>,
@@ -114,7 +118,7 @@ impl Transaction {
     /// Create a new transaction
     pub fn new(from: [u8; 32], to: [u8; 32], amount: Amount, nonce: u64) -> Self {
         let timestamp = IppanTimeMicros::now();
-        let payload = Self::create_payload(&from, &to, amount, nonce);
+        let payload = Self::create_payload(&from, &to, amount, nonce, None);
         let hashtimer = HashTimer::derive(
             "transaction",
             timestamp,
@@ -132,6 +136,7 @@ impl Transaction {
             nonce,
             visibility: TransactionVisibility::Public,
             topics: Vec::new(),
+            handle_op: None,
             confidential: None,
             zk_proof: None,
             signature: [0u8; 64], // Will be set after signing
@@ -143,6 +148,17 @@ impl Transaction {
     /// Attach cleartext topics/tags to the transaction body.
     pub fn set_topics(&mut self, topics: Vec<String>) {
         self.topics = topics;
+    }
+
+    /// Attach a handle operation payload (e.g. registration) to the transaction.
+    pub fn set_handle_operation(&mut self, operation: HandleOperation) {
+        self.handle_op = Some(operation);
+        self.refresh_hashtimer();
+    }
+
+    /// Returns the embedded handle operation, if any.
+    pub fn handle_operation(&self) -> Option<&HandleOperation> {
+        self.handle_op.as_ref()
     }
 
     /// Attach a confidential envelope and mark the transaction as confidential.
@@ -173,6 +189,24 @@ impl Transaction {
         self.id = self.hash();
     }
 
+    fn refresh_hashtimer(&mut self) {
+        let payload = Self::create_payload(
+            &self.from,
+            &self.to,
+            self.amount,
+            self.nonce,
+            self.handle_op.as_ref(),
+        );
+        self.hashtimer = HashTimer::derive(
+            "transaction",
+            self.timestamp,
+            b"transaction",
+            &payload,
+            &self.nonce.to_be_bytes(),
+            &self.from,
+        );
+    }
+
     /// Compute the canonical transaction hash using BLAKE3.
     fn compute_hash(&self) -> [u8; 32] {
         let hash = blake3::hash(&self.canonical_bytes());
@@ -182,12 +216,24 @@ impl Transaction {
     }
 
     /// Create payload for HashTimer computation
-    fn create_payload(from: &[u8; 32], to: &[u8; 32], amount: Amount, nonce: u64) -> Vec<u8> {
+    fn create_payload(
+        from: &[u8; 32],
+        to: &[u8; 32],
+        amount: Amount,
+        nonce: u64,
+        handle_op: Option<&HandleOperation>,
+    ) -> Vec<u8> {
         let mut payload = Vec::new();
         payload.extend_from_slice(from);
         payload.extend_from_slice(to);
         payload.extend_from_slice(&amount.atomic().to_be_bytes());
         payload.extend_from_slice(&nonce.to_be_bytes());
+        if let Some(op) = handle_op {
+            payload.push(1);
+            Self::append_handle_operation(&mut payload, op);
+        } else {
+            payload.push(0);
+        }
         payload
     }
 
@@ -207,6 +253,13 @@ impl Transaction {
         bytes.extend_from_slice(&self.timestamp.0.to_be_bytes());
         bytes.push(self.visibility.as_byte());
         Self::append_topics(&mut bytes, &self.topics);
+        match &self.handle_op {
+            Some(op) => {
+                bytes.push(1);
+                Self::append_handle_operation(&mut bytes, op);
+            }
+            None => bytes.push(0),
+        }
         match &self.confidential {
             Some(envelope) => {
                 bytes.push(1);
@@ -243,6 +296,28 @@ impl Transaction {
         bytes.extend_from_slice(&(topics.len() as u32).to_be_bytes());
         for topic in topics {
             Self::append_length_prefixed(bytes, topic.as_bytes());
+        }
+    }
+
+    fn append_handle_operation(bytes: &mut Vec<u8>, op: &HandleOperation) {
+        match op {
+            HandleOperation::Register(data) => {
+                bytes.push(0);
+                Self::append_length_prefixed(bytes, data.handle.as_bytes());
+                bytes.extend_from_slice(&data.owner);
+                if let Some(exp) = data.expires_at {
+                    bytes.push(1);
+                    bytes.extend_from_slice(&exp.to_be_bytes());
+                } else {
+                    bytes.push(0);
+                }
+                bytes.extend_from_slice(&(data.metadata.len() as u32).to_be_bytes());
+                for (key, value) in &data.metadata {
+                    Self::append_length_prefixed(bytes, key.as_bytes());
+                    Self::append_length_prefixed(bytes, value.as_bytes());
+                }
+                Self::append_length_prefixed(bytes, &data.signature);
+            }
         }
     }
 
@@ -311,11 +386,12 @@ impl Transaction {
     /// Check if transaction is valid
     pub fn is_valid(&self) -> bool {
         // Basic validation checks
+        let has_handle = self.handle_op.is_some();
         if self.visibility == TransactionVisibility::Confidential {
             if self.confidential.is_none() || self.zk_proof.is_none() {
                 return false;
             }
-        } else {
+        } else if !has_handle {
             if self.amount.is_zero() {
                 return false;
             }
@@ -336,7 +412,13 @@ impl Transaction {
         }
 
         // Verify HashTimer is valid and consistent with contents
-        let payload = Self::create_payload(&self.from, &self.to, self.amount, self.nonce);
+        let payload = Self::create_payload(
+            &self.from,
+            &self.to,
+            self.amount,
+            self.nonce,
+            self.handle_op.as_ref(),
+        );
         let expected_hashtimer = HashTimer::derive(
             "transaction",
             self.timestamp,
@@ -348,6 +430,12 @@ impl Transaction {
 
         if expected_hashtimer != self.hashtimer {
             return false;
+        }
+
+        if let Some(op) = &self.handle_op {
+            if op.validate_for_sender(&self.from).is_err() {
+                return false;
+            }
         }
 
         // HashTimer should not be from the future

@@ -293,6 +293,7 @@ async fn test_round_finalization() {
         &consensus.config,
         &consensus.fee_collector,
         &consensus.payment_engine,
+        &consensus.handle_pipeline,
         &consensus.metrics,
     )
     .unwrap();

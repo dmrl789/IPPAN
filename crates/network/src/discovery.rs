@@ -106,12 +106,25 @@ impl DiscoveredPeer {
 #[derive(Debug, Clone)]
 pub enum DiscoveryMessage {
     DiscoverPeers,
-    PeerFound { peer: Peer },
-    PeerLost { peer_id: String },
-    PeerConnected { peer_id: String },
-    PeerDisconnected { peer_id: String },
-    ExchangePeers { peer_id: String },
-    UpdateReputation { peer_id: String, score_micros: RatioMicros },
+    PeerFound {
+        peer: Peer,
+    },
+    PeerLost {
+        peer_id: String,
+    },
+    PeerConnected {
+        peer_id: String,
+    },
+    PeerDisconnected {
+        peer_id: String,
+    },
+    ExchangePeers {
+        peer_id: String,
+    },
+    UpdateReputation {
+        peer_id: String,
+        score_micros: RatioMicros,
+    },
 }
 
 /// Discovery service implementation

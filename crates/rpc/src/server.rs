@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
@@ -17,21 +18,28 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use ed25519_dalek::{Signer, SigningKey};
 use ippan_consensus::PoAConsensus;
 use ippan_consensus_dlc::AiConsensusStatus;
 use ippan_files::{FileDhtService, FileStorage};
 use ippan_l1_fees::FeePolicy;
+use ippan_l1_handle_anchors::L1HandleAnchorStorage;
+use ippan_l2_handle_registry::{
+    Handle, HandleMetadata, HandleRegistryError, HandleStatus, L2HandleRegistry,
+};
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, Storage};
 use ippan_types::address::{decode_address, encode_address};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
-    Amount, Block, L2Commit, L2ExitRecord, L2Network, RoundFinalizationRecord, Transaction,
+    Amount, Block, HandleOperation, HandleRegisterOp, L2Commit, L2ExitRecord, L2Network,
+    RoundFinalizationRecord, Transaction,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
 use tower::Layer;
@@ -55,6 +63,8 @@ const MAX_MEMO_BYTES: usize = 256;
 const DEFAULT_PAYMENT_HISTORY_LIMIT: usize = 25;
 const MAX_PAYMENT_HISTORY_LIMIT: usize = 200;
 const PAYMENT_ENDPOINT: &str = "/tx/payment";
+const HANDLE_REGISTER_ENDPOINT: &str = "/handle/register";
+const HANDLE_LOOKUP_ENDPOINT: &str = "/handle/:handle";
 
 /// Layer 2 configuration
 #[derive(Clone, Debug, Serialize)]
@@ -86,6 +96,8 @@ pub struct AppState {
     pub file_storage: Option<Arc<dyn FileStorage>>,
     pub file_dht: Option<Arc<dyn FileDhtService>>,
     pub dev_mode: bool,
+    pub handle_registry: Arc<L2HandleRegistry>,
+    pub handle_anchors: Arc<L1HandleAnchorStorage>,
 }
 
 type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
@@ -324,6 +336,51 @@ struct DevFundResponse {
     created: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HandleRegisterRequest {
+    handle: String,
+    owner: String,
+    #[serde(default)]
+    metadata: BTreeMap<String, String>,
+    #[serde(default)]
+    expires_at: Option<u64>,
+    #[serde(default, deserialize_with = "deserialize_option_u128_from_any")]
+    fee: Option<u128>,
+    #[serde(default)]
+    nonce: Option<u64>,
+    signing_key: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HandleRegisterResponse {
+    tx_hash: String,
+    handle: String,
+    owner: String,
+    nonce: u64,
+    fee_atomic: String,
+    expires_at: Option<u64>,
+    metadata: BTreeMap<String, String>,
+    status: HandleSubmissionStatus,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum HandleSubmissionStatus {
+    AcceptedToMempool,
+}
+
+#[derive(Debug, Serialize)]
+struct HandleInfoResponse {
+    handle: String,
+    owner: String,
+    status: String,
+    expires_at: Option<u64>,
+    metadata: BTreeMap<String, String>,
+    created_at: u64,
+    updated_at: u64,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum PaymentDirection {
@@ -367,8 +424,6 @@ enum PaymentError {
     ZeroAmount,
     #[error("account not found")]
     AccountNotFound,
-    #[error("failed to load account data: {0}")]
-    StorageFailure(String),
     #[error("failed to derive nonce: {0}")]
     NonceLookupFailed(String),
     #[error("required fee {required} exceeds provided limit {provided}")]
@@ -381,6 +436,61 @@ enum PaymentError {
     SubmissionFailed(String),
 }
 
+#[derive(Debug, Error)]
+enum HandleRegistrationError {
+    #[error("handle must include @ prefix and suffix (e.g. @user.ipn)")]
+    InvalidHandleFormat,
+    #[error("invalid owner address: {0}")]
+    InvalidOwner(String),
+    #[error("missing signing key")]
+    MissingSigningKey,
+    #[error("invalid signing key: {0}")]
+    InvalidSigningKey(String),
+    #[error("account not found")]
+    AccountNotFound,
+    #[error("failed to derive nonce")]
+    NonceDerivationFailed,
+    #[error("fee too low (required {required}, provided {provided})")]
+    FeeTooLow { required: u64, provided: u128 },
+    #[error("failed to build handle transaction: {0}")]
+    BuildFailure(String),
+    #[error("consensus not active")]
+    ConsensusUnavailable,
+    #[error("failed to submit handle transaction: {0}")]
+    SubmissionFailed(String),
+}
+
+impl HandleRegistrationError {
+    fn status_and_code(&self) -> (StatusCode, &'static str) {
+        match self {
+            HandleRegistrationError::InvalidHandleFormat => {
+                (StatusCode::BAD_REQUEST, "invalid_handle")
+            }
+            HandleRegistrationError::InvalidOwner(_) => (StatusCode::BAD_REQUEST, "invalid_owner"),
+            HandleRegistrationError::MissingSigningKey => {
+                (StatusCode::BAD_REQUEST, "missing_signing_key")
+            }
+            HandleRegistrationError::InvalidSigningKey(_) => {
+                (StatusCode::BAD_REQUEST, "invalid_signing_key")
+            }
+            HandleRegistrationError::AccountNotFound => {
+                (StatusCode::BAD_REQUEST, "account_not_found")
+            }
+            HandleRegistrationError::NonceDerivationFailed => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "nonce_error")
+            }
+            HandleRegistrationError::FeeTooLow { .. } => (StatusCode::BAD_REQUEST, "fee_too_low"),
+            HandleRegistrationError::BuildFailure(_) => (StatusCode::BAD_REQUEST, "build_failure"),
+            HandleRegistrationError::ConsensusUnavailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, "consensus_unavailable")
+            }
+            HandleRegistrationError::SubmissionFailed(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "submission_failed")
+            }
+        }
+    }
+}
+
 impl PaymentError {
     fn status_and_code(&self) -> (StatusCode, &'static str) {
         match self {
@@ -390,7 +500,6 @@ impl PaymentError {
             PaymentError::MemoTooLong(_) => (StatusCode::BAD_REQUEST, "memo_too_long"),
             PaymentError::ZeroAmount => (StatusCode::BAD_REQUEST, "invalid_amount"),
             PaymentError::AccountNotFound => (StatusCode::NOT_FOUND, "account_not_found"),
-            PaymentError::StorageFailure(_) => (StatusCode::INTERNAL_SERVER_ERROR, "storage_error"),
             PaymentError::NonceLookupFailed(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "nonce_lookup_failed")
             }
@@ -413,6 +522,16 @@ struct BuiltPayment {
     memo: Option<String>,
     from: [u8; 32],
     to: [u8; 32],
+}
+
+struct BuiltHandleRegistration {
+    transaction: Transaction,
+    handle: String,
+    owner: [u8; 32],
+    metadata: BTreeMap<String, String>,
+    fee_atomic: u64,
+    nonce: u64,
+    expires_at: Option<u64>,
 }
 
 fn deserialize_u128_from_any<'de, D>(deserializer: D) -> Result<u128, D::Error>
@@ -540,6 +659,218 @@ fn normalize_memo(memo: Option<String>) -> Result<Option<String>, PaymentError> 
     Ok(None)
 }
 
+fn normalize_handle_input(handle: &str) -> Result<String, HandleRegistrationError> {
+    let trimmed = handle.trim();
+    if trimmed.is_empty() {
+        return Err(HandleRegistrationError::InvalidHandleFormat);
+    }
+    let normalized = if trimmed.starts_with('@') {
+        trimmed.to_string()
+    } else {
+        format!("@{trimmed}")
+    };
+    let candidate = Handle::new(normalized.clone());
+    if !candidate.is_valid() {
+        return Err(HandleRegistrationError::InvalidHandleFormat);
+    }
+    Ok(candidate.as_str().to_string())
+}
+
+fn normalize_handle_query(raw: &str) -> Result<Handle, HandleRegistrationError> {
+    let normalized = normalize_handle_input(raw)?;
+    Ok(Handle::new(normalized))
+}
+
+fn parse_handle_signing_key(raw: &str) -> Result<SigningKey, HandleRegistrationError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(HandleRegistrationError::MissingSigningKey);
+    }
+    let normalized = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    let bytes = hex::decode(normalized)
+        .map_err(|err| HandleRegistrationError::InvalidSigningKey(err.to_string()))?;
+    if bytes.len() != 32 {
+        return Err(HandleRegistrationError::InvalidSigningKey(format!(
+            "expected 32-byte key, got {} bytes",
+            bytes.len()
+        )));
+    }
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&bytes);
+    Ok(SigningKey::from_bytes(&key))
+}
+
+fn derive_handle_nonce(
+    state: &Arc<AppState>,
+    owner: &[u8; 32],
+    requested: Option<u64>,
+) -> Result<u64, HandleRegistrationError> {
+    if let Some(nonce) = requested {
+        return Ok(nonce);
+    }
+    match state.storage.get_account(owner) {
+        Ok(Some(account)) => Ok(account.nonce.saturating_add(1)),
+        Ok(None) => Err(HandleRegistrationError::AccountNotFound),
+        Err(_) => Err(HandleRegistrationError::NonceDerivationFailed),
+    }
+}
+
+fn sort_metadata(metadata: BTreeMap<String, String>) -> BTreeMap<String, String> {
+    metadata
+        .into_iter()
+        .filter_map(|(key, value)| {
+            let trimmed_key = key.trim();
+            if trimmed_key.is_empty() {
+                return None;
+            }
+            let trimmed_value = value.trim();
+            Some((trimmed_key.to_string(), trimmed_value.to_string()))
+        })
+        .collect()
+}
+
+fn sign_handle_registration_payload(
+    signing_key: &SigningKey,
+    handle: &str,
+    owner: &[u8; 32],
+    expires_at: Option<u64>,
+) -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+    payload.extend_from_slice(handle.as_bytes());
+    payload.extend_from_slice(owner);
+    if let Some(exp) = expires_at {
+        payload.extend_from_slice(&exp.to_le_bytes());
+    }
+    let digest = Sha256::digest(&payload);
+    signing_key.sign(&digest).to_bytes().to_vec()
+}
+
+fn build_handle_registration_transaction(
+    state: &Arc<AppState>,
+    request: HandleRegisterRequest,
+) -> Result<BuiltHandleRegistration, HandleRegistrationError> {
+    let handle = normalize_handle_input(&request.handle)?;
+    let owner_bytes = decode_address(&request.owner)
+        .map_err(|err| HandleRegistrationError::InvalidOwner(err.to_string()))?;
+    let signing_key = parse_handle_signing_key(&request.signing_key)?;
+    if signing_key.verifying_key().to_bytes() != owner_bytes {
+        return Err(HandleRegistrationError::InvalidOwner(
+            "owner does not match signing key".to_string(),
+        ));
+    }
+
+    let nonce = derive_handle_nonce(state, &owner_bytes, request.nonce)?;
+    let metadata = sort_metadata(request.metadata);
+    let signature =
+        sign_handle_registration_payload(&signing_key, &handle, &owner_bytes, request.expires_at);
+
+    let mut tx = Transaction::new(owner_bytes, [0u8; 32], Amount::zero(), nonce);
+    let operation = HandleOperation::Register(HandleRegisterOp {
+        handle: handle.clone(),
+        owner: owner_bytes,
+        metadata: metadata.clone(),
+        expires_at: request.expires_at,
+        signature,
+    });
+    tx.set_handle_operation(operation);
+    let signing_bytes = signing_key.to_bytes();
+    tx.sign(&signing_bytes)
+        .map_err(|err| HandleRegistrationError::BuildFailure(err.to_string()))?;
+
+    let policy = FeePolicy::default();
+    let fee_atomic = policy.required_fee(&tx);
+    if let Err(err) = policy.enforce_fee_limit(request.fee, fee_atomic) {
+        if let ippan_l1_fees::FeePolicyError::FeeBelowMinimum { required, provided } = err {
+            return Err(HandleRegistrationError::FeeTooLow { required, provided });
+        }
+        return Err(HandleRegistrationError::BuildFailure(err.to_string()));
+    }
+
+    Ok(BuiltHandleRegistration {
+        transaction: tx,
+        handle,
+        owner: owner_bytes,
+        metadata,
+        fee_atomic,
+        nonce,
+        expires_at: request.expires_at,
+    })
+}
+
+async fn handle_error_response(
+    state: &Arc<AppState>,
+    addr: &SocketAddr,
+    endpoint: &str,
+    err: HandleRegistrationError,
+) -> (StatusCode, Json<ApiError>) {
+    let (status, code) = err.status_and_code();
+    let message = err.to_string();
+    record_security_failure(state, addr, endpoint, &message).await;
+    (status, Json(ApiError::new(code, message)))
+}
+
+fn handle_registration_response_from_built(
+    built: &BuiltHandleRegistration,
+) -> HandleRegisterResponse {
+    HandleRegisterResponse {
+        tx_hash: hex::encode(built.transaction.hash()),
+        handle: built.handle.clone(),
+        owner: encode_address(&built.owner),
+        nonce: built.nonce,
+        fee_atomic: format_fee(built.fee_atomic),
+        expires_at: built.expires_at,
+        metadata: built.metadata.clone(),
+        status: HandleSubmissionStatus::AcceptedToMempool,
+    }
+}
+
+fn format_handle_status(status: &HandleStatus) -> &'static str {
+    match status {
+        HandleStatus::Active => "active",
+        HandleStatus::Suspended => "suspended",
+        HandleStatus::Expired => "expired",
+        HandleStatus::Transferred => "transferred",
+    }
+}
+
+fn handle_info_from_metadata(handle: &Handle, metadata: HandleMetadata) -> HandleInfoResponse {
+    let owner = encode_address(metadata.owner.as_bytes());
+    let metadata_map = metadata
+        .metadata
+        .into_iter()
+        .collect::<BTreeMap<String, String>>();
+    HandleInfoResponse {
+        handle: handle.as_str().to_string(),
+        owner,
+        status: format_handle_status(&metadata.status).to_string(),
+        expires_at: if metadata.expires_at == 0 {
+            None
+        } else {
+            Some(metadata.expires_at)
+        },
+        metadata: metadata_map,
+        created_at: metadata.created_at,
+        updated_at: metadata.updated_at,
+    }
+}
+
+fn map_handle_lookup_error(err: HandleRegistryError) -> (StatusCode, &'static str, String) {
+    match err {
+        HandleRegistryError::HandleNotFound { .. } => {
+            (StatusCode::NOT_FOUND, "handle_not_found", err.to_string())
+        }
+        HandleRegistryError::HandleExpired { .. } => {
+            (StatusCode::NOT_FOUND, "handle_expired", err.to_string())
+        }
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "handle_registry_error",
+            err.to_string(),
+        ),
+    }
+}
+
 impl PaymentView {
     fn from_transaction(
         tx: &Transaction,
@@ -646,6 +977,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/tx", post(handle_submit_tx))
         .route("/tx/payment", post(handle_payment_tx))
         .route("/tx/:hash", get(handle_get_transaction))
+        .route(HANDLE_REGISTER_ENDPOINT, post(handle_register_handle))
+        .route(HANDLE_LOOKUP_ENDPOINT, get(handle_get_handle))
         .route("/files/publish", post(handle_publish_file))
         .route("/files/:id", get(handle_get_file))
         .route("/block/:id", get(handle_get_block))
@@ -879,6 +1212,85 @@ async fn handle_submit_tx(
     }
 }
 
+async fn handle_register_handle(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(request): Json<HandleRegisterRequest>,
+) -> Result<Json<HandleRegisterResponse>, (StatusCode, Json<ApiError>)> {
+    if let Err(err) = guard_request(&state, &addr, HANDLE_REGISTER_ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, HANDLE_REGISTER_ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    let built = match build_handle_registration_transaction(&state, request) {
+        Ok(built) => built,
+        Err(err) => {
+            return Err(handle_error_response(&state, &addr, HANDLE_REGISTER_ENDPOINT, err).await)
+        }
+    };
+
+    let response = handle_registration_response_from_built(&built);
+    let tx_for_consensus = built.transaction.clone();
+
+    if let Some(consensus) = &state.consensus {
+        if let Err(err) = consensus.submit_transaction(tx_for_consensus) {
+            return Err(handle_error_response(
+                &state,
+                &addr,
+                HANDLE_REGISTER_ENDPOINT,
+                HandleRegistrationError::SubmissionFailed(err.to_string()),
+            )
+            .await);
+        }
+    } else {
+        return Err(handle_error_response(
+            &state,
+            &addr,
+            HANDLE_REGISTER_ENDPOINT,
+            HandleRegistrationError::ConsensusUnavailable,
+        )
+        .await);
+    }
+
+    record_security_success(&state, &addr, HANDLE_REGISTER_ENDPOINT).await;
+    Ok(Json(response))
+}
+
+async fn handle_get_handle(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(raw_handle): AxumPath<String>,
+) -> Result<Json<HandleInfoResponse>, (StatusCode, Json<ApiError>)> {
+    if let Err(err) = guard_request(&state, &addr, HANDLE_LOOKUP_ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, HANDLE_LOOKUP_ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    let handle = match normalize_handle_query(&raw_handle) {
+        Ok(handle) => handle,
+        Err(err) => {
+            return Err(handle_error_response(&state, &addr, HANDLE_LOOKUP_ENDPOINT, err).await)
+        }
+    };
+
+    match state.handle_registry.get_metadata(&handle) {
+        Ok(metadata) => {
+            let response = handle_info_from_metadata(&handle, metadata);
+            record_security_success(&state, &addr, HANDLE_LOOKUP_ENDPOINT).await;
+            Ok(Json(response))
+        }
+        Err(err) => {
+            let (status, code, message) = map_handle_lookup_error(err);
+            if status.is_server_error() {
+                record_security_failure(&state, &addr, HANDLE_LOOKUP_ENDPOINT, &message).await;
+            } else {
+                record_security_success(&state, &addr, HANDLE_LOOKUP_ENDPOINT).await;
+            }
+            Err((status, Json(ApiError::new(code, message))))
+        }
+    }
+}
+
 async fn handle_payment_tx(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -1080,7 +1492,7 @@ fn derive_next_nonce(state: &Arc<AppState>, address: &[u8; 32]) -> Result<u64, P
     match state.storage.get_account(address) {
         Ok(Some(account)) => Ok(account.nonce.saturating_add(1)),
         Ok(None) => Err(PaymentError::AccountNotFound),
-        Err(err) => Err(PaymentError::StorageFailure(err.to_string())),
+        Err(err) => Err(PaymentError::NonceLookupFailed(err.to_string())),
     }
 }
 
@@ -1998,6 +2410,7 @@ mod tests {
     use ippan_consensus::{PoAConfig, Validator};
     use ippan_consensus_dlc::{AiConsensusStatus, DlcConfig as AiDlcConfig, DlcConsensus};
     use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
+    use ippan_l2_handle_registry::{HandleRegistration, PublicKey};
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
     use ippan_storage::{ChainState, MemoryStorage, ValidatorTelemetry};
@@ -2021,6 +2434,8 @@ mod tests {
     async fn test_health_endpoint() {
         let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::default());
         let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
+        let handle_registry = Arc::new(L2HandleRegistry::new());
+        let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
         let app_state = Arc::new(AppState {
             storage: Arc::new(MemoryStorage::default()),
             start_time: Instant::now(),
@@ -2045,6 +2460,8 @@ mod tests {
             file_storage: Some(file_storage),
             file_dht: Some(file_dht),
             dev_mode: true,
+            handle_registry,
+            handle_anchors,
         });
 
         let response = handle_health(State(app_state)).await;
@@ -2112,6 +2529,8 @@ mod tests {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
         let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
         let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
+        let handle_registry = Arc::new(L2HandleRegistry::new());
+        let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
         Arc::new(AppState {
             storage,
             start_time: Instant::now(),
@@ -2136,6 +2555,8 @@ mod tests {
             file_storage: Some(file_storage),
             file_dht: Some(file_dht),
             dev_mode: true,
+            handle_registry,
+            handle_anchors,
         })
     }
 
@@ -2895,6 +3316,140 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_handle_register_endpoint_success() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = PoAConfig::default();
+        config.validators.push(Validator {
+            id: sample_public_key([80u8; 32]),
+            address: sample_public_key([81u8; 32]),
+            stake: 1_000,
+            is_active: true,
+        });
+
+        let poa = PoAConsensus::new(config, storage.clone(), sample_public_key([82u8; 32]));
+        let mempool = poa.mempool();
+        let consensus = Arc::new(Mutex::new(poa));
+        let (tx_sender, mut rx) = mpsc::unbounded_channel();
+        let handle = ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool.clone());
+
+        let mut app_state = (*build_app_state(None, None)).clone();
+        app_state.storage = storage.clone();
+        app_state.consensus = Some(handle);
+        app_state.tx_sender = Some(tx_sender);
+        app_state.mempool = mempool.clone();
+        let state = Arc::new(app_state);
+
+        let signer = sample_private_key([83u8; 32]);
+        let owner = signer.verifying_key().to_bytes();
+        state
+            .storage
+            .update_account(Account {
+                address: owner,
+                balance: 5_000,
+                nonce: 2,
+            })
+            .expect("account");
+
+        let mut metadata = BTreeMap::new();
+        metadata.insert("display_name".into(), "Alice".into());
+        let request = HandleRegisterRequest {
+            handle: "@alice.ipn".into(),
+            owner: encode_address(&owner),
+            metadata,
+            expires_at: Some(ippan_time_now() + 60),
+            fee: None,
+            nonce: None,
+            signing_key: hex::encode(signer.to_bytes()),
+        };
+
+        let addr: SocketAddr = "127.0.0.1:9450".parse().unwrap();
+        let response =
+            handle_register_handle(State(state.clone()), ConnectInfo(addr), Json(request))
+                .await
+                .expect("register");
+        assert_eq!(response.0.status, HandleSubmissionStatus::AcceptedToMempool);
+        assert_eq!(response.0.handle, "@alice.ipn");
+        assert_eq!(response.0.nonce, 3);
+
+        let dispatched = rx.recv().await.expect("tx dispatched");
+        let op = dispatched
+            .handle_operation()
+            .expect("handle operation exists");
+        match op {
+            HandleOperation::Register(op) => {
+                assert_eq!(op.handle, "@alice.ipn");
+                assert_eq!(op.owner, owner);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_register_endpoint_rejects_invalid_handle() {
+        let state = make_app_state();
+        let signer = sample_private_key([84u8; 32]);
+        let owner = signer.verifying_key().to_bytes();
+        let request = HandleRegisterRequest {
+            handle: "invalid".into(),
+            owner: encode_address(&owner),
+            metadata: BTreeMap::new(),
+            expires_at: None,
+            fee: None,
+            nonce: Some(1),
+            signing_key: hex::encode(signer.to_bytes()),
+        };
+        let addr: SocketAddr = "127.0.0.1:9451".parse().unwrap();
+        let err = handle_register_handle(State(state), ConnectInfo(addr), Json(request))
+            .await
+            .expect_err("invalid handle");
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_lookup_endpoint_flow() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9452".parse().unwrap();
+        let signer = sample_private_key([85u8; 32]);
+        let owner = signer.verifying_key().to_bytes();
+        let handle = Handle::new("@lookup.ipn");
+        let expires_at = Some(ippan_time_now() + 120);
+        let signature =
+            sign_handle_registration_payload(&signer, handle.as_str(), &owner, expires_at);
+        state
+            .handle_registry
+            .register(HandleRegistration {
+                handle: handle.clone(),
+                owner: PublicKey::new(owner),
+                signature,
+                metadata: HashMap::from([(String::from("alias"), String::from("Lookup"))]),
+                expires_at,
+            })
+            .expect("registry insert");
+
+        let response = handle_get_handle(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(handle.as_str().to_string()),
+        )
+        .await
+        .expect("lookup success");
+        assert_eq!(response.0.handle, "@lookup.ipn");
+        assert_eq!(response.0.owner, encode_address(&owner));
+        assert_eq!(
+            response.0.metadata.get("alias"),
+            Some(&"Lookup".to_string())
+        );
+
+        let missing = handle_get_handle(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("@unknown.ipn".to_string()),
+        )
+        .await
+        .expect_err("missing");
+        assert_eq!(missing.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn test_handle_dev_fund_requires_dev_mode() {
         let base = make_app_state();
         let mut inner = (*base).clone();
@@ -3600,6 +4155,8 @@ mod tests {
 
         let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
         let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
+        let handle_registry = Arc::new(L2HandleRegistry::new());
+        let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
         let state = Arc::new(AppState {
             storage,
             start_time: Instant::now(),
@@ -3624,6 +4181,8 @@ mod tests {
             file_storage: Some(file_storage),
             file_dht: Some(file_dht),
             dev_mode: true,
+            handle_registry,
+            handle_anchors,
         });
 
         let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();

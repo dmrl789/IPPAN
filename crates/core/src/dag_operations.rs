@@ -1,6 +1,6 @@
 use crate::dag::BlockDAG;
-use ippan_types::{ratio_from_parts, RatioMicros};
 use anyhow::Result;
+use ippan_types::{ratio_from_parts, RatioMicros};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -103,10 +103,7 @@ impl DAGOperations {
         }
 
         let convergence_ratio_micros = if total_blocks > 0 {
-            ratio_from_parts(
-                (total_blocks - orphan_blocks) as u128,
-                total_blocks as u128,
-            )
+            ratio_from_parts((total_blocks - orphan_blocks) as u128, total_blocks as u128)
         } else {
             0
         };

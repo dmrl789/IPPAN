@@ -12,6 +12,8 @@ use anyhow::Result;
 use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
 use ippan_l1_fees::FeePolicy;
+use ippan_l1_handle_anchors::L1HandleAnchorStorage;
+use ippan_l2_handle_registry::L2HandleRegistry;
 use ippan_mempool::Mempool;
 use ippan_storage::Storage;
 use ippan_types::{
@@ -40,6 +42,7 @@ pub mod bonding;
 pub mod dgbdt;
 pub mod dlc;
 pub mod dlc_integration;
+pub mod handles;
 pub mod hashtimer_integration;
 pub mod payments;
 pub mod shadow_verifier;
@@ -202,6 +205,7 @@ pub struct PoAConsensus {
     pub model_reloader: Option<Arc<model_reload::ModelReloader>>,
     pub metrics: Arc<metrics::ConsensusMetrics>,
     pub payment_engine: Arc<payments::PaymentApplier>,
+    pub handle_pipeline: Arc<handles::HandlePipeline>,
 }
 
 impl PoAConsensus {
@@ -210,6 +214,22 @@ impl PoAConsensus {
         config: PoAConfig,
         storage: Arc<dyn Storage + Send + Sync>,
         validator_id: [u8; 32],
+    ) -> Self {
+        Self::with_handle_services(
+            config,
+            storage,
+            validator_id,
+            Arc::new(L2HandleRegistry::new()),
+            Arc::new(L1HandleAnchorStorage::new()),
+        )
+    }
+
+    pub fn with_handle_services(
+        config: PoAConfig,
+        storage: Arc<dyn Storage + Send + Sync>,
+        validator_id: [u8; 32],
+        handle_registry: Arc<L2HandleRegistry>,
+        handle_anchors: Arc<L1HandleAnchorStorage>,
     ) -> Self {
         let (tx_sender, _rx) = mpsc::unbounded_channel();
         let latest_height = storage.get_latest_height().unwrap_or(0);
@@ -237,7 +257,6 @@ impl PoAConsensus {
         let dgbdt_engine = DGBDTEngine::new();
 
         let telemetry_manager = Arc::new(telemetry::TelemetryManager::new(storage.clone()));
-        // Load existing telemetry from storage
         let _ = telemetry_manager.load_from_storage();
 
         let metrics = Arc::new(metrics::ConsensusMetrics::new());
@@ -264,6 +283,10 @@ impl PoAConsensus {
             payment_engine: Arc::new(payments::PaymentApplier::new(
                 FeePolicy::default(),
                 payments::TREASURY_ACCOUNT,
+            )),
+            handle_pipeline: Arc::new(handles::HandlePipeline::new(
+                handle_registry,
+                handle_anchors,
             )),
         }
     }
@@ -302,6 +325,7 @@ impl PoAConsensus {
             metrics,
             dgbdt_engine,
             payment_engine,
+            handle_pipeline,
         ) = (
             self.is_running.clone(),
             self.current_slot.clone(),
@@ -317,6 +341,7 @@ impl PoAConsensus {
             self.metrics.clone(),
             self.dgbdt_engine.clone(),
             self.payment_engine.clone(),
+            self.handle_pipeline.clone(),
         );
 
         let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
@@ -333,6 +358,7 @@ impl PoAConsensus {
                     &config,
                     &fee_collector,
                     &payment_engine,
+                    &handle_pipeline,
                     &metrics,
                 ) {
                     error!("Round finalization error: {e}");
@@ -557,6 +583,7 @@ impl PoAConsensus {
         config: &PoAConfig,
         fee_collector: &Arc<RwLock<FeeCollector>>,
         payment_engine: &Arc<payments::PaymentApplier>,
+        handle_pipeline: &Arc<handles::HandlePipeline>,
         metrics: &Arc<metrics::ConsensusMetrics>,
     ) -> Result<()> {
         let (round_id, block_ids, start, end) = {
@@ -614,13 +641,38 @@ impl PoAConsensus {
         let mut tx_lookup = HashMap::new();
         for block in &blocks {
             for tx in &block.transactions {
-                tx_lookup.insert(tx.hash(), (tx.clone(), block.header.creator));
+                tx_lookup.insert(
+                    tx.hash(),
+                    (tx.clone(), block.header.creator, block.header.round),
+                );
             }
         }
 
         let mut payment_stats = payments::PaymentRoundStats::new(round_id);
         for tx_id in &ordered {
-            if let Some((tx, proposer)) = tx_lookup.get(tx_id) {
+            if let Some((tx, proposer, block_round)) = tx_lookup.get(tx_id) {
+                let tx_kind = fees::classify_transaction(tx);
+                let handle_ok = if matches!(tx_kind, TxKind::Handle) {
+                    match handle_pipeline.apply(tx, *block_round, round_id) {
+                        Ok(()) => true,
+                        Err(err) => {
+                            warn!(
+                                "Round {}: handle tx {} rejected: {}",
+                                round_id,
+                                hex::encode(tx_id),
+                                err
+                            );
+                            false
+                        }
+                    }
+                } else {
+                    true
+                };
+
+                if !handle_ok {
+                    continue;
+                }
+
                 match payment_engine.apply(storage, tx, proposer) {
                     Ok(split) => payment_stats.record_success(tx, *proposer, split),
                     Err(err) => {

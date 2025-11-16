@@ -27,6 +27,8 @@ ippan-crypto = { path = "../crates/crypto" }
 ippan-mempool = { path = "../crates/mempool" }
 ippan-security = { path = "../crates/security" }
 ippan-files = { path = "../crates/files" }
+ippan-l2-handle-registry = { path = "../crates/l2_handle_registry" }
+ippan-l1-handle-anchors = { path = "../crates/l1_handle_anchors" }
 
 anyhow = { workspace = true }
 thiserror = { workspace = true }

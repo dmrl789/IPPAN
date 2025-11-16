@@ -203,19 +203,17 @@ impl InputValidator {
             }
             ValidationRule::NumericRange { field, min, max } => {
                 let value = self.lookup_field(root, field)?;
-                let number = parse_numeric_value(value).ok_or_else(|| ValidationError::RuleViolation {
-                    field: field.clone(),
-                    reason: "expected numeric value".into(),
-                })?;
+                let number =
+                    parse_numeric_value(value).ok_or_else(|| ValidationError::RuleViolation {
+                        field: field.clone(),
+                        reason: "expected numeric value".into(),
+                    })?;
 
                 if let Some(lower) = min {
                     if number < *lower {
                         return Err(ValidationError::RuleViolation {
                             field: field.clone(),
-                            reason: format!(
-                                "value must be >= {}",
-                                format_numeric_value(*lower)
-                            ),
+                            reason: format!("value must be >= {}", format_numeric_value(*lower)),
                         });
                     }
                 }
@@ -224,10 +222,7 @@ impl InputValidator {
                     if number > *upper {
                         return Err(ValidationError::RuleViolation {
                             field: field.clone(),
-                            reason: format!(
-                                "value must be <= {}",
-                                format_numeric_value(*upper)
-                            ),
+                            reason: format!("value must be <= {}", format_numeric_value(*upper)),
                         });
                     }
                 }

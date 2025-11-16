@@ -24,6 +24,8 @@ ippan-consensus-dlc = { path = "../consensus_dlc" }
 ippan-ai-core = { path = "../ai_core", optional = true }
 ippan-ai-registry = { path = "../ai_registry", optional = true }
 ippan-l1-fees = { path = "../l1_fees" }
+ippan-l2-handle-registry = { path = "../l2_handle_registry" }
+ippan-l1-handle-anchors = { path = "../l1_handle_anchors" }
 
 anyhow = { workspace = true }
 thiserror = { workspace = true }
@@ -38,6 +40,7 @@ blake3 = { workspace = true }
 rayon = { workspace = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
