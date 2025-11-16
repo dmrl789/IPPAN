@@ -518,6 +518,7 @@ async fn main() -> Result<()> {
         tx_sender: Some(tx_sender.clone()),
         node_id: config.node_id.clone(),
         consensus: Some(consensus_handle.clone()),
+        ai_status: None,
         l2_config,
         mempool: mempool.clone(),
         unified_ui_dist: config.unified_ui_dist_dir.clone(),

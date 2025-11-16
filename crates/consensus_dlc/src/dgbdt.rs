@@ -247,6 +247,11 @@ impl FairnessModel {
         self.active_hash.as_deref()
     }
 
+    /// Optional human-readable model version string.
+    pub fn model_version(&self) -> Option<String> {
+        Some(self.model.version.to_string())
+    }
+
     pub fn testing_stub() -> Self {
         use ippan_ai_core::gbdt::{Node as TestNode, Tree as TestTree};
 

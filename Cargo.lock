@@ -3236,6 +3236,7 @@ dependencies = [
  "hex",
  "igd",
  "ippan-consensus",
+ "ippan-consensus-dlc",
  "ippan-files",
  "ippan-l1-fees",
  "ippan-mempool",

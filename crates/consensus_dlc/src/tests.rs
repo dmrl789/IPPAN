@@ -70,6 +70,54 @@ async fn test_consensus_round_processing() {
 }
 
 #[tokio::test]
+async fn test_ai_status_reports_stub_when_registry_missing() {
+    let config = DlcConfig::default();
+    let consensus = DlcConsensus::new(config);
+
+    let status = consensus.ai_status();
+    assert!(status.enabled);
+    assert!(status.using_stub);
+    assert!(status.model_hash.is_none());
+    assert_eq!(status.model_version.as_deref(), Some("1"));
+}
+
+#[tokio::test]
+async fn test_ai_status_reports_real_model_metadata() {
+    use ippan_ai_core::gbdt::{Node as DNode, Tree as DTree, SCALE};
+    use ippan_ai_registry::d_gbdt::{compute_model_hash, DGBDTRegistry};
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let registry_path = temp.path().join("registry");
+
+    let db = sled::open(&registry_path).unwrap();
+    let mut registry = DGBDTRegistry::new(db);
+
+    let tree = DTree::new(
+        vec![
+            DNode::internal(0, 0, 50 * SCALE, 1, 2),
+            DNode::leaf(1, 100 * SCALE),
+            DNode::leaf(2, 200 * SCALE),
+        ],
+        SCALE,
+    );
+    let model = ippan_ai_core::gbdt::Model::new(vec![tree], 0);
+    let hash = compute_model_hash(&model).unwrap();
+    registry.store_active_model(model, hash.clone()).unwrap();
+    drop(registry);
+
+    std::env::set_var("IPPAN_DGBDT_REGISTRY_PATH", &registry_path);
+    let consensus = DlcConsensus::new(DlcConfig::default());
+    std::env::remove_var("IPPAN_DGBDT_REGISTRY_PATH");
+
+    let status = consensus.ai_status();
+    assert!(status.enabled);
+    assert!(!status.using_stub);
+    assert_eq!(status.model_hash.as_deref(), Some(hash.as_str()));
+    assert_eq!(status.model_version.as_deref(), Some("1"));
+}
+
+#[tokio::test]
 async fn test_block_proposal_and_verification() {
     let mut dag = BlockDAG::new();
     let genesis_id = dag.genesis_id.clone().unwrap();

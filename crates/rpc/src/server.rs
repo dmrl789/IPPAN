@@ -18,6 +18,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ippan_consensus::PoAConsensus;
+use ippan_consensus_dlc::AiConsensusStatus;
 use ippan_l1_fees::FeePolicy;
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
@@ -72,6 +73,7 @@ pub struct AppState {
     pub tx_sender: Option<mpsc::UnboundedSender<Transaction>>,
     pub node_id: String,
     pub consensus: Option<ConsensusHandle>,
+    pub ai_status: Option<AiStatusHandle>,
     pub l2_config: L2Config,
     pub mempool: Arc<Mempool>,
     pub unified_ui_dist: Option<PathBuf>,
@@ -79,6 +81,40 @@ pub struct AppState {
     pub security: Option<Arc<SecurityManager>>,
     pub metrics: Option<PrometheusHandle>,
     pub dev_mode: bool,
+}
+
+type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
+
+/// Handle for retrieving AI status snapshots from consensus or stubs.
+#[derive(Clone)]
+pub struct AiStatusHandle {
+    getter: Arc<dyn Fn() -> AiStatusFuture + Send + Sync>,
+}
+
+impl AiStatusHandle {
+    pub fn new<F, Fut>(factory: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = AiConsensusStatus> + Send + 'static,
+    {
+        Self {
+            getter: Arc::new(move || {
+                let future = factory();
+                Box::pin(future) as AiStatusFuture
+            }),
+        }
+    }
+
+    pub fn from_static(status: AiConsensusStatus) -> Self {
+        Self::new(move || {
+            let snapshot = status.clone();
+            async move { snapshot }
+        })
+    }
+
+    pub async fn snapshot(&self) -> AiConsensusStatus {
+        (self.getter)().await
+    }
 }
 
 /// Consensus handle abstraction
@@ -130,6 +166,38 @@ impl ConsensusHandle {
 pub struct ConsensusStateView {
     pub round: u64,
     pub validators: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AiStatus {
+    enabled: bool,
+    using_stub: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_version: Option<String>,
+}
+
+impl AiStatus {
+    fn disabled() -> Self {
+        Self {
+            enabled: false,
+            using_stub: false,
+            model_hash: None,
+            model_version: None,
+        }
+    }
+}
+
+impl From<AiConsensusStatus> for AiStatus {
+    fn from(status: AiConsensusStatus) -> Self {
+        Self {
+            enabled: status.enabled,
+            using_stub: status.using_stub,
+            model_hash: status.model_hash,
+            model_version: status.model_version,
+        }
+    }
 }
 
 /// Transaction lookup response payload used by JSON responses.
@@ -569,6 +637,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/time", get(handle_time))
         .route("/version", get(handle_version))
         .route("/metrics", get(handle_metrics))
+        .route("/ai/status", get(handle_get_ai_status))
         .route("/tx", post(handle_submit_tx))
         .route("/tx/payment", post(handle_payment_tx))
         .route("/tx/:hash", get(handle_get_transaction))
@@ -714,13 +783,11 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
 
     let consensus_view = if let Some(consensus) = &state.consensus {
         match consensus.snapshot().await {
-            Ok(view) => {
-                Some(serde_json::json!({
-                    "round": view.round,
-                    "validator_count": view.validators.len(),
-                    "validators": view.validators,
-                }))
-            }
+            Ok(view) => Some(serde_json::json!({
+                "round": view.round,
+                "validator_count": view.validators.len(),
+                "validators": view.validators,
+            })),
             Err(err) => {
                 warn!("Failed to snapshot consensus state: {}", err);
                 None
@@ -770,6 +837,16 @@ async fn handle_metrics(State(state): State<Arc<AppState>>) -> Response {
         *response.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
         response
     }
+}
+
+async fn handle_get_ai_status(State(state): State<Arc<AppState>>) -> Json<AiStatus> {
+    let response = if let Some(handle) = &state.ai_status {
+        let snapshot = handle.snapshot().await;
+        AiStatus::from(snapshot)
+    } else {
+        AiStatus::disabled()
+    };
+    Json(response)
 }
 
 async fn handle_submit_tx(
@@ -1912,6 +1989,7 @@ mod tests {
     use axum::Json;
     use ed25519_dalek::SigningKey;
     use ippan_consensus::{PoAConfig, Validator};
+    use ippan_consensus_dlc::AiConsensusStatus;
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
     use ippan_storage::{ChainState, MemoryStorage, ValidatorTelemetry};
@@ -1939,6 +2017,7 @@ mod tests {
             tx_sender: None,
             node_id: "test-node".into(),
             consensus: None,
+            ai_status: None,
             l2_config: L2Config {
                 max_commit_size: 1000,
                 min_epoch_gap_ms: 1000,
@@ -1959,6 +2038,33 @@ mod tests {
         assert_eq!(json.get("status").unwrap(), "healthy");
     }
 
+    #[tokio::test]
+    async fn test_handle_get_ai_status_disabled_by_default() {
+        let Json(status) = handle_get_ai_status(State(make_app_state())).await;
+        assert!(!status.enabled);
+        assert!(status.model_hash.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_ai_status_with_provider() {
+        let handle = AiStatusHandle::from_static(AiConsensusStatus {
+            enabled: true,
+            using_stub: false,
+            model_hash: Some("deadbeef".into()),
+            model_version: Some("v2".into()),
+        });
+
+        let mut state = (*make_app_state()).clone();
+        state.ai_status = Some(handle);
+        let state = Arc::new(state);
+
+        let Json(status) = handle_get_ai_status(State(state)).await;
+        assert!(status.enabled);
+        assert!(!status.using_stub);
+        assert_eq!(status.model_hash.as_deref(), Some("deadbeef"));
+        assert_eq!(status.model_version.as_deref(), Some("v2"));
+    }
+
     fn build_app_state(
         security: Option<Arc<SecurityManager>>,
         unified_ui_dist: Option<PathBuf>,
@@ -1972,6 +2078,7 @@ mod tests {
             tx_sender: None,
             node_id: "test-node".into(),
             consensus: None,
+            ai_status: None,
             l2_config: L2Config {
                 max_commit_size: 512,
                 min_epoch_gap_ms: 1_000,
