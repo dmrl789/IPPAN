@@ -199,3 +199,6 @@ The previous design stored handle mappings directly on L1, which violated the mi
 ## Conclusion
 
 The L2 handle system provides a scalable, secure, and architecturally sound solution for human-readable identifiers while maintaining IPPAN's core principle of L1 minimalism. The system supports the full range of use cases from simple user handles to complex IoT device management, all while keeping L1 fast and efficient.
+---
+
+See also: [End-to-End IPPAN Dev Demo](demo_end_to_end_ippan.md)

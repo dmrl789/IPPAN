@@ -59,6 +59,9 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] RPC `/tx/payment` + `/account/:address/payments` endpoints exist in `crates/rpc/src/server.rs` and only accept integer (`u128`) currency amounts.
 - [x] Demo docs/scripts describing the payment flow exist (`docs/payments/demo_end_to_end_payment.md`, `scripts/demo_payment_flow.sh`).
 
+## 9. End-to-End Demo
+- [x] End-to-end dev demo for handles + payments + files + AI/DHT status documented in `docs/demo_end_to_end_ippan.md` and automated via `scripts/demo_ippan_full_flow.sh`.
+
 ## Optional Test Runs
 - `cargo test -p ippan-rpc -- --nocapture` → **fails** (expected) due to missing OpenSSL headers in the environment; no additional compiler errors observed before the toolchain check halted.
 - `cargo test -p ippan-consensus-dlc -- --nocapture` → **passes** locally (vends registry-backed fairness); only external toolchain issues (e.g., OpenSSL) would block in other environments.
