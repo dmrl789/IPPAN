@@ -3,6 +3,7 @@
 //! Handles automatic peer discovery, peer exchange, and network topology management.
 
 use anyhow::Result;
+use ippan_types::{format_ratio, RatioMicros, RATIO_SCALE};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -74,7 +75,7 @@ pub struct DiscoveredPeer {
     pub last_seen: Instant,
     pub connection_attempts: usize,
     pub is_connected: bool,
-    pub reputation_score: f64,
+    pub reputation_score_micros: RatioMicros,
     pub capabilities: Vec<String>,
 }
 
@@ -87,7 +88,7 @@ impl DiscoveredPeer {
             last_seen: now,
             connection_attempts: 0,
             is_connected: false,
-            reputation_score: 0.5, // Start with neutral reputation
+            reputation_score_micros: RATIO_SCALE / 2, // Start with neutral reputation
             capabilities: vec![],
         }
     }
@@ -110,7 +111,7 @@ pub enum DiscoveryMessage {
     PeerConnected { peer_id: String },
     PeerDisconnected { peer_id: String },
     ExchangePeers { peer_id: String },
-    UpdateReputation { peer_id: String, score: f64 },
+    UpdateReputation { peer_id: String, score_micros: RatioMicros },
 }
 
 /// Discovery service implementation
@@ -218,18 +219,22 @@ impl PeerDiscovery {
     }
 
     /// Update peer reputation
-    pub async fn update_peer_reputation(&self, peer_id: &str, score: f64) -> Result<()> {
+    pub async fn update_peer_reputation(
+        &self,
+        peer_id: &str,
+        score_micros: RatioMicros,
+    ) -> Result<()> {
         {
             let mut known_peers = self.known_peers.write();
             if let Some(peer) = known_peers.get_mut(peer_id) {
-                peer.reputation_score = score.clamp(0.0, 1.0);
+                peer.reputation_score_micros = score_micros.min(RATIO_SCALE);
             }
         }
 
         self.discovery_sender
             .send(DiscoveryMessage::UpdateReputation {
                 peer_id: peer_id.to_string(),
-                score,
+                score_micros: score_micros.min(RATIO_SCALE),
             })?;
         Ok(())
     }
@@ -377,8 +382,15 @@ impl PeerDiscovery {
                         DiscoveryMessage::ExchangePeers { peer_id } => {
                             debug!("Exchanging peers with: {}", peer_id);
                         }
-                        DiscoveryMessage::UpdateReputation { peer_id, score } => {
-                            debug!("Updated reputation for {}: {}", peer_id, score);
+                        DiscoveryMessage::UpdateReputation {
+                            peer_id,
+                            score_micros,
+                        } => {
+                            debug!(
+                                "Updated reputation for {}: {}",
+                                peer_id,
+                                format_ratio(score_micros)
+                            );
                         }
                     }
                 }
@@ -462,7 +474,7 @@ mod tests {
 
         discovery.add_peer(peer).await.unwrap();
         assert!(discovery
-            .update_peer_reputation("test-peer", 0.8)
+            .update_peer_reputation("test-peer", RATIO_SCALE * 8 / 10)
             .await
             .is_ok());
     }

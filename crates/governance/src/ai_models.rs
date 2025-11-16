@@ -1,5 +1,6 @@
 use anyhow::Result;
 use ippan_ai_registry::AiModelProposal;
+use ippan_types::{ratio_from_parts, RatioMicros, RATIO_SCALE};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -42,7 +43,7 @@ impl ModelRegistryEntry {
 // 🧩 Proposal Manager — handles voting and stake-based approval
 // -----------------------------------------------------------------------------
 pub struct ProposalManager {
-    threshold: f64,
+    threshold_micros: RatioMicros,
     minimum_stake: u64,
     proposals: HashMap<String, ProposalState>,
 }
@@ -73,9 +74,9 @@ enum ProposalStatus {
 }
 
 impl ProposalManager {
-    pub fn new(threshold: f64, minimum_stake: u64) -> Self {
+    pub fn new(threshold_micros: RatioMicros, minimum_stake: u64) -> Self {
         Self {
-            threshold,
+            threshold_micros: threshold_micros.min(RATIO_SCALE),
             minimum_stake,
             proposals: HashMap::new(),
         }
@@ -149,10 +150,13 @@ impl ProposalManager {
         // Check threshold
         let total_stake = state.total_stake_for + state.total_stake_against;
         if total_stake > 0 {
-            let approval_ratio = state.total_stake_for as f64 / total_stake as f64;
-            if approval_ratio >= self.threshold {
+            let approval_ratio =
+                ratio_from_parts(state.total_stake_for as u128, total_stake as u128);
+            if approval_ratio >= self.threshold_micros {
                 state.status = ProposalStatus::Approved;
-            } else if approval_ratio < (1.0 - self.threshold) {
+            } else if approval_ratio
+                < RATIO_SCALE.saturating_sub(self.threshold_micros)
+            {
                 state.status = ProposalStatus::Rejected;
             }
         }

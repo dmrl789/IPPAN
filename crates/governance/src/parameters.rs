@@ -1,5 +1,6 @@
 use anyhow::Result;
 use ippan_economics::EmissionParams;
+use ippan_types::{ratio_from_bps, RatioMicros, RATIO_SCALE};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -12,7 +13,7 @@ pub struct GovernanceParameters {
     /// Minimum IPN stake to submit a proposal
     pub min_proposal_stake: u64,
     /// Minimum approval threshold (0–1)
-    pub voting_threshold: f64,
+    pub voting_threshold: RatioMicros,
     /// Duration of voting window (seconds)
     pub voting_duration: u64,
     /// Maximum number of concurrent proposals
@@ -31,7 +32,7 @@ impl Default for GovernanceParameters {
     fn default() -> Self {
         Self {
             min_proposal_stake: 1_000_000,
-            voting_threshold: 0.67,
+            voting_threshold: ratio_from_bps(6_700),
             voting_duration: 7 * 24 * 3600,
             max_active_proposals: 10,
             min_proposal_interval: 24 * 3600,
@@ -146,14 +147,7 @@ impl ParameterManager {
     fn validate_parameter_value(&self, name: &str, value: &serde_json::Value) -> Result<()> {
         match name {
             "voting_threshold" => {
-                let v = value
-                    .as_f64()
-                    .ok_or_else(|| anyhow::anyhow!("must be f64"))?;
-                if !(0.0..=1.0).contains(&v) {
-                    return Err(anyhow::anyhow!(
-                        "Voting threshold must be between 0.0 and 1.0"
-                    ));
-                }
+                parse_ratio_from_json(value)?;
             }
             _ => {
                 if !value.is_number() {
@@ -174,10 +168,7 @@ impl ParameterManager {
                     .ok_or_else(|| anyhow::anyhow!("Invalid value type for min_proposal_stake"))?;
             }
             "voting_threshold" => {
-                self.parameters.voting_threshold = proposal
-                    .new_value
-                    .as_f64()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid value type for voting_threshold"))?;
+                self.parameters.voting_threshold = parse_ratio_from_json(&proposal.new_value)?;
             }
             "voting_duration" => {
                 self.parameters.voting_duration = proposal
@@ -258,6 +249,75 @@ impl Default for ParameterManager {
     }
 }
 
+fn parse_ratio_from_json(value: &serde_json::Value) -> Result<RatioMicros> {
+    match value {
+        serde_json::Value::Number(num) => parse_ratio_str(&num.to_string()),
+        serde_json::Value::String(s) => parse_ratio_str(s),
+        _ => Err(anyhow::anyhow!(
+            "Voting threshold must be provided as a number or string"
+        )),
+    }
+}
+
+fn parse_ratio_str(raw: &str) -> Result<RatioMicros> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow::anyhow!("Voting threshold cannot be empty"));
+    }
+    if trimmed.starts_with('-') {
+        return Err(anyhow::anyhow!(
+            "Voting threshold cannot be negative: {trimmed}"
+        ));
+    }
+
+    let mut parts = trimmed.split('.');
+    let whole_part = parts.next().unwrap_or("");
+    let fractional_part = parts.next();
+    if parts.next().is_some() {
+        return Err(anyhow::anyhow!(
+            "Voting threshold may contain at most one decimal point: {trimmed}"
+        ));
+    }
+
+    let whole = if whole_part.is_empty() {
+        0
+    } else {
+        whole_part.parse::<u64>().map_err(|_| {
+            anyhow::anyhow!("Invalid whole number component for voting threshold: {trimmed}")
+        })?
+    };
+
+    if whole > 1 {
+        return Err(anyhow::anyhow!(
+            "Voting threshold cannot exceed 1.0 (100%): {trimmed}"
+        ));
+    }
+
+    let mut ratio = (whole as u128) * (RATIO_SCALE as u128);
+    if let Some(frac) = fractional_part {
+        if !frac.chars().all(|c| c.is_ascii_digit()) {
+            return Err(anyhow::anyhow!(
+                "Voting threshold fractional component must be numeric: {trimmed}"
+            ));
+        }
+        let mut fractional = frac.to_string();
+        if fractional.len() > 6 {
+            fractional.truncate(6);
+        }
+        while fractional.len() < 6 {
+            fractional.push('0');
+        }
+        if !fractional.is_empty() {
+            let frac_value = fractional.parse::<u64>().map_err(|_| {
+                anyhow::anyhow!("Invalid fractional component for voting threshold: {trimmed}")
+            })?;
+            ratio += frac_value as u128;
+        }
+    }
+
+    Ok(ratio.min(RATIO_SCALE as u128) as RatioMicros)
+}
+
 // -----------------------------------------------------------------------------
 // ✅ Tests
 // -----------------------------------------------------------------------------
@@ -269,7 +329,7 @@ mod tests {
     #[test]
     fn test_default_governance_params() {
         let g = GovernanceParameters::default();
-        assert_eq!(g.voting_threshold, 0.67);
+        assert_eq!(g.voting_threshold, ratio_from_bps(6_700));
         assert_eq!(g.economics.proposer_weight_bps, 5455);
     }
 

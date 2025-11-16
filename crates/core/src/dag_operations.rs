@@ -1,4 +1,5 @@
 use crate::dag::BlockDAG;
+use ippan_types::{ratio_from_parts, RatioMicros};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -9,10 +10,10 @@ use tokio::sync::RwLock;
 pub struct DAGAnalysis {
     pub total_blocks: usize,
     pub max_depth: u32,
-    pub average_depth: f64,
+    pub average_depth_micros: RatioMicros,
     pub orphan_blocks: usize,
     pub longest_chain: Vec<[u8; 32]>,
-    pub convergence_ratio: f64,
+    pub convergence_ratio_micros: RatioMicros,
 }
 
 /// DAG optimization configuration
@@ -47,7 +48,7 @@ pub struct DAGPath {
 pub struct DAGStatistics {
     pub total_blocks: usize,
     pub total_transactions: usize,
-    pub average_block_size: f64,
+    pub average_block_size_micros: RatioMicros,
     pub max_depth: u32,
     pub orphan_count: usize,
 }
@@ -90,10 +91,10 @@ impl DAGOperations {
             }
         }
 
-        let average_depth = if total_blocks > 0 {
-            total_depth as f64 / total_blocks as f64
+        let average_depth_micros = if total_blocks > 0 {
+            ratio_from_parts(total_depth as u128, total_blocks as u128)
         } else {
-            0.0
+            0
         };
 
         // Find longest chain (simplified)
@@ -101,19 +102,22 @@ impl DAGOperations {
             longest_chain = all_blocks[..1].to_vec();
         }
 
-        let convergence_ratio = if total_blocks > 0 {
-            (total_blocks - orphan_blocks) as f64 / total_blocks as f64
+        let convergence_ratio_micros = if total_blocks > 0 {
+            ratio_from_parts(
+                (total_blocks - orphan_blocks) as u128,
+                total_blocks as u128,
+            )
         } else {
-            0.0
+            0
         };
 
         let analysis = DAGAnalysis {
             total_blocks,
             max_depth: max_depth as u32,
-            average_depth,
+            average_depth_micros,
             orphan_blocks,
             longest_chain,
-            convergence_ratio,
+            convergence_ratio_micros,
         };
 
         // Cache the result
@@ -144,7 +148,7 @@ impl DAGOperations {
         Ok(DAGStatistics {
             total_blocks: 0,
             total_transactions: 0,
-            average_block_size: 0.0,
+            average_block_size_micros: 0,
             max_depth: 0,
             orphan_count: 0,
         })

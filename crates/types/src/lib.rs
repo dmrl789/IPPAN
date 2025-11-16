@@ -11,6 +11,7 @@ pub mod file_descriptor;
 pub mod l2;
 pub mod receipt;
 pub mod round;
+pub mod scalars;
 pub mod snapshot;
 pub mod time_service;
 pub mod transaction;
@@ -43,6 +44,9 @@ pub use receipt::*;
 
 // Snapshot types
 pub use snapshot::*;
+
+// Scalar helpers
+pub use scalars::*;
 
 // Time service utilities
 pub use time_service::{

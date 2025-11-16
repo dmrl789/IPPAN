@@ -12,6 +12,11 @@ pub type ValidatorId = [u8; 32];
 /// Round identifier
 pub type RoundId = u64;
 
+/// Reputation score scaling (1.0 == 1_000_000 micro-units).
+pub const REPUTATION_SCORE_SCALE: u32 = 1_000_000;
+pub const REPUTATION_SCORE_MIN: u32 = REPUTATION_SCORE_SCALE / 10; // 0.1
+pub const REPUTATION_SCORE_MAX: u32 = REPUTATION_SCORE_SCALE * 10; // 10.0
+
 /// Participation role in a round
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
@@ -30,7 +35,7 @@ pub struct Participation {
     pub role: Role,
     pub blocks_proposed: u32,
     pub blocks_verified: u32,
-    pub reputation_score: f64,
+    pub reputation_score_micros: u32,
     pub stake_weight: u128,
 }
 
@@ -132,7 +137,7 @@ mod tests {
             role: Role::Proposer,
             blocks_proposed: 1,
             blocks_verified: 0,
-            reputation_score: 1.0,
+            reputation_score_micros: REPUTATION_SCORE_SCALE,
             stake_weight: 1000,
         };
 

@@ -585,9 +585,9 @@ pub fn verify_signature(&self, public_key: &[u8]) -> bool {
 ### Current Status
 ```rust
 // Update other metrics
-performance.average_latency_ms = 50.0; // Placeholder
-performance.success_rate = 0.95; // Placeholder
-performance.memory_usage_mb = 100.0; // Placeholder
+performance.average_latency_micros = 50_000; // Placeholder (50ms)
+performance.success_rate_micros = 950_000; // Placeholder (95%)
+performance.memory_usage_bytes = 100 * 1024 * 1024; // Placeholder
 ```
 
 ### Issue
@@ -599,7 +599,7 @@ performance.memory_usage_mb = 100.0; // Placeholder
 // Add fields to SyncManager for tracking
 pub struct SyncManager {
     // ... existing fields ...
-    latency_samples: Arc<RwLock<Vec<f64>>>,
+    latency_samples: Arc<RwLock<Vec<u64>>>, // microseconds
     success_count: Arc<AtomicU64>,
     failure_count: Arc<AtomicU64>,
 }
@@ -610,8 +610,8 @@ async fn update_performance_metrics(&self) -> Result<()> {
     // Calculate average latency from samples
     let latency_samples = self.latency_samples.read().await;
     if !latency_samples.is_empty() {
-        performance.average_latency_ms = 
-            latency_samples.iter().sum::<f64>() / latency_samples.len() as f64;
+        let sum: u64 = latency_samples.iter().sum();
+        performance.average_latency_micros = sum / latency_samples.len() as u64;
     }
     
     // Calculate success rate
@@ -619,12 +619,12 @@ async fn update_performance_metrics(&self) -> Result<()> {
     let failures = self.failure_count.load(Ordering::Relaxed);
     let total = successes + failures;
     if total > 0 {
-        performance.success_rate = successes as f64 / total as f64;
+        performance.success_rate_micros = ratio_from_parts(successes as u128, total as u128);
     }
     
     // Get actual memory usage
     if let Ok(mem) = get_memory_usage() {
-        performance.memory_usage_mb = mem as f64 / (1024.0 * 1024.0);
+        performance.memory_usage_bytes = mem;
     }
     
     self.send_event(SyncEvent::PerformanceUpdate(performance.clone())).await?;
@@ -632,7 +632,7 @@ async fn update_performance_metrics(&self) -> Result<()> {
 }
 
 // Helper to record sync operation
-pub async fn record_sync_operation(&self, success: bool, latency_ms: f64) {
+pub async fn record_sync_operation(&self, success: bool, latency_micros: u64) {
     if success {
         self.success_count.fetch_add(1, Ordering::Relaxed);
     } else {
@@ -640,7 +640,7 @@ pub async fn record_sync_operation(&self, success: bool, latency_ms: f64) {
     }
     
     let mut samples = self.latency_samples.write().await;
-    samples.push(latency_ms);
+    samples.push(latency_micros);
     
     // Keep only last 1000 samples
     if samples.len() > 1000 {

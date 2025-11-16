@@ -5,6 +5,7 @@
 //! aggregation and periodic reporting for production environments.
 
 use anyhow::Result;
+use ippan_types::{ratio_from_parts, RatioMicros, RATIO_SCALE};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -15,6 +16,9 @@ use std::sync::{
 use std::time::{Duration, Instant};
 use tokio::time::interval;
 use tracing::{debug, info};
+
+const LATENCY_EMA_SCALE: u64 = 1_000;
+const LATENCY_EMA_ALPHA: u64 = 100; // 10%
 
 /// Core deterministic network metrics
 #[derive(Debug)]
@@ -37,9 +41,9 @@ pub struct NetworkMetrics {
     // Timing
     start_time: Instant,
 
-    // Latency tracking
-    avg_latency_ms: RwLock<f64>,
-    max_latency_ms: AtomicU64,
+    // Latency tracking (microseconds)
+    avg_latency_micros: RwLock<u64>,
+    max_latency_micros: AtomicU64,
     latency_samples: AtomicU64,
 
     // Async state (optional)
@@ -60,8 +64,8 @@ impl NetworkMetrics {
             connections_closed: AtomicU64::new(0),
             connections_failed: AtomicU64::new(0),
             start_time: Instant::now(),
-            avg_latency_ms: RwLock::new(0.0),
-            max_latency_ms: AtomicU64::new(0),
+            avg_latency_micros: RwLock::new(0),
+            max_latency_micros: AtomicU64::new(0),
             latency_samples: AtomicU64::new(0),
             is_running: Arc::new(AtomicBool::new(false)),
         }
@@ -103,14 +107,14 @@ impl NetworkMetrics {
     }
 
     pub fn record_latency(&self, latency: Duration) {
-        let latency_ms = latency.as_millis() as u64;
+        let latency_micros = latency.as_micros() as u64;
 
         // Update max latency
-        let mut current_max = self.max_latency_ms.load(Ordering::Relaxed);
-        while latency_ms > current_max {
-            match self.max_latency_ms.compare_exchange_weak(
+        let mut current_max = self.max_latency_micros.load(Ordering::Relaxed);
+        while latency_micros > current_max {
+            match self.max_latency_micros.compare_exchange_weak(
                 current_max,
-                latency_ms,
+                latency_micros,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
@@ -119,11 +123,12 @@ impl NetworkMetrics {
             }
         }
 
-        // Update average latency (EMA)
-        let mut avg = self.avg_latency_ms.write();
+        // Update average latency (EMA using integer math)
+        let mut avg = self.avg_latency_micros.write();
         self.latency_samples.fetch_add(1, Ordering::Relaxed);
-        let alpha = 0.1;
-        *avg = *avg * (1.0 - alpha) + (latency_ms as f64) * alpha;
+        *avg = ((*avg * (LATENCY_EMA_SCALE - LATENCY_EMA_ALPHA))
+            + (latency_micros * LATENCY_EMA_ALPHA))
+            / LATENCY_EMA_SCALE;
     }
 
     // ----------------------------
@@ -143,8 +148,8 @@ impl NetworkMetrics {
             connections_failed: self.connections_failed.load(Ordering::Relaxed),
             active_connections: self.active_connections(),
             uptime_seconds: self.start_time.elapsed().as_secs(),
-            avg_latency_ms: *self.avg_latency_ms.read(),
-            max_latency_ms: self.max_latency_ms.load(Ordering::Relaxed),
+            avg_latency_micros: *self.avg_latency_micros.read(),
+            max_latency_micros: self.max_latency_micros.load(Ordering::Relaxed),
             latency_samples: self.latency_samples.load(Ordering::Relaxed),
         }
     }
@@ -165,8 +170,8 @@ impl NetworkMetrics {
         self.connections_opened.store(0, Ordering::Relaxed);
         self.connections_closed.store(0, Ordering::Relaxed);
         self.connections_failed.store(0, Ordering::Relaxed);
-        *self.avg_latency_ms.write() = 0.0;
-        self.max_latency_ms.store(0, Ordering::Relaxed);
+        *self.avg_latency_micros.write() = 0;
+        self.max_latency_micros.store(0, Ordering::Relaxed);
         self.latency_samples.store(0, Ordering::Relaxed);
     }
 
@@ -187,14 +192,15 @@ impl NetworkMetrics {
             while is_running.load(Ordering::SeqCst) {
                 ticker.tick().await;
                 let snapshot = metrics.snapshot();
+                let avg_lat_display = format_micros_as_millis(snapshot.avg_latency_micros);
                 info!(
                     target: "network::metrics",
-                    "Metrics snapshot: messages={} recv={} conn={} uptime={}s avg_lat={:.2}ms",
+                    "Metrics snapshot: messages={} recv={} conn={} uptime={}s avg_lat={}ms",
                     snapshot.messages_sent,
                     snapshot.messages_received,
                     snapshot.active_connections,
                     snapshot.uptime_seconds,
-                    snapshot.avg_latency_ms
+                    avg_lat_display
                 );
             }
         });
@@ -227,57 +233,71 @@ pub struct NetworkMetricsSnapshot {
     pub connections_failed: u64,
     pub active_connections: u64,
     pub uptime_seconds: u64,
-    pub avg_latency_ms: f64,
-    pub max_latency_ms: u64,
+    pub avg_latency_micros: u64,
+    pub max_latency_micros: u64,
     pub latency_samples: u64,
 }
 
 impl NetworkMetricsSnapshot {
-    pub fn messages_per_second(&self) -> f64 {
+    pub fn messages_per_second(&self) -> u64 {
         if self.uptime_seconds == 0 {
-            0.0
+            0
         } else {
-            (self.messages_sent + self.messages_received) as f64 / self.uptime_seconds as f64
+            (self.messages_sent + self.messages_received) / self.uptime_seconds
         }
     }
 
-    pub fn bytes_per_second(&self) -> f64 {
+    pub fn bytes_per_second(&self) -> u64 {
         if self.uptime_seconds == 0 {
-            0.0
+            0
         } else {
-            (self.bytes_sent + self.bytes_received) as f64 / self.uptime_seconds as f64
+            (self.bytes_sent + self.bytes_received) / self.uptime_seconds
         }
     }
 
-    pub fn success_rate(&self) -> f64 {
+    pub fn success_rate(&self) -> RatioMicros {
         let total = self.messages_sent + self.messages_failed;
         if total == 0 {
-            1.0
+            RATIO_SCALE
         } else {
-            self.messages_sent as f64 / total as f64
+            ratio_from_parts(self.messages_sent as u128, total as u128)
         }
     }
 }
 
 /// Generic trait for metric collection extensibility
 pub trait MetricsCollector: Send + Sync {
-    fn record_metric(&self, name: &str, value: f64);
-    fn get_metric(&self, name: &str) -> Option<f64>;
-    fn get_all_metrics(&self) -> HashMap<String, f64>;
+    fn record_metric(&self, name: &str, value: i64);
+    fn get_metric(&self, name: &str) -> Option<i64>;
+    fn get_all_metrics(&self) -> HashMap<String, i64>;
 }
 
 impl MetricsCollector for NetworkMetrics {
-    fn record_metric(&self, name: &str, value: f64) {
+    fn record_metric(&self, name: &str, value: i64) {
         debug!("Custom metric {}: {}", name, value);
         let _ = value;
     }
 
-    fn get_metric(&self, _name: &str) -> Option<f64> {
+    fn get_metric(&self, _name: &str) -> Option<i64> {
         None
     }
 
-    fn get_all_metrics(&self) -> HashMap<String, f64> {
+    fn get_all_metrics(&self) -> HashMap<String, i64> {
         HashMap::new()
+    }
+}
+
+fn format_micros_as_millis(micros: u64) -> String {
+    let whole = micros / 1_000;
+    let fractional = micros % 1_000;
+    if fractional == 0 {
+        format!("{whole}")
+    } else {
+        let mut frac_str = format!("{fractional:03}");
+        while frac_str.ends_with('0') {
+            frac_str.pop();
+        }
+        format!("{whole}.{}", frac_str)
     }
 }
 
@@ -309,8 +329,8 @@ mod tests {
         metrics.record_latency(Duration::from_millis(10));
         metrics.record_latency(Duration::from_millis(20));
         let snap = metrics.snapshot();
-        assert!(snap.avg_latency_ms > 0.0);
-        assert_eq!(snap.max_latency_ms, 20);
+        assert!(snap.avg_latency_micros > 0);
+        assert_eq!(snap.max_latency_micros, 20_000);
     }
 
     #[test]
@@ -327,12 +347,15 @@ mod tests {
             connections_failed: 0,
             active_connections: 2,
             uptime_seconds: 10,
-            avg_latency_ms: 12.3,
-            max_latency_ms: 40,
+            avg_latency_micros: 12_300,
+            max_latency_micros: 40_000,
             latency_samples: 2,
         };
-        assert_eq!(snap.messages_per_second(), 15.0);
-        assert_eq!(snap.bytes_per_second(), 150.0);
-        assert!((snap.success_rate() - 0.909).abs() < 0.01);
+        assert_eq!(snap.messages_per_second(), 15);
+        assert_eq!(snap.bytes_per_second(), 150);
+        assert_eq!(
+            snap.success_rate(),
+            ratio_from_parts(100, 110)
+        );
     }
 }

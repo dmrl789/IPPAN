@@ -203,7 +203,13 @@ impl MerkleTree {
         if self.leaves.is_empty() {
             0
         } else {
-            (self.leaves.len() as f64).log2().ceil() as usize
+            let mut nodes = self.leaves.len().next_power_of_two();
+            let mut height = 0;
+            while nodes > 1 {
+                nodes >>= 1;
+                height += 1;
+            }
+            height
         }
     }
 

@@ -125,11 +125,6 @@ impl Amount {
         (self.0 / ATOMIC_PER_IPN) as u64
     }
 
-    /// Convert to floating-point IPN (use only for display)
-    pub fn to_ipn_f64(&self) -> f64 {
-        self.0 as f64 / ATOMIC_PER_IPN as f64
-    }
-
     /// Checked addition
     pub fn checked_add(&self, other: Amount) -> Option<Amount> {
         self.0.checked_add(other.0).map(Amount)

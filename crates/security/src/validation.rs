@@ -3,6 +3,8 @@ use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
+const NUMERIC_SCALE: i128 = 1_000_000;
+
 /// Validation error returned by [`InputValidator`].
 #[derive(Debug, Error, Clone)]
 pub enum ValidationError {
@@ -36,8 +38,8 @@ pub enum ValidationRule {
     /// Limit the numeric range for a field. Bounds are inclusive when provided.
     NumericRange {
         field: String,
-        min: Option<f64>,
-        max: Option<f64>,
+        min: Option<i128>,
+        max: Option<i128>,
     },
     /// Restrict a field to a predefined whitelist of string values.
     AllowedValues { field: String, values: Vec<String> },
@@ -201,13 +203,7 @@ impl InputValidator {
             }
             ValidationRule::NumericRange { field, min, max } => {
                 let value = self.lookup_field(root, field)?;
-                let number = match value {
-                    Value::Number(n) => n.as_f64(),
-                    Value::String(s) => s.parse::<f64>().ok(),
-                    _ => None,
-                };
-
-                let number = number.ok_or_else(|| ValidationError::RuleViolation {
+                let number = parse_numeric_value(value).ok_or_else(|| ValidationError::RuleViolation {
                     field: field.clone(),
                     reason: "expected numeric value".into(),
                 })?;
@@ -216,7 +212,10 @@ impl InputValidator {
                     if number < *lower {
                         return Err(ValidationError::RuleViolation {
                             field: field.clone(),
-                            reason: format!("value must be >= {}", lower),
+                            reason: format!(
+                                "value must be >= {}",
+                                format_numeric_value(*lower)
+                            ),
                         });
                     }
                 }
@@ -225,7 +224,10 @@ impl InputValidator {
                     if number > *upper {
                         return Err(ValidationError::RuleViolation {
                             field: field.clone(),
-                            reason: format!("value must be <= {}", upper),
+                            reason: format!(
+                                "value must be <= {}",
+                                format_numeric_value(*upper)
+                            ),
                         });
                     }
                 }
@@ -295,5 +297,92 @@ impl InputValidator {
         }
 
         Ok(current)
+    }
+}
+
+fn parse_numeric_value(value: &Value) -> Option<i128> {
+    match value {
+        Value::Number(n) => parse_decimal_str(&n.to_string()),
+        Value::String(s) => parse_decimal_str(s),
+        _ => None,
+    }
+}
+
+fn parse_decimal_str(raw: &str) -> Option<i128> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let (negative, digits) = match trimmed.as_bytes().first() {
+        Some(b'-') => (true, &trimmed[1..]),
+        Some(b'+') => (false, &trimmed[1..]),
+        _ => (false, trimmed),
+    };
+
+    if digits.is_empty() {
+        return None;
+    }
+
+    let mut parts = digits.split('.');
+    let whole_part = parts.next().unwrap_or("");
+    let fractional_part = parts.next();
+    if parts.next().is_some() {
+        return None;
+    }
+
+    let whole = if whole_part.is_empty() {
+        0
+    } else {
+        whole_part.parse::<i128>().ok()?
+    };
+
+    let mut value = whole.checked_mul(NUMERIC_SCALE)?;
+    if let Some(frac) = fractional_part {
+        if !frac.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let mut fractional = frac.to_string();
+        if fractional.len() > 6 {
+            fractional.truncate(6);
+        }
+        while fractional.len() < 6 {
+            fractional.push('0');
+        }
+        if !fractional.is_empty() {
+            let frac_value = fractional.parse::<i128>().ok()?;
+            value = value.checked_add(frac_value)?;
+        }
+    }
+
+    if negative {
+        value.checked_neg()
+    } else {
+        Some(value)
+    }
+}
+
+fn format_numeric_value(value: i128) -> String {
+    let negative = value < 0;
+    let abs = value.abs();
+    let whole = abs / NUMERIC_SCALE;
+    let fractional = abs % NUMERIC_SCALE;
+
+    if fractional == 0 {
+        if negative {
+            format!("-{whole}")
+        } else {
+            format!("{whole}")
+        }
+    } else {
+        let mut frac_str = format!("{fractional:06}");
+        while frac_str.ends_with('0') {
+            frac_str.pop();
+        }
+        if negative {
+            format!("-{whole}.{frac_str}")
+        } else {
+            format!("{whole}.{frac_str}")
+        }
     }
 }
