@@ -194,7 +194,7 @@ pub async fn handle_publish_file(
 
     // Publish to DHT
     let dht_published = if let Some(dht_service) = &state.file_dht {
-        match dht_service.publish_file(&descriptor) {
+        match dht_service.publish_file(&descriptor).await {
             Ok(result) => {
                 debug!("DHT publish result: {:?}", result);
                 result.success
@@ -263,7 +263,7 @@ pub async fn handle_get_file(
 
     // Try DHT lookup if local not found
     if let Some(dht_service) = &state.file_dht {
-        match dht_service.find_file(&file_id) {
+        match dht_service.find_file(&file_id).await {
             Ok(result) => {
                 if let Some(descriptor) = result.descriptor {
                     return Ok(Json(FileDescriptorResponse::from(descriptor)));

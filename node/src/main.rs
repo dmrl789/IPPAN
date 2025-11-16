@@ -10,7 +10,10 @@ use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFi
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::L2HandleRegistry;
 use ippan_mempool::Mempool;
-use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};
+use ippan_p2p::{
+    HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService, Libp2pNetwork, Multiaddr,
+    NetworkEvent, P2PConfig,
+};
 use ippan_rpc::server::ConsensusHandle;
 use ippan_rpc::{start_server, AiStatusHandle, AppState, L2Config};
 use ippan_security::{SecurityConfig as RpcSecurityConfig, SecurityManager as RpcSecurityManager};
@@ -22,12 +25,28 @@ use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileDhtMode {
+    Stub,
+    Libp2p,
+}
+
+impl FileDhtMode {
+    fn from_env(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "libp2p" => FileDhtMode::Libp2p,
+            _ => FileDhtMode::Stub,
+        }
+    }
+}
 
 /// Application configuration
 #[derive(Debug, Clone)]
@@ -77,6 +96,11 @@ struct AppConfig {
     p2p_public_host: Option<String>,
     p2p_enable_upnp: bool,
     p2p_external_ip_services: Vec<String>,
+
+    // File DHT
+    file_dht_mode: FileDhtMode,
+    file_dht_listen_multiaddrs: Vec<String>,
+    file_dht_bootstrap_multiaddrs: Vec<String>,
 
     // Unified UI
     unified_ui_dist_dir: Option<PathBuf>,
@@ -133,6 +157,31 @@ impl AppConfig {
             external_ip_services.push("https://api.ipify.org".to_string());
             external_ip_services.push("https://ifconfig.me/ip".to_string());
         }
+
+        let file_dht_mode = FileDhtMode::from_env(
+            &config
+                .get_string("FILE_DHT_MODE")
+                .unwrap_or_else(|_| "stub".to_string()),
+        );
+
+        let mut file_dht_listen_multiaddrs: Vec<String> = config
+            .get_string("FILE_DHT_LIBP2P_LISTEN")
+            .unwrap_or_else(|_| "/ip4/0.0.0.0/tcp/9100".to_string())
+            .split(',')
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect();
+        if file_dht_listen_multiaddrs.is_empty() {
+            file_dht_listen_multiaddrs.push("/ip4/0.0.0.0/tcp/9100".to_string());
+        }
+
+        let file_dht_bootstrap_multiaddrs: Vec<String> = config
+            .get_string("FILE_DHT_LIBP2P_BOOTSTRAP")
+            .unwrap_or_else(|_| String::new())
+            .split(',')
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect();
 
         let unified_ui_dist_dir = config
             .get_string("UNIFIED_UI_DIST_DIR")
@@ -257,6 +306,9 @@ impl AppConfig {
                 .filter(|s| !s.is_empty()),
             p2p_enable_upnp: config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false),
             p2p_external_ip_services: external_ip_services,
+            file_dht_mode,
+            file_dht_listen_multiaddrs,
+            file_dht_bootstrap_multiaddrs,
             unified_ui_dist_dir,
             enable_security: config.get_bool("ENABLE_SECURITY").unwrap_or(true),
             prometheus_enabled: config.get_bool("PROMETHEUS_ENABLED").unwrap_or(true),
@@ -272,6 +324,24 @@ impl AppConfig {
                 .parse()?,
         })
     }
+}
+
+fn parse_multiaddrs(values: &[String], label: &str) -> Vec<Multiaddr> {
+    values
+        .iter()
+        .filter_map(|value| {
+            if value.is_empty() {
+                return None;
+            }
+            match Multiaddr::from_str(value) {
+                Ok(addr) => Some(addr),
+                Err(err) => {
+                    warn!("Invalid {} multiaddr {}: {}", label, value, err);
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 #[tokio::main]
@@ -528,7 +598,49 @@ async fn main() -> Result<()> {
     };
 
     let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
-    let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
+    let file_dht: Arc<dyn FileDhtService> = match config.file_dht_mode {
+        FileDhtMode::Stub => {
+            info!("File DHT mode set to stub");
+            Arc::new(StubFileDhtService::new())
+        }
+        FileDhtMode::Libp2p => {
+            info!("File DHT mode set to libp2p");
+            let listen_multiaddrs =
+                parse_multiaddrs(&config.file_dht_listen_multiaddrs, "FILE_DHT_LIBP2P_LISTEN");
+            let bootstrap_multiaddrs = parse_multiaddrs(
+                &config.file_dht_bootstrap_multiaddrs,
+                "FILE_DHT_LIBP2P_BOOTSTRAP",
+            );
+            let mut libp2p_config = Libp2pConfig::default();
+            if !listen_multiaddrs.is_empty() {
+                libp2p_config.listen_addresses = listen_multiaddrs;
+            }
+            libp2p_config.bootstrap_peers = bootstrap_multiaddrs;
+            if !libp2p_config
+                .gossip_topics
+                .iter()
+                .any(|topic| topic == "ippan/files")
+            {
+                libp2p_config.gossip_topics.push("ippan/files".to_string());
+            }
+            match Libp2pNetwork::new(libp2p_config) {
+                Ok(network) => {
+                    let network = Arc::new(network);
+                    let addresses = network.listen_addresses();
+                    info!("File DHT libp2p listening on {:?}", addresses);
+                    let ipn_service = Arc::new(IpnDhtService::new(Some(network)));
+                    Arc::new(Libp2pFileDhtService::new(ipn_service))
+                }
+                Err(err) => {
+                    warn!(
+                        "Failed to initialise libp2p File DHT (fallback to stub): {}",
+                        err
+                    );
+                    Arc::new(StubFileDhtService::new())
+                }
+            }
+        }
+    };
 
     let app_state = AppState {
         storage: storage.clone(),

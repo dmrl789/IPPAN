@@ -58,21 +58,21 @@ Successfully implemented the first usable version of IPNDHT-backed file/hash pub
   - Thread-safe with RwLock
   - Supports pagination and filtering
 
-#### DHT Integration (`crates/files/src/dht.rs`)
+#### DHT Integration (`crates/files/src/dht.rs` + `crates/p2p/src/ipndht.rs`)
 
-- **FileDhtService trait**: Abstract DHT interface
-  - `publish_file()`: Publish descriptor to DHT
-  - `find_file()`: Query DHT by FileId
+- **FileDhtService trait**: Async abstraction (`async-trait`) so RPC handlers can await
+  - `publish_file()`: Publish descriptor to the configured backend
+  - `find_file()`: Lookup by FileId and return providers + descriptor
 
-- **StubFileDhtService**: Placeholder implementation
-  - Always succeeds for publish (marks as "stub")
-  - Never finds files (returns None)
-  - Ready for libp2p Kademlia integration
+- **StubFileDhtService**: Lightweight fallback
+  - Publishes locally only (no network propagation)
+  - Returns `None` for lookups, used in tests/minimal deployments
 
-- **Libp2pFileDhtService** (placeholder):
-  - Structure defined for future integration
-  - Will use `kad::Behaviour::put_record()` for publish
-  - Will use `kad::Behaviour::get_record()` for lookup
+- **Libp2pFileDhtService**: Production path
+  - Wraps `IpnDhtService` from `ippan-p2p`
+  - Uses libp2p Kademlia `put_record` / `get_record` + provider queries
+  - Serializes descriptors as JSON keyed by `file_id`
+  - Shares an in-process cache for repeated lookups
 
 ### 2. RPC Endpoints (`crates/rpc/src/files.rs`)
 
@@ -198,6 +198,10 @@ Comprehensive test suite with **17 tests**, all passing:
 - Request/response conversions
 
 ### 5. Documentation
+
+- Updated `docs/ipndht/file-descriptors.md` with runtime DHT mode table,
+  including the new `IPPAN_FILE_DHT_MODE` flag plus libp2p listen/bootstrap
+  settings so operators can switch between stub/libp2p without code changes.
 
 Created comprehensive documentation:
 
