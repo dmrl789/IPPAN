@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::currency::Amount;
+
 /// Registration and runtime metadata for an L2 network bridged to IPPAN.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct L2Network {
@@ -83,7 +85,7 @@ pub struct L2ExitRecord {
     /// Address/account initiating the exit on the L2.
     pub account: String,
     /// Amount being withdrawn, expressed in native IPPAN units.
-    pub amount: f64,
+    pub amount: Amount,
     /// Optional replay protection nonce supplied by the L2.
     pub nonce: Option<u64>,
     /// Raw proof of inclusion that accompanies the exit.

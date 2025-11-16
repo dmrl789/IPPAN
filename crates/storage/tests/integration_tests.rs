@@ -72,7 +72,7 @@ fn create_test_l2_exit(id: &str, l2_id: &str, account: &str) -> L2ExitRecord {
         l2_id: l2_id.to_string(),
         epoch: 1,
         account: account.to_string(),
-        amount: 1000.0,
+        amount: Amount::from_ipn(1000),
         nonce: Some(1),
         proof_of_inclusion: "proof123".to_string(),
         status: L2ExitStatus::Pending,

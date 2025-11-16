@@ -118,10 +118,7 @@ impl Amount {
         Self(atomic)
     }
 
-    /// Convert to floating-point IPN (display only)
-    pub fn to_ipn_f64(&self) -> f64 {
-        self.0 as f64 / ATOMIC_PER_IPN as f64
-    }
+    /// Deterministic display is handled via `Display` (`format!("{}", amount)`).
 
     /// Checked arithmetic prevents overflow
     pub fn checked_add(&self, other: Amount) -> Option<Amount>;
@@ -514,7 +511,10 @@ All precision features are covered by extensive unit tests:
 #[test]
 fn test_yocto_precision() {
     let one_yocto = Amount::from_atomic(1);
-    assert_eq!(one_yocto.to_ipn_f64(), 1e-24);
+    assert_eq!(
+        format!("{}", one_yocto),
+        "0.000000000000000000000001 IPN"
+    );
 }
 
 #[test]

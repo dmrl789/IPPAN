@@ -697,7 +697,6 @@ async fn deny_request(
 // -----------------------------------------------------------------------------
 
 async fn handle_health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    metrics::gauge!("node_health").set(1.0);
     Json(serde_json::json!({
         "status": "healthy",
         "timestamp": ippan_time_now(),
@@ -712,13 +711,10 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     let peer_count = state.peer_count.load(Ordering::Relaxed);
     let requests_served = state.req_count.load(Ordering::Relaxed);
     let mempool_size = state.mempool.size();
-    metrics::gauge!("mempool_size").set(mempool_size as f64);
-    let mut consensus_round_metric = 0.0;
 
     let consensus_view = if let Some(consensus) = &state.consensus {
         match consensus.snapshot().await {
             Ok(view) => {
-                consensus_round_metric = view.round as f64;
                 Some(serde_json::json!({
                     "round": view.round,
                     "validator_count": view.validators.len(),
@@ -733,7 +729,6 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     } else {
         None
     };
-    metrics::gauge!("consensus_round").set(consensus_round_metric);
 
     Json(serde_json::json!({
         "status": "ok",
@@ -2860,7 +2855,7 @@ mod tests {
                 l2_id: "demo-l2".into(),
                 epoch: 1,
                 account: "acct".into(),
-                amount: 1.0,
+                amount: Amount::from_ipn(1),
                 nonce: Some(1),
                 proof_of_inclusion: "proof".into(),
                 status: L2ExitStatus::Pending,

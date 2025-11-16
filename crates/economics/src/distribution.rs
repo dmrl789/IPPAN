@@ -1,6 +1,7 @@
 use crate::errors::EconomicsError;
 use crate::types::{
     DistributionResult, EconomicsParams, MicroIPN, Participation, ParticipationSet, Payouts, Role,
+    REPUTATION_SCORE_MAX, REPUTATION_SCORE_MIN, REPUTATION_SCORE_SCALE,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -47,9 +48,11 @@ pub fn validate_participation_set(participants: &ParticipationSet) -> Result<(),
             ));
         }
 
-        if !participant.reputation_score.is_finite() || participant.reputation_score < 0.0 {
+        if participant.reputation_score_micros < REPUTATION_SCORE_MIN
+            || participant.reputation_score_micros > REPUTATION_SCORE_MAX
+        {
             return Err(EconomicsError::InvalidParticipation(
-                "reputation score must be a finite positive value".to_string(),
+                "reputation score must be between 0.1 and 10.0".to_string(),
             ));
         }
 
@@ -181,7 +184,7 @@ fn compute_role_weights(participation: &Participation) -> (MicroIPN, MicroIPN) {
         return (0, 0);
     }
 
-    let reputation = reputation_factor(participation.reputation_score);
+    let reputation = reputation_factor(participation.reputation_score_micros);
     let base = participation
         .stake_weight
         .saturating_mul(multiplier)
@@ -210,13 +213,11 @@ fn compute_role_weights(participation: &Participation) -> (MicroIPN, MicroIPN) {
     (proposer_weight, verifier_weight)
 }
 
-fn reputation_factor(score: f64) -> MicroIPN {
-    if !score.is_finite() || score <= 0.0 {
-        return 100; // Minimum factor (0.1)
-    }
-
-    let clamped = score.clamp(0.1, 10.0);
-    (clamped * 100.0).round() as MicroIPN
+fn reputation_factor(score_micros: u32) -> MicroIPN {
+    let clamped = score_micros
+        .max(REPUTATION_SCORE_MIN)
+        .min(REPUTATION_SCORE_MAX) as u128;
+    (clamped * 100) / (REPUTATION_SCORE_SCALE as u128)
 }
 
 #[cfg(test)]
@@ -267,7 +268,7 @@ mod tests {
                 role: Role::Proposer,
                 blocks_proposed: 1,
                 blocks_verified: 0,
-                reputation_score: 1.0,
+                reputation_score_micros: REPUTATION_SCORE_SCALE,
                 stake_weight: 1000,
             },
             Participation {
@@ -275,7 +276,7 @@ mod tests {
                 role: Role::Verifier,
                 blocks_proposed: 0,
                 blocks_verified: 2,
-                reputation_score: 1.0,
+                reputation_score_micros: REPUTATION_SCORE_SCALE,
                 stake_weight: 1000,
             },
         ];
@@ -309,7 +310,7 @@ mod tests {
             role: Role::Proposer,
             blocks_proposed: 0,
             blocks_verified: 0,
-            reputation_score: 1.0,
+            reputation_score_micros: REPUTATION_SCORE_SCALE,
             stake_weight: 1000,
         };
 
@@ -340,7 +341,7 @@ mod tests {
             role: Role::Proposer,
             blocks_proposed: 1,
             blocks_verified: 0,
-            reputation_score: 1.0,
+            reputation_score_micros: REPUTATION_SCORE_SCALE,
             stake_weight: 1000,
         }];
 
@@ -351,7 +352,7 @@ mod tests {
             role: Role::Proposer,
             blocks_proposed: 1,
             blocks_verified: 0,
-            reputation_score: 1.0,
+            reputation_score_micros: REPUTATION_SCORE_SCALE,
             stake_weight: 0, // Invalid: zero stake
         }];
 
@@ -366,7 +367,7 @@ mod tests {
             role: Role::Proposer,
             blocks_proposed: 0,
             blocks_verified: 0,
-            reputation_score: 1.0,
+            reputation_score_micros: REPUTATION_SCORE_SCALE,
             stake_weight: 1,
         }];
 

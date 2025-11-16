@@ -1,3 +1,4 @@
+use ippan_types::{ratio_from_parts, RatioMicros, RATIO_SCALE};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -87,11 +88,11 @@ impl PeerHealthStatus {
         self.last_success.elapsed() >= stale_threshold
     }
 
-    fn success_rate(&self) -> f64 {
+    fn success_rate(&self) -> RatioMicros {
         if self.total_checks == 0 {
-            return 1.0;
+            return RATIO_SCALE;
         }
-        self.successful_checks as f64 / self.total_checks as f64
+        ratio_from_parts(self.successful_checks as u128, self.total_checks as u128)
     }
 }
 
@@ -226,7 +227,7 @@ impl Default for HealthMonitor {
 pub struct PeerHealthStats {
     pub health: PeerHealth,
     pub consecutive_failures: u32,
-    pub success_rate: f64,
+    pub success_rate: RatioMicros,
     pub total_checks: u64,
     pub last_success_seconds: u64,
     pub last_check_seconds: u64,
@@ -271,7 +272,7 @@ mod tests {
 
         let stats = monitor.get_stats(peer).unwrap();
         assert_eq!(stats.total_checks, 3);
-        assert!((stats.success_rate - 0.666).abs() < 0.01);
+        assert_eq!(stats.success_rate, ratio_from_parts(2, 3));
     }
 
     #[test]

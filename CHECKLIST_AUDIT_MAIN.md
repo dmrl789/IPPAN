@@ -25,7 +25,7 @@ _Generated: 2025-11-15_
 - [x] `cargo test -p ippan-consensus-dlc -- --nocapture` compiles/runs (modulo expected OpenSSL env gaps) now that `ippan_ai_core` exports resolve.
 
 ## 4. No Floats in Runtime
-- [ ] Runtime crates still contain `f64`/`f32` usages (e.g., `crates/types/src/l2.rs`, `crates/governance/src/voting.rs`, `crates/economics/src/types.rs`, `crates/security/src/validation.rs`, `crates/network/src/metrics.rs`, `crates/core/src/sync_manager.rs`). These are outside tests/examples and violate the "no float" rule.
+- [x] Runtime crates now avoid `f64`/`f32` usages: currency/L2 types use atomic units, governance/economics/security/network/core/rpc modules all compute with fixed-point integers or ratios.
 - [x] `.github/workflows/no-float-runtime.yml` exists and targets `main`.
 - [ ] Workflow scope is limited to `ai_core`, `consensus*`, and `ai_registry`; it does **not** scan other runtime crates (`types`, `network`, `governance`, `storage`, `node`, etc.), so violations slip through CI.
 

@@ -4,7 +4,10 @@
 //! into the IPPAN blockchain, showing how emission, distribution, and governance work together.
 
 use ippan_consensus::{RoundExecutor, create_participation_set};
-use ippan_economics_core::{EconomicsParams, EconomicsParameterManager};
+use ippan_economics_core::{
+    EconomicsParameterManager, EconomicsParams, REPUTATION_SCORE_MAX, REPUTATION_SCORE_MIN,
+    REPUTATION_SCORE_SCALE,
+};
 use ippan_governance::ParameterManager;
 use ippan_treasury::{InMemoryAccountLedger, RewardSink, FeeCollector};
 use ippan_types::{ChainState, MicroIPN, RoundId};
@@ -187,6 +190,10 @@ fn create_demo_participants(round: RoundId) -> Vec<ippan_economics_core::Partici
         let blocks_proposed = if i == 0 { 1 } else { 0 };
         let blocks_verified = (i + 1) as u32;
         let reputation = 0.8 + (i as f64 * 0.1);
+        let mut reputation_micros =
+            (reputation * REPUTATION_SCORE_SCALE as f64).round() as u32;
+        reputation_micros = reputation_micros
+            .clamp(REPUTATION_SCORE_MIN, REPUTATION_SCORE_MAX);
         
         participants.push(ippan_economics_core::Participation {
             validator_id,
@@ -197,7 +204,7 @@ fn create_demo_participants(round: RoundId) -> Vec<ippan_economics_core::Partici
             },
             blocks_proposed,
             blocks_verified,
-            reputation_score: reputation,
+            reputation_score_micros: reputation_micros,
             stake_weight: stake,
         });
     }

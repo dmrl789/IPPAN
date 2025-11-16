@@ -1,5 +1,6 @@
 use anyhow::Result;
 use ed25519_dalek::Verifier;
+use ippan_types::{ratio_from_parts, RatioMicros, RATIO_SCALE};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -69,12 +70,13 @@ impl VotingPowerCalculator {
         self.total_stake
     }
 
-    /// Calculate voting power percentage
-    pub fn get_voting_percentage(&self, validator: &[u8; 32]) -> f64 {
+    /// Calculate voting power percentage as ratio micro units (0-1_000_000).
+    pub fn get_voting_percentage_micros(&self, validator: &[u8; 32]) -> RatioMicros {
         if self.total_stake == 0 {
-            return 0.0;
+            0
+        } else {
+            ratio_from_parts(self.get_voting_power(validator) as u128, self.total_stake as u128)
         }
-        self.get_voting_power(validator) as f64 / self.total_stake as f64
     }
 }
 
@@ -93,13 +95,17 @@ pub struct VotingSession {
     pub total_voting_stake: u64,
     /// Total stake that voted to approve
     pub approval_stake: u64,
-    /// Voting threshold (percentage)
-    pub threshold: f64,
+    /// Voting threshold (ratio micro units)
+    pub threshold_micros: RatioMicros,
 }
 
 impl VotingSession {
     /// Create a new voting session
-    pub fn new(proposal_id: String, duration_seconds: u64, threshold: f64) -> Self {
+    pub fn new(
+        proposal_id: String,
+        duration_seconds: u64,
+        threshold_micros: RatioMicros,
+    ) -> Self {
         let start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -112,7 +118,7 @@ impl VotingSession {
             votes: HashMap::new(),
             total_voting_stake: 0,
             approval_stake: 0,
-            threshold,
+            threshold_micros: threshold_micros.min(RATIO_SCALE),
         }
     }
 
@@ -155,8 +161,9 @@ impl VotingSession {
             return false;
         }
 
-        let approval_percentage = self.approval_stake as f64 / self.total_voting_stake as f64;
-        approval_percentage >= self.threshold
+        let approval_ratio =
+            ratio_from_parts(self.approval_stake as u128, self.total_voting_stake as u128);
+        approval_ratio >= self.threshold_micros
     }
 
     /// Check if voting is still open
@@ -175,12 +182,12 @@ impl VotingSession {
             total_stake: self.total_voting_stake,
             approval_stake: self.approval_stake,
             rejection_stake: self.total_voting_stake - self.approval_stake,
-            approval_percentage: if self.total_voting_stake > 0 {
-                self.approval_stake as f64 / self.total_voting_stake as f64
+            approval_ratio_micros: if self.total_voting_stake > 0 {
+                ratio_from_parts(self.approval_stake as u128, self.total_voting_stake as u128)
             } else {
-                0.0
+                0
             },
-            threshold: self.threshold,
+            threshold_micros: self.threshold_micros,
             passed: self.has_passed(),
         }
     }
@@ -218,10 +225,10 @@ pub struct VotingResults {
     pub approval_stake: u64,
     /// Stake that voted to reject
     pub rejection_stake: u64,
-    /// Approval percentage
-    pub approval_percentage: f64,
-    /// Required threshold
-    pub threshold: f64,
+    /// Approval ratio expressed in micro units
+    pub approval_ratio_micros: RatioMicros,
+    /// Required threshold (micro ratio)
+    pub threshold_micros: RatioMicros,
     /// Whether the proposal passed
     pub passed: bool,
 }
@@ -263,13 +270,23 @@ mod tests {
         assert_eq!(calculator.total_stake(), 3000);
         assert_eq!(calculator.get_voting_power(&[1u8; 32]), 1000);
         assert_eq!(calculator.get_voting_power(&[2u8; 32]), 2000);
-        assert_eq!(calculator.get_voting_percentage(&[1u8; 32]), 1.0 / 3.0);
-        assert_eq!(calculator.get_voting_percentage(&[2u8; 32]), 2.0 / 3.0);
+        assert_eq!(
+            calculator.get_voting_percentage_micros(&[1u8; 32]),
+            ratio_from_parts(1, 3)
+        );
+        assert_eq!(
+            calculator.get_voting_percentage_micros(&[2u8; 32]),
+            ratio_from_parts(2, 3)
+        );
     }
 
     #[test]
     fn test_voting_session() {
-        let mut session = VotingSession::new("proposal_1".to_string(), 3600, 0.67);
+        let mut session = VotingSession::new(
+            "proposal_1".to_string(),
+            3600,
+            ratio_from_parts(2, 3),
+        );
 
         let vote1 = create_test_vote("proposal_1", true);
         let vote2 = create_test_vote("proposal_1", false);
@@ -282,13 +299,17 @@ mod tests {
         assert_eq!(results.total_stake, 1500);
         assert_eq!(results.approval_stake, 1000);
         assert_eq!(results.rejection_stake, 500);
-        assert!((results.approval_percentage - 2.0 / 3.0).abs() < 0.001);
+        assert_eq!(results.approval_ratio_micros, ratio_from_parts(2, 3));
         assert!(!results.passed); // 67% threshold, we have 66.7% which is below threshold
     }
 
     #[test]
     fn test_duplicate_vote() {
-        let mut session = VotingSession::new("proposal_1".to_string(), 3600, 0.67);
+        let mut session = VotingSession::new(
+            "proposal_1".to_string(),
+            3600,
+            ratio_from_parts(2, 3),
+        );
 
         let vote = create_test_vote("proposal_1", true);
 

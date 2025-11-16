@@ -4,6 +4,7 @@
 //! conflict resolution, state reconciliation, and performance optimization.
 
 use anyhow::{anyhow, Result};
+use ippan_types::{format_ratio, RatioMicros, RATIO_SCALE};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -11,6 +12,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
+
+const PERFORMANCE_SCORE_SCALE: u32 = 1_000;
+const PERFORMANCE_SCORE_MAX: u32 = 1_500;
+const PERFORMANCE_SCORE_MIN: u32 = 100;
+const PERFORMANCE_SCORE_INCREMENT: u32 = 50;
+const PERFORMANCE_SCORE_DECAY_NUM: u32 = 9;
+const PERFORMANCE_SCORE_DECAY_DEN: u32 = 10;
 
 use crate::block::Block;
 use crate::dag::BlockDAG;
@@ -82,12 +90,12 @@ pub enum SyncEvent {
 /// Synchronization performance metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncPerformance {
-    pub blocks_per_second: f64,
-    pub average_latency_ms: f64,
-    pub success_rate: f64,
+    pub blocks_per_second: u64,
+    pub average_latency_micros: u64,
+    pub success_rate_micros: RatioMicros,
     pub total_blocks_synced: usize,
     pub sync_duration: Duration,
-    pub memory_usage_mb: f64,
+    pub memory_usage_bytes: u64,
 }
 
 /// Advanced synchronization manager
@@ -110,7 +118,7 @@ struct PeerConnection {
     peer_id: String,
     last_seen: Instant,
     sync_capability: SyncCapability,
-    performance_score: f64,
+    performance_score: u32,
     is_active: bool,
 }
 
@@ -223,7 +231,7 @@ impl SyncManager {
             peer_id: peer_id.clone(),
             last_seen: Instant::now(),
             sync_capability: capability,
-            performance_score: 1.0,
+            performance_score: PERFORMANCE_SCORE_SCALE,
             is_active: true,
         };
         connections.insert(peer_id.clone(), connection);
@@ -468,10 +476,10 @@ impl SyncManager {
         let mut dag_ops = self.dag_ops.write().await;
         let analysis = dag_ops.analyze_dag().await?;
 
-        if analysis.convergence_ratio > 0.5 {
+        if analysis.convergence_ratio_micros > RATIO_SCALE / 2 {
             warn!(
-                "High convergence ratio detected: {:.2}%",
-                analysis.convergence_ratio * 100.0
+                "High convergence ratio detected: {}",
+                format_ratio(analysis.convergence_ratio_micros)
             );
             self.send_event(SyncEvent::ConflictDetected(vec![])).await?;
         }
@@ -517,7 +525,7 @@ impl SyncManager {
         our_tips: &[[u8; 32]],
         batch_limit: usize,
         protocols: Vec<String>,
-        performance_score: f64,
+        performance_score: u32,
     ) -> Result<()> {
         if protocols.is_empty() {
             warn!(
@@ -528,10 +536,10 @@ impl SyncManager {
         }
 
         debug!(
-            "Requesting up to {} blocks from peer {} (score {:.2}) using {:?} for {} tips",
+            "Requesting up to {} blocks from peer {} (score {}) using {:?} for {} tips",
             batch_limit,
             peer_id,
-            performance_score,
+            format_performance_score(performance_score),
             protocols,
             our_tips.len()
         );
@@ -545,9 +553,16 @@ impl SyncManager {
         if let Some(connection) = connections.get_mut(peer_id) {
             connection.last_seen = Instant::now();
             if success {
-                connection.performance_score = (connection.performance_score + 0.05).min(1.5);
+                connection.performance_score = connection
+                    .performance_score
+                    .saturating_add(PERFORMANCE_SCORE_INCREMENT)
+                    .min(PERFORMANCE_SCORE_MAX);
             } else {
-                connection.performance_score = (connection.performance_score * 0.9).max(0.1);
+                let decayed = connection
+                    .performance_score
+                    .saturating_mul(PERFORMANCE_SCORE_DECAY_NUM)
+                    / PERFORMANCE_SCORE_DECAY_DEN;
+                connection.performance_score = decayed.max(PERFORMANCE_SCORE_MIN);
             }
         }
     }
@@ -562,14 +577,16 @@ impl SyncManager {
             let elapsed = last.elapsed();
             if elapsed.as_secs() > 0 {
                 performance.blocks_per_second =
-                    performance.total_blocks_synced as f64 / elapsed.as_secs() as f64;
+                    performance.total_blocks_synced as u64 / elapsed.as_secs();
+            } else {
+                performance.blocks_per_second = 0;
             }
         }
 
         // Update other metrics
-        performance.average_latency_ms = 50.0; // Placeholder
-        performance.success_rate = 0.95; // Placeholder
-        performance.memory_usage_mb = 100.0; // Placeholder
+        performance.average_latency_micros = 50_000; // Placeholder
+        performance.success_rate_micros = (RATIO_SCALE * 95) / 100; // Placeholder
+        performance.memory_usage_bytes = 100 * 1024 * 1024; // Placeholder
 
         self.send_event(SyncEvent::PerformanceUpdate(performance.clone()))
             .await?;
@@ -613,15 +630,29 @@ impl SyncManager {
     }
 }
 
+fn format_performance_score(score: u32) -> String {
+    let whole = score / PERFORMANCE_SCORE_SCALE;
+    let fractional = score % PERFORMANCE_SCORE_SCALE;
+    if fractional == 0 {
+        format!("{whole}")
+    } else {
+        let mut frac_str = format!("{fractional:03}");
+        while frac_str.ends_with('0') {
+            frac_str.pop();
+        }
+        format!("{whole}.{}", frac_str)
+    }
+}
+
 impl Default for SyncPerformance {
     fn default() -> Self {
         Self {
-            blocks_per_second: 0.0,
-            average_latency_ms: 0.0,
-            success_rate: 1.0,
+            blocks_per_second: 0,
+            average_latency_micros: 0,
+            success_rate_micros: RATIO_SCALE,
             total_blocks_synced: 0,
             sync_duration: Duration::from_secs(0),
-            memory_usage_mb: 0.0,
+            memory_usage_bytes: 0,
         }
     }
 }

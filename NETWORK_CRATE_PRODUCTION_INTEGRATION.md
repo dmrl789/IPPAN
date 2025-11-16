@@ -451,7 +451,10 @@ metrics.record_connection_opened();
 // Get snapshot
 let snapshot = metrics.snapshot();
 println!("Messages/sec: {}", snapshot.messages_per_second());
-println!("Avg latency: {}ms", snapshot.avg_latency_ms);
+println!(
+    "Avg latency: {}ms",
+    snapshot.avg_latency_micros as f64 / 1000.0
+);
 ```
 
 ### 3. Using Health Monitor
