@@ -7,7 +7,7 @@ _Generated: 2025-11-15_
 - [x] Unit tests cover happy-path, insufficient balance, fee distribution (treasury + proposer) in `crates/consensus/src/payments.rs`.
 - [x] CLI `ippan pay` surface exists (`crates/cli/src/main.rs`, `PayCommand` posts to `/tx/payment`).
 - [x] RPC `POST /tx/payment` handler + router wiring live in `crates/rpc/src/server.rs`, so the CLI call has an axum endpoint to hit.
-- [x] Payment history `GET /account/:address/payments` exists in `crates/rpc/src/server.rs` and surfaces storage-backed history/pagination.
+- [x] Payment history `GET /account/:address/payments` exists in `crates/rpc/src/server.rs`, returning storage-backed history sorted by timestamp with a clamped `limit` (cursor-style pagination reserved for future work).
 - [x] End-to-end payment demo docs/scripts (`docs/payments/demo_end_to_end_payment.md`, `scripts/demo_payment_flow.sh`) are committed and current.
 
 ## 2. Fees
@@ -55,7 +55,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 
 ## 8. Payment API Docs & CLI
 - [x] CLI `pay` command documented in code and uses integer atomic units (`crates/cli/src/main.rs`).
-- [x] Payment API guide (`docs/PAYMENT_API_GUIDE.md`) now documents `/tx/payment` and `/account/:address/payments` in detail.
+- [x] `docs/PAYMENT_API_GUIDE.md` captures the currency model, REST payloads, CLI usage, and client snippets for `/tx/payment` and `/account/:address/payments`.
 - [x] RPC `/tx/payment` + `/account/:address/payments` endpoints exist in `crates/rpc/src/server.rs` and only accept integer (`u128`) currency amounts.
 - [x] Demo docs/scripts describing the payment flow exist (`docs/payments/demo_end_to_end_payment.md`, `scripts/demo_payment_flow.sh`).
 
