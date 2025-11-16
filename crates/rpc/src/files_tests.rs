@@ -14,6 +14,7 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
     use std::time::Instant;
+    use tokio::runtime::Runtime;
 
     use crate::files::{FileDescriptorResponse, PublishFileRequest};
     use crate::server::{AppState, L2Config};
@@ -139,12 +140,13 @@ mod tests {
         let descriptor = FileDescriptor::new(content_hash, [1u8; 32], 100, None, vec![]);
 
         // Publish
-        let publish_result = dht.publish_file(&descriptor).unwrap();
+        let rt = Runtime::new().expect("tokio runtime");
+        let publish_result = rt.block_on(dht.publish_file(&descriptor)).unwrap();
         assert!(publish_result.success);
         assert_eq!(publish_result.file_id, descriptor.id);
 
         // Lookup (stub always returns None)
-        let lookup_result = dht.find_file(&descriptor.id).unwrap();
+        let lookup_result = rt.block_on(dht.find_file(&descriptor.id)).unwrap();
         assert_eq!(lookup_result.descriptor, None);
     }
 
@@ -157,13 +159,14 @@ mod tests {
         let owner = [99u8; 32];
 
         // Publish multiple files
+        let rt = Runtime::new().expect("tokio runtime");
         for i in 0..5 {
             let content = format!("file content {}", i);
             let hash = ContentHash::from_data(content.as_bytes());
             let desc = FileDescriptor::new(hash, owner, 100 + i, None, vec![]);
 
             storage.store(desc.clone()).unwrap();
-            let publish_result = dht.publish_file(&desc).unwrap();
+            let publish_result = rt.block_on(dht.publish_file(&desc)).unwrap();
             assert!(publish_result.success);
         }
 

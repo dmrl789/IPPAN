@@ -6,6 +6,7 @@ mod integration_tests {
     use crate::dht::{FileDhtService, StubFileDhtService};
     use crate::storage::{FileStorage, MemoryFileStorage};
     use ippan_time::IppanTimeMicros;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn test_full_workflow() {
@@ -34,7 +35,8 @@ mod integration_tests {
         storage.store(descriptor.clone()).unwrap();
 
         // Publish to DHT
-        let publish_result = dht.publish_file(&descriptor).unwrap();
+        let rt = Runtime::new().expect("tokio runtime");
+        let publish_result = rt.block_on(dht.publish_file(&descriptor)).unwrap();
         assert!(publish_result.success);
         assert_eq!(publish_result.file_id, descriptor.id);
 

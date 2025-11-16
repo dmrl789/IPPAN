@@ -10,6 +10,7 @@ integration-tests = []
 
 [dependencies]
 ippan-types = { path = "../types" }
+ippan-files = { path = "../files" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

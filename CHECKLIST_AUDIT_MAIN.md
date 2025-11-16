@@ -50,7 +50,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] FileDescriptor model + indices implemented (`crates/files/src/descriptor.rs`, `crates/files/src/storage.rs`, and `crates/types/src/file_descriptor.rs`).
 - [x] RPC handler logic for `POST /files/publish` + `GET /files/{id}` exists in `crates/rpc/src/files.rs` with coverage tests (`files_tests.rs`).
 - [x] `crates/rpc/src/files.rs` handlers are wired into the `Router`, and `AppState` now carries `file_storage`/`file_dht` handles so `ippan-rpc` builds with file RPC enabled (stub DHT still acceptable).
-- [ ] Real libp2p-backed `FileDhtService` remains unimplemented; runtime currently exposes the stub implementation so publish/find compile but provide no network propagation yet.
+- [x] File DHT has a libp2p-backed `FileDhtService` behind the runtime flag (`IPPAN_FILE_DHT_MODE=libp2p`), enabling publish/find to use Kademlia while keeping the stub for tests and minimal setups.
 - [x] Documentation covers file descriptors/DHT hooks (`docs/ipndht/file-descriptors.md`, `IPNDHT_FILE_IMPLEMENTATION_SUMMARY.md`).
 
 ## 8. Payment API Docs & CLI

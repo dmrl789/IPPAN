@@ -3028,6 +3028,7 @@ name = "ippan-files"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "blake3",
  "hex",
  "ippan-crypto",
@@ -3215,6 +3216,7 @@ dependencies = [
  "futures",
  "hex",
  "igd",
+ "ippan-files",
  "ippan-types",
  "libp2p",
  "local-ip-address",
