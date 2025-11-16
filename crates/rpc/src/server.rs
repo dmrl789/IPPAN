@@ -1989,7 +1989,7 @@ mod tests {
     use axum::Json;
     use ed25519_dalek::SigningKey;
     use ippan_consensus::{PoAConfig, Validator};
-    use ippan_consensus_dlc::AiConsensusStatus;
+    use ippan_consensus_dlc::{AiConsensusStatus, DlcConfig as AiDlcConfig, DlcConsensus};
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
     use ippan_storage::{ChainState, MemoryStorage, ValidatorTelemetry};
@@ -2063,6 +2063,31 @@ mod tests {
         assert!(!status.using_stub);
         assert_eq!(status.model_hash.as_deref(), Some("deadbeef"));
         assert_eq!(status.model_version.as_deref(), Some("v2"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_ai_status_from_dlc_consensus() {
+        let consensus = Arc::new(Mutex::new(DlcConsensus::new(AiDlcConfig::default())));
+        let handle = AiStatusHandle::new({
+            let consensus = consensus.clone();
+            move || {
+                let consensus = consensus.clone();
+                async move {
+                    let snapshot = {
+                        let guard = consensus.lock().await;
+                        guard.ai_status()
+                    };
+                    snapshot
+                }
+            }
+        });
+
+        let mut state = (*make_app_state()).clone();
+        state.ai_status = Some(handle);
+        let state = Arc::new(state);
+
+        let Json(status) = handle_get_ai_status(State(state)).await;
+        assert!(status.enabled);
     }
 
     fn build_app_state(

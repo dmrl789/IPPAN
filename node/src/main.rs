@@ -5,10 +5,11 @@ use hex::encode as hex_encode;
 use ippan_consensus::{
     DLCConfig, DLCIntegratedConsensus, PoAConfig, PoAConsensus, Validator, VALIDATOR_BOND_AMOUNT,
 };
+use ippan_consensus_dlc::{DlcConfig as AiDlcConfig, DlcConsensus};
 use ippan_mempool::Mempool;
 use ippan_p2p::{HttpP2PNetwork, NetworkEvent, P2PConfig};
 use ippan_rpc::server::ConsensusHandle;
-use ippan_rpc::{start_server, AppState, L2Config};
+use ippan_rpc::{start_server, AiStatusHandle, AppState, L2Config};
 use ippan_security::{SecurityConfig as RpcSecurityConfig, SecurityManager as RpcSecurityManager};
 use ippan_storage::{SledStorage, Storage};
 use ippan_types::{
@@ -16,6 +17,7 @@ use ippan_types::{
 };
 use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -354,6 +356,7 @@ async fn main() -> Result<()> {
 
     // Initialize consensus based on mode
     let (tx_sender, mempool, consensus);
+    let mut ai_status_handle: Option<AiStatusHandle> = None;
 
     if config.consensus_mode.to_uppercase() == "DLC" || config.enable_dlc {
         info!("Starting DLC consensus mode");
@@ -401,6 +404,7 @@ async fn main() -> Result<()> {
         // Start DLC consensus
         dlc_integrated.start().await?;
         consensus = Arc::new(Mutex::new(dlc_integrated.poa));
+        ai_status_handle = build_dlc_ai_status_handle();
 
         info!("DLC consensus engine started");
         info!("  - Temporal finality: {}ms", config.temporal_finality_ms);
@@ -518,7 +522,7 @@ async fn main() -> Result<()> {
         tx_sender: Some(tx_sender.clone()),
         node_id: config.node_id.clone(),
         consensus: Some(consensus_handle.clone()),
-        ai_status: None,
+        ai_status: ai_status_handle,
         l2_config,
         mempool: mempool.clone(),
         unified_ui_dist: config.unified_ui_dist_dir.clone(),
@@ -736,4 +740,31 @@ fn init_logging(config: &AppConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn build_dlc_ai_status_handle() -> Option<AiStatusHandle> {
+    match catch_unwind(AssertUnwindSafe(|| {
+        DlcConsensus::new(AiDlcConfig::default())
+    })) {
+        Ok(consensus) => {
+            let consensus = Arc::new(Mutex::new(consensus));
+            Some(AiStatusHandle::new({
+                let consensus = consensus.clone();
+                move || {
+                    let consensus = consensus.clone();
+                    async move {
+                        let snapshot = {
+                            let guard = consensus.lock().await;
+                            guard.ai_status()
+                        };
+                        snapshot
+                    }
+                }
+            }))
+        }
+        Err(_) => {
+            warn!("Failed to initialize DLC AI status monitor; /ai/status will report disabled");
+            None
+        }
+    }
 }

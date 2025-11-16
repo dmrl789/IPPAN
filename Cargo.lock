@@ -3179,6 +3179,7 @@ dependencies = [
  "dirs 5.0.1",
  "hex",
  "ippan-consensus",
+ "ippan-consensus-dlc",
  "ippan-crypto",
  "ippan-mempool",
  "ippan-p2p",
