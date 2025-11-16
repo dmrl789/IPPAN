@@ -4,9 +4,12 @@
 //! object keys and stable formatting so that model artifacts can be hashed and
 //! compared reliably across architectures.
 
+use crate::errors::AiCoreError;
+use crate::gbdt::Model;
 use serde::{ser::Error as SerdeSerError, Serialize};
 use serde_json::{self, map::Map, ser::PrettyFormatter, Serializer, Value};
 use std::io::Write;
+use std::path::Path;
 
 /// Recursively sort JSON object keys to obtain a canonical representation.
 fn canonicalize(value: Value) -> Value {
@@ -48,4 +51,52 @@ where
     let mut buffer = Vec::new();
     write_canonical_json(&mut buffer, value)?;
     String::from_utf8(buffer).map_err(|err| SerdeSerError::custom(err.to_string()))
+}
+
+/// Produce canonical JSON for a deterministic GBDT model.
+pub fn canonical_model_json(model: &Model) -> Result<String, AiCoreError> {
+    Ok(model.to_canonical_json().map_err(AiCoreError::from)?)
+}
+
+/// Load a deterministic GBDT model from disk, validating its structure.
+pub fn load_model_from_path<P: AsRef<Path>>(path: P) -> Result<Model, AiCoreError> {
+    Ok(Model::load_json(path).map_err(AiCoreError::from)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gbdt::tree::Node;
+    use crate::gbdt::{Model, Tree, SCALE};
+    use tempfile::NamedTempFile;
+
+    fn sample_model() -> Model {
+        let tree = Tree::new(
+            vec![
+                Node::internal(0, 0, 50 * SCALE, 1, 2),
+                Node::leaf(1, 100 * SCALE),
+                Node::leaf(2, 200 * SCALE),
+            ],
+            SCALE,
+        );
+        Model::new(vec![tree], 0)
+    }
+
+    #[test]
+    fn test_canonical_model_json_wrapper() {
+        let model = sample_model();
+        let via_model = model.to_canonical_json().unwrap();
+        let via_helper = canonical_model_json(&model).unwrap();
+        assert_eq!(via_model, via_helper);
+    }
+
+    #[test]
+    fn test_load_model_from_path_wrapper() {
+        let model = sample_model();
+        let tmp = NamedTempFile::new().unwrap();
+        model.save_json(tmp.path()).unwrap();
+
+        let loaded = load_model_from_path(tmp.path()).unwrap();
+        assert_eq!(loaded, model);
+    }
 }

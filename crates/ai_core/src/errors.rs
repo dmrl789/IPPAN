@@ -1,5 +1,7 @@
 //! Error types for AI Core
 
+use crate::gbdt::model::ModelError;
+use crate::serde_canon::CanonicalError;
 use thiserror::Error;
 
 /// Result type for AI Core operations
@@ -74,5 +76,17 @@ impl From<toml::de::Error> for AiCoreError {
 impl From<toml::ser::Error> for AiCoreError {
     fn from(err: toml::ser::Error) -> Self {
         AiCoreError::Serialization(err.to_string())
+    }
+}
+
+impl From<CanonicalError> for AiCoreError {
+    fn from(err: CanonicalError) -> Self {
+        AiCoreError::Serialization(err.to_string())
+    }
+}
+
+impl From<ModelError> for AiCoreError {
+    fn from(err: ModelError) -> Self {
+        AiCoreError::Validation(err.to_string())
     }
 }

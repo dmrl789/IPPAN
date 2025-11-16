@@ -19,6 +19,7 @@ pub mod gbdt_legacy;
 pub mod health;
 pub mod log;
 pub mod model;
+pub mod model_hash;
 pub mod model_manager;
 pub mod models;
 pub mod monitoring;
@@ -40,7 +41,7 @@ pub use crate::errors::{AiCoreError, Result as AiCoreResult};
 pub use crate::features::{extract_features, FeatureConfig, FeatureVector, ValidatorTelemetry};
 pub use crate::fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
 pub use crate::gbdt::{
-    model_hash, model_hash_hex, Model as DeterministicModel, ModelError as DeterministicModelError,
+    model_hash, Model as DeterministicModel, ModelError as DeterministicModelError,
     Node as DeterministicNode, Tree as DeterministicTree, SCALE as DGBDT_SCALE,
 };
 pub use crate::gbdt_legacy::{
@@ -52,6 +53,8 @@ pub use crate::model::{
     load_model, verify_model_hash, Model as LegacyModel, ModelMetadata, ModelPackage,
     MODEL_HASH_SIZE,
 };
+pub use crate::model_hash::model_hash_hex;
+pub use crate::serialization::{canonical_model_json, load_model_from_path};
 pub use crate::types::{
     DataType, ExecutionContext, ExecutionMetadata, ExecutionResult, ModelId, ModelInput,
     ModelMetadata as TypesModelMetadata, ModelOutput,

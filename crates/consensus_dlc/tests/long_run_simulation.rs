@@ -11,7 +11,10 @@ use ippan_consensus_dlc::{
 };
 use ippan_types::Amount;
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+};
 use tokio::sync::mpsc;
 use tokio::task::yield_now;
 
@@ -81,6 +84,7 @@ struct SplitRoundContext {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn long_run_dlc_handles_churn_and_network_partitions() -> Result<()> {
+    env::set_var("IPPAN_DGBDT_ALLOW_STUB", "1");
     let mut consensus = DlcConsensus::new(DlcConfig {
         validators_per_round: 11,
         min_validator_stake: bond::MIN_VALIDATOR_BOND,
@@ -533,17 +537,17 @@ fn pick_random_validator(validators: &HashSet<String>, rng: &mut StdRng) -> Opti
 }
 
 fn random_metrics(rng: &mut StdRng, stake_micro: u64) -> ValidatorMetrics {
-    let uptime = rng.gen_range(0.92..=1.0);
-    let latency = rng.gen_range(0.01..=0.18);
-    let honesty = rng.gen_range(0.88..=1.0);
+    let uptime = rng.gen_range(9_200..=10_000);
+    let latency = rng.gen_range(100..=1_800);
+    let honesty = rng.gen_range(8_800..=10_000);
     let blocks_proposed = rng.gen_range(50..=400);
     let blocks_verified = rng.gen_range(blocks_proposed..=(blocks_proposed + 200));
     let rounds_active = rng.gen_range(32..=1_024);
 
     ValidatorMetrics::new(
-        (uptime * 10000.0) as i64,  // Scale 0-1 to 0-10000
-        (latency * 10000.0) as i64, // Scale 0-1 to 0-10000
-        (honesty * 10000.0) as i64, // Scale 0-1 to 0-10000
+        uptime,
+        latency,
+        honesty,
         blocks_proposed,
         blocks_verified,
         Amount::from_micro_ipn(stake_micro),
@@ -565,13 +569,10 @@ fn drift_validator_metrics(consensus: &mut DlcConsensus, rng: &mut StdRng) {
     for id in validator_ids.iter().take(8) {
         if let Some(metrics) = consensus.validators.get_validator(id).cloned() {
             let mut updated = metrics.clone();
-            let uptime_delta = rng.gen_range(0.85..=1.0);
-            let latency_sample = rng.gen_range(0.01..=0.25);
+            let uptime_delta_scaled = rng.gen_range(8_500..=10_000);
+            let latency_sample_scaled = rng.gen_range(100..=2_500);
             let proposed_delta = rng.gen_range(0..=2);
             let verified_delta = rng.gen_range(0..=3);
-            // Convert to scaled integers for update
-            let uptime_delta_scaled = (uptime_delta * 10000.0) as i64;
-            let latency_sample_scaled = (latency_sample * 10000.0) as i64;
             updated.update(
                 uptime_delta_scaled,
                 latency_sample_scaled,

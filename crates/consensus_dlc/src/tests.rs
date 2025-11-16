@@ -91,7 +91,7 @@ async fn test_block_proposal_and_verification() {
 
 #[tokio::test]
 async fn test_verifier_selection_determinism() {
-    let model = FairnessModel::new_production();
+    let model = FairnessModel::testing_stub();
     let mut validators = HashMap::new();
 
     for i in 1..=5 {
@@ -244,7 +244,7 @@ async fn test_dag_topological_sort() {
 
 #[tokio::test]
 async fn test_fairness_model_scoring() {
-    let model = FairnessModel::new_production();
+    let model = FairnessModel::testing_stub();
 
     // High-quality validator
     let good_metrics = ValidatorMetrics::new(
@@ -290,7 +290,7 @@ async fn test_hashtimer_ordering() {
 
 #[tokio::test]
 async fn test_block_validation_invalid_proposer() {
-    let model = FairnessModel::new_production();
+    let model = FairnessModel::testing_stub();
     let mut validators = HashMap::new();
     validators.insert("val1".to_string(), ValidatorMetrics::default());
 
