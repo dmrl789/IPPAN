@@ -92,14 +92,14 @@ fn next_port() -> u16 {
 fn test_config(listen_port: u16) -> P2PConfig {
     let mut config = P2PConfig::default();
     config.listen_address = format!("http://127.0.0.1:{listen_port}");
-    config.bootstrap_peers = Vec::new();
+    config.dht.bootstrap_peers = Vec::new();
     config.peer_discovery_interval = Duration::from_millis(50);
     config.message_timeout = Duration::from_millis(100);
     config.retry_attempts = 1;
-    config.public_host = Some(config.listen_address.clone());
-    config.enable_upnp = false;
-    config.external_ip_services = Vec::new();
-    config.peer_announce_interval = Duration::from_secs(60);
+    config.dht.public_host = Some(config.listen_address.clone());
+    config.dht.enable_upnp = false;
+    config.dht.external_ip_services = Vec::new();
+    config.dht.announce_interval = Duration::from_secs(60);
     config
 }
 
@@ -156,7 +156,7 @@ async fn node_discovery_loop_finds_new_peer() {
     let mut server = MockPeerServer::start(vec![discovered_peer.clone()]).await;
 
     let mut config = test_config(next_port());
-    config.bootstrap_peers = vec![server.address().to_string()];
+    config.dht.bootstrap_peers = vec![server.address().to_string()];
     let local_address = config.listen_address.clone();
     let mut network = HttpP2PNetwork::new(config, local_address).expect("network creation");
 

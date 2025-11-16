@@ -177,6 +177,12 @@ The libp2p Kademlia DHT is **initialized but minimally used**:
 ### Phase D2: Foundation Hardening (Bootstrap & Discovery)
 **Goal:** Ensure nodes can reliably discover each other in all conditions
 
+**Update (2025-11-15):** `ippan-p2p` now exposes a dedicated `DhtConfig` that decouples bootstrap peers, NAT traversal hints,
+and HTTP announcement intervals from the general `P2PConfig`. Node startup feeds this struct from environment variables, and
+`HttpP2PNetwork` automatically derives the announce address via explicit overrides, UPnP external IP detection, or fallbacks to
+configured IP discovery services. This gives operators a single place to tweak DHT-facing behavior without mutating unrelated
+network settings and provides a deterministic source of truth for future libp2p upgrades.
+
 **Tasks:**
 1. **Bootstrap configuration improvements**
    - Add DNS seed resolution (e.g., `seed.ippan.network`)

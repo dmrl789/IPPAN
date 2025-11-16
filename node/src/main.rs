@@ -11,8 +11,8 @@ use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{HandleDhtService, L2HandleRegistry, StubHandleDhtService};
 use ippan_mempool::Mempool;
 use ippan_p2p::{
-    HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService, Libp2pHandleDhtService,
-    Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig,
+    DhtConfig, HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService,
+    Libp2pHandleDhtService, Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig,
 };
 use ippan_rpc::server::ConsensusHandle;
 use ippan_rpc::{start_server, AiStatusHandle, AppState, L2Config};
@@ -611,17 +611,21 @@ async fn main() -> Result<()> {
     let p2p_host = &config.p2p_host;
     let p2p_port = config.p2p_port;
     let listen_address = format!("http://{p2p_host}:{p2p_port}");
+    let dht_config = DhtConfig {
+        bootstrap_peers: config.bootstrap_nodes.clone(),
+        public_host: config.p2p_public_host.clone(),
+        enable_upnp: config.p2p_enable_upnp,
+        external_ip_services: config.p2p_external_ip_services.clone(),
+        announce_interval: Duration::from_secs(config.peer_announce_interval_secs),
+    };
+
     let p2p_config = P2PConfig {
         listen_address: listen_address.clone(),
-        bootstrap_peers: config.bootstrap_nodes.clone(),
         max_peers: config.max_peers,
         peer_discovery_interval: Duration::from_secs(config.peer_discovery_interval_secs),
         message_timeout: Duration::from_secs(10),
         retry_attempts: 3,
-        public_host: config.p2p_public_host.clone(),
-        enable_upnp: config.p2p_enable_upnp,
-        external_ip_services: config.p2p_external_ip_services.clone(),
-        peer_announce_interval: Duration::from_secs(config.peer_announce_interval_secs),
+        dht: dht_config,
     };
 
     let mut p2p_network = HttpP2PNetwork::new(p2p_config, listen_address.clone())?;
