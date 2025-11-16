@@ -34,7 +34,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 
 ## 5. IPNDHT Network Layer
 - [x] Libp2p network stack + DHT helper (`crates/p2p/src/lib.rs`, `crates/p2p/src/ipndht.rs`) provide publish/find APIs with caching.
-- [ ] No dedicated `DhtConfig`; bootstrap/NAT settings live in `P2PConfig` and there is no config layer that drives DHT behavior independently.
+- [x] Dedicated `DhtConfig` separates bootstrap/NAT/DHT announcement settings from `P2PConfig`, feeding the HTTP network and libp2p-backed IPNDHT helpers.
 - [x] Node startup (`node/src/main.rs`) now wires `MemoryFileStorage` + `StubFileDhtService` into the RPC `AppState`, giving `/files/*` endpoints live handles while the real libp2p-backed service is still pending.
 - [x] Multi-node/discovery tests exist (ignored by default) under `crates/p2p/tests/ipndht_resilience.rs`.
 - [x] Docs available: `docs/ipndht/ipndht_hardening_plan.md`, `docs/ipndht/file-descriptors.md`, `IPNDHT_FILE_IMPLEMENTATION_SUMMARY.md`.

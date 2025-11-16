@@ -31,11 +31,14 @@ pub use parallel_gossip::{
 };
 
 use anyhow::{anyhow, Result};
+use igd::aio::search_gateway;
+use igd::SearchOptions;
 use ippan_types::{ippan_time_now, Block, Transaction};
 use parking_lot::{Mutex, RwLock};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -152,34 +155,55 @@ impl PeerRecord {
 #[derive(Debug, Clone)]
 pub struct P2PConfig {
     pub listen_address: String,
-    pub bootstrap_peers: Vec<String>,
     pub max_peers: usize,
     pub peer_discovery_interval: Duration,
     pub message_timeout: Duration,
     pub retry_attempts: usize,
-    pub public_host: Option<String>,
-    pub enable_upnp: bool,
-    pub external_ip_services: Vec<String>,
-    pub peer_announce_interval: Duration,
+    pub dht: DhtConfig,
 }
 
 impl Default for P2PConfig {
     fn default() -> Self {
         Self {
             listen_address: "http://0.0.0.0:9000".to_string(),
-            bootstrap_peers: vec![],
             max_peers: 50,
             peer_discovery_interval: Duration::from_secs(30),
             message_timeout: Duration::from_secs(10),
             retry_attempts: 3,
+            dht: DhtConfig::default(),
+        }
+    }
+}
+
+/// Dedicated configuration for HTTP-level DHT announcements.
+#[derive(Debug, Clone)]
+pub struct DhtConfig {
+    pub bootstrap_peers: Vec<String>,
+    pub public_host: Option<String>,
+    pub enable_upnp: bool,
+    pub external_ip_services: Vec<String>,
+    pub announce_interval: Duration,
+}
+
+impl Default for DhtConfig {
+    fn default() -> Self {
+        Self {
+            bootstrap_peers: Vec::new(),
             public_host: None,
             enable_upnp: false,
             external_ip_services: vec![
                 "https://api.ipify.org".to_string(),
                 "https://ifconfig.me/ip".to_string(),
             ],
-            peer_announce_interval: Duration::from_secs(60),
+            announce_interval: Duration::from_secs(60),
         }
+    }
+}
+
+impl DhtConfig {
+    fn announce_override(&self, listen_address: &str) -> Option<String> {
+        let candidate = self.public_host.as_ref()?;
+        build_candidate_address(listen_address, candidate)
     }
 }
 
@@ -216,10 +240,8 @@ impl HttpP2PNetwork {
         let (incoming_sender, incoming_receiver) = mpsc::unbounded_channel();
 
         let announce_address = config
-            .public_host
-            .clone()
-            .map(|addr| ensure_http_scheme(&addr))
-            .and_then(|addr| normalize_peer(&addr).ok())
+            .dht
+            .announce_override(&listen_address)
             .unwrap_or_else(|| listen_address.clone());
 
         Ok(Self {
@@ -283,7 +305,11 @@ impl HttpP2PNetwork {
             *running = true;
         }
 
-        for peer in self.config.bootstrap_peers.clone() {
+        if let Some(address) = self.configure_announce_address().await {
+            *self.announce_address.write() = address;
+        }
+
+        for peer in self.config.dht.bootstrap_peers.clone() {
             if let Err(err) = self.add_peer(peer).await {
                 warn!("Failed to add bootstrap peer: {err}");
             }
@@ -515,7 +541,8 @@ impl HttpP2PNetwork {
         let listen_address = self.listen_address.clone();
         let interval_duration = self
             .config
-            .peer_announce_interval
+            .dht
+            .announce_interval
             .max(Duration::from_secs(5));
 
         *self.announce_task.lock() = Some(tokio::spawn(async move {
@@ -603,6 +630,107 @@ impl HttpP2PNetwork {
     }
 }
 
+impl HttpP2PNetwork {
+    async fn configure_announce_address(&self) -> Option<String> {
+        if let Some(explicit) = self.config.dht.announce_override(&self.listen_address) {
+            return Some(explicit);
+        }
+
+        if let Some(host) = self.detect_external_ip_via_upnp().await {
+            if let Some(address) = build_candidate_address(&self.listen_address, &host) {
+                return Some(address);
+            }
+        }
+
+        if let Some(host) = self.detect_external_ip_via_services().await {
+            if let Some(address) = build_candidate_address(&self.listen_address, &host) {
+                return Some(address);
+            }
+        }
+
+        None
+    }
+
+    async fn detect_external_ip_via_upnp(&self) -> Option<String> {
+        if !self.config.dht.enable_upnp {
+            return None;
+        }
+
+        match search_gateway(SearchOptions::default()).await {
+            Ok(gateway) => match gateway.get_external_ip().await {
+                Ok(ip) => {
+                    debug!("Discovered external IP via UPnP: {}", ip);
+                    Some(ip.to_string())
+                }
+                Err(err) => {
+                    debug!("Failed to fetch external IP via UPnP: {}", err);
+                    None
+                }
+            },
+            Err(err) => {
+                debug!("UPnP gateway discovery failed: {}", err);
+                None
+            }
+        }
+    }
+
+    async fn detect_external_ip_via_services(&self) -> Option<String> {
+        if self.config.dht.external_ip_services.is_empty() {
+            return None;
+        }
+
+        for endpoint in &self.config.dht.external_ip_services {
+            let trimmed = endpoint.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            match self.client.get(trimmed).send().await {
+                Ok(response) => {
+                    if !response.status().is_success() {
+                        continue;
+                    }
+                    if let Ok(body) = response.text().await {
+                        let candidate = body.trim();
+                        if candidate.is_empty() {
+                            continue;
+                        }
+                        if candidate.parse::<IpAddr>().is_ok() {
+                            debug!("Detected external IP via {}: {}", trimmed, candidate);
+                            return Some(candidate.to_string());
+                        }
+                    }
+                }
+                Err(err) => {
+                    debug!("Failed to query {} for external IP: {}", trimmed, err);
+                }
+            }
+        }
+
+        None
+    }
+}
+
+fn build_candidate_address(listen_address: &str, host: &str) -> Option<String> {
+    if host.contains("://") {
+        return normalize_peer(host).ok();
+    }
+
+    let base = Url::parse(listen_address).ok()?;
+    let scheme = base.scheme();
+    let port = base.port_or_known_default();
+    let formatted_host = if host.contains(':') {
+        host.to_string()
+    } else if let Some(port) = port {
+        format!("{host}:{port}")
+    } else {
+        host.to_string()
+    };
+
+    let candidate = format!("{scheme}://{formatted_host}");
+    normalize_peer(&candidate).ok()
+}
+
 fn derive_peer_id(address: &str) -> String {
     let hash = blake3::hash(address.as_bytes());
     format!("peer-{}", &hash.to_hex()[..16])
@@ -679,6 +807,19 @@ mod tests {
         let config = P2PConfig::default();
         let network = HttpP2PNetwork::new(config, "http://localhost:9000".to_string());
         assert!(network.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_configure_announce_address_prefers_public_host() {
+        let mut config = P2PConfig::default();
+        config.listen_address = "http://127.0.0.1:9101".into();
+        config.dht.public_host = Some("https://example.com:9101".into());
+        config.dht.external_ip_services.clear();
+        config.dht.enable_upnp = false;
+
+        let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9101".into()).expect("network");
+        let override_addr = network.configure_announce_address().await;
+        assert_eq!(override_addr.unwrap(), "https://example.com:9101");
     }
 
     #[test]

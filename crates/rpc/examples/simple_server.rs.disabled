@@ -1,3 +1,4 @@
+use ippan_p2p::DhtConfig;
 use ippan_rpc::{start_server, L2Config, P2PConfig};
 use std::time::Duration;
 
@@ -9,18 +10,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Configure P2P network
     let p2p_config = P2PConfig {
         listen_address: "http://0.0.0.0:9000".to_string(),
-        bootstrap_peers: vec![],
         max_peers: 50,
         peer_discovery_interval: Duration::from_secs(30),
         message_timeout: Duration::from_secs(10),
         retry_attempts: 3,
-        public_host: None,
-        enable_upnp: false,
-        external_ip_services: vec![
-            "https://api.ipify.org".to_string(),
-            "https://ifconfig.me/ip".to_string(),
-        ],
-        peer_announce_interval: Duration::from_secs(60),
+        dht: DhtConfig {
+            bootstrap_peers: vec![],
+            public_host: None,
+            enable_upnp: false,
+            external_ip_services: vec![
+                "https://api.ipify.org".to_string(),
+                "https://ifconfig.me/ip".to_string(),
+            ],
+            announce_interval: Duration::from_secs(60),
+        },
     };
 
     // Configure L2 blockchain

@@ -7,7 +7,9 @@ mod tests {
         FileStorage, MemoryFileStorage,
     };
     use ippan_l1_handle_anchors::L1HandleAnchorStorage;
-    use ippan_l2_handle_registry::{dht::StubHandleDhtService, dht::HandleDhtService, L2HandleRegistry};
+    use ippan_l2_handle_registry::{
+        dht::HandleDhtService, dht::StubHandleDhtService, L2HandleRegistry,
+    };
     use ippan_mempool::Mempool;
     use ippan_storage::MemoryStorage;
     use ippan_types::address::encode_address;
