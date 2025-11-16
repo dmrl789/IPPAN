@@ -13,7 +13,7 @@ use blake3::Hasher as Blake3;
 use ippan_crypto::{validate_confidential_block, validate_confidential_transaction};
 use ippan_l1_fees::FeePolicy;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
-use ippan_l2_handle_registry::L2HandleRegistry;
+use ippan_l2_handle_registry::{dht::HandleDhtService, L2HandleRegistry};
 use ippan_mempool::Mempool;
 use ippan_storage::Storage;
 use ippan_types::{
@@ -221,6 +221,7 @@ impl PoAConsensus {
             validator_id,
             Arc::new(L2HandleRegistry::new()),
             Arc::new(L1HandleAnchorStorage::new()),
+            None,
         )
     }
 
@@ -230,6 +231,7 @@ impl PoAConsensus {
         validator_id: [u8; 32],
         handle_registry: Arc<L2HandleRegistry>,
         handle_anchors: Arc<L1HandleAnchorStorage>,
+        handle_dht: Option<Arc<dyn HandleDhtService>>,
     ) -> Self {
         let (tx_sender, _rx) = mpsc::unbounded_channel();
         let latest_height = storage.get_latest_height().unwrap_or(0);
@@ -284,9 +286,10 @@ impl PoAConsensus {
                 FeePolicy::default(),
                 payments::TREASURY_ACCOUNT,
             )),
-            handle_pipeline: Arc::new(handles::HandlePipeline::new(
+            handle_pipeline: Arc::new(handles::HandlePipeline::with_dht(
                 handle_registry,
                 handle_anchors,
+                handle_dht,
             )),
         }
     }

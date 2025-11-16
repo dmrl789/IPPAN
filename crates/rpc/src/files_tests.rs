@@ -7,7 +7,7 @@ mod tests {
         FileStorage, MemoryFileStorage,
     };
     use ippan_l1_handle_anchors::L1HandleAnchorStorage;
-    use ippan_l2_handle_registry::L2HandleRegistry;
+    use ippan_l2_handle_registry::{dht::StubHandleDhtService, dht::HandleDhtService, L2HandleRegistry};
     use ippan_mempool::Mempool;
     use ippan_storage::MemoryStorage;
     use ippan_types::address::encode_address;
@@ -26,6 +26,7 @@ mod tests {
         let mempool = Arc::new(Mempool::new(1_000));
         let handle_registry = Arc::new(L2HandleRegistry::new());
         let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let handle_dht: Arc<dyn HandleDhtService> = Arc::new(StubHandleDhtService::new());
 
         AppState {
             storage,
@@ -53,6 +54,7 @@ mod tests {
             dev_mode: true,
             handle_registry,
             handle_anchors,
+            handle_dht: Some(handle_dht),
         }
     }
 

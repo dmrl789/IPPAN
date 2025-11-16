@@ -44,7 +44,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] L1 handle anchor storage exists (`crates/l1_handle_anchors/src/anchors.rs`) with proof generation/verification.
 - [x] Consensus pipeline now processes `TxKind::Handle` transactions via `crates/consensus/src/handles.rs`, enforcing deterministic fees/uniqueness + anchoring during round finalization.
 - [x] RPC endpoints `POST /handle/register` and `GET /handle/{handle}` live in `crates/rpc/src/server.rs`, wiring builder helpers + router paths.
-- [ ] No DHT publication for handles (hook remains a stub; follow-up needed to connect to the real IPNDHT service).
+- [x] Handle registrations publish into IPNDHT via the new `HandleDhtService` (stub + libp2p), so consensus writes immediately propagate to the DHT.
 
 ## 7. File Descriptors & DHT
 - [x] FileDescriptor model + indices implemented (`crates/files/src/descriptor.rs`, `crates/files/src/storage.rs`, and `crates/types/src/file_descriptor.rs`).

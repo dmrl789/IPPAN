@@ -25,7 +25,8 @@ use ippan_files::{FileDhtService, FileStorage};
 use ippan_l1_fees::FeePolicy;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{
-    Handle, HandleMetadata, HandleRegistryError, HandleStatus, L2HandleRegistry,
+    dht::HandleDhtService, Handle, HandleMetadata, HandleRegistryError, HandleStatus,
+    L2HandleRegistry,
 };
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
@@ -98,6 +99,7 @@ pub struct AppState {
     pub dev_mode: bool,
     pub handle_registry: Arc<L2HandleRegistry>,
     pub handle_anchors: Arc<L1HandleAnchorStorage>,
+    pub handle_dht: Option<Arc<dyn HandleDhtService>>,
 }
 
 type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
@@ -2410,7 +2412,7 @@ mod tests {
     use ippan_consensus::{PoAConfig, Validator};
     use ippan_consensus_dlc::{AiConsensusStatus, DlcConfig as AiDlcConfig, DlcConsensus};
     use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
-    use ippan_l2_handle_registry::{HandleRegistration, PublicKey};
+    use ippan_l2_handle_registry::{HandleRegistration, PublicKey, StubHandleDhtService};
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
     use ippan_storage::{ChainState, MemoryStorage, ValidatorTelemetry};
@@ -2436,6 +2438,7 @@ mod tests {
         let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
         let handle_registry = Arc::new(L2HandleRegistry::new());
         let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let handle_dht: Arc<dyn HandleDhtService> = Arc::new(StubHandleDhtService::new());
         let app_state = Arc::new(AppState {
             storage: Arc::new(MemoryStorage::default()),
             start_time: Instant::now(),
@@ -2462,6 +2465,7 @@ mod tests {
             dev_mode: true,
             handle_registry,
             handle_anchors,
+            handle_dht: Some(handle_dht),
         });
 
         let response = handle_health(State(app_state)).await;
@@ -2531,6 +2535,7 @@ mod tests {
         let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
         let handle_registry = Arc::new(L2HandleRegistry::new());
         let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let handle_dht: Arc<dyn HandleDhtService> = Arc::new(StubHandleDhtService::new());
         Arc::new(AppState {
             storage,
             start_time: Instant::now(),
@@ -2557,6 +2562,7 @@ mod tests {
             dev_mode: true,
             handle_registry,
             handle_anchors,
+            handle_dht: Some(handle_dht),
         })
     }
 
@@ -4157,6 +4163,7 @@ mod tests {
         let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
         let handle_registry = Arc::new(L2HandleRegistry::new());
         let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let handle_dht: Arc<dyn HandleDhtService> = Arc::new(StubHandleDhtService::new());
         let state = Arc::new(AppState {
             storage,
             start_time: Instant::now(),
@@ -4183,6 +4190,7 @@ mod tests {
             dev_mode: true,
             handle_registry,
             handle_anchors,
+            handle_dht: Some(handle_dht),
         });
 
         let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();

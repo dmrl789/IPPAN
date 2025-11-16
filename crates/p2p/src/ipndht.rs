@@ -1,9 +1,14 @@
 use crate::Libp2pNetwork;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use blake3;
 use ippan_files::descriptor::FileDescriptor;
 use ippan_files::dht::{DhtLookupResult, DhtPublishResult, FileDhtService};
 use ippan_files::FileId;
+use ippan_l2_handle_registry::{
+    dht::{HandleDhtError, HandleDhtRecord, HandleDhtService},
+    Handle,
+};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,11 +21,17 @@ struct CachedDescriptor {
     descriptor: FileDescriptor,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedHandleRecord {
+    record: HandleDhtRecord,
+}
+
 /// IPNDHT helper responsible for publishing and discovering file descriptors.
 #[derive(Clone)]
 pub struct IpnDhtService {
     network: Option<Arc<Libp2pNetwork>>,
     cache: Arc<RwLock<HashMap<FileId, CachedDescriptor>>>,
+    handle_cache: Arc<RwLock<HashMap<Handle, CachedHandleRecord>>>,
 }
 
 impl IpnDhtService {
@@ -29,6 +40,7 @@ impl IpnDhtService {
         Self {
             network,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            handle_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -100,6 +112,63 @@ impl IpnDhtService {
     fn key_for(id: &FileId) -> Vec<u8> {
         id.as_bytes().to_vec()
     }
+
+    pub async fn publish_handle(&self, record: &HandleDhtRecord) -> Result<()> {
+        self.handle_cache.write().insert(
+            record.handle.clone(),
+            CachedHandleRecord {
+                record: record.clone(),
+            },
+        );
+
+        if let Some(network) = &self.network {
+            let key = Self::handle_key(&record.handle);
+            let value = serde_json::to_vec(record).context("serialize handle record for DHT")?;
+            network
+                .put_dht_record(key.clone(), value)
+                .context("publish handle record to DHT")?;
+            network
+                .start_providing_record(key)
+                .context("announce handle record provider")?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn find_handle(&self, handle: &Handle) -> Result<Option<HandleDhtRecord>> {
+        if let Some(record) = self.handle_cache.read().get(handle) {
+            return Ok(Some(record.record.clone()));
+        }
+
+        let Some(network) = &self.network else {
+            return Ok(None);
+        };
+
+        if let Some(bytes) = network
+            .get_dht_record(Self::handle_key(handle))
+            .await
+            .context("query handle record from DHT")?
+        {
+            let record: HandleDhtRecord =
+                serde_json::from_slice(&bytes).context("decode handle record from DHT")?;
+            self.handle_cache.write().insert(
+                record.handle.clone(),
+                CachedHandleRecord {
+                    record: record.clone(),
+                },
+            );
+            return Ok(Some(record));
+        }
+
+        Ok(None)
+    }
+
+    fn handle_key(handle: &Handle) -> Vec<u8> {
+        let digest = blake3::hash(handle.as_str().as_bytes());
+        let mut key = b"handle:".to_vec();
+        key.extend_from_slice(digest.as_bytes());
+        key
+    }
 }
 
 /// File DHT service backed by a shared `IpnDhtService` handle.
@@ -136,10 +205,43 @@ impl FileDhtService for Libp2pFileDhtService {
     }
 }
 
+/// Handle DHT service backed by a shared `IpnDhtService` handle.
+#[derive(Clone)]
+pub struct Libp2pHandleDhtService {
+    inner: Arc<IpnDhtService>,
+}
+
+impl Libp2pHandleDhtService {
+    pub fn new(service: Arc<IpnDhtService>) -> Self {
+        Self { inner: service }
+    }
+}
+
+#[async_trait]
+impl HandleDhtService for Libp2pHandleDhtService {
+    async fn publish_handle(&self, record: &HandleDhtRecord) -> Result<(), HandleDhtError> {
+        self.inner
+            .publish_handle(record)
+            .await
+            .map_err(HandleDhtError::from)
+    }
+
+    async fn find_handle(
+        &self,
+        handle: &Handle,
+    ) -> Result<Option<HandleDhtRecord>, HandleDhtError> {
+        self.inner
+            .find_handle(handle)
+            .await
+            .map_err(HandleDhtError::from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ippan_files::descriptor::{ContentHash, FileDescriptor};
+    use ippan_l2_handle_registry::PublicKey;
 
     fn sample_descriptor() -> FileDescriptor {
         let owner = [1u8; 32];
@@ -186,5 +288,43 @@ mod tests {
             .expect("lookup result");
         assert_eq!(lookup.file_id, descriptor.id);
         assert_eq!(lookup.providers.len(), 0);
+    }
+
+    fn sample_handle_record() -> HandleDhtRecord {
+        HandleDhtRecord::new(Handle::new("@demo.ipn"), PublicKey([9u8; 32]), Some(42))
+    }
+
+    #[tokio::test]
+    async fn publishes_and_finds_handle_from_cache() {
+        let service = IpnDhtService::new(None);
+        let record = sample_handle_record();
+        service.publish_handle(&record).await.expect("publish");
+
+        let fetched = service
+            .find_handle(&record.handle)
+            .await
+            .expect("lookup")
+            .expect("record");
+        assert_eq!(fetched.handle.as_str(), record.handle.as_str());
+        assert_eq!(fetched.owner.as_bytes(), record.owner.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn libp2p_handle_dht_service_wraps_ipndht() {
+        let ipn = Arc::new(IpnDhtService::new(None));
+        let service = Libp2pHandleDhtService::new(ipn);
+        let record = sample_handle_record();
+
+        service
+            .publish_handle(&record)
+            .await
+            .expect("publish handle");
+
+        let fetched = service
+            .find_handle(&record.handle)
+            .await
+            .expect("lookup handle")
+            .expect("record present");
+        assert_eq!(fetched.expires_at, record.expires_at);
     }
 }

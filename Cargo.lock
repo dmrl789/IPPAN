@@ -3123,6 +3123,7 @@ name = "ippan-l2-handle-registry"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "ed25519-dalek",
  "futures",
  "hex",
@@ -3217,6 +3218,7 @@ dependencies = [
  "hex",
  "igd",
  "ippan-files",
+ "ippan-l2-handle-registry",
  "ippan-types",
  "libp2p",
  "local-ip-address",

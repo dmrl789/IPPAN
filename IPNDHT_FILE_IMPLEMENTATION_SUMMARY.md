@@ -166,6 +166,14 @@ Router updated to include:
 
 **Runtime wiring (Nov 2025 update):** `node/src/main.rs` now instantiates `MemoryFileStorage` and the stub `FileDhtService`, injecting both into `AppState` so the `/files/*` RPC endpoints run end-to-end even before the libp2p-backed service ships.
 
+### 4. Handle DHT integration
+
+- Added `HandleDhtService` + `StubHandleDhtService` in `crates/l2_handle_registry/src/dht.rs` to mirror the file descriptor DHT surface.
+- `IpnDhtService` now caches/publishes both file descriptors and `HandleDhtRecord`s (keyed by `handle:` + `blake3(@handle.ipn)`), and exposes `Libp2pHandleDhtService` for runtime wiring.
+- Consensus handle pipeline (`crates/consensus/src/handles.rs`) receives an optional `Arc<dyn HandleDhtService>` and publishes each committed registration asynchronously (errors are logged but non-fatal).
+- Node startup selects the implementation via `IPPAN_HANDLE_DHT_MODE=stub|libp2p` (default `stub`) and shares the same libp2p swarm as file descriptors when either DHT is set to `libp2p`.
+- RPC `AppState` now carries `handle_dht` so future `/handle/{handle}` fallbacks can query the DHT if local storage misses.
+
 ### 4. Test Coverage
 
 Comprehensive test suite with **17 tests**, all passing:

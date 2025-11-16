@@ -24,7 +24,7 @@ pub use libp2p_network::{
     Libp2pCommand, Libp2pConfig, Libp2pEvent, Libp2pNetwork, DEFAULT_GOSSIP_TOPICS,
 };
 
-pub use ipndht::{IpnDhtService, Libp2pFileDhtService};
+pub use ipndht::{IpnDhtService, Libp2pFileDhtService, Libp2pHandleDhtService};
 pub use parallel_gossip::{
     DagVertexAnnouncement, GossipConfig, GossipError, GossipMessage, GossipMetricsSnapshot,
     GossipPayload, GossipTopic, ParallelGossipNetwork,
