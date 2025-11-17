@@ -13,6 +13,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::warn;
 
 /// Minimal metadata cached for files that have been published either locally or
 /// discovered through the DHT.
@@ -84,13 +85,10 @@ impl IpnDhtService {
         {
             let descriptor: FileDescriptor =
                 serde_json::from_slice(&bytes).context("decode descriptor from DHT")?;
-            self.cache.write().insert(
-                descriptor.id,
-                CachedDescriptor {
-                    descriptor: descriptor.clone(),
-                },
-            );
-            return Ok(Some(descriptor));
+            if let Some(descriptor) = self.cache_descriptor_from_dht(id, descriptor) {
+                return Ok(Some(descriptor));
+            }
+            return Ok(None);
         }
 
         Ok(None)
@@ -111,6 +109,37 @@ impl IpnDhtService {
 
     fn key_for(id: &FileId) -> Vec<u8> {
         id.as_bytes().to_vec()
+    }
+
+    fn cache_descriptor_from_dht(
+        &self,
+        requested_id: &FileId,
+        descriptor: FileDescriptor,
+    ) -> Option<FileDescriptor> {
+        if descriptor.id != *requested_id {
+            warn!(
+                ?requested_id,
+                received = ?descriptor.id,
+                "Rejected descriptor with mismatched id"
+            );
+            return None;
+        }
+
+        let mut cache = self.cache.write();
+        if let Some(existing) = cache.get(requested_id) {
+            if existing.descriptor != descriptor {
+                warn!(?requested_id, "Rejected conflicting descriptor fields");
+                return Some(existing.descriptor.clone());
+            }
+        }
+
+        cache.insert(
+            descriptor.id,
+            CachedDescriptor {
+                descriptor: descriptor.clone(),
+            },
+        );
+        Some(descriptor)
     }
 
     pub async fn publish_handle(&self, record: &HandleDhtRecord) -> Result<()> {
@@ -288,6 +317,45 @@ mod tests {
             .expect("lookup result");
         assert_eq!(lookup.file_id, descriptor.id);
         assert_eq!(lookup.providers.len(), 0);
+    }
+
+    #[test]
+    fn rejects_mismatched_descriptor_from_dht() {
+        let service = IpnDhtService::new(None);
+        let descriptor = sample_descriptor();
+        let other = sample_descriptor();
+        assert_ne!(descriptor.id, other.id);
+
+        let result = service.cache_descriptor_from_dht(&descriptor.id, other.clone());
+        assert!(result.is_none());
+        assert!(service.cache.read().get(&other.id).is_none());
+        assert!(service.cache.read().get(&descriptor.id).is_none());
+    }
+
+    #[test]
+    fn conflicting_descriptor_keeps_cached_version() {
+        let service = IpnDhtService::new(None);
+        let descriptor = sample_descriptor();
+        service.cache.write().insert(
+            descriptor.id,
+            CachedDescriptor {
+                descriptor: descriptor.clone(),
+            },
+        );
+
+        let mut conflicting = descriptor.clone();
+        conflicting.size_bytes += 512;
+
+        let returned = service
+            .cache_descriptor_from_dht(&descriptor.id, conflicting)
+            .expect("cached descriptor returned");
+
+        assert_eq!(returned.id, descriptor.id);
+        assert_eq!(returned.size_bytes, descriptor.size_bytes);
+
+        let cache_guard = service.cache.read();
+        let cached = cache_guard.get(&descriptor.id).unwrap();
+        assert_eq!(cached.descriptor.size_bytes, descriptor.size_bytes);
     }
 
     fn sample_handle_record() -> HandleDhtRecord {
