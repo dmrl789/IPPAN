@@ -1,0 +1,45 @@
+# IPPAN node production configuration template
+# Copy this file to /etc/ippan/config.toml and adjust values per environment.
+
+[rpc]
+# RPC bind address; keep on loopback and front with TLS proxy.
+bind = "127.0.0.1"
+# Public port exposed via reverse proxy.
+port = 8080
+# Disable dev helpers in production.
+dev_mode = false
+
+[p2p]
+# External interface for libp2p / gossip.
+bind = "0.0.0.0"
+port = 9000
+# Bootstrap peers reachable from this node.
+bootstrap_nodes = "https://seed1.ippan.net:9000,https://seed2.ippan.net:9000"
+# Conservative peer limit for small servers.
+max_peers = 48
+
+[dht]
+# File/state DHT backend: stub | libp2p (libp2p recommended for production).
+mode = "libp2p"
+# Handle registry DHT backend: stub until production relays are live.
+handle_mode = "stub"
+# Listening multiaddrs for libp2p transports (comma-separated).
+listen_multiaddrs = "/ip4/0.0.0.0/tcp/9100"
+# Bootstrap peers for the libp2p swarm.
+bootstrap_multiaddrs = ""
+
+[consensus]
+# Runtime mode: PoA (default) or DLC when the AI fairness pipeline is enabled.
+mode = "PoA"
+# Toggle DLC consensus extensions.
+enable_dlc = false
+
+[storage]
+# Persistent data directory.
+data_dir = "/var/lib/ippan"
+# Path to sled database files.
+db_path = "/var/lib/ippan/db"
+
+[security]
+# Enforce RPC security manager / IP policy.
+enable = true

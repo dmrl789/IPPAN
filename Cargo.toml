@@ -77,6 +77,13 @@ file = "Cargo.toml"
 search = 'version = "{{prev_version}}" # metadata-version'
 replace = 'version = "{{version}}" # metadata-version'
 
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [workspace.dependencies]
 # --------------------------
 # Core libraries
