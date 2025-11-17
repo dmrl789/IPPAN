@@ -3,7 +3,7 @@
 //! Implements deterministic exact-greedy decision tree construction
 //! with fixed-point arithmetic only.
 
-use ippan_ai_core::gbdt_legacy::{Node, Tree};
+use ippan_ai_core::gbdt::tree::Node;
 use std::collections::BTreeMap;
 
 use crate::deterministic::SplitTieBreaker;
@@ -94,14 +94,14 @@ impl CartBuilder {
         }
     }
 
-    /// Build tree and return nodes
-    pub fn build(&self) -> Tree {
+    /// Build tree and return deterministic nodes
+    pub fn build(&self) -> Vec<Node> {
         let mut nodes = Vec::new();
         let indices: Vec<usize> = (0..self.samples.len()).collect();
 
         self.build_node(&indices, 0, &mut nodes, 0);
 
-        Tree { nodes }
+        nodes
     }
 
     /// Recursively build tree nodes
@@ -111,21 +111,15 @@ impl CartBuilder {
         depth: usize,
         nodes: &mut Vec<Node>,
         node_id: usize,
-    ) -> u16 {
-        let current_idx = nodes.len() as u16;
+    ) -> i32 {
+        let current_idx = nodes.len() as i32;
 
         // Calculate leaf value
         let leaf_value = self.calculate_leaf_value(indices);
 
         // Check stopping conditions
         if depth >= self.config.max_depth || indices.len() < 2 * self.config.min_samples_leaf {
-            nodes.push(Node {
-                feature_index: 0,
-                threshold: 0,
-                left: 0,
-                right: 0,
-                value: Some(leaf_value),
-            });
+            nodes.push(Node::leaf(current_idx, leaf_value));
             return current_idx;
         }
 
@@ -134,13 +128,7 @@ impl CartBuilder {
             Some(s) => s,
             None => {
                 // No valid split, create leaf
-                nodes.push(Node {
-                    feature_index: 0,
-                    threshold: 0,
-                    left: 0,
-                    right: 0,
-                    value: Some(leaf_value),
-                });
+                nodes.push(Node::leaf(current_idx, leaf_value));
                 return current_idx;
             }
         };
@@ -153,24 +141,18 @@ impl CartBuilder {
             || right_indices.len() < self.config.min_samples_leaf
         {
             // Split would violate min_samples_leaf, create leaf
-            nodes.push(Node {
-                feature_index: 0,
-                threshold: 0,
-                left: 0,
-                right: 0,
-                value: Some(leaf_value),
-            });
+            nodes.push(Node::leaf(current_idx, leaf_value));
             return current_idx;
         }
 
         // Reserve space for current node
-        nodes.push(Node {
-            feature_index: split.feature_idx as u16,
-            threshold: split.threshold,
-            left: 0,
-            right: 0,
-            value: None,
-        });
+        nodes.push(Node::internal(
+            current_idx,
+            split.feature_idx as i32,
+            split.threshold,
+            -1,
+            -1,
+        ));
 
         // Build left and right subtrees
         let left_idx = self.build_node(&left_indices, depth + 1, nodes, node_id * 2 + 1);
@@ -304,16 +286,15 @@ impl CartBuilder {
     }
 
     /// Calculate optimal leaf value: -G/H
-    fn calculate_leaf_value(&self, indices: &[usize]) -> i32 {
+    fn calculate_leaf_value(&self, indices: &[usize]) -> i64 {
         let (sum_g, sum_h) = self.sum_gradients_hessians(indices);
 
         if sum_h == 0 {
             return 0;
         }
 
-        // Scale to maintain precision
-        let value = -((sum_g as i128 * 1000) / sum_h as i128) as i64;
-        value.clamp(i32::MIN as i64, i32::MAX as i64) as i32
+        let value = -((sum_g as i128) / sum_h as i128) as i64;
+        value
     }
 }
 
@@ -339,10 +320,10 @@ mod tests {
         };
 
         let builder = CartBuilder::new(&features, &gradients, &hessians, config);
-        let tree = builder.build();
+        let nodes = builder.build();
 
-        assert!(!tree.nodes.is_empty());
-        assert!(tree.nodes[0].value.is_some() || tree.nodes[0].value.is_none());
+        assert!(!nodes.is_empty());
+        assert!(nodes[0].leaf.is_some() || nodes[0].leaf.is_none());
     }
 
     #[test]
@@ -353,9 +334,9 @@ mod tests {
 
         let config = TreeConfig::default();
         let builder = CartBuilder::new(&features, &gradients, &hessians, config);
-        let tree = builder.build();
+        let nodes = builder.build();
 
-        assert_eq!(tree.nodes.len(), 1);
-        assert!(tree.nodes[0].value.is_some());
+        assert_eq!(nodes.len(), 1);
+        assert!(nodes[0].leaf.is_some());
     }
 }

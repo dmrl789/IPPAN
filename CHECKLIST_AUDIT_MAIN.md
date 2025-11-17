@@ -27,6 +27,17 @@ _Generated: 2025-11-15_
 
 Operators can now fetch the live AI model hash and stub/real status via RPC, making the deterministic pipeline observable.
 
+- [x] `ai_trainer` crate trains deterministic models and exports them in the
+      `ippan-ai-core` fixed-point format with canonical JSON + BLAKE3 hash.
+- [x] All trained models live under `models/` with documented naming and
+      lifecycle guidance (`models/README.md`).
+- [x] `config/dlc.toml` links to a canonical model path and expected hash so
+      `ai_registry` can reject mismatches at startup.
+- [x] `docs/AI_MODEL_LIFECYCLE.md` and `docs/AI_TRAINING_DATASET.md` describe
+      the dataset schema and full model lifecycle.
+- [ ] CI automation to cross-check `expected_hash` values against the on-disk
+      JSON artifacts (future work).
+
 ## 4. No Floats in Runtime
 - [x] Runtime crates now avoid `f64`/`f32` usages: currency/L2 types use atomic units, governance/economics/security/network/core/rpc modules all compute with fixed-point integers or ratios.
 - [x] `.github/workflows/no-float-runtime.yml` exists and targets `main`.
