@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Arg, ArgAction, Command};
-use config::Config;
+use config::{Config, File};
 use hex::encode as hex_encode;
 use ippan_consensus::{
     DLCConfig, DLCIntegratedConsensus, PoAConfig, PoAConsensus, Validator, VALIDATOR_BOND_AMOUNT,
@@ -25,7 +25,7 @@ use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::net::IpAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -137,11 +137,17 @@ struct AppConfig {
 }
 
 impl AppConfig {
-    fn load() -> Result<Self> {
-        // Load from environment variables with defaults
-        let config = Config::builder()
-            .add_source(config::Environment::with_prefix("IPPAN"))
-            .build()?;
+    fn load(config_path: Option<&str>) -> Result<Self> {
+        // Load from optional file first (so env vars can override)
+        let mut builder = Config::builder();
+
+        if let Some(path) = config_path {
+            builder = builder.add_source(File::from(Path::new(path)));
+        }
+
+        builder = builder.add_source(config::Environment::with_prefix("IPPAN"));
+
+        let config = builder.build()?;
 
         // Parse validator ID from hex string
         let validator_id_str = config.get_string("VALIDATOR_ID").unwrap_or_else(|_| {
@@ -403,7 +409,10 @@ async fn main() -> Result<()> {
         .get_matches();
 
     // Load configuration
-    let mut config = AppConfig::load()?;
+    let config_path = matches
+        .get_one::<String>("config")
+        .map(|value| value.as_str());
+    let mut config = AppConfig::load(config_path)?;
 
     // Override with command line arguments
     if let Some(data_dir) = matches.get_one::<String>("data-dir") {

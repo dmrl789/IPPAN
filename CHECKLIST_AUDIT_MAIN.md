@@ -61,6 +61,8 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 
 ## 9. End-to-End Demo
 - [x] End-to-end dev demo for handles + payments + files + AI/DHT status documented in `docs/demo_end_to_end_ippan.md` and automated via `scripts/demo_ippan_full_flow.sh`.
+- [x] Three-node localnet demo (handles + payments + file DHT) documented in `docs/localnet_three_node_demo.md` with configs + scripts under `localnet/` and `scripts/localnet_*`.
+- [ ] Multi-node soak / longevity tests for the localnet (long-running gossip + DLC stress) are still pending.
 
 ## 10. RPC & Security
 - [x] All RPC routes now share the existing `SecurityManager` guard + rate limiter so read/write endpoints enforce IP/rate policies consistently (`crates/rpc/src/server.rs`).
