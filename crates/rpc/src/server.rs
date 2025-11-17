@@ -19,6 +19,8 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ed25519_dalek::{Signer, SigningKey};
+#[cfg(test)]
+use http_body_util::BodyExt;
 use ippan_consensus::PoAConsensus;
 use ippan_consensus_dlc::AiConsensusStatus;
 use ippan_files::{FileDhtService, FileStorage};
@@ -32,6 +34,7 @@ use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, Storage};
 use ippan_types::address::{decode_address, encode_address};
+use ippan_types::health::{HealthStatus, NodeHealth, NodeHealthContext};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
     Amount, Block, HandleOperation, HandleRegisterOp, L2Commit, L2ExitRecord, L2Network,
@@ -86,6 +89,7 @@ pub struct AppState {
     pub p2p_network: Option<Arc<HttpP2PNetwork>>,
     pub tx_sender: Option<mpsc::UnboundedSender<Transaction>>,
     pub node_id: String,
+    pub consensus_mode: String,
     pub consensus: Option<ConsensusHandle>,
     pub ai_status: Option<AiStatusHandle>,
     pub l2_config: L2Config,
@@ -96,10 +100,12 @@ pub struct AppState {
     pub metrics: Option<PrometheusHandle>,
     pub file_storage: Option<Arc<dyn FileStorage>>,
     pub file_dht: Option<Arc<dyn FileDhtService>>,
+    pub dht_file_mode: String,
     pub dev_mode: bool,
     pub handle_registry: Arc<L2HandleRegistry>,
     pub handle_anchors: Arc<L1HandleAnchorStorage>,
     pub handle_dht: Option<Arc<dyn HandleDhtService>>,
+    pub dht_handle_mode: String,
 }
 
 type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
@@ -970,7 +976,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     );
 
     let mut router = Router::new()
-        .route("/health", get(handle_health))
+        .route("/health", get(handle_get_health))
         .route("/status", get(handle_status))
         .route("/time", get(handle_time))
         .route("/version", get(handle_version))
@@ -1107,23 +1113,79 @@ async fn deny_request(
 // Handlers
 // -----------------------------------------------------------------------------
 
-async fn handle_health(
+async fn build_health_snapshot(state: &Arc<AppState>) -> HealthStatus {
+    let peer_count = state.peer_count.load(Ordering::Relaxed) as u64;
+    let mempool_size = state.mempool.size() as u64;
+    let uptime_seconds = state.start_time.elapsed().as_secs();
+    let requests_served = state.req_count.load(Ordering::Relaxed) as u64;
+
+    let ai_enabled = if let Some(handle) = &state.ai_status {
+        handle.snapshot().await.enabled
+    } else {
+        false
+    };
+
+    let (consensus_healthy, last_consensus_round) = if let Some(consensus) = &state.consensus {
+        match consensus.snapshot().await {
+            Ok(view) => (true, Some(view.round)),
+            Err(err) => {
+                warn!("Failed to snapshot consensus state for /health: {}", err);
+                (false, None)
+            }
+        }
+    } else {
+        (false, None)
+    };
+
+    let (mut storage_healthy, last_finalized_round) =
+        match state.storage.get_latest_round_finalization() {
+            Ok(record) => (true, record.map(|entry| entry.round)),
+            Err(err) => {
+                warn!("Failed to read latest finalization for /health: {}", err);
+                (false, None)
+            }
+        };
+
+    if let Err(err) = state.storage.get_latest_height() {
+        warn!("Failed to read latest height for /health: {}", err);
+        storage_healthy = false;
+    }
+
+    let context = NodeHealthContext {
+        consensus_mode: state.consensus_mode.clone(),
+        consensus_healthy,
+        ai_enabled,
+        dht_file_mode: state.dht_file_mode.clone(),
+        dht_handle_mode: state.dht_handle_mode.clone(),
+        dht_healthy: state.file_dht.is_some() || state.handle_dht.is_some(),
+        rpc_healthy: true,
+        storage_healthy,
+        last_finalized_round,
+        last_consensus_round,
+        peer_count,
+        mempool_size,
+        uptime_seconds,
+        requests_served,
+        node_id: state.node_id.clone(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        dev_mode: state.dev_mode,
+    };
+
+    NodeHealth::snapshot(context)
+}
+
+async fn handle_get_health(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
+) -> Result<Json<HealthStatus>, (StatusCode, &'static str)> {
     const ENDPOINT: &str = "/health";
     if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
         return Err(deny_request(&state, &addr, ENDPOINT, err).await);
     }
 
+    let snapshot = build_health_snapshot(&state).await;
     record_security_success(&state, &addr, ENDPOINT).await;
-    Ok(Json(serde_json::json!({
-        "status": "healthy",
-        "timestamp": ippan_time_now(),
-        "version": env!("CARGO_PKG_VERSION"),
-        "peer_count": state.peer_count.load(Ordering::Relaxed),
-        "chain_id": state.l2_config.max_l2_count
-    })))
+    Ok(Json(snapshot))
 }
 
 async fn handle_status(
@@ -2551,7 +2613,7 @@ mod tests {
     use tokio::time::{sleep, Duration};
 
     #[tokio::test]
-    async fn test_health_endpoint() {
+    async fn test_handle_get_health_basic() {
         let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::default());
         let file_dht: Arc<dyn FileDhtService> = Arc::new(StubFileDhtService::new());
         let handle_registry = Arc::new(L2HandleRegistry::new());
@@ -2564,6 +2626,7 @@ mod tests {
             p2p_network: None,
             tx_sender: None,
             node_id: "test-node".into(),
+            consensus_mode: "poa".into(),
             consensus: None,
             ai_status: None,
             l2_config: L2Config {
@@ -2580,17 +2643,21 @@ mod tests {
             metrics: None,
             file_storage: Some(file_storage),
             file_dht: Some(file_dht),
+            dht_file_mode: "stub".into(),
             dev_mode: true,
             handle_registry,
             handle_anchors,
             handle_dht: Some(handle_dht),
+            dht_handle_mode: "stub".into(),
         });
 
         let addr: SocketAddr = "127.0.0.1:6000".parse().unwrap();
-        let Json(json) = handle_health(State(app_state), ConnectInfo(addr))
+        let Json(status) = handle_get_health(State(app_state), ConnectInfo(addr))
             .await
             .expect("health");
-        assert_eq!(json.get("status").unwrap(), "healthy");
+        assert_eq!(status.consensus_mode, "poa");
+        assert!(status.rpc_healthy);
+        assert_eq!(status.peer_count, 0);
     }
 
     #[tokio::test]
@@ -2672,6 +2739,7 @@ mod tests {
             p2p_network: None,
             tx_sender: None,
             node_id: "test-node".into(),
+            consensus_mode: "poa".into(),
             consensus: None,
             ai_status: None,
             l2_config: L2Config {
@@ -2688,10 +2756,12 @@ mod tests {
             metrics: None,
             file_storage: Some(file_storage),
             file_dht: Some(file_dht),
+            dht_file_mode: "stub".into(),
             dev_mode: true,
             handle_registry,
             handle_anchors,
             handle_dht: Some(handle_dht),
+            dht_handle_mode: "stub".into(),
         })
     }
 
@@ -4230,6 +4300,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_handle_get_metrics_basic() {
+        use metrics::{Key, Level, Metadata, Recorder};
+        use metrics_exporter_prometheus::PrometheusBuilder;
+
+        let recorder = PrometheusBuilder::new().build_recorder();
+        let handle = recorder.handle();
+        let key = Key::from_static_name("rpc_test_counter");
+        let metadata = Metadata::new("rpc::tests", Level::INFO, Some(module_path!()));
+        let counter = recorder.register_counter(&key, &metadata);
+        counter.increment(1);
+
+        let mut state = (*make_app_state()).clone();
+        state.metrics = Some(handle);
+        let state = Arc::new(state);
+
+        let addr: SocketAddr = "127.0.0.1:8450".parse().unwrap();
+        let response = handle_metrics(State(state), ConnectInfo(addr))
+            .await
+            .expect("metrics");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = BodyExt::collect(response.into_body())
+            .await
+            .expect("collect metrics body")
+            .to_bytes();
+        assert!(!body.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_guard_request_with_security_failure() {
         let dir = tempdir().expect("tempdir");
         let config = SecurityConfig {
@@ -4332,6 +4431,7 @@ mod tests {
             p2p_network: Some(network),
             tx_sender: None,
             node_id: "test-node".into(),
+            consensus_mode: "poa".into(),
             consensus: None,
             ai_status: None,
             l2_config: L2Config {
@@ -4348,10 +4448,12 @@ mod tests {
             metrics: None,
             file_storage: Some(file_storage),
             file_dht: Some(file_dht),
+            dht_file_mode: "stub".into(),
             dev_mode: true,
             handle_registry,
             handle_anchors,
             handle_dht: Some(handle_dht),
+            dht_handle_mode: "stub".into(),
         });
 
         let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();
