@@ -279,17 +279,55 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
         ))
     })?;
 
-    let model_path_str = config
-        .get("dgbdt")
-        .and_then(|v| v.get("d_gbdt_model_path"))
+    let (model_path_str, expected_hash) = extract_model_entry(&config)?;
+
+    let full_path = resolve_model_path(config_path, Path::new(&model_path_str));
+    let (model, hash) = load_model_from_path(&full_path)?;
+
+    if let Some(expected) = expected_hash {
+        if !hash.eq_ignore_ascii_case(&expected) {
+            return Err(RegistryError::InvalidInput(format!(
+                "Configured expected hash {} does not match model hash {}",
+                expected, hash
+            )));
+        }
+    }
+
+    Ok((model, hash))
+}
+
+fn extract_model_entry(config: &toml::Value) -> Result<(String, Option<String>)> {
+    let dgbdt_table = config.get("dgbdt").ok_or_else(|| {
+        RegistryError::InvalidInput("Missing 'dgbdt' section in config".to_string())
+    })?;
+
+    if let Some(model_table) = dgbdt_table.get("model") {
+        let path = model_table
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                RegistryError::InvalidInput("Missing 'dgbdt.model.path' in config".to_string())
+            })?
+            .to_string();
+        let expected_hash = model_table
+            .get("expected_hash")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        return Ok((path, expected_hash));
+    }
+
+    // Fallback to legacy flat field for backwards compatibility
+    let path = dgbdt_table
+        .get("d_gbdt_model_path")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            RegistryError::InvalidInput("Missing 'dgbdt.d_gbdt_model_path' in config".to_string())
-        })?;
+            RegistryError::InvalidInput(
+                "Missing 'dgbdt.model.path' or legacy 'dgbdt.d_gbdt_model_path' in config".to_string(),
+            )
+        })?
+        .to_string();
 
-    let full_path = resolve_model_path(config_path, Path::new(model_path_str));
-
-    load_model_from_path(&full_path)
+    Ok((path, None))
 }
 
 fn resolve_model_path(config_path: &Path, model_path: &Path) -> PathBuf {
@@ -501,11 +539,17 @@ mod tests {
         let model_path = models_dir.join("model.json");
         std::fs::write(&model_path, serde_json::to_string(&model).unwrap()).unwrap();
 
+        let hash = compute_model_hash(&model).unwrap();
         let config_path = config_dir.join("dlc.toml");
-        let config_contents = r#"
+        let config_contents = format!(
+            r#"
 [dgbdt]
-d_gbdt_model_path = "models/model.json"
-"#;
+  [dgbdt.model]
+  path = "models/model.json"
+  expected_hash = "{}"
+"#,
+            hash
+        );
         std::fs::write(&config_path, config_contents).unwrap();
 
         let (activated_model, hash) = registry
@@ -516,6 +560,33 @@ d_gbdt_model_path = "models/model.json"
         let stored = registry.get_active_model().unwrap();
         assert_eq!(stored.1, hash);
         assert_eq!(stored.0.trees.len(), model.trees.len());
+    }
+
+    #[test]
+    fn test_expected_hash_mismatch() {
+        let (_registry, temp_dir) = create_test_registry();
+        let root = temp_dir.path();
+
+        let config_dir = root.join("config");
+        let models_dir = root.join("models");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(&models_dir).unwrap();
+
+        let model = create_test_model();
+        let model_path = models_dir.join("model.json");
+        std::fs::write(&model_path, serde_json::to_string(&model).unwrap()).unwrap();
+
+        let config_path = config_dir.join("dlc.toml");
+        let config_contents = r#"
+[dgbdt]
+  [dgbdt.model]
+  path = "models/model.json"
+  expected_hash = "deadbeef"
+"#;
+        std::fs::write(&config_path, config_contents).unwrap();
+
+        let result = load_model_from_config(&config_path);
+        assert!(matches!(result, Err(RegistryError::InvalidInput(_))));
     }
 
     #[test]

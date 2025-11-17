@@ -1,12 +1,40 @@
 //! CSV dataset loading and preprocessing
 //!
-//! Reads integer-only datasets (already scaled to SCALE = 1_000_000)
-//! and provides deterministic shuffling and splitting.
+//! Reads validator telemetry exported as deterministic CSV. All values must be
+//! integers that are already scaled to the runtime SCALE (1_000_000 for micros)
+//! and each row must be sorted by `(validator_id, timestamp)`.
 
 use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::deterministic::xxhash64_i64;
+
+/// Dataset columns required for training.
+pub static DATASET_COLUMNS: Lazy<Vec<&'static str>> = Lazy::new(|| {
+    vec![
+        "validator_id",
+        "timestamp",
+        "uptime_micros",
+        "latency_micros",
+        "votes_cast",
+        "votes_missed",
+        "stake_atomic",
+        "label",
+    ]
+});
+
+/// Feature columns used as model inputs (in this specific order).
+pub static FEATURE_COLUMNS: Lazy<Vec<&'static str>> = Lazy::new(|| {
+    vec![
+        "uptime_micros",
+        "latency_micros",
+        "votes_cast",
+        "votes_missed",
+        "stake_atomic",
+    ]
+});
 
 /// Training dataset with integer features and targets
 #[derive(Clone, Debug)]
@@ -14,55 +42,110 @@ pub struct Dataset {
     pub features: Vec<Vec<i64>>,
     pub targets: Vec<i64>,
     pub feature_count: usize,
+    pub feature_names: Vec<String>,
+}
+
+/// Per-feature statistics used for diagnostics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FeatureStats {
+    pub name: String,
+    pub min: i64,
+    pub max: i64,
 }
 
 impl Dataset {
-    /// Load dataset from CSV file
-    /// Expected format: feature1,feature2,...,target
-    /// All values must be integers (pre-scaled)
+    /// Load dataset from CSV file with a deterministic header.
+    ///
+    /// Expected header columns:
+    /// `validator_id,timestamp,uptime_micros,latency_micros,votes_cast,votes_missed,stake_atomic,label`
     pub fn from_csv<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref()).context("Failed to read CSV file")?;
 
+        let mut lines = content.lines().enumerate();
+        let mut header: Option<Vec<String>> = None;
+
+        // Find the first non-empty, non-comment line as header.
+        while let Some((_, raw_line)) = lines.next() {
+            let line = raw_line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            header = Some(
+                line
+                    .split(',')
+                    .map(|part| part.trim().to_string())
+                    .collect(),
+            );
+            break;
+        }
+
+        let header = header.ok_or_else(|| anyhow::anyhow!("Dataset is missing a header row"))?;
+        let mut header_map = HashMap::new();
+        for (idx, name) in header.iter().enumerate() {
+            header_map.insert(name.as_str(), idx);
+        }
+
+        for col in DATASET_COLUMNS.iter() {
+            if !header_map.contains_key(col) {
+                anyhow::bail!("Missing required column '{col}' in dataset header");
+            }
+        }
+
+        let feature_indices: Vec<usize> = FEATURE_COLUMNS
+            .iter()
+            .map(|name| header_map[name])
+            .collect();
+        let label_index = header_map["label"];
+        let validator_index = header_map["validator_id"];
+        let timestamp_index = header_map["timestamp"];
+
         let mut features = Vec::new();
         let mut targets = Vec::new();
-        let mut feature_count = 0;
+        let mut prev_key: Option<(i64, i64)> = None;
 
-        for (line_idx, line) in content.lines().enumerate() {
-            let line = line.trim();
+        for (line_idx, raw_line) in lines {
+            let line = raw_line.trim();
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
 
             let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-            if parts.len() < 2 {
-                anyhow::bail!("Line {}: expected at least 2 columns", line_idx + 1);
-            }
-
-            if feature_count == 0 {
-                feature_count = parts.len() - 1;
-            } else if parts.len() - 1 != feature_count {
+            if parts.len() != header.len() {
                 anyhow::bail!(
-                    "Line {}: expected {} features, got {}",
+                    "Line {}: expected {} columns, found {}",
                     line_idx + 1,
-                    feature_count,
-                    parts.len() - 1
+                    header.len(),
+                    parts.len()
                 );
             }
 
-            let mut row_features = Vec::with_capacity(feature_count);
-            for (i, part) in parts.iter().take(feature_count).enumerate() {
-                let val = part.parse::<i64>().with_context(|| {
-                    format!("Line {}, column {}: invalid integer", line_idx + 1, i + 1)
-                })?;
-                row_features.push(val);
+            let parse = |idx: usize| -> Result<i64> {
+                parts[idx].parse::<i64>().with_context(|| {
+                    format!("Line {} column {} ('{}') is not an integer", line_idx + 1, idx + 1, parts[idx])
+                })
+            };
+
+            let validator_id = parse(validator_index)?;
+            let timestamp = parse(timestamp_index)?;
+
+            if let Some(prev) = prev_key {
+                if (validator_id, timestamp) < prev {
+                    anyhow::bail!(
+                        "Line {}: dataset must be sorted by validator_id,timestamp",
+                        line_idx + 1
+                    );
+                }
+            }
+            prev_key = Some((validator_id, timestamp));
+
+            let mut row_features = Vec::with_capacity(feature_indices.len());
+            for &idx in &feature_indices {
+                row_features.push(parse(idx)?);
             }
 
-            let target = parts[feature_count]
-                .parse::<i64>()
-                .with_context(|| format!("Line {}: invalid target", line_idx + 1))?;
-
+            let label = parse(label_index)?;
+            targets.push(label);
             features.push(row_features);
-            targets.push(target);
         }
 
         if features.is_empty() {
@@ -70,9 +153,10 @@ impl Dataset {
         }
 
         Ok(Self {
+            feature_count: feature_indices.len(),
+            feature_names: FEATURE_COLUMNS.iter().map(|s| s.to_string()).collect(),
             features,
             targets,
-            feature_count,
         })
     }
 
@@ -115,17 +199,26 @@ impl Dataset {
     }
 
     /// Get feature statistics for validation
-    pub fn feature_stats(&self) -> Vec<(i64, i64)> {
-        let mut stats = vec![(i64::MAX, i64::MIN); self.feature_count];
+    pub fn feature_stats(&self) -> Vec<FeatureStats> {
+        let mut mins = vec![i64::MAX; self.feature_count];
+        let mut maxs = vec![i64::MIN; self.feature_count];
 
         for row in &self.features {
-            for (i, &val) in row.iter().enumerate() {
-                stats[i].0 = stats[i].0.min(val);
-                stats[i].1 = stats[i].1.max(val);
+            for (idx, &val) in row.iter().enumerate() {
+                mins[idx] = mins[idx].min(val);
+                maxs[idx] = maxs[idx].max(val);
             }
         }
 
-        stats
+        self.feature_names
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| FeatureStats {
+                name: name.clone(),
+                min: mins[idx],
+                max: maxs[idx],
+            })
+            .collect()
     }
 }
 
@@ -137,9 +230,13 @@ mod tests {
 
     fn create_test_csv() -> Result<NamedTempFile> {
         let mut file = NamedTempFile::new()?;
-        writeln!(file, "100,200,300,1")?;
-        writeln!(file, "150,250,350,2")?;
-        writeln!(file, "200,300,400,3")?;
+        writeln!(
+            file,
+            "validator_id,timestamp,uptime_micros,latency_micros,votes_cast,votes_missed,stake_atomic,label"
+        )?;
+        writeln!(file, "1,100,100,20,10,0,500,1000")?;
+        writeln!(file, "1,200,150,25,12,1,500,1100")?;
+        writeln!(file, "2,100,200,30,15,0,600,1200")?;
         file.flush()?;
         Ok(file)
     }
@@ -150,9 +247,9 @@ mod tests {
         let dataset = Dataset::from_csv(file.path())?;
 
         assert_eq!(dataset.len(), 3);
-        assert_eq!(dataset.feature_count, 3);
-        assert_eq!(dataset.features[0], vec![100, 200, 300]);
-        assert_eq!(dataset.targets[0], 1);
+        assert_eq!(dataset.feature_count, FEATURE_COLUMNS.len());
+        assert_eq!(dataset.features[0], vec![100, 20, 10, 0, 500]);
+        assert_eq!(dataset.targets[0], 1000);
 
         Ok(())
     }
@@ -178,10 +275,8 @@ mod tests {
         let dataset = Dataset::from_csv(file.path())?;
 
         let stats = dataset.feature_stats();
-        assert_eq!(stats.len(), 3);
-        assert_eq!(stats[0], (100, 200)); // min, max for feature 0
-        assert_eq!(stats[1], (200, 300));
-        assert_eq!(stats[2], (300, 400));
+        assert_eq!(stats.len(), FEATURE_COLUMNS.len());
+        assert_eq!(stats[0], FeatureStats { name: "uptime_micros".into(), min: 100, max: 200 });
 
         Ok(())
     }

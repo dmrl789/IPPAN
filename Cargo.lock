@@ -2849,6 +2849,7 @@ dependencies = [
  "clap",
  "hex",
  "ippan-ai-core",
+ "once_cell",
  "serde",
  "serde_json",
  "tempfile",

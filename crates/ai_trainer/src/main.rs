@@ -1,165 +1,105 @@
 //! IPPAN GBDT Trainer CLI
 //!
-//! Deterministic offline trainer for producing reproducible GBDT models.
+//! Provides a deterministic offline entrypoint for training consensus models.
 
 use anyhow::{Context, Result};
-use clap::Parser;
-use ippan_ai_core::serialization::canonical_json_string;
-use ippan_ai_trainer::{Dataset, GbdtConfig, GbdtTrainer};
+use clap::{Args, Parser, Subcommand};
+use ippan_ai_core::{canonical_model_json, model_hash_hex};
+use ippan_ai_trainer::{train_model_from_csv, TrainingParams};
+use std::fs;
 use std::path::PathBuf;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 #[derive(Parser, Debug)]
-#[command(name = "ippan-train")]
+#[command(name = "ai-trainer")]
 #[command(author = "IPPAN Contributors")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Deterministic GBDT trainer for IPPAN blockchain", long_about = None)]
-struct Args {
-    /// Input CSV dataset path (integer columns, last column is target)
-    #[arg(short, long)]
-    input: PathBuf,
+#[command(about = "Deterministic D-GBDT trainer", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    /// Output directory for model and hash
-    #[arg(short, long, default_value = "models/gbdt")]
-    output: PathBuf,
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Train a deterministic model from a telemetry dataset
+    Train(TrainArgs),
+}
+
+#[derive(Args, Debug)]
+struct TrainArgs {
+    /// Input CSV dataset path
+    #[arg(long)]
+    dataset: PathBuf,
+
+    /// Output model JSON path
+    #[arg(long)]
+    out: PathBuf,
 
     /// Number of boosting trees
-    #[arg(long, default_value = "64")]
-    trees: usize,
+    #[arg(long, default_value_t = 32)]
+    tree_count: usize,
 
     /// Maximum tree depth
-    #[arg(long, default_value = "6")]
+    #[arg(long, default_value_t = 4)]
     max_depth: usize,
 
     /// Minimum samples per leaf
-    #[arg(long, default_value = "32")]
+    #[arg(long, default_value_t = 8)]
     min_samples_leaf: usize,
 
-    /// Learning rate (fixed-point, e.g., 100000 = 0.1)
-    #[arg(long, default_value = "100000")]
-    learning_rate: i64,
+    /// Learning rate in micros (100000 = 0.1)
+    #[arg(long, default_value_t = 100_000)]
+    learning_rate_micro: i64,
 
-    /// Quantization step for feature values
-    #[arg(long, default_value = "1000")]
-    quant_step: i64,
-
-    /// Random seed for deterministic shuffling
-    #[arg(long, default_value = "42")]
-    seed: i64,
-
-    /// Output scale (default 10000)
-    #[arg(long, default_value = "10000")]
-    scale: i32,
-
-    /// Skip dataset shuffling
-    #[arg(long)]
-    no_shuffle: bool,
-
-    /// Verbose logging
-    #[arg(short, long)]
-    verbose: bool,
+    /// Feature quantization step
+    #[arg(long, default_value_t = 10_000)]
+    quantization_step: i64,
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-
-    // Setup logging
-    let log_level = if args.verbose {
-        Level::DEBUG
-    } else {
-        Level::INFO
-    };
+    let cli = Cli::parse();
 
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(log_level)
+        .with_max_level(Level::INFO)
         .with_target(false)
         .finish();
-
     tracing::subscriber::set_global_default(subscriber)
-        .context("Failed to set tracing subscriber")?;
+        .context("failed to initialize logging")?;
 
-    info!(
-        "IPPAN Deterministic GBDT Trainer v{}",
-        env!("CARGO_PKG_VERSION")
-    );
-    info!("═══════════════════════════════════════════");
-
-    // Load dataset
-    info!("Loading dataset from: {}", args.input.display());
-    let mut dataset = Dataset::from_csv(&args.input).context("Failed to load dataset")?;
-
-    info!(
-        "Loaded {} samples with {} features",
-        dataset.len(),
-        dataset.feature_count
-    );
-
-    // Shuffle dataset if requested
-    if !args.no_shuffle {
-        info!("Shuffling dataset with seed: {}", args.seed);
-        dataset.shuffle(args.seed);
+    match cli.command {
+        Commands::Train(args) => run_train(args),
     }
+}
 
-    // Display feature statistics
-    let stats = dataset.feature_stats();
-    info!("Feature statistics:");
-    for (i, (min, max)) in stats.iter().enumerate() {
-        info!("  Feature {}: min={}, max={}", i, min, max);
-    }
+fn run_train(args: TrainArgs) -> Result<()> {
+    info!(dataset = %args.dataset.display(), out = %args.out.display(), starting = true);
 
-    // Configure trainer
-    let config = GbdtConfig {
-        num_trees: args.trees,
+    let params = TrainingParams {
+        tree_count: args.tree_count,
         max_depth: args.max_depth,
         min_samples_leaf: args.min_samples_leaf,
-        learning_rate: args.learning_rate,
-        quant_step: args.quant_step,
-        scale: args.scale,
+        learning_rate_micro: args.learning_rate_micro,
+        quantization_step: args.quantization_step,
     };
 
-    info!("Training configuration:");
-    info!("  Trees: {}", config.num_trees);
-    info!("  Max depth: {}", config.max_depth);
-    info!("  Min samples per leaf: {}", config.min_samples_leaf);
-    info!("  Learning rate: {} (fixed-point)", config.learning_rate);
-    info!("  Quantization step: {}", config.quant_step);
-    info!("  Scale: {}", config.scale);
+    let model = train_model_from_csv(&args.dataset, params)
+        .context("failed to train deterministic model")?;
 
-    // Train model
-    info!("═══════════════════════════════════════════");
-    info!("Starting training...");
-    let trainer = GbdtTrainer::new(config);
-    let model = trainer.train(&dataset)?;
+    let canonical = canonical_model_json(&model).context("failed to canonicalize model")?;
+    fs::create_dir_all(
+        args.out
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from(".")),
+    )
+    .context("failed to create output directory")?;
+    fs::write(&args.out, canonical.as_bytes()).context("failed to write model")?;
 
-    info!("Training complete!");
-    info!("  Bias: {}", model.bias);
-    info!("  Trees: {}", model.trees.len());
-    info!("  Model hash: {}", model.metadata.model_hash);
-
-    // Create output directory
-    std::fs::create_dir_all(&args.output).context("Failed to create output directory")?;
-
-    // Save model as canonical JSON
-    let model_path = args.output.join("active.json");
-    info!("Saving model to: {}", model_path.display());
-
-    let canonical_json = canonical_json_string(&model).context("Failed to serialize model")?;
-
-    std::fs::write(&model_path, &canonical_json).context("Failed to write model file")?;
-
-    // Calculate and save BLAKE3 hash
-    let hash = blake3::hash(canonical_json.as_bytes());
-    let hash_hex = hex::encode(hash.as_bytes());
-
-    let hash_path = args.output.join("active.hash");
-    info!("Saving hash to: {}", hash_path.display());
-    std::fs::write(&hash_path, &hash_hex).context("Failed to write hash file")?;
-
-    info!("═══════════════════════════════════════════");
-    info!("✓ Training completed successfully");
-    info!("  Model: {}", model_path.display());
-    info!("  Hash: {} ({})", hash_path.display(), hash_hex);
+    let hash = model_hash_hex(&model).context("failed to hash model")?;
+    info!(model_hash = %hash);
+    println!("model_hash={}", hash);
 
     Ok(())
 }

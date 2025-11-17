@@ -50,8 +50,10 @@ slash_penalty = 0.10
 performance = 0.10
 stake = 0.05
 
-# Path to the D-GBDT model file
-d_gbdt_model_path = "config/models/d_gbdt_v1.json"
+# Deterministic D-GBDT model artifact
+[dgbdt.model]
+path = "models/dlc/dlc_model_example.json"
+expected_hash = "c549f359dc77fab3739e571d1d404143ac6c31f652588e8846e3770df8d63c26"
 
 [shadow_verifiers]
 # Maximum number of parallel shadow verifiers
