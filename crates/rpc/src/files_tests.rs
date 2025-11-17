@@ -37,6 +37,7 @@ mod tests {
             p2p_network: None,
             tx_sender: None,
             node_id: "test-node".to_string(),
+            consensus_mode: "poa".into(),
             consensus: None,
             ai_status: None,
             l2_config: L2Config {
@@ -53,10 +54,12 @@ mod tests {
             metrics: None,
             file_storage: Some(file_storage),
             file_dht: Some(file_dht),
+            dht_file_mode: "stub".into(),
             dev_mode: true,
             handle_registry,
             handle_anchors,
             handle_dht: Some(handle_dht),
+            dht_handle_mode: "stub".into(),
         }
     }
 

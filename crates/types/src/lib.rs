@@ -9,6 +9,7 @@ pub mod chain_state;
 pub mod currency;
 pub mod file_descriptor;
 pub mod handle;
+pub mod health;
 pub mod l2;
 pub mod receipt;
 pub mod round;
@@ -33,6 +34,9 @@ pub use currency::{denominations, Amount, AtomicIPN, ATOMIC_PER_IPN, IPN_DECIMAL
 
 // File descriptor metadata
 pub use file_descriptor::*;
+
+// Health/observability payloads
+pub use health::*;
 
 // Handle transaction helpers
 pub use handle::*;

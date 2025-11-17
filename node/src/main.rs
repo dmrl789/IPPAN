@@ -23,6 +23,7 @@ use ippan_types::{
 };
 use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use std::fmt;
 use std::net::IpAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
@@ -49,6 +50,16 @@ impl FileDhtMode {
     }
 }
 
+impl fmt::Display for FileDhtMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            FileDhtMode::Stub => "stub",
+            FileDhtMode::Libp2p => "libp2p",
+        };
+        f.write_str(value)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HandleDhtMode {
     Stub,
@@ -61,6 +72,16 @@ impl HandleDhtMode {
             "libp2p" => HandleDhtMode::Libp2p,
             _ => HandleDhtMode::Stub,
         }
+    }
+}
+
+impl fmt::Display for HandleDhtMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            HandleDhtMode::Stub => "stub",
+            HandleDhtMode::Libp2p => "libp2p",
+        };
+        f.write_str(value)
     }
 }
 
@@ -739,6 +760,7 @@ async fn main() -> Result<()> {
         p2p_network: Some(p2p_network_arc.clone()),
         tx_sender: Some(tx_sender.clone()),
         node_id: config.node_id.clone(),
+        consensus_mode: config.consensus_mode.clone(),
         consensus: Some(consensus_handle.clone()),
         ai_status: ai_status_handle,
         l2_config,
@@ -749,10 +771,12 @@ async fn main() -> Result<()> {
         metrics: prometheus_handle.clone(),
         file_storage: Some(file_storage),
         file_dht: Some(file_dht),
+        dht_file_mode: config.file_dht_mode.to_string(),
         dev_mode: config.dev_mode,
         handle_registry: handle_registry.clone(),
         handle_anchors: handle_anchors.clone(),
         handle_dht: Some(handle_dht.clone()),
+        dht_handle_mode: config.handle_dht_mode.to_string(),
     };
 
     let rpc_host = &config.rpc_host;

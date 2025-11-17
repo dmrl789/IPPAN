@@ -3245,6 +3245,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "http-body-util",
  "igd",
  "ippan-consensus",
  "ippan-consensus-dlc",

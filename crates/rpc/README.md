@@ -108,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         p2p_network: None,
         tx_sender: None,
         node_id: "node-1".into(),
+        consensus_mode: "poa".into(),
         consensus: None,
         ai_status: None,
         l2_config,
@@ -116,7 +117,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         req_count: Arc::new(AtomicUsize::new(0)),
         security: None,
         metrics: None,
+        file_storage: None,
+        file_dht: None,
+        dht_file_mode: "stub".into(),
         dev_mode: false,
+        handle_registry: Arc::new(/* registry */),
+        handle_anchors: Arc::new(/* anchors */),
+        handle_dht: None,
+        dht_handle_mode: "stub".into(),
     };
 
     start_server(state, "0.0.0.0:9000").await?;

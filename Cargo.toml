@@ -196,6 +196,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 url = "2.5"
 igd = { version = "0.12", features = ["aio", "tokio"] }
 local-ip-address = "0.6"
+http-body-util = "0.1"
 
 # --------------------------
 # REST APIs and Web interfaces
