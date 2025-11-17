@@ -104,3 +104,9 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `ippan-node snapshot export/import` subcommands run maintenance flows without starting networking.
 - [x] `docs/STORAGE_AND_SNAPSHOTS.md` documents the layout, snapshot workflow, and crash-restart scenario.
 - [ ] Automated snapshot/restore CI soak tests (future).
+
+## 14. Network Resilience
+- [x] Chaos knobs for P2P (probabilistic drop & latency) exist.
+- [x] `scripts/localnet_chaos_start.sh` + `scripts/localnet_chaos_scenario.sh` exercise payments, handles, and files while drops/latency are active.
+- [x] Node restart/churn walkthrough (`scripts/localnet_churn_scenario.sh`) documents the manual stop/start flow and validates RPC convergence after reboot.
+- [ ] Automated, long-running chaos suites wired into CI remain future work.

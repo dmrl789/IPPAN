@@ -11,7 +11,7 @@ use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{HandleDhtService, L2HandleRegistry, StubHandleDhtService};
 use ippan_mempool::Mempool;
 use ippan_p2p::{
-    DhtConfig, HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService,
+    ChaosConfig, DhtConfig, HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService,
     Libp2pHandleDhtService, Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig,
 };
 use ippan_rpc::server::ConsensusHandle;
@@ -140,6 +140,10 @@ struct AppConfig {
     p2p_public_host: Option<String>,
     p2p_enable_upnp: bool,
     p2p_external_ip_services: Vec<String>,
+    chaos_drop_outbound_prob: u16,
+    chaos_drop_inbound_prob: u16,
+    chaos_extra_latency_ms_min: u64,
+    chaos_extra_latency_ms_max: u64,
 
     // File DHT
     file_dht_mode: FileDhtMode,
@@ -361,6 +365,22 @@ impl AppConfig {
                 .filter(|s| !s.is_empty()),
             p2p_enable_upnp: config.get_bool("P2P_ENABLE_UPNP").unwrap_or(false),
             p2p_external_ip_services: external_ip_services,
+            chaos_drop_outbound_prob: config
+                .get_string("CHAOS_DROP_OUTBOUND_PROB")
+                .unwrap_or_else(|_| "0".to_string())
+                .parse()?,
+            chaos_drop_inbound_prob: config
+                .get_string("CHAOS_DROP_INBOUND_PROB")
+                .unwrap_or_else(|_| "0".to_string())
+                .parse()?,
+            chaos_extra_latency_ms_min: config
+                .get_string("CHAOS_EXTRA_LATENCY_MS_MIN")
+                .unwrap_or_else(|_| "0".to_string())
+                .parse()?,
+            chaos_extra_latency_ms_max: config
+                .get_string("CHAOS_EXTRA_LATENCY_MS_MAX")
+                .unwrap_or_else(|_| "0".to_string())
+                .parse()?,
             file_dht_mode,
             file_dht_listen_multiaddrs,
             file_dht_bootstrap_multiaddrs,
@@ -467,22 +487,26 @@ async fn main() -> Result<()> {
                 .subcommand_required(true)
                 .arg_required_else_help(true)
                 .subcommand(
-                    Command::new("export").about("Export snapshot data to a directory").arg(
-                        Arg::new("dir")
-                            .long("dir")
-                            .value_name("PATH")
-                            .required(true)
-                            .help("Directory to write the snapshot into"),
-                    ),
+                    Command::new("export")
+                        .about("Export snapshot data to a directory")
+                        .arg(
+                            Arg::new("dir")
+                                .long("dir")
+                                .value_name("PATH")
+                                .required(true)
+                                .help("Directory to write the snapshot into"),
+                        ),
                 )
                 .subcommand(
-                    Command::new("import").about("Import snapshot data from a directory").arg(
-                        Arg::new("dir")
-                            .long("dir")
-                            .value_name("PATH")
-                            .required(true)
-                            .help("Directory previously created via `snapshot export`"),
-                    ),
+                    Command::new("import")
+                        .about("Import snapshot data from a directory")
+                        .arg(
+                            Arg::new("dir")
+                                .long("dir")
+                                .value_name("PATH")
+                                .required(true)
+                                .help("Directory previously created via `snapshot export`"),
+                        ),
                 ),
         )
         .get_matches();
@@ -764,6 +788,12 @@ async fn main() -> Result<()> {
         message_timeout: Duration::from_secs(10),
         retry_attempts: 3,
         dht: dht_config,
+        chaos: ChaosConfig {
+            drop_outbound_prob: config.chaos_drop_outbound_prob,
+            drop_inbound_prob: config.chaos_drop_inbound_prob,
+            extra_latency_ms_min: config.chaos_extra_latency_ms_min,
+            extra_latency_ms_max: config.chaos_extra_latency_ms_max,
+        },
     };
 
     let mut p2p_network = HttpP2PNetwork::new(p2p_config, listen_address.clone())?;
