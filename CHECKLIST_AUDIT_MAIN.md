@@ -62,6 +62,11 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 ## 9. End-to-End Demo
 - [x] End-to-end dev demo for handles + payments + files + AI/DHT status documented in `docs/demo_end_to_end_ippan.md` and automated via `scripts/demo_ippan_full_flow.sh`.
 
+## 10. RPC & Security
+- [x] All RPC routes now share the existing `SecurityManager` guard + rate limiter so read/write endpoints enforce IP/rate policies consistently (`crates/rpc/src/server.rs`).
+- [x] Dev-only helpers such as `/dev/fund` are gated by `IPPAN_DEV_MODE`, loopback IP checks, and loopback binding defaults outside dev mode (`node/src/main.rs`).
+- [ ] Advanced authentication (API keys, JWT) remains future work; current deployments rely on IP whitelists + reverse proxies per `docs/SECURITY_GUIDE.md`.
+
 ## Optional Test Runs
 - `cargo test -p ippan-rpc -- --nocapture` → **fails** (expected) due to missing OpenSSL headers in the environment; no additional compiler errors observed before the toolchain check halted.
 - `cargo test -p ippan-consensus-dlc -- --nocapture` → **passes** locally (vends registry-backed fairness); only external toolchain issues (e.g., OpenSSL) would block in other environments.
