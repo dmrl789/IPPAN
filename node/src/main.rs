@@ -24,7 +24,9 @@ use ippan_types::{
 use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::fmt;
-use std::net::IpAddr;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::net::{IpAddr, TcpListener};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -34,6 +36,10 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+mod version;
+
+use version::{git_commit_hash, IPPAN_VERSION};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FileDhtMode {
@@ -202,36 +208,37 @@ impl AppConfig {
             external_ip_services.push("https://ifconfig.me/ip".to_string());
         }
 
-        let file_dht_mode = FileDhtMode::from_env(
-            &config
-                .get_string("FILE_DHT_MODE")
-                .unwrap_or_else(|_| "stub".to_string()),
-        );
+        let file_dht_mode_value = get_string_value(&config, &["FILE_DHT_MODE", "dht.mode"])
+            .unwrap_or_else(|| "stub".to_string());
+        let file_dht_mode = FileDhtMode::from_env(&file_dht_mode_value);
 
-        let handle_dht_mode = HandleDhtMode::from_env(
-            &config
-                .get_string("HANDLE_DHT_MODE")
-                .unwrap_or_else(|_| "stub".to_string()),
-        );
+        let handle_dht_mode_value =
+            get_string_value(&config, &["HANDLE_DHT_MODE", "dht.handle_mode"])
+                .unwrap_or_else(|| "stub".to_string());
+        let handle_dht_mode = HandleDhtMode::from_env(&handle_dht_mode_value);
 
-        let mut file_dht_listen_multiaddrs: Vec<String> = config
-            .get_string("FILE_DHT_LIBP2P_LISTEN")
-            .unwrap_or_else(|_| "/ip4/0.0.0.0/tcp/9100".to_string())
-            .split(',')
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .collect();
+        let mut file_dht_listen_multiaddrs: Vec<String> = get_string_value(
+            &config,
+            &["FILE_DHT_LIBP2P_LISTEN", "dht.listen_multiaddrs"],
+        )
+        .unwrap_or_else(|| "/ip4/0.0.0.0/tcp/9100".to_string())
+        .split(',')
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
         if file_dht_listen_multiaddrs.is_empty() {
             file_dht_listen_multiaddrs.push("/ip4/0.0.0.0/tcp/9100".to_string());
         }
 
-        let file_dht_bootstrap_multiaddrs: Vec<String> = config
-            .get_string("FILE_DHT_LIBP2P_BOOTSTRAP")
-            .unwrap_or_else(|_| String::new())
-            .split(',')
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .collect();
+        let file_dht_bootstrap_multiaddrs: Vec<String> = get_string_value(
+            &config,
+            &["FILE_DHT_LIBP2P_BOOTSTRAP", "dht.bootstrap_multiaddrs"],
+        )
+        .unwrap_or_else(String::new)
+        .split(',')
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
 
         let unified_ui_dist_dir = config
             .get_string("UNIFIED_UI_DIST_DIR")
@@ -248,10 +255,7 @@ impl AppConfig {
                 }
             });
 
-        let dev_mode = config
-            .get_string("DEV_MODE")
-            .unwrap_or_else(|_| "false".to_string())
-            .parse()?;
+        let dev_mode = get_bool_value(&config, &["DEV_MODE", "rpc.dev_mode"], false);
 
         let default_rpc_host = if dev_mode {
             "0.0.0.0".to_string()
@@ -260,17 +264,12 @@ impl AppConfig {
         };
 
         Ok(Self {
-            node_id: config
-                .get_string("NODE_ID")
-                .unwrap_or_else(|_| "ippan_node".to_string()),
+            node_id: get_string_value(&config, &["NODE_ID", "node.id"])
+                .unwrap_or_else(|| "ippan_node".to_string()),
             validator_id,
-            consensus_mode: config
-                .get_string("CONSENSUS_MODE")
-                .unwrap_or_else(|_| "POA".to_string()),
-            enable_dlc: config
-                .get_string("ENABLE_DLC")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse()?,
+            consensus_mode: get_string_value(&config, &["CONSENSUS_MODE", "consensus.mode"])
+                .unwrap_or_else(|| "POA".to_string()),
+            enable_dlc: get_bool_value(&config, &["ENABLE_DLC", "consensus.enable_dlc"], false),
             temporal_finality_ms: config
                 .get_string("TEMPORAL_FINALITY_MS")
                 .unwrap_or_else(|_| "250".to_string())
@@ -286,24 +285,20 @@ impl AppConfig {
             enable_dgbdt_fairness: config.get_bool("ENABLE_DGBDT_FAIRNESS").unwrap_or(true),
             enable_shadow_verifiers: config.get_bool("ENABLE_SHADOW_VERIFIERS").unwrap_or(true),
             require_validator_bond: config.get_bool("REQUIRE_VALIDATOR_BOND").unwrap_or(true),
-            rpc_host: config.get_string("RPC_HOST").unwrap_or(default_rpc_host),
-            rpc_port: config
-                .get_string("RPC_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
+            rpc_host: get_string_value(&config, &["RPC_HOST", "rpc.bind", "rpc.host"])
+                .unwrap_or(default_rpc_host),
+            rpc_port: get_string_value(&config, &["RPC_PORT", "rpc.port"])
+                .unwrap_or_else(|| "8080".to_string())
                 .parse()?,
-            p2p_host: config
-                .get_string("P2P_HOST")
-                .unwrap_or_else(|_| "0.0.0.0".to_string()),
-            p2p_port: config
-                .get_string("P2P_PORT")
-                .unwrap_or_else(|_| "9000".to_string())
+            p2p_host: get_string_value(&config, &["P2P_HOST", "p2p.bind", "p2p.host"])
+                .unwrap_or_else(|| "0.0.0.0".to_string()),
+            p2p_port: get_string_value(&config, &["P2P_PORT", "p2p.port"])
+                .unwrap_or_else(|| "9000".to_string())
                 .parse()?,
-            data_dir: config
-                .get_string("DATA_DIR")
-                .unwrap_or_else(|_| "./data".to_string()),
-            db_path: config
-                .get_string("DB_PATH")
-                .unwrap_or_else(|_| "./data/db".to_string()),
+            data_dir: get_string_value(&config, &["DATA_DIR", "storage.data_dir"])
+                .unwrap_or_else(|| "./data".to_string()),
+            db_path: get_string_value(&config, &["DB_PATH", "storage.db_path"])
+                .unwrap_or_else(|| "./data/db".to_string()),
             slot_duration_ms: config
                 .get_string("SLOT_DURATION_MS")
                 .unwrap_or_else(|_| "100".to_string())
@@ -339,16 +334,14 @@ impl AppConfig {
                 .get_string("L2_MAX_L2_COUNT")
                 .unwrap_or_else(|_| "100".to_string())
                 .parse()?,
-            bootstrap_nodes: config
-                .get_string("BOOTSTRAP_NODES")
+            bootstrap_nodes: get_string_value(&config, &["BOOTSTRAP_NODES", "p2p.bootstrap_nodes"])
                 .unwrap_or_default()
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
-            max_peers: config
-                .get_string("MAX_PEERS")
-                .unwrap_or_else(|_| "50".to_string())
+            max_peers: get_string_value(&config, &["MAX_PEERS", "p2p.max_peers"])
+                .unwrap_or_else(|| "50".to_string())
                 .parse()?,
             peer_discovery_interval_secs: config
                 .get_string("PEER_DISCOVERY_INTERVAL_SECS")
@@ -370,7 +363,7 @@ impl AppConfig {
             file_dht_bootstrap_multiaddrs,
             handle_dht_mode,
             unified_ui_dist_dir,
-            enable_security: config.get_bool("ENABLE_SECURITY").unwrap_or(true),
+            enable_security: get_bool_value(&config, &["ENABLE_SECURITY", "security.enable"], true),
             prometheus_enabled: config.get_bool("PROMETHEUS_ENABLED").unwrap_or(true),
             log_level: config
                 .get_string("LOG_LEVEL")
@@ -381,6 +374,30 @@ impl AppConfig {
             dev_mode,
         })
     }
+}
+
+fn get_string_value(config: &Config, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        config
+            .get_string(*key)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn get_bool_value(config: &Config, keys: &[&str], default: bool) -> bool {
+    for key in keys {
+        if let Ok(value) = config.get_bool(*key) {
+            return value;
+        }
+        if let Ok(raw) = config.get_string(*key) {
+            if let Ok(parsed) = raw.parse::<bool>() {
+                return parsed;
+            }
+        }
+    }
+    default
 }
 
 fn parse_multiaddrs(values: &[String], label: &str) -> Vec<Multiaddr> {
@@ -405,8 +422,9 @@ fn parse_multiaddrs(values: &[String], label: &str) -> Vec<Multiaddr> {
 async fn main() -> Result<()> {
     // Parse command line arguments
     let matches = Command::new("ippan-node")
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(IPPAN_VERSION)
         .about("IPPAN Blockchain Node")
+        .disable_version_flag(true)
         .arg(
             Arg::new("config")
                 .short('c')
@@ -427,6 +445,19 @@ async fn main() -> Result<()> {
                 .action(ArgAction::SetTrue)
                 .help("Run in development mode"),
         )
+        .arg(
+            Arg::new("version_flag")
+                .short('V')
+                .long("version")
+                .action(ArgAction::SetTrue)
+                .help("Print detailed version information and exit"),
+        )
+        .arg(
+            Arg::new("check")
+                .long("check")
+                .action(ArgAction::SetTrue)
+                .help("Run configuration and environment self-checks, then exit"),
+        )
         .get_matches();
 
     // Load configuration
@@ -441,6 +472,7 @@ async fn main() -> Result<()> {
         config.db_path = format!("{data_dir}/db");
     }
 
+    let mut dev_mode_forced_off = false;
     if matches.get_flag("dev") {
         config.dev_mode = true;
         config.log_level = "debug".to_string();
@@ -450,8 +482,29 @@ async fn main() -> Result<()> {
         }
     }
 
+    if cfg!(feature = "production") && config.dev_mode {
+        dev_mode_forced_off = true;
+        config.dev_mode = false;
+    }
+
+    if matches.get_flag("version_flag") {
+        print_version_info(&config);
+        return Ok(());
+    }
+
+    if matches.get_flag("check") {
+        run_self_check(&config)?;
+        return Ok(());
+    }
+
     // Initialize logging
     init_logging(&config)?;
+
+    if dev_mode_forced_off {
+        warn!(
+            "Production feature enabled: development-only endpoints are disabled regardless of flags"
+        );
+    }
 
     // Initialize metrics exporter
     let prometheus_handle = init_metrics(&config);
@@ -477,7 +530,7 @@ async fn main() -> Result<()> {
     }
 
     // Create data directory
-    std::fs::create_dir_all(&config.data_dir)?;
+    fs::create_dir_all(&config.data_dir)?;
 
     // Initialize storage
     let storage = Arc::new(SledStorage::new(&config.db_path)?);
@@ -1014,4 +1067,133 @@ fn build_dlc_ai_status_handle() -> Option<AiStatusHandle> {
             None
         }
     }
+}
+
+fn print_version_info(config: &AppConfig) {
+    let mode = consensus_mode_label(config);
+    println!(
+        "IPPAN {} (commit {}) [{}]",
+        IPPAN_VERSION,
+        git_commit_hash(),
+        mode
+    );
+}
+
+fn consensus_mode_label(config: &AppConfig) -> &'static str {
+    if config.consensus_mode.eq_ignore_ascii_case("DLC") || config.enable_dlc {
+        "DLC"
+    } else {
+        "PoA"
+    }
+}
+
+fn run_self_check(config: &AppConfig) -> Result<()> {
+    println!("Running IPPAN node self-check...");
+    let mut issues = Vec::new();
+
+    if config.node_id.trim().is_empty() {
+        issues.push("NODE_ID must not be empty".to_string());
+    }
+
+    let consensus = config.consensus_mode.to_uppercase();
+    if consensus != "POA" && consensus != "DLC" {
+        issues.push(format!(
+            "Invalid CONSENSUS_MODE '{}'; expected 'PoA' or 'DLC'",
+            config.consensus_mode
+        ));
+    }
+
+    if config.rpc_port == 0 {
+        issues.push("RPC_PORT must be greater than zero".to_string());
+    }
+
+    if config.p2p_port == 0 {
+        issues.push("P2P_PORT must be greater than zero".to_string());
+    }
+
+    if config.rpc_port == config.p2p_port {
+        issues.push("RPC_PORT and P2P_PORT must be different".to_string());
+    }
+
+    if let Err(err) = ensure_port_available(&config.rpc_host, config.rpc_port, "RPC") {
+        issues.push(err);
+    }
+
+    if let Err(err) = ensure_port_available(&config.p2p_host, config.p2p_port, "P2P") {
+        issues.push(err);
+    }
+
+    if let Err(err) = ensure_storage_directory(&config.data_dir) {
+        issues.push(err);
+    }
+
+    if let Some(parent) = Path::new(&config.db_path).parent() {
+        if !parent.exists() {
+            issues.push(format!(
+                "Database directory {} does not exist",
+                parent.display()
+            ));
+        }
+    } else {
+        issues.push(format!("DB_PATH '{}' is invalid", config.db_path));
+    }
+
+    if issues.is_empty() {
+        println!("OK");
+        Ok(())
+    } else {
+        for issue in &issues {
+            eprintln!("- {issue}");
+        }
+        anyhow::bail!("self-check failed")
+    }
+}
+
+fn ensure_port_available(host: &str, port: u16, label: &str) -> Result<(), String> {
+    let addr = format!("{host}:{port}");
+    match TcpListener::bind(&addr) {
+        Ok(listener) => drop(listener),
+        Err(err) => {
+            return Err(format!(
+                "{label} port {addr} is not available for binding: {err}"
+            ))
+        }
+    }
+    Ok(())
+}
+
+fn ensure_storage_directory(path: &str) -> Result<(), String> {
+    let dir = Path::new(path);
+    if !dir.exists() {
+        return Err(format!(
+            "Storage directory {} does not exist; create it before starting the node",
+            dir.display()
+        ));
+    }
+    if !dir.is_dir() {
+        return Err(format!("Storage path {} is not a directory", dir.display()));
+    }
+
+    let probe = dir.join(".ippan_write_test");
+    match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&probe)
+    {
+        Ok(mut file) => {
+            if let Err(err) = file.write_all(b"ok") {
+                return Err(format!("Unable to write into {}: {}", dir.display(), err));
+            }
+        }
+        Err(err) => {
+            return Err(format!(
+                "Unable to open {} for writing: {}",
+                dir.display(),
+                err
+            ));
+        }
+    }
+    let _ = fs::remove_file(&probe);
+    Ok(())
 }

@@ -78,3 +78,11 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - `cargo test -p ippan-rpc -- --nocapture` → **fails** (expected) due to missing OpenSSL headers in the environment; no additional compiler errors observed before the toolchain check halted.
 - `cargo test -p ippan-consensus-dlc -- --nocapture` → **passes** locally (vends registry-backed fairness); only external toolchain issues (e.g., OpenSSL) would block in other environments.
 - `cargo test -p ippan-network -- --nocapture` → **passes** (27 unit tests green).
+
+## 12. Production Readiness
+- [x] Semantic versioning + `/version` endpoint
+- [x] Release packaging directory with config template
+- [x] Systemd template for Linux deployments
+- [x] Node `--version` & `--check` flags
+- [ ] CI-driven reproducible release builds (future)
+- [ ] SBOM signing + binary signatures (future)

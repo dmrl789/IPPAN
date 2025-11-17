@@ -1,0 +1,13 @@
+[Unit]
+Description=IPPAN Node
+After=network-online.target
+
+[Service]
+User=ippan
+WorkingDirectory=/var/lib/ippan
+ExecStart=/usr/local/bin/ippan-node --config /etc/ippan/config.toml
+Restart=always
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

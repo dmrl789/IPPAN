@@ -1261,9 +1261,22 @@ async fn handle_version(
     record_security_success(&state, &addr, ENDPOINT).await;
     Ok(Json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
-        "build_time": "unknown",
-        "git_commit": "unknown"
+        "commit": git_commit_hash(),
+        "mode": rpc_consensus_mode(&state.consensus_mode)
     })))
+}
+
+/// Optional Git commit hash set by CI (GIT_COMMIT_HASH env var) during builds.
+fn git_commit_hash() -> &'static str {
+    option_env!("GIT_COMMIT_HASH").unwrap_or("unknown")
+}
+
+fn rpc_consensus_mode(mode: &str) -> &'static str {
+    if mode.eq_ignore_ascii_case("DLC") {
+        "DLC"
+    } else {
+        "PoA"
+    }
 }
 
 async fn handle_metrics(
@@ -4292,6 +4305,11 @@ mod tests {
             version.get("version"),
             Some(&serde_json::json!(env!("CARGO_PKG_VERSION")))
         );
+        assert_eq!(
+            version.get("commit"),
+            Some(&serde_json::json!(git_commit_hash()))
+        );
+        assert_eq!(version.get("mode"), Some(&serde_json::json!("PoA")));
 
         let metrics_response = handle_metrics(State(state), ConnectInfo(addr))
             .await
