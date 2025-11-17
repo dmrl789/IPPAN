@@ -38,11 +38,12 @@ maybe_jq() {
 extract_json_field() {
   local json="$1"
   local field="$2"
-  python - "$field" <<'PY' <<<"${json}"
+  python -c '
 import json
 import sys
-payload = json.load(sys.stdin)
+
 field = sys.argv[1]
+payload = json.loads(sys.argv[2])
 value = payload
 for part in field.split('.'):
     if isinstance(value, dict) and part in value:
@@ -50,11 +51,10 @@ for part in field.split('.'):
     else:
         raise SystemExit(f"missing field: {field}")
 if isinstance(value, (dict, list)):
-    import json as _json
-    print(_json.dumps(value))
+    print(json.dumps(value))
 else:
     print(value)
-PY
+' "${field}" "${json}"
 }
 
 ensure_node_ready() {
