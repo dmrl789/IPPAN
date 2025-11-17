@@ -1107,17 +1107,34 @@ async fn deny_request(
 // Handlers
 // -----------------------------------------------------------------------------
 
-async fn handle_health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    Json(serde_json::json!({
+async fn handle_health(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/health";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(serde_json::json!({
         "status": "healthy",
         "timestamp": ippan_time_now(),
         "version": env!("CARGO_PKG_VERSION"),
         "peer_count": state.peer_count.load(Ordering::Relaxed),
         "chain_id": state.l2_config.max_l2_count
-    }))
+    })))
 }
 
-async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+async fn handle_status(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/status";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
     let uptime_seconds = state.start_time.elapsed().as_secs();
     let peer_count = state.peer_count.load(Ordering::Relaxed);
     let requests_served = state.req_count.load(Ordering::Relaxed);
@@ -1139,7 +1156,9 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
         None
     };
 
-    Json(serde_json::json!({
+    record_security_success(&state, &addr, ENDPOINT).await;
+
+    Ok(Json(serde_json::json!({
         "status": "ok",
         "node_id": state.node_id.clone(),
         "version": env!("CARGO_PKG_VERSION"),
@@ -1149,23 +1168,51 @@ async fn handle_status(State(state): State<Arc<AppState>>) -> Json<serde_json::V
         "network_active": state.p2p_network.is_some(),
         "consensus": consensus_view,
         "mempool_size": mempool_size
-    }))
+    })))
 }
 
-async fn handle_time() -> Json<serde_json::Value> {
+async fn handle_time(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/time";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
     let now = ippan_time_now();
-    Json(serde_json::json!({ "timestamp": now, "time_us": now }))
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(
+        serde_json::json!({ "timestamp": now, "time_us": now }),
+    ))
 }
 
-async fn handle_version() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
+async fn handle_version(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/version";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "build_time": "unknown",
         "git_commit": "unknown"
-    }))
+    })))
 }
 
-async fn handle_metrics(State(state): State<Arc<AppState>>) -> Response {
+async fn handle_metrics(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Response, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/metrics";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
     if let Some(handle) = &state.metrics {
         let mut response = Response::new(Body::from(handle.render()));
         *response.status_mut() = StatusCode::OK;
@@ -1173,22 +1220,33 @@ async fn handle_metrics(State(state): State<Arc<AppState>>) -> Response {
             CONTENT_TYPE,
             HeaderValue::from_static("text/plain; version=0.0.4"),
         );
-        response
+        record_security_success(&state, &addr, ENDPOINT).await;
+        Ok(response)
     } else {
         let mut response = Response::new(Body::from("Prometheus metrics disabled"));
         *response.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
-        response
+        record_security_success(&state, &addr, ENDPOINT).await;
+        Ok(response)
     }
 }
 
-async fn handle_get_ai_status(State(state): State<Arc<AppState>>) -> Json<AiStatus> {
+async fn handle_get_ai_status(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<AiStatus>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/ai/status";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
     let response = if let Some(handle) = &state.ai_status {
         let snapshot = handle.snapshot().await;
         AiStatus::from(snapshot)
     } else {
         AiStatus::disabled()
     };
-    Json(response)
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(response))
 }
 
 async fn handle_submit_tx(
@@ -1707,16 +1765,37 @@ async fn handle_get_account_payments(
     }
 }
 
-async fn handle_get_peers(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
-    if let Some(net) = &state.p2p_network {
-        Json(net.get_peers())
-    } else {
-        Json(vec![])
-    }
+async fn handle_get_peers(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<Vec<String>>, (StatusCode, &'static str)> {
+    serve_peer_listing(state, addr, "/peers").await
 }
 
-async fn handle_get_p2p_peers(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
-    handle_get_peers(State(state)).await
+async fn handle_get_p2p_peers(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<Vec<String>>, (StatusCode, &'static str)> {
+    serve_peer_listing(state, addr, "/p2p/peers").await
+}
+
+async fn serve_peer_listing(
+    state: Arc<AppState>,
+    addr: SocketAddr,
+    endpoint: &'static str,
+) -> Result<Json<Vec<String>>, (StatusCode, &'static str)> {
+    if let Err(err) = guard_request(&state, &addr, endpoint).await {
+        return Err(deny_request(&state, &addr, endpoint, err).await);
+    }
+
+    let peers = if let Some(net) = &state.p2p_network {
+        net.get_peers()
+    } else {
+        vec![]
+    };
+
+    record_security_success(&state, &addr, endpoint).await;
+    Ok(Json(peers))
 }
 
 // -----------------------------------------------------------------------------
@@ -2033,17 +2112,36 @@ fn ingest_transaction_from_peer(state: &Arc<AppState>, tx: &Transaction) -> Resu
 // L2 Endpoints
 // -----------------------------------------------------------------------------
 
-async fn handle_get_l2_config(State(state): State<Arc<AppState>>) -> Json<L2Config> {
-    Json(state.l2_config.clone())
+async fn handle_get_l2_config(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<L2Config>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/l2/config";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(state.l2_config.clone()))
 }
 
 async fn handle_list_l2_networks(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<Json<Vec<L2Network>>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/l2/networks";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
     match state.storage.list_l2_networks() {
-        Ok(networks) => Ok(Json(networks)),
+        Ok(networks) => {
+            record_security_success(&state, &addr, ENDPOINT).await;
+            Ok(Json(networks))
+        }
         Err(err) => {
             error!("Failed to list L2 networks: {}", err);
+            record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to list L2 networks",
@@ -2054,12 +2152,22 @@ async fn handle_list_l2_networks(
 
 async fn handle_list_l2_commits(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(filter): Query<L2Filter>,
 ) -> Result<Json<Vec<L2Commit>>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/l2/commits";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
     match state.storage.list_l2_commits(filter.l2_id.as_deref()) {
-        Ok(commits) => Ok(Json(commits)),
+        Ok(commits) => {
+            record_security_success(&state, &addr, ENDPOINT).await;
+            Ok(Json(commits))
+        }
         Err(err) => {
             error!("Failed to list L2 commits: {}", err);
+            record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to list L2 commits",
@@ -2070,12 +2178,22 @@ async fn handle_list_l2_commits(
 
 async fn handle_list_l2_exits(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(filter): Query<L2Filter>,
 ) -> Result<Json<Vec<L2ExitRecord>>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/l2/exits";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
     match state.storage.list_l2_exits(filter.l2_id.as_deref()) {
-        Ok(exits) => Ok(Json(exits)),
+        Ok(exits) => {
+            record_security_success(&state, &addr, ENDPOINT).await;
+            Ok(Json(exits))
+        }
         Err(err) => {
             error!("Failed to list L2 exits: {}", err);
+            record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
             Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to list L2 exits"))
         }
     }
@@ -2468,14 +2586,19 @@ mod tests {
             handle_dht: Some(handle_dht),
         });
 
-        let response = handle_health(State(app_state)).await;
-        let json = response.0;
+        let addr: SocketAddr = "127.0.0.1:6000".parse().unwrap();
+        let Json(json) = handle_health(State(app_state), ConnectInfo(addr))
+            .await
+            .expect("health");
         assert_eq!(json.get("status").unwrap(), "healthy");
     }
 
     #[tokio::test]
     async fn test_handle_get_ai_status_disabled_by_default() {
-        let Json(status) = handle_get_ai_status(State(make_app_state())).await;
+        let addr: SocketAddr = "127.0.0.1:6001".parse().unwrap();
+        let Json(status) = handle_get_ai_status(State(make_app_state()), ConnectInfo(addr))
+            .await
+            .expect("ai status");
         assert!(!status.enabled);
         assert!(status.model_hash.is_none());
     }
@@ -2493,7 +2616,10 @@ mod tests {
         state.ai_status = Some(handle);
         let state = Arc::new(state);
 
-        let Json(status) = handle_get_ai_status(State(state)).await;
+        let addr: SocketAddr = "127.0.0.1:6002".parse().unwrap();
+        let Json(status) = handle_get_ai_status(State(state), ConnectInfo(addr))
+            .await
+            .expect("ai status");
         assert!(status.enabled);
         assert!(!status.using_stub);
         assert_eq!(status.model_hash.as_deref(), Some("deadbeef"));
@@ -2522,7 +2648,10 @@ mod tests {
         state.ai_status = Some(handle);
         let state = Arc::new(state);
 
-        let Json(status) = handle_get_ai_status(State(state)).await;
+        let addr: SocketAddr = "127.0.0.1:6003".parse().unwrap();
+        let Json(status) = handle_get_ai_status(State(state), ConnectInfo(addr))
+            .await
+            .expect("ai status");
         assert!(status.enabled);
     }
 
@@ -3608,13 +3737,15 @@ mod tests {
             })
             .expect("exit");
 
-        let networks = handle_list_l2_networks(State(state.clone()))
+        let addr: SocketAddr = "127.0.0.1:6200".parse().unwrap();
+        let networks = handle_list_l2_networks(State(state.clone()), ConnectInfo(addr))
             .await
             .expect("networks");
         assert_eq!(networks.0.len(), 1);
 
         let commits = handle_list_l2_commits(
             State(state.clone()),
+            ConnectInfo(addr),
             Query(L2Filter {
                 l2_id: Some("demo-l2".into()),
             }),
@@ -3625,6 +3756,7 @@ mod tests {
 
         let exits = handle_list_l2_exits(
             State(state.clone()),
+            ConnectInfo(addr),
             Query(L2Filter {
                 l2_id: Some("demo-l2".into()),
             }),
@@ -3637,10 +3769,12 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_l2_config_and_submit_tx_failure() {
         let state = make_app_state();
-        let config = handle_get_l2_config(State(state.clone())).await;
+        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
+        let config = handle_get_l2_config(State(state.clone()), ConnectInfo(addr))
+            .await
+            .expect("config");
         assert_eq!(config.0.max_l2_count, 1);
 
-        let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
         let tx = sample_transaction([2u8; 32], sample_public_key([3u8; 32]), 9);
         let response = handle_submit_tx(State(state.clone()), ConnectInfo(addr), Json(tx)).await;
         assert_eq!(response.0, StatusCode::SERVICE_UNAVAILABLE);
@@ -3849,10 +3983,15 @@ mod tests {
     #[tokio::test]
     async fn test_handle_peers_endpoints() {
         let state = make_app_state();
-        let peers = handle_get_peers(State(state.clone())).await;
+        let addr: SocketAddr = "127.0.0.1:9801".parse().unwrap();
+        let peers = handle_get_peers(State(state.clone()), ConnectInfo(addr))
+            .await
+            .expect("peers");
         assert!(peers.0.is_empty());
 
-        let p2p_peers = handle_get_p2p_peers(State(state)).await;
+        let p2p_peers = handle_get_p2p_peers(State(state), ConnectInfo(addr))
+            .await
+            .expect("p2p peers");
         assert!(p2p_peers.0.is_empty());
 
         let config = P2PConfig {
@@ -3869,10 +4008,14 @@ mod tests {
         let mut with_net = (*build_app_state(None, None)).clone();
         with_net.p2p_network = Some(network);
         let with_net = Arc::new(with_net);
-        let peers = handle_get_peers(State(with_net.clone())).await;
+        let peers = handle_get_peers(State(with_net.clone()), ConnectInfo(addr))
+            .await
+            .expect("peers");
         assert_eq!(peers.0.len(), 1);
 
-        let p2p_peers = handle_get_p2p_peers(State(with_net)).await;
+        let p2p_peers = handle_get_p2p_peers(State(with_net), ConnectInfo(addr))
+            .await
+            .expect("p2p peers");
         assert_eq!(p2p_peers.0.len(), 1);
     }
 
@@ -3966,20 +4109,27 @@ mod tests {
         state.storage = storage;
         let state = Arc::new(state);
 
-        let networks = handle_list_l2_networks(State(state.clone())).await;
+        let addr: SocketAddr = "127.0.0.1:6300".parse().unwrap();
+
+        let networks = handle_list_l2_networks(State(state.clone()), ConnectInfo(addr)).await;
         assert!(matches!(
             networks,
             Err((StatusCode::INTERNAL_SERVER_ERROR, _))
         ));
 
-        let commits =
-            handle_list_l2_commits(State(state.clone()), Query(L2Filter::default())).await;
+        let commits = handle_list_l2_commits(
+            State(state.clone()),
+            ConnectInfo(addr),
+            Query(L2Filter::default()),
+        )
+        .await;
         assert!(matches!(
             commits,
             Err((StatusCode::INTERNAL_SERVER_ERROR, _))
         ));
 
-        let exits = handle_list_l2_exits(State(state), Query(L2Filter::default())).await;
+        let exits =
+            handle_list_l2_exits(State(state), ConnectInfo(addr), Query(L2Filter::default())).await;
         assert!(matches!(exits, Err((StatusCode::INTERNAL_SERVER_ERROR, _))));
     }
 
@@ -4057,14 +4207,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_misc_endpoints() {
-        let time = handle_time().await;
-        assert!(time.0.get("timestamp").is_some());
-        let version = handle_version().await;
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:8400".parse().unwrap();
+
+        let Json(time) = handle_time(State(state.clone()), ConnectInfo(addr))
+            .await
+            .expect("time");
+        assert!(time.get("timestamp").is_some());
+
+        let Json(version) = handle_version(State(state.clone()), ConnectInfo(addr))
+            .await
+            .expect("version");
         assert_eq!(
-            version.0.get("version"),
+            version.get("version"),
             Some(&serde_json::json!(env!("CARGO_PKG_VERSION")))
         );
-        let metrics_response = handle_metrics(State(make_app_state())).await;
+
+        let metrics_response = handle_metrics(State(state), ConnectInfo(addr))
+            .await
+            .expect("metrics");
         assert_eq!(metrics_response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 

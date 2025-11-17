@@ -23,6 +23,7 @@ use ippan_types::{
 };
 use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use std::net::IpAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -220,6 +221,17 @@ impl AppConfig {
                 }
             });
 
+        let dev_mode = config
+            .get_string("DEV_MODE")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse()?;
+
+        let default_rpc_host = if dev_mode {
+            "0.0.0.0".to_string()
+        } else {
+            "127.0.0.1".to_string()
+        };
+
         Ok(Self {
             node_id: config
                 .get_string("NODE_ID")
@@ -247,9 +259,7 @@ impl AppConfig {
             enable_dgbdt_fairness: config.get_bool("ENABLE_DGBDT_FAIRNESS").unwrap_or(true),
             enable_shadow_verifiers: config.get_bool("ENABLE_SHADOW_VERIFIERS").unwrap_or(true),
             require_validator_bond: config.get_bool("REQUIRE_VALIDATOR_BOND").unwrap_or(true),
-            rpc_host: config
-                .get_string("RPC_HOST")
-                .unwrap_or_else(|_| "0.0.0.0".to_string()),
+            rpc_host: config.get_string("RPC_HOST").unwrap_or(default_rpc_host),
             rpc_port: config
                 .get_string("RPC_PORT")
                 .unwrap_or_else(|_| "8080".to_string())
@@ -341,10 +351,7 @@ impl AppConfig {
             log_format: config
                 .get_string("LOG_FORMAT")
                 .unwrap_or_else(|_| "pretty".to_string()),
-            dev_mode: config
-                .get_string("DEV_MODE")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse()?,
+            dev_mode,
         })
     }
 }
@@ -408,6 +415,9 @@ async fn main() -> Result<()> {
         config.dev_mode = true;
         config.log_level = "debug".to_string();
         config.log_format = "pretty".to_string();
+        if config.rpc_host == "127.0.0.1" {
+            config.rpc_host = "0.0.0.0".to_string();
+        }
     }
 
     // Initialize logging
@@ -424,6 +434,17 @@ async fn main() -> Result<()> {
     info!("Validator ID: {}", hex::encode(config.validator_id));
     info!("Data directory: {}", config.data_dir);
     info!("Development mode: {}", config.dev_mode);
+
+    if !config.dev_mode {
+        if let Ok(ip) = config.rpc_host.parse::<IpAddr>() {
+            if ip.is_unspecified() {
+                warn!(
+                    "RPC host {} binds to all interfaces outside dev mode; consider setting IPPAN_RPC_HOST=127.0.0.1 and fronting the API with a reverse proxy or firewall",
+                    config.rpc_host
+                );
+            }
+        }
+    }
 
     // Create data directory
     std::fs::create_dir_all(&config.data_dir)?;
