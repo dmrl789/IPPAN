@@ -35,6 +35,7 @@ use igd::aio::search_gateway;
 use igd::SearchOptions;
 use ippan_types::{ippan_time_now, Block, Transaction};
 use parking_lot::{Mutex, RwLock};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -43,7 +44,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tokio::time::interval;
+use tokio::time::{interval, sleep};
 use tracing::{debug, info, warn};
 use url::Url;
 
@@ -151,6 +152,40 @@ impl PeerRecord {
     }
 }
 
+/// Chaos testing controls for intentionally unstable networking.
+#[derive(Debug, Clone)]
+pub struct ChaosConfig {
+    /// Probability (0-10000 => 0-100.00%) to drop an outbound message before it is sent.
+    pub drop_outbound_prob: u16,
+    /// Probability (0-10000 => 0-100.00%) to drop an inbound message before it is processed.
+    pub drop_inbound_prob: u16,
+    /// Minimum artificial latency to inject before delivering a message (milliseconds).
+    pub extra_latency_ms_min: u64,
+    /// Maximum artificial latency to inject before delivering a message (milliseconds).
+    pub extra_latency_ms_max: u64,
+}
+
+impl ChaosConfig {
+    fn normalized(&self) -> Self {
+        let mut normalized = self.clone();
+        if normalized.extra_latency_ms_max < normalized.extra_latency_ms_min {
+            normalized.extra_latency_ms_max = normalized.extra_latency_ms_min;
+        }
+        normalized
+    }
+}
+
+impl Default for ChaosConfig {
+    fn default() -> Self {
+        Self {
+            drop_outbound_prob: 0,
+            drop_inbound_prob: 0,
+            extra_latency_ms_min: 0,
+            extra_latency_ms_max: 0,
+        }
+    }
+}
+
 /// P2P network configuration
 #[derive(Debug, Clone)]
 pub struct P2PConfig {
@@ -160,6 +195,7 @@ pub struct P2PConfig {
     pub message_timeout: Duration,
     pub retry_attempts: usize,
     pub dht: DhtConfig,
+    pub chaos: ChaosConfig,
 }
 
 impl Default for P2PConfig {
@@ -171,6 +207,7 @@ impl Default for P2PConfig {
             message_timeout: Duration::from_secs(10),
             retry_attempts: 3,
             dht: DhtConfig::default(),
+            chaos: ChaosConfig::default(),
         }
     }
 }
@@ -225,6 +262,7 @@ pub struct HttpP2PNetwork {
     incoming_receiver: Arc<Mutex<Option<mpsc::UnboundedReceiver<NetworkEvent>>>>,
     discovery_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     announce_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+    chaos: ChaosHandle,
 }
 
 impl HttpP2PNetwork {
@@ -244,6 +282,8 @@ impl HttpP2PNetwork {
             .announce_override(&listen_address)
             .unwrap_or_else(|| listen_address.clone());
 
+        let chaos = ChaosHandle::new(config.chaos.clone(), &listen_address);
+
         Ok(Self {
             config,
             client,
@@ -258,6 +298,7 @@ impl HttpP2PNetwork {
             incoming_receiver: Arc::new(Mutex::new(Some(incoming_receiver))),
             discovery_task: Arc::new(Mutex::new(None)),
             announce_task: Arc::new(Mutex::new(None)),
+            chaos,
         })
     }
 
@@ -400,6 +441,15 @@ impl HttpP2PNetwork {
         self.add_peer(from.clone()).await?;
         self.touch_peer(&from);
 
+        if self.chaos.should_drop_inbound() {
+            debug!(target: "p2p::chaos", from = %from, "Dropping inbound message due to chaos configuration");
+            return Ok(());
+        }
+
+        if let Some(delay) = self.chaos.latency_delay() {
+            sleep(delay).await;
+        }
+
         match &message {
             NetworkMessage::PeerInfo {
                 peer_id,
@@ -539,6 +589,7 @@ impl HttpP2PNetwork {
         let peer_id = self.local_peer_id.clone();
         let announce_address = self.announce_address.clone();
         let listen_address = self.listen_address.clone();
+        let chaos = self.chaos.clone();
         let interval_duration = self
             .config
             .dht
@@ -569,7 +620,9 @@ impl HttpP2PNetwork {
                     if peer == listen_address {
                         continue;
                     }
-                    if let Err(err) = post_message(&client, &peer, &message).await {
+                    if let Err(err) =
+                        post_message_with_chaos(&client, &peer, &message, &chaos).await
+                    {
                         debug!("Failed to announce to {}: {}", peer, err);
                     }
                 }
@@ -584,7 +637,7 @@ impl HttpP2PNetwork {
             addresses: vec![address],
             time_us: Some(ippan_time_now()),
         };
-        post_message(&self.client, peer, &message).await
+        post_message_with_chaos(&self.client, peer, &message, &self.chaos).await
     }
 
     fn touch_peer(&self, peer: &str) {
@@ -796,6 +849,86 @@ async fn post_message(client: &Client, peer: &str, message: &NetworkMessage) -> 
         ));
     }
     Ok(())
+}
+
+async fn post_message_with_chaos(
+    client: &Client,
+    peer: &str,
+    message: &NetworkMessage,
+    chaos: &ChaosHandle,
+) -> Result<()> {
+    if chaos.should_drop_outbound() {
+        debug!(target: "p2p::chaos", peer = %peer, "Dropping outbound message due to chaos configuration");
+        return Ok(());
+    }
+
+    if let Some(delay) = chaos.latency_delay() {
+        sleep(delay).await;
+    }
+
+    post_message(client, peer, message).await
+}
+
+#[derive(Clone)]
+struct ChaosHandle {
+    config: ChaosConfig,
+    rng: Arc<Mutex<StdRng>>,
+}
+
+impl ChaosHandle {
+    fn new(config: ChaosConfig, listen_address: &str) -> Self {
+        let normalized = config.normalized();
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(blake3::hash(listen_address.as_bytes()).as_bytes());
+        let rng = StdRng::from_seed(seed);
+        Self {
+            config: normalized,
+            rng: Arc::new(Mutex::new(rng)),
+        }
+    }
+
+    fn should_drop_outbound(&self) -> bool {
+        self.sample_drop(self.config.drop_outbound_prob)
+    }
+
+    fn should_drop_inbound(&self) -> bool {
+        self.sample_drop(self.config.drop_inbound_prob)
+    }
+
+    fn sample_drop(&self, probability: u16) -> bool {
+        if probability == 0 {
+            return false;
+        }
+
+        let mut rng = self.rng.lock();
+        let roll: u16 = rng.gen_range(0..=9999);
+        roll < probability
+    }
+
+    fn latency_delay(&self) -> Option<Duration> {
+        let min = self.config.extra_latency_ms_min;
+        let max = self
+            .config
+            .extra_latency_ms_max
+            .max(self.config.extra_latency_ms_min);
+
+        if max == 0 && min == 0 {
+            return None;
+        }
+
+        let delay_ms = if max == min {
+            max
+        } else {
+            let mut rng = self.rng.lock();
+            rng.gen_range(min..=max)
+        };
+
+        if delay_ms == 0 {
+            None
+        } else {
+            Some(Duration::from_millis(delay_ms))
+        }
+    }
 }
 
 #[cfg(test)]
