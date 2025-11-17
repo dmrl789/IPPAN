@@ -55,7 +55,7 @@ impl GbdtTrainer {
         let mut trees = Vec::with_capacity(self.config.tree_count);
 
         for tree_idx in 0..self.config.tree_count {
-            tracing::info!("training_tree" = tree_idx + 1, total = self.config.tree_count);
+            tracing::info!(training_tree = tree_idx + 1, total = self.config.tree_count);
 
             let (gradients, hessians) =
                 self.calculate_gradients_hessians(&dataset.targets, &predictions);

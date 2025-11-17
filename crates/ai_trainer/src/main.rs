@@ -74,7 +74,7 @@ fn main() -> Result<()> {
 }
 
 fn run_train(args: TrainArgs) -> Result<()> {
-    info!("dataset" = %args.dataset.display(), "out" = %args.out.display(), "starting" = true);
+    info!(dataset = %args.dataset.display(), out = %args.out.display(), starting = true);
 
     let params = TrainingParams {
         tree_count: args.tree_count,
@@ -98,7 +98,7 @@ fn run_train(args: TrainArgs) -> Result<()> {
     fs::write(&args.out, canonical.as_bytes()).context("failed to write model")?;
 
     let hash = model_hash_hex(&model).context("failed to hash model")?;
-    info!("model_hash" = %hash);
+    info!(model_hash = %hash);
     println!("model_hash={}", hash);
 
     Ok(())
