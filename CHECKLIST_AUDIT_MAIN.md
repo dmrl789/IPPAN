@@ -86,3 +86,10 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] Node `--version` & `--check` flags
 - [ ] CI-driven reproducible release builds (future)
 - [ ] SBOM signing + binary signatures (future)
+
+## 13. Storage & Recovery
+- [x] SnapshotManifest defined and derivable from storage.
+- [x] `export_snapshot` / `import_snapshot` cover blocks, transactions, accounts, files, and metadata.
+- [x] `ippan-node snapshot export/import` subcommands run maintenance flows without starting networking.
+- [x] `docs/STORAGE_AND_SNAPSHOTS.md` documents the layout, snapshot workflow, and crash-restart scenario.
+- [ ] Automated snapshot/restore CI soak tests (future).

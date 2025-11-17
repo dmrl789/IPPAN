@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Arg, ArgAction, Command};
 use config::{Config, File};
 use hex::encode as hex_encode;
@@ -17,7 +17,7 @@ use ippan_p2p::{
 use ippan_rpc::server::ConsensusHandle;
 use ippan_rpc::{start_server, AiStatusHandle, AppState, L2Config};
 use ippan_security::{SecurityConfig as RpcSecurityConfig, SecurityManager as RpcSecurityManager};
-use ippan_storage::{SledStorage, Storage};
+use ippan_storage::{export_snapshot, import_snapshot, SledStorage, Storage};
 use ippan_types::{
     ippan_time_init, ippan_time_now, Block, HashTimer, IppanTimeMicros, Transaction,
 };
@@ -97,6 +97,7 @@ struct AppConfig {
     // Node identity
     node_id: String,
     validator_id: [u8; 32],
+    network_id: String,
 
     // Network
     rpc_host: String,
@@ -267,6 +268,8 @@ impl AppConfig {
             node_id: get_string_value(&config, &["NODE_ID", "node.id"])
                 .unwrap_or_else(|| "ippan_node".to_string()),
             validator_id,
+            network_id: get_string_value(&config, &["NETWORK_ID", "network.id", "network_id"])
+                .unwrap_or_else(|| "ippan-devnet".to_string()),
             consensus_mode: get_string_value(&config, &["CONSENSUS_MODE", "consensus.mode"])
                 .unwrap_or_else(|| "POA".to_string()),
             enable_dlc: get_bool_value(&config, &["ENABLE_DLC", "consensus.enable_dlc"], false),
@@ -458,6 +461,30 @@ async fn main() -> Result<()> {
                 .action(ArgAction::SetTrue)
                 .help("Run configuration and environment self-checks, then exit"),
         )
+        .subcommand(
+            Command::new("snapshot")
+                .about("Export or import on-disk snapshots")
+                .subcommand_required(true)
+                .arg_required_else_help(true)
+                .subcommand(
+                    Command::new("export").about("Export snapshot data to a directory").arg(
+                        Arg::new("dir")
+                            .long("dir")
+                            .value_name("PATH")
+                            .required(true)
+                            .help("Directory to write the snapshot into"),
+                    ),
+                )
+                .subcommand(
+                    Command::new("import").about("Import snapshot data from a directory").arg(
+                        Arg::new("dir")
+                            .long("dir")
+                            .value_name("PATH")
+                            .required(true)
+                            .help("Directory previously created via `snapshot export`"),
+                    ),
+                ),
+        )
         .get_matches();
 
     // Load configuration
@@ -497,6 +524,11 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    if let Some(snapshot_matches) = matches.subcommand_matches("snapshot") {
+        handle_snapshot_subcommand(snapshot_matches, &config)?;
+        return Ok(());
+    }
+
     // Initialize logging
     init_logging(&config)?;
 
@@ -515,6 +547,7 @@ async fn main() -> Result<()> {
 
     info!("Starting IPPAN node: {}", config.node_id);
     info!("Validator ID: {}", hex::encode(config.validator_id));
+    info!("Network ID: {}", config.network_id);
     info!("Data directory: {}", config.data_dir);
     info!("Development mode: {}", config.dev_mode);
 
@@ -534,6 +567,7 @@ async fn main() -> Result<()> {
 
     // Initialize storage
     let storage = Arc::new(SledStorage::new(&config.db_path)?);
+    storage.set_network_id(&config.network_id)?;
     storage.initialize()?;
     info!("Storage initialized at {}", config.db_path);
 
@@ -1146,6 +1180,54 @@ fn run_self_check(config: &AppConfig) -> Result<()> {
             eprintln!("- {issue}");
         }
         anyhow::bail!("self-check failed")
+    }
+}
+
+fn handle_snapshot_subcommand(matches: &clap::ArgMatches, config: &AppConfig) -> Result<()> {
+    match matches.subcommand() {
+        Some(("export", export_matches)) => {
+            let dir = export_matches
+                .get_one::<String>("dir")
+                .ok_or_else(|| anyhow!("--dir is required"))?;
+            let dir_path = PathBuf::from(dir);
+            let storage = SledStorage::new(&config.db_path)?;
+            storage.set_network_id(&config.network_id)?;
+            let manifest = export_snapshot(&storage, &dir_path)?;
+            println!(
+                "Snapshot exported to {} (height {}, accounts {}, files {})",
+                dir_path.display(),
+                manifest.height,
+                manifest.accounts_count,
+                manifest.files_count
+            );
+            println!(
+                "Network: {} • Payments: {} • Blocks: {}",
+                manifest.network_id, manifest.payments_count, manifest.blocks_count
+            );
+            Ok(())
+        }
+        Some(("import", import_matches)) => {
+            let dir = import_matches
+                .get_one::<String>("dir")
+                .ok_or_else(|| anyhow!("--dir is required"))?;
+            let dir_path = PathBuf::from(dir);
+            let mut storage = SledStorage::new(&config.db_path)?;
+            storage.set_network_id(&config.network_id)?;
+            let manifest = import_snapshot(&mut storage, &dir_path)?;
+            println!(
+                "Snapshot imported from {} (height {}, accounts {}, files {})",
+                dir_path.display(),
+                manifest.height,
+                manifest.accounts_count,
+                manifest.files_count
+            );
+            println!(
+                "Network: {} • Payments: {} • Blocks: {}",
+                manifest.network_id, manifest.payments_count, manifest.blocks_count
+            );
+            Ok(())
+        }
+        _ => Err(anyhow!("Unsupported snapshot command")),
     }
 }
 

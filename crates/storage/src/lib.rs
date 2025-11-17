@@ -5,13 +5,15 @@
 //!
 use anyhow::{anyhow, Result};
 use ippan_types::{
-    Address, Block, FileDescriptor, FileDescriptorId, L2Commit, L2ExitRecord, L2Network,
-    RoundCertificate, RoundFinalizationRecord, RoundId, Transaction,
+    ippan_time_now, Address, Block, ChainState, FileDescriptor, FileDescriptorId, L2Commit,
+    L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord, RoundId, Transaction,
 };
 use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sled::{Db, Tree};
 use std::collections::{BTreeMap, HashMap};
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -30,6 +32,147 @@ pub enum StorageError {
     AccountNotFound,
 }
 
+/// Errors raised when exporting or importing snapshots.
+#[derive(thiserror::Error, Debug)]
+pub enum SnapshotError {
+    #[error("storage error: {0}")]
+    Storage(#[from] anyhow::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+    #[error("snapshot directory must be empty: {0}")]
+    DirectoryNotEmpty(String),
+    #[error("snapshot path missing: {0}")]
+    MissingSnapshot(String),
+    #[error("snapshot manifest invalid: {0}")]
+    InvalidManifest(String),
+    #[error("network mismatch (expected {expected}, found {actual})")]
+    NetworkMismatch { expected: String, actual: String },
+    #[error("storage not empty; start from a clean database before importing")]
+    StorageNotEmpty,
+}
+
+/// Versioned manifest describing snapshot metadata and record counts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotManifest {
+    pub version: u32,
+    pub network_id: String,
+    pub height: u64,
+    pub last_round_id: Option<String>,
+    pub timestamp_us: u64,
+    pub accounts_count: u64,
+    pub payments_count: u64,
+    pub blocks_count: u64,
+    pub handles_count: u64,
+    pub files_count: u64,
+    pub ai_model_hash: Option<String>,
+}
+
+/// Minimal @handle representation for snapshot exports.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct HandleSnapshotRecord {
+    pub handle: String,
+    pub owner: String,
+    #[serde(default)]
+    pub expires_at: u64,
+}
+
+const SNAPSHOT_MANIFEST_VERSION: u32 = 1;
+const MANIFEST_FILE: &str = "manifest.json";
+const BLOCKS_FILE: &str = "blocks.jsonl";
+const PAYMENTS_FILE: &str = "payments.jsonl";
+const ACCOUNTS_FILE: &str = "accounts.jsonl";
+const HANDLES_FILE: &str = "handles.jsonl";
+const FILES_FILE: &str = "files.jsonl";
+const ROUNDS_FILE: &str = "rounds.jsonl";
+const CHAIN_STATE_FILE: &str = "chain_state.json";
+
+impl SnapshotManifest {
+    pub fn new_from_storage(storage: &impl StorageLike) -> Result<Self, SnapshotError> {
+        let collections = collect_snapshot_data(storage)?;
+        let height = storage.get_latest_height()?;
+        let last_round_id = collections
+            .rounds
+            .last()
+            .map(|record| record.round.to_string());
+        Ok(Self {
+            version: SNAPSHOT_MANIFEST_VERSION,
+            network_id: storage.snapshot_network_id(),
+            height,
+            last_round_id,
+            timestamp_us: ippan_time_now(),
+            accounts_count: collections.accounts.len() as u64,
+            payments_count: collections.transactions.len() as u64,
+            blocks_count: collections.blocks.len() as u64,
+            handles_count: collections.handles.len() as u64,
+            files_count: collections.files.len() as u64,
+            ai_model_hash: storage.snapshot_ai_model_hash()?,
+        })
+    }
+
+    pub fn validate_against_storage(
+        &self,
+        storage: &impl StorageLike,
+    ) -> Result<(), SnapshotError> {
+        let collections = collect_snapshot_data(storage)?;
+        let height = storage.get_latest_height()?;
+        if self.network_id != storage.snapshot_network_id() {
+            return Err(SnapshotError::NetworkMismatch {
+                expected: self.network_id.clone(),
+                actual: storage.snapshot_network_id(),
+            });
+        }
+        if self.height != height {
+            return Err(SnapshotError::InvalidManifest(format!(
+                "height mismatch: manifest={}, storage={}",
+                self.height, height
+            )));
+        }
+        if self.blocks_count != collections.blocks.len() as u64 {
+            return Err(SnapshotError::InvalidManifest(format!(
+                "blocks mismatch: manifest={}, storage={}",
+                self.blocks_count,
+                collections.blocks.len()
+            )));
+        }
+        if self.accounts_count != collections.accounts.len() as u64 {
+            return Err(SnapshotError::InvalidManifest(format!(
+                "accounts mismatch: manifest={}, storage={}",
+                self.accounts_count,
+                collections.accounts.len()
+            )));
+        }
+        if self.payments_count != collections.transactions.len() as u64 {
+            return Err(SnapshotError::InvalidManifest(format!(
+                "payments mismatch: manifest={}, storage={}",
+                self.payments_count,
+                collections.transactions.len()
+            )));
+        }
+        if self.handles_count != collections.handles.len() as u64 {
+            return Err(SnapshotError::InvalidManifest(format!(
+                "handles mismatch: manifest={}, storage={}",
+                self.handles_count,
+                collections.handles.len()
+            )));
+        }
+        if self.files_count != collections.files.len() as u64 {
+            return Err(SnapshotError::InvalidManifest(format!(
+                "files mismatch: manifest={}, storage={}",
+                self.files_count,
+                collections.files.len()
+            )));
+        }
+        if self.ai_model_hash != storage.snapshot_ai_model_hash()? {
+            return Err(SnapshotError::InvalidManifest(
+                "AI model hash mismatch".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Account information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
@@ -38,20 +181,276 @@ pub struct Account {
     pub nonce: u64,
 }
 
-/// Chain state (economic + round metadata)
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ChainState {
-    pub total_issued_micro: u128,
-    pub last_updated_round: u64,
+/// Extended storage interface for snapshot export/import helpers.
+pub trait StorageLike: Storage + Send + Sync {
+    fn snapshot_network_id(&self) -> String;
+    fn snapshot_blocks(&self) -> Result<Vec<Block>>;
+    fn snapshot_transactions(&self) -> Result<Vec<Transaction>>;
+    fn snapshot_accounts(&self) -> Result<Vec<Account>>;
+    fn snapshot_handles(&self) -> Result<Vec<HandleSnapshotRecord>> {
+        Ok(Vec::new())
+    }
+    fn snapshot_file_descriptors(&self) -> Result<Vec<FileDescriptor>>;
+    fn snapshot_round_finalizations(&self) -> Result<Vec<RoundFinalizationRecord>>;
+    fn snapshot_chain_state(&self) -> Result<ChainState>;
+    fn snapshot_ai_model_hash(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+    fn apply_ai_model_hash(&self, _hash: Option<&str>) -> Result<()> {
+        Ok(())
+    }
+    fn flush_storage(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
-impl ChainState {
-    pub fn add_issued_micro(&mut self, amt: u128) {
-        self.total_issued_micro = self.total_issued_micro.saturating_add(amt);
+struct SnapshotCollections {
+    accounts: Vec<Account>,
+    blocks: Vec<Block>,
+    transactions: Vec<Transaction>,
+    handles: Vec<HandleSnapshotRecord>,
+    files: Vec<FileDescriptor>,
+    rounds: Vec<RoundFinalizationRecord>,
+    chain_state: ChainState,
+}
+
+fn collect_snapshot_data(storage: &impl StorageLike) -> Result<SnapshotCollections, SnapshotError> {
+    storage.flush_storage()?;
+    let mut accounts = storage.snapshot_accounts()?;
+    sort_accounts(&mut accounts);
+    let mut blocks = storage.snapshot_blocks()?;
+    sort_blocks(&mut blocks);
+    let mut transactions = storage.snapshot_transactions()?;
+    sort_transactions(&mut transactions);
+    let mut handles = storage.snapshot_handles()?;
+    handles.sort_by(|a, b| a.handle.cmp(&b.handle));
+    let mut files = storage.snapshot_file_descriptors()?;
+    sort_file_descriptors(&mut files);
+    let mut rounds = storage.snapshot_round_finalizations()?;
+    sort_rounds(&mut rounds);
+    Ok(SnapshotCollections {
+        accounts,
+        blocks,
+        transactions,
+        handles,
+        files,
+        rounds,
+        chain_state: storage.snapshot_chain_state()?,
+    })
+}
+
+pub fn export_snapshot(
+    storage: &impl StorageLike,
+    path: &Path,
+) -> Result<SnapshotManifest, SnapshotError> {
+    ensure_export_directory(path)?;
+    let collections = collect_snapshot_data(storage)?;
+    write_jsonl(&path.join(BLOCKS_FILE), &collections.blocks)?;
+    write_jsonl(&path.join(PAYMENTS_FILE), &collections.transactions)?;
+    write_jsonl(&path.join(ACCOUNTS_FILE), &collections.accounts)?;
+    write_jsonl(&path.join(HANDLES_FILE), &collections.handles)?;
+    write_jsonl(&path.join(FILES_FILE), &collections.files)?;
+    write_jsonl(&path.join(ROUNDS_FILE), &collections.rounds)?;
+    write_json_file(&path.join(CHAIN_STATE_FILE), &collections.chain_state)?;
+
+    let manifest = SnapshotManifest {
+        version: SNAPSHOT_MANIFEST_VERSION,
+        network_id: storage.snapshot_network_id(),
+        height: storage.get_latest_height()?,
+        last_round_id: collections
+            .rounds
+            .last()
+            .map(|record| record.round.to_string()),
+        timestamp_us: ippan_time_now(),
+        accounts_count: collections.accounts.len() as u64,
+        payments_count: collections.transactions.len() as u64,
+        blocks_count: collections.blocks.len() as u64,
+        handles_count: collections.handles.len() as u64,
+        files_count: collections.files.len() as u64,
+        ai_model_hash: storage.snapshot_ai_model_hash()?,
+    };
+
+    write_json_file(&path.join(MANIFEST_FILE), &manifest)?;
+    Ok(manifest)
+}
+
+pub fn import_snapshot(
+    storage: &mut impl StorageLike,
+    path: &Path,
+) -> Result<SnapshotManifest, SnapshotError> {
+    ensure_import_directory(path)?;
+    let manifest_path = path.join(MANIFEST_FILE);
+    let manifest: SnapshotManifest = read_json_file(&manifest_path)?;
+    if manifest.version != SNAPSHOT_MANIFEST_VERSION {
+        return Err(SnapshotError::InvalidManifest(format!(
+            "unsupported manifest version {}",
+            manifest.version
+        )));
     }
-    pub fn update_round(&mut self, round: u64) {
-        self.last_updated_round = round;
+    let storage_network = storage.snapshot_network_id();
+    if storage_network != manifest.network_id {
+        return Err(SnapshotError::NetworkMismatch {
+            expected: manifest.network_id.clone(),
+            actual: storage_network,
+        });
     }
+    ensure_storage_empty(storage)?;
+
+    let blocks: Vec<Block> = read_optional_jsonl(&path.join(BLOCKS_FILE))?;
+    let transactions: Vec<Transaction> = read_optional_jsonl(&path.join(PAYMENTS_FILE))?;
+    let accounts: Vec<Account> = read_optional_jsonl(&path.join(ACCOUNTS_FILE))?;
+    let handles: Vec<HandleSnapshotRecord> = read_optional_jsonl(&path.join(HANDLES_FILE))?;
+    let files: Vec<FileDescriptor> = read_optional_jsonl(&path.join(FILES_FILE))?;
+    let rounds: Vec<RoundFinalizationRecord> = read_optional_jsonl(&path.join(ROUNDS_FILE))?;
+    let chain_state: Option<ChainState> = read_optional_json(&path.join(CHAIN_STATE_FILE))?;
+
+    for block in blocks {
+        storage.store_block(block)?;
+    }
+    for tx in transactions {
+        storage.store_transaction(tx)?;
+    }
+    for account in accounts {
+        storage.update_account(account)?;
+    }
+    for record in rounds {
+        storage.store_round_finalization(record)?;
+    }
+    for descriptor in files {
+        storage.store_file_descriptor(descriptor)?;
+    }
+    if let Some(state) = chain_state {
+        storage.update_chain_state(&state)?;
+    }
+
+    // Handles are documented but currently in-memory only. We parse the file to
+    // ensure deterministic exports and surface the data to operators. The
+    // storage layer intentionally no-ops because handle persistence lives in
+    // `l2_handle_registry` today.
+    if !handles.is_empty() {
+        tracing::warn!(
+            "handle snapshot contained {} records but the registry is in-memory; data not restored",
+            handles.len()
+        );
+    }
+
+    storage.apply_ai_model_hash(manifest.ai_model_hash.as_deref())?;
+    storage.flush_storage()?;
+    manifest.validate_against_storage(storage)?;
+    Ok(manifest)
+}
+
+fn ensure_export_directory(path: &Path) -> Result<(), SnapshotError> {
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(SnapshotError::InvalidManifest(format!(
+                "snapshot path {} is not a directory",
+                path.display()
+            )));
+        }
+        if path.read_dir()?.next().is_some() {
+            return Err(SnapshotError::DirectoryNotEmpty(path.display().to_string()));
+        }
+    } else {
+        fs::create_dir_all(path)?;
+    }
+    Ok(())
+}
+
+fn ensure_import_directory(path: &Path) -> Result<(), SnapshotError> {
+    if !path.exists() || !path.is_dir() {
+        return Err(SnapshotError::MissingSnapshot(path.display().to_string()));
+    }
+    Ok(())
+}
+
+fn write_jsonl<T: Serialize>(path: &Path, records: &[T]) -> Result<(), SnapshotError> {
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    for record in records {
+        serde_json::to_writer(&mut writer, record)?;
+        writer.write_all(b"\n")?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
+fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<(), SnapshotError> {
+    let file = File::create(path)?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, value)?;
+    Ok(())
+}
+
+fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<T, SnapshotError> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    Ok(serde_json::from_reader(reader)?)
+}
+
+fn read_optional_jsonl<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, SnapshotError> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut records = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        records.push(serde_json::from_str(&line)?);
+    }
+    Ok(records)
+}
+
+fn read_optional_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, SnapshotError> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(read_json_file(path)?))
+}
+
+fn ensure_storage_empty(storage: &impl StorageLike) -> Result<(), SnapshotError> {
+    if storage.get_latest_height()? > 0 {
+        return Err(SnapshotError::StorageNotEmpty);
+    }
+    if storage.get_transaction_count()? > 0 {
+        return Err(SnapshotError::StorageNotEmpty);
+    }
+    if !storage.snapshot_accounts()?.is_empty() {
+        return Err(SnapshotError::StorageNotEmpty);
+    }
+    if !storage.snapshot_file_descriptors()?.is_empty() {
+        return Err(SnapshotError::StorageNotEmpty);
+    }
+    Ok(())
+}
+
+fn sort_blocks(blocks: &mut Vec<Block>) {
+    blocks.sort_by(|a, b| {
+        a.header
+            .round
+            .cmp(&b.header.round)
+            .then_with(|| a.hash().cmp(&b.hash()))
+    });
+}
+
+fn sort_transactions(transactions: &mut Vec<Transaction>) {
+    transactions.sort_by(|a, b| a.hash().cmp(&b.hash()));
+}
+
+fn sort_accounts(accounts: &mut Vec<Account>) {
+    accounts.sort_by(|a, b| a.address.cmp(&b.address));
+}
+
+fn sort_file_descriptors(files: &mut Vec<FileDescriptor>) {
+    files.sort_by(|a, b| a.id.as_bytes().cmp(b.id.as_bytes()));
+}
+
+fn sort_rounds(rounds: &mut Vec<RoundFinalizationRecord>) {
+    rounds.sort_by(|a, b| a.round.cmp(&b.round));
 }
 
 /// Abstract storage trait
@@ -386,6 +785,58 @@ impl Storage for MemoryStorage {
     }
 }
 
+impl StorageLike for MemoryStorage {
+    fn snapshot_network_id(&self) -> String {
+        "memory-devnet".to_string()
+    }
+
+    fn snapshot_blocks(&self) -> Result<Vec<Block>> {
+        let mut blocks: Vec<Block> = self.inner.blocks.read().values().cloned().collect();
+        sort_blocks(&mut blocks);
+        Ok(blocks)
+    }
+
+    fn snapshot_transactions(&self) -> Result<Vec<Transaction>> {
+        let mut txs: Vec<Transaction> = self.inner.transactions.read().values().cloned().collect();
+        sort_transactions(&mut txs);
+        Ok(txs)
+    }
+
+    fn snapshot_accounts(&self) -> Result<Vec<Account>> {
+        let mut accounts: Vec<Account> = self.inner.accounts.read().values().cloned().collect();
+        sort_accounts(&mut accounts);
+        Ok(accounts)
+    }
+
+    fn snapshot_file_descriptors(&self) -> Result<Vec<FileDescriptor>> {
+        let mut files: Vec<FileDescriptor> = self
+            .inner
+            .file_descriptors
+            .read()
+            .values()
+            .cloned()
+            .collect();
+        sort_file_descriptors(&mut files);
+        Ok(files)
+    }
+
+    fn snapshot_round_finalizations(&self) -> Result<Vec<RoundFinalizationRecord>> {
+        let mut rounds: Vec<RoundFinalizationRecord> = self
+            .inner
+            .round_finalizations
+            .read()
+            .values()
+            .cloned()
+            .collect();
+        sort_rounds(&mut rounds);
+        Ok(rounds)
+    }
+
+    fn snapshot_chain_state(&self) -> Result<ChainState> {
+        Ok(self.inner.chain_state.read().clone())
+    }
+}
+
 /// Sled-backed implementation
 pub struct SledStorage {
     db: Db,
@@ -402,6 +853,7 @@ pub struct SledStorage {
     file_descriptors: Tree,
     file_owner_index: Tree,
     chain_state: Arc<RwLock<ChainState>>,
+    network_id: Arc<RwLock<String>>,
 }
 
 impl SledStorage {
@@ -425,6 +877,11 @@ impl SledStorage {
         } else {
             ChainState::default()
         };
+        let network_id = if let Some(bytes) = metadata.get(b"network_id")? {
+            String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| "unknown".to_string())
+        } else {
+            "unknown".to_string()
+        };
 
         Ok(Self {
             db,
@@ -441,6 +898,7 @@ impl SledStorage {
             file_descriptors,
             file_owner_index,
             chain_state: Arc::new(RwLock::new(chain_state)),
+            network_id: Arc::new(RwLock::new(network_id)),
         })
     }
 
@@ -461,6 +919,13 @@ impl SledStorage {
 
     pub fn flush(&self) -> Result<()> {
         self.db.flush()?;
+        Ok(())
+    }
+
+    pub fn set_network_id(&self, network_id: &str) -> Result<()> {
+        self.metadata
+            .insert(b"network_id", network_id.as_bytes())?;
+        *self.network_id.write() = network_id.to_string();
         Ok(())
     }
 }
@@ -751,6 +1216,90 @@ impl Storage for SledStorage {
     }
 }
 
+impl StorageLike for SledStorage {
+    fn snapshot_network_id(&self) -> String {
+        self.network_id.read().clone()
+    }
+
+    fn snapshot_blocks(&self) -> Result<Vec<Block>> {
+        let mut blocks = Vec::new();
+        for entry in self.blocks.iter() {
+            let (_, value) = entry?;
+            blocks.push(serde_json::from_slice(&value)?);
+        }
+        sort_blocks(&mut blocks);
+        Ok(blocks)
+    }
+
+    fn snapshot_transactions(&self) -> Result<Vec<Transaction>> {
+        let mut txs = Vec::new();
+        for entry in self.transactions.iter() {
+            let (_, value) = entry?;
+            txs.push(serde_json::from_slice(&value)?);
+        }
+        sort_transactions(&mut txs);
+        Ok(txs)
+    }
+
+    fn snapshot_accounts(&self) -> Result<Vec<Account>> {
+        let mut accounts = Vec::new();
+        for entry in self.accounts.iter() {
+            let (_, value) = entry?;
+            accounts.push(serde_json::from_slice(&value)?);
+        }
+        sort_accounts(&mut accounts);
+        Ok(accounts)
+    }
+
+    fn snapshot_file_descriptors(&self) -> Result<Vec<FileDescriptor>> {
+        let mut files = Vec::new();
+        for entry in self.file_descriptors.iter() {
+            let (_, value) = entry?;
+            files.push(serde_json::from_slice(&value)?);
+        }
+        sort_file_descriptors(&mut files);
+        Ok(files)
+    }
+
+    fn snapshot_round_finalizations(&self) -> Result<Vec<RoundFinalizationRecord>> {
+        let mut rounds = Vec::new();
+        for entry in self.round_finalizations.iter() {
+            let (_, value) = entry?;
+            rounds.push(serde_json::from_slice(&value)?);
+        }
+        sort_rounds(&mut rounds);
+        Ok(rounds)
+    }
+
+    fn snapshot_chain_state(&self) -> Result<ChainState> {
+        self.get_chain_state()
+    }
+
+    fn snapshot_ai_model_hash(&self) -> Result<Option<String>> {
+        Ok(self
+            .metadata
+            .get(b"ai_model_hash")?
+            .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
+            .filter(|value| !value.is_empty()))
+    }
+
+    fn apply_ai_model_hash(&self, hash: Option<&str>) -> Result<()> {
+        match hash {
+            Some(value) if !value.is_empty() => {
+                self.metadata.insert(b"ai_model_hash", value.as_bytes())?;
+            }
+            _ => {
+                self.metadata.remove(b"ai_model_hash")?;
+            }
+        }
+        Ok(())
+    }
+
+    fn flush_storage(&self) -> Result<()> {
+        self.flush()
+    }
+}
+
 fn build_owner_index_key(owner: &[u8; 32], descriptor: &[u8; 32]) -> Vec<u8> {
     let mut key = Vec::with_capacity(64);
     key.extend_from_slice(owner);
@@ -765,7 +1314,10 @@ fn build_owner_index_key(owner: &[u8; 32], descriptor: &[u8; 32]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ippan_types::{BlockId, HashTimer, IppanTimeMicros, RoundCertificate, RoundId};
+    use ippan_types::{
+        Amount, BlockId, HashTimer, IppanTimeMicros, RoundCertificate, RoundFinalizationRecord,
+        RoundId, RoundWindow, Transaction,
+    };
     use tempfile::tempdir;
 
     fn sample_cert(round: RoundId) -> RoundCertificate {
@@ -867,5 +1419,56 @@ mod tests {
             .expect("list owner");
         assert_eq!(owner_files.len(), 1);
         assert_eq!(owner_files[0].id, descriptor.id);
+    }
+
+    #[test]
+    fn snapshot_manifest_counts_memory_state() {
+        let storage = MemoryStorage::new();
+
+        let mut tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1_000), 1);
+        tx.refresh_id();
+        storage.store_transaction(tx.clone()).expect("store tx");
+
+        let block = Block::new(vec![], vec![tx.clone()], 1, [9u8; 32]);
+        storage.store_block(block).expect("store block");
+
+        let account = Account {
+            address: [42u8; 32],
+            balance: 5_000,
+            nonce: 2,
+        };
+        storage.update_account(account).expect("store account");
+
+        let descriptor = sample_descriptor(3);
+        storage
+            .store_file_descriptor(descriptor)
+            .expect("store file");
+
+        let round_record = RoundFinalizationRecord {
+            round: 1,
+            window: RoundWindow {
+                id: 1,
+                start_us: IppanTimeMicros(10),
+                end_us: IppanTimeMicros(20),
+            },
+            ordered_tx_ids: vec![tx.hash()],
+            fork_drops: vec![],
+            state_root: [0u8; 32],
+            proof: sample_cert(1),
+            total_fees_atomic: Some(10),
+            treasury_fees_atomic: Some(2),
+            applied_payments: Some(1),
+            rejected_payments: Some(0),
+        };
+        storage
+            .store_round_finalization(round_record)
+            .expect("store finalization");
+
+        let manifest = SnapshotManifest::new_from_storage(&storage).expect("manifest");
+        assert_eq!(manifest.accounts_count, 1);
+        assert_eq!(manifest.payments_count, 1);
+        assert_eq!(manifest.blocks_count, 1);
+        assert_eq!(manifest.files_count, 1);
+        assert_eq!(manifest.handles_count, 0);
     }
 }
