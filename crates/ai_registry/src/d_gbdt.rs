@@ -322,7 +322,8 @@ fn extract_model_entry(config: &toml::Value) -> Result<(String, Option<String>)>
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
             RegistryError::InvalidInput(
-                "Missing 'dgbdt.model.path' or legacy 'dgbdt.d_gbdt_model_path' in config".to_string(),
+                "Missing 'dgbdt.model.path' or legacy 'dgbdt.d_gbdt_model_path' in config"
+                    .to_string(),
             )
         })?
         .to_string();

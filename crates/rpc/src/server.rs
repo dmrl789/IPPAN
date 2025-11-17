@@ -2724,9 +2724,9 @@ mod tests {
     use ippan_storage::{MemoryStorage, ValidatorTelemetry};
     use ippan_types::{
         address::{encode_address, Address},
-        Amount, ChainState, FileDescriptor as ChainFileDescriptor, FileDescriptorId, IppanTimeMicros,
-        L2ExitStatus, L2NetworkStatus, RoundCertificate, RoundFinalizationRecord, RoundId,
-        RoundWindow,
+        Amount, ChainState, FileDescriptor as ChainFileDescriptor, FileDescriptorId,
+        IppanTimeMicros, L2ExitStatus, L2NetworkStatus, RoundCertificate, RoundFinalizationRecord,
+        RoundId, RoundWindow,
     };
     use std::collections::{HashMap, HashSet};
     use std::fs;

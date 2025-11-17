@@ -71,8 +71,7 @@ impl Dataset {
                 continue;
             }
             header = Some(
-                line
-                    .split(',')
+                line.split(',')
                     .map(|part| part.trim().to_string())
                     .collect(),
             );
@@ -121,7 +120,12 @@ impl Dataset {
 
             let parse = |idx: usize| -> Result<i64> {
                 parts[idx].parse::<i64>().with_context(|| {
-                    format!("Line {} column {} ('{}') is not an integer", line_idx + 1, idx + 1, parts[idx])
+                    format!(
+                        "Line {} column {} ('{}') is not an integer",
+                        line_idx + 1,
+                        idx + 1,
+                        parts[idx]
+                    )
                 })
             };
 
@@ -276,7 +280,14 @@ mod tests {
 
         let stats = dataset.feature_stats();
         assert_eq!(stats.len(), FEATURE_COLUMNS.len());
-        assert_eq!(stats[0], FeatureStats { name: "uptime_micros".into(), min: 100, max: 200 });
+        assert_eq!(
+            stats[0],
+            FeatureStats {
+                name: "uptime_micros".into(),
+                min: 100,
+                max: 200
+            }
+        );
 
         Ok(())
     }

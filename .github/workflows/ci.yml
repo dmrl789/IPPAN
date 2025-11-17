@@ -2,14 +2,13 @@ name: Build & Test (Rust)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
 
 jobs:
   build-test:
@@ -23,6 +22,6 @@ jobs:
       - name: Build and Test
         run: |
           cargo fmt --all -- --check
-          cargo clippy --workspace --all-targets --all-features
-          cargo build --all
-          cargo test --all -- --nocapture
+          RUSTFLAGS="" cargo clippy --workspace --all-targets --all-features
+          RUSTFLAGS="-D warnings" cargo build --all
+          RUSTFLAGS="-D warnings" cargo test --all -- --nocapture

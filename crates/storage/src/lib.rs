@@ -923,8 +923,7 @@ impl SledStorage {
     }
 
     pub fn set_network_id(&self, network_id: &str) -> Result<()> {
-        self.metadata
-            .insert(b"network_id", network_id.as_bytes())?;
+        self.metadata.insert(b"network_id", network_id.as_bytes())?;
         *self.network_id.write() = network_id.to_string();
         Ok(())
     }
