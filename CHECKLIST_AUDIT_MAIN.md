@@ -42,6 +42,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] Runtime crates now avoid `f64`/`f32` usages: currency/L2 types use atomic units, governance/economics/security/network/core/rpc modules all compute with fixed-point integers or ratios.
 - [x] `.github/workflows/no-float-runtime.yml` exists and targets `main`.
 - [ ] Workflow scope is limited to `ai_core`, `consensus*`, and `ai_registry`; it does **not** scan other runtime crates (`types`, `network`, `governance`, `storage`, `node`, etc.), so violations slip through CI.
+- [x] Workflow now limits matching to Rust runtime sources (excluding tests/examples/benches) so comments/docs mentioning floats no longer cause false positives.
 
 ## 5. IPNDHT Network Layer
 - [x] Libp2p network stack + DHT helper (`crates/p2p/src/lib.rs`, `crates/p2p/src/ipndht.rs`) provide publish/find APIs with caching.
@@ -49,6 +50,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] Node startup (`node/src/main.rs`) now wires `MemoryFileStorage` + `StubFileDhtService` into the RPC `AppState`, giving `/files/*` endpoints live handles while the real libp2p-backed service is still pending.
 - [x] Multi-node/discovery tests exist (ignored by default) under `crates/p2p/tests/ipndht_resilience.rs`.
 - [x] Docs available: `docs/ipndht/ipndht_hardening_plan.md`, `docs/ipndht/file-descriptors.md`, `IPNDHT_FILE_IMPLEMENTATION_SUMMARY.md`.
+- [x] IPNDHT lookup rejects mismatched/conflicting descriptors from the DHT and unit tests cover the rejection paths.
 
 ## 6. Handles (@handle.ipn)
 - [x] Handle registry + metadata (`crates/l2_handle_registry/src/*.rs`) implement handle validation, owner index, expiration, and tests.
