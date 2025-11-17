@@ -85,6 +85,13 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `/metrics` endpoint serves Prometheus text output whenever the exporter is enabled (`crates/rpc/src/server.rs`).
 - [ ] Advanced dashboards/alert policies are tracked separately (future work).
 
+## 11b. Explorer & Ops API
+- [x] Explorer-read RPC surface documented in `docs/API_EXPLORER_SURFACE.md`.
+- [x] Core DTOs for blocks/txs/accounts/payments/handles/files are consistent, integer-based, and stable.
+- [x] Observability endpoints (`/health`, `/ai/status`, `/metrics`) documented for dashboards.
+- [x] Dev-only endpoints explicitly marked and dev-gated.
+- [ ] Strong versioning / deprecation policy for RPC (future).
+
 ## Optional Test Runs
 - `cargo test -p ippan-rpc -- --nocapture` → **fails** (expected) due to missing OpenSSL headers in the environment; no additional compiler errors observed before the toolchain check halted.
 - `cargo test -p ippan-consensus-dlc -- --nocapture` → **passes** locally (vends registry-backed fairness); only external toolchain issues (e.g., OpenSSL) would block in other environments.

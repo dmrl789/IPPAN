@@ -38,7 +38,7 @@ use ippan_types::health::{HealthStatus, NodeHealth, NodeHealthContext};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
     Amount, Block, HandleOperation, HandleRegisterOp, L2Commit, L2ExitRecord, L2Network,
-    RoundFinalizationRecord, Transaction,
+    RoundFinalizationRecord, Transaction, TransactionVisibility,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::de::{self, Deserializer, Visitor};
@@ -201,6 +201,8 @@ struct AiStatus {
     model_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    consensus_mode: Option<String>,
 }
 
 impl AiStatus {
@@ -210,6 +212,7 @@ impl AiStatus {
             using_stub: false,
             model_hash: None,
             model_version: None,
+            consensus_mode: None,
         }
     }
 }
@@ -221,26 +224,40 @@ impl From<AiConsensusStatus> for AiStatus {
             using_stub: status.using_stub,
             model_hash: status.model_hash,
             model_version: status.model_version,
+            consensus_mode: None,
         }
     }
 }
 
 /// Transaction lookup response payload used by JSON responses.
 #[derive(Debug, Serialize)]
-struct TransactionEnvelope {
-    hash: String,
-    transaction: Transaction,
-}
-
-#[derive(Debug, Serialize)]
-struct BlockWithFees {
-    block: Block,
+#[serde(rename_all = "snake_case")]
+struct BlockResponse {
+    block: BlockView,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    fee_summary: Option<RoundFeeSummary>,
+    fee_summary: Option<RoundFeeSummaryView>,
 }
 
 #[derive(Debug, Serialize)]
-struct RoundFeeSummary {
+#[serde(rename_all = "snake_case")]
+struct BlockView {
+    id: String,
+    round: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    height: Option<u64>,
+    creator: String,
+    hash_timer: String,
+    timestamp: u64,
+    parent_ids: Vec<String>,
+    transaction_hashes: Vec<String>,
+    tx_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    transactions: Vec<TransactionView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct RoundFeeSummaryView {
     round: u64,
     total_fees_atomic: String,
     treasury_fees_atomic: String,
@@ -248,7 +265,7 @@ struct RoundFeeSummary {
     rejected_payments: u64,
 }
 
-impl RoundFeeSummary {
+impl RoundFeeSummaryView {
     fn from_record(record: &RoundFinalizationRecord) -> Option<Self> {
         let total = record.total_fees_atomic?;
         let treasury = record.treasury_fees_atomic.unwrap_or(0);
@@ -262,15 +279,96 @@ impl RoundFeeSummary {
     }
 }
 
+impl TransactionView {
+    fn from_transaction(tx: &Transaction, status: TransactionStatus) -> Self {
+        let fee_required = FeePolicy::default().required_fee(tx);
+        Self {
+            hash: hex_encode(tx.hash()),
+            from: encode_address(&tx.from),
+            to: encode_address(&tx.to),
+            amount_atomic: format_atomic(tx.amount.atomic()),
+            fee_atomic: format_fee(fee_required),
+            nonce: tx.nonce,
+            timestamp: tx.timestamp.0,
+            hash_timer: tx.hashtimer.to_hex(),
+            status,
+            visibility: tx.visibility,
+            memo: tx.topics.first().cloned(),
+            handle_operation: tx.handle_op.clone(),
+        }
+    }
+}
+
+impl BlockView {
+    fn from_block(block: &Block, height: Option<u64>) -> Self {
+        let transaction_hashes = block
+            .transactions
+            .iter()
+            .map(|tx| hex_encode(tx.hash()))
+            .collect::<Vec<_>>();
+        let transactions = block
+            .transactions
+            .iter()
+            .map(|tx| TransactionView::from_transaction(tx, TransactionStatus::Finalized))
+            .collect::<Vec<_>>();
+        let timestamp = block.header.hashtimer.timestamp_us.max(0) as u64;
+        Self {
+            id: hex_encode(block.header.id),
+            round: block.header.round,
+            height,
+            creator: hex_encode(block.header.creator),
+            hash_timer: block.header.hashtimer.to_hex(),
+            timestamp,
+            parent_ids: block
+                .header
+                .parent_ids
+                .iter()
+                .map(|parent| hex_encode(parent))
+                .collect(),
+            transaction_hashes,
+            tx_count: block.transactions.len(),
+            transactions,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum TransactionStatus {
+    #[allow(dead_code)]
+    AcceptedToMempool,
+    Finalized,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct TransactionView {
+    hash: String,
+    from: String,
+    to: String,
+    amount_atomic: String,
+    fee_atomic: String,
+    nonce: u64,
+    timestamp: u64,
+    hash_timer: String,
+    status: TransactionStatus,
+    visibility: TransactionVisibility,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    handle_operation: Option<HandleOperation>,
+}
+
 /// Account lookup response payload with recent transaction history.
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 struct AccountResponse {
     address: String,
-    balance: u64,
+    balance_atomic: String,
     nonce: u64,
-    transactions: Vec<TransactionEnvelope>,
+    recent_transactions: Vec<TransactionView>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    payments: Vec<PaymentView>,
+    recent_payments: Vec<PaymentView>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -300,6 +398,7 @@ struct DevFundRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 struct PaymentResponse {
     tx_hash: String,
     status: PaymentStatus,
@@ -309,6 +408,8 @@ struct PaymentResponse {
     amount_atomic: String,
     fee_atomic: String,
     timestamp: u64,
+    hash_timer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     memo: Option<String>,
 }
 
@@ -320,6 +421,7 @@ enum PaymentStatus {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 struct PaymentView {
     hash: String,
     from: String,
@@ -331,6 +433,8 @@ struct PaymentView {
     total_cost_atomic: Option<String>,
     nonce: u64,
     timestamp: u64,
+    hash_timer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     memo: Option<String>,
     status: PaymentStatus,
 }
@@ -885,7 +989,7 @@ impl PaymentView {
         perspective: Option<&[u8; 32]>,
         status: PaymentStatus,
     ) -> Self {
-        let hash = hex::encode(tx.hash());
+        let hash = hex_encode(tx.hash());
         let from = encode_address(&tx.from);
         let to = encode_address(&tx.to);
         let memo = tx.topics.first().cloned();
@@ -912,6 +1016,7 @@ impl PaymentView {
             total_cost_atomic,
             nonce: tx.nonce,
             timestamp: tx.timestamp.0,
+            hash_timer: tx.hashtimer.to_hex(),
             memo,
             status,
         }
@@ -1314,12 +1419,13 @@ async fn handle_get_ai_status(
         return Err(deny_request(&state, &addr, ENDPOINT, err).await);
     }
 
-    let response = if let Some(handle) = &state.ai_status {
+    let mut response = if let Some(handle) = &state.ai_status {
         let snapshot = handle.snapshot().await;
         AiStatus::from(snapshot)
     } else {
         AiStatus::disabled()
     };
+    response.consensus_mode = Some(state.consensus_mode.clone());
     record_security_success(&state, &addr, ENDPOINT).await;
     Ok(Json(response))
 }
@@ -1619,6 +1725,7 @@ fn payment_response_from_built(built: &BuiltPayment) -> PaymentResponse {
         amount_atomic: format_atomic(built.amount_atomic),
         fee_atomic: format_fee(built.fee_atomic),
         timestamp: built.transaction.timestamp.0,
+        hash_timer: built.transaction.hashtimer.to_hex(),
         memo: built.memo.clone(),
     }
 }
@@ -1646,7 +1753,7 @@ async fn handle_get_transaction(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     AxumPath(hash): AxumPath<String>,
-) -> Result<Json<TransactionEnvelope>, (StatusCode, &'static str)> {
+) -> Result<Json<TransactionView>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/tx/:hash").await {
         return Err(deny_request(&state, &addr, "/tx/:hash", err).await);
     }
@@ -1662,10 +1769,7 @@ async fn handle_get_transaction(
 
     match state.storage.get_transaction(&hash_bytes) {
         Ok(Some(tx)) => {
-            let envelope = TransactionEnvelope {
-                hash: hex_encode(tx.hash()),
-                transaction: tx,
-            };
+            let envelope = TransactionView::from_transaction(&tx, TransactionStatus::Finalized);
             record_security_success(&state, &addr, "/tx/:hash").await;
             Ok(Json(envelope))
         }
@@ -1688,7 +1792,7 @@ async fn handle_get_block(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     AxumPath(id): AxumPath<String>,
-) -> Result<Json<BlockWithFees>, (StatusCode, &'static str)> {
+) -> Result<Json<BlockResponse>, (StatusCode, &'static str)> {
     if let Err(err) = guard_request(&state, &addr, "/block/:id").await {
         return Err(deny_request(&state, &addr, "/block/:id", err).await);
     }
@@ -1702,15 +1806,19 @@ async fn handle_get_block(
         }
     };
 
+    let mut height_hint = None;
     let block_result = match identifier {
         BlockIdentifier::Hash(hash) => state.storage.get_block(&hash),
-        BlockIdentifier::Height(height) => state.storage.get_block_by_height(height),
+        BlockIdentifier::Height(height) => {
+            height_hint = Some(height);
+            state.storage.get_block_by_height(height)
+        }
     };
 
     match block_result {
         Ok(Some(block)) => {
             record_security_success(&state, &addr, "/block/:id").await;
-            let response = block_with_fee_summary(&state.storage, block);
+            let response = block_response_with_fee_summary(&state.storage, block, height_hint);
             Ok(Json(response))
         }
         Ok(None) => {
@@ -2311,29 +2419,34 @@ fn parse_block_identifier(input: &str) -> Option<BlockIdentifier> {
 
 fn account_to_response(account: Account, transactions: Vec<Transaction>) -> AccountResponse {
     let payments = build_payment_views(&transactions, &account.address);
-    let transactions = transactions
-        .into_iter()
-        .map(|tx| TransactionEnvelope {
-            hash: hex_encode(tx.hash()),
-            transaction: tx,
-        })
+    let recent_transactions = transactions
+        .iter()
+        .map(|tx| TransactionView::from_transaction(tx, TransactionStatus::Finalized))
         .collect();
 
     AccountResponse {
         address: hex_encode(account.address),
-        balance: account.balance,
+        balance_atomic: format_atomic(account.balance as u128),
         nonce: account.nonce,
-        transactions,
-        payments,
+        recent_transactions,
+        recent_payments: payments,
     }
 }
 
-fn block_with_fee_summary(storage: &Arc<dyn Storage + Send + Sync>, block: Block) -> BlockWithFees {
+fn block_response_with_fee_summary(
+    storage: &Arc<dyn Storage + Send + Sync>,
+    block: Block,
+    height_hint: Option<u64>,
+) -> BlockResponse {
     let fee_summary = match storage.get_round_finalization(block.header.round) {
-        Ok(Some(record)) => RoundFeeSummary::from_record(&record),
+        Ok(Some(record)) => RoundFeeSummaryView::from_record(&record),
         _ => None,
     };
-    BlockWithFees { block, fee_summary }
+    let block_view = BlockView::from_block(&block, height_hint);
+    BlockResponse {
+        block: block_view,
+        fee_summary,
+    }
 }
 
 fn build_payment_views(transactions: &[Transaction], perspective: &[u8; 32]) -> Vec<PaymentView> {
@@ -2608,10 +2721,10 @@ mod tests {
     use ippan_l2_handle_registry::{HandleRegistration, PublicKey, StubHandleDhtService};
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
-    use ippan_storage::{ChainState, MemoryStorage, ValidatorTelemetry};
+    use ippan_storage::{MemoryStorage, ValidatorTelemetry};
     use ippan_types::{
         address::{encode_address, Address},
-        Amount, FileDescriptor as ChainFileDescriptor, FileDescriptorId, IppanTimeMicros,
+        Amount, ChainState, FileDescriptor as ChainFileDescriptor, FileDescriptorId, IppanTimeMicros,
         L2ExitStatus, L2NetworkStatus, RoundCertificate, RoundFinalizationRecord, RoundId,
         RoundWindow,
     };
@@ -3130,9 +3243,10 @@ mod tests {
         let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 3);
         let response = account_to_response(account, vec![tx.clone()]);
         assert_eq!(response.address, hex::encode(sample_public_key([1u8; 32])));
-        assert_eq!(response.transactions.len(), 1);
-        assert_eq!(response.transactions[0].hash.len(), 64);
-        assert_eq!(response.transactions[0].transaction.hash(), tx.hash());
+        assert_eq!(response.balance_atomic, "1000");
+        assert_eq!(response.recent_transactions.len(), 1);
+        assert_eq!(response.recent_transactions[0].hash.len(), 64);
+        assert_eq!(response.recent_transactions[0].hash, hex::encode(tx.hash()));
     }
 
     #[test]
@@ -3332,7 +3446,8 @@ mod tests {
         )
         .await
         .expect("block by hash");
-        assert_eq!(by_hash.0.block.header.round, 5);
+        assert_eq!(by_hash.0.block.round, 5);
+        assert!(by_hash.0.block.height.is_none());
         assert!(by_hash.0.fee_summary.is_none());
 
         let by_height = handle_get_block(
@@ -3342,7 +3457,8 @@ mod tests {
         )
         .await
         .expect("block by height");
-        assert_eq!(by_height.0.block.header.round, 5);
+        assert_eq!(by_height.0.block.round, 5);
+        assert_eq!(by_height.0.block.height, Some(5));
         assert!(by_height.0.fee_summary.is_none());
 
         let bad = handle_get_block(
@@ -3431,9 +3547,9 @@ mod tests {
         )
         .await
         .expect("account ok");
-        assert_eq!(ok.0.balance, 500);
-        assert_eq!(ok.0.transactions.len(), 2);
-        assert_eq!(ok.0.payments.len(), 2);
+        assert_eq!(ok.0.balance_atomic, "500");
+        assert_eq!(ok.0.recent_transactions.len(), 2);
+        assert_eq!(ok.0.recent_payments.len(), 2);
 
         let missing = handle_get_account(
             State(state.clone()),
