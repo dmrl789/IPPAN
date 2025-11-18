@@ -456,6 +456,10 @@ mod serialization_tests {
             fork_drops: vec![[30u8; 32]],
             state_root: [40u8; 32],
             proof: cert,
+            total_fees_atomic: Some(1_234_567u128),
+            treasury_fees_atomic: Some(987_654u128),
+            applied_payments: Some(42),
+            rejected_payments: Some(3),
         };
 
         let json =
