@@ -2,7 +2,9 @@ name: AI Determinism & DLC Consensus
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - main
+      - master
     paths:
       - 'crates/ai_core/**'
       - 'crates/ai_registry/**'
@@ -11,7 +13,9 @@ on:
       - 'models/**'
       - 'config/dlc.toml'
   pull_request:
-    branches: [ master ]
+    branches:
+      - main
+      - master
 
 env:
   RUSTFLAGS: "-D warnings"

@@ -2,9 +2,13 @@ name: Build & Test (Rust)
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - main
+      - master
   pull_request:
-    branches: [ master ]
+    branches:
+      - main
+      - master
 
 env:
   RUST_BACKTRACE: 1

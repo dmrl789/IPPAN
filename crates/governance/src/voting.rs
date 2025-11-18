@@ -162,7 +162,12 @@ impl VotingSession {
 
         let approval_ratio =
             ratio_from_parts(self.approval_stake as u128, self.total_voting_stake as u128);
-        approval_ratio >= self.threshold_micros
+
+        if self.threshold_micros >= RATIO_SCALE {
+            approval_ratio >= self.threshold_micros
+        } else {
+            approval_ratio > self.threshold_micros
+        }
     }
 
     /// Check if voting is still open
