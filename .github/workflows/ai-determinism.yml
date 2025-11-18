@@ -208,8 +208,12 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
+            cargo_target: x86_64-unknown-linux-gnu
+            needs_qemu: false
           - arch: aarch64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-24.04
+            cargo_target: aarch64-unknown-linux-gnu
+            needs_qemu: true
 
     steps:
       - uses: actions/checkout@v4
@@ -217,15 +221,37 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Add target toolchain
+        run: rustup target add ${{ matrix.cargo_target }}
+
+      - name: Install qemu for aarch64
+        if: matrix.needs_qemu == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu qemu-user
+
       - name: Generate deterministic inference output
         run: |
           mkdir -p target/determinism
-          cargo run \
-            --manifest-path crates/ai_core/Cargo.toml \
-            --release \
-            --bin dump_inference \
-            -- \
-            --output target/determinism/inference-${{ matrix.arch }}.json
+          if [[ "${{ matrix.arch }}" == "aarch64" ]]; then
+            cargo build \
+              --manifest-path crates/ai_core/Cargo.toml \
+              --release \
+              --bin dump_inference \
+              --target ${{ matrix.cargo_target }}
+            qemu-aarch64 \
+              -L /usr/aarch64-linux-gnu \
+              target/${{ matrix.cargo_target }}/release/dump_inference \
+              --output target/determinism/inference-${{ matrix.arch }}.json
+          else
+            cargo run \
+              --manifest-path crates/ai_core/Cargo.toml \
+              --release \
+              --bin dump_inference \
+              --target ${{ matrix.cargo_target }} \
+              -- \
+              --output target/determinism/inference-${{ matrix.arch }}.json
+          fi
 
       - name: Upload inference artifact
         uses: actions/upload-artifact@v4
