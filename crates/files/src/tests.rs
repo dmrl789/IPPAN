@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod integration_tests {
-    use crate::descriptor::{ContentHash, FileDescriptor, FileId};
+    use crate::descriptor::{ContentHash, FileDescriptor};
     use crate::dht::{FileDhtService, StubFileDhtService};
     use crate::storage::{FileStorage, MemoryFileStorage};
     use ippan_time::IppanTimeMicros;
