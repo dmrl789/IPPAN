@@ -153,7 +153,7 @@ impl PeerRecord {
 }
 
 /// Chaos testing controls for intentionally unstable networking.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChaosConfig {
     /// Probability (0-10000 => 0-100.00%) to drop an outbound message before it is sent.
     pub drop_outbound_prob: u16,
@@ -172,17 +172,6 @@ impl ChaosConfig {
             normalized.extra_latency_ms_max = normalized.extra_latency_ms_min;
         }
         normalized
-    }
-}
-
-impl Default for ChaosConfig {
-    fn default() -> Self {
-        Self {
-            drop_outbound_prob: 0,
-            drop_inbound_prob: 0,
-            extra_latency_ms_min: 0,
-            extra_latency_ms_max: 0,
-        }
     }
 }
 
@@ -944,11 +933,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_configure_announce_address_prefers_public_host() {
-        let mut config = P2PConfig::default();
-        config.listen_address = "http://127.0.0.1:9101".into();
-        config.dht.public_host = Some("https://example.com:9101".into());
-        config.dht.external_ip_services.clear();
-        config.dht.enable_upnp = false;
+        let config = P2PConfig {
+            listen_address: "http://127.0.0.1:9101".into(),
+            dht: DhtConfig {
+                public_host: Some("https://example.com:9101".into()),
+                external_ip_services: Vec::new(),
+                enable_upnp: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9101".into()).expect("network");
         let override_addr = network.configure_announce_address().await;

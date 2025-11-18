@@ -19,9 +19,20 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Build and Test
-        run: |
-          cargo fmt --all -- --check
-          RUSTFLAGS="" cargo clippy --workspace --all-targets --all-features
-          RUSTFLAGS="-D warnings" cargo build --all
-          RUSTFLAGS="-D warnings" cargo test --all -- --nocapture
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Cargo clippy
+        run: RUSTFLAGS="" cargo clippy --workspace --all-targets --all-features
+
+      - name: Cargo build
+        run: RUSTFLAGS="-D warnings" cargo build --workspace --all-features
+
+      - name: Cargo test (build only)
+        run: cargo test --workspace --all-features --no-run
+
+      - name: Cargo test
+        run: RUSTFLAGS="-D warnings" cargo test --workspace --all-features -- --nocapture
+
+      - name: AI Core determinism tests
+        run: cargo test -p ippan-ai-core -- --nocapture

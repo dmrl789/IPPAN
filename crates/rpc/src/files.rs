@@ -116,7 +116,7 @@ pub async fn handle_publish_file(
     if let Err(err) = guard_file_request(&state, &addr, "/files/publish").await {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(ApiError::new("security_error", &err.to_string())),
+            Json(ApiError::new("security_error", err.to_string())),
         ));
     }
 
@@ -126,7 +126,7 @@ pub async fn handle_publish_file(
             StatusCode::BAD_REQUEST,
             Json(ApiError::new(
                 "invalid_owner",
-                &format!("Invalid owner address: {}", e),
+                format!("Invalid owner address: {}", e),
             )),
         )
     })?;
@@ -137,7 +137,7 @@ pub async fn handle_publish_file(
             StatusCode::BAD_REQUEST,
             Json(ApiError::new(
                 "invalid_content_hash",
-                &format!("Invalid content hash: {}", e),
+                format!("Invalid content hash: {}", e),
             )),
         )
     })?;
@@ -231,7 +231,7 @@ pub async fn handle_get_file(
     if let Err(err) = guard_file_request(&state, &addr, "/files/{id}").await {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(ApiError::new("security_error", &err.to_string())),
+            Json(ApiError::new("security_error", err.to_string())),
         ));
     }
 
@@ -241,7 +241,7 @@ pub async fn handle_get_file(
             StatusCode::BAD_REQUEST,
             Json(ApiError::new(
                 "invalid_file_id",
-                &format!("Invalid file ID: {}", e),
+                format!("Invalid file ID: {}", e),
             )),
         )
     })?;

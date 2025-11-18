@@ -351,7 +351,7 @@ mod tests {
         let metrics = ValidatorMetrics::default();
 
         let score = model.score_deterministic(&metrics);
-        assert!(score >= 0 && score <= 10000); // Score is scaled 0-10000
+        assert!((0..=10000).contains(&score)); // Score is scaled 0-10000
     }
 
     #[test]

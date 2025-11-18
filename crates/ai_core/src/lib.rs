@@ -99,7 +99,7 @@ mod internal_tests {
             rounds_active: 10_000,
             avg_latency_us: 80_000,
             slash_count: 0,
-            stake: 500_000_00000000,
+            stake: 50_000_000_000_000,
             age_rounds: 100_000,
         };
 

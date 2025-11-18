@@ -48,9 +48,7 @@ impl GbdtTrainer {
         let mut predictions = vec![0i64; n_samples];
 
         let bias = self.calculate_bias(&dataset.targets);
-        for pred in &mut predictions {
-            *pred = bias;
-        }
+        predictions.fill(bias);
 
         let mut trees = Vec::with_capacity(self.config.tree_count);
 

@@ -293,8 +293,7 @@ impl CartBuilder {
             return 0;
         }
 
-        let value = -((sum_g as i128) / sum_h as i128) as i64;
-        value
+        -((sum_g as i128) / sum_h as i128) as i64
     }
 }
 

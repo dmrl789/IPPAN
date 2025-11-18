@@ -9,5 +9,5 @@ use crate::gbdt::Model;
 /// no whitespace) and feeds it to BLAKE3. The result is a 64-character hex
 /// string that is stable across platforms.
 pub fn model_hash_hex(model: &Model) -> Result<String, AiCoreError> {
-    Ok(model.hash_hex().map_err(AiCoreError::from)?)
+    model.hash_hex().map_err(AiCoreError::from)
 }
