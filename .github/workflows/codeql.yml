@@ -2,9 +2,9 @@ name: Security & CodeQL
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ master ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ master ]
   schedule:
     - cron: '0 3 * * 1'
 
