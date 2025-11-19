@@ -1,70 +1,105 @@
 {
-  "metadata": {
-    "model_id": "reputation_v1",
-    "version": 1,
-    "model_type": "gbdt",
-    "description": "Reputation scoring model for validator selection in IPPAN consensus",
-    "training_data": "historical_validator_performance",
-    "features": [
-      "proposal_rate",
-      "verification_rate",
-      "latency_score",
-      "slash_penalty",
-      "stake_weight",
-      "longevity"
-    ],
-    "performance_metrics": {
-      "accuracy": 0.95,
-      "precision": 0.93,
-      "recall": 0.91
+  "learning_rate": 250000,
+  "trees": [
+    {
+      "nodes": [
+        {
+          "feature": 0,
+          "threshold": 0,
+          "left": 1,
+          "right": 2,
+          "value": null
+        },
+        {
+          "feature": 0,
+          "threshold": 0,
+          "left": null,
+          "right": null,
+          "value": 180000
+        },
+        {
+          "feature": 0,
+          "threshold": 0,
+          "left": null,
+          "right": null,
+          "value": -220000
+        }
+      ]
     },
-    "hash_sha256": "0397885bb1360a7b991f7fbb4373edbc7defadb0fd6f3c91bfb0efe3e4203fe7",
-    "feature_count": 6,
-    "output_scale": 10000,
-    "output_min": 0,
-    "output_max": 10000
-  },
-  "model": {
-    "trees": [
-      {
-        "nodes": [
-          { "feature_index": 0, "threshold": 5000, "left": 1, "right": 2, "value": null },
-          { "feature_index": 1, "threshold": 5000, "left": 3, "right": 4, "value": null },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 500 },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 800 },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 1200 }
-        ]
-      },
-      {
-        "nodes": [
-          { "feature_index": 2, "threshold": 7000, "left": 1, "right": 2, "value": null },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 300 },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 600 }
-        ]
-      },
-      {
-        "nodes": [
-          { "feature_index": 3, "threshold": 8000, "left": 1, "right": 2, "value": null },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": -200 },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 400 }
-        ]
-      },
-      {
-        "nodes": [
-          { "feature_index": 4, "threshold": 5000, "left": 1, "right": 2, "value": null },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 200 },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 800 }
-        ]
-      },
-      {
-        "nodes": [
-          { "feature_index": 5, "threshold": 3000, "left": 1, "right": 2, "value": null },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 100 },
-          { "feature_index": 0, "threshold": 0, "left": 0, "right": 0, "value": 500 }
-        ]
-      }
-    ],
-    "bias": 5000,
-    "scale": 10000
-  }
+    {
+      "nodes": [
+        {
+          "feature": 1,
+          "threshold": 1500000,
+          "left": 1,
+          "right": 2,
+          "value": null
+        },
+        {
+          "feature": 1,
+          "threshold": 0,
+          "left": null,
+          "right": null,
+          "value": 150000
+        },
+        {
+          "feature": 1,
+          "threshold": 0,
+          "left": null,
+          "right": null,
+          "value": -150000
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "feature": 2,
+          "threshold": 99900000,
+          "left": 1,
+          "right": 2,
+          "value": null
+        },
+        {
+          "feature": 2,
+          "threshold": 0,
+          "left": null,
+          "right": null,
+          "value": 250000
+        },
+        {
+          "feature": 2,
+          "threshold": 0,
+          "left": null,
+          "right": null,
+          "value": -120000
+        }
+      ]
+    },
+    {
+      "nodes": [
+        {
+          "feature": 3,
+          "threshold": 750000,
+          "left": 1,
+          "right": 2,
+          "value": null
+        },
+        {
+          "feature": 3,
+          "threshold": 0,
+          "left": null,
+          "right": null,
+          "value": 120000
+        },
+        {
+          "feature": 3,
+          "threshold": 0,
+          "left": null,
+          "right": null,
+          "value": -80000
+        }
+      ]
+    }
+  ]
 }

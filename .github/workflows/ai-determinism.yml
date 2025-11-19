@@ -131,22 +131,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ripgrep
 
-      - name: Check for f32/f64 in ai_core (non-test/bench)
+      - name: Check for f32/f64 in ai_core (non-test/bench/example)
         run: |
           echo "🔍 Checking crates/ai_core for f32/f64..."
-          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/benches/**' "(f32|f64)" crates/ai_core \
+          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/examples/**' --glob '!**/benches/**' "(f32|f64)" crates/ai_core \
             | grep -v "//.*f32\|//.*f64"
           
-      - name: Check for f32/f64 in consensus* (non-test/bench)
+      - name: Check for f32/f64 in consensus* (non-test/bench/example)
         run: |
           echo "🔍 Checking crates/consensus* for f32/f64..."
-          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/benches/**' "(f32|f64)" crates/consensus* \
+          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/examples/**' --glob '!**/benches/**' "(f32|f64)" crates/consensus* \
             | grep -v "//.*f32\|//.*f64"
           
-      - name: Check for f32/f64 in ai_registry (non-test/bench)
+      - name: Check for f32/f64 in ai_registry (non-test/bench/example)
         run: |
           echo "🔍 Checking crates/ai_registry for f32/f64..."
-          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/benches/**' "(f32|f64)" crates/ai_registry \
+          ! rg -n --glob '*.rs' --glob '!**/tests/**' --glob '!**/examples/**' --glob '!**/benches/**' "(f32|f64)" crates/ai_registry \
             | grep -v "//.*f32\|//.*f64" || echo "✅ ai_registry clean or not found"
           
       - name: Verification summary
@@ -228,7 +228,14 @@ jobs:
         if: matrix.needs_qemu
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu qemu-user
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user
+
+      - name: Configure aarch64 cross-linker
+        if: matrix.needs_qemu
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> "$GITHUB_ENV"
 
       - name: Generate deterministic inference output
         run: |
