@@ -225,7 +225,7 @@ jobs:
         run: rustup target add ${{ matrix.cargo_target }}
 
       - name: Install qemu for aarch64
-        if: matrix.needs_qemu == 'true'
+        if: matrix.needs_qemu
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu qemu-user
