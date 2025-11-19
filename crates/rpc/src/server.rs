@@ -3686,13 +3686,9 @@ mod tests {
             signing_key: Some(hex::encode(sample_private_key([32u8; 32]).to_bytes())),
         };
 
-        let err = handle_payment_tx(
-            State(state.clone()),
-            ConnectInfo(addr),
-            Json(bad_request),
-        )
-        .await
-        .expect_err("invalid address");
+        let err = handle_payment_tx(State(state.clone()), ConnectInfo(addr), Json(bad_request))
+            .await
+            .expect_err("invalid address");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
 
         let signer = sample_private_key([33u8; 32]);
@@ -3861,9 +3857,7 @@ mod tests {
             state.handle_anchors.clone(),
             state.handle_dht.clone(),
         );
-        pipeline
-            .apply(&dispatched, 20, 20)
-            .expect("apply pipeline");
+        pipeline.apply(&dispatched, 20, 20).expect("apply pipeline");
         tokio::task::yield_now().await;
 
         let lookup = handle_get_handle(
@@ -4043,14 +4037,8 @@ mod tests {
         let incoming_clone = incoming.clone();
         let self_clone = self_transfer.clone();
 
-        state
-            .storage
-            .store_transaction(outgoing)
-            .expect("outgoing");
-        state
-            .storage
-            .store_transaction(incoming)
-            .expect("incoming");
+        state.storage.store_transaction(outgoing).expect("outgoing");
+        state.storage.store_transaction(incoming).expect("incoming");
         state
             .storage
             .store_transaction(self_transfer)

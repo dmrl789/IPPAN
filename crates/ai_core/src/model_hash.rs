@@ -18,10 +18,7 @@ mod tests {
     use crate::gbdt::{tree::Node, Model, Tree, SCALE};
 
     fn sample_model_with_bias(bias: i64) -> Model {
-        let tree = Tree::new(
-            vec![Node::leaf(0, 100 * SCALE)],
-            SCALE,
-        );
+        let tree = Tree::new(vec![Node::leaf(0, 100 * SCALE)], SCALE);
         Model::new(vec![tree], bias)
     }
 

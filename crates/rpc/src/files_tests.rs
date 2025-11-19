@@ -62,11 +62,7 @@ mod tests {
         }
 
         async fn find_file(&self, id: &FileId) -> Result<DhtLookupResult> {
-            let descriptor = self
-                .lookup
-                .lock()
-                .clone()
-                .filter(|desc| desc.id == *id);
+            let descriptor = self.lookup.lock().clone().filter(|desc| desc.id == *id);
             Ok(DhtLookupResult {
                 file_id: *id,
                 descriptor,
