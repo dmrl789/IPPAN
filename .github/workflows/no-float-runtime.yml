@@ -34,11 +34,31 @@ jobs:
           set -euo pipefail
           echo "Checking for f32/f64 in runtime crates (.rs only, excluding tests/examples/benches)..."
 
-          paths=(
-            crates/ai_core/src
+          runtime_paths=(
+            crates/types/src
+            crates/core/src
+            crates/time/src
             crates/consensus/src
             crates/consensus_dlc/src
+            crates/mempool/src
+            crates/storage/src
+            crates/network/src
+            crates/p2p/src
+            crates/rpc/src
+            crates/security/src
+            crates/governance/src
+            crates/economics/src
+            crates/ippan_economics/src
+            crates/treasury/src
+            crates/l1_fees/src
+            crates/l2_fees/src
+            crates/l2_handle_registry/src
+            crates/l1_handle_anchors/src
+            crates/validator_resolution/src
+            crates/files/src
+            crates/ai_core/src
             crates/ai_registry/src
+            node/src
           )
 
           matches=$(rg \
@@ -48,7 +68,7 @@ jobs:
               --glob '!**/benches/**' \
               -n \
               '\b(f32|f64)\b' \
-              "${paths[@]}" || true)
+              "${runtime_paths[@]}" || true)
 
           matches=$(echo "$matches" | grep -Ev '^\s*//' || true)
 
