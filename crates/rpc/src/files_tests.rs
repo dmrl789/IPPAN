@@ -2,9 +2,14 @@
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use axum::extract::{ConnectInfo, Path as AxumPath, State};
+    use axum::Json;
     use ippan_files::{
-        descriptor::ContentHash, dht::StubFileDhtService, FileDescriptor, FileDhtService,
-        FileStorage, MemoryFileStorage,
+        descriptor::ContentHash,
+        dht::{DhtLookupResult, DhtPublishResult, StubFileDhtService},
+        FileDescriptor, FileDhtService, FileId, FileStorage, MemoryFileStorage,
     };
     use ippan_l1_handle_anchors::L1HandleAnchorStorage;
     use ippan_l2_handle_registry::{
@@ -13,13 +18,58 @@ mod tests {
     use ippan_mempool::Mempool;
     use ippan_storage::MemoryStorage;
     use ippan_types::address::encode_address;
+    use parking_lot::Mutex;
+    use std::net::SocketAddr;
     use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
     use std::time::Instant;
     use tokio::runtime::Runtime;
 
-    use crate::files::{FileDescriptorResponse, PublishFileRequest};
+    use crate::files::{
+        handle_get_file, handle_publish_file, FileDescriptorResponse, PublishFileRequest,
+    };
     use crate::server::{AppState, L2Config};
+
+    #[derive(Clone, Default)]
+    struct RecordingFileDht {
+        published: Arc<Mutex<Vec<FileDescriptor>>>,
+        lookup: Arc<Mutex<Option<FileDescriptor>>>,
+    }
+
+    impl RecordingFileDht {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn last_published(&self) -> Option<FileDescriptor> {
+            self.published.lock().last().cloned()
+        }
+
+        fn set_lookup_descriptor(&self, descriptor: FileDescriptor) {
+            *self.lookup.lock() = Some(descriptor);
+        }
+    }
+
+    #[async_trait]
+    impl FileDhtService for RecordingFileDht {
+        async fn publish_file(&self, descriptor: &FileDescriptor) -> Result<DhtPublishResult> {
+            self.published.lock().push(descriptor.clone());
+            Ok(DhtPublishResult {
+                file_id: descriptor.id,
+                success: true,
+                message: Some("recording".into()),
+            })
+        }
+
+        async fn find_file(&self, id: &FileId) -> Result<DhtLookupResult> {
+            let descriptor = self.lookup.lock().clone().filter(|desc| desc.id == *id);
+            Ok(DhtLookupResult {
+                file_id: *id,
+                descriptor,
+                providers: Vec::new(),
+            })
+        }
+    }
 
     fn create_test_state() -> AppState {
         let storage = Arc::new(MemoryStorage::new());
@@ -185,5 +235,73 @@ mod tests {
         for file in &owner_files {
             assert_eq!(file.owner, owner);
         }
+    }
+
+    #[tokio::test]
+    async fn test_publish_file_endpoint_persists_and_publishes() {
+        let mut state = create_test_state();
+        let recording = Arc::new(RecordingFileDht::new());
+        state.file_dht = Some(recording.clone());
+        let state = Arc::new(state);
+
+        let owner = [1u8; 32];
+        let request = PublishFileRequest {
+            owner: encode_address(&owner),
+            content_hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            size_bytes: 2048,
+            mime_type: Some("application/json".into()),
+            tags: vec!["rpc".into()],
+        };
+
+        let addr: SocketAddr = "127.0.0.1:9500".parse().unwrap();
+        let response = handle_publish_file(State(state.clone()), ConnectInfo(addr), Json(request))
+            .await
+            .expect("publish ok")
+            .0;
+
+        assert_eq!(response.size_bytes, 2048);
+        assert_eq!(response.mime_type.as_deref(), Some("application/json"));
+        assert!(response.dht_published);
+
+        let file_id = FileId::from_hex(&response.id).expect("valid id");
+        let stored = state
+            .file_storage
+            .as_ref()
+            .unwrap()
+            .get(&file_id)
+            .expect("storage ok")
+            .expect("descriptor stored");
+        assert_eq!(stored.id, file_id);
+
+        let published = recording.last_published().expect("dht call");
+        assert_eq!(published.id, file_id);
+    }
+
+    #[tokio::test]
+    async fn test_get_file_endpoint_uses_dht_when_storage_missing() {
+        let mut state = create_test_state();
+        state.file_storage = None;
+        let recording = Arc::new(RecordingFileDht::new());
+
+        let content_hash = ContentHash::from_data(b"remote");
+        let descriptor = FileDescriptor::new(content_hash, [9u8; 32], 512, None, vec![]);
+        recording.set_lookup_descriptor(descriptor.clone());
+
+        state.file_dht = Some(recording.clone());
+        let state = Arc::new(state);
+
+        let addr: SocketAddr = "127.0.0.1:9501".parse().unwrap();
+        let response = handle_get_file(
+            State(state),
+            ConnectInfo(addr),
+            AxumPath(descriptor.id.to_hex()),
+        )
+        .await
+        .expect("lookup ok")
+        .0;
+
+        assert_eq!(response.id, descriptor.id.to_hex());
+        assert_eq!(response.owner, encode_address(&descriptor.owner));
     }
 }

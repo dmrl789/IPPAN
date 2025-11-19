@@ -2715,7 +2715,7 @@ mod tests {
     use axum::extract::{ConnectInfo, Path as AxumPath, Query};
     use axum::Json;
     use ed25519_dalek::SigningKey;
-    use ippan_consensus::{PoAConfig, Validator};
+    use ippan_consensus::{handles::HandlePipeline, PoAConfig, Validator};
     use ippan_consensus_dlc::{AiConsensusStatus, DlcConfig as AiDlcConfig, DlcConsensus};
     use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
     use ippan_l2_handle_registry::{HandleRegistration, PublicKey, StubHandleDhtService};
@@ -2784,6 +2784,28 @@ mod tests {
         assert_eq!(status.consensus_mode, "poa");
         assert!(status.rpc_healthy);
         assert_eq!(status.peer_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_health_reflects_dependency_failures() {
+        let failing: Arc<dyn Storage + Send + Sync> = Arc::new(FailingStorage::new(&[
+            "get_latest_round_finalization",
+            "get_latest_height",
+        ]));
+        let mut inner = (*build_app_state(None, None)).clone();
+        inner.storage = failing;
+        inner.consensus = None;
+        inner.file_dht = None;
+        inner.handle_dht = None;
+        let state = Arc::new(inner);
+
+        let addr: SocketAddr = "127.0.0.1:6003".parse().unwrap();
+        let Json(status) = handle_get_health(State(state), ConnectInfo(addr))
+            .await
+            .expect("health");
+        assert!(!status.consensus_healthy);
+        assert!(!status.storage_healthy);
+        assert!(!status.dht_healthy);
     }
 
     #[tokio::test]
@@ -3650,6 +3672,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_handle_payment_tx_rejects_invalid_payloads() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9402".parse().unwrap();
+
+        let bad_request = PaymentRequest {
+            from: "invalid".into(),
+            to: encode_address(&sample_public_key([31u8; 32])),
+            amount: 1,
+            fee: None,
+            nonce: Some(1),
+            memo: None,
+            signing_key: Some(hex::encode(sample_private_key([32u8; 32]).to_bytes())),
+        };
+
+        let err = handle_payment_tx(State(state.clone()), ConnectInfo(addr), Json(bad_request))
+            .await
+            .expect_err("invalid address");
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+
+        let signer = sample_private_key([33u8; 32]);
+        let zero_amount = PaymentRequest {
+            from: encode_address(&signer.verifying_key().to_bytes()),
+            to: encode_address(&sample_public_key([34u8; 32])),
+            amount: 0,
+            fee: None,
+            nonce: Some(1),
+            memo: None,
+            signing_key: Some(hex::encode(signer.to_bytes())),
+        };
+
+        let err = handle_payment_tx(State(state), ConnectInfo(addr), Json(zero_amount))
+            .await
+            .expect_err("zero amount");
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
     async fn test_handle_register_endpoint_success() {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
         let mut config = PoAConfig::default();
@@ -3736,6 +3795,84 @@ mod tests {
             .await
             .expect_err("invalid handle");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_register_round_trip_with_pipeline_and_dht() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = PoAConfig::default();
+        config.validators.push(Validator {
+            id: sample_public_key([90u8; 32]),
+            address: sample_public_key([91u8; 32]),
+            stake: 1_000,
+            is_active: true,
+        });
+
+        let poa = PoAConsensus::new(config, storage.clone(), sample_public_key([92u8; 32]));
+        let mempool = poa.mempool();
+        let consensus = Arc::new(Mutex::new(poa));
+        let (tx_sender, mut rx) = mpsc::unbounded_channel();
+        let handle = ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool.clone());
+
+        let mut app_state = (*build_app_state(None, None)).clone();
+        let stub_handle_dht: Arc<StubHandleDhtService> = Arc::new(StubHandleDhtService::new());
+        app_state.storage = storage.clone();
+        app_state.consensus = Some(handle);
+        app_state.tx_sender = Some(tx_sender);
+        app_state.mempool = mempool;
+        app_state.handle_dht = Some(stub_handle_dht.clone());
+        let state = Arc::new(app_state);
+
+        let signer = sample_private_key([93u8; 32]);
+        let owner = signer.verifying_key().to_bytes();
+        state
+            .storage
+            .update_account(Account {
+                address: owner,
+                balance: 5_000,
+                nonce: 0,
+            })
+            .expect("account");
+
+        let mut metadata = BTreeMap::new();
+        metadata.insert("alias".into(), "Pipeline".into());
+        let request = HandleRegisterRequest {
+            handle: "@pipeline.ipn".into(),
+            owner: encode_address(&owner),
+            metadata,
+            expires_at: Some(ippan_time_now() + 120),
+            fee: None,
+            nonce: None,
+            signing_key: hex::encode(signer.to_bytes()),
+        };
+
+        let addr: SocketAddr = "127.0.0.1:9453".parse().unwrap();
+        let _ = handle_register_handle(State(state.clone()), ConnectInfo(addr), Json(request))
+            .await
+            .expect("register ok");
+
+        let dispatched = rx.recv().await.expect("tx dispatched");
+        let pipeline = HandlePipeline::with_dht(
+            state.handle_registry.clone(),
+            state.handle_anchors.clone(),
+            state.handle_dht.clone(),
+        );
+        pipeline.apply(&dispatched, 20, 20).expect("apply pipeline");
+        tokio::task::yield_now().await;
+
+        let lookup = handle_get_handle(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("@pipeline.ipn".to_string()),
+        )
+        .await
+        .expect("lookup");
+        assert_eq!(lookup.0.owner, encode_address(&owner));
+
+        let dht_record = stub_handle_dht
+            .get(&Handle::new("@pipeline.ipn"))
+            .expect("dht record");
+        assert_eq!(dht_record.owner.as_bytes(), &owner);
     }
 
     #[tokio::test]
@@ -3871,6 +4008,71 @@ mod tests {
             response.0[0].hash == hex::encode(outgoing.hash())
                 || response.0[0].hash == hex::encode(incoming.hash())
         );
+    }
+
+    #[tokio::test]
+    async fn test_handle_get_account_payments_direction_and_limit() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9403".parse().unwrap();
+
+        let signer = sample_private_key([70u8; 32]);
+        let account_address = signer.verifying_key().to_bytes();
+        state
+            .storage
+            .update_account(Account {
+                address: account_address,
+                balance: 9_000,
+                nonce: 0,
+            })
+            .expect("account");
+
+        let mut outgoing = sample_transaction([70u8; 32], sample_public_key([71u8; 32]), 10);
+        outgoing.timestamp = IppanTimeMicros(200);
+        let mut incoming = sample_transaction(sample_public_key([72u8; 32]), account_address, 11);
+        incoming.timestamp = IppanTimeMicros(300);
+        let mut self_transfer = sample_transaction([70u8; 32], account_address, 12);
+        self_transfer.timestamp = IppanTimeMicros(100);
+
+        let outgoing_clone = outgoing.clone();
+        let incoming_clone = incoming.clone();
+        let self_clone = self_transfer.clone();
+
+        state.storage.store_transaction(outgoing).expect("outgoing");
+        state.storage.store_transaction(incoming).expect("incoming");
+        state
+            .storage
+            .store_transaction(self_transfer)
+            .expect("self");
+
+        let limited = handle_get_account_payments(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryQuery { limit: Some(2) }),
+        )
+        .await
+        .expect("limited")
+        .0;
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0].nonce, incoming_clone.nonce);
+        assert!(matches!(limited[0].direction, PaymentDirection::Incoming));
+        assert!(matches!(limited[1].direction, PaymentDirection::Outgoing));
+
+        let full = handle_get_account_payments(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(account_address)),
+            Query(PaymentHistoryQuery { limit: None }),
+        )
+        .await
+        .expect("full")
+        .0;
+        assert_eq!(full.len(), 3);
+        assert_eq!(full[2].nonce, self_clone.nonce);
+        assert!(matches!(full[2].direction, PaymentDirection::SelfTransfer));
+        assert!(matches!(full[0].direction, PaymentDirection::Incoming));
+        assert!(matches!(full[1].direction, PaymentDirection::Outgoing));
+        assert_eq!(full[1].nonce, outgoing_clone.nonce);
     }
 
     #[test]

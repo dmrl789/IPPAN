@@ -435,4 +435,43 @@ mod tests {
         assert_eq!(loaded_hash, hash);
         assert_eq!(fairness.active_hash(), Some(loaded_hash.as_str()));
     }
+
+    #[test]
+    fn test_fairness_model_from_registry_scores_consistently() {
+        use ippan_ai_core::gbdt::{Node as DNode, Tree as DTree, SCALE};
+
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("registry");
+        let db = sled::open(&db_path).unwrap();
+        let mut registry = DGBDTRegistry::new(db);
+
+        let tree = DTree::new(
+            vec![
+                DNode::internal(0, 0, 50 * SCALE, 1, 2),
+                DNode::leaf(1, 100 * SCALE),
+                DNode::leaf(2, 200 * SCALE),
+            ],
+            SCALE,
+        );
+        let model = ippan_ai_core::gbdt::Model::new(vec![tree], 0);
+        let hash = compute_model_hash(&model).unwrap();
+        registry.store_active_model(model, hash.clone()).unwrap();
+        drop(registry);
+
+        let (fairness, loaded_hash) = FairnessModel::from_registry_path(&db_path).unwrap();
+        assert_eq!(loaded_hash, hash);
+        let metrics = ValidatorMetrics::new(
+            9800,
+            1500,
+            9700,
+            50,
+            75,
+            Amount::from_micro_ipn(5_000_000),
+            500,
+        );
+        let score_a = fairness.score_deterministic(&metrics);
+        let score_b = fairness.score_deterministic(&metrics);
+        assert_eq!(score_a, score_b);
+        assert!(score_a >= 0 && score_a <= 10_000);
+    }
 }

@@ -91,6 +91,24 @@ mod tests {
     }
 
     #[test]
+    fn test_canonical_json_string_sorts_keys_recursively() {
+        let value = serde_json::json!({
+            "z": 1,
+            "a": {
+                "c": 3,
+                "b": 2
+            },
+            "m": 0
+        });
+
+        let canonical = canonical_json_string(&value).unwrap();
+        assert_eq!(
+            canonical,
+            "{\n  \"a\": {\n    \"b\": 2,\n    \"c\": 3\n  },\n  \"m\": 0,\n  \"z\": 1\n}"
+        );
+    }
+
+    #[test]
     fn test_load_model_from_path_wrapper() {
         let model = sample_model();
         let tmp = NamedTempFile::new().unwrap();
