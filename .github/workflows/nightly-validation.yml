@@ -131,55 +131,76 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Install cargo-tarpaulin
+      - name: Install cargo-llvm-cov
         run: |
-          cargo install cargo-tarpaulin --locked
+          cargo install cargo-llvm-cov --locked
 
-      - name: Run cargo tarpaulin
+      - name: Create coverage directory
+        run: |
+          mkdir -p coverage
+
+      - name: Run coverage with cargo-llvm-cov
         run: |
           echo "Generating coverage report..."
-          cargo tarpaulin \
+          cargo llvm-cov \
             --workspace \
             --all-features \
-            --timeout 600 \
-            --out Xml \
-            --out Json \
-            --out Html \
-            --output-dir coverage \
-            --exclude-files "apps/*" \
-            --exclude-files "examples/*" \
-            --exclude-files "benches/*" \
-            --exclude-files "tests/*" \
-            --skip-clean \
-            -- --test-threads 1
+            --lcov \
+            --output-path coverage/lcov.info \
+            --ignore-filename-regex '(apps|examples|benches|tests)/.*'
+          
+          # Also generate HTML for human viewing
+          cargo llvm-cov \
+            --workspace \
+            --all-features \
+            --html \
+            --output-dir coverage/html \
+            --ignore-filename-regex '(apps|examples|benches|tests)/.*' || true
+          
+          # Generate a text summary
+          cargo llvm-cov \
+            --workspace \
+            --all-features \
+            --ignore-filename-regex '(apps|examples|benches|tests)/.*' \
+            > coverage/summary.txt || echo "Coverage: 0.00%" > coverage/summary.txt
         continue-on-error: true
-        id: tarpaulin
+        id: coverage_run
 
       - name: Parse coverage results
         id: coverage_results
         run: |
-          if [ -f coverage/cobertura.xml ]; then
-            # Extract coverage percentage from XML
-            coverage=$(grep -oP 'line-rate="\K[0-9.]+' coverage/cobertura.xml | head -1)
-            coverage_percent=$(echo "$coverage * 100" | bc -l | xargs printf "%.2f")
-            echo "coverage=$coverage_percent" >> "$GITHUB_OUTPUT"
-          elif [ -f coverage/tarpaulin-report.json ]; then
-            # Fallback to JSON parsing
-            coverage=$(jq -r '.coverage' coverage/tarpaulin-report.json 2>/dev/null || echo "0")
+          if [ -f coverage/lcov.info ]; then
+            # Extract coverage percentage from lcov.info
+            # lcov.info format: LF:<lines_found> LH:<lines_hit>
+            lines_found=$(grep -oP '^LF:\K[0-9]+' coverage/lcov.info | awk '{s+=$1} END {print s}')
+            lines_hit=$(grep -oP '^LH:\K[0-9]+' coverage/lcov.info | awk '{s+=$1} END {print s}')
+            
+            if [ "$lines_found" -gt 0 ]; then
+              coverage=$(echo "scale=2; ($lines_hit / $lines_found) * 100" | bc)
+              echo "coverage=$coverage" >> "$GITHUB_OUTPUT"
+              echo "Coverage: $coverage% ($lines_hit/$lines_found lines)"
+            else
+              echo "coverage=0.00" >> "$GITHUB_OUTPUT"
+              echo "No coverage data found"
+            fi
+          elif [ -f coverage/summary.txt ]; then
+            # Try to parse from summary text
+            coverage=$(grep -oP '[0-9]+\.[0-9]+%' coverage/summary.txt | head -1 | tr -d '%' || echo "0.00")
             echo "coverage=$coverage" >> "$GITHUB_OUTPUT"
+            echo "Coverage from summary: $coverage%"
           else
             echo "coverage=0.00" >> "$GITHUB_OUTPUT"
+            echo "No coverage files generated"
           fi
 
       - name: Upload coverage artifacts
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upload_coverage))
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ github.run_number }}
-          path: |
-            coverage/
+          path: coverage/
           retention-days: 90
-          if-no-files-found: warn
+          if-no-files-found: ignore
 
       - name: Generate coverage badge
         if: always()
