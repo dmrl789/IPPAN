@@ -2738,6 +2738,29 @@ mod tests {
     use tempfile::tempdir;
     use tokio::time::{sleep, Duration};
 
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(prev) = &self.previous {
+                std::env::set_var(self.key, prev);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
     #[tokio::test]
     async fn test_handle_get_health_basic() {
         let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::default());
@@ -2843,7 +2866,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_ai_status_from_dlc_consensus() {
-        std::env::set_var("IPPAN_DGBDT_ALLOW_STUB", "1");
+        let _stub_guard = EnvVarGuard::set("IPPAN_DGBDT_ALLOW_STUB", "1");
         let consensus = Arc::new(Mutex::new(DlcConsensus::new(AiDlcConfig::default())));
         let handle = AiStatusHandle::new({
             let consensus = consensus.clone();

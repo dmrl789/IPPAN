@@ -82,9 +82,32 @@ struct SplitRoundContext {
     double_sign_round: bool,
 }
 
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvVarGuard {
+    fn new(key: &'static str, value: &str) -> Self {
+        let previous = env::var(key).ok();
+        env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        if let Some(prev) = &self.previous {
+            env::set_var(self.key, prev);
+        } else {
+            env::remove_var(self.key);
+        }
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn long_run_dlc_handles_churn_and_network_partitions() -> Result<()> {
-    env::set_var("IPPAN_DGBDT_ALLOW_STUB", "1");
+    let _stub_guard = EnvVarGuard::new("IPPAN_DGBDT_ALLOW_STUB", "1");
     let mut consensus = DlcConsensus::new(DlcConfig {
         validators_per_round: 11,
         min_validator_stake: bond::MIN_VALIDATOR_BOND,
