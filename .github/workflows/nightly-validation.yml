@@ -131,55 +131,48 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Install cargo-tarpaulin
+      - name: Install cargo-llvm-cov
         run: |
-          cargo install cargo-tarpaulin --locked
+          cargo install cargo-llvm-cov --locked
 
-      - name: Run cargo tarpaulin
+      - name: Run coverage
         run: |
-          echo "Generating coverage report..."
-          cargo tarpaulin \
+          echo "Generating coverage report with cargo-llvm-cov..."
+          mkdir -p coverage
+          cargo llvm-cov \
             --workspace \
             --all-features \
-            --timeout 600 \
-            --out Xml \
-            --out Json \
-            --out Html \
-            --output-dir coverage \
-            --exclude-files "apps/*" \
-            --exclude-files "examples/*" \
-            --exclude-files "benches/*" \
-            --exclude-files "tests/*" \
-            --skip-clean \
-            -- --test-threads 1
+            --lcov \
+            --output-path coverage/lcov.info
         continue-on-error: true
-        id: tarpaulin
+        id: llvm_cov
 
       - name: Parse coverage results
         id: coverage_results
         run: |
-          if [ -f coverage/cobertura.xml ]; then
-            # Extract coverage percentage from XML
-            coverage=$(grep -oP 'line-rate="\K[0-9.]+' coverage/cobertura.xml | head -1)
-            coverage_percent=$(echo "$coverage * 100" | bc -l | xargs printf "%.2f")
-            echo "coverage=$coverage_percent" >> "$GITHUB_OUTPUT"
-          elif [ -f coverage/tarpaulin-report.json ]; then
-            # Fallback to JSON parsing
-            coverage=$(jq -r '.coverage' coverage/tarpaulin-report.json 2>/dev/null || echo "0")
-            echo "coverage=$coverage" >> "$GITHUB_OUTPUT"
+          if [ -f coverage/lcov.info ]; then
+            total_lines=$(grep -E '^LF:' coverage/lcov.info | awk -F: '{s+=$2} END {print s+0}')
+            covered_lines=$(grep -E '^LH:' coverage/lcov.info | awk -F: '{s+=$2} END {print s+0}')
+
+            if [ "$total_lines" -gt 0 ]; then
+              coverage=$(echo "scale=2; ($covered_lines/$total_lines)*100" | bc -l)
+              coverage=$(printf "%.2f" "$coverage")
+              echo "coverage=$coverage" >> "$GITHUB_OUTPUT"
+            else
+              echo "coverage=0.00" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "coverage=0.00" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload coverage artifacts
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upload_coverage))
+      - name: Upload coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ github.run_number }}
-          path: |
-            coverage/
+          path: coverage/
           retention-days: 90
-          if-no-files-found: warn
+          if-no-files-found: ignore
 
       - name: Generate coverage badge
         if: always()
