@@ -49,3 +49,4 @@ ed25519-dalek = { workspace = true }
 rand = { workspace = true }
 tempfile = { workspace = true }
 http-body-util = { workspace = true }
+async-trait = { workspace = true }

@@ -564,6 +564,46 @@ mod tests {
     }
 
     #[test]
+    fn test_load_and_activate_records_history_and_active_model() {
+        let (mut registry, temp_dir) = create_test_registry();
+        let root = temp_dir.path();
+
+        let config_dir = root.join("config");
+        let models_dir = root.join("models");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(&models_dir).unwrap();
+
+        let model = create_test_model();
+        let model_path = models_dir.join("model.json");
+        std::fs::write(&model_path, serde_json::to_string(&model).unwrap()).unwrap();
+        let hash = compute_model_hash(&model).unwrap();
+
+        let config_path = config_dir.join("dlc.toml");
+        let config_contents = format!(
+            r#"
+[dgbdt]
+  [dgbdt.model]
+  path = "models/model.json"
+  expected_hash = "{}"
+"#,
+            hash
+        );
+        std::fs::write(&config_path, config_contents).unwrap();
+
+        registry
+            .load_and_activate_from_config(&config_path)
+            .expect("activation");
+
+        let history = registry.get_history().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].hash_hex, hash);
+
+        let (active_model, active_hash) = registry.get_active_model().unwrap();
+        assert_eq!(active_hash, hash);
+        assert_eq!(active_model.trees.len(), model.trees.len());
+    }
+
+    #[test]
     fn test_expected_hash_mismatch() {
         let (_registry, temp_dir) = create_test_registry();
         let root = temp_dir.path();

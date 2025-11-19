@@ -9,6 +9,7 @@ _Generated: 2025-11-15_
 - [x] RPC `POST /tx/payment` handler + router wiring live in `crates/rpc/src/server.rs`, so the CLI call has an axum endpoint to hit.
 - [x] Payment history `GET /account/:address/payments` exists in `crates/rpc/src/server.rs`, returning storage-backed history sorted by timestamp with a clamped `limit` (cursor-style pagination reserved for future work).
 - [x] End-to-end payment demo docs/scripts (`docs/payments/demo_end_to_end_payment.md`, `scripts/demo_payment_flow.sh`) are committed and current.
+- [x] RPC integration tests cover `POST /tx/payment` success/error cases and `GET /account/:address/payments` pagination/direction handling.
 
 ## 2. Fees
 - [x] Centralized integer-only fee logic via `ippan_l1_fees::FeePolicy` (`crates/l1_fees/src/lib.rs`).
@@ -24,6 +25,7 @@ _Generated: 2025-11-15_
 - [x] AI determinism workflow `.github/workflows/ai-determinism.yml` targets `main` and runs determinism/no-float jobs.
 - [x] `cargo test -p ippan-consensus-dlc -- --nocapture` compiles/runs (modulo expected OpenSSL env gaps) now that `ippan_ai_core` exports resolve.
 - [x] `/ai/status` RPC endpoint is backed by the live DLC consensus engine and surfaces whether the deterministic model is enabled, stub status, and the active BLAKE3 hash/version (see `docs/AI_STATUS_API.md`).
+- [x] Canonical JSON + BLAKE3 hashing tests cover deterministic model serialization; registry activation tests verify sled state + history.
 
 Operators can now fetch the live AI model hash and stub/real status via RPC, making the deterministic pipeline observable.
 
@@ -65,6 +67,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] Consensus pipeline now processes `TxKind::Handle` transactions via `crates/consensus/src/handles.rs`, enforcing deterministic fees/uniqueness + anchoring during round finalization.
 - [x] RPC endpoints `POST /handle/register` and `GET /handle/{handle}` live in `crates/rpc/src/server.rs`, wiring builder helpers + router paths.
 - [x] Handle registrations publish into IPNDHT via the new `HandleDhtService` (stub + libp2p), so consensus writes immediately propagate to the DHT.
+- [x] RPC tests exercise handle registration + lookup flows, replaying consensus pipeline to assert stub DHT publication and registry responses.
 
 ## 7. File Descriptors & DHT
 - [x] FileDescriptor model + indices implemented (`crates/files/src/descriptor.rs`, `crates/files/src/storage.rs`, and `crates/types/src/file_descriptor.rs`).
@@ -72,6 +75,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `crates/rpc/src/files.rs` handlers are wired into the `Router`, and `AppState` now carries `file_storage`/`file_dht` handles so `ippan-rpc` builds with file RPC enabled (stub DHT still acceptable).
 - [x] File DHT has a libp2p-backed `FileDhtService` behind the runtime flag (`IPPAN_FILE_DHT_MODE=libp2p`), enabling publish/find to use Kademlia while keeping the stub for tests and minimal setups.
 - [x] Documentation covers file descriptors/DHT hooks (`docs/ipndht/file-descriptors.md`, `IPNDHT_FILE_IMPLEMENTATION_SUMMARY.md`).
+- [x] RPC file endpoint tests cover publish success/validation plus DHT fallback lookups via instrumented stub services.
 
 ## 8. Payment API Docs & CLI
 - [x] CLI `pay` command documented in code and uses integer atomic units (`crates/cli/src/main.rs`).
@@ -92,6 +96,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 ## 11. Observability & Ops
 - [x] `/health` endpoint surfaces consensus/DHT/RPC/storage status as a structured `HealthStatus` payload (`crates/rpc/src/server.rs`).
 - [x] `/metrics` endpoint serves Prometheus text output whenever the exporter is enabled (`crates/rpc/src/server.rs`).
+- [x] `/health` endpoint contract validated via tests covering healthy + degraded dependencies.
 - [ ] Advanced dashboards/alert policies are tracked separately (future work).
 
 ## 11b. Explorer & Ops API
@@ -100,6 +105,14 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] Observability endpoints (`/health`, `/ai/status`, `/metrics`) documented for dashboards.
 - [x] Dev-only endpoints explicitly marked and dev-gated.
 - [ ] Strong versioning / deprecation policy for RPC (future).
+
+## Tests & Coverage
+- [x] L1 payment RPC tests exercise `/tx/payment` success/error cases plus `/account/:address/payments` pagination & direction handling.
+- [x] Handle registration/lookup tests drive transactions through the consensus pipeline and assert stub DHT publication state.
+- [x] File RPC tests validate publish/store flows and DHT fallback lookups via recording stubs.
+- [x] AI/DLC determinism covered via canonical JSON/hash tests, registry activation/history assertions, and fairness model scoring from sled-backed registries.
+- [x] `/health` endpoint tested for both healthy and degraded dependencies to mirror operator expectations.
+- [ ] Long-running chaos/resilience tests in CI (future work).
 
 ## Optional Test Runs
 - `cargo test -p ippan-rpc -- --nocapture` → **fails** (expected) due to missing OpenSSL headers in the environment; no additional compiler errors observed before the toolchain check halted.
