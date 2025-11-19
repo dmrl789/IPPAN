@@ -56,15 +56,39 @@ jobs:
       - name: Parse test results
         id: test_results
         run: |
+          set -euo pipefail
+
+          normalize_number() {
+            local value="${1:-}"
+            value="${value//$'\r'/}"
+            value="${value//$'\n'/}"
+
+            if [[ "$value" =~ ^[0-9]+$ ]]; then
+              echo "$value"
+            else
+              local digits
+              digits=$(echo "$value" | tr -dc '0-9')
+              if [ -z "$digits" ]; then
+                echo "0"
+              else
+                echo "$digits"
+              fi
+            fi
+          }
+
           if [ -f test-output.log ]; then
-            passed=$(grep -c "test result: ok" test-output.log || echo "0")
-            failed=$(grep "test result: FAILED" test-output.log | wc -l || echo "0")
-            total_tests=$(grep -oP '\d+(?= passed)' test-output.log | head -1 || echo "0")
-            
-            echo "passed=$passed" >> "$GITHUB_OUTPUT"
-            echo "failed=$failed" >> "$GITHUB_OUTPUT"
-            echo "total=$total_tests" >> "$GITHUB_OUTPUT"
-            
+            passed_raw=$( (grep -c "test result: ok" test-output.log) || true )
+            failed_raw=$( (grep -c "test result: FAILED" test-output.log) || true )
+            total_raw=$( (grep -oP '\d+(?= passed)' test-output.log | head -1) || true )
+
+            passed=$(normalize_number "$passed_raw")
+            failed=$(normalize_number "$failed_raw")
+            total_tests=$(normalize_number "$total_raw")
+
+            echo "passed=${passed}" >> "$GITHUB_OUTPUT"
+            echo "failed=${failed}" >> "$GITHUB_OUTPUT"
+            echo "total=${total_tests}" >> "$GITHUB_OUTPUT"
+
             if [ "$failed" -gt 0 ]; then
               echo "status=failed" >> "$GITHUB_OUTPUT"
             else
@@ -187,11 +211,11 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download coverage results
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: coverage-report-${{ github.run_number }}
           path: coverage/
-        continue-on-error: true
 
       - name: Calculate readiness score
         id: readiness
