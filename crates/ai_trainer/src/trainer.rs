@@ -102,20 +102,21 @@ impl GbdtTrainer {
         (gradients, hessians)
     }
 
-    fn update_predictions(&self, nodes: &[ippan_ai_core::gbdt::tree::Node], features: &[Vec<i64>], predictions: &mut [i64]) {
+    fn update_predictions(
+        &self,
+        nodes: &[ippan_ai_core::gbdt::tree::Node],
+        features: &[Vec<i64>],
+        predictions: &mut [i64],
+    ) {
         for (idx, feature_vec) in features.iter().enumerate() {
             let value = self.evaluate_nodes(nodes, feature_vec);
-            let scaled = ((value as i128 * self.config.learning_rate_micro as i128) / SCALE as i128)
-                as i64;
+            let scaled =
+                ((value as i128 * self.config.learning_rate_micro as i128) / SCALE as i128) as i64;
             predictions[idx] = predictions[idx].saturating_add(scaled);
         }
     }
 
-    fn evaluate_nodes(
-        &self,
-        nodes: &[ippan_ai_core::gbdt::tree::Node],
-        features: &[i64],
-    ) -> i64 {
+    fn evaluate_nodes(&self, nodes: &[ippan_ai_core::gbdt::tree::Node], features: &[i64]) -> i64 {
         if nodes.is_empty() {
             return 0;
         }

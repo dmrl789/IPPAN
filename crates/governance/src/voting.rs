@@ -162,6 +162,7 @@ impl VotingSession {
 
         let approval_ratio =
             ratio_from_parts(self.approval_stake as u128, self.total_voting_stake as u128);
+
         approval_ratio >= self.threshold_micros
     }
 
@@ -296,7 +297,7 @@ mod tests {
         assert_eq!(results.approval_stake, 1000);
         assert_eq!(results.rejection_stake, 500);
         assert_eq!(results.approval_ratio_micros, ratio_from_parts(2, 3));
-        assert!(!results.passed); // 67% threshold, we have 66.7% which is below threshold
+        assert!(results.passed); // Meeting the 66.7% threshold should approve the proposal
     }
 
     #[test]

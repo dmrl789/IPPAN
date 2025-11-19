@@ -2,10 +2,11 @@
 //! Tests block storage, account management, transactions, L2 operations,
 //! round certificates, validator telemetry, and chain state.
 
-use ippan_storage::{Account, ChainState, MemoryStorage, SledStorage, Storage, ValidatorTelemetry};
+use ippan_storage::{Account, MemoryStorage, SledStorage, Storage, ValidatorTelemetry};
 use ippan_types::{
-    Amount, Block, IppanTimeMicros, L2Commit, L2ExitRecord, L2ExitStatus, L2Network,
-    L2NetworkStatus, RoundCertificate, RoundFinalizationRecord, RoundWindow, Transaction,
+    chain_state::ChainState, Amount, Block, IppanTimeMicros, L2Commit, L2ExitRecord, L2ExitStatus,
+    L2Network, L2NetworkStatus, RoundCertificate, RoundFinalizationRecord, RoundWindow,
+    Transaction,
 };
 use tempfile::TempDir;
 
@@ -367,28 +368,32 @@ fn test_chain_state_storage<S: Storage>(storage: &S) {
     // Get initial state (should be default)
     let initial_state = storage.get_chain_state().unwrap();
     assert_eq!(initial_state.total_issued_micro, 0);
-    assert_eq!(initial_state.last_updated_round, 0);
+    assert_eq!(initial_state.current_round, 0);
+    assert_eq!(initial_state.last_updated, 0);
 
     // Update chain state
     let mut state = ChainState {
         total_issued_micro: 1000000,
-        last_updated_round: 50,
+        current_round: 50,
+        ..ChainState::default()
     };
     storage.update_chain_state(&state).unwrap();
 
     // Retrieve updated state
     let retrieved = storage.get_chain_state().unwrap();
     assert_eq!(retrieved.total_issued_micro, 1000000);
-    assert_eq!(retrieved.last_updated_round, 50);
+    assert_eq!(retrieved.current_round, 50);
 
     // Update again with helper methods
     state.add_issued_micro(500000);
-    state.update_round(51);
+    state.set_round(51);
+    state.set_last_updated(51);
     storage.update_chain_state(&state).unwrap();
 
     let retrieved2 = storage.get_chain_state().unwrap();
     assert_eq!(retrieved2.total_issued_micro, 1500000);
-    assert_eq!(retrieved2.last_updated_round, 51);
+    assert_eq!(retrieved2.current_round, 51);
+    assert_eq!(retrieved2.last_updated, 51);
 
     // Ensure retrieving chain state does not mutate underlying storage
     let snapshot = storage.get_chain_state().unwrap();
@@ -587,7 +592,8 @@ fn sled_storage_chain_state_persistence_across_restart() {
 
         let mut state = storage.get_chain_state().unwrap();
         state.add_issued_micro(42);
-        state.update_round(7);
+        state.set_round(7);
+        state.set_last_updated(7);
         storage.update_chain_state(&state).unwrap();
         storage.flush().unwrap();
     }
@@ -596,7 +602,8 @@ fn sled_storage_chain_state_persistence_across_restart() {
         let storage = SledStorage::new(&path).unwrap();
         let state = storage.get_chain_state().unwrap();
         assert_eq!(state.total_issued_micro, 42);
-        assert_eq!(state.last_updated_round, 7);
+        assert_eq!(state.current_round, 7);
+        assert_eq!(state.last_updated, 7);
     }
 }
 

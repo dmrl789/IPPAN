@@ -40,9 +40,16 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 
 ## 4. No Floats in Runtime
 - [x] Runtime crates now avoid `f64`/`f32` usages: currency/L2 types use atomic units, governance/economics/security/network/core/rpc modules all compute with fixed-point integers or ratios.
-- [x] `.github/workflows/no-float-runtime.yml` exists and targets `main`.
+- [x] `.github/workflows/no-float-runtime.yml` exists and targets `master`.
 - [ ] Workflow scope is limited to `ai_core`, `consensus*`, and `ai_registry`; it does **not** scan other runtime crates (`types`, `network`, `governance`, `storage`, `node`, etc.), so violations slip through CI.
 - [x] Workflow now limits matching to Rust runtime sources (excluding tests/examples/benches) so comments/docs mentioning floats no longer cause false positives.
+
+## 4b. CI / Actions
+- [x] Build & Test (Rust) workflow listens to `master`, scopes `RUSTFLAGS=-D warnings` to build/test only, and the storage integration tests compile again after updating `ChainState` usage (`crates/storage/tests/integration_tests.rs`).
+- [x] AI Determinism & DLC workflow watches `master` pushes/PRs so determinism + DLC suites re-run on the default branch.
+- [x] No Floats in Runtime workflow now triggers on `master`, keeping the gate aligned with the active branch.
+- [x] CodeQL/Security scan workflow updated to the `master` branch so pushes there stay covered.
+- [ ] RPC crate tests continue to require system OpenSSL headers; `cargo test -p ippan-rpc` remains environment-blocked on hosted runners (see notes below) and is treated as an external issue until the repo bundles its own TLS backend.
 
 ## 5. IPNDHT Network Layer
 - [x] Libp2p network stack + DHT helper (`crates/p2p/src/lib.rs`, `crates/p2p/src/ipndht.rs`) provide publish/find APIs with caching.

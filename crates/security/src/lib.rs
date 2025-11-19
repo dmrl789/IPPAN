@@ -18,8 +18,10 @@ pub use validation::{InputValidator, ValidationError, ValidationRule};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::io::ErrorKind;
 use std::net::IpAddr;
 use std::time::{Duration, SystemTime};
+use tracing::warn;
 
 /// Security configuration for the IPPAN node
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,7 +78,24 @@ pub struct SecurityManager {
 impl SecurityManager {
     pub fn new(config: SecurityConfig) -> Result<Self> {
         let rate_limiter = RateLimiter::new(config.rate_limit.clone())?;
-        let audit_logger = AuditLogger::new(&config.audit_log_path)?;
+        let mut config = config;
+        let audit_logger = match AuditLogger::new(&config.audit_log_path) {
+            Ok(logger) => logger,
+            Err(err) => {
+                if Self::is_permission_denied(&err) {
+                    let fallback_path = Self::fallback_audit_log_path();
+                    warn!(
+                        original_path = %config.audit_log_path,
+                        fallback_path = %fallback_path,
+                        "Audit log path not writable, falling back to temp directory"
+                    );
+                    config.audit_log_path = fallback_path;
+                    AuditLogger::new(&config.audit_log_path)?
+                } else {
+                    return Err(err);
+                }
+            }
+        };
         let validator = InputValidator::new();
         let circuit_breaker = CircuitBreaker::new(CircuitBreakerConfig::default());
 
@@ -223,6 +242,19 @@ impl SecurityManager {
             }
         }
         false
+    }
+
+    fn is_permission_denied(err: &anyhow::Error) -> bool {
+        err.downcast_ref::<std::io::Error>()
+            .is_some_and(|io_err| io_err.kind() == ErrorKind::PermissionDenied)
+    }
+
+    fn fallback_audit_log_path() -> String {
+        std::env::temp_dir()
+            .join("ippan-security")
+            .join("audit.log")
+            .to_string_lossy()
+            .into_owned()
     }
 
     /// Clean up expired blocked IPs

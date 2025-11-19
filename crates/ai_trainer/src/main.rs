@@ -65,8 +65,7 @@ fn main() -> Result<()> {
         .with_max_level(Level::INFO)
         .with_target(false)
         .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .context("failed to initialize logging")?;
+    tracing::subscriber::set_global_default(subscriber).context("failed to initialize logging")?;
 
     match cli.command {
         Commands::Train(args) => run_train(args),
