@@ -55,12 +55,12 @@ where
 
 /// Produce canonical JSON for a deterministic GBDT model.
 pub fn canonical_model_json(model: &Model) -> Result<String, AiCoreError> {
-    Ok(model.to_canonical_json().map_err(AiCoreError::from)?)
+    model.to_canonical_json().map_err(AiCoreError::from)
 }
 
 /// Load a deterministic GBDT model from disk, validating its structure.
 pub fn load_model_from_path<P: AsRef<Path>>(path: P) -> Result<Model, AiCoreError> {
-    Ok(Model::load_json(path).map_err(AiCoreError::from)?)
+    Model::load_json(path).map_err(AiCoreError::from)
 }
 
 #[cfg(test)]

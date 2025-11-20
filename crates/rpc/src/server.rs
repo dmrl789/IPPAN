@@ -323,7 +323,7 @@ impl BlockView {
                 .header
                 .parent_ids
                 .iter()
-                .map(|parent| hex_encode(parent))
+                .map(hex_encode)
                 .collect(),
             transaction_hashes,
             tx_count: block.transactions.len(),
@@ -1693,7 +1693,7 @@ fn build_payment_transaction(
     }
 
     tx.sign(&signing_key)
-        .map_err(|err| PaymentError::SigningFailed(err))?;
+        .map_err(PaymentError::SigningFailed)?;
 
     let fee_policy = FeePolicy::default();
     let fee_atomic = fee_policy.required_fee(&tx);
@@ -2519,7 +2519,7 @@ where
         }
 
         let future = self.inner.call(request);
-        Box::pin(async move { future.await })
+        Box::pin(future)
     }
 }
 

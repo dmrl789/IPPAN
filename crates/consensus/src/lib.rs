@@ -466,8 +466,7 @@ impl PoAConsensus {
                         slash_count: telemetry.slash_count,
                         recent_performance: (telemetry.recent_performance_scaled * 1_000_000)
                             / 10000,
-                        network_contribution: (telemetry.network_contribution_scaled as i64
-                            * 1_000_000)
+                        network_contribution: (telemetry.network_contribution_scaled * 1_000_000)
                             / 10000,
                         stake_amount: validator.stake,
                     },
@@ -579,6 +578,7 @@ impl PoAConsensus {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn finalize_round_if_ready(
         storage: &Arc<dyn Storage + Send + Sync>,
         tracker: &Arc<RwLock<RoundTracker>>,

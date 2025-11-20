@@ -66,7 +66,7 @@ impl HandlePipeline {
         block_height: u64,
         round: u64,
     ) -> Result<(), HandleApplyError> {
-        if &op.owner != &tx.from {
+        if op.owner != tx.from {
             return Err(HandleApplyError::OwnerMismatch);
         }
 

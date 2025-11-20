@@ -153,7 +153,7 @@ impl PeerRecord {
 }
 
 /// Chaos testing controls for intentionally unstable networking.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChaosConfig {
     /// Probability (0-10000 => 0-100.00%) to drop an outbound message before it is sent.
     pub drop_outbound_prob: u16,
@@ -172,17 +172,6 @@ impl ChaosConfig {
             normalized.extra_latency_ms_max = normalized.extra_latency_ms_min;
         }
         normalized
-    }
-}
-
-impl Default for ChaosConfig {
-    fn default() -> Self {
-        Self {
-            drop_outbound_prob: 0,
-            drop_inbound_prob: 0,
-            extra_latency_ms_min: 0,
-            extra_latency_ms_max: 0,
-        }
     }
 }
 

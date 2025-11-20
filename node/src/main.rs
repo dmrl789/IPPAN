@@ -239,7 +239,7 @@ impl AppConfig {
             &config,
             &["FILE_DHT_LIBP2P_BOOTSTRAP", "dht.bootstrap_multiaddrs"],
         )
-        .unwrap_or_else(String::new)
+        .unwrap_or_default()
         .split(',')
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -402,7 +402,7 @@ impl AppConfig {
 fn get_string_value(config: &Config, keys: &[&str]) -> Option<String> {
     keys.iter().find_map(|key| {
         config
-            .get_string(*key)
+            .get_string(key)
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
@@ -411,10 +411,10 @@ fn get_string_value(config: &Config, keys: &[&str]) -> Option<String> {
 
 fn get_bool_value(config: &Config, keys: &[&str], default: bool) -> bool {
     for key in keys {
-        if let Ok(value) = config.get_bool(*key) {
+        if let Ok(value) = config.get_bool(key) {
             return value;
         }
-        if let Ok(raw) = config.get_string(*key) {
+        if let Ok(raw) = config.get_string(key) {
             if let Ok(parsed) = raw.parse::<bool>() {
                 return parsed;
             }

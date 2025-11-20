@@ -215,8 +215,7 @@ fn compute_role_weights(participation: &Participation) -> (MicroIPN, MicroIPN) {
 
 fn reputation_factor(score_micros: u32) -> MicroIPN {
     let clamped = score_micros
-        .max(REPUTATION_SCORE_MIN)
-        .min(REPUTATION_SCORE_MAX) as u128;
+        .clamp(REPUTATION_SCORE_MIN, REPUTATION_SCORE_MAX) as u128;
     (clamped * 100) / (REPUTATION_SCORE_SCALE as u128)
 }
 
