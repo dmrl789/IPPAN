@@ -42,8 +42,8 @@ scripts/testnet/run-local-multi-node.sh
 ## Basic RC test scenarios
 1. **Generate demo keys**
    ```bash
-   cargo run -p keygen -- generate --output testnet/keys --name sender
-   cargo run -p keygen -- generate --output testnet/keys --name receiver
+   cargo run -p ippan-keygen -- generate --output testnet/keys --name sender
+   cargo run -p ippan-keygen -- generate --output testnet/keys --name receiver
 
    SENDER_HEX=$(tr -d '\n' < testnet/keys/sender_public.key | tr '[:upper:]' '[:lower:]')
    RECEIVER_HEX=$(tr -d '\n' < testnet/keys/receiver_public.key | tr '[:upper:]' '[:lower:]')
@@ -60,7 +60,7 @@ scripts/testnet/run-local-multi-node.sh
 
 3. **Send a payment via the CLI**
    ```bash
-   cargo run -p cli -- \
+   cargo run -p ippan-cli -- \
      --rpc-url http://127.0.0.1:3111 \
      pay \
      --from "${SENDER_ADDR}" \
