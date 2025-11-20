@@ -80,7 +80,7 @@ impl FileStorage for MemoryFileStorage {
         // Update owner index
         {
             let mut by_owner = self.inner.by_owner.write();
-            by_owner.entry(owner).or_insert_with(Vec::new).push(id);
+            by_owner.entry(owner).or_default().push(id);
         }
 
         // Update time index

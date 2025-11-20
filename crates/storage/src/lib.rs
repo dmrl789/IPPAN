@@ -428,7 +428,7 @@ fn ensure_storage_empty(storage: &impl StorageLike) -> Result<(), SnapshotError>
     Ok(())
 }
 
-fn sort_blocks(blocks: &mut Vec<Block>) {
+fn sort_blocks(blocks: &mut [Block]) {
     blocks.sort_by(|a, b| {
         a.header
             .round
@@ -437,19 +437,19 @@ fn sort_blocks(blocks: &mut Vec<Block>) {
     });
 }
 
-fn sort_transactions(transactions: &mut Vec<Transaction>) {
-    transactions.sort_by(|a, b| a.hash().cmp(&b.hash()));
+fn sort_transactions(transactions: &mut [Transaction]) {
+    transactions.sort_by_key(|tx| tx.hash());
 }
 
-fn sort_accounts(accounts: &mut Vec<Account>) {
+fn sort_accounts(accounts: &mut [Account]) {
     accounts.sort_by(|a, b| a.address.cmp(&b.address));
 }
 
-fn sort_file_descriptors(files: &mut Vec<FileDescriptor>) {
+fn sort_file_descriptors(files: &mut [FileDescriptor]) {
     files.sort_by(|a, b| a.id.as_bytes().cmp(b.id.as_bytes()));
 }
 
-fn sort_rounds(rounds: &mut Vec<RoundFinalizationRecord>) {
+fn sort_rounds(rounds: &mut [RoundFinalizationRecord]) {
     rounds.sort_by(|a, b| a.round.cmp(&b.round));
 }
 

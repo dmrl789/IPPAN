@@ -65,7 +65,7 @@ impl Dataset {
         let mut header: Option<Vec<String>> = None;
 
         // Find the first non-empty, non-comment line as header.
-        while let Some((_, raw_line)) = lines.next() {
+        for (_, raw_line) in lines.by_ref() {
             let line = raw_line.trim();
             if line.is_empty() || line.starts_with('#') {
                 continue;
