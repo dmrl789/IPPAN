@@ -163,11 +163,13 @@ impl SecurityManager {
         endpoint: &str,
         reason: &str,
     ) -> Result<()> {
+        let now = SystemTime::now();
         let attempt_count = {
             let mut attempts = self.failed_attempts.write();
-            let (count, _) = attempts.entry(ip).or_insert((0, SystemTime::now()));
-            *count += 1;
-            *count
+            let entry = attempts.entry(ip).or_insert((0, now));
+            entry.0 += 1;
+            entry.1 = now;
+            entry.0
         };
 
         self.audit_logger
@@ -309,6 +311,8 @@ pub struct SecurityStats {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
+    use std::time::Duration;
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn test_security_manager_creation() {
@@ -350,6 +354,39 @@ mod tests {
         // Should be blocked now
         let result = manager.check_request(ip, "/api").await;
         assert!(matches!(result, Err(SecurityError::IpBlocked)));
+    }
+
+    #[tokio::test]
+    async fn test_block_duration_extends_on_new_failures() {
+        let config = SecurityConfig {
+            max_failed_attempts: 1,
+            block_duration: 1,
+            ..Default::default()
+        };
+
+        let manager = SecurityManager::new(config).unwrap();
+        let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+
+        manager
+            .record_failed_attempt(ip, "/api", "unauthorized")
+            .await
+            .unwrap();
+        assert!(matches!(
+            manager.check_request(ip, "/api").await,
+            Err(SecurityError::IpBlocked)
+        ));
+
+        sleep(Duration::from_millis(1100)).await;
+
+        manager
+            .record_failed_attempt(ip, "/api", "unauthorized")
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            manager.check_request(ip, "/api").await,
+            Err(SecurityError::IpBlocked)
+        ));
     }
 
     #[tokio::test]
