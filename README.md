@@ -13,6 +13,12 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - See [release notes](docs/release-notes/IPPAN_v0.9.0_RC1.md), the matching [changelog entry](CHANGELOG.md#v090-rc1--2025-11-20),
   and the [operator guide](docs/operators/running-ippan-rc-node.md) (including guidance for embedding git metadata into RC builds).
 
+## RC Testnet
+
+- Current RC: **v0.9.0-rc1**
+- To run a local RC testnet, see: [docs/operators/ippan-rc-testnet-guide.md](docs/operators/ippan-rc-testnet-guide.md)
+- To report issues or feedback: use the "RC Bug Report" or "RC Feedback / UX" GitHub issue templates.
+
 ## 🚀 Features
 
 - **IPPAN Time**: Monotonic microsecond precision time service with peer synchronization
