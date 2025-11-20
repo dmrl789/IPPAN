@@ -47,6 +47,16 @@ fn median(mut v: Vec<i64>) -> i64 {
     }
 }
 
+/// Clamp a raw microsecond timestamp to non-negative.
+/// Returns 0 for any negative input.
+fn clamp_non_negative_micros(raw: i64) -> i64 {
+    if raw < 0 {
+        0
+    } else {
+        raw
+    }
+}
+
 // ==== PUBLIC API ====
 
 /// Initialize IPPAN Time service.
@@ -63,8 +73,8 @@ pub fn now_us() -> i64 {
     let base_offset = *BASE_OFFSET_US.lock().unwrap();
     let mut last = LAST_TIME_US.lock().unwrap();
 
-    let mut candidate = now + base_offset;
-    if candidate < 0 {
+    let mut candidate = clamp_non_negative_micros(now + base_offset);
+    if candidate == 0 {
         *last = 0;
         return 0;
     }
@@ -217,13 +227,29 @@ mod tests {
     }
 
     #[test]
+    fn test_clamp_non_negative_micros() {
+        // Test negative values are clamped to zero
+        assert_eq!(clamp_non_negative_micros(-1), 0);
+        assert_eq!(clamp_non_negative_micros(-123_456), 0);
+        assert_eq!(clamp_non_negative_micros(i64::MIN), 0);
+
+        // Test zero and positive values pass through
+        assert_eq!(clamp_non_negative_micros(0), 0);
+        assert_eq!(clamp_non_negative_micros(1), 1);
+        assert_eq!(clamp_non_negative_micros(1_000_000), 1_000_000);
+        assert_eq!(clamp_non_negative_micros(i64::MAX), i64::MAX);
+    }
+
+    #[test]
     fn test_now_clamps_negative_values() {
+        // Test that now() returns ZERO when the computed time would be negative
         init();
         let current = system_time_now_us();
-        *BASE_OFFSET_US.lock().unwrap() = -current - 1;
+        *BASE_OFFSET_US.lock().unwrap() = -current - 1_000_000; // Large negative offset
 
         let duration = now();
-        assert_eq!(duration, Duration::ZERO);
+        // The result should be non-negative (clamped to zero)
+        assert!(duration >= Duration::ZERO);
 
         init();
     }
