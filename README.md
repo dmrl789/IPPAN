@@ -4,13 +4,22 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 
 > **Development Workflow**: IPPAN uses trunk-based development on `main`. See [MAIN_BRANCH_DEVELOPMENT.md](MAIN_BRANCH_DEVELOPMENT.md) for complete guidelines.
 
+## Status
+
+- Current version: **v0.9.0-rc1** (Release Candidate)
+- Nightly Full Validation: ✅ green (coverage ≈ 65%, readiness: Release Candidate)
+- Intended use: **testnet / devnet experimentation only**, not production.
+- Breaking changes are still possible before v1.0.
+- See [release notes](docs/release-notes/IPPAN_v0.9.0_RC1.md), the matching [changelog entry](CHANGELOG.md#v090-rc1--2025-11-20),
+  and the [operator guide](docs/operators/running-ippan-rc-node.md) (including guidance for embedding git metadata into RC builds).
+
 ## 🚀 Features
 
 - **IPPAN Time**: Monotonic microsecond precision time service with peer synchronization
 - **HashTimer**: 256-bit temporal identifiers (14 hex prefix + 50 hex suffix) embedded in all blockchain operations
 - **Real Blockchain**: Complete implementation with transactions, blocks, consensus, and P2P networking
 - **Web Explorer**: Hosted blockchain explorer at https://ippan.com/explorer for transaction and block visibility
-- **Production Ready**: Docker, systemd, and CI/CD configurations
+- **Release Candidate Hardening**: Docker, systemd, and CI/CD configurations validated via nightly workflows
 
 > **Single-branch development**: All day-to-day work lands directly on `main`. Temporary topic branches should remain short-lived and are deleted after their changes fast-forward onto `main`.
 
