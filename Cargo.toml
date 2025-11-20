@@ -45,6 +45,7 @@ members = [
   "crates/keygen",           # Key generation tool
   "crates/benchmark",        # Performance benchmarking tool
   "crates/explorer",         # Block explorer API gateway
+  "tools/loadgen",           # RPC load generator for perf baselines
 ]
 
 resolver = "2"

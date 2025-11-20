@@ -21,3 +21,9 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+criterion = "0.5"
+
+[[bench]]
+name = "block_apply_bench"
+path = "benches/block_apply_bench.rs"
+harness = false

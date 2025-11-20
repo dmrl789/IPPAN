@@ -1,0 +1,17 @@
+[package]
+name = "ippan-loadgen"
+version = "0.1.0"
+edition = "2021"
+description = "Simple load generator for exercising IPPAN RPC payment throughput"
+authors = ["IPPAN Contributors"]
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+ed25519-dalek = { workspace = true }
+hex = { workspace = true }
+ippan-types = { path = "../../crates/types" }
+rand = { workspace = true }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

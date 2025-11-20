@@ -18,3 +18,11 @@ rand_core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "hash_timer_bench"
+path = "benches/hash_timer_bench.rs"
+harness = false
