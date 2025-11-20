@@ -36,7 +36,7 @@ release profile (`opt-level = "z"`, LTO, panic = abort, stripped symbols).
    - `[rpc]` — keep `bind = "127.0.0.1"` unless a reverse proxy protects the node.
    - `[p2p]` — set `bootstrap_nodes` and `bind` to match your firewall rules.
    - `[dht]` — select `mode = "libp2p"` for production; keep `handle_mode = "stub"` until handle relays are live.
-   - `[consensus]` — choose `PoA` or enable DLC extensions.
+   - `[consensus]` — DLC is the default; PoA remains only as a legacy/dev fallback.
    - `[storage]` — ensure `data_dir` and `db_path` point to a persistent disk.
    - `[security]` — leave `enable = true` to enforce RPC security policies.
 3. Run `ippan-node --check --config /etc/ippan/config.toml` to validate ports, directories, and settings.

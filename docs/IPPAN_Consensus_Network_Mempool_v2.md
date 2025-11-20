@@ -8,7 +8,7 @@
 
 ## 1  Objective
 
-This release replaces the experimental Proof-of-Authority engine with a deterministic, fault-tolerant, and cryptographically verifiable **FBA + HashTimer consensus**.
+This release replaces the experimental Proof-of-Authority engine with the deterministic-learning **DLC + HashTimer consensus** stack (D-GBDT driven validator selection with shadow verifiers).
 It introduces modular crates for **consensus coordination**, **transaction admission**, **secure networking**, and **atomic ledger state**—forming the production core of the IPPAN blockchain.
 
 ---
@@ -46,7 +46,7 @@ Each layer communicates over typed `tokio::mpsc` channels and can be tested inde
 
 ## 4  Consensus Layer (`crates/consensus`)
 
-**Type:** Deterministic FBA (Roundchain)
+**Type:** Deterministic Learning Consensus (D-GBDT + shadow verifiers)
 **Time base:** HashTimer (µs precision)
 **Signature:** Ed25519 → BLS aggregation planned
 

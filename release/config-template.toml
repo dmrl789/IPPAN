@@ -29,10 +29,10 @@ listen_multiaddrs = "/ip4/0.0.0.0/tcp/9100"
 bootstrap_multiaddrs = ""
 
 [consensus]
-# Runtime mode: PoA (default) or DLC when the AI fairness pipeline is enabled.
-mode = "PoA"
+# Runtime mode: DLC by default (PoA remains available only as a legacy/dev fallback).
+mode = "DLC"
 # Toggle DLC consensus extensions.
-enable_dlc = false
+enable_dlc = true
 
 [storage]
 # Persistent data directory.

@@ -40,6 +40,11 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [ ] CI automation to cross-check `expected_hash` values against the on-disk
       JSON artifacts (future work).
 
+## 3b. Shadow Verifiers (DLC Redundancy)
+- [x] Primary + shadow verifier selection is deterministic and repeats across runs (tested in `crates/consensus/tests/dlc_integration_tests.rs`).
+- [x] DLC verifier set management covers shadow branch handling and consistency (`crates/consensus_dlc/tests/long_run_simulation.rs`).
+- [ ] Additional long-run shadow verifier soak tests in CI (Future phase, not RC blocker).
+
 ## 4. No Floats in Runtime
 - [x] Runtime crates now avoid `f64`/`f32` usages: currency/L2 types use atomic units, governance/economics/security/network/core/rpc modules all compute with fixed-point integers or ratios.
 - [x] `.github/workflows/no-float-runtime.yml` exists and targets `master`.
