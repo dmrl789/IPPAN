@@ -28,7 +28,8 @@
 - Nodes compiled with v0.9.0-rc1 should be rebuilt when the final v0.9.0 is tagged.
 - Config compatibility is not guaranteed across RC iterations; review defaults each upgrade.
 - Embedding the git revision into builds via `GIT_COMMIT_HASH=$(git rev-parse --short HEAD)` is
-  recommended so operators can verify which RC commit is running in logs.
+  recommended so operators can verify which RC commit is running in logs (the startup banner
+  prints `IPPAN v0.9.0-rc1 (git <short-hash>)`).
 
 ## Reporting issues
 - File issues with reproduction steps, architecture (x86_64/aarch64), and log excerpts.
