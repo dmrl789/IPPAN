@@ -29,9 +29,12 @@ listen_multiaddrs = "/ip4/0.0.0.0/tcp/9100"
 bootstrap_multiaddrs = ""
 
 [consensus]
-# Runtime mode: PoA (default) or DLC when the AI fairness pipeline is enabled.
+# Runtime mode: keep PoA as the default so a fresh node can start without extra DLC
+# registry setup. Switch to `DLC` only after provisioning a D-GBDT registry (see
+# `IPPAN_DGBDT_REGISTRY_PATH`) or enabling stub entries via
+# `IPPAN_DGBDT_ALLOW_STUB=true`.
 mode = "PoA"
-# Toggle DLC consensus extensions.
+# Toggle DLC consensus extensions (requires registry or stub env above).
 enable_dlc = false
 
 [storage]

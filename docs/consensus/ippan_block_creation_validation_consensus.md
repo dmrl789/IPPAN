@@ -8,8 +8,10 @@ repository:
 - `crates/types` defines the canonical [`Block`](../../crates/types/src/block.rs),
   [`Transaction`](../../crates/types/src/transaction.rs), and
   [`HashTimer`](../../crates/types/src/hashtimer.rs) types.
-- `crates/consensus` provides a Proof-of-Authority (PoA) round loop,
-  deterministic ordering utilities, and the [`ParallelDag`](../../crates/consensus/src/parallel_dag.rs)
+- `crates/consensus` provides the Deterministic Learning Consensus (DLC)
+  round loop (with PoA kept only as a compatibility fallback),
+  deterministic ordering utilities, and the
+  [`ParallelDag`](../../crates/consensus/src/parallel_dag.rs)
   primitives used for high-throughput block intake.
 - `crates/crypto` houses the confidential transaction verifier. Its
   [`zk_stark`](../../crates/crypto/src/zk_stark.rs) module exposes the STARK
