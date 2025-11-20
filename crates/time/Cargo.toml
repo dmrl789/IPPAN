@@ -21,3 +21,7 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.5"
+
+[[bench]]
+name = "hash_timer_bench"
+harness = false

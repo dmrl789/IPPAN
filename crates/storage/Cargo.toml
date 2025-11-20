@@ -22,3 +22,7 @@ tracing = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 criterion = "0.5"
+
+[[bench]]
+name = "block_apply_bench"
+harness = false

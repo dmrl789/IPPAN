@@ -45,3 +45,7 @@ reqwest = { workspace = true, optional = true }
 tokio = { workspace = true }
 tempfile = { workspace = true }
 criterion = "0.5"
+
+[[bench]]
+name = "dgbdt_inference_bench"
+harness = false
