@@ -36,25 +36,26 @@
 - Added conflict resolution and performance monitoring
 - Created production-ready synchronization system
 
-## 🚨 **REMAINING CRITICAL ISSUES**
+## 🚨 **ACTIVE CRITICAL WORKSTREAMS**
 
-### 1. Economics Crate (BLOCKING)
-- **Status**: ❌ **COMPILATION FAILED**
-- **Issue**: `ValidatorId` doesn't implement `std::fmt::Display`
-- **Priority**: CRITICAL
-- **Estimated Fix Time**: 5 minutes
+### 1. Economics Crate Integration
+- **Status**: 🟡 **IN PROGRESS** (compiles and ships deterministic emission tests)
+- **Scope**: `crates/ippan_economics` (DAG-Fair emission, supply cap, parameter manager)
+- **Next steps**: Finalize parameter tuning and wire distribution outputs into DLC reward flows.
 
-### 2. AI Core Crate (BLOCKING)
-- **Status**: ❌ **COMPILATION FAILED**
-- **Issues**: Multiple field access errors and missing types
-- **Priority**: CRITICAL
-- **Estimated Fix Time**: 2-3 hours
+### 2. AI Core + Registry Determinism
+- **Status**: 🟡 **IN PROGRESS** (builds cleanly with deterministic inference paths)
+- **Scope**: `crates/ai_core`, `crates/ai_registry` with DLC/GBDT determinism enforced by CI
+- **Next steps**: Expand regression coverage and performance profiling on representative datasets.
 
-### 3. Missing Core Functionality
-- **Consensus Mechanism**: Not implemented
-- **Economic Model**: Incomplete
-- **Governance System**: Missing
-- **Security Features**: Basic only
+### 3. Network & Storage Hardening
+- **Status**: 🟡 **IN PROGRESS**
+- **Scope**: `crates/network` (libp2p gossip + dedup tests) and `crates/storage` (snapshot/export/import tests)
+- **Next steps**: Load/perf exercises, peer scoring integration, and snapshot/pruning soak tests.
+
+### 4. Governance & External Audit
+- **Status**: 🔴 **NOT STARTED**
+- **Scope**: On-chain governance flows and external third-party security audit remain to be scheduled before mainnet.
 
 ## 📊 **DETAILED STATUS BREAKDOWN**
 
@@ -63,26 +64,26 @@
 2. **ippan-types** - ✅ **Working** - Basic type definitions
 3. **ippan-time** - ✅ **Working** - Time utilities
 
-### 🔄 **Partially Ready (2/20 crates)**
+### 🔄 **In Progress / Partially Ready (10/20 crates)**
 4. **ippan-core** - ✅ **Enhanced** - DAG operations and sync manager
-5. **ippan-network** - 🔄 **Basic** - Network layer structure
+5. **ippan-consensus-dlc** - 🔄 **Deterministic DLC/GBDT consensus** - Live code path with AI determinism checks
+6. **ippan-economics** - 🔄 **Compiling** - Deterministic emission + supply tracking; integration pending
+7. **ippan-ai-core** - 🔄 **Compiling** - Deterministic inference; broader regression tests in flight
+8. **ippan-ai-registry** - 🔄 **Compiling** - Model registry + determinism enforcement hooks
+9. **ippan-network** - 🔄 **Basic** - Libp2p gossip/discovery with deduplication tests
+10. **ippan-storage** - 🔄 **Basic** - Snapshot/export/import utilities with coverage
+11. **ippan-security** - 🔄 **In Progress** - Rate limiting, whitelist logic, and security CI checks
+12. **ippan-mempool** - 🔄 **Queued** - Baseline transaction queue present; needs perf + consensus coupling
+13. **ippan-rpc** - 🔄 **Scaffolding** - Service surface defined; wiring to storage/network ongoing
 
-### ❌ **Not Production Ready (15/20 crates)**
-6. **ippan-economics** - ❌ **Compilation errors** 🚨
-7. **ippan-ai-core** - ❌ **Compilation errors** 🚨
-8. **ippan-consensus** - ❌ **Missing core functionality**
-9. **ippan-governance** - ❌ **Missing core functionality**
-10. **ippan-wallet** - ❌ **Missing core functionality**
-11. **ippan-storage** - ❌ **Missing core functionality**
-12. **ippan-security** - ❌ **Missing core functionality**
-13. **ippan-mempool** - ❌ **Missing core functionality**
-14. **ippan-p2p** - ❌ **Missing core functionality**
-15. **ippan-rpc** - ❌ **Missing core functionality**
-16. **ippan-treasury** - ❌ **Missing core functionality**
-17. **ippan-validator-resolution** - ❌ **Missing core functionality**
-18. **ippan-l1-handle-anchors** - ❌ **Missing core functionality**
-19. **ippan-l2-handle-registry** - ❌ **Missing core functionality**
-20. **ippan-l2-fees** - ❌ **Missing core functionality**
+### ❌ **Not Production Ready (remaining)**
+14. **ippan-governance** - ❌ **Not implemented**
+15. **ippan-wallet** - ❌ **Needs on-chain integration and signing flows**
+16. **ippan-treasury** - ❌ **In design**
+17. **ippan-validator-resolution** - ❌ **Awaiting consensus + governance hooks**
+18. **ippan-l1-handle-anchors** - ❌ **Awaiting handle lifecycle wiring**
+19. **ippan-l2-handle-registry** - ❌ **Awaiting handle lifecycle wiring**
+20. **ippan-l2-fees** - ❌ **Awaiting economics parameterization**
 
 ## 🎯 **IMMEDIATE ACTION PLAN**
 
@@ -170,7 +171,7 @@ pub enum AiCoreError {
 
 ## 📈 **PROGRESS METRICS**
 
-### ✅ **Completed (25%)**
+### ✅ **Completed (core milestones)**
 - [x] Crypto crate compilation fixes
 - [x] Enhanced core DAG operations
 - [x] Comprehensive crypto suite structure
@@ -180,21 +181,20 @@ pub enum AiCoreError {
 - [x] Merkle tree implementations
 - [x] Commitment schemes
 
-### 🔄 **In Progress (15%)**
-- [ ] Economics crate compilation fixes
-- [ ] AI Core crate compilation fixes
-- [ ] Network layer enhancements
-- [ ] Storage layer improvements
+### 🔄 **In Progress (current focus)**
+- [x] Economics crate compilation fixes (compiling; integration/testing continues)
+- [x] AI Core crate compilation fixes (compiling; determinism coverage ongoing)
+- [x] Network layer enhancements (libp2p gossip, dedup tests; needs perf tuning)
+- [x] Storage layer improvements (snapshot/export/import paths validated)
+- [ ] Economic model completion (parameter tuning & emission modeling)
+- [ ] Security features (rate limiting/whitelist present; threat modeling ongoing)
+- [ ] Comprehensive testing (workspace + nightly ~65% coverage; fuzz/load pending)
+- [ ] Documentation (README/operator docs present; user guides/examples in progress)
+- [ ] Performance optimization (baseline acceptable; dedicated benchmarking outstanding)
 
-### ❌ **Not Started (60%)**
-- [ ] Consensus mechanism implementation
-- [ ] Economic model completion
-- [ ] Governance system
-- [ ] Security features
-- [ ] Comprehensive testing
-- [ ] Documentation
-- [ ] Performance optimization
-- [ ] Security audit
+### ❌ **Not Started**
+- [ ] Governance system (on-chain governance not yet implemented; slated for later phase)
+- [ ] Security audit (external third-party audit required pre-mainnet)
 
 ## 🚨 **RISK ASSESSMENT**
 
