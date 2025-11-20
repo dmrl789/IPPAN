@@ -60,8 +60,21 @@ pub fn init() {
 /// Return the current deterministic IPPAN time in microseconds.
 pub fn now_us() -> i64 {
     let now = system_time_now_us();
-    *LAST_TIME_US.lock().unwrap() = now;
-    now + *BASE_OFFSET_US.lock().unwrap()
+    let base_offset = *BASE_OFFSET_US.lock().unwrap();
+    let mut last = LAST_TIME_US.lock().unwrap();
+
+    let mut candidate = now + base_offset;
+    if candidate < 0 {
+        *last = 0;
+        return 0;
+    }
+
+    if candidate <= *last {
+        candidate = *last + 1;
+    }
+
+    *last = candidate;
+    candidate
 }
 
 /// Ingest a peer timestamp sample (in microseconds).
@@ -125,6 +138,20 @@ mod tests {
     }
 
     #[test]
+    fn monotonic_time_does_not_move_backwards() {
+        init();
+
+        let mut readings = Vec::new();
+        for _ in 0..10 {
+            readings.push(now_us());
+        }
+
+        for window in readings.windows(2) {
+            assert!(window[1] >= window[0]);
+        }
+    }
+
+    #[test]
     fn test_peer_ingest_median() {
         init();
         for d in [-200, -100, 0, 100, 200] {
@@ -133,6 +160,37 @@ mod tests {
         let (_, offset, count) = status();
         assert!(count <= MEDIAN_WINDOW);
         assert!(offset.abs() < 1_000);
+    }
+
+    #[test]
+    fn skew_outliers_are_discarded() {
+        init();
+        let initial = status();
+
+        ingest_sample(system_time_now_us() + 20_000_000); // > 10s skew
+
+        let after = status();
+        assert_eq!(initial.1, after.1, "base offset must ignore outliers");
+        assert_eq!(
+            initial.2, after.2,
+            "skew samples must not grow for outliers"
+        );
+    }
+
+    #[test]
+    fn drift_corrections_are_bounded_and_converge() {
+        init();
+
+        // Force an exaggerated offset so clamping logic is exercised.
+        *BASE_OFFSET_US.lock().unwrap() = 10_000;
+
+        ingest_sample(system_time_now_us()); // median drift ~0, clamp to -5_000
+        let (_, offset_after_first, _) = status();
+        assert_eq!(offset_after_first, 5_000);
+
+        ingest_sample(system_time_now_us()); // clamp remaining drift back to 0
+        let (_, offset_after_second, _) = status();
+        assert_eq!(offset_after_second, 0);
     }
 
     #[test]

@@ -1314,8 +1314,8 @@ fn build_owner_index_key(owner: &[u8; 32], descriptor: &[u8; 32]) -> Vec<u8> {
 mod tests {
     use super::*;
     use ippan_types::{
-        Amount, BlockId, HashTimer, IppanTimeMicros, RoundCertificate, RoundFinalizationRecord,
-        RoundId, RoundWindow, Transaction,
+        Amount, Block, BlockId, ChainState, HashTimer, IppanTimeMicros, RoundCertificate,
+        RoundFinalizationRecord, RoundId, RoundWindow, Transaction,
     };
     use tempfile::tempdir;
 
@@ -1372,6 +1372,12 @@ mod tests {
             Some("application/test".into()),
             vec!["tag".into()],
         )
+    }
+
+    fn sample_block(round: RoundId) -> Block {
+        let mut tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1_000), round);
+        tx.refresh_id();
+        Block::new(vec![], vec![tx], round, [3u8; 32])
     }
 
     #[test]
@@ -1469,5 +1475,184 @@ mod tests {
         assert_eq!(manifest.blocks_count, 1);
         assert_eq!(manifest.files_count, 1);
         assert_eq!(manifest.handles_count, 0);
+    }
+
+    #[test]
+    fn storing_same_block_twice_is_idempotent() {
+        let storage = MemoryStorage::new();
+        let block = sample_block(5);
+
+        storage.store_block(block.clone()).expect("store block");
+        let first_height = storage.get_latest_height().expect("height");
+
+        storage
+            .store_block(block.clone())
+            .expect("idempotent store");
+
+        assert_eq!(first_height, storage.get_latest_height().expect("height"));
+        let fetched = storage
+            .get_block(&block.header.id)
+            .expect("fetch")
+            .expect("block exists");
+        assert_eq!(fetched.header.id, block.header.id);
+        assert_eq!(fetched.transactions.len(), block.transactions.len());
+    }
+
+    #[test]
+    fn snapshot_round_trip_restores_state() {
+        let storage = MemoryStorage::new();
+
+        let mut chain_state = ChainState::with_initial(42, 2, 3);
+        chain_state.set_state_root([9u8; 32]);
+        chain_state.set_last_updated(777);
+        chain_state
+            .metadata
+            .insert("network".into(), "devnet".into());
+        storage
+            .update_chain_state(&chain_state)
+            .expect("store chain state");
+
+        let mut tx = Transaction::new([9u8; 32], [8u8; 32], Amount::from_atomic(500), 1);
+        tx.refresh_id();
+        storage
+            .store_transaction(tx.clone())
+            .expect("store transaction");
+
+        let block = Block::new(vec![], vec![tx.clone()], 1, [1u8; 32]);
+        storage.store_block(block.clone()).expect("store block");
+
+        let account_a = Account {
+            address: [7u8; 32],
+            balance: 1_500,
+            nonce: 0,
+        };
+        let account_b = Account {
+            address: [6u8; 32],
+            balance: 2_500,
+            nonce: 1,
+        };
+        storage
+            .update_account(account_a.clone())
+            .expect("store account a");
+        storage
+            .update_account(account_b.clone())
+            .expect("store account b");
+
+        let descriptor = sample_descriptor(5);
+        storage
+            .store_file_descriptor(descriptor.clone())
+            .expect("store descriptor");
+
+        let round_record = RoundFinalizationRecord {
+            round: 1,
+            window: RoundWindow {
+                id: 1,
+                start_us: IppanTimeMicros(10),
+                end_us: IppanTimeMicros(20),
+            },
+            ordered_tx_ids: vec![tx.hash()],
+            fork_drops: vec![],
+            state_root: [1u8; 32],
+            proof: sample_cert(1),
+            total_fees_atomic: Some(10),
+            treasury_fees_atomic: Some(2),
+            applied_payments: Some(1),
+            rejected_payments: Some(0),
+        };
+        storage
+            .store_round_finalization(round_record.clone())
+            .expect("store finalization");
+
+        let snapshot_dir = tempdir().expect("temp snapshot dir");
+        let manifest = export_snapshot(&storage, snapshot_dir.path()).expect("export snapshot");
+
+        let mut replay_storage = MemoryStorage::new();
+        let imported =
+            import_snapshot(&mut replay_storage, snapshot_dir.path()).expect("import snapshot");
+
+        assert_eq!(manifest.height, imported.height);
+        assert_eq!(manifest.blocks_count, imported.blocks_count);
+
+        let normalize_accounts = |accounts: Vec<Account>| {
+            accounts
+                .into_iter()
+                .map(|acc| (acc.address, acc.balance, acc.nonce))
+                .collect::<Vec<_>>()
+        };
+        let original_accounts = normalize_accounts(storage.snapshot_accounts().expect("accounts"));
+        let replay_accounts =
+            normalize_accounts(replay_storage.snapshot_accounts().expect("accounts replay"));
+        assert_eq!(original_accounts, replay_accounts);
+
+        let tx_ids: Vec<[u8; 32]> = storage
+            .snapshot_transactions()
+            .expect("txs")
+            .into_iter()
+            .map(|tx| tx.hash())
+            .collect();
+        let replay_tx_ids: Vec<[u8; 32]> = replay_storage
+            .snapshot_transactions()
+            .expect("txs replay")
+            .into_iter()
+            .map(|tx| tx.hash())
+            .collect();
+        assert_eq!(tx_ids, replay_tx_ids);
+
+        let block_ids: Vec<[u8; 32]> = storage
+            .snapshot_blocks()
+            .expect("blocks")
+            .into_iter()
+            .map(|block| block.header.id)
+            .collect();
+        let replay_block_ids: Vec<[u8; 32]> = replay_storage
+            .snapshot_blocks()
+            .expect("blocks replay")
+            .into_iter()
+            .map(|block| block.header.id)
+            .collect();
+        assert_eq!(block_ids, replay_block_ids);
+
+        let round_summaries: Vec<(RoundId, [u8; 32])> = storage
+            .snapshot_round_finalizations()
+            .expect("rounds")
+            .into_iter()
+            .map(|record| (record.round, record.state_root))
+            .collect();
+        let replay_round_summaries: Vec<(RoundId, [u8; 32])> = replay_storage
+            .snapshot_round_finalizations()
+            .expect("rounds replay")
+            .into_iter()
+            .map(|record| (record.round, record.state_root))
+            .collect();
+        assert_eq!(round_summaries, replay_round_summaries);
+
+        let original_state = storage.snapshot_chain_state().expect("chain state");
+        let replay_state = replay_storage
+            .snapshot_chain_state()
+            .expect("chain state replay");
+        assert_eq!(
+            original_state.total_issued_micro,
+            replay_state.total_issued_micro
+        );
+        assert_eq!(original_state.current_height, replay_state.current_height);
+        assert_eq!(original_state.current_round, replay_state.current_round);
+        assert_eq!(original_state.state_root, replay_state.state_root);
+        assert_eq!(original_state.last_updated, replay_state.last_updated);
+
+        // Balances must remain non-negative and totals preserved
+        let original_sum: u64 = storage
+            .snapshot_accounts()
+            .expect("accounts")
+            .into_iter()
+            .map(|acc| acc.balance)
+            .sum();
+        let replay_sum: u64 = replay_storage
+            .snapshot_accounts()
+            .expect("accounts replay")
+            .into_iter()
+            .map(|acc| acc.balance)
+            .sum();
+        assert_eq!(original_sum, replay_sum);
+        assert!(replay_sum > 0);
     }
 }

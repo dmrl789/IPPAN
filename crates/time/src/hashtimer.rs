@@ -6,6 +6,7 @@
 //! of the timestamp, providing a lightweight ordering primitive that
 //! can be attached to blocks, transactions, or gossip payloads.
 
+use std::cmp::Ordering;
 use std::convert::TryInto;
 
 use blake3::Hasher;
@@ -41,6 +42,22 @@ pub struct HashTimer {
     pub signature: Vec<u8>,
     /// Public key corresponding to the signer of this HashTimer (empty if unsigned).
     pub public_key: Vec<u8>,
+}
+
+impl PartialOrd for HashTimer {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for HashTimer {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.timestamp_us
+            .cmp(&other.timestamp_us)
+            .then_with(|| self.digest().cmp(&other.digest()))
+            .then_with(|| self.signature.cmp(&other.signature))
+            .then_with(|| self.public_key.cmp(&other.public_key))
+    }
 }
 
 impl HashTimer {
@@ -463,6 +480,24 @@ mod tests {
             "HashTimers must order by time"
         );
         assert!(ht1.time() < ht2.time(), "IppanTimeMicros must be ordered");
+    }
+
+    #[test]
+    fn hashtimer_ordering_breaks_ties_with_digest() {
+        let time = IppanTimeMicros(7);
+        let first = HashTimer::derive("tx", time, b"d", b"pa", &[1u8; 32], &[1u8; 32]);
+        let second = HashTimer::derive("tx", time, b"d", b"pb", &[2u8; 32], &[2u8; 32]);
+
+        let mut timers = vec![second.clone(), first.clone()];
+        timers.sort();
+
+        let expected = if first.digest() <= second.digest() {
+            vec![first, second]
+        } else {
+            vec![second, first]
+        };
+
+        assert_eq!(timers, expected, "Ordering must be deterministic by digest");
     }
 
     #[test]
