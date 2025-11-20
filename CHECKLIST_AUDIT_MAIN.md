@@ -124,6 +124,11 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - `cargo test -p ippan-consensus-dlc -- --nocapture` → **passes** locally (vends registry-backed fairness); only external toolchain issues (e.g., OpenSSL) would block in other environments.
 - `cargo test -p ippan-network -- --nocapture` → **passes** (27 unit tests green).
 
+## ZK / Cryptographic proofs
+- [x] ZK-STARK design PRD drafted (see `docs/zk/zk-ippan-stark-prd.md`)
+- [ ] Prototype STARK circuit and off-chain verifier (testnet only)
+- [ ] Optional integration of STARK proofs into DLC / reward flows
+
 ## 12. Production Readiness
 - [x] Semantic versioning + `/version` endpoint
 - [x] Release packaging directory with config template

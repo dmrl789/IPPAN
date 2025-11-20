@@ -107,3 +107,11 @@ A quick reference for reviewers to see where each major IPPAN feature lives in c
   - Health endpoint coverage (healthy/degraded dependencies) and metrics wiring in `crates/rpc/src/server.rs` tests.
 - **CI:**
   - Exercised by RPC suites in `.github/workflows/ci.yml` and nightly validation.
+
+### ZK-IPPAN / ZK-STARK integration (design stage)
+
+- **Code:** (design only)
+  - `docs/zk/zk-ippan-stark-prd.md`
+- **Tests:** not implemented yet (future work)
+- **CI:** none (future work)
+- **Status:** Design-only, no circuits implemented in v0.9.0-rc1
