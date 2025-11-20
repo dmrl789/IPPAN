@@ -101,7 +101,14 @@ pub fn ingest_sample(peer_time_us: i64) {
     let delta = (median_drift - *base).clamp(-MAX_DRIFT_US, MAX_DRIFT_US);
 
     *base += delta;
-    *LAST_TIME_US.lock().unwrap() = now_us;
+
+    let candidate = now_us + *base;
+    drop(base);
+
+    let mut last = LAST_TIME_US.lock().unwrap();
+    if candidate > *last {
+        *last = candidate;
+    }
 }
 
 /// Return the current IPPAN time as a Duration since UNIX_EPOCH.
@@ -149,6 +156,22 @@ mod tests {
         for window in readings.windows(2) {
             assert!(window[1] >= window[0]);
         }
+    }
+
+    #[test]
+    fn ingest_sample_does_not_rewind_last_time() {
+        init();
+
+        // Introduce a positive base offset and record the current IPPAN time.
+        *BASE_OFFSET_US.lock().unwrap() = 5_000;
+        let before = now_us();
+
+        // Ingesting a sample at the current system time will clamp the offset
+        // back toward zero. The last timestamp must not move backwards.
+        ingest_sample(system_time_now_us());
+        let after = now_us();
+
+        assert!(after >= before);
     }
 
     #[test]
