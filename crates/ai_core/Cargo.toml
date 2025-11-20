@@ -48,4 +48,5 @@ criterion = "0.5"
 
 [[bench]]
 name = "dgbdt_inference_bench"
+path = "benches/dgbdt_inference_bench.rs"
 harness = false

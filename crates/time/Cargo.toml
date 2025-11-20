@@ -24,4 +24,5 @@ criterion = "0.5"
 
 [[bench]]
 name = "hash_timer_bench"
+path = "benches/hash_timer_bench.rs"
 harness = false
