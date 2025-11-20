@@ -10,7 +10,8 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - Nightly Full Validation: ✅ green (coverage ≈ 65%, readiness: Release Candidate)
 - Intended use: **testnet / devnet experimentation only**, not production.
 - Breaking changes are still possible before v1.0.
-- See [release notes](docs/release-notes/IPPAN_v0.9.0_RC1.md) and the [operator guide](docs/operators/running-ippan-rc-node.md).
+- See [release notes](docs/release-notes/IPPAN_v0.9.0_RC1.md), the matching [changelog entry](CHANGELOG.md#v090-rc1--2025-11-20),
+  and the [operator guide](docs/operators/running-ippan-rc-node.md) (including guidance for embedding git metadata into RC builds).
 
 ## 🚀 Features
 

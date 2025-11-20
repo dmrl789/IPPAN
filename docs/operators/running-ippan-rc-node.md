@@ -11,6 +11,11 @@
 ```bash
 git clone https://github.com/dmrl789/IPPAN.git
 cd IPPAN
+
+# (Recommended) Embed the git revision into the binary for operator visibility
+export GIT_COMMIT_HASH="$(git rev-parse --short HEAD)"
+
+# Build the RC node
 cargo build --release -p node
 ```
 
@@ -29,6 +34,9 @@ cargo build --release -p node
 ./target/release/node --config config/node.toml
 ```
 - The binary prints the IPPAN version at startup (`v0.9.0-rc1`).
+- If you exported `GIT_COMMIT_HASH` during the build, the startup log will also
+  show the embedded commit, which helps operators confirm exactly which RC
+  binary is running.
 
 ## Observability
 - Logs: stdout/stderr by default; direct to files via your process supervisor.
