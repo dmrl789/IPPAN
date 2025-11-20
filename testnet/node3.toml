@@ -1,0 +1,43 @@
+# IPPAN RC testnet configuration for Node 3 (C)
+NODE_ID = "rc-node3"
+VALIDATOR_ID = "3333333333333333333333333333333333333333333333333333333333333333"
+NETWORK_ID = "ippan-rc1"
+
+# RPC endpoints
+RPC_HOST = "127.0.0.1"
+RPC_PORT = "3113"
+
+# HTTP P2P networking
+P2P_HOST = "127.0.0.1"
+P2P_PORT = "4113"
+BOOTSTRAP_NODES = "http://127.0.0.1:4111,http://127.0.0.1:4112"
+MAX_PEERS = "24"
+PEER_DISCOVERY_INTERVAL_SECS = "5"
+PEER_ANNOUNCE_INTERVAL_SECS = "15"
+
+# Storage layout
+DATA_DIR = "./testnet/node3/data"
+DB_PATH = "./testnet/node3/data/db"
+
+# IPNDHT / libp2p settings
+FILE_DHT_MODE = "libp2p"
+HANDLE_DHT_MODE = "libp2p"
+FILE_DHT_LIBP2P_LISTEN = "/ip4/127.0.0.1/tcp/9213"
+FILE_DHT_LIBP2P_BOOTSTRAP = "/ip4/127.0.0.1/tcp/9211,/ip4/127.0.0.1/tcp/9212"
+
+# Consensus + DLC knobs
+CONSENSUS_MODE = "POA"
+ENABLE_DLC = "true"
+TEMPORAL_FINALITY_MS = "500"
+SHADOW_VERIFIER_COUNT = "3"
+MIN_REPUTATION_SCORE = "5000"
+REQUIRE_VALIDATOR_BOND = "false"
+
+# RPC development affordances
+DEV_MODE = "true"
+ENABLE_SECURITY = "false"
+LOG_LEVEL = "info"
+LOG_FORMAT = "pretty"
+
+# Observability
+PROMETHEUS_ENABLED = "false"
