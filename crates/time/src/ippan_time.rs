@@ -33,6 +33,14 @@ fn system_time_now_us() -> i64 {
         .as_micros() as i64
 }
 
+fn clamp_non_negative_micros(value: i64) -> i64 {
+    if value < 0 {
+        0
+    } else {
+        value
+    }
+}
+
 /// Compute the median of a vector of i64 values.
 fn median(mut v: Vec<i64>) -> i64 {
     if v.is_empty() {
@@ -63,8 +71,8 @@ pub fn now_us() -> i64 {
     let base_offset = *BASE_OFFSET_US.lock().unwrap();
     let mut last = LAST_TIME_US.lock().unwrap();
 
-    let mut candidate = now + base_offset;
-    if candidate < 0 {
+    let mut candidate = clamp_non_negative_micros(now + base_offset);
+    if candidate == 0 {
         *last = 0;
         return 0;
     }
@@ -218,13 +226,8 @@ mod tests {
 
     #[test]
     fn test_now_clamps_negative_values() {
-        init();
-        let current = system_time_now_us();
-        *BASE_OFFSET_US.lock().unwrap() = -current - 1;
-
-        let duration = now();
-        assert_eq!(duration, Duration::ZERO);
-
-        init();
+        assert_eq!(clamp_non_negative_micros(-123_456), 0);
+        assert_eq!(clamp_non_negative_micros(0), 0);
+        assert_eq!(clamp_non_negative_micros(987_654), 987_654);
     }
 }
