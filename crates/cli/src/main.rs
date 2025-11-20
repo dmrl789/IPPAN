@@ -410,10 +410,7 @@ async fn handle_pay_command(cmd: PayCommand, rpc_url: &str) -> Result<()> {
         .await?;
 
     let status = response.status();
-    let body = response
-        .json::<Value>()
-        .await
-        .unwrap_or(Value::Null);
+    let body = response.json::<Value>().await.unwrap_or(Value::Null);
 
     if status.is_success() {
         if let Some(tx_hash) = body.get("tx_hash").and_then(|v| v.as_str()) {
