@@ -110,9 +110,9 @@ fn main() -> Result<()> {
         .build()
         .context("build reqwest client")?;
 
-    let counter = AtomicUsize::new(0);
-    let success = AtomicUsize::new(0);
-    let failures = AtomicUsize::new(0);
+    let counter = Arc::new(AtomicUsize::new(0));
+    let success = Arc::new(AtomicUsize::new(0));
+    let failures = Arc::new(AtomicUsize::new(0));
     let latencies = Arc::new(Mutex::new(Vec::with_capacity(total)));
 
     let start = Instant::now();
@@ -125,6 +125,10 @@ fn main() -> Result<()> {
             let latencies = Arc::clone(&latencies);
             let fee = args.fee_limit;
             let signing_key_hex = signing_key_hex.clone();
+            let counter = Arc::clone(&counter);
+            let success = Arc::clone(&success);
+            let failures = Arc::clone(&failures);
+            let rpc_endpoint = rpc_endpoint.clone();
             scope.spawn(move || loop {
                 let idx = counter.fetch_add(1, Ordering::Relaxed);
                 if idx >= total {
