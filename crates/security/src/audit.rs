@@ -15,6 +15,9 @@ pub struct AuditLogger {
     log_path: String,
 }
 
+// V1-BLOCKER: integrate external third-party security review outputs (attestations,
+// issue mappings) into the audit pipeline once vendor scope and format are agreed.
+
 impl AuditLogger {
     pub fn new(log_path: &str) -> Result<Self> {
         // Ensure the directory exists

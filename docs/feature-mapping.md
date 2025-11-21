@@ -1,5 +1,7 @@
 # IPPAN Feature → Code → Tests Map
 
+> Mainnet launch priorities are tracked in `docs/release/v1-mainnet-checklist.md`. Use this map to trace each checklist item to concrete code and tests.
+
 A quick reference for reviewers to see where each major IPPAN feature lives in code, how it is tested, and which CI workflows exercise it. Paths are relative to the repository root.
 
 ## IPPAN Time & HashTimer

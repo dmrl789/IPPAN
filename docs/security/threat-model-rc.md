@@ -1,5 +1,7 @@
 # IPPAN RC Threat Model
 
+> Mainnet gating: see `docs/release/v1-mainnet-checklist.md` for launch-blocking security tasks.
+
 ## 1. Assets
 
 - Consensus state (blocks, rounds, HashTimers, DLC scores)

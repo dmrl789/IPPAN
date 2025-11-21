@@ -1,5 +1,7 @@
 # Main Branch Feature Audit Checklist
 
+> For mainnet launch gating, see also: `docs/release/v1-mainnet-checklist.md`
+
 _Generated: 2025-11-15_
 
 ## 1. L1 Payments

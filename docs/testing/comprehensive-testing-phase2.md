@@ -1,5 +1,7 @@
 # Comprehensive Testing – Phase 2 (Adversarial + Property Tests)
 
+> Mainnet readiness: tracked in `docs/release/v1-mainnet-checklist.md` with Phase 2 coverage informing launch gates.
+
 Phase 2 extends the deterministic coverage from Phase 1 with property-based fuzzing and adversarial request paths across consensus, RPC, and networking.
 
 ## DLC consensus property tests

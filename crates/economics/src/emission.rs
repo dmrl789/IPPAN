@@ -3,6 +3,9 @@ use crate::types::{EconomicsParams, EmissionResult, MicroIPN, RoundId};
 
 const MAX_HALVING_EPOCH: u32 = 63;
 
+// V1-BLOCKER: finalize the mainnet emission curve (cap, halving cadence, reward floor)
+// so this implementation matches the signed-off economics spec and test vectors.
+
 /// Compute the per-round emission without considering the global supply cap.
 pub fn emission_for_round(round: RoundId, params: &EconomicsParams) -> MicroIPN {
     if round == 0 {
