@@ -126,12 +126,12 @@ impl RateLimiter {
     /// Check if a request should be rate limited
     pub async fn check_rate_limit(&self, ip: IpAddr, endpoint: &str) -> Result<bool> {
         let mut stats = self.stats.write().await;
-        stats.total_requests += 1;
+        stats.total_requests = stats.total_requests.saturating_add(1);
 
         // Check global rate limit first
         if let Some(ref global_limiter) = self.global_limiter {
             if global_limiter.check().is_err() {
-                stats.global_rate_limited += 1;
+                stats.global_rate_limited = stats.global_rate_limited.saturating_add(1);
                 return Ok(false);
             }
         }
@@ -142,7 +142,7 @@ impl RateLimiter {
                 .check_endpoint_limit(ip, endpoint, endpoint_limit)
                 .await?;
             if !allowed {
-                stats.endpoint_rate_limited += 1;
+                stats.endpoint_rate_limited = stats.endpoint_rate_limited.saturating_add(1);
                 return Ok(false);
             }
         }
@@ -150,11 +150,11 @@ impl RateLimiter {
         // Check general IP rate limit
         let allowed = self.check_ip_limit(ip).await?;
         if !allowed {
-            stats.ip_rate_limited += 1;
+            stats.ip_rate_limited = stats.ip_rate_limited.saturating_add(1);
             return Ok(false);
         }
 
-        stats.allowed_requests += 1;
+        stats.allowed_requests = stats.allowed_requests.saturating_add(1);
         Ok(true)
     }
 
@@ -296,6 +296,7 @@ pub enum RateLimitError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::net::Ipv4Addr;
     use tokio::time::{sleep, Duration};
 
@@ -381,6 +382,54 @@ mod tests {
 
         // Should be able to make requests again
         assert!(limiter.check_rate_limit(ip, "/test").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_blocks_and_recovers_after_window() {
+        let config = RateLimitConfig {
+            requests_per_second: 1,
+            burst_capacity: 1,
+            endpoint_limits: HashMap::new(),
+            global_requests_per_second: Some(10),
+        };
+
+        let limiter = RateLimiter::new(config).unwrap();
+        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+
+        assert!(limiter.check_rate_limit(ip, "/abuse").await.unwrap());
+        assert!(!limiter.check_rate_limit(ip, "/abuse").await.unwrap());
+
+        sleep(Duration::from_millis(1100)).await;
+
+        assert!(limiter.check_rate_limit(ip, "/abuse").await.unwrap());
+
+        let snapshot = limiter.stats_snapshot().await;
+        assert_eq!(snapshot.total_requests, 3);
+        assert_eq!(snapshot.allowed_requests, 2);
+        assert_eq!(snapshot.ip_rate_limited, 1);
+    }
+
+    #[tokio::test]
+    async fn test_global_rate_limit_counts_overflow_safely() {
+        let config = RateLimitConfig {
+            requests_per_second: 10,
+            burst_capacity: 10,
+            endpoint_limits: HashMap::new(),
+            global_requests_per_second: Some(2),
+        };
+
+        let limiter = RateLimiter::new(config).unwrap();
+        let ip1 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let ip2 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
+
+        assert!(limiter.check_rate_limit(ip1, "/global").await.unwrap());
+        assert!(limiter.check_rate_limit(ip2, "/global").await.unwrap());
+        assert!(!limiter.check_rate_limit(ip1, "/global").await.unwrap());
+
+        let snapshot = limiter.stats_snapshot().await;
+        assert_eq!(snapshot.global_rate_limited, 1);
+        assert_eq!(snapshot.total_requests, 3);
+        assert_eq!(snapshot.allowed_requests, 2);
     }
 
     #[tokio::test]

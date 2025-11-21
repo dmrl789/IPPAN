@@ -167,7 +167,7 @@ impl SecurityManager {
         let attempt_count = {
             let mut attempts = self.failed_attempts.write();
             let entry = attempts.entry(ip).or_insert((0, now));
-            entry.0 += 1;
+            entry.0 = entry.0.saturating_add(1);
             entry.1 = now;
             entry.0
         };
@@ -311,7 +311,7 @@ pub struct SecurityStats {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime};
     use tokio::time::sleep;
 
     #[tokio::test]
@@ -387,6 +387,67 @@ mod tests {
             manager.check_request(ip, "/api").await,
             Err(SecurityError::IpBlocked)
         ));
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_allows_blocked_ip_after_timeout() {
+        let config = SecurityConfig {
+            max_failed_attempts: 1,
+            block_duration: 1,
+            ..Default::default()
+        };
+
+        let manager = SecurityManager::new(config).unwrap();
+        let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
+
+        manager
+            .record_failed_attempt(ip, "/api", "unauthorized")
+            .await
+            .unwrap();
+        assert!(matches!(
+            manager.check_request(ip, "/api").await,
+            Err(SecurityError::IpBlocked)
+        ));
+
+        sleep(Duration::from_millis(1100)).await;
+        manager.cleanup_expired_blocks().await;
+
+        assert!(manager.check_request(ip, "/api").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_failed_attempt_counter_saturates() {
+        let config = SecurityConfig::default();
+        let manager = SecurityManager::new(config).unwrap();
+        let ip = IpAddr::V4(Ipv4Addr::new(172, 16, 0, 9));
+
+        {
+            let mut attempts = manager.failed_attempts.write();
+            attempts.insert(ip, (u32::MAX - 1, SystemTime::now()));
+        }
+
+        manager
+            .record_failed_attempt(ip, "/api", "overflow guard")
+            .await
+            .unwrap();
+
+        let attempts = manager.failed_attempts.read();
+        assert_eq!(attempts.get(&ip).map(|entry| entry.0), Some(u32::MAX));
+    }
+
+    #[tokio::test]
+    async fn test_empty_whitelist_blocks_all_ips() {
+        let config = SecurityConfig {
+            enable_ip_whitelist: true,
+            whitelisted_ips: vec![],
+            ..Default::default()
+        };
+
+        let manager = SecurityManager::new(config).unwrap();
+        let ip = IpAddr::V4(Ipv4Addr::new(10, 10, 10, 10));
+
+        let result = manager.check_request(ip, "/api").await;
+        assert!(matches!(result, Err(SecurityError::IpNotWhitelisted)));
     }
 
     #[tokio::test]

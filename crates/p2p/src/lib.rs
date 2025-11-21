@@ -999,4 +999,57 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(network.get_peer_count(), 0);
     }
+
+    #[tokio::test]
+    async fn spammy_malformed_peer_does_not_poison_state() {
+        let config = P2PConfig::default();
+        let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9310".into()).expect("network");
+
+        let valid_peer = "http://127.0.0.1:9311";
+        network.add_peer(valid_peer.into()).await.expect("peer add");
+
+        for _ in 0..5 {
+            let result = network
+                .process_incoming_message(
+                    "this is not a url",
+                    NetworkMessage::PeerDiscovery {
+                        peers: vec!["%%%".into()],
+                    },
+                )
+                .await;
+            assert!(result.is_err());
+        }
+
+        assert!(network.get_peer_count() >= 1);
+
+        let announce = network
+            .process_incoming_message(
+                valid_peer,
+                NetworkMessage::PeerInfo {
+                    peer_id: "peer-a".into(),
+                    addresses: vec![valid_peer.into()],
+                    time_us: Some(1),
+                },
+            )
+            .await;
+        assert!(announce.is_ok());
+
+        let metadata = network.get_peer_metadata();
+        assert!(metadata.iter().any(|p| p.address == valid_peer));
+    }
+
+    #[tokio::test]
+    async fn rapid_connect_disconnect_does_not_leak_peers() {
+        let config = P2PConfig::default();
+        let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9320".into()).expect("network");
+
+        for i in 0..20 {
+            let peer = format!("http://127.0.0.1:94{:02}", i);
+            let _ = network.add_peer(peer.clone()).await;
+            network.remove_peer(&peer);
+        }
+
+        assert_eq!(network.get_peer_count(), 0);
+        assert!(network.get_peer_metadata().is_empty());
+    }
 }

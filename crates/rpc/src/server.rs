@@ -2718,7 +2718,7 @@ mod tests {
         HandleRegistration, HandleRegistryError, PublicKey, StubHandleDhtService,
     };
     use ippan_p2p::NetworkEvent;
-    use ippan_security::{SecurityConfig, SecurityManager};
+    use ippan_security::{RateLimitConfig, SecurityConfig, SecurityManager};
     use ippan_storage::{MemoryStorage, ValidatorTelemetry};
     use ippan_types::{
         address::{encode_address, Address},
@@ -4775,6 +4775,78 @@ mod tests {
         let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
         let result = guard_request(&state, &addr, "/health").await;
         assert!(matches!(result, Err(SecurityError::IpNotWhitelisted)));
+    }
+
+    #[tokio::test]
+    async fn test_guard_request_rate_limits_abusive_ip() {
+        let dir = tempdir().expect("tempdir");
+        let rate_limit = RateLimitConfig {
+            requests_per_second: 2,
+            burst_capacity: 2,
+            endpoint_limits: HashMap::new(),
+            global_requests_per_second: Some(10),
+        };
+        let config = SecurityConfig {
+            rate_limit,
+            audit_log_path: dir.path().join("audit.log").to_string_lossy().to_string(),
+            ..SecurityConfig::default()
+        };
+
+        let manager = SecurityManager::new(config).expect("manager");
+        let state = build_app_state(Some(Arc::new(manager)), None);
+
+        let addr: SocketAddr = "127.0.0.1:9050".parse().unwrap();
+
+        assert!(guard_request(&state, &addr, "/health").await.is_ok());
+        assert!(guard_request(&state, &addr, "/health").await.is_ok());
+
+        let result = guard_request(&state, &addr, "/health").await;
+        assert!(matches!(result, Err(SecurityError::RateLimitExceeded)));
+
+        sleep(Duration::from_millis(600)).await;
+
+        assert!(guard_request(&state, &addr, "/health").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_guard_request_blocks_after_repeated_failures_then_recovers() {
+        let dir = tempdir().expect("tempdir");
+        let mut config = SecurityConfig {
+            max_failed_attempts: 3,
+            block_duration: 1,
+            audit_log_path: dir.path().join("audit.log").to_string_lossy().to_string(),
+            ..SecurityConfig::default()
+        };
+
+        config.rate_limit.endpoint_limits.clear();
+        let manager = SecurityManager::new(config).expect("manager");
+        let state = build_app_state(Some(Arc::new(manager)), None);
+
+        let addr: SocketAddr = "127.0.0.1:9051".parse().unwrap();
+        let endpoint = "/auth";
+
+        for _ in 0..3 {
+            state
+                .security
+                .as_ref()
+                .unwrap()
+                .record_failed_attempt(addr.ip(), endpoint, "invalid")
+                .await
+                .unwrap();
+        }
+
+        let blocked = guard_request(&state, &addr, endpoint).await;
+        assert!(matches!(blocked, Err(SecurityError::IpBlocked)));
+
+        sleep(Duration::from_millis(1100)).await;
+        state
+            .security
+            .as_ref()
+            .unwrap()
+            .cleanup_expired_blocks()
+            .await;
+
+        assert!(guard_request(&state, &addr, endpoint).await.is_ok());
     }
 
     #[tokio::test]
