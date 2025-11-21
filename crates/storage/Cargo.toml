@@ -22,6 +22,7 @@ tracing = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 criterion = "0.5"
+blake3 = { workspace = true }
 
 [[bench]]
 name = "block_apply_bench"

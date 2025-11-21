@@ -7,6 +7,7 @@
 //! - Replay from genesis produces identical results
 //! - State transitions are atomic and consistent
 
+use blake3::Hasher;
 use ippan_storage::{Account, MemoryStorage, SledStorage, Storage};
 use ippan_types::{
     chain_state::ChainState, Amount, Block, RoundFinalizationRecord, RoundWindow, Transaction,
@@ -59,9 +60,16 @@ fn apply_state_update(
     round: u64,
     base_value: u64,
 ) -> anyhow::Result<[u8; 32]> {
-    // Create and store accounts for this round
+    // Create and store accounts for this round with unique addresses
     for i in 0..5 {
-        let addr = [(round * 10 + i) as u8; 32];
+        let mut addr = [0u8; 32];
+        // Encode round and i to ensure uniqueness
+        addr[0] = round as u8;
+        addr[1] = i as u8;
+        // Fill rest with a pattern to avoid collisions
+        for j in 2..32 {
+            addr[j] = ((round * 7 + i * 3 + j as u64) % 256) as u8;
+        }
         let account = Account {
             address: addr,
             balance: base_value + i * 1000,
@@ -78,13 +86,13 @@ fn apply_state_update(
         vec![]
     };
     let block = create_test_block(round, creator, parent);
-    let block_hash = block.hash();
+    let _block_hash = block.hash();
     storage.store_block(block)?;
 
     // Update chain state
     let mut state = storage.get_chain_state()?;
     state.set_round(round);
-    state.add_issued_micro(base_value * 5);
+    state.add_issued_micro((base_value * 5) as u128);
     state.set_last_updated(round);
     storage.update_chain_state(&state)?;
 
@@ -100,17 +108,19 @@ fn apply_state_update(
 
 /// Compute a simple state root hash from storage state
 fn compute_state_root(storage: &impl Storage) -> anyhow::Result<[u8; 32]> {
-    use blake3::Hasher;
 
     let mut hasher = Hasher::new();
 
     // Hash all accounts in deterministic order
     let accounts = storage.get_all_accounts()?;
-    let mut sorted_accounts: Vec<_> = accounts.into_iter().collect();
+    let mut sorted_accounts: Vec<([u8; 32], Account)> = accounts
+        .into_iter()
+        .map(|acc| (acc.address, acc))
+        .collect();
     sorted_accounts.sort_by_key(|(addr, _)| *addr);
 
-    for (addr, account) in sorted_accounts {
-        hasher.update(&addr);
+    for (addr, account) in &sorted_accounts {
+        hasher.update(addr);
         hasher.update(&account.balance.to_be_bytes());
         hasher.update(&account.nonce.to_be_bytes());
     }
@@ -158,7 +168,7 @@ fn multi_block_sequential_application() {
     assert_eq!(chain_state.current_round, rounds - 1);
     assert_eq!(
         chain_state.total_issued_micro,
-        10_000 * 5 * rounds,
+        (10_000 * 5 * rounds) as u128,
         "Total issued should match sum of emissions"
     );
 
@@ -219,10 +229,15 @@ fn replay_from_genesis_produces_identical_state() {
     let accounts2 = storage2.get_all_accounts().unwrap();
     assert_eq!(accounts1.len(), accounts2.len(), "Account count must match");
 
-    for (addr, acc1) in accounts1.iter() {
-        let acc2 = accounts2.get(addr).expect("Account should exist in storage2");
-        assert_eq!(acc1.balance, acc2.balance, "Balance mismatch for {:?}", addr);
-        assert_eq!(acc1.nonce, acc2.nonce, "Nonce mismatch for {:?}", addr);
+    let mut acc1_map: std::collections::HashMap<[u8; 32], Account> = std::collections::HashMap::new();
+    for acc in accounts1.iter() {
+        acc1_map.insert(acc.address, acc.clone());
+    }
+    
+    for acc2 in accounts2.iter() {
+        let acc1 = acc1_map.get(&acc2.address).expect("Account should exist in storage1");
+        assert_eq!(acc1.balance, acc2.balance, "Balance mismatch for {:?}", acc2.address);
+        assert_eq!(acc1.nonce, acc2.nonce, "Nonce mismatch for {:?}", acc2.address);
     }
 }
 
@@ -397,7 +412,7 @@ fn sled_multi_block_replay_with_persistence() {
         );
         assert_eq!(
             chain_state.total_issued_micro,
-            8_000 * 5 * rounds,
+            (8_000 * 5 * rounds) as u128,
             "Total issued should be preserved"
         );
 
@@ -466,12 +481,11 @@ fn partial_replay_from_checkpoint() {
 
     // Copy accounts from checkpoint
     let checkpoint_accounts = storage.get_all_accounts().unwrap();
-    for round in 0..10 {
-        for i in 0..5 {
-            let addr = [(round * 10 + i) as u8; 32];
-            if let Some(account) = checkpoint_accounts.get(&addr) {
-                storage2.update_account(account.clone()).unwrap();
-            }
+    for account in checkpoint_accounts.iter() {
+        // Only copy accounts from first 10 rounds (round is encoded in addr[0])
+        let round_index = account.address[0] as u64;
+        if round_index < 10 {
+            storage2.update_account(account.clone()).unwrap();
         }
     }
 
@@ -480,7 +494,7 @@ fn partial_replay_from_checkpoint() {
         apply_state_update(&storage2, round, 5_000).unwrap();
     }
 
-    let replay_final_hash = compute_state_root(&storage2).unwrap();
+    let _replay_final_hash = compute_state_root(&storage2).unwrap();
 
     // INVARIANT: Partial replay should produce same final state
     // Note: This may differ slightly due to block storage differences,
@@ -566,7 +580,7 @@ fn large_multi_block_sequence() {
     // INVARIANT: Chain state should be consistent
     let chain_state = storage.get_chain_state().unwrap();
     assert_eq!(chain_state.current_round, rounds - 1);
-    assert_eq!(chain_state.total_issued_micro, 1_000 * 5 * rounds);
+    assert_eq!(chain_state.total_issued_micro, (1_000 * 5 * rounds) as u128);
 
     // INVARIANT: Account count should match expected
     let all_accounts = storage.get_all_accounts().unwrap();
@@ -579,12 +593,10 @@ fn large_multi_block_sequence() {
 
 #[test]
 fn deterministic_state_hash_with_same_inputs() {
-    let storage = MemoryStorage::new();
-
     // Create identical state in multiple passes
     let hashes: Vec<[u8; 32]> = (0..3)
         .map(|_| {
-            // Reset storage state by clearing and reapplying
+                // Reset storage state by clearing and reapplying
             let storage = MemoryStorage::new();
 
             for round in 0..5 {
