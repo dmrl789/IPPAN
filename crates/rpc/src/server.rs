@@ -3745,7 +3745,10 @@ mod tests {
             .expect("malformed request");
         request.extensions_mut().insert(ConnectInfo(addr));
 
-        let response = router.oneshot(request).await.expect("response for malformed payload");
+        let response = router
+            .oneshot(request)
+            .await
+            .expect("response for malformed payload");
 
         let status = response.status();
         assert!(status.is_client_error(), "unexpected status {status}");

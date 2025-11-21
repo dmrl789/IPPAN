@@ -966,9 +966,18 @@ mod tests {
         config.max_peers = 2;
         let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9200".into()).expect("network");
 
-        network.add_peer("http://127.0.0.1:9201".into()).await.expect("peer 1");
-        network.add_peer("http://127.0.0.1:9202".into()).await.expect("peer 2");
-        network.add_peer("http://127.0.0.1:9203".into()).await.expect("peer 3 exceeds cap");
+        network
+            .add_peer("http://127.0.0.1:9201".into())
+            .await
+            .expect("peer 1");
+        network
+            .add_peer("http://127.0.0.1:9202".into())
+            .await
+            .expect("peer 2");
+        network
+            .add_peer("http://127.0.0.1:9203".into())
+            .await
+            .expect("peer 3 exceeds cap");
 
         assert_eq!(network.get_peer_count(), 2);
 
