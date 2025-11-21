@@ -3340,6 +3340,7 @@ name = "ippan-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "criterion",
  "hex",
  "ippan-types",
