@@ -2706,13 +2706,17 @@ mod tests {
     use super::*;
     use crate::P2PConfig;
     use anyhow::anyhow;
+    use axum::body::Body;
     use axum::extract::{ConnectInfo, Path as AxumPath, Query};
+    use axum::http::Request;
     use axum::Json;
     use ed25519_dalek::SigningKey;
     use ippan_consensus::{handles::HandlePipeline, PoAConfig, Validator};
     use ippan_consensus_dlc::{AiConsensusStatus, DlcConfig as AiDlcConfig, DlcConsensus};
     use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
-    use ippan_l2_handle_registry::{HandleRegistration, PublicKey, StubHandleDhtService};
+    use ippan_l2_handle_registry::{
+        HandleRegistration, HandleRegistryError, PublicKey, StubHandleDhtService,
+    };
     use ippan_p2p::NetworkEvent;
     use ippan_security::{SecurityConfig, SecurityManager};
     use ippan_storage::{MemoryStorage, ValidatorTelemetry};
@@ -2731,6 +2735,7 @@ mod tests {
     use std::time::Instant;
     use tempfile::tempdir;
     use tokio::time::{sleep, Duration};
+    use tower::ServiceExt;
 
     struct EnvVarGuard {
         key: &'static str,
@@ -3726,6 +3731,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_payment_endpoint_rejects_malformed_json() {
+        let state = make_app_state();
+        let request_counter = state.req_count.clone();
+        let router = build_router(state);
+
+        let addr: SocketAddr = "127.0.0.1:9405".parse().unwrap();
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/tx/payment")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from("{\"from\": \"truncated"))
+            .expect("malformed request");
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let response = router
+            .oneshot(request)
+            .await
+            .expect("response for malformed payload");
+
+        let status = response.status();
+        assert!(status.is_client_error(), "unexpected status {status}");
+        let observed = request_counter.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(observed <= 1);
+    }
+
+    #[tokio::test]
+    async fn test_payment_endpoint_rejects_wrong_method() {
+        let state = make_app_state();
+        let router = build_router(state);
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/tx/payment")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response for wrong method");
+
+        assert!(response.status().is_client_error());
+    }
+
+    #[tokio::test]
     async fn test_handle_register_endpoint_success() {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
         let mut config = PoAConfig::default();
@@ -3812,6 +3862,35 @@ mod tests {
             .await
             .expect_err("invalid handle");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_register_endpoint_rejects_overlong_handle() {
+        let state = make_app_state();
+        let signer = sample_private_key([85u8; 32]);
+        let owner = signer.verifying_key().to_bytes();
+        let oversized = format!("@{}{}", "a".repeat(80), ".ipn");
+        let request = HandleRegisterRequest {
+            handle: oversized.clone(),
+            owner: encode_address(&owner),
+            metadata: BTreeMap::new(),
+            expires_at: None,
+            fee: None,
+            nonce: Some(1),
+            signing_key: hex::encode(signer.to_bytes()),
+        };
+
+        let addr: SocketAddr = "127.0.0.1:9452".parse().unwrap();
+        let err = handle_register_handle(State(state.clone()), ConnectInfo(addr), Json(request))
+            .await
+            .expect_err("oversized handle should fail");
+
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        let lookup = state
+            .handle_registry
+            .resolve(&Handle::new(oversized))
+            .expect_err("handle should not exist");
+        assert!(matches!(lookup, HandleRegistryError::HandleNotFound { .. }));
     }
 
     #[tokio::test]
