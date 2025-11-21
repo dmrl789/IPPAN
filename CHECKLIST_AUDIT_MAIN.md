@@ -119,6 +119,36 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `/health` endpoint tested for both healthy and degraded dependencies to mirror operator expectations.
 - [ ] Long-running chaos/resilience tests in CI (future work).
 
+## Comprehensive Testing - Phase 1
+- [x] **IPPAN Time / HashTimer invariants tested** (`crates/time/src/ippan_time.rs`, `crates/time/src/hashtimer.rs`)
+  - [x] Monotonicity tests with synthetic peer samples
+  - [x] Skew rejection and acceptance tests for outlier handling
+  - [x] Non-negative clamping edge case tests
+  - [x] HashTimer ordering consistency with sequential timers
+  - [x] Signature integrity tests with wrong keys and tampered content
+  - [x] Total order property tests for HashTimer comparisons
+  - [x] Context separation tests for derive function
+- [x] **DLC long-run simulation tests with explicit invariants** (`crates/consensus_dlc/tests/long_run_invariants.rs`)
+  - [x] Emission counter non-negative invariant tests
+  - [x] Validator score range invariant tests (scores always in [0, 10000])
+  - [x] Total rewards vs emission matching tests
+  - [x] Validator participation fairness tests (no starvation over 500 rounds)
+  - [x] DAG convergence invariant tests (bounded tips/pending blocks)
+  - [x] Edge case panic-resistance tests with slashing
+  - [x] Deterministic simulation repeatability tests with fixed seeds
+- [x] **Storage / replay multi-block tests** (`crates/storage/tests/replay_tests.rs`)
+  - [x] Sequential multi-block application with state consistency
+  - [x] Replay-from-genesis determinism tests
+  - [x] State hash consistency and verification across operations
+  - [x] Multi-block transaction sequence tests with balance conservation
+  - [x] Sled persistence and restart tests
+  - [x] Partial replay from checkpoint tests
+  - [x] Atomic state transition tests
+  - [x] Large sequence stress tests (100 rounds)
+  - [x] Deterministic hash computation tests
+- [ ] Fuzzing / property-based testing for consensus and network (Phase 2)
+- [ ] Long-duration stress tests in real testnet (Phase 2)
+
 ## Optional Test Runs
 - `cargo test -p ippan-rpc -- --nocapture` → **fails** (expected) due to missing OpenSSL headers in the environment; no additional compiler errors observed before the toolchain check halted.
 - `cargo test -p ippan-consensus-dlc -- --nocapture` → **passes** locally (vends registry-backed fairness); only external toolchain issues (e.g., OpenSSL) would block in other environments.
