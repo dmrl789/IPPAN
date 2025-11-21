@@ -54,8 +54,8 @@ fn snapshot_replay_roundtrip_preserves_state() {
     let manifest = export_snapshot(&storage, snapshot_dir.path()).expect("export snapshot");
 
     let mut replay_storage = MemoryStorage::new();
-    let imported_manifest = import_snapshot(&mut replay_storage, snapshot_dir.path())
-        .expect("import snapshot");
+    let imported_manifest =
+        import_snapshot(&mut replay_storage, snapshot_dir.path()).expect("import snapshot");
 
     assert_eq!(manifest.height, imported_manifest.height);
     assert_eq!(manifest.blocks_count, imported_manifest.blocks_count);

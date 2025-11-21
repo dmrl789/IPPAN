@@ -761,6 +761,9 @@ mod tests {
         sorted.sort();
 
         assert_eq!(sorted, timers, "pre-sorted sequence should remain ordered");
-        assert!(sorted.iter().all(|t| t.verify()), "All signed timers must verify");
+        assert!(
+            sorted.iter().all(|t| t.verify()),
+            "All signed timers must verify"
+        );
     }
 }

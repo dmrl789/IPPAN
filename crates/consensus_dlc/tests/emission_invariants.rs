@@ -2,10 +2,7 @@
 
 use anyhow::Result;
 use ippan_consensus_dlc::{
-    dag::Block,
-    dgbdt::ValidatorMetrics,
-    hashtimer::HashTimer,
-    DlcConfig, DlcConsensus,
+    dag::Block, dgbdt::ValidatorMetrics, hashtimer::HashTimer, DlcConfig, DlcConsensus,
 };
 use ippan_types::Amount;
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -119,8 +116,7 @@ async fn long_run_emission_and_fairness_invariants() -> Result<()> {
 
     let stats = consensus.stats();
     assert_eq!(
-        stats.emission_stats.emitted_supply as u128,
-        expected_emission,
+        stats.emission_stats.emitted_supply as u128, expected_emission,
         "Emission supply should match cumulative block rewards"
     );
     let accounted_rewards =

@@ -315,6 +315,9 @@ mod tests {
         *BASE_OFFSET_US.lock().unwrap() = i64::MIN / 2;
 
         let computed = now_us();
-        assert!(computed >= 0, "now_us should be clamped to non-negative values");
+        assert!(
+            computed >= 0,
+            "now_us should be clamped to non-negative values"
+        );
     }
 }
