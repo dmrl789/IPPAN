@@ -169,6 +169,35 @@ mod tests {
     }
 
     #[test]
+    fn monotonic_with_median_from_peer_offsets() {
+        init();
+
+        let anchor = system_time_now_us();
+        let peer_offsets = [-4_000, 1_500, 2_000, -1_000, 3_500, 0];
+
+        let mut readings = Vec::new();
+        for offset in peer_offsets {
+            ingest_sample(anchor + offset);
+            readings.push(now_us());
+        }
+
+        for window in readings.windows(2) {
+            assert!(
+                window[1] >= window[0],
+                "IPPAN time must not move backwards when ingesting samples"
+            );
+        }
+
+        let (_, base_offset, _) = status();
+        let expected_median = median(peer_offsets.to_vec());
+        let bounded_median = expected_median.clamp(-MAX_DRIFT_US, MAX_DRIFT_US);
+        assert!(
+            (base_offset - bounded_median).abs() <= 16,
+            "base offset should converge toward median drift (got {base_offset}, expected ~{bounded_median})"
+        );
+    }
+
+    #[test]
     fn ingest_sample_does_not_rewind_last_time() {
         init();
 
@@ -207,6 +236,31 @@ mod tests {
         assert_eq!(
             initial.2, after.2,
             "skew samples must not grow for outliers"
+        );
+    }
+
+    #[test]
+    fn mixed_skew_samples_keep_median_stable() {
+        init();
+
+        let anchor = system_time_now_us();
+        for offset in [500, -250, 750, -1_000] {
+            ingest_sample(anchor + offset);
+        }
+
+        let (_, base_before, count_before) = status();
+
+        ingest_sample(anchor + 15_000_000);
+        ingest_sample(anchor - 25_000_000);
+
+        let (_, base_after, count_after) = status();
+        assert_eq!(
+            base_before, base_after,
+            "base offset should ignore extreme skewed samples"
+        );
+        assert_eq!(
+            count_before, count_after,
+            "outlier samples must not be recorded"
         );
     }
 
@@ -252,5 +306,18 @@ mod tests {
         assert!(duration >= Duration::ZERO);
 
         init();
+    }
+
+    #[test]
+    fn now_us_never_returns_negative() {
+        init();
+        *LAST_TIME_US.lock().unwrap() = -5;
+        *BASE_OFFSET_US.lock().unwrap() = i64::MIN / 2;
+
+        let computed = now_us();
+        assert!(
+            computed >= 0,
+            "now_us should be clamped to non-negative values"
+        );
     }
 }

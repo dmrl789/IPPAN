@@ -501,6 +501,21 @@ mod tests {
     }
 
     #[test]
+    fn hashtimer_ordering_is_stable_across_sorts() {
+        let time = IppanTimeMicros(42);
+        let a = HashTimer::derive("ctx", time, b"domain", b"payload-a", &[0u8; 32], &[1u8; 32]);
+        let b = HashTimer::derive("ctx", time, b"domain", b"payload-b", &[0u8; 32], &[2u8; 32]);
+
+        let mut first_sort = vec![a.clone(), b.clone()];
+        first_sort.sort();
+
+        let mut second_sort = vec![b, a];
+        second_sort.sort();
+
+        assert_eq!(first_sort, second_sort, "Sorting must be deterministic");
+    }
+
+    #[test]
     fn hashtimer_nonce_changes_digest() {
         let time = IppanTimeMicros(1000000);
         let nonce1 = [1u8; 32];
@@ -686,6 +701,21 @@ mod tests {
     }
 
     #[test]
+    fn signature_verification_fails_when_entropy_is_tampered() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let mut timer = sign_hashtimer(&signing_key);
+
+        timer.entropy[0] ^= 0xFF;
+
+        assert!(
+            !verify_hashtimer(&timer),
+            "Changing entropy must invalidate the signature"
+        );
+        assert!(!timer.verify());
+    }
+
+    #[test]
     fn hashtimer_time_accessor() {
         let time = IppanTimeMicros(12345678);
         let timer = HashTimer::derive("tx", time, b"d", b"p", &[0u8; 32], &[0u8; 32]);
@@ -706,5 +736,34 @@ mod tests {
         let digest2 = digest_from_parts(timestamp_us, &entropy);
 
         assert_eq!(digest1, digest2, "digest_from_parts must be deterministic");
+    }
+
+    #[test]
+    fn sequential_hashtimers_remain_ordered_and_verifiable() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+
+        let mut timers = Vec::new();
+        for i in 0..5u8 {
+            let mut timer = HashTimer::derive(
+                "seq",
+                IppanTimeMicros(1_000 + i as u64),
+                b"domain",
+                &[i],
+                &[i; 32],
+                &[9u8; 32],
+            );
+            timer.sign_with(&signing_key);
+            timers.push(timer);
+        }
+
+        let mut sorted = timers.clone();
+        sorted.sort();
+
+        assert_eq!(sorted, timers, "pre-sorted sequence should remain ordered");
+        assert!(
+            sorted.iter().all(|t| t.verify()),
+            "All signed timers must verify"
+        );
     }
 }
