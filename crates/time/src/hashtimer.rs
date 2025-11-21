@@ -707,4 +707,321 @@ mod tests {
 
         assert_eq!(digest1, digest2, "digest_from_parts must be deterministic");
     }
+
+    // =====================================================================
+    // COMPREHENSIVE TESTING - PHASE 1: HashTimer Ordering & Signature
+    // =====================================================================
+
+    #[test]
+    fn ordering_consistency_multiple_sequential_hashtimers() {
+        // Create a sequence of HashTimers with incrementing timestamps
+        let mut timers = Vec::new();
+        for i in 0..10 {
+            let time = IppanTimeMicros(1000 * (i as u64 + 1));
+            let timer = HashTimer::derive(
+                "test",
+                time,
+                b"domain",
+                &format!("payload-{}", i).as_bytes(),
+                &[i as u8; 32],
+                &[0u8; 32],
+            );
+            timers.push(timer);
+        }
+
+        // Sort the timers
+        let mut sorted_timers = timers.clone();
+        sorted_timers.sort();
+
+        // Verify ordering is deterministic and matches timestamp order
+        for i in 0..sorted_timers.len() - 1 {
+            assert!(
+                sorted_timers[i].timestamp_us <= sorted_timers[i + 1].timestamp_us,
+                "Timers must be ordered by timestamp"
+            );
+        }
+
+        // Sort again and verify stability
+        let mut sorted_again = timers.clone();
+        sorted_again.sort();
+
+        for (i, (a, b)) in sorted_timers
+            .iter()
+            .zip(sorted_again.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                a.timestamp_us, b.timestamp_us,
+                "Sorting at index {} must be deterministic",
+                i
+            );
+            assert_eq!(
+                a.digest(),
+                b.digest(),
+                "Sorting at index {} must be deterministic",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn ordering_tie_breaking_with_same_timestamp() {
+        let time = IppanTimeMicros(5000);
+
+        // Create multiple timers with same timestamp but different payloads
+        let mut timers = Vec::new();
+        for i in 0..20 {
+            let timer = HashTimer::derive(
+                "test",
+                time,
+                b"domain",
+                &format!("payload-{:02}", i).as_bytes(),
+                &[i as u8; 32],
+                &[0u8; 32],
+            );
+            timers.push(timer);
+        }
+
+        // Sort multiple times and ensure consistency
+        let mut sorted1 = timers.clone();
+        sorted1.sort();
+
+        let mut sorted2 = timers.clone();
+        sorted2.sort();
+
+        // Verify exact same ordering
+        for (i, (a, b)) in sorted1.iter().zip(sorted2.iter()).enumerate() {
+            assert_eq!(
+                a, b,
+                "Sort order must be deterministic at position {}",
+                i
+            );
+        }
+
+        // Verify ordering uses digest for tie-breaking
+        for window in sorted1.windows(2) {
+            let a = &window[0];
+            let b = &window[1];
+            assert_eq!(a.timestamp_us, b.timestamp_us, "Same timestamp");
+            assert!(
+                a.digest() <= b.digest(),
+                "Digest tie-breaking must be consistent"
+            );
+        }
+    }
+
+    #[test]
+    fn signature_integrity_wrong_key_always_fails() {
+        let mut rng = OsRng;
+
+        // Generate multiple key pairs
+        let keys: Vec<_> = (0..5).map(|_| SigningKey::generate(&mut rng)).collect();
+
+        // Sign with first key
+        let timer = sign_hashtimer(&keys[0]);
+
+        // Verify fails with all other keys
+        for (i, wrong_key) in keys.iter().enumerate().skip(1) {
+            let mut tampered = timer.clone();
+            tampered.public_key = wrong_key.verifying_key().to_bytes().to_vec();
+
+            assert!(
+                !verify_hashtimer(&tampered),
+                "Wrong key {} should fail verification",
+                i
+            );
+            assert!(
+                !tampered.verify(),
+                "verify() method should fail for wrong key {}",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn signature_integrity_tampered_content_fails() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let original = sign_hashtimer(&signing_key);
+
+        // Tampering with timestamp
+        let mut tampered_time = original.clone();
+        tampered_time.timestamp_us += 1;
+        assert!(!tampered_time.verify(), "Tampered timestamp should fail");
+
+        // Tampering with entropy
+        let mut tampered_entropy = original.clone();
+        tampered_entropy.entropy[0] ^= 0xFF;
+        assert!(!tampered_entropy.verify(), "Tampered entropy should fail");
+
+        // Tampering with signature bytes
+        let mut tampered_sig = original.clone();
+        if !tampered_sig.signature.is_empty() {
+            tampered_sig.signature[0] ^= 0xFF;
+            assert!(
+                !tampered_sig.verify(),
+                "Tampered signature bytes should fail"
+            );
+        }
+    }
+
+    #[test]
+    fn multiple_sequential_hashtimers_no_panic() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+
+        // Create and verify many sequential HashTimers
+        let mut timers = Vec::new();
+        for _ in 0..100 {
+            let timer = sign_hashtimer(&signing_key);
+            assert!(timer.verify(), "Each timer should verify");
+            timers.push(timer);
+        }
+
+        // All should remain valid
+        for (i, timer) in timers.iter().enumerate() {
+            assert!(
+                timer.verify(),
+                "Timer {} should still verify after creation of others",
+                i
+            );
+        }
+
+        // Sort should not panic
+        timers.sort();
+
+        // Verify ordering is sensible (timestamps should be increasing or equal)
+        for window in timers.windows(2) {
+            assert!(
+                window[0].timestamp_us <= window[1].timestamp_us,
+                "Timestamps should be monotonic in sorted sequence"
+            );
+        }
+    }
+
+    #[test]
+    fn hashtimer_ordering_is_total_order() {
+        let time1 = IppanTimeMicros(1000);
+        let time2 = IppanTimeMicros(2000);
+        let time3 = IppanTimeMicros(3000);
+
+        let ht1 = HashTimer::derive("test", time1, b"d", b"p1", &[1u8; 32], &[1u8; 32]);
+        let ht2 = HashTimer::derive("test", time2, b"d", b"p2", &[2u8; 32], &[2u8; 32]);
+        let ht3 = HashTimer::derive("test", time3, b"d", b"p3", &[3u8; 32], &[3u8; 32]);
+
+        // Test transitivity: if a <= b and b <= c, then a <= c
+        assert!(ht1 <= ht2, "ht1 <= ht2");
+        assert!(ht2 <= ht3, "ht2 <= ht3");
+        assert!(ht1 <= ht3, "ht1 <= ht3 (transitivity)");
+
+        // Test antisymmetry: if a <= b and b <= a, then a == b
+        assert!(ht1 <= ht1, "ht1 <= ht1 (reflexivity)");
+        assert!(ht1 >= ht1, "ht1 >= ht1 (reflexivity)");
+
+        // Test totality: for any a, b, either a <= b or b <= a
+        assert!(ht1 <= ht2 || ht2 <= ht1, "Total order must hold");
+        assert!(ht2 <= ht3 || ht3 <= ht2, "Total order must hold");
+    }
+
+    #[test]
+    fn signature_verification_empty_signature_is_valid() {
+        // Unsigned HashTimers should be considered valid
+        let time = IppanTimeMicros(1000000);
+        let timer = HashTimer::derive("test", time, b"domain", b"payload", &[0u8; 32], &[0u8; 32]);
+
+        assert!(timer.signature.is_empty());
+        assert!(timer.public_key.is_empty());
+        assert!(
+            timer.verify(),
+            "Unsigned HashTimer should be valid for ordering"
+        );
+    }
+
+    #[test]
+    fn signature_verification_invalid_public_key_format() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let mut timer = sign_hashtimer(&signing_key);
+
+        // Corrupt public key by truncating
+        timer.public_key.truncate(10);
+
+        assert!(
+            !verify_hashtimer(&timer),
+            "Invalid public key format should fail"
+        );
+        assert!(!timer.verify(), "verify() should fail for invalid format");
+    }
+
+    #[test]
+    fn signature_verification_invalid_signature_format() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+        let mut timer = sign_hashtimer(&signing_key);
+
+        // Corrupt signature by truncating
+        timer.signature.truncate(10);
+
+        assert!(
+            !verify_hashtimer(&timer),
+            "Invalid signature format should fail"
+        );
+        assert!(!timer.verify(), "verify() should fail for invalid format");
+    }
+
+    #[test]
+    fn ordering_stability_across_clones() {
+        let mut rng = OsRng;
+        let signing_key = SigningKey::generate(&mut rng);
+
+        let original = sign_hashtimer(&signing_key);
+        let cloned = original.clone();
+
+        // Ordering must be same for original and clone
+        assert_eq!(
+            original.cmp(&cloned),
+            std::cmp::Ordering::Equal,
+            "Clone should compare equal"
+        );
+        assert_eq!(original, cloned, "Clone should be equal");
+    }
+
+    #[test]
+    fn derive_context_separation_comprehensive() {
+        let time = IppanTimeMicros(1234567);
+        let domain = b"test-domain";
+        let payload = b"test-payload";
+        let nonce = [42u8; 32];
+        let node_id = [7u8; 32];
+
+        // Create timers with different contexts
+        let contexts = vec!["tx", "block", "round", "custom1", "custom2"];
+        let mut timers = Vec::new();
+
+        for ctx in &contexts {
+            let timer = HashTimer::derive(ctx, time, domain, payload, &nonce, &node_id);
+            timers.push((ctx, timer));
+        }
+
+        // Verify all contexts produce different entropy
+        for i in 0..timers.len() {
+            for j in (i + 1)..timers.len() {
+                let (ctx_i, timer_i) = &timers[i];
+                let (ctx_j, timer_j) = &timers[j];
+
+                assert_ne!(
+                    timer_i.entropy, timer_j.entropy,
+                    "Contexts {} and {} must produce different entropy",
+                    ctx_i, ctx_j
+                );
+                assert_ne!(
+                    timer_i.digest(),
+                    timer_j.digest(),
+                    "Contexts {} and {} must produce different digests",
+                    ctx_i,
+                    ctx_j
+                );
+            }
+        }
+    }
 }

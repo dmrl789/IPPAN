@@ -253,4 +253,206 @@ mod tests {
 
         init();
     }
+
+    // =====================================================================
+    // COMPREHENSIVE TESTING - PHASE 1: Time/HashTimer Invariants
+    // =====================================================================
+
+    #[test]
+    fn monotonicity_with_synthetic_peer_samples() {
+        init();
+
+        // Record initial time
+        let t0 = now_us();
+
+        // Feed in a sequence of peer offsets (some positive, some negative)
+        let peer_offsets = vec![1000, -500, 2000, -1000, 1500, 500, -200, 800];
+
+        for offset in peer_offsets {
+            ingest_sample(system_time_now_us() + offset);
+            let current = now_us();
+            // Time must never go backwards
+            assert!(
+                current >= t0,
+                "Time went backwards after ingesting sample with offset {}",
+                offset
+            );
+        }
+
+        // Verify median behaviour - with mixed offsets, median should be reasonable
+        let (last, offset, count) = status();
+        assert!(count > 0, "Samples should have been recorded");
+        assert!(offset.abs() < 10_000, "Median offset should be reasonable");
+        assert!(last >= t0, "Final time should be >= initial time");
+    }
+
+    #[test]
+    fn median_computation_with_fixed_samples() {
+        // Test the median function directly with known inputs
+        assert_eq!(median(vec![]), 0);
+        assert_eq!(median(vec![5]), 5);
+        assert_eq!(median(vec![1, 2, 3]), 2);
+        assert_eq!(median(vec![1, 2, 3, 4]), 2); // (2+3)/2 = 2 (integer division)
+        assert_eq!(median(vec![10, 20, 30, 40, 50]), 30);
+
+        // Test with negative values
+        assert_eq!(median(vec![-100, 0, 100]), 0);
+        assert_eq!(median(vec![-500, -200, 200, 500]), 0); // (-200+200)/2 = 0
+
+        // Test with all same values
+        assert_eq!(median(vec![42, 42, 42, 42, 42]), 42);
+    }
+
+    #[test]
+    fn skew_rejection_multiple_outliers() {
+        init();
+        let initial = status();
+
+        // Feed in multiple outliers (beyond ±10s)
+        let outliers = vec![
+            15_000_000,  // +15s
+            -15_000_000, // -15s
+            20_000_000,  // +20s
+            -25_000_000, // -25s
+        ];
+
+        for outlier in outliers {
+            ingest_sample(system_time_now_us() + outlier);
+        }
+
+        let after = status();
+
+        // All outliers should be rejected - sample count and offset should not change
+        assert_eq!(
+            initial.2, after.2,
+            "No samples should be added for outliers"
+        );
+        assert_eq!(
+            initial.1, after.1,
+            "Base offset should not change with outliers"
+        );
+    }
+
+    #[test]
+    fn skew_acceptance_within_bounds() {
+        init();
+
+        // Feed in samples within acceptable bounds (< ±10s)
+        let acceptable_offsets = vec![
+            5_000_000,   // +5s
+            -5_000_000,  // -5s
+            1_000_000,   // +1s
+            -2_000_000,  // -2s
+            3_000_000,   // +3s
+        ];
+
+        for offset in &acceptable_offsets {
+            ingest_sample(system_time_now_us() + offset);
+        }
+
+        let (_, _, count) = status();
+        assert_eq!(
+            count,
+            acceptable_offsets.len(),
+            "All acceptable samples should be recorded"
+        );
+    }
+
+    #[test]
+    fn non_negative_clamping_edge_cases() {
+        // Test edge cases for clamping
+        assert_eq!(clamp_non_negative_micros(i64::MIN), 0);
+        assert_eq!(clamp_non_negative_micros(i64::MIN + 1), 0);
+        assert_eq!(clamp_non_negative_micros(-1_000_000), 0);
+        assert_eq!(clamp_non_negative_micros(-1), 0);
+        assert_eq!(clamp_non_negative_micros(0), 0);
+        assert_eq!(clamp_non_negative_micros(1), 1);
+        assert_eq!(clamp_non_negative_micros(1_000_000), 1_000_000);
+        assert_eq!(clamp_non_negative_micros(i64::MAX), i64::MAX);
+    }
+
+    #[test]
+    fn monotonicity_under_rapid_calls() {
+        init();
+
+        // Make many rapid calls and ensure strict monotonicity
+        let mut times = Vec::new();
+        for _ in 0..1000 {
+            times.push(now_us());
+        }
+
+        // Verify strict monotonic increase
+        for window in times.windows(2) {
+            assert!(
+                window[1] > window[0],
+                "Time must strictly increase: {} -> {}",
+                window[0],
+                window[1]
+            );
+        }
+    }
+
+    #[test]
+    fn convergence_with_consistent_peer_offset() {
+        init();
+
+        // Simulate peers all reporting consistent +2000us offset
+        for _ in 0..MEDIAN_WINDOW {
+            ingest_sample(system_time_now_us() + 2000);
+        }
+
+        let (_, offset, _) = status();
+
+        // Offset should converge toward +2000us, bounded by MAX_DRIFT_US per step
+        // After MEDIAN_WINDOW samples, we should be close to the target
+        assert!(
+            offset > 0,
+            "Offset should be positive when peers report positive drift"
+        );
+        assert!(
+            offset <= 2000,
+            "Offset should not exceed reported drift due to bounded correction"
+        );
+    }
+
+    #[test]
+    fn mixed_peer_offsets_produce_stable_median() {
+        init();
+
+        // Simulate a mix of peer offsets
+        let offsets = vec![
+            -1000, -500, 0, 500, 1000, // First batch: median = 0
+            -800, -400, 100, 600, 1200, // Second batch: median shifts
+        ];
+
+        for offset in offsets {
+            ingest_sample(system_time_now_us() + offset);
+        }
+
+        let (last_time, base_offset, count) = status();
+
+        // Verify state is consistent
+        assert_eq!(count, 10, "All samples should be recorded");
+        assert!(last_time > 0, "Last time should be positive");
+        assert!(
+            base_offset.abs() < 5_000,
+            "Base offset should be bounded by MAX_DRIFT_US adjustments"
+        );
+    }
+
+    #[test]
+    fn time_never_returns_negative_with_extreme_offset() {
+        init();
+
+        // Set an extreme negative offset
+        *BASE_OFFSET_US.lock().unwrap() = i64::MIN / 2;
+
+        // Multiple calls should never return negative time
+        for _ in 0..100 {
+            let t = now_us();
+            assert!(t >= 0, "Time should never be negative, got {}", t);
+        }
+
+        init();
+    }
 }
