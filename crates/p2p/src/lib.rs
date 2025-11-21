@@ -952,4 +952,42 @@ mod tests {
         let deserialized: NetworkMessage = serde_json::from_slice(&serialized).unwrap();
         assert!(matches!(deserialized, NetworkMessage::Block(_)));
     }
+
+    #[test]
+    fn malformed_network_message_is_rejected() {
+        let malformed = br#"{" + not valid json"#;
+        let decoded = serde_json::from_slice::<NetworkMessage>(malformed);
+        assert!(decoded.is_err());
+    }
+
+    #[tokio::test]
+    async fn peer_limit_prevents_unbounded_growth() {
+        let mut config = P2PConfig::default();
+        config.max_peers = 2;
+        let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9200".into()).expect("network");
+
+        network.add_peer("http://127.0.0.1:9201".into()).await.expect("peer 1");
+        network.add_peer("http://127.0.0.1:9202".into()).await.expect("peer 2");
+        network.add_peer("http://127.0.0.1:9203".into()).await.expect("peer 3 exceeds cap");
+
+        assert_eq!(network.get_peer_count(), 2);
+
+        network.remove_peer("http://127.0.0.1:9201");
+        network.remove_peer("http://127.0.0.1:9202");
+        let metadata = network.get_peer_metadata();
+        assert!(metadata.len() <= 1);
+    }
+
+    #[tokio::test]
+    async fn process_incoming_message_rejects_empty_peer() {
+        let config = P2PConfig::default();
+        let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9300".into()).expect("network");
+
+        let result = network
+            .process_incoming_message("   ", NetworkMessage::PeerDiscovery { peers: vec![] })
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(network.get_peer_count(), 0);
+    }
 }

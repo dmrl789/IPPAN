@@ -119,12 +119,10 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `/health` endpoint tested for both healthy and degraded dependencies to mirror operator expectations.
 - [ ] Long-running chaos/resilience tests in CI (future work).
 
-### Comprehensive Testing (Phase 1)
-- [x] Time / HashTimer invariants covered with monotonicity, skew rejection, and clamping tests in `crates/time`.
-- [x] DLC long-run simulation tests exercise deterministic emission/reward invariants and reputation bounds (`crates/consensus_dlc/tests/emission_invariants.rs`).
-- [x] Multi-block storage replay + snapshot round-trip tests validate state/root consistency across replays (`crates/storage/tests/replay_roundtrip.rs`).
-- [ ] Property-based / fuzz testing for consensus and networking (Phase 2).
-- [ ] Long-duration stress tests in live/RC testnets (Phase 2).
+### Comprehensive Testing
+- [x] Phase 1: Time / HashTimer invariants covered with monotonicity, skew rejection, and clamping tests in `crates/time`; DLC long-run simulation invariants (`crates/consensus_dlc/tests/emission_invariants.rs`); multi-block storage replay + snapshot round-trip validation (`crates/storage/tests/replay_roundtrip.rs`).
+- [x] Phase 2: Property-based DLC consensus tests, adversarial RPC coverage for malformed payloads and invalid handles, and p2p/DHT robustness against malformed messages and peer churn.
+- [ ] Phase 3: Long-duration stress tests, scaled fuzzing, and live testnet soak runs.
 
 ## Optional Test Runs
 - `cargo test -p ippan-rpc -- --nocapture` → **fails** (expected) due to missing OpenSSL headers in the environment; no additional compiler errors observed before the toolchain check halted.
