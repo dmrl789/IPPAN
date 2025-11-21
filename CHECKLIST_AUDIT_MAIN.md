@@ -94,6 +94,11 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [ ] Multi-node soak / longevity tests for the localnet (long-running gossip + DLC stress) are still pending.
 
 ## 10. RPC & Security
+- [x] RC threat model documented (`docs/security/threat-model-rc.md`).
+- [x] Security crate hardened and tested for rate limiting, whitelist, and lockout behaviour (`crates/security`).
+- [x] RPC + P2P abuse scenarios tested (rate-limit spam, repeated failures, malformed/rapid peers) in `crates/rpc` and `crates/p2p`.
+- [ ] External third-party audit (Phase 2) pending scheduling.
+- [ ] Additional runtime hardening (OS sandboxing, firewall recipes) tracked for post-RC rollout.
 - [x] All RPC routes now share the existing `SecurityManager` guard + rate limiter so read/write endpoints enforce IP/rate policies consistently (`crates/rpc/src/server.rs`).
 - [x] Dev-only helpers such as `/dev/fund` are gated by `IPPAN_DEV_MODE`, loopback IP checks, and loopback binding defaults outside dev mode (`node/src/main.rs`).
 - [ ] Advanced authentication (API keys, JWT) remains future work; current deployments rely on IP whitelists + reverse proxies per `docs/SECURITY_GUIDE.md`.
