@@ -460,7 +460,7 @@ This peer-reviewed academic paper formalizes IPPAN's novel consensus paradigm:
 
 ## 📝 License
 
-Apache-2.0
+IPPAN is provided as source-available software under the IPPAN Community Source License. See LICENSE.md for full terms.
 
 ## 🤝 Contributing
 
