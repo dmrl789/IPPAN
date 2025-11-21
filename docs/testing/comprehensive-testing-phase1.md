@@ -1,5 +1,7 @@
 # Comprehensive Testing — Phase 1
 
+> Mainnet readiness: see `docs/release/v1-mainnet-checklist.md` for the launch gate items informed by this phase.
+
 This document tracks the first phase of comprehensive testing for IPPAN. It focuses on deterministic invariants for timekeeping, DLC consensus behavior over long runs, and storage replay integrity.
 
 ## New test coverage

@@ -1,5 +1,7 @@
 # Security Hardening Phase 1 (RC)
 
+> Mainnet gating checklist: `docs/release/v1-mainnet-checklist.md` tracks remaining security launch blockers.
+
 ## Scope completed
 
 - RC threat model documented at `docs/security/threat-model-rc.md`.

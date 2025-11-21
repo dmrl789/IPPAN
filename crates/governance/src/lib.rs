@@ -8,6 +8,9 @@
 //! All governance actions are deterministic, time-bounded by HashTimer rounds,
 //! and cryptographically signed by authorized validators or domain owners.
 
+// V1-BLOCKER: wire the minimal governance/upgrade path for mainnet (config-gated
+// proposals and validator authorization) once the launch policy is finalized.
+
 pub mod ai_models;
 pub mod parameters;
 pub mod voting;

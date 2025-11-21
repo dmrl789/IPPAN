@@ -4,6 +4,9 @@ use ippan_storage::MemoryStorage;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+// V1-BLOCKER: add a long-duration soak test harness that exercises networking,
+// storage, RPC, and consensus over N-day runs with log capture for mainnet gating.
+
 #[tokio::test]
 async fn test_ai_integration() {
     // Create a simple test model
