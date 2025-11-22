@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use clap::{Arg, ArgAction, Command};
+use clap::{value_parser, Arg, ArgAction, Command};
 use config::{Config, File};
 use hex::encode as hex_encode;
 use ippan_consensus::{
@@ -29,6 +29,7 @@ use std::io::Write;
 use std::net::{IpAddr, TcpListener};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::process::Command as StdCommand;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -163,6 +164,9 @@ struct AppConfig {
     // Logging
     log_level: String,
     log_format: String,
+
+    // Process management
+    pid_file: Option<PathBuf>,
 
     // Development
     dev_mode: bool,
@@ -395,6 +399,7 @@ impl AppConfig {
                 .get_string("LOG_FORMAT")
                 .unwrap_or_else(|_| "pretty".to_string()),
             dev_mode,
+            pid_file: get_string_value(&config, &["PID_FILE", "node.pid_file"]).map(PathBuf::from),
         })
     }
 }
@@ -441,6 +446,152 @@ fn parse_multiaddrs(values: &[String], label: &str) -> Vec<Multiaddr> {
         .collect()
 }
 
+fn load_config_with_overrides(matches: &clap::ArgMatches) -> Result<AppConfig> {
+    let config_path = matches
+        .get_one::<String>("config")
+        .map(|value| value.as_str());
+    let mut config = AppConfig::load(config_path)?;
+    apply_overrides(matches, &mut config);
+
+    if config.pid_file.is_none() {
+        config.pid_file = Some(PathBuf::from(&config.data_dir).join("ippan-node.pid"));
+    }
+
+    Ok(config)
+}
+
+fn apply_overrides(matches: &clap::ArgMatches, config: &mut AppConfig) {
+    if let Some(data_dir) = matches.get_one::<String>("data-dir") {
+        config.data_dir = data_dir.clone();
+        config.db_path = format!("{data_dir}/db");
+    }
+
+    if let Some(network) = matches.get_one::<String>("network") {
+        config.network_id = network.clone();
+    }
+
+    if let Some(log_level) = matches.get_one::<String>("log-level") {
+        config.log_level = log_level.clone();
+    }
+
+    if let Some(log_format) = matches.get_one::<String>("log-format") {
+        config.log_format = log_format.clone();
+    }
+
+    if let Some(rpc_host) = matches.get_one::<String>("rpc-host") {
+        config.rpc_host = rpc_host.clone();
+    }
+
+    if let Some(rpc_port) = matches.get_one::<u16>("rpc-port") {
+        config.rpc_port = *rpc_port;
+    }
+
+    if let Some(p2p_port) = matches.get_one::<u16>("p2p-port") {
+        config.p2p_port = *p2p_port;
+    }
+
+    if matches.get_flag("disable-metrics") {
+        config.prometheus_enabled = false;
+    }
+
+    if let Some(pid_file) = matches.get_one::<String>("pid-file") {
+        config.pid_file = Some(PathBuf::from(pid_file));
+    }
+
+    if matches.get_flag("dev") {
+        config.dev_mode = true;
+        config.log_level = "debug".to_string();
+        config.log_format = "pretty".to_string();
+        if config.rpc_host == "127.0.0.1" {
+            config.rpc_host = "0.0.0.0".to_string();
+        }
+    }
+}
+
+struct PidFileGuard {
+    path: PathBuf,
+}
+
+impl Drop for PidFileGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn write_pid_file(path: &Path) -> Result<PidFileGuard> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    if path.exists() {
+        let existing = fs::read_to_string(path).unwrap_or_default();
+        anyhow::bail!(
+            "PID file {} already exists (contents: {}); stop the running node or remove the file",
+            path.display(),
+            existing.trim()
+        );
+    }
+
+    fs::write(path, std::process::id().to_string())?;
+    Ok(PidFileGuard {
+        path: path.to_path_buf(),
+    })
+}
+
+fn stop_node(config: &AppConfig) -> Result<()> {
+    let pid_path = config
+        .pid_file
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(&config.data_dir).join("ippan-node.pid"));
+
+    if !pid_path.exists() {
+        anyhow::bail!(
+            "PID file {} not found; is the node running?",
+            pid_path.display()
+        );
+    }
+
+    let pid_raw = fs::read_to_string(&pid_path)?;
+    let pid: i32 = pid_raw
+        .trim()
+        .parse()
+        .map_err(|_| anyhow!("Invalid PID contents in {}", pid_path.display()))?;
+
+    let status = StdCommand::new("kill")
+        .arg("-INT")
+        .arg(pid.to_string())
+        .status()?;
+
+    if status.success() {
+        println!("Sent SIGINT to IPPAN node process {pid}");
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "Failed to signal PID {} (exit status: {:?})",
+            pid,
+            status.code()
+        )
+    }
+}
+
+async fn check_status(config: &AppConfig, health_path: &str) -> Result<()> {
+    let mut path = health_path.to_string();
+    if !path.starts_with('/') {
+        path = format!("/{path}");
+    }
+    let url = format!("http://{}:{}{}", config.rpc_host, config.rpc_port, path);
+    let response = reqwest::Client::new().get(&url).send().await?;
+    let status = response.status();
+    let body = response.text().await?;
+    println!("GET {url} -> {status}");
+    println!("{body}");
+    if status.is_success() {
+        Ok(())
+    } else {
+        anyhow::bail!("Health check failed with status {status}")
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Parse command line arguments
@@ -453,33 +604,122 @@ async fn main() -> Result<()> {
                 .short('c')
                 .long("config")
                 .value_name("FILE")
-                .help("Configuration file path"),
+                .help("Configuration file path")
+                .global(true),
         )
         .arg(
             Arg::new("data-dir")
                 .short('d')
                 .long("data-dir")
                 .value_name("DIR")
-                .help("Data directory"),
+                .help("Data directory")
+                .global(true),
         )
         .arg(
             Arg::new("dev")
                 .long("dev")
                 .action(ArgAction::SetTrue)
-                .help("Run in development mode"),
+                .help("Run in development mode")
+                .global(true),
         )
         .arg(
             Arg::new("version_flag")
                 .short('V')
                 .long("version")
                 .action(ArgAction::SetTrue)
-                .help("Print detailed version information and exit"),
+                .help("Print detailed version information and exit")
+                .global(true),
         )
         .arg(
             Arg::new("check")
                 .long("check")
                 .action(ArgAction::SetTrue)
-                .help("Run configuration and environment self-checks, then exit"),
+                .help("Run configuration and environment self-checks, then exit")
+                .global(true),
+        )
+        .arg(
+            Arg::new("network")
+                .long("network")
+                .value_name("NETWORK")
+                .help("Network identifier (e.g. localnet or testnet)")
+                .global(true),
+        )
+        .arg(
+            Arg::new("log-level")
+                .long("log-level")
+                .value_name("LEVEL")
+                .value_parser(["trace", "debug", "info", "warn", "error"])
+                .help("Override the log level")
+                .global(true),
+        )
+        .arg(
+            Arg::new("log-format")
+                .long("log-format")
+                .value_name("FORMAT")
+                .value_parser(["pretty", "json"])
+                .help("Select log output format")
+                .global(true),
+        )
+        .arg(
+            Arg::new("rpc-host")
+                .long("rpc-host")
+                .value_name("HOST")
+                .help("Override RPC bind host (defaults to config value)")
+                .global(true),
+        )
+        .arg(
+            Arg::new("rpc-port")
+                .long("rpc-port")
+                .value_name("PORT")
+                .value_parser(value_parser!(u16))
+                .help("Override RPC port")
+                .global(true),
+        )
+        .arg(
+            Arg::new("p2p-port")
+                .long("p2p-port")
+                .value_name("PORT")
+                .value_parser(value_parser!(u16))
+                .help("Override P2P port")
+                .global(true),
+        )
+        .arg(
+            Arg::new("disable-metrics")
+                .long("disable-metrics")
+                .action(ArgAction::SetTrue)
+                .help("Disable the Prometheus metrics endpoint")
+                .global(true),
+        )
+        .arg(
+            Arg::new("pid-file")
+                .long("pid-file")
+                .value_name("FILE")
+                .help("PID file to use for start/stop coordination")
+                .global(true),
+        )
+        .subcommand(
+            Command::new("start").about("Start the IPPAN node using the provided configuration"),
+        )
+        .subcommand(
+            Command::new("status")
+                .about("Check the /health endpoint for a running node")
+                .arg(
+                    Arg::new("health-path")
+                        .long("health-path")
+                        .value_name("PATH")
+                        .default_value("/health")
+                        .help("Health endpoint path to query"),
+                ),
+        )
+        .subcommand(
+            Command::new("stop")
+                .about("Send a SIGINT to a running node based on its PID file")
+                .arg(
+                    Arg::new("pid-file")
+                        .long("pid-file")
+                        .value_name("FILE")
+                        .help("PID file to read when stopping the node"),
+                ),
         )
         .subcommand(
             Command::new("snapshot")
@@ -511,45 +751,50 @@ async fn main() -> Result<()> {
         )
         .get_matches();
 
-    // Load configuration
-    let config_path = matches
-        .get_one::<String>("config")
-        .map(|value| value.as_str());
-    let mut config = AppConfig::load(config_path)?;
-
-    // Override with command line arguments
-    if let Some(data_dir) = matches.get_one::<String>("data-dir") {
-        config.data_dir = data_dir.clone();
-        config.db_path = format!("{data_dir}/db");
+    if let Some(status_matches) = matches.subcommand_matches("status") {
+        let config = load_config_with_overrides(status_matches)?;
+        let health_path = status_matches
+            .get_one::<String>("health-path")
+            .map(|value| value.as_str())
+            .unwrap_or("/health");
+        check_status(&config, health_path).await?;
+        return Ok(());
     }
 
+    if let Some(stop_matches) = matches.subcommand_matches("stop") {
+        let config = load_config_with_overrides(stop_matches)?;
+        stop_node(&config)?;
+        return Ok(());
+    }
+
+    if let Some(snapshot_matches) = matches.subcommand_matches("snapshot") {
+        let config = load_config_with_overrides(snapshot_matches)?;
+        handle_snapshot_subcommand(snapshot_matches, &config)?;
+        return Ok(());
+    }
+
+    let start_matches = matches.subcommand_matches("start").unwrap_or(&matches);
+
+    let mut config = load_config_with_overrides(start_matches)?;
     let mut dev_mode_forced_off = false;
-    if matches.get_flag("dev") {
-        config.dev_mode = true;
-        config.log_level = "debug".to_string();
-        config.log_format = "pretty".to_string();
-        if config.rpc_host == "127.0.0.1" {
-            config.rpc_host = "0.0.0.0".to_string();
-        }
-    }
 
     if cfg!(feature = "production") && config.dev_mode {
         dev_mode_forced_off = true;
         config.dev_mode = false;
     }
 
-    if matches.get_flag("version_flag") {
+    if start_matches.get_flag("version_flag") {
         print_version_info(&config);
         return Ok(());
     }
 
-    if matches.get_flag("check") {
-        run_self_check(&config)?;
-        return Ok(());
+    fs::create_dir_all(&config.data_dir)?;
+    if let Some(parent) = Path::new(&config.db_path).parent() {
+        fs::create_dir_all(parent)?;
     }
 
-    if let Some(snapshot_matches) = matches.subcommand_matches("snapshot") {
-        handle_snapshot_subcommand(snapshot_matches, &config)?;
+    if start_matches.get_flag("check") {
+        run_self_check(&config)?;
         return Ok(());
     }
 
@@ -561,6 +806,12 @@ async fn main() -> Result<()> {
             "Production feature enabled: development-only endpoints are disabled regardless of flags"
         );
     }
+
+    let _pid_guard = if let Some(pid_file) = &config.pid_file {
+        Some(write_pid_file(pid_file)?)
+    } else {
+        None
+    };
 
     // Initialize metrics exporter
     let prometheus_handle = init_metrics(&config);
