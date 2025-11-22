@@ -1,5 +1,5 @@
 use ippan_p2p::DhtConfig;
-use ippan_rpc::{start_server, L2Config, P2PConfig};
+use ippan_rpc::{start_server, L2Config, P2PConfig, P2PLimits};
 use std::time::Duration;
 
 #[tokio::main]
@@ -24,6 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             ],
             announce_interval: Duration::from_secs(60),
         },
+        limits: P2PLimits::default(),
     };
 
     // Configure L2 blockchain

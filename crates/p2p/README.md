@@ -81,12 +81,10 @@ network.run().await;
 ### HTTP P2P Network
 
 ```rust
-use ippan_p2p::{P2PConfig, HttpP2PNetwork};
+use ippan_p2p::{HttpP2PNetwork, P2PConfig};
 
 let config = P2PConfig {
     listen_address: "http://0.0.0.0:9000".to_string(),
-    bootstrap_peers: vec!["http://bootstrap-node:9000".to_string()],
-    enable_upnp: true,
     ..Default::default()
 };
 
@@ -105,11 +103,13 @@ network.start().await?;
 
 ### P2PConfig (HTTP)
 - `listen_address`: HTTP address to listen on
-- `bootstrap_peers`: List of known peer addresses
 - `max_peers`: Maximum number of concurrent peers
 - `peer_discovery_interval`: How often to query peers for more peers
-- `enable_upnp`: Enable UPnP port mapping
-- `external_ip_services`: Services to query for external IP
+- `message_timeout`: HTTP timeout for peer requests
+- `retry_attempts`: Number of times to retry failed requests
+- `dht`: Discovery and announcement settings (`DhtConfig`)
+- `chaos`: Deterministic drop/latency injection for testing (`ChaosConfig`)
+- `limits`: Message size and rate protection (`P2PLimits`)
 
 ## Network Events
 

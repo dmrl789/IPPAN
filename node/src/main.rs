@@ -12,7 +12,7 @@ use ippan_l2_handle_registry::{HandleDhtService, L2HandleRegistry, StubHandleDht
 use ippan_mempool::Mempool;
 use ippan_p2p::{
     ChaosConfig, DhtConfig, HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService,
-    Libp2pHandleDhtService, Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig,
+    Libp2pHandleDhtService, Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig, P2PLimits,
 };
 use ippan_rpc::server::ConsensusHandle;
 use ippan_rpc::{start_server, AiStatusHandle, AppState, L2Config};
@@ -794,6 +794,7 @@ async fn main() -> Result<()> {
             extra_latency_ms_min: config.chaos_extra_latency_ms_min,
             extra_latency_ms_max: config.chaos_extra_latency_ms_max,
         },
+        limits: P2PLimits::default(),
     };
 
     let mut p2p_network = HttpP2PNetwork::new(p2p_config, listen_address.clone())?;
