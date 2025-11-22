@@ -122,6 +122,21 @@ impl DGBDTRegistry {
         Ok((activated_model, hash))
     }
 
+    /// Ensure an active model exists, activating from a config file if needed.
+    ///
+    /// Returns the active `(Model, hash)` pair either from the registry or by
+    /// loading and activating the model specified in the provided config file.
+    pub fn ensure_active_model_from_config<P: AsRef<Path>>(
+        &mut self,
+        config_path: P,
+    ) -> Result<(Model, String)> {
+        match self.get_active_model() {
+            Ok(model) => Ok(model),
+            Err(RegistryError::ModelNotFound(_)) => self.load_and_activate_from_config(config_path),
+            Err(err) => Err(err),
+        }
+    }
+
     /// Get the currently active model with its hash
     pub fn get_active_model(&self) -> Result<(Model, String)> {
         let data = self.db.get(ACTIVE_MODEL_KEY).map_err(|err| {
@@ -294,6 +309,14 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
     }
 
     Ok((model, hash))
+}
+
+/// Convenience helper to activate a model using an existing registry handle.
+pub fn load_and_activate_from_config<P: AsRef<Path>>(
+    registry: &mut DGBDTRegistry,
+    config_path: P,
+) -> Result<(Model, String)> {
+    registry.load_and_activate_from_config(config_path)
 }
 
 fn extract_model_entry(config: &toml::Value) -> Result<(String, Option<String>)> {
