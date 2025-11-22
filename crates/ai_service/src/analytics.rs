@@ -1,8 +1,10 @@
 //! Analytics and insights module
 
 use crate::errors::AIServiceError;
+use crate::fixed_math::{correlation as fixed_correlation, mean, sqrt_fixed, variance};
 use crate::types::{AnalyticsConfig, AnalyticsInsight, DataPoint, InsightType, SeverityLevel};
 use chrono::{Duration, Utc};
+use ippan_ai_core::Fixed;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -28,7 +30,7 @@ impl AnalyticsService {
     pub fn add_data_point(
         &mut self,
         metric: String,
-        value: f64,
+        value: Fixed,
         unit: String,
         tags: HashMap<String, String>,
     ) {
@@ -90,29 +92,34 @@ impl AnalyticsService {
         }
 
         let recent_points = &data_points[data_points.len().saturating_sub(10)..];
-        let values: Vec<f64> = recent_points.iter().map(|p| p.value).collect();
+        let values: Vec<Fixed> = recent_points.iter().map(|p| p.value).collect();
 
-        // Simple linear regression to detect trend
-        let n = values.len() as f64;
-        let sum_x: f64 = (0..values.len()).map(|i| i as f64).sum();
-        let sum_y: f64 = values.iter().sum();
-        let sum_xy: f64 = values
-            .iter()
-            .enumerate()
-            .map(|(i, &y)| (i as f64) * y)
-            .sum();
-        let sum_x2: f64 = (0..values.len()).map(|i| (i as f64).powi(2)).sum();
+        let n = Fixed::from_int(values.len() as i64);
+        let sum_x = (0..values.len()).fold(Fixed::ZERO, |acc, i| acc + Fixed::from_int(i as i64));
+        let sum_y = values.iter().copied().fold(Fixed::ZERO, |acc, v| acc + v);
+        let sum_xy = values.iter().enumerate().fold(Fixed::ZERO, |acc, (i, y)| {
+            acc + (Fixed::from_int(i as i64) * *y)
+        });
+        let sum_x2 = (0..values.len()).fold(Fixed::ZERO, |acc, i| {
+            let idx = Fixed::from_int(i as i64);
+            acc + (idx * idx)
+        });
 
-        let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x.powi(2));
+        let denominator = n * sum_x2 - sum_x * sum_x;
+        if denominator.is_zero() {
+            return None;
+        }
+
+        let slope = (n * sum_xy - sum_x * sum_y) / denominator;
         let trend_strength = slope.abs();
 
-        if trend_strength > 0.1 {
-            let trend_direction = if slope > 0.0 {
+        if trend_strength > Fixed::from_ratio(1, 10) {
+            let trend_direction = if slope > Fixed::ZERO {
                 "increasing"
             } else {
                 "decreasing"
             };
-            let severity = if trend_strength > 0.5 {
+            let severity = if trend_strength > Fixed::from_ratio(1, 2) {
                 SeverityLevel::High
             } else {
                 SeverityLevel::Medium
@@ -123,10 +130,10 @@ impl AnalyticsService {
                 insight_type: InsightType::Performance,
                 title: format!("{} trend detected", metric),
                 description: format!(
-                    "{} is {} with strength {:.2}",
+                    "{} is {} with strength {}",
                     metric, trend_direction, trend_strength
                 ),
-                confidence: trend_strength.min(1.0),
+                confidence: trend_strength.clamp(Fixed::ZERO, Fixed::ONE),
                 severity,
                 data_points: recent_points.to_vec(),
                 recommendations: vec![
@@ -150,16 +157,15 @@ impl AnalyticsService {
             return None;
         }
 
-        let values: Vec<f64> = data_points.iter().map(|p| p.value).collect();
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let variance =
-            values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
-        let std_dev = variance.sqrt();
+        let values: Vec<Fixed> = data_points.iter().map(|p| p.value).collect();
+        let mean_value = mean(&values);
+        let variance_value = variance(&values, mean_value);
+        let std_dev = sqrt_fixed(variance_value);
 
         // Find outliers (values more than 2 standard deviations from mean)
         let outliers: Vec<&DataPoint> = data_points
             .iter()
-            .filter(|&p| (p.value - mean).abs() > 2.0 * std_dev)
+            .filter(|&p| (p.value - mean_value).abs() > std_dev.mul_int(2))
             .collect();
 
         if !outliers.is_empty() {
@@ -174,13 +180,13 @@ impl AnalyticsService {
                 insight_type: InsightType::Performance,
                 title: format!("Anomalies detected in {}", metric),
                 description: format!(
-                    "Found {} anomalous values in {} data points. Mean: {:.2}, StdDev: {:.2}",
+                    "Found {} anomalous values in {} data points. Mean: {}, StdDev: {}",
                     outliers.len(),
                     data_points.len(),
-                    mean,
+                    mean_value,
                     std_dev
                 ),
-                confidence: 0.8,
+                confidence: Fixed::from_ratio(8, 10),
                 severity,
                 data_points: outliers.into_iter().cloned().collect(),
                 recommendations: vec![
@@ -208,15 +214,15 @@ impl AnalyticsService {
         }
 
         let recent_points = &data_points[data_points.len().saturating_sub(20)..];
-        let values: Vec<f64> = recent_points.iter().map(|p| p.value).collect();
-        let avg_value = values.iter().sum::<f64>() / values.len() as f64;
+        let values: Vec<Fixed> = recent_points.iter().map(|p| p.value).collect();
+        let avg_value = mean(&values);
 
         let (threshold, severity) = if metric.contains("latency") {
-            (1000.0, SeverityLevel::High) // 1 second
+            (Fixed::from_int(1000), SeverityLevel::High) // 1 second
         } else if metric.contains("error") {
-            (0.05, SeverityLevel::High) // 5% error rate
+            (Fixed::from_ratio(5, 100), SeverityLevel::High) // 5% error rate
         } else if metric.contains("throughput") {
-            (100.0, SeverityLevel::Medium) // 100 TPS
+            (Fixed::from_int(100), SeverityLevel::Medium) // 100 TPS
         } else {
             return None;
         };
@@ -233,7 +239,7 @@ impl AnalyticsService {
                 insight_type: InsightType::Performance,
                 title: format!("Performance issue detected in {}", metric),
                 description: format!(
-                    "{} average value {:.2} is {} threshold {:.2}",
+                    "{} average value {} is {} threshold {}",
                     metric,
                     avg_value,
                     if metric.contains("throughput") {
@@ -243,7 +249,7 @@ impl AnalyticsService {
                     },
                     threshold
                 ),
-                confidence: 0.9,
+                confidence: Fixed::from_ratio(9, 10),
                 severity,
                 data_points: recent_points.to_vec(),
                 recommendations: vec![
@@ -274,13 +280,13 @@ impl AnalyticsService {
             return None;
         }
 
-        let values1: Vec<f64> = data1.iter().map(|p| p.value).collect();
-        let values2: Vec<f64> = data2.iter().map(|p| p.value).collect();
+        let values1: Vec<Fixed> = data1.iter().map(|p| p.value).collect();
+        let values2: Vec<Fixed> = data2.iter().map(|p| p.value).collect();
 
-        let correlation = self.calculate_correlation(&values1, &values2);
+        let correlation = fixed_correlation(&values1, &values2);
 
-        if correlation.abs() > 0.7 {
-            let relationship = if correlation > 0.0 {
+        if correlation.abs() > Fixed::from_ratio(7, 10) {
+            let relationship = if correlation > Fixed::ZERO {
                 "positive"
             } else {
                 "negative"
@@ -291,10 +297,10 @@ impl AnalyticsService {
                 insight_type: InsightType::Performance,
                 title: format!("Strong correlation between {} and {}", metric1, metric2),
                 description: format!(
-                    "Found {} correlation ({:.2}) between {} and {}",
+                    "Found {} correlation ({}) between {} and {}",
                     relationship, correlation, metric1, metric2
                 ),
-                confidence: correlation.abs(),
+                confidence: correlation.abs().clamp(Fixed::ZERO, Fixed::ONE),
                 severity: SeverityLevel::Medium,
                 data_points: data1.iter().chain(data2.iter()).cloned().collect(),
                 recommendations: vec![
@@ -309,22 +315,9 @@ impl AnalyticsService {
     }
 
     /// Calculate correlation coefficient
-    fn calculate_correlation(&self, x: &[f64], y: &[f64]) -> f64 {
-        let n = x.len() as f64;
-        let sum_x: f64 = x.iter().sum();
-        let sum_y: f64 = y.iter().sum();
-        let sum_xy: f64 = x.iter().zip(y.iter()).map(|(a, b)| a * b).sum();
-        let sum_x2: f64 = x.iter().map(|a| a * a).sum();
-        let sum_y2: f64 = y.iter().map(|a| a * a).sum();
-
-        let numerator = n * sum_xy - sum_x * sum_y;
-        let denominator = ((n * sum_x2 - sum_x.powi(2)) * (n * sum_y2 - sum_y.powi(2))).sqrt();
-
-        if denominator == 0.0 {
-            0.0
-        } else {
-            numerator / denominator
-        }
+    #[allow(dead_code)]
+    fn calculate_correlation(&self, x: &[Fixed], y: &[Fixed]) -> Fixed {
+        fixed_correlation(x, y)
     }
 
     /// Clean up old data based on retention policy
@@ -389,20 +382,37 @@ mod tests {
         let mut tags = HashMap::new();
         tags.insert("node".to_string(), "node1".to_string());
 
-        service.add_data_point("latency".to_string(), 100.0, "ms".to_string(), tags);
+        service.add_data_point(
+            "latency".to_string(),
+            Fixed::from_int(100),
+            "ms".to_string(),
+            tags,
+        );
 
         assert_eq!(service.data_store.len(), 1);
         assert_eq!(service.data_store["latency"].len(), 1);
-        assert_eq!(service.data_store["latency"][0].value, 100.0);
+        assert_eq!(service.data_store["latency"][0].value, Fixed::from_int(100));
     }
 
     #[test]
     fn test_correlation_calculation() {
         let service = AnalyticsService::new(Default::default());
-        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
+        let x = vec![
+            Fixed::from_int(1),
+            Fixed::from_int(2),
+            Fixed::from_int(3),
+            Fixed::from_int(4),
+            Fixed::from_int(5),
+        ];
+        let y = vec![
+            Fixed::from_int(2),
+            Fixed::from_int(4),
+            Fixed::from_int(6),
+            Fixed::from_int(8),
+            Fixed::from_int(10),
+        ];
 
         let correlation = service.calculate_correlation(&x, &y);
-        assert!((correlation - 1.0).abs() < 0.001); // Should be perfect positive correlation
+        assert!((correlation - Fixed::ONE).abs() < Fixed::from_ratio(1, 1000));
     }
 }

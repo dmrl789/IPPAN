@@ -5,6 +5,7 @@ use crate::types::{
     ContractAnalysisMetadata, ContractAnalysisType, ContractIssue, SeverityLevel,
     SmartContractAnalysisRequest, SmartContractAnalysisResponse,
 };
+use ippan_ai_core::Fixed;
 use uuid::Uuid;
 
 /// Smart contract analysis service
@@ -268,72 +269,72 @@ impl SmartContractService {
     }
 
     /// Calculate security score based on issues
-    fn calculate_security_score(&self, issues: &[ContractIssue]) -> f64 {
+    fn calculate_security_score(&self, issues: &[ContractIssue]) -> Fixed {
         if issues.is_empty() {
-            return 1.0;
+            return Fixed::ONE;
         }
 
-        let mut score: f64 = 1.0;
+        let mut score = Fixed::ONE;
         for issue in issues {
             let penalty = match issue.severity {
-                SeverityLevel::Critical => 0.3,
-                SeverityLevel::High => 0.2,
-                SeverityLevel::Medium => 0.1,
-                SeverityLevel::Low => 0.05,
+                SeverityLevel::Critical => Fixed::from_ratio(3, 10),
+                SeverityLevel::High => Fixed::from_ratio(1, 5),
+                SeverityLevel::Medium => Fixed::from_ratio(1, 10),
+                SeverityLevel::Low => Fixed::from_ratio(1, 20),
             };
             score -= penalty;
         }
 
-        score.max(0.0)
+        score.clamp(Fixed::ZERO, Fixed::ONE)
     }
 
     /// Calculate gas efficiency score
-    fn calculate_gas_efficiency_score(&self, code: &str, language: &str) -> f64 {
-        let mut score: f64 = 1.0;
+    fn calculate_gas_efficiency_score(&self, code: &str, language: &str) -> Fixed {
+        let mut score = Fixed::ONE;
 
         // Simple heuristics for gas efficiency
         let lines = code.lines().count();
         if lines > 1000 {
-            score -= 0.1; // Large contracts are less efficient
+            score -= Fixed::from_ratio(1, 10); // Large contracts are less efficient
         }
 
         // Check for common gas-inefficient patterns
         if code.contains("for (uint i = 0; i < array.length; i++)") {
-            score -= 0.1;
+            score -= Fixed::from_ratio(1, 10);
         }
 
         if code.contains("string memory") && code.contains("abi.encodePacked") {
-            score -= 0.05;
+            score -= Fixed::from_ratio(1, 20);
         }
 
         if language == "solidity" && code.contains("bytes32") && code.contains("keccak256") {
-            score += 0.05; // Efficient hashing
+            score += Fixed::from_ratio(1, 20); // Efficient hashing
         }
 
-        score.clamp(0.0, 1.0)
+        score.clamp(Fixed::ZERO, Fixed::ONE)
     }
 
     /// Calculate complexity score
-    fn calculate_complexity_score(&self, code: &str) -> f64 {
-        let lines = code.lines().count() as f64;
-        let mut complexity = 0.0;
+    fn calculate_complexity_score(&self, code: &str) -> Fixed {
+        let lines = code.lines().count() as i64;
+        let mut complexity = Fixed::ZERO;
 
         // Count control structures
-        complexity += code.matches("if ").count() as f64 * 1.0;
-        complexity += code.matches("for ").count() as f64 * 1.0;
-        complexity += code.matches("while ").count() as f64 * 1.0;
-        complexity += code.matches("switch ").count() as f64 * 1.0;
-        complexity += code.matches("try ").count() as f64 * 1.0;
+        complexity += Fixed::from_int(code.matches("if ").count() as i64);
+        complexity += Fixed::from_int(code.matches("for ").count() as i64);
+        complexity += Fixed::from_int(code.matches("while ").count() as i64);
+        complexity += Fixed::from_int(code.matches("switch ").count() as i64);
+        complexity += Fixed::from_int(code.matches("try ").count() as i64);
 
         // Count function definitions
-        complexity += code.matches("function ").count() as f64 * 0.5;
-        complexity += code.matches("modifier ").count() as f64 * 0.3;
+        complexity += Fixed::from_ratio(code.matches("function ").count() as i64, 2);
+        complexity += Fixed::from_ratio(code.matches("modifier ").count() as i64 * 3, 10);
 
         // Normalize by lines of code
-        if lines > 0.0 {
-            complexity / lines
+        if lines > 0 {
+            complexity / Fixed::from_int(lines)
         } else {
-            0.0
+            Fixed::ZERO
         }
     }
 
@@ -400,7 +401,7 @@ contract TestContract {
 
         assert!(!response.issues.is_empty());
         assert_eq!(response.issues[0].issue_type, "tx.origin_usage");
-        assert!(response.security_score < 1.0);
+        assert!(response.security_score < Fixed::ONE);
     }
 
     #[tokio::test]
@@ -440,7 +441,7 @@ fn dangerous_function() {
         }];
 
         let score = service.calculate_security_score(&issues);
-        assert_eq!(score, 0.8); // 1.0 - 0.2 for High severity
+        assert_eq!(score, Fixed::from_ratio(8, 10)); // 1.0 - 0.2 for High severity
     }
 
     #[test]
@@ -449,7 +450,7 @@ fn dangerous_function() {
         let code = "contract Test { function test() public {} }";
         let score = service.calculate_gas_efficiency_score(code, "solidity");
 
-        assert!(score > 0.0);
-        assert!(score <= 1.0);
+        assert!(score > Fixed::ZERO);
+        assert!(score <= Fixed::ONE);
     }
 }

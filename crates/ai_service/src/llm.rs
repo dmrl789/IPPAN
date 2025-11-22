@@ -2,6 +2,7 @@
 
 use crate::errors::AIServiceError;
 use crate::types::{LLMConfig, LLMRequest, LLMResponse, LLMUsage};
+use ippan_ai_core::Fixed;
 use serde_json::json;
 use std::time::Duration;
 
@@ -25,7 +26,9 @@ impl LLMService {
 
     /// Generate text using LLM
     pub async fn generate(&self, request: LLMRequest) -> Result<LLMResponse, AIServiceError> {
-        let payload = json!({
+        let temperature = request.temperature.unwrap_or(self.config.temperature);
+
+        let mut payload = json!({
             "model": self.config.model_name,
             "messages": [
                 {
@@ -34,9 +37,9 @@ impl LLMService {
                 }
             ],
             "max_tokens": request.max_tokens.unwrap_or(self.config.max_tokens),
-            "temperature": request.temperature.unwrap_or(self.config.temperature),
             "stream": request.stream
         });
+        payload["temperature"] = fixed_json_value(temperature);
 
         let response = self
             .client
@@ -106,7 +109,7 @@ impl LLMService {
             ),
             context: Some(context.as_object().unwrap().clone().into_iter().collect()),
             max_tokens: Some(2000),
-            temperature: Some(0.3),
+            temperature: Some(Fixed::from_ratio(3, 10)),
             stream: false,
         };
 
@@ -129,7 +132,7 @@ impl LLMService {
             ),
             context: None,
             max_tokens: Some(3000),
-            temperature: Some(0.2),
+            temperature: Some(Fixed::from_ratio(1, 5)),
             stream: false,
         };
 
@@ -149,7 +152,7 @@ impl LLMService {
             ),
             context: None,
             max_tokens: Some(1000),
-            temperature: Some(0.5),
+            temperature: Some(Fixed::from_ratio(1, 2)),
             stream: false,
         };
 
@@ -169,7 +172,7 @@ impl LLMService {
             ),
             context: None,
             max_tokens: Some(1500),
-            temperature: Some(0.4),
+            temperature: Some(Fixed::from_ratio(2, 5)),
             stream: false,
         };
 
@@ -189,13 +192,17 @@ impl LLMService {
             ),
             context: None,
             max_tokens: Some(2000),
-            temperature: Some(0.3),
+            temperature: Some(Fixed::from_ratio(3, 10)),
             stream: false,
         };
 
         let response = self.generate(request).await?;
         Ok(response.text)
     }
+}
+
+fn fixed_json_value(value: Fixed) -> serde_json::Value {
+    serde_json::Value::String(value.to_string())
 }
 
 #[cfg(test)]
@@ -209,7 +216,7 @@ mod tests {
             api_key: "test-key".to_string(),
             model_name: "gpt-4".to_string(),
             max_tokens: 1000,
-            temperature: 0.7,
+            temperature: Fixed::from_ratio(7, 10),
             timeout_seconds: 30,
         };
 
@@ -223,13 +230,13 @@ mod tests {
             prompt: "Test prompt".to_string(),
             context: None,
             max_tokens: Some(100),
-            temperature: Some(0.5),
+            temperature: Some(Fixed::from_ratio(1, 2)),
             stream: false,
         };
 
         assert_eq!(request.prompt, "Test prompt");
         assert_eq!(request.max_tokens, Some(100));
-        assert_eq!(request.temperature, Some(0.5));
+        assert_eq!(request.temperature, Some(Fixed::from_ratio(1, 2)));
         assert!(!request.stream);
     }
 }

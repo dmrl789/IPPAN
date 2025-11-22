@@ -11,6 +11,7 @@
 pub mod analytics;
 pub mod config;
 pub mod errors;
+pub mod fixed_math;
 pub mod health;
 pub mod llm;
 pub mod metrics;

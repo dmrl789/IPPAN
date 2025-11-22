@@ -1,5 +1,6 @@
 //! Production-ready integration tests for AI Service
 
+use ippan_ai_core::Fixed;
 use ippan_ai_service::{
     AIService, AIServiceConfig, AnalyticsConfig, ConfigManager, ContractAnalysisType, HealthStatus,
     LLMConfig, LLMRequest, OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
@@ -72,7 +73,7 @@ async fn test_llm_integration() {
         prompt: "Test prompt".to_string(),
         context: None,
         max_tokens: Some(10),
-        temperature: Some(0.0),
+        temperature: Some(Fixed::ZERO),
         stream: false,
     };
 
@@ -110,8 +111,10 @@ contract Test {
         .await
         .expect("Smart contract analysis failed");
 
-    assert!(analysis.security_score >= 0.0 && analysis.security_score <= 1.0);
-    assert!(analysis.gas_efficiency_score >= 0.0 && analysis.gas_efficiency_score <= 1.0);
+    assert!(analysis.security_score >= Fixed::ZERO && analysis.security_score <= Fixed::ONE);
+    assert!(
+        analysis.gas_efficiency_score >= Fixed::ZERO && analysis.gas_efficiency_score <= Fixed::ONE
+    );
 
     service.stop().await.expect("Failed to stop service");
 }
@@ -147,7 +150,7 @@ async fn test_transaction_optimization() {
         .await
         .expect("Transaction optimization failed");
 
-    assert!(optimization.confidence >= 0.0 && optimization.confidence <= 1.0);
+    assert!(optimization.confidence >= Fixed::ZERO && optimization.confidence <= Fixed::ONE);
     assert!(!optimization.suggestions.is_empty());
 
     service.stop().await.expect("Failed to stop service");
@@ -166,7 +169,7 @@ async fn test_analytics_data_collection() {
     for i in 0..5 {
         service.add_analytics_data(
             "test_metric".to_string(),
-            i as f64 * 10.0,
+            Fixed::from_int(i as i64 * 10),
             "count".to_string(),
             tags.clone(),
         );
@@ -196,9 +199,9 @@ async fn test_monitoring_alerts() {
     service.start().await.expect("Failed to start service");
 
     // Add metrics that should trigger alerts
-    service.add_monitoring_metric("memory_usage".to_string(), 85.0);
-    service.add_monitoring_metric("cpu_usage".to_string(), 95.0);
-    service.add_monitoring_metric("error_rate".to_string(), 8.0);
+    service.add_monitoring_metric("memory_usage".to_string(), Fixed::from_int(85));
+    service.add_monitoring_metric("cpu_usage".to_string(), Fixed::from_int(95));
+    service.add_monitoring_metric("error_rate".to_string(), Fixed::from_int(8));
 
     // Check for alerts
     let alerts = service
@@ -236,8 +239,8 @@ async fn test_error_handling() {
     let invalid_request = LLMRequest {
         prompt: "".to_string(), // Empty prompt
         context: None,
-        max_tokens: Some(0),     // Invalid max_tokens
-        temperature: Some(-1.0), // Invalid temperature
+        max_tokens: Some(0),               // Invalid max_tokens
+        temperature: Some(Fixed::NEG_ONE), // Invalid temperature
         stream: false,
     };
 
@@ -281,7 +284,7 @@ fn create_test_config() -> AIServiceConfig {
             api_key: "test-key".to_string(),
             model_name: "gpt-4".to_string(),
             max_tokens: 1000,
-            temperature: 0.7,
+            temperature: Fixed::from_ratio(7, 10),
             timeout_seconds: 30,
         },
         analytics_config: AnalyticsConfig {

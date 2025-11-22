@@ -1,5 +1,6 @@
 //! Performance tests for AI Service
 
+use ippan_ai_core::Fixed;
 use ippan_ai_service::{
     AIService, AIServiceConfig, AnalyticsConfig, ContractAnalysisType, LLMConfig, LLMRequest,
     OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
@@ -18,7 +19,7 @@ async fn test_llm_performance() {
         prompt: "Test prompt for performance testing".to_string(),
         context: None,
         max_tokens: Some(100),
-        temperature: Some(0.7),
+        temperature: Some(Fixed::from_ratio(7, 10)),
         stream: false,
     };
 
@@ -172,7 +173,7 @@ async fn test_memory_usage() {
     for i in 0..1000 {
         service.add_analytics_data(
             "test_metric".to_string(),
-            i as f64,
+            Fixed::from_int(i as i64),
             "count".to_string(),
             tags.clone(),
         );
@@ -203,7 +204,7 @@ async fn test_error_recovery() {
         prompt: "".to_string(),
         context: None,
         max_tokens: Some(0),
-        temperature: Some(-1.0),
+        temperature: Some(Fixed::NEG_ONE),
         stream: false,
     };
 
@@ -270,7 +271,7 @@ fn create_test_config() -> AIServiceConfig {
             api_key: "test-key".to_string(),
             model_name: "gpt-4".to_string(),
             max_tokens: 1000,
-            temperature: 0.7,
+            temperature: Fixed::from_ratio(7, 10),
             timeout_seconds: 30,
         },
         analytics_config: AnalyticsConfig {

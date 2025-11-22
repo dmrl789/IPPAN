@@ -1,5 +1,6 @@
 //! Integration tests for AI Service
 
+use ippan_ai_core::Fixed;
 use ippan_ai_service::{
     AIService, AIServiceConfig, ContractAnalysisType, LLMConfig, LLMRequest, OptimizationGoal,
     SmartContractAnalysisRequest, TransactionData, TransactionOptimizationRequest, VERSION,
@@ -38,7 +39,7 @@ async fn test_llm_generation() {
             api_key: "test-key".to_string(),
             model_name: "gpt-4".to_string(),
             max_tokens: 1000,
-            temperature: 0.7,
+            temperature: Fixed::from_ratio(7, 10),
             timeout_seconds: 30,
         },
         ..Default::default()
@@ -50,7 +51,7 @@ async fn test_llm_generation() {
         prompt: "Explain blockchain technology".to_string(),
         context: None,
         max_tokens: Some(100),
-        temperature: Some(0.5),
+        temperature: Some(Fixed::from_ratio(1, 2)),
         stream: false,
     };
 
@@ -87,8 +88,8 @@ contract TestContract {
     assert!(result.is_ok());
 
     let analysis = result.unwrap();
-    assert!(analysis.security_score > 0.0);
-    assert!(analysis.security_score <= 1.0);
+    assert!(analysis.security_score > Fixed::ZERO);
+    assert!(analysis.security_score <= Fixed::ONE);
     assert!(!analysis.issues.is_empty() || analysis.issues.is_empty());
 }
 
@@ -118,8 +119,8 @@ async fn test_transaction_optimization() {
     assert!(result.is_ok());
 
     let optimization = result.unwrap();
-    assert!(optimization.confidence > 0.0);
-    assert!(optimization.confidence <= 1.0);
+    assert!(optimization.confidence > Fixed::ZERO);
+    assert!(optimization.confidence <= Fixed::ONE);
     assert!(!optimization.suggestions.is_empty());
 }
 
@@ -135,7 +136,12 @@ async fn test_analytics_data_collection() {
     let mut tags = HashMap::new();
     tags.insert("node".to_string(), "node1".to_string());
 
-    service.add_analytics_data("cpu_usage".to_string(), 75.0, "percent".to_string(), tags);
+    service.add_analytics_data(
+        "cpu_usage".to_string(),
+        Fixed::from_int(75),
+        "percent".to_string(),
+        tags,
+    );
 
     let insights = service.get_analytics_insights().await;
     assert!(insights.is_ok());
@@ -150,7 +156,7 @@ async fn test_monitoring_alerts() {
 
     let mut service = AIService::new(config).unwrap();
 
-    service.add_monitoring_metric("memory_usage".to_string(), 85.0);
+    service.add_monitoring_metric("memory_usage".to_string(), Fixed::from_int(85));
 
     let alerts = service.check_monitoring_alerts().await;
     assert!(alerts.is_ok());
@@ -176,7 +182,7 @@ async fn test_configuration_updates() {
         api_key: "new-key".to_string(),
         model_name: "claude-3".to_string(),
         max_tokens: 2000,
-        temperature: 0.5,
+        temperature: Fixed::from_ratio(1, 2),
         timeout_seconds: 60,
     };
 
