@@ -1,0 +1,21 @@
+# Logging profile for the IPPAN Public RC Testnet
+
+[testnet]
+log_level = "info"
+log_dir = "./logs"
+log_format = "json"    # use "pretty" for human-friendly logs
+enable_console = true
+enable_file = true
+max_file_size = 104857600  # 100MB
+max_files = 10
+
+# Operators running locally can enable verbose tracing by switching the profile
+# to "debug" and toggling console/file outputs as needed.
+[debug]
+log_level = "debug"
+log_dir = "./logs"
+log_format = "pretty"
+enable_console = true
+enable_file = false
+max_file_size = 52428800   # 50MB
+max_files = 5

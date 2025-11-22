@@ -1,0 +1,6 @@
+# IPPAN Public RC Testnet seed list (placeholder values)
+# Replace with the latest published endpoints before launch.
+seed1.rc-testnet.ippan.example.com:9000
+seed2.rc-testnet.ippan.example.com:9000
+seed3.rc-testnet.ippan.example.com:9000
+seed4.rc-testnet.ippan.example.com:9000
