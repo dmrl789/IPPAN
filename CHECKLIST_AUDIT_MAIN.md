@@ -4,6 +4,9 @@
 
 _Generated: 2025-11-15_
 
+## Process / Governance
+- Audit updates are committed directly to `master` in line with `MAIN_BRANCH_DEVELOPMENT.md`; no alternate branches or PRs unless maintainers explicitly request them.
+
 ## 1. L1 Payments
 - [x] Hardened payment pipeline (`crates/consensus/src/payments.rs`) applies fees/anti-double-spend inside round finalization with stats + tests.
 - [x] Unit tests cover happy-path, insufficient balance, fee distribution (treasury + proposer) in `crates/consensus/src/payments.rs`.

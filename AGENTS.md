@@ -38,7 +38,7 @@
 
 | Name | Role | Permissions |
 |------|------|-------------|
-| **Ugo Giuliani** | Lead Architect | Merge to `main`, release management |
+| **Ugo Giuliani** | Lead Architect | Merge to `master`, release management |
 | **Desirée Verga** | Strategic Product Lead | Docs, roadmap, governance |
 | **Kambei Sapote** | Network Engineer | P2P topology, infra |
 | **Cursor Agent (autonomous)** | Automated PRs & merges | CI + Dev branches |
@@ -103,18 +103,23 @@
 
 ## 🌿 Branching & Merge Policy
 
-* **Default branch:** `main`
-* **Working branches:** `feature/*`, `fix/*`, `codex/*`, `hotfix/*`
-* **Release branches:** `release/vX.Y`
-* **Backports:** `maintenance/vX.(Y-1)`
+- **Only branch:** `master`.
+- **No additional branches:** Do not create `main`, `develop`, `feature/*`, `fix/*`, `codex/*`, `hotfix/*`, release, or maintenance/backport branches for agent tasks.
+- **No PRs by default:** Agents commit directly to `master`; open PRs only if the owner explicitly instructs.
 
-**Merge gates:**
+**Merge gates (when an explicit PR is requested):**
 1. CI green (build, tests, lint, format)
 2. ≥1 human approval
 3. InfraBot preflight ok if infra changed
 4. SecurityBot ok if security label present
 
-**Hotfix:** allowed with `p0` + `hotfix/*`, requires InfraBot auto-deploy + rollback.
+**Hotfix:** Only permitted when explicitly requested by maintainers; otherwise agents stay on `master`.
+
+## 🛡️ Agent Guardrails
+
+- Do not modify CI/workflow files or toolchain configuration unless a task explicitly authorizes it.
+- Do not introduce new `f32`/`f64` usage in runtime code (integer or fixed-point only).
+- OpenSSL/toolchain environment issues are out of scope for agents; report them instead of patching toolchains.
 
 ---
 
