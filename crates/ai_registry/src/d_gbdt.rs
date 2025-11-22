@@ -136,28 +136,40 @@ impl DGBDTRegistry {
         let resolved_path = resolve_model_path(config_path, Path::new(&model_path));
 
         match self.get_active_model() {
-            Ok((active_model, active_hash)) => {
+            Ok((active_model, _stored_hash)) => {
+                let computed_active_hash = compute_model_hash(&active_model)?;
+
                 if let Some(expected) = expected_hash.as_ref() {
-                    if active_hash.eq_ignore_ascii_case(expected) {
-                        return Ok((active_model, active_hash));
+                    if computed_active_hash.eq_ignore_ascii_case(expected) {
+                        return Ok((active_model, computed_active_hash));
                     }
 
                     info!(
-                        "Configured expected hash {} does not match active hash {}; reloading", 
-                        expected, active_hash
+                        "Configured expected hash {} does not match active hash {}; reloading",
+                        expected, computed_active_hash
                     );
 
-                    return self.load_and_activate_from_config(config_path);
+                    let (configured_model, configured_hash) = load_model_from_path(&resolved_path)?;
+                    if !configured_hash.eq_ignore_ascii_case(expected) {
+                        return Err(RegistryError::InvalidInput(format!(
+                            "Configured expected hash {} does not match model hash {}",
+                            expected, configured_hash
+                        )));
+                    }
+
+                    let activated_model = configured_model.clone();
+                    self.store_active_model(configured_model, configured_hash.clone())?;
+                    return Ok((activated_model, configured_hash));
                 }
 
                 let (configured_model, configured_hash) = load_model_from_path(&resolved_path)?;
-                if active_hash.eq_ignore_ascii_case(&configured_hash) {
-                    return Ok((active_model, active_hash));
+                if computed_active_hash.eq_ignore_ascii_case(&configured_hash) {
+                    return Ok((active_model, computed_active_hash));
                 }
 
                 info!(
                     "Configured model hash {} differs from active hash {}; updating active model",
-                    configured_hash, active_hash
+                    configured_hash, computed_active_hash
                 );
 
                 let updated_model = configured_model.clone();
@@ -562,20 +574,26 @@ mod tests {
         let newer_model = Model::new(initial_model.trees.clone(), 42);
         let newer_hash = compute_model_hash(&newer_model).unwrap();
         let model_path = temp_dir.path().join("dgbdt_new.json");
-        std::fs::write(&model_path, serde_json::to_string_pretty(&newer_model).unwrap()).unwrap();
+        std::fs::write(
+            &model_path,
+            serde_json::to_string_pretty(&newer_model).unwrap(),
+        )
+        .unwrap();
 
         let config_path = temp_dir.path().join("config_expected.toml");
         std::fs::write(
             &config_path,
             format!(
                 "[dgbdt.model]\npath = \"{}\"\nexpected_hash = \"{}\"\n",
-                model_path.display(), newer_hash
+                model_path.display(),
+                newer_hash
             ),
         )
         .unwrap();
 
-        let (active_model, active_hash) =
-            registry.ensure_active_model_from_config(&config_path).unwrap();
+        let (active_model, active_hash) = registry
+            .ensure_active_model_from_config(&config_path)
+            .unwrap();
 
         assert_eq!(active_hash, newer_hash);
         assert_eq!(active_model.bias, 42);
@@ -600,20 +618,22 @@ mod tests {
         let newer_model = Model::new(initial_model.trees.clone(), 99);
         let newer_hash = compute_model_hash(&newer_model).unwrap();
         let model_path = temp_dir.path().join("dgbdt_latest.json");
-        std::fs::write(&model_path, serde_json::to_string_pretty(&newer_model).unwrap()).unwrap();
+        std::fs::write(
+            &model_path,
+            serde_json::to_string_pretty(&newer_model).unwrap(),
+        )
+        .unwrap();
 
         let config_path = temp_dir.path().join("config_no_expected.toml");
         std::fs::write(
             &config_path,
-            format!(
-                "[dgbdt.model]\npath = \"{}\"\n",
-                model_path.display()
-            ),
+            format!("[dgbdt.model]\npath = \"{}\"\n", model_path.display()),
         )
         .unwrap();
 
-        let (active_model, active_hash) =
-            registry.ensure_active_model_from_config(&config_path).unwrap();
+        let (active_model, active_hash) = registry
+            .ensure_active_model_from_config(&config_path)
+            .unwrap();
 
         assert_eq!(active_hash, newer_hash);
         assert_eq!(active_model.bias, 99);
