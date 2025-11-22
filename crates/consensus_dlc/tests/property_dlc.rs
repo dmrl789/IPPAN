@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use ippan_consensus_dlc::{
     bond,
     dag::Block,
@@ -12,6 +10,7 @@ use ippan_consensus_dlc::{
 use ippan_types::Amount;
 use proptest::prelude::*;
 use proptest::test_runner::TestCaseResult;
+use std::collections::HashSet;
 use tokio::runtime::Runtime;
 
 struct EnvVarGuard {
@@ -33,6 +32,24 @@ impl Drop for EnvVarGuard {
             std::env::set_var(self.key, prev);
         } else {
             std::env::remove_var(self.key);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn fairness_scoring_is_deterministic_and_bounded(
+        metrics in prop::collection::vec(adversarial_validator_metrics(), 1..20)
+    ) {
+        let model = FairnessModel::testing_stub();
+
+        for metrics in metrics {
+            let score_a = model.score_deterministic(&metrics);
+            let score_b = model.score_deterministic(&metrics);
+
+            prop_assert_eq!(score_a, score_b);
+            prop_assert!(score_a >= 0);
+            prop_assert!(score_a <= 10_000);
         }
     }
 }
@@ -135,6 +152,40 @@ proptest! {
 
 proptest! {
     #[test]
+    fn shadow_verifier_selected_when_capacity_and_activity_allow(
+        validator_count in 3usize..15,
+        max_set_size in 2usize..8,
+    ) {
+        let mut manager = ValidatorSetManager::new(FairnessModel::testing_stub(), max_set_size);
+
+        for idx in 0..validator_count {
+            let metrics = ValidatorMetrics::new(
+                9_000 - (idx as i64 * 25),
+                400 + (idx as i64 * 10),
+                9_500,
+                idx as u64,
+                idx as u64,
+                Amount::from_micro_ipn(5_000_000 + (idx as u64 * 100_000)),
+                10 + idx as u64,
+            );
+            manager
+                .register_validator(format!("validator-{idx}"), metrics)
+                .expect("registration succeeds");
+        }
+
+        let effective_set_size = max_set_size.min(validator_count).max(2);
+        let set = manager
+            .select_for_round("shadow-check".to_string(), 1)
+            .expect("selection succeeds");
+
+        prop_assert!(set.size() <= effective_set_size);
+        prop_assert!(!set.shadows.is_empty());
+        prop_assert!(set.shadows.iter().all(|id| id != &set.primary));
+    }
+}
+
+proptest! {
+    #[test]
     fn consensus_rounds_survive_randomized_events(
         validator_count in 3usize..8,
         events in prop::collection::vec((prop::bool::ANY, 0usize..16usize), 1..20),
@@ -205,4 +256,51 @@ proptest! {
 
         outcome?;
     }
+}
+
+fn adversarial_validator_metrics() -> impl Strategy<Value = ValidatorMetrics> {
+    prop_oneof![
+        Just(ValidatorMetrics::default()),
+        (
+            0i64..=10_000,
+            0i64..=15_000,
+            0i64..=10_000,
+            0u64..=1_000,
+            0u64..=1_000,
+            0u64..=1_000,
+            1_000_000u64..=50_000_000u64,
+        )
+            .prop_map(|(uptime, latency, honesty, proposed, verified, rounds_active, stake)| {
+                ValidatorMetrics::new(
+                    uptime,
+                    latency,
+                    honesty,
+                    proposed,
+                    verified,
+                    Amount::from_micro_ipn(stake),
+                    rounds_active,
+                )
+            }),
+        // Highly skewed stake and activity with identical uptime to stress ordering
+        (
+            prop_oneof![Just(0i64), Just(10_000i64)],
+            prop_oneof![Just(0i64), Just(15_000i64)],
+            prop_oneof![Just(0i64), Just(10_000i64)],
+            prop_oneof![Just(0u64), Just(2_000u64)],
+            prop_oneof![Just(0u64), Just(2_000u64)],
+            prop_oneof![Just(0u64), Just(2_000u64)],
+            prop_oneof![Just(1_000_000u64), Just(100_000_000u64)],
+        )
+            .prop_map(|(uptime, latency, honesty, proposed, verified, rounds_active, stake)| {
+                ValidatorMetrics::new(
+                    uptime,
+                    latency,
+                    honesty,
+                    proposed,
+                    verified,
+                    Amount::from_micro_ipn(stake),
+                    rounds_active,
+                )
+            })
+    ]
 }
