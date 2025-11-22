@@ -34,6 +34,8 @@ The following branch references have been removed from CI workflows:
 
 ## Development Guidelines
 
+**License Notice:** IPPAN is licensed under the IPPAN Community Source License (source-available with restricted forks/competing networks and commercial use). See `LICENSE.md` for details.
+
 ### Making Changes
 
 1. **Work directly on `main`**:
