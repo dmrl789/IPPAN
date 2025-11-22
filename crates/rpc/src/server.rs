@@ -3,6 +3,7 @@ use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -11,11 +12,16 @@ use std::task::{Context as TaskContext, Poll};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context as AnyhowContext, Result};
+use axum::async_trait;
 use axum::body::Body;
+use axum::error_handling::HandleErrorLayer;
+use axum::extract::rejection::JsonRejection;
+use axum::extract::FromRequest;
 use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
 use axum::http::header::{HeaderValue, CONTENT_TYPE};
+use axum::http::Request;
 use axum::http::StatusCode;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ed25519_dalek::{Signer, SigningKey};
@@ -41,14 +47,19 @@ use ippan_types::{
     RoundFinalizationRecord, Transaction, TransactionVisibility,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
-use serde::de::{self, Deserializer, Visitor};
+use serde::de::{self, DeserializeOwned, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
+use tower::limit::ConcurrencyLimitLayer;
+use tower::timeout::TimeoutLayer;
+use tower::BoxError;
 use tower::Layer;
 use tower::Service;
+use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, warn};
@@ -69,6 +80,9 @@ const MAX_PAYMENT_HISTORY_LIMIT: usize = 200;
 const PAYMENT_ENDPOINT: &str = "/tx/payment";
 const HANDLE_REGISTER_ENDPOINT: &str = "/handle/register";
 const HANDLE_LOOKUP_ENDPOINT: &str = "/handle/:handle";
+const MAX_BODY_BYTES: usize = 64 * 1024; // 64 KiB
+const REQUEST_TIMEOUT_SECS: u64 = 10;
+const MAX_CONCURRENT_REQUESTS: usize = 128;
 
 /// Layer 2 configuration
 #[derive(Clone, Debug, Serialize)]
@@ -502,6 +516,60 @@ struct PaymentHistoryQuery {
     limit: Option<usize>,
 }
 
+#[derive(Debug)]
+pub struct ValidatedJson<T>(pub T);
+
+impl<T> Deref for ValidatedJson<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[async_trait]
+impl<S, T> FromRequest<S, Body> for ValidatedJson<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, Json<ApiError>);
+
+    async fn from_request(req: Request<Body>, state: &S) -> Result<Self, Self::Rejection> {
+        match Json::<T>::from_request(req, state).await {
+            Ok(Json(value)) => Ok(Self(value)),
+            Err(rejection) => {
+                let (status, code, message) = map_json_rejection(&rejection);
+                Err((status, Json(ApiError::new(code, message))))
+            }
+        }
+    }
+}
+
+fn map_json_rejection(rejection: &JsonRejection) -> (StatusCode, &'static str, String) {
+    match rejection {
+        JsonRejection::JsonDataError(err) => {
+            (StatusCode::BAD_REQUEST, "invalid_json", err.to_string())
+        }
+        JsonRejection::JsonSyntaxError(err) => {
+            (StatusCode::BAD_REQUEST, "invalid_json", err.to_string())
+        }
+        JsonRejection::MissingJsonContentType(_) => (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "unsupported_media_type",
+            "missing or invalid content-type; expected application/json".to_string(),
+        ),
+        JsonRejection::BytesRejection(err) => {
+            (StatusCode::BAD_REQUEST, "invalid_body", err.to_string())
+        }
+        _ => (
+            StatusCode::BAD_REQUEST,
+            "invalid_json",
+            rejection.to_string(),
+        ),
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ApiError {
     code: &'static str,
@@ -515,6 +583,53 @@ impl ApiError {
             message: message.into(),
         }
     }
+}
+
+async fn handle_service_error(err: BoxError) -> (StatusCode, Json<ApiError>) {
+    if err.is::<tower::timeout::error::Elapsed>() {
+        return (
+            StatusCode::REQUEST_TIMEOUT,
+            Json(ApiError::new("timeout", "request timed out")),
+        );
+    }
+
+    let message = err.to_string();
+    let message_lower = message.to_lowercase();
+
+    if message_lower.contains("body") && message_lower.contains("limit") {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(ApiError::new(
+                "body_too_large",
+                format!("request body exceeds {MAX_BODY_BYTES} bytes"),
+            )),
+        );
+    }
+
+    if message_lower.contains("concurrency") || message_lower.contains("capacity") {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ApiError::new(
+                "too_many_requests",
+                "server is handling too many requests; please retry",
+            )),
+        );
+    }
+
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ApiError::new("internal_error", "unexpected internal error")),
+    )
+}
+
+async fn handle_not_found() -> (StatusCode, Json<ApiError>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ApiError::new(
+            "not_found",
+            "requested resource was not found",
+        )),
+    )
 }
 
 #[derive(Debug, Error)]
@@ -1115,13 +1230,27 @@ fn build_router(state: Arc<AppState>) -> Router {
     if let Some(static_root) = &state.unified_ui_dist {
         if Path::new(static_root).exists() {
             info!("Serving Unified UI from {:?}", static_root);
-            router = router.fallback_service(ServeDir::new(static_root));
+            let file_service =
+                ServeDir::new(static_root).not_found_service(tower::service_fn(|_req| async {
+                    Ok::<_, Infallible>(handle_not_found().await.into_response())
+                }));
+            router = router.fallback_service(file_service);
         } else {
             warn!("Static UI directory {:?} not found", static_root);
+            router = router.fallback(handle_not_found);
         }
+    } else {
+        router = router.fallback(handle_not_found);
     }
 
+    let middleware_stack = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(handle_service_error))
+        .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
+        .layer(TimeoutLayer::new(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
+        .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES));
+
     router
+        .layer(middleware_stack)
         .layer(cors)
         .layer(rate_limiter)
         .layer(circuit_breaker)
@@ -1428,30 +1557,40 @@ async fn handle_get_ai_status(
 async fn handle_submit_tx(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(tx): Json<Transaction>,
-) -> (StatusCode, &'static str) {
+    ValidatedJson(tx): ValidatedJson<Transaction>,
+) -> Result<&'static str, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, "/tx").await {
-        return deny_request(&state, &addr, "/tx", err).await;
+        let (status, message) = deny_request(&state, &addr, "/tx", err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
     }
 
     if let Some(consensus) = &state.consensus {
         if let Err(e) = consensus.submit_transaction(tx.clone()) {
             warn!("Failed to enqueue transaction: {}", e);
             record_security_failure(&state, &addr, "/tx", &e.to_string()).await;
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to submit tx");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::new("submission_failed", "Failed to submit tx")),
+            ));
         }
         record_security_success(&state, &addr, "/tx").await;
-        (StatusCode::OK, "Transaction accepted")
+        Ok("Transaction accepted")
     } else {
         record_security_failure(&state, &addr, "/tx", "Consensus not active").await;
-        (StatusCode::SERVICE_UNAVAILABLE, "Consensus not active")
+        Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiError::new(
+                "consensus_unavailable",
+                "Consensus not active",
+            )),
+        ))
     }
 }
 
 async fn handle_register_handle(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(request): Json<HandleRegisterRequest>,
+    ValidatedJson(request): ValidatedJson<HandleRegisterRequest>,
 ) -> Result<Json<HandleRegisterResponse>, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, HANDLE_REGISTER_ENDPOINT).await {
         let (status, message) = deny_request(&state, &addr, HANDLE_REGISTER_ENDPOINT, err).await;
@@ -1530,7 +1669,7 @@ async fn handle_get_handle(
 async fn handle_payment_tx(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(request): Json<PaymentRequest>,
+    ValidatedJson(request): ValidatedJson<PaymentRequest>,
 ) -> Result<Json<PaymentResponse>, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, PAYMENT_ENDPOINT).await {
         let (status, message) = deny_request(&state, &addr, PAYMENT_ENDPOINT, err).await;
@@ -1567,7 +1706,7 @@ async fn handle_payment_tx(
 async fn handle_dev_fund(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(request): Json<DevFundRequest>,
+    ValidatedJson(request): ValidatedJson<DevFundRequest>,
 ) -> Result<Json<DevFundResponse>, (StatusCode, Json<ApiError>)> {
     const ENDPOINT: &str = "/dev/fund";
 
@@ -1982,10 +2121,11 @@ async fn serve_peer_listing(
 async fn handle_p2p_blocks(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(message): Json<NetworkMessage>,
-) -> (StatusCode, &'static str) {
+    ValidatedJson(message): ValidatedJson<NetworkMessage>,
+) -> Result<&'static str, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, "/p2p/blocks").await {
-        return deny_request(&state, &addr, "/p2p/blocks", err).await;
+        let (status, message) = deny_request(&state, &addr, "/p2p/blocks", err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
     }
 
     let from = resolve_peer_address(&state, &addr, &message);
@@ -1995,12 +2135,18 @@ async fn handle_p2p_blocks(
         NetworkMessage::Block(block) => match ingest_block_from_peer(&state, &block) {
             Ok(()) => {
                 record_security_success(&state, &addr, "/p2p/blocks").await;
-                (StatusCode::OK, "Block accepted")
+                Ok("Block accepted")
             }
             Err(err) => {
                 error!("Failed to persist block from {}: {}", from, err);
                 record_security_failure(&state, &addr, "/p2p/blocks", &err.to_string()).await;
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to persist block")
+                Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError::new(
+                        "block_persist_failed",
+                        "Failed to persist block",
+                    )),
+                ))
             }
         },
         other => {
@@ -2010,7 +2156,10 @@ async fn handle_p2p_blocks(
             );
             let reason = format!("Unexpected payload: {:?}", other);
             record_security_failure(&state, &addr, "/p2p/blocks", &reason).await;
-            (StatusCode::BAD_REQUEST, "Expected block message")
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("invalid_message", "Expected block message")),
+            ))
         }
     }
 }
@@ -2018,10 +2167,11 @@ async fn handle_p2p_blocks(
 async fn handle_p2p_block_response(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(message): Json<NetworkMessage>,
-) -> (StatusCode, &'static str) {
+    ValidatedJson(message): ValidatedJson<NetworkMessage>,
+) -> Result<&'static str, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, "/p2p/block-response").await {
-        return deny_request(&state, &addr, "/p2p/block-response", err).await;
+        let (status, message) = deny_request(&state, &addr, "/p2p/block-response", err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
     }
 
     let from = resolve_peer_address(&state, &addr, &message);
@@ -2031,16 +2181,19 @@ async fn handle_p2p_block_response(
         NetworkMessage::BlockResponse(block) => match ingest_block_from_peer(&state, &block) {
             Ok(()) => {
                 record_security_success(&state, &addr, "/p2p/block-response").await;
-                (StatusCode::OK, "Block response accepted")
+                Ok("Block response accepted")
             }
             Err(err) => {
                 error!("Failed to handle block response from {}: {}", from, err);
                 record_security_failure(&state, &addr, "/p2p/block-response", &err.to_string())
                     .await;
-                (
+                Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to handle block response",
-                )
+                    Json(ApiError::new(
+                        "block_response_failed",
+                        "Failed to handle block response",
+                    )),
+                ))
             }
         },
         other => {
@@ -2050,7 +2203,13 @@ async fn handle_p2p_block_response(
             );
             let reason = format!("Unexpected payload: {:?}", other);
             record_security_failure(&state, &addr, "/p2p/block-response", &reason).await;
-            (StatusCode::BAD_REQUEST, "Expected block response message")
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new(
+                    "invalid_message",
+                    "Expected block response message",
+                )),
+            ))
         }
     }
 }
@@ -2058,10 +2217,11 @@ async fn handle_p2p_block_response(
 async fn handle_p2p_transactions(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(message): Json<NetworkMessage>,
-) -> (StatusCode, &'static str) {
+    ValidatedJson(message): ValidatedJson<NetworkMessage>,
+) -> Result<&'static str, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, "/p2p/transactions").await {
-        return deny_request(&state, &addr, "/p2p/transactions", err).await;
+        let (status, message) = deny_request(&state, &addr, "/p2p/transactions", err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
     }
 
     let from = resolve_peer_address(&state, &addr, &message);
@@ -2071,15 +2231,18 @@ async fn handle_p2p_transactions(
         NetworkMessage::Transaction(tx) => match ingest_transaction_from_peer(&state, &tx) {
             Ok(()) => {
                 record_security_success(&state, &addr, "/p2p/transactions").await;
-                (StatusCode::OK, "Transaction accepted")
+                Ok("Transaction accepted")
             }
             Err(err) => {
                 error!("Failed to ingest transaction from {}: {}", from, err);
                 record_security_failure(&state, &addr, "/p2p/transactions", &err.to_string()).await;
-                (
+                Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to ingest transaction",
-                )
+                    Json(ApiError::new(
+                        "transaction_ingest_failed",
+                        "Failed to ingest transaction",
+                    )),
+                ))
             }
         },
         other => {
@@ -2089,7 +2252,13 @@ async fn handle_p2p_transactions(
             );
             let reason = format!("Unexpected payload: {:?}", other);
             record_security_failure(&state, &addr, "/p2p/transactions", &reason).await;
-            (StatusCode::BAD_REQUEST, "Expected transaction message")
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new(
+                    "invalid_message",
+                    "Expected transaction message",
+                )),
+            ))
         }
     }
 }
@@ -2097,10 +2266,11 @@ async fn handle_p2p_transactions(
 async fn handle_p2p_peer_info(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(message): Json<NetworkMessage>,
-) -> (StatusCode, &'static str) {
+    ValidatedJson(message): ValidatedJson<NetworkMessage>,
+) -> Result<&'static str, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, "/p2p/peer-info").await {
-        return deny_request(&state, &addr, "/p2p/peer-info", err).await;
+        let (status, message) = deny_request(&state, &addr, "/p2p/peer-info", err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
     }
 
     let from = resolve_peer_address(&state, &addr, &message);
@@ -2109,7 +2279,7 @@ async fn handle_p2p_peer_info(
     match message {
         NetworkMessage::PeerInfo { .. } => {
             record_security_success(&state, &addr, "/p2p/peer-info").await;
-            (StatusCode::OK, "Peer info accepted")
+            Ok("Peer info accepted")
         }
         other => {
             warn!(
@@ -2118,7 +2288,13 @@ async fn handle_p2p_peer_info(
             );
             let reason = format!("Unexpected payload: {:?}", other);
             record_security_failure(&state, &addr, "/p2p/peer-info", &reason).await;
-            (StatusCode::BAD_REQUEST, "Expected peer info message")
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new(
+                    "invalid_message",
+                    "Expected peer info message",
+                )),
+            ))
         }
     }
 }
@@ -2126,10 +2302,11 @@ async fn handle_p2p_peer_info(
 async fn handle_p2p_peer_discovery(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(message): Json<NetworkMessage>,
-) -> (StatusCode, &'static str) {
+    ValidatedJson(message): ValidatedJson<NetworkMessage>,
+) -> Result<&'static str, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, "/p2p/peer-discovery").await {
-        return deny_request(&state, &addr, "/p2p/peer-discovery", err).await;
+        let (status, message) = deny_request(&state, &addr, "/p2p/peer-discovery", err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
     }
 
     let from = resolve_peer_address(&state, &addr, &message);
@@ -2138,7 +2315,7 @@ async fn handle_p2p_peer_discovery(
     match message {
         NetworkMessage::PeerDiscovery { .. } => {
             record_security_success(&state, &addr, "/p2p/peer-discovery").await;
-            (StatusCode::OK, "Peer discovery accepted")
+            Ok("Peer discovery accepted")
         }
         other => {
             warn!(
@@ -2147,7 +2324,13 @@ async fn handle_p2p_peer_discovery(
             );
             let reason = format!("Unexpected payload: {:?}", other);
             record_security_failure(&state, &addr, "/p2p/peer-discovery", &reason).await;
-            (StatusCode::BAD_REQUEST, "Expected peer discovery message")
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new(
+                    "invalid_message",
+                    "Expected peer discovery message",
+                )),
+            ))
         }
     }
 }
@@ -2155,11 +2338,11 @@ async fn handle_p2p_peer_discovery(
 async fn handle_p2p_block_request(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(message): Json<NetworkMessage>,
-) -> Result<Json<NetworkMessage>, StatusCode> {
+    ValidatedJson(message): ValidatedJson<NetworkMessage>,
+) -> Result<Json<NetworkMessage>, (StatusCode, Json<ApiError>)> {
     if let Err(err) = guard_request(&state, &addr, "/p2p/block-request").await {
-        let (status, _) = deny_request(&state, &addr, "/p2p/block-request", err).await;
-        return Err(status);
+        let (status, message) = deny_request(&state, &addr, "/p2p/block-request", err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
     }
 
     let from = resolve_peer_address(&state, &addr, &message);
@@ -2178,13 +2361,25 @@ async fn handle_p2p_block_request(
                     hex_encode(hash)
                 );
                 record_security_success(&state, &addr, "/p2p/block-request").await;
-                Err(StatusCode::NOT_FOUND)
+                Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ApiError::new(
+                        "block_not_found",
+                        "Requested block not found",
+                    )),
+                ))
             }
             Err(err) => {
                 error!("Failed to serve block request from {}: {}", from, err);
                 record_security_failure(&state, &addr, "/p2p/block-request", &err.to_string())
                     .await;
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
+                Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError::new(
+                        "block_request_failed",
+                        "Failed to serve block request",
+                    )),
+                ))
             }
         },
         other => {
@@ -2194,7 +2389,13 @@ async fn handle_p2p_block_request(
             );
             let reason = format!("Unexpected payload: {:?}", other);
             record_security_failure(&state, &addr, "/p2p/block-request", &reason).await;
-            Err(StatusCode::BAD_REQUEST)
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new(
+                    "invalid_message",
+                    "Expected block request message",
+                )),
+            ))
         }
     }
 }
@@ -3662,8 +3863,12 @@ mod tests {
         };
 
         let addr: SocketAddr = "127.0.0.1:9400".parse().unwrap();
-        let response =
-            handle_payment_tx(State(state.clone()), ConnectInfo(addr), Json(request)).await;
+        let response = handle_payment_tx(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(request),
+        )
+        .await;
         let json = response.expect("payment ok").0;
         assert_eq!(json.status, PaymentStatus::AcceptedToMempool);
         assert_eq!(json.nonce, 4);
@@ -3687,7 +3892,7 @@ mod tests {
             signing_key: None,
         };
 
-        let err = handle_payment_tx(State(state), ConnectInfo(addr), Json(request))
+        let err = handle_payment_tx(State(state), ConnectInfo(addr), ValidatedJson(request))
             .await
             .expect_err("missing key");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
@@ -3708,9 +3913,13 @@ mod tests {
             signing_key: Some(hex::encode(sample_private_key([32u8; 32]).to_bytes())),
         };
 
-        let err = handle_payment_tx(State(state.clone()), ConnectInfo(addr), Json(bad_request))
-            .await
-            .expect_err("invalid address");
+        let err = handle_payment_tx(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(bad_request),
+        )
+        .await
+        .expect_err("invalid address");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
 
         let signer = sample_private_key([33u8; 32]);
@@ -3724,7 +3933,7 @@ mod tests {
             signing_key: Some(hex::encode(signer.to_bytes())),
         };
 
-        let err = handle_payment_tx(State(state), ConnectInfo(addr), Json(zero_amount))
+        let err = handle_payment_tx(State(state), ConnectInfo(addr), ValidatedJson(zero_amount))
             .await
             .expect_err("zero amount");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
@@ -3823,10 +4032,13 @@ mod tests {
         };
 
         let addr: SocketAddr = "127.0.0.1:9450".parse().unwrap();
-        let response =
-            handle_register_handle(State(state.clone()), ConnectInfo(addr), Json(request))
-                .await
-                .expect("register");
+        let response = handle_register_handle(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(request),
+        )
+        .await
+        .expect("register");
         assert_eq!(response.0.status, HandleSubmissionStatus::AcceptedToMempool);
         assert_eq!(response.0.handle, "@alice.ipn");
         assert_eq!(response.0.nonce, 3);
@@ -3858,7 +4070,7 @@ mod tests {
             signing_key: hex::encode(signer.to_bytes()),
         };
         let addr: SocketAddr = "127.0.0.1:9451".parse().unwrap();
-        let err = handle_register_handle(State(state), ConnectInfo(addr), Json(request))
+        let err = handle_register_handle(State(state), ConnectInfo(addr), ValidatedJson(request))
             .await
             .expect_err("invalid handle");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
@@ -3881,9 +4093,13 @@ mod tests {
         };
 
         let addr: SocketAddr = "127.0.0.1:9452".parse().unwrap();
-        let err = handle_register_handle(State(state.clone()), ConnectInfo(addr), Json(request))
-            .await
-            .expect_err("oversized handle should fail");
+        let err = handle_register_handle(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(request),
+        )
+        .await
+        .expect_err("oversized handle should fail");
 
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
         let lookup = state
@@ -3943,9 +4159,13 @@ mod tests {
         };
 
         let addr: SocketAddr = "127.0.0.1:9453".parse().unwrap();
-        let _ = handle_register_handle(State(state.clone()), ConnectInfo(addr), Json(request))
-            .await
-            .expect("register ok");
+        let _ = handle_register_handle(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(request),
+        )
+        .await
+        .expect("register ok");
 
         let dispatched = rx.recv().await.expect("tx dispatched");
         let pipeline = HandlePipeline::with_dht(
@@ -4029,7 +4249,7 @@ mod tests {
             nonce: Some(0),
         };
 
-        let err = handle_dev_fund(State(state), ConnectInfo(addr), Json(request))
+        let err = handle_dev_fund(State(state), ConnectInfo(addr), ValidatedJson(request))
             .await
             .expect_err("dev mode required");
         assert_eq!(err.0, StatusCode::FORBIDDEN);
@@ -4049,10 +4269,14 @@ mod tests {
             nonce: Some(3),
         };
 
-        let response = handle_dev_fund(State(state.clone()), ConnectInfo(addr), Json(request))
-            .await
-            .expect("fund ok")
-            .0;
+        let response = handle_dev_fund(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(request),
+        )
+        .await
+        .expect("fund ok")
+        .0;
         assert_eq!(response.balance, 5_000);
         assert_eq!(response.nonce, 3);
         assert!(!response.address_hex.is_empty());
@@ -4273,8 +4497,10 @@ mod tests {
         assert_eq!(config.0.max_l2_count, 1);
 
         let tx = sample_transaction([2u8; 32], sample_public_key([3u8; 32]), 9);
-        let response = handle_submit_tx(State(state.clone()), ConnectInfo(addr), Json(tx)).await;
-        assert_eq!(response.0, StatusCode::SERVICE_UNAVAILABLE);
+        let response =
+            handle_submit_tx(State(state.clone()), ConnectInfo(addr), ValidatedJson(tx)).await;
+        let (status, _) = response.expect_err("consensus unavailable");
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]
@@ -4305,9 +4531,14 @@ mod tests {
 
         let addr: SocketAddr = "127.0.0.1:9101".parse().unwrap();
         let tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 11);
-        let accepted =
-            handle_submit_tx(State(ok_state.clone()), ConnectInfo(addr), Json(tx.clone())).await;
-        assert_eq!(accepted.0, StatusCode::OK);
+        let accepted = handle_submit_tx(
+            State(ok_state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(tx.clone()),
+        )
+        .await
+        .expect("accepted");
+        assert_eq!(accepted, "Transaction accepted");
         let received = rx_ok.recv().await.expect("consensus dispatch");
         assert_eq!(received.hash(), tx.hash());
 
@@ -4326,13 +4557,14 @@ mod tests {
         let rejected = handle_submit_tx(
             State(fail_state),
             ConnectInfo(addr),
-            Json(sample_transaction(
+            ValidatedJson(sample_transaction(
                 [7u8; 32],
                 sample_public_key([8u8; 32]),
                 12,
             )),
         )
-        .await;
+        .await
+        .expect_err("submission failed");
         assert_eq!(rejected.0, StatusCode::INTERNAL_SERVER_ERROR);
     }
 
@@ -4344,27 +4576,36 @@ mod tests {
         let block = Block::new(vec![], vec![tx.clone()], 2, [7u8; 32]);
         let block_message = NetworkMessage::Block(block.clone());
 
-        let block_result =
-            handle_p2p_blocks(State(state.clone()), ConnectInfo(addr), Json(block_message)).await;
-        assert_eq!(block_result.0, StatusCode::OK);
+        let block_result = handle_p2p_blocks(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(block_message),
+        )
+        .await
+        .expect("block accepted");
+        assert_eq!(block_result, "Block accepted");
 
         let tx_message = NetworkMessage::Transaction(tx.clone());
-        let tx_result =
-            handle_p2p_transactions(State(state.clone()), ConnectInfo(addr), Json(tx_message))
-                .await;
-        assert_eq!(tx_result.0, StatusCode::OK);
+        let tx_result = handle_p2p_transactions(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(tx_message),
+        )
+        .await
+        .expect("tx accepted");
+        assert_eq!(tx_result, "Transaction accepted");
 
         let unexpected = handle_p2p_blocks(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::PeerInfo {
+            ValidatedJson(NetworkMessage::PeerInfo {
                 peer_id: "peer".into(),
                 addresses: vec![],
                 time_us: None,
             }),
         )
         .await;
-        assert_eq!(unexpected.0, StatusCode::BAD_REQUEST);
+        assert_eq!(unexpected.unwrap_err().0, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -4375,34 +4616,37 @@ mod tests {
         let info = handle_p2p_peer_info(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::PeerInfo {
+            ValidatedJson(NetworkMessage::PeerInfo {
                 peer_id: "peer-1".into(),
                 addresses: vec!["http://example.com".into()],
                 time_us: Some(1),
             }),
         )
         .await;
-        assert_eq!(info.0, StatusCode::OK);
+        assert_eq!(info.expect("peer info"), "Peer info accepted");
 
         let discovery = handle_p2p_peer_discovery(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::PeerDiscovery {
+            ValidatedJson(NetworkMessage::PeerDiscovery {
                 peers: vec!["http://peer".into()],
             }),
         )
         .await;
-        assert_eq!(discovery.0, StatusCode::OK);
+        assert_eq!(
+            discovery.expect("peer discovery"),
+            "Peer discovery accepted"
+        );
 
         let unexpected = handle_p2p_peer_info(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::Transaction(sample_transaction(
+            ValidatedJson(NetworkMessage::Transaction(sample_transaction(
                 [0u8; 32], [1u8; 32], 1,
             ))),
         )
         .await;
-        assert_eq!(unexpected.0, StatusCode::BAD_REQUEST);
+        assert_eq!(unexpected.unwrap_err().0, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -4452,7 +4696,7 @@ mod tests {
         let ok = handle_p2p_block_request(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::BlockRequest { hash: block_hash }),
+            ValidatedJson(NetworkMessage::BlockRequest { hash: block_hash }),
         )
         .await
         .expect("block response");
@@ -4461,20 +4705,20 @@ mod tests {
         let missing = handle_p2p_block_request(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::BlockRequest { hash: [1u8; 32] }),
+            ValidatedJson(NetworkMessage::BlockRequest { hash: [1u8; 32] }),
         )
         .await
         .expect_err("missing");
-        assert_eq!(missing, StatusCode::NOT_FOUND);
+        assert_eq!(missing.0, StatusCode::NOT_FOUND);
 
         let bad = handle_p2p_block_request(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::PeerDiscovery { peers: vec![] }),
+            ValidatedJson(NetworkMessage::PeerDiscovery { peers: vec![] }),
         )
         .await
         .expect_err("bad request");
-        assert_eq!(bad, StatusCode::BAD_REQUEST);
+        assert_eq!(bad.0, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -4649,57 +4893,57 @@ mod tests {
         let blocked = handle_p2p_blocks(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::Block(block.clone())),
+            ValidatedJson(NetworkMessage::Block(block.clone())),
         )
         .await;
-        assert_eq!(blocked.0, StatusCode::FORBIDDEN);
+        assert_eq!(blocked.unwrap_err().0, StatusCode::FORBIDDEN);
 
         let blocked_resp = handle_p2p_block_response(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::BlockResponse(block.clone())),
+            ValidatedJson(NetworkMessage::BlockResponse(block.clone())),
         )
         .await;
-        assert_eq!(blocked_resp.0, StatusCode::FORBIDDEN);
+        assert_eq!(blocked_resp.unwrap_err().0, StatusCode::FORBIDDEN);
 
         let blocked_tx = handle_p2p_transactions(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::Transaction(tx.clone())),
+            ValidatedJson(NetworkMessage::Transaction(tx.clone())),
         )
         .await;
-        assert_eq!(blocked_tx.0, StatusCode::FORBIDDEN);
+        assert_eq!(blocked_tx.unwrap_err().0, StatusCode::FORBIDDEN);
 
         let blocked_info = handle_p2p_peer_info(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::PeerInfo {
+            ValidatedJson(NetworkMessage::PeerInfo {
                 peer_id: "peer".into(),
                 addresses: vec!["http://peer".into()],
                 time_us: Some(1),
             }),
         )
         .await;
-        assert_eq!(blocked_info.0, StatusCode::FORBIDDEN);
+        assert_eq!(blocked_info.unwrap_err().0, StatusCode::FORBIDDEN);
 
         let blocked_discovery = handle_p2p_peer_discovery(
             State(state.clone()),
             ConnectInfo(addr),
-            Json(NetworkMessage::PeerDiscovery {
+            ValidatedJson(NetworkMessage::PeerDiscovery {
                 peers: vec!["http://peer".into()],
             }),
         )
         .await;
-        assert_eq!(blocked_discovery.0, StatusCode::FORBIDDEN);
+        assert_eq!(blocked_discovery.unwrap_err().0, StatusCode::FORBIDDEN);
 
         let blocked_request = handle_p2p_block_request(
             State(state),
             ConnectInfo(addr),
-            Json(NetworkMessage::BlockRequest { hash: [0u8; 32] }),
+            ValidatedJson(NetworkMessage::BlockRequest { hash: [0u8; 32] }),
         )
         .await
         .expect_err("blocked request");
-        assert_eq!(blocked_request, StatusCode::FORBIDDEN);
+        assert_eq!(blocked_request.0, StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

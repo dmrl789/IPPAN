@@ -5,7 +5,6 @@ mod tests {
     use anyhow::Result;
     use async_trait::async_trait;
     use axum::extract::{ConnectInfo, Path as AxumPath, State};
-    use axum::Json;
     use ippan_files::{
         descriptor::ContentHash,
         dht::{DhtLookupResult, DhtPublishResult, StubFileDhtService},
@@ -28,7 +27,7 @@ mod tests {
     use crate::files::{
         handle_get_file, handle_publish_file, FileDescriptorResponse, PublishFileRequest,
     };
-    use crate::server::{AppState, L2Config};
+    use crate::server::{AppState, L2Config, ValidatedJson};
 
     #[derive(Clone, Default)]
     struct RecordingFileDht {
@@ -255,10 +254,14 @@ mod tests {
         };
 
         let addr: SocketAddr = "127.0.0.1:9500".parse().unwrap();
-        let response = handle_publish_file(State(state.clone()), ConnectInfo(addr), Json(request))
-            .await
-            .expect("publish ok")
-            .0;
+        let response = handle_publish_file(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(request),
+        )
+        .await
+        .expect("publish ok")
+        .0;
 
         assert_eq!(response.size_bytes, 2048);
         assert_eq!(response.mime_type.as_deref(), Some("application/json"));

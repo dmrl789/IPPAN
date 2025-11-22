@@ -11,7 +11,7 @@ use ippan_types::address::{decode_address, encode_address};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
-use crate::server::{ApiError, AppState};
+use crate::server::{ApiError, AppState, ValidatedJson};
 
 /// Request to publish a file descriptor.
 #[derive(Debug, Deserialize)]
@@ -110,7 +110,7 @@ impl From<FileDescriptor> for FileDescriptorResponse {
 pub async fn handle_publish_file(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(request): Json<PublishFileRequest>,
+    ValidatedJson(request): ValidatedJson<PublishFileRequest>,
 ) -> Result<Json<PublishFileResponse>, (StatusCode, Json<ApiError>)> {
     // Security check
     if let Err(err) = guard_file_request(&state, &addr, "/files/publish").await {
