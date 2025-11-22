@@ -6,6 +6,7 @@ on:
       - main
       - master
     paths:
+      - '.github/workflows/ai-determinism.yml'
       - 'crates/ai_core/**'
       - 'crates/ai_registry/**'
       - 'crates/consensus/**'
@@ -16,6 +17,14 @@ on:
     branches:
       - main
       - master
+    paths:
+      - '.github/workflows/ai-determinism.yml'
+      - 'crates/ai_core/**'
+      - 'crates/ai_registry/**'
+      - 'crates/consensus/**'
+      - 'crates/consensus_dlc/**'
+      - 'models/**'
+      - 'config/dlc.toml'
 
 env:
   RUSTFLAGS: "-D warnings"
