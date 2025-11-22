@@ -64,6 +64,22 @@ These fixes address both failing jobs in the CI run:
 2. **Verify CI passes** on the new PR
 3. **Merge** once approved
 
+## Determinism Guarantees & Local Reproduction
+
+- **What we guarantee on CI**
+  - `x86_64-unknown-linux-gnu` runs the full ai_core determinism suite plus DLC fairness/consensus tests to assert bit-for-bit outputs for the same inputs on the same architecture.
+  - `aarch64-unknown-linux-gnu` currently cross-compiles ai_core to prove the code path builds cleanly; a dedicated job (with QEMU when needed) runs the `dump_inference` binary on both arches and compares serialized features/scores/model hash for exact matches.
+  - The workflow is scoped to AI + consensus crates, models, `config/dlc.toml`, and the workflow file itself so unrelated/comment-only changes do not trigger or fail determinism CI.
+
+- **What we do not guarantee yet**
+  - We do not run the full DLC/ai_core test matrix on aarch64 because of runner time limits; cross-arch coverage relies on deterministic inference artifacts instead.
+  - Cross-arch determinism beyond the curated inference comparison (e.g., long-running property tests) remains a future enhancement.
+
+- **How to reproduce locally**
+  - Run the core determinism suite: `cargo test -p ippan-ai-core -- --nocapture`
+  - Run the DLC consensus suite: `cargo test -p ippan-consensus-dlc -- --nocapture`
+  - Optional cross-arch check: `cargo build --manifest-path crates/ai_core/Cargo.toml --target aarch64-unknown-linux-gnu --release` and then execute `cargo run --manifest-path crates/ai_core/Cargo.toml --release --bin dump_inference -- --output target/determinism/inference-x86_64.json` (repeat with QEMU for aarch64) to compare JSON outputs.
+
 ## Technical Notes
 
 ### Why These f64 Uses Are Safe
