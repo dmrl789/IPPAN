@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  ippan-node:
+    # Build directly from the repository. If you have a published image, replace
+    # `build` with `image: ghcr.io/ippan/ippan-node:rc` (or similar).
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: ippan/ippan-node:rc-testnet
+    container_name: ippan-rc-testnet-node
+
+    # Bind to the same ports exposed in the sample config.
+    ports:
+      - "8080:8080"   # RPC/API
+      - "9000:9000"   # P2P
+
+    # Mount operator-tuned configs and persistent data.
+    volumes:
+      - ./node-config.toml:/config/node-config.toml:ro
+      - ./logging.toml:/config/logging.toml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+    # Run the node with the RC testnet config.
+    command: ["ippan-node", "--config", "/config/node-config.toml"]
+
+    environment:
+      RUST_LOG: info
+
+    restart: unless-stopped

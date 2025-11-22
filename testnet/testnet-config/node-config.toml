@@ -1,0 +1,67 @@
+# IPPAN Public RC Testnet node configuration (sample)
+# Copy this file and customize values for your operator environment.
+
+[node]
+# Human-readable name for your node as it will appear in logs and /health.
+id = "operator-node-1"
+
+[network]
+# Public RC testnet identifier (do not reuse localnet/devnet ids).
+id = "ippan-public-rc-testnet"
+
+[rpc]
+# RPC binds to all interfaces so external dashboards can connect. Use a firewall
+# or reverse proxy if you need to restrict access.
+host = "0.0.0.0"
+port = 8080
+# RC testnet exposes dev helpers by default so operators can verify flows.
+dev_mode = true
+
+[p2p]
+# HTTP-based P2P listener configuration for the RC testnet.
+host = "0.0.0.0"
+port = 9000
+# Comma-separated seed list; see seed-nodes.txt for sample values.
+bootstrap_nodes = "seed1.rc-testnet.ippan.example.com:9000,seed2.rc-testnet.ippan.example.com:9000,seed3.rc-testnet.ippan.example.com:9000"
+max_peers = 64
+peer_discovery_interval_secs = 30
+peer_announce_interval_secs = 60
+
+[storage]
+# Location of chain data. Mount this path to persistent storage in Docker setups.
+data_dir = "./data"
+db_path = "./data/db"
+
+[logging]
+# Log level and format for RC testnet participants.
+log_level = "info"
+log_format = "json"
+log_dir = "./logs"
+enable_console = true
+enable_file = true
+max_file_size = 104857600  # 100MB
+max_files = 10
+
+[consensus]
+# RC testnet uses the current default PoA mode; DLC toggles stay off for now.
+mode = "POA"
+enable_dlc = false
+
+# Timing and throughput defaults suitable for public testnet traffic.
+SLOT_DURATION_MS = 200
+MAX_TRANSACTIONS_PER_BLOCK = 500
+BLOCK_REWARD = 10
+FINALIZATION_INTERVAL_MS = 400
+
+# L2 settings align with RC public testnet parameters.
+L2_MAX_COMMIT_SIZE = 16384
+L2_MIN_EPOCH_GAP_MS = 250
+L2_CHALLENGE_WINDOW_MS = 60000
+L2_DA_MODE = "external"
+L2_MAX_L2_COUNT = 100
+
+[telemetry]
+# Optional Prometheus exporter. Leave disabled unless you scrape metrics.
+prometheus_enabled = false
+prometheus_host = "0.0.0.0"
+prometheus_port = 9898
