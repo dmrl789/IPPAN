@@ -267,20 +267,22 @@ fn adversarial_validator_metrics() -> impl Strategy<Value = ValidatorMetrics> {
             0i64..=10_000,
             0u64..=1_000,
             0u64..=1_000,
-            0u64..=1_000,
             1_000_000u64..=50_000_000u64,
+            0u64..=1_000,
         )
-            .prop_map(|(uptime, latency, honesty, proposed, verified, rounds_active, stake)| {
-                ValidatorMetrics::new(
-                    uptime,
-                    latency,
-                    honesty,
-                    proposed,
-                    verified,
-                    Amount::from_micro_ipn(stake),
-                    rounds_active,
-                )
-            }),
+            .prop_map(
+                |(uptime, latency, honesty, proposed, verified, stake, rounds_active)| {
+                    ValidatorMetrics::new(
+                        uptime,
+                        latency,
+                        honesty,
+                        proposed,
+                        verified,
+                        Amount::from_micro_ipn(stake),
+                        rounds_active,
+                    )
+                }
+            ),
         // Highly skewed stake and activity with identical uptime to stress ordering
         (
             prop_oneof![Just(0i64), Just(10_000i64)],
@@ -288,19 +290,21 @@ fn adversarial_validator_metrics() -> impl Strategy<Value = ValidatorMetrics> {
             prop_oneof![Just(0i64), Just(10_000i64)],
             prop_oneof![Just(0u64), Just(2_000u64)],
             prop_oneof![Just(0u64), Just(2_000u64)],
-            prop_oneof![Just(0u64), Just(2_000u64)],
             prop_oneof![Just(1_000_000u64), Just(100_000_000u64)],
+            prop_oneof![Just(0u64), Just(2_000u64)],
         )
-            .prop_map(|(uptime, latency, honesty, proposed, verified, rounds_active, stake)| {
-                ValidatorMetrics::new(
-                    uptime,
-                    latency,
-                    honesty,
-                    proposed,
-                    verified,
-                    Amount::from_micro_ipn(stake),
-                    rounds_active,
-                )
-            })
+            .prop_map(
+                |(uptime, latency, honesty, proposed, verified, stake, rounds_active)| {
+                    ValidatorMetrics::new(
+                        uptime,
+                        latency,
+                        honesty,
+                        proposed,
+                        verified,
+                        Amount::from_micro_ipn(stake),
+                        rounds_active,
+                    )
+                }
+            )
     ]
 }

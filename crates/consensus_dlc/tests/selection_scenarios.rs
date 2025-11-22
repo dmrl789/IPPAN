@@ -43,7 +43,10 @@ fn run_rotation_scenario(
 
     for round in 0..rounds {
         let set = manager
-            .select_for_round(format!("scenario-{validator_count}-{round}"), round as u64 + 1)
+            .select_for_round(
+                format!("scenario-{validator_count}-{round}"),
+                round as u64 + 1,
+            )
             .expect("selection succeeds");
 
         *primary_counts.entry(set.primary.clone()).or_default() += 1;
