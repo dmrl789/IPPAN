@@ -108,6 +108,19 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] Dev-only helpers such as `/dev/fund` are gated by `IPPAN_DEV_MODE`, loopback IP checks, and loopback binding defaults outside dev mode (`node/src/main.rs`).
 - [ ] Advanced authentication (API keys, JWT) remains future work; current deployments rely on IP whitelists + reverse proxies per `docs/SECURITY_GUIDE.md`.
 
+## Security Hardening – Phase 1
+- [x] Threat model and Phase 1 scope captured in `SECURITY_THREAT_MODEL.md` (assets, adversaries, mitigations, and deferrals).
+- [x] P2P/DHT spam guards and descriptor validation documented and exercised (peer caps, churn throttling, conflict rejection).
+- [x] RPC guardrails consolidated on `SecurityManager` (per-IP/per-endpoint rate limits, allow/deny lists, dev-mode gating).
+- [x] Deterministic AI pipeline enforced (no floats in runtime paths, canonical JSON + BLAKE3 hashing, determinism tests).
+- [ ] CI expansion for cross-crate no-float scanning and long-run chaos/soak coverage (Phase 2).
+- [ ] External audit, bug bounty/red-team, and OS/network hardening playbooks (Phase 2).
+
+### Next phase
+- External security/cryptography audit and formal review of DLC/HashTimer assumptions.
+- Launch bug bounty or red-team exercise aligned with audit findings.
+- Publish OS/network hardening runbooks (firewall, sandboxing) and extend CI to cover expanded no-float/chaos scopes.
+
 ## 11. Observability & Ops
 - [x] `/health` endpoint surfaces consensus/DHT/RPC/storage status as a structured `HealthStatus` payload (`crates/rpc/src/server.rs`).
 - [x] `/metrics` endpoint serves Prometheus text output whenever the exporter is enabled (`crates/rpc/src/server.rs`).
