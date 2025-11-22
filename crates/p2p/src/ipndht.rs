@@ -142,6 +142,40 @@ impl IpnDhtService {
         Some(descriptor)
     }
 
+    fn cache_handle_from_dht(
+        &self,
+        requested_handle: &Handle,
+        record: HandleDhtRecord,
+    ) -> Option<HandleDhtRecord> {
+        if record.handle != *requested_handle {
+            warn!(
+                ?requested_handle,
+                received = %record.handle.as_str(),
+                "Rejected handle record with mismatched handle"
+            );
+            return None;
+        }
+
+        let mut cache = self.handle_cache.write();
+        if let Some(existing) = cache.get(requested_handle) {
+            if existing.record != record {
+                warn!(
+                    handle = %requested_handle.as_str(),
+                    "Rejected conflicting handle record fields"
+                );
+                return Some(existing.record.clone());
+            }
+        }
+
+        cache.insert(
+            record.handle.clone(),
+            CachedHandleRecord {
+                record: record.clone(),
+            },
+        );
+        Some(record)
+    }
+
     pub async fn publish_handle(&self, record: &HandleDhtRecord) -> Result<()> {
         self.handle_cache.write().insert(
             record.handle.clone(),
@@ -180,13 +214,10 @@ impl IpnDhtService {
         {
             let record: HandleDhtRecord =
                 serde_json::from_slice(&bytes).context("decode handle record from DHT")?;
-            self.handle_cache.write().insert(
-                record.handle.clone(),
-                CachedHandleRecord {
-                    record: record.clone(),
-                },
-            );
-            return Ok(Some(record));
+            if let Some(record) = self.cache_handle_from_dht(handle, record) {
+                return Ok(Some(record));
+            }
+            return Ok(None);
         }
 
         Ok(None)
@@ -360,6 +391,43 @@ mod tests {
 
     fn sample_handle_record() -> HandleDhtRecord {
         HandleDhtRecord::new(Handle::new("@demo.ipn"), PublicKey([9u8; 32]), Some(42))
+    }
+
+    #[test]
+    fn rejects_mismatched_handle_from_dht() {
+        let service = IpnDhtService::new(None);
+        let expected = sample_handle_record();
+        let other = HandleDhtRecord::new(
+            Handle::new("@other.ipn"),
+            expected.owner.clone(),
+            expected.expires_at,
+        );
+
+        let result = service.cache_handle_from_dht(&expected.handle, other);
+        assert!(result.is_none());
+        assert!(service.handle_cache.read().is_empty());
+    }
+
+    #[test]
+    fn conflicting_handle_record_keeps_cached_version() {
+        let service = IpnDhtService::new(None);
+        let record = sample_handle_record();
+        service.handle_cache.write().insert(
+            record.handle.clone(),
+            CachedHandleRecord {
+                record: record.clone(),
+            },
+        );
+
+        let mut conflicting = record.clone();
+        conflicting.expires_at = Some(999);
+
+        let returned = service
+            .cache_handle_from_dht(&record.handle, conflicting)
+            .expect("cached handle returned");
+
+        assert_eq!(returned.owner, record.owner);
+        assert_eq!(returned.expires_at, record.expires_at);
     }
 
     #[tokio::test]

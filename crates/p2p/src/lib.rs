@@ -40,6 +40,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -185,6 +186,7 @@ pub struct P2PConfig {
     pub retry_attempts: usize,
     pub dht: DhtConfig,
     pub chaos: ChaosConfig,
+    pub limits: P2PLimits,
 }
 
 impl Default for P2PConfig {
@@ -197,6 +199,31 @@ impl Default for P2PConfig {
             retry_attempts: 3,
             dht: DhtConfig::default(),
             chaos: ChaosConfig::default(),
+            limits: P2PLimits::default(),
+        }
+    }
+}
+
+/// Limits used to guard against oversized or spammy inbound traffic.
+#[derive(Debug, Clone)]
+pub struct P2PLimits {
+    /// Maximum permitted encoded message size (in bytes). `0` disables the guard.
+    pub max_message_bytes: usize,
+    /// Maximum number of messages accepted per peer before triggering cooldown. `0` disables the guard.
+    pub max_messages_per_peer: u64,
+    /// Maximum number of messages accepted globally before applying backpressure. `0` disables the guard.
+    pub global_message_limit: u64,
+    /// Cooldown duration for peers that exceed their allowance.
+    pub peer_cooldown: Duration,
+}
+
+impl Default for P2PLimits {
+    fn default() -> Self {
+        Self {
+            max_message_bytes: 512 * 1024,
+            max_messages_per_peer: 2048,
+            global_message_limit: 32_768,
+            peer_cooldown: Duration::from_secs(30),
         }
     }
 }
@@ -244,6 +271,9 @@ pub struct HttpP2PNetwork {
     peer_metadata: Arc<RwLock<HashMap<String, PeerRecord>>>,
     peer_count: Arc<RwLock<usize>>,
     is_running: Arc<RwLock<bool>>,
+    global_message_count: Arc<AtomicU64>,
+    peer_message_counts: Arc<Mutex<HashMap<String, u64>>>,
+    peer_cooldowns: Arc<Mutex<HashMap<String, u64>>>,
     local_peer_id: String,
     listen_address: String,
     announce_address: Arc<RwLock<String>>,
@@ -280,6 +310,9 @@ impl HttpP2PNetwork {
             peer_metadata: Arc::new(RwLock::new(HashMap::new())),
             peer_count: Arc::new(RwLock::new(0)),
             is_running: Arc::new(RwLock::new(false)),
+            global_message_count: Arc::new(AtomicU64::new(0)),
+            peer_message_counts: Arc::new(Mutex::new(HashMap::new())),
+            peer_cooldowns: Arc::new(Mutex::new(HashMap::new())),
             local_peer_id: derive_peer_id(&listen_address),
             listen_address,
             announce_address: Arc::new(RwLock::new(announce_address)),
@@ -427,6 +460,7 @@ impl HttpP2PNetwork {
         message: NetworkMessage,
     ) -> Result<()> {
         let from = normalize_peer(from)?;
+        self.enforce_inbound_limits(&from, &message)?;
         self.add_peer(from.clone()).await?;
         self.touch_peer(&from);
 
@@ -492,6 +526,87 @@ impl HttpP2PNetwork {
 
         self.incoming_sender.send(event)?;
         Ok(())
+    }
+
+    fn enforce_inbound_limits(&self, peer: &str, message: &NetworkMessage) -> Result<()> {
+        let size = message_size_bytes(message)?;
+        let limits = &self.config.limits;
+
+        if limits.max_message_bytes > 0 && size > limits.max_message_bytes {
+            return Err(anyhow!(
+                "message from {peer} exceeds max size ({} > {})",
+                size,
+                limits.max_message_bytes
+            ));
+        }
+
+        let now = ippan_time_now();
+        if self.peer_in_cooldown(peer, now) {
+            return Err(anyhow!("peer {peer} is in cooldown after exceeding limits"));
+        }
+
+        if !self.consume_message_budget(peer) {
+            self.activate_cooldown(peer, now);
+            return Err(anyhow!("peer {peer} exceeded message allowance"));
+        }
+
+        Ok(())
+    }
+
+    fn consume_message_budget(&self, peer: &str) -> bool {
+        let limits = &self.config.limits;
+
+        if limits.global_message_limit > 0 {
+            let mut current = self.global_message_count.load(Ordering::Relaxed);
+            while current < limits.global_message_limit {
+                match self.global_message_count.compare_exchange(
+                    current,
+                    current.saturating_add(1),
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(updated) => current = updated,
+                }
+            }
+
+            if current >= limits.global_message_limit {
+                return false;
+            }
+        }
+
+        if limits.max_messages_per_peer == 0 {
+            return true;
+        }
+
+        let mut counts = self.peer_message_counts.lock();
+        let entry = counts.entry(peer.to_string()).or_insert(0);
+        if *entry >= limits.max_messages_per_peer {
+            return false;
+        }
+        *entry = entry.saturating_add(1);
+        true
+    }
+
+    fn activate_cooldown(&self, peer: &str, now_us: u64) {
+        let deadline = cooldown_deadline(now_us, self.config.limits.peer_cooldown);
+        self.peer_cooldowns
+            .lock()
+            .insert(peer.to_string(), deadline);
+    }
+
+    fn peer_in_cooldown(&self, peer: &str, now_us: u64) -> bool {
+        let mut cooldowns = self.peer_cooldowns.lock();
+        if let Some(expiry) = cooldowns.get(peer) {
+            if *expiry <= now_us {
+                cooldowns.remove(peer);
+                self.peer_message_counts.lock().remove(peer);
+                return false;
+            }
+            return true;
+        }
+
+        false
     }
 
     fn spawn_discovery_loop(&mut self) {
@@ -773,6 +888,15 @@ fn build_candidate_address(listen_address: &str, host: &str) -> Option<String> {
     normalize_peer(&candidate).ok()
 }
 
+fn cooldown_deadline(now_us: u64, duration: Duration) -> u64 {
+    let extra = duration.as_micros().min(u64::MAX as u128) as u64;
+    now_us.saturating_add(extra)
+}
+
+fn message_size_bytes(message: &NetworkMessage) -> Result<usize, serde_json::Error> {
+    serde_json::to_vec(message).map(|bytes| bytes.len())
+}
+
 fn derive_peer_id(address: &str) -> String {
     let hash = blake3::hash(address.as_bytes());
     format!("peer-{}", &hash.to_hex()[..16])
@@ -1036,6 +1160,82 @@ mod tests {
 
         let metadata = network.get_peer_metadata();
         assert!(metadata.iter().any(|p| p.address == valid_peer));
+    }
+
+    #[tokio::test]
+    async fn oversized_message_is_rejected_before_peer_is_added() {
+        let mut config = P2PConfig::default();
+        config.limits.max_message_bytes = 32;
+        let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9315".into()).expect("network");
+
+        let message = NetworkMessage::PeerInfo {
+            peer_id: "peer-oversized".into(),
+            addresses: vec!["http://127.0.0.1:9315/with/a/very/long/address".into()],
+            time_us: Some(1),
+        };
+
+        let result = network
+            .process_incoming_message("http://127.0.0.1:9316", message)
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(network.get_peer_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn per_peer_limit_triggers_cooldown() {
+        let mut config = P2PConfig::default();
+        config.limits.max_messages_per_peer = 2;
+        config.limits.global_message_limit = 10;
+        config.limits.peer_cooldown = Duration::from_millis(25);
+        let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9325".into()).expect("network");
+
+        let peer = "http://127.0.0.1:9326";
+        let message = NetworkMessage::PeerDiscovery {
+            peers: vec![peer.into()],
+        };
+
+        assert!(network
+            .process_incoming_message(peer, message.clone())
+            .await
+            .is_ok());
+        assert!(network
+            .process_incoming_message(peer, message.clone())
+            .await
+            .is_ok());
+
+        let rejected = network
+            .process_incoming_message(peer, message.clone())
+            .await;
+        assert!(rejected.is_err());
+
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        let after_cooldown = network.process_incoming_message(peer, message).await;
+        assert!(after_cooldown.is_ok());
+    }
+
+    #[tokio::test]
+    async fn global_limit_caps_total_inbound_messages() {
+        let mut config = P2PConfig::default();
+        config.limits.global_message_limit = 2;
+        let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9330".into()).expect("network");
+
+        let message = NetworkMessage::PeerDiscovery { peers: vec![] };
+
+        assert!(network
+            .process_incoming_message("http://127.0.0.1:9331", message.clone())
+            .await
+            .is_ok());
+        assert!(network
+            .process_incoming_message("http://127.0.0.1:9332", message.clone())
+            .await
+            .is_ok());
+
+        let rejected = network
+            .process_incoming_message("http://127.0.0.1:9333", message)
+            .await;
+        assert!(rejected.is_err());
     }
 
     #[tokio::test]
