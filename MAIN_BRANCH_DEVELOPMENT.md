@@ -1,34 +1,34 @@
-# Main Branch Development Workflow
+# Master Branch Development Workflow
 
 ## Overview
 
-IPPAN now follows a **trunk-based development** workflow where all development occurs directly on the `main` branch. This document outlines the configuration, rationale, and guidelines for this approach.
+IPPAN follows a **trunk-based development** workflow where all development occurs directly on the `master` branch. This document outlines the configuration, rationale, and guidelines for this approach.
 
-## Branch Policy (MAIN ONLY)
+## Branch Policy (MASTER ONLY)
 
-- Work **ONLY** on the `main` branch.
+- Work **ONLY** on the `master` branch.
 - Do **NOT** create or use `develop`, `feature/*`, or any other branches for agent work.
-- Agent tasks commit directly to `main`.
+- Agent tasks commit directly to `master`.
 
 ## Configuration
 
 ### Branch Strategy
 
-- **Primary Branch**: `main`
+- **Primary Branch**: `master`
 - **Feature Branches**: Not required for most changes
-- **Release Strategy**: Direct commits to `main`
-- **CI/CD Triggers**: All workflows run on the `main` branch
+- **Release Strategy**: Direct commits to `master`
+- **CI/CD Triggers**: All workflows run on the `master` branch
 
 ### CI/CD Configuration
 
-All GitHub Actions workflows are configured to trigger on the `main` branch:
+All GitHub Actions workflows are configured to trigger on the `master` branch:
 
-- **Build & Test** (`ci.yml`): Runs on every push and PR to `main`
-- **AI Determinism** (`ai-determinism.yml`): Validates AI determinism on `main` changes
-- **No Float Runtime** (`no-float-runtime.yml`): Ensures no f32/f64 in runtime code on `main`
+- **Build & Test** (`ci.yml`): Runs on every push and PR to `master`
+- **AI Determinism** (`ai-determinism.yml`): Validates AI determinism on `master` changes
+- **No Float Runtime** (`no-float-runtime.yml`): Ensures no f32/f64 in runtime code on `master`
 - **IPPAN Test Suite** (`ippan-test-suite.yml`): Manual trigger for comprehensive testing
 - **Nightly Validation** (`nightly-validation.yml`): Automated nightly validation
-- **CodeQL Security** (`codeql.yml`): Security analysis on `main` commits
+- **CodeQL Security** (`codeql.yml`): Security analysis on `master` commits
 - **Auto Cleanup** (`auto-cleanup.yml`): Scheduled cleanup of old workflow runs
 
 ### Removed Branch References
@@ -42,20 +42,20 @@ The following branch references have been removed from CI workflows:
 
 ### Making Changes
 
-1. **Work directly on `main`**:
+1. **Work directly on `master`**:
    ```bash
-   git checkout main
-   git pull origin main
+   git checkout master
+   git pull origin master
    # Make your changes
    git add .
    git commit -m "descriptive commit message"
-   git push origin main
+   git push origin master
    ```
 
 2. **For Cursor AI Development**:
-   - Ensure Cursor is configured to use `main` as the base branch
+   - Ensure Cursor is configured to use `master` as the base branch
    - Disable automatic feature branch creation
-   - All commits should target `main` directly
+   - All commits should target `master` directly
 
 3. **Code Quality Gates**:
    - All commits must pass CI checks before merge
@@ -97,7 +97,7 @@ The following branch references have been removed from CI workflows:
 1. **Simplicity**: No branch management overhead
 2. **Continuous Integration**: All changes are integrated immediately
 3. **Faster Feedback**: CI runs on every commit, catching issues early
-4. **Single Source of Truth**: `main` always represents the current state
+4. **Single Source of Truth**: `master` always represents the current state
 5. **Reduced Merge Conflicts**: Frequent small commits reduce conflict probability
 
 ### Safety Mechanisms
@@ -105,7 +105,7 @@ The following branch references have been removed from CI workflows:
 1. **Comprehensive CI**: Multiple workflow validation on every commit
 2. **Automated Testing**: Full test suite runs on every push
 3. **Determinism Checks**: AI and consensus validation ensures reproducibility
-4. **Security Scanning**: CodeQL runs regularly on `main`
+4. **Security Scanning**: CodeQL runs regularly on `master`
 5. **Nightly Validation**: Comprehensive validation suite runs nightly
 
 ### When to Use Feature Branches
@@ -115,7 +115,7 @@ Feature branches may still be used for:
 - **External contributions**: PRs from forks
 - **Multi-developer coordination**: When multiple developers need to collaborate on a complex feature
 
-In these cases, create a short-lived feature branch and merge back to `main` as soon as possible.
+In these cases, create a short-lived feature branch and merge back to `master` as soon as possible.
 
 ## Cursor Configuration
 
@@ -123,27 +123,27 @@ In these cases, create a short-lived feature branch and merge back to `main` as 
 
 For Cursor AI development on this project:
 
-1. **Base Branch**: `main`
-2. **Default Branch**: `main`
+1. **Base Branch**: `master`
+2. **Default Branch**: `master`
 3. **Auto-create branches**: Disabled
 4. **Workspace Settings** (`.cursor/config.yaml`):
    ```yaml
    branch:
-     default: main
-     base: main
+     default: master
+     base: master
      auto_create: false
    ```
 
 ## Emergency Procedures
 
-### Broken Build on Main
+### Broken Build on Master
 
-If a commit breaks the build on `main`:
+If a commit breaks the build on `master`:
 
 1. **Immediate Revert**:
    ```bash
    git revert <commit-hash>
-   git push origin main
+   git push origin master
    ```
 
 2. **Fix Forward**: If revert is not feasible, push a fix immediately:
@@ -151,14 +151,14 @@ If a commit breaks the build on `main`:
    # Fix the issue
    git add .
    git commit -m "fix: resolve broken build from <commit-hash>"
-   git push origin main
+   git push origin master
    ```
 
 ### CI Failures
 
 1. Check the GitHub Actions tab for failure details
 2. Fix locally and verify: `cargo test --workspace`
-3. Push the fix to `main`
+3. Push the fix to `master`
 
 ## Monitoring and Validation
 
@@ -189,7 +189,7 @@ If you're used to feature branches:
 
 ### Temporary Branches
 
-The `cursor/configure-main-branch-development-workflow-0258` branch was created to implement this workflow. It has been merged into `main` and should not be used for future development.
+The `cursor/configure-main-branch-development-workflow-0258` branch was created to implement this workflow. It has been merged into `master` and should not be used for future development.
 
 ## Additional Resources
 
