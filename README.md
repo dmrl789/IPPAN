@@ -460,7 +460,7 @@ This peer-reviewed academic paper formalizes IPPAN's novel consensus paradigm:
 
 ## 📝 License
 
-IPPAN is provided as source-available software under the IPPAN Community Source License. See LICENSE.md for full terms.
+IPPAN is provided as **source-available software** under the IPPAN Community Source License. You can read and audit the code and run nodes on official IPPAN networks, but forks, competing networks, and commercial redistribution are restricted. Governing law is England & Wales with courts in London, UK. See `LICENSE.md` for full terms.
 
 ## 🤝 Contributing
 
