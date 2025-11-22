@@ -7,6 +7,11 @@ _Generated: 2025-11-15_
 ## Process / Governance
 - Audit updates are committed directly to `master` in line with `MAIN_BRANCH_DEVELOPMENT.md`; no alternate branches or PRs unless maintainers explicitly request them.
 
+## Audit-Ready Snapshot
+- The canonical scope, RC version, and commit placeholder for the external audit are recorded in `AUDIT_READY.md`.
+- Feature development is paused for the commit chosen for audit; only documentation or tagging updates should be layered before handing it to auditors.
+- Known caveats: OpenSSL-linked RPC tests may remain environment-blocked, long-run chaos/no-float expansion is deferred to Phase 2, and non-critical UI/UX polish is out of scope for this round.
+
 ## 1. L1 Payments
 - [x] Hardened payment pipeline (`crates/consensus/src/payments.rs`) applies fees/anti-double-spend inside round finalization with stats + tests.
 - [x] Unit tests cover happy-path, insufficient balance, fee distribution (treasury + proposer) in `crates/consensus/src/payments.rs`.
