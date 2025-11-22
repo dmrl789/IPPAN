@@ -1,0 +1,72 @@
+# IPPAN node reference configuration
+# Copy this file and override values to match your environment.
+
+[node]
+# Human-friendly node identifier for logs and /health output.
+id = "ippan-node-1"
+
+[network]
+# Network label (use "localnet" for local testing, "testnet" for shared test networks).
+id = "localnet"
+
+[rpc]
+# RPC host/port (default binds to all interfaces for quick demos; use 127.0.0.1 with a reverse proxy for hardened setups).
+host = "0.0.0.0"
+port = 8080
+# Enable dev-only helpers such as /dev/fund.
+dev_mode = true
+
+[p2p]
+# HTTP-based P2P listener configuration.
+host = "0.0.0.0"
+port = 9000
+bootstrap_nodes = ""
+max_peers = 50
+peer_discovery_interval_secs = 30
+peer_announce_interval_secs = 60
+
+[storage]
+# Where chain data and rocksdb/sled state is stored.
+data_dir = "./data"
+db_path = "./data/db"
+
+[consensus]
+# Switch between "POA" and "DLC" modes.
+mode = "POA"
+# Toggle DLC consensus extensions while retaining PoA basics.
+enable_dlc = false
+
+# Core timing/tuning knobs
+SLOT_DURATION_MS = 100
+MAX_TRANSACTIONS_PER_BLOCK = 1000
+BLOCK_REWARD = 10
+FINALIZATION_INTERVAL_MS = 200
+
+# DLC-specific timing/safety options (ignored when consensus.mode = "POA")
+TEMPORAL_FINALITY_MS = 250
+SHADOW_VERIFIER_COUNT = 3
+MIN_REPUTATION_SCORE = 5000
+ENABLE_DGBDT_FAIRNESS = true
+ENABLE_SHADOW_VERIFIERS = true
+REQUIRE_VALIDATOR_BOND = true
+
+# L2 configuration
+L2_MAX_COMMIT_SIZE = 16384
+L2_MIN_EPOCH_GAP_MS = 250
+L2_CHALLENGE_WINDOW_MS = 60000
+L2_DA_MODE = "external"
+L2_MAX_L2_COUNT = 100
+
+# DHT/Files/Handles
+FILE_DHT_MODE = "stub"
+HANDLE_DHT_MODE = "stub"
+FILE_DHT_LIBP2P_LISTEN = "/ip4/0.0.0.0/tcp/9100"
+FILE_DHT_LIBP2P_BOOTSTRAP = ""
+
+# Observability
+PROMETHEUS_ENABLED = true
+LOG_LEVEL = "info"
+LOG_FORMAT = "pretty"
+
+# Process management
+PID_FILE = "./data/ippan-node.pid"
