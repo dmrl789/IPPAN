@@ -8,15 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Placeholder for upcoming changes.
 
-## v0.9.0-rc1 — 2025-11-20
+## v0.9.0-rc1 (Audit Candidate) — 2025-11-20
 
-- Deterministic AI/D-GBDT (DLC) consensus integrated and CI-gated.
-- Cross-arch determinism tests (x86_64 and aarch64).
-- No-float runtime enforcement across core crates.
-- IPPAN Time + HashTimer ordering and genesis replay implemented.
-- RPC coverage for payments, handles, files, AI status, operator health.
-- Security layer with rate-limiting and IP whitelisting, with tests.
-- Nightly Full Validation workflow with coverage and readiness scoring.
+- Deterministic AI/D-GBDT (DLC) consensus path hardened with canonical JSON + BLAKE3 hashing and cross-arch determinism tests.
+- No-float runtime enforcement expanded across consensus, RPC, storage, and AI-core crates to keep execution deterministic.
+- HashTimer + time ordering pipelines finalized with genesis replay validation and snapshot import/export coverage.
+- RPC/API security guardrails consolidated on `SecurityManager` (rate limits, IP allow/deny lists) across payments, handles, files, AI status, and health endpoints.
+- IPNDHT/libp2p resilience improvements for descriptor validation and peer churn handling, backed by multi-node tests.
+- Nightly full validation workflow retained for coverage scoring and readiness tracking ahead of external audit.
 
 ## [0.1.0] - 2025-11-06
 
