@@ -2,6 +2,7 @@
 
 use crate::errors::AIServiceError;
 use crate::types::*;
+use ippan_ai_core::Fixed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
@@ -41,8 +42,8 @@ pub struct MonitoringConfig {
     pub metrics_interval: Duration,
     pub health_check_interval: Duration,
     pub memory_threshold: u64,
-    pub cpu_threshold: f64,
-    pub error_rate_threshold: f64,
+    pub cpu_threshold: Fixed,
+    pub error_rate_threshold: Fixed,
     pub response_time_threshold: u64,
     pub enable_alerting: bool,
     pub alert_cooldown: Duration,
@@ -57,8 +58,8 @@ impl Default for MonitoringConfig {
             metrics_interval: Duration::from_secs(60),
             health_check_interval: Duration::from_secs(30),
             memory_threshold: 1_000_000_000, // 1GB
-            cpu_threshold: 80.0,
-            error_rate_threshold: 5.0,
+            cpu_threshold: Fixed::from_int(80),
+            error_rate_threshold: Fixed::from_int(5),
             response_time_threshold: 5_000_000, // 5s
             enable_alerting: true,
             alert_cooldown: Duration::from_secs(300),
@@ -211,7 +212,7 @@ impl ServiceMonitor {
 
         // Error rate
         let error_rate = self.metrics.error_rate.load(Ordering::Relaxed);
-        if error_rate as f64 > self.config.error_rate_threshold {
+        if Fixed::from_int(error_rate as i64) > self.config.error_rate_threshold {
             status = ServiceStatus::Degraded;
             alerts.push(ServiceAlert {
                 id: format!("err_{}", now.elapsed().as_secs()),
@@ -470,7 +471,7 @@ impl AlertHandler for FileAlertHandler {
 pub struct MonitoringService {
     monitor: ServiceMonitor,
     alerts: Vec<MonitoringAlert>,
-    metrics_store: HashMap<String, Vec<f64>>,
+    metrics_store: HashMap<String, Vec<Fixed>>,
 }
 
 impl MonitoringService {
@@ -482,16 +483,11 @@ impl MonitoringService {
         }
     }
 
-    pub fn add_metric(&mut self, metric_name: String, value: f64) {
+    pub fn add_metric(&mut self, metric_name: String, value: Fixed) {
         self.metrics_store
             .entry(metric_name.clone())
             .or_default()
             .push(value);
-
-        // Also record in the underlying monitor
-        if metric_name == "memory_usage" {
-            self.monitor.record_memory_usage(value as u64);
-        }
     }
 
     pub async fn check_alerts(&mut self) -> Result<Vec<MonitoringAlert>, AIServiceError> {
@@ -501,13 +497,13 @@ impl MonitoringService {
         // Check for high memory usage
         if let Some(memory_values) = self.metrics_store.get("memory_usage") {
             if let Some(&latest) = memory_values.last() {
-                if latest > 80.0 {
+                if latest > Fixed::from_int(80) {
                     let alert = MonitoringAlert {
                         alert_id: format!("memory_{}", chrono::Utc::now().timestamp()),
                         alert_type: "high_memory_usage".to_string(),
                         severity: SeverityLevel::High,
                         title: "High Memory Usage".to_string(),
-                        description: format!("Memory usage is at {:.1}%", latest),
+                        description: format!("Memory usage is at {}%", latest),
                         metrics: [("memory_usage".to_string(), latest)].into(),
                         timestamp: chrono::Utc::now(),
                         status: AlertStatus::Active,
@@ -521,13 +517,13 @@ impl MonitoringService {
         // Check for high CPU usage
         if let Some(cpu_values) = self.metrics_store.get("cpu_usage") {
             if let Some(&latest) = cpu_values.last() {
-                if latest > 90.0 {
+                if latest > self.monitor.config.cpu_threshold {
                     let alert = MonitoringAlert {
                         alert_id: format!("cpu_{}", chrono::Utc::now().timestamp()),
                         alert_type: "high_cpu_usage".to_string(),
                         severity: SeverityLevel::High,
                         title: "High CPU Usage".to_string(),
-                        description: format!("CPU usage is at {:.1}%", latest),
+                        description: format!("CPU usage is at {}%", latest),
                         metrics: [("cpu_usage".to_string(), latest)].into(),
                         timestamp: chrono::Utc::now(),
                         status: AlertStatus::Active,

@@ -3,6 +3,7 @@
 //! This example demonstrates how to use the AI Service in a production environment
 //! with proper configuration, monitoring, and error handling.
 
+use ippan_ai_core::Fixed;
 use ippan_ai_service::{
     AIService, AIServiceConfig, AnalyticsConfig, ContractAnalysisType, LLMConfig, LLMRequest,
     OptimizationConstraints, OptimizationGoal, SmartContractAnalysisRequest, TransactionData,
@@ -84,7 +85,7 @@ fn create_production_config() -> AIServiceConfig {
                 .unwrap_or_else(|_| "your-api-key-here".to_string()),
             model_name: std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4".to_string()),
             max_tokens: 4000,
-            temperature: 0.7,
+            temperature: Fixed::from_ratio(7, 10),
             timeout_seconds: 30,
         },
         analytics_config: AnalyticsConfig {
@@ -116,7 +117,7 @@ async fn demonstrate_llm_functionality(
             context
         }),
         max_tokens: Some(500),
-        temperature: Some(0.7),
+        temperature: Some(Fixed::from_ratio(7, 10)),
         stream: false,
     };
 
@@ -220,7 +221,7 @@ async fn demonstrate_transaction_optimization(
     match service.optimize_transaction(request).await {
         Ok(optimization) => {
             info!("Transaction Optimization Results:");
-            info!("  Confidence: {:.2}", optimization.confidence);
+            info!("  Confidence: {}", optimization.confidence);
             info!("  Suggestions: {}", optimization.suggestions.len());
             for suggestion in &optimization.suggestions {
                 info!(
@@ -230,7 +231,8 @@ async fn demonstrate_transaction_optimization(
             }
             info!("  Expected Improvements:");
             for (metric, improvement) in &optimization.expected_improvements {
-                info!("    - {}: {:.2}%", metric, improvement * 100.0);
+                let percentage = *improvement * Fixed::from_int(100);
+                info!("    - {}: {}%", metric, percentage);
             }
         }
         Err(e) => {
@@ -252,21 +254,21 @@ async fn demonstrate_analytics(service: &mut AIService) -> Result<(), Box<dyn st
     for i in 0..10 {
         service.add_analytics_data(
             "cpu_usage".to_string(),
-            50.0 + (i as f64 * 5.0),
+            Fixed::from_int(50 + (i as i64 * 5)),
             "percent".to_string(),
             tags.clone(),
         );
 
         service.add_analytics_data(
             "memory_usage".to_string(),
-            60.0 + (i as f64 * 2.0),
+            Fixed::from_int(60 + (i as i64 * 2)),
             "percent".to_string(),
             tags.clone(),
         );
 
         service.add_analytics_data(
             "transaction_throughput".to_string(),
-            100.0 + (i as f64 * 10.0),
+            Fixed::from_int(100 + (i as i64 * 10)),
             "tps".to_string(),
             tags.clone(),
         );
@@ -278,7 +280,7 @@ async fn demonstrate_analytics(service: &mut AIService) -> Result<(), Box<dyn st
             info!("Analytics Insights Generated: {}", insights.len());
             for insight in &insights {
                 info!(
-                    "  - {}: {} (confidence: {:.2})",
+                    "  - {}: {} (confidence: {})",
                     insight.title, insight.description, insight.confidence
                 );
             }
@@ -295,9 +297,9 @@ async fn demonstrate_monitoring(service: &mut AIService) -> Result<(), Box<dyn s
     info!("Demonstrating monitoring functionality");
 
     // Add some metrics that should trigger alerts
-    service.add_monitoring_metric("memory_usage".to_string(), 85.0);
-    service.add_monitoring_metric("cpu_usage".to_string(), 95.0);
-    service.add_monitoring_metric("error_rate".to_string(), 8.0);
+    service.add_monitoring_metric("memory_usage".to_string(), Fixed::from_int(85));
+    service.add_monitoring_metric("cpu_usage".to_string(), Fixed::from_int(95));
+    service.add_monitoring_metric("error_rate".to_string(), Fixed::from_int(8));
 
     // Check for alerts
     match service.check_monitoring_alerts().await {

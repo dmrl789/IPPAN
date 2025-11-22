@@ -2,6 +2,7 @@
 
 #[cfg(feature = "analytics")]
 use chrono::{DateTime, Utc};
+use ippan_ai_core::Fixed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -33,8 +34,8 @@ pub struct LLMConfig {
     pub model_name: String,
     /// Max tokens
     pub max_tokens: u32,
-    /// Temperature
-    pub temperature: f32,
+    /// Temperature (micro-units)
+    pub temperature: Fixed,
     /// Timeout in seconds
     pub timeout_seconds: u64,
 }
@@ -62,7 +63,7 @@ pub struct LLMRequest {
     /// Max tokens
     pub max_tokens: Option<u32>,
     /// Temperature
-    pub temperature: Option<f32>,
+    pub temperature: Option<Fixed>,
     /// Stream response
     pub stream: bool,
 }
@@ -103,8 +104,8 @@ pub struct AnalyticsInsight {
     pub title: String,
     /// Description
     pub description: String,
-    /// Confidence score (0.0 to 1.0)
-    pub confidence: f64,
+    /// Confidence score (0.0 to 1.0) stored as fixed-point
+    pub confidence: Fixed,
     /// Severity level
     pub severity: SeverityLevel,
     /// Data points
@@ -153,7 +154,7 @@ pub struct DataPoint {
     /// Metric name
     pub metric: String,
     /// Value
-    pub value: f64,
+    pub value: Fixed,
     /// Unit
     pub unit: String,
     /// Timestamp
@@ -181,10 +182,10 @@ pub struct SmartContractAnalysisRequest {
 pub struct SmartContractAnalysisResponse {
     /// Analysis ID
     pub analysis_id: String,
-    /// Security score (0.0 to 1.0)
-    pub security_score: f64,
-    /// Gas efficiency score (0.0 to 1.0)
-    pub gas_efficiency_score: f64,
+    /// Security score (0.0 to 1.0) stored as fixed-point
+    pub security_score: Fixed,
+    /// Gas efficiency score (0.0 to 1.0) stored as fixed-point
+    pub gas_efficiency_score: Fixed,
     /// Issues found
     pub issues: Vec<ContractIssue>,
     /// Recommendations
@@ -229,7 +230,7 @@ pub struct ContractAnalysisMetadata {
     /// Lines of code
     pub lines_of_code: u32,
     /// Complexity score
-    pub complexity_score: f64,
+    pub complexity_score: Fixed,
     /// Analysis duration
     pub analysis_duration_ms: u64,
     /// Tools used
@@ -255,9 +256,9 @@ pub struct TransactionOptimizationResponse {
     /// Optimization suggestions
     pub suggestions: Vec<OptimizationSuggestion>,
     /// Expected improvements
-    pub expected_improvements: HashMap<String, f64>,
+    pub expected_improvements: HashMap<String, Fixed>,
     /// Confidence score
-    pub confidence: f64,
+    pub confidence: Fixed,
 }
 
 /// Transaction data
@@ -317,7 +318,7 @@ pub struct OptimizationSuggestion {
     /// Description
     pub description: String,
     /// Expected improvement
-    pub expected_improvement: f64,
+    pub expected_improvement: Fixed,
     /// Implementation difficulty
     pub difficulty: DifficultyLevel,
 }
@@ -348,7 +349,7 @@ pub struct MonitoringAlert {
     /// Description
     pub description: String,
     /// Metrics
-    pub metrics: HashMap<String, f64>,
+    pub metrics: HashMap<String, Fixed>,
     /// Timestamp
     #[cfg(feature = "analytics")]
     pub timestamp: DateTime<Utc>,
@@ -383,7 +384,7 @@ impl Default for AIServiceConfig {
                 api_key: "".to_string(),
                 model_name: "gpt-4".to_string(),
                 max_tokens: 4000,
-                temperature: 0.7,
+                temperature: Fixed::from_ratio(7, 10),
                 timeout_seconds: 30,
             },
             analytics_config: AnalyticsConfig {

@@ -1,5 +1,6 @@
 //! Unit tests for AI Service components
 
+use ippan_ai_core::Fixed;
 use ippan_ai_service::{
     AlertStatus, AnalyticsConfig, ContractAnalysisType, InsightType, MonitoringService,
     OptimizationConstraints, OptimizationGoal, SeverityLevel, TransactionData,
@@ -27,7 +28,12 @@ fn test_analytics_data_point_addition() {
     let mut tags = HashMap::new();
     tags.insert("node".to_string(), "node1".to_string());
 
-    service.add_data_point("cpu_usage".to_string(), 75.0, "percent".to_string(), tags);
+    service.add_data_point(
+        "cpu_usage".to_string(),
+        Fixed::from_int(75),
+        "percent".to_string(),
+        tags,
+    );
 
     // In a real test, you'd verify the data was added
     // (Service creation and method call verified by no panic)
@@ -43,9 +49,10 @@ fn test_analytics_insight_filtering() {
     tags.insert("test".to_string(), "true".to_string());
 
     for i in 0..25 {
+        let value = Fixed::from_int(50 + i as i64);
         service.add_data_point(
             "test_metric".to_string(),
-            (50.0 + i as f64).sin() * 10.0 + 50.0,
+            value,
             "units".to_string(),
             tags.clone(),
         );
@@ -72,7 +79,7 @@ fn test_monitoring_service_creation() {
 #[cfg(feature = "analytics")]
 fn test_monitoring_metric_addition() {
     let mut service = MonitoringService::new(Default::default());
-    service.add_metric("cpu_usage".to_string(), 75.0);
+    service.add_metric("cpu_usage".to_string(), Fixed::from_int(75));
 
     // Verify metric was added
     let stats = service.get_statistics();
@@ -139,10 +146,10 @@ contract TestContract {
     assert!(result.is_ok());
 
     let analysis = result.unwrap();
-    assert!(analysis.security_score >= 0.0);
-    assert!(analysis.security_score <= 1.0);
-    assert!(analysis.gas_efficiency_score >= 0.0);
-    assert!(analysis.gas_efficiency_score <= 1.0);
+    assert!(analysis.security_score >= Fixed::ZERO);
+    assert!(analysis.security_score <= Fixed::ONE);
+    assert!(analysis.gas_efficiency_score >= Fixed::ZERO);
+    assert!(analysis.gas_efficiency_score <= Fixed::ONE);
 }
 
 #[tokio::test]
@@ -169,7 +176,7 @@ fn dangerous_function() {
     assert!(result.is_ok());
 
     let analysis = result.unwrap();
-    assert!(analysis.security_score < 1.0); // Should be lower due to unsafe code
+    assert!(analysis.security_score < Fixed::ONE); // Should be lower due to unsafe code
     assert!(!analysis.issues.is_empty());
 }
 
@@ -226,8 +233,8 @@ async fn test_gas_optimization() {
     assert!(result.is_ok());
 
     let optimization = result.unwrap();
-    assert!(optimization.confidence > 0.0);
-    assert!(optimization.confidence <= 1.0);
+    assert!(optimization.confidence > Fixed::ZERO);
+    assert!(optimization.confidence <= Fixed::ONE);
     assert!(!optimization.suggestions.is_empty());
     assert!(optimization.expected_improvements.contains_key("gas_usage"));
 }
@@ -258,7 +265,7 @@ async fn test_throughput_optimization() {
     assert!(result.is_ok());
 
     let optimization = result.unwrap();
-    assert!(optimization.confidence > 0.0);
+    assert!(optimization.confidence > Fixed::ZERO);
     assert!(optimization
         .expected_improvements
         .contains_key("throughput"));
@@ -290,7 +297,7 @@ async fn test_security_optimization() {
     assert!(result.is_ok());
 
     let optimization = result.unwrap();
-    assert!(optimization.confidence > 0.0);
+    assert!(optimization.confidence > Fixed::ZERO);
     assert!(optimization.expected_improvements.contains_key("security"));
 }
 

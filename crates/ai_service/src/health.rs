@@ -1,6 +1,7 @@
 //! Health check and status endpoints for production monitoring
 
 use crate::{AIService, AIServiceError};
+use ippan_ai_core::Fixed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -187,7 +188,7 @@ impl AIService {
             prompt: "Health check".to_string(),
             context: None,
             max_tokens: Some(1),
-            temperature: Some(0.0),
+            temperature: Some(Fixed::ZERO),
             stream: false,
         };
 

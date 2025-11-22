@@ -1,6 +1,7 @@
 //! Production-ready configuration management
 
-use crate::{AIServiceConfig, AIServiceError};
+use crate::{fixed_math::parse_decimal_env, AIServiceConfig, AIServiceError};
+use ippan_ai_core::Fixed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -144,10 +145,10 @@ impl ConfigManager {
                     .unwrap_or_else(|_| "4000".to_string())
                     .parse()
                     .unwrap_or(4000),
-                temperature: env::var("LLM_TEMPERATURE")
-                    .unwrap_or_else(|_| "0.7".to_string())
-                    .parse::<f32>()
-                    .unwrap_or(0.7f32),
+                temperature: parse_decimal_env(
+                    &env::var("LLM_TEMPERATURE").unwrap_or_else(|_| "0.7".to_string()),
+                    Fixed::from_ratio(7, 10),
+                ),
                 timeout_seconds: env::var("LLM_TIMEOUT")
                     .unwrap_or_else(|_| "30".to_string())
                     .parse()
@@ -254,9 +255,8 @@ impl ConfigManager {
         }
 
         if let Ok(value) = env::var("LLM_TEMPERATURE") {
-            if let Ok(parsed) = value.trim().parse::<f32>() {
-                config.llm_config.temperature = parsed;
-            }
+            config.llm_config.temperature =
+                parse_decimal_env(value.as_str(), config.llm_config.temperature);
         }
 
         if let Ok(value) = env::var("LLM_TIMEOUT") {
@@ -361,7 +361,7 @@ struct LLMConfigFile {
     api_endpoint: String,
     model_name: String,
     max_tokens: u32,
-    temperature: f64,
+    temperature: toml::Value,
     timeout_seconds: u64,
 }
 
@@ -419,7 +419,10 @@ impl From<ConfigFile> for AIServiceConfig {
                 api_key: "".to_string(), // Will be loaded from secrets
                 model_name: config.llm.model_name,
                 max_tokens: config.llm.max_tokens,
-                temperature: config.llm.temperature as f32,
+                temperature: parse_decimal_env(
+                    &config.llm.temperature.to_string(),
+                    Fixed::from_ratio(7, 10),
+                ),
                 timeout_seconds: config.llm.timeout_seconds,
             },
             analytics_config: crate::AnalyticsConfig {

@@ -14,6 +14,7 @@ use crate::{
         TransactionOptimizationRequest, TransactionOptimizationResponse,
     },
 };
+use ippan_ai_core::Fixed;
 use serde::Serialize;
 use std::collections::HashMap;
 use tokio::time::{interval, Duration};
@@ -198,7 +199,7 @@ impl AIService {
     pub fn add_analytics_data(
         &mut self,
         metric: String,
-        value: f64,
+        value: Fixed,
         unit: String,
         tags: HashMap<String, String>,
     ) {
@@ -242,7 +243,7 @@ impl AIService {
     // Monitoring Methods
     // -------------------
 
-    pub fn add_monitoring_metric(&mut self, metric_name: String, value: f64) {
+    pub fn add_monitoring_metric(&mut self, metric_name: String, value: Fixed) {
         #[cfg(feature = "analytics")]
         if self.config.enable_monitoring {
             self.monitoring_service.add_metric(metric_name, value);
@@ -457,13 +458,18 @@ mod tests {
         let mut tags = HashMap::new();
         tags.insert("node".to_string(), "node1".to_string());
 
-        service.add_analytics_data("cpu_usage".to_string(), 75.0, "percent".to_string(), tags);
+        service.add_analytics_data(
+            "cpu_usage".to_string(),
+            Fixed::from_int(75),
+            "percent".to_string(),
+            tags,
+        );
         for i in 0..5 {
             let mut t = HashMap::new();
             t.insert("node".to_string(), format!("node{}", i));
             service.add_analytics_data(
                 "cpu_usage".to_string(),
-                70.0 + (i as f64),
+                Fixed::from_int(70 + i as i64),
                 "percent".to_string(),
                 t,
             );
@@ -477,7 +483,7 @@ mod tests {
         let mut service = AIService::new(config).unwrap();
 
         service.start().await.unwrap();
-        service.add_monitoring_metric("memory_usage".to_string(), 85.0);
+        service.add_monitoring_metric("memory_usage".to_string(), Fixed::from_int(85));
         let _ = service.check_monitoring_alerts().await.unwrap();
     }
 }

@@ -1,8 +1,9 @@
 //! Production-ready metrics collection and reporting
 
-use crate::AIServiceError;
+use crate::{fixed_math::ratio_to_fixed, AIServiceError};
+use ippan_ai_core::Fixed;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -30,7 +31,7 @@ pub struct MetricsCollector {
 
     // Error metrics
     pub error_count: Arc<AtomicU64>,
-    pub error_rate: Arc<AtomicU64>,
+    pub error_rate: Arc<AtomicI64>,
 
     // Start time for uptime calculation
     start_time: SystemTime,
@@ -60,7 +61,7 @@ impl MetricsCollector {
             cpu_usage_percent: Arc::new(AtomicU64::new(0)),
             active_connections: Arc::new(AtomicUsize::new(0)),
             error_count: Arc::new(AtomicU64::new(0)),
-            error_rate: Arc::new(AtomicU64::new(0)),
+            error_rate: Arc::new(AtomicI64::new(0)),
             start_time: SystemTime::now(),
         }
     }
@@ -127,17 +128,9 @@ impl MetricsCollector {
         let failed_requests = self.failed_requests.load(Ordering::Relaxed);
         let request_duration_ms = self.request_duration_ms.load(Ordering::Relaxed);
 
-        let success_rate = if total_requests > 0 {
-            successful_requests as f64 / total_requests as f64
-        } else {
-            0.0
-        };
+        let success_rate = ratio_to_fixed(successful_requests, total_requests);
 
-        let avg_duration_ms = if total_requests > 0 {
-            request_duration_ms as f64 / total_requests as f64
-        } else {
-            0.0
-        };
+        let avg_duration_ms = ratio_to_fixed(request_duration_ms, total_requests);
 
         let uptime = self.start_time.elapsed().unwrap_or_default();
 
@@ -162,7 +155,7 @@ impl MetricsCollector {
             cpu_usage_percent: self.cpu_usage_percent.load(Ordering::Relaxed),
             active_connections: self.active_connections.load(Ordering::Relaxed),
             error_count: self.error_count.load(Ordering::Relaxed),
-            error_rate: self.error_rate.load(Ordering::Relaxed) as f64 / 100.0,
+            error_rate: Fixed::from_micro(self.error_rate.load(Ordering::Relaxed)),
         }
     }
 
@@ -172,8 +165,10 @@ impl MetricsCollector {
         let error_count = self.error_count.load(Ordering::Relaxed);
 
         if total_requests > 0 {
-            let rate = (error_count as f64 / total_requests as f64 * 100.0) as u64;
+            let rate = ratio_to_fixed(error_count, total_requests).to_micro();
             self.error_rate.store(rate, Ordering::Relaxed);
+        } else {
+            self.error_rate.store(0, Ordering::Relaxed);
         }
     }
 }
@@ -186,8 +181,8 @@ pub struct MetricsSnapshot {
     pub total_requests: u64,
     pub successful_requests: u64,
     pub failed_requests: u64,
-    pub success_rate: f64,
-    pub avg_duration_ms: f64,
+    pub success_rate: Fixed,
+    pub avg_duration_ms: Fixed,
     pub llm_requests: u64,
     pub analytics_requests: u64,
     pub smart_contract_requests: u64,
@@ -198,7 +193,7 @@ pub struct MetricsSnapshot {
     pub cpu_usage_percent: u64,
     pub active_connections: usize,
     pub error_count: u64,
-    pub error_rate: f64,
+    pub error_rate: Fixed,
 }
 
 /// Metrics exporter for external monitoring systems
