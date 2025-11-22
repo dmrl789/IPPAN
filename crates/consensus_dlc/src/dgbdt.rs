@@ -4,6 +4,7 @@
 //! selection and reputation scoring using integer-only arithmetic.
 
 use crate::error::{DlcError, Result};
+use ippan_ai_core::fairness::{DeterministicFairnessModel, ValidatorFeatureVector};
 use ippan_ai_core::gbdt::{Model as DgbdtModel, SCALE as DGBDT_SCALE};
 use ippan_ai_registry::d_gbdt::DGBDTRegistry;
 use ippan_types::currency::denominations;
@@ -16,6 +17,8 @@ use std::path::{Path, PathBuf};
 
 const REGISTRY_ENV_KEY: &str = "IPPAN_DGBDT_REGISTRY_PATH";
 const DEFAULT_REGISTRY_PATH: &str = "data/dgbdt_registry";
+const DLC_CONFIG_ENV_KEY: &str = "IPPAN_DLC_CONFIG_PATH";
+const DEFAULT_DLC_CONFIG_PATH: &str = "config/dlc.toml";
 
 /// Validator metrics used for fairness scoring (deterministic, scaled integers)
 /// All percentage/ratio fields are scaled by 10000 (e.g., 10000 = 100%)
@@ -123,40 +126,50 @@ pub struct NormalizedMetrics {
     pub stake_weight: i64,
 }
 
+impl From<NormalizedMetrics> for ValidatorFeatureVector {
+    fn from(metrics: NormalizedMetrics) -> Self {
+        ValidatorFeatureVector::new(
+            metrics.uptime,
+            metrics.latency_inv,
+            metrics.honesty,
+            metrics.proposal_rate,
+            metrics.verification_rate,
+            metrics.stake_weight,
+        )
+        .clamped()
+    }
+}
+
 /// Fairness model backed by deterministic GBDT inference.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FairnessModel {
     #[serde(rename = "model")]
-    model: DgbdtModel,
+    model: DeterministicFairnessModel,
     #[serde(skip)]
     active_hash: Option<String>,
 }
 
 impl FairnessModel {
-    const FEATURE_SCALE_FACTOR: i64 = DGBDT_SCALE / 10_000;
-    const SCORE_MAX: i64 = 10_000;
-
     /// Load a D-GBDT model from a file path
     pub fn from_d_gbdt_file(path: &Path) -> Result<Self> {
         use ippan_ai_registry::d_gbdt::load_model_from_path;
 
         let (model, _hash) = load_model_from_path(path)
             .map_err(|e| DlcError::Model(format!("Failed to load D-GBDT model: {}", e)))?;
-
         Ok(Self::from_d_gbdt_model(model))
     }
 
     /// Create a FairnessModel from a loaded D-GBDT model
     pub fn from_d_gbdt_model(model: DgbdtModel) -> Self {
         Self {
-            model,
+            model: DeterministicFairnessModel::from_model(model),
             active_hash: None,
         }
     }
 
     fn with_hash(model: DgbdtModel, hash: Option<String>) -> Self {
         Self {
-            model,
+            model: DeterministicFairnessModel::from_model(model),
             active_hash: hash,
         }
     }
@@ -166,6 +179,18 @@ impl FairnessModel {
         let (model, hash) = registry
             .get_active_model()
             .map_err(|e| DlcError::Model(format!("Failed to read active D-GBDT model: {e}")))?;
+        let fairness = FairnessModel::with_hash(model, Some(hash.clone()));
+        Ok((fairness, hash))
+    }
+
+    /// Build a fairness model, activating the configured model if none is stored yet.
+    pub fn from_registry_with_config(
+        registry: &mut DGBDTRegistry,
+        config_path: &Path,
+    ) -> Result<(Self, String)> {
+        let (model, hash) = registry
+            .ensure_active_model_from_config(config_path)
+            .map_err(|e| DlcError::Model(format!("Failed to load D-GBDT model: {e}")))?;
         let fairness = FairnessModel::with_hash(model, Some(hash.clone()));
         Ok((fairness, hash))
     }
@@ -184,61 +209,57 @@ impl FairnessModel {
         Self::from_registry(&mut registry)
     }
 
+    /// Load a fairness model from a registry database, activating from config if needed.
+    pub fn from_registry_path_with_config<P: AsRef<Path>, C: AsRef<Path>>(
+        path: P,
+        config_path: C,
+    ) -> Result<(Self, String)> {
+        let db_path = path.as_ref();
+        let db = sled::open(db_path).map_err(|e| {
+            DlcError::Model(format!(
+                "Failed to open D-GBDT registry at {}: {}",
+                db_path.display(),
+                e
+            ))
+        })?;
+        let mut registry = DGBDTRegistry::new(db);
+        Self::from_registry_with_config(&mut registry, config_path.as_ref())
+    }
+
     /// Load a fairness model using the configured registry environment variable.
     pub fn load_from_env_registry() -> Result<(Self, String)> {
-        let path = env::var(REGISTRY_ENV_KEY).unwrap_or_else(|_| DEFAULT_REGISTRY_PATH.to_string());
-        Self::from_registry_path(PathBuf::from(path))
+        let registry_path =
+            env::var(REGISTRY_ENV_KEY).unwrap_or_else(|_| DEFAULT_REGISTRY_PATH.to_string());
+        let config_path =
+            env::var(DLC_CONFIG_ENV_KEY).unwrap_or_else(|_| DEFAULT_DLC_CONFIG_PATH.to_string());
+        Self::from_registry_path_with_config(
+            PathBuf::from(registry_path),
+            PathBuf::from(config_path),
+        )
     }
 
     /// Deterministic integer-based scoring via D-GBDT model.
     pub fn score_deterministic(&self, metrics: &ValidatorMetrics) -> i64 {
-        let features = self.scaled_features(metrics);
-        let raw_score = self.model.score(&features);
-        Self::quantize_score(raw_score)
-    }
-
-    fn scaled_features(&self, metrics: &ValidatorMetrics) -> [i64; 6] {
-        let normalized = metrics.to_normalized();
-        let scale = Self::feature_scale();
-        [
-            normalized.uptime,
-            normalized.latency_inv,
-            normalized.honesty,
-            normalized.proposal_rate,
-            normalized.verification_rate,
-            normalized.stake_weight,
-        ]
-        .map(|value| value.saturating_mul(scale))
-    }
-
-    const fn feature_scale() -> i64 {
-        if Self::FEATURE_SCALE_FACTOR == 0 {
-            1
-        } else {
-            Self::FEATURE_SCALE_FACTOR
-        }
-    }
-
-    fn quantize_score(raw: i64) -> i64 {
-        let divisor = Self::feature_scale().max(1);
-        let normalized = raw / divisor;
-        normalized.clamp(0, Self::SCORE_MAX)
+        let normalized = ValidatorFeatureVector::from(metrics.to_normalized());
+        self.model.score(&normalized)
     }
 
     /// Validate model integrity
     pub fn validate(&self) -> Result<()> {
         self.model
+            .model()
             .validate()
             .map_err(|e| DlcError::Model(format!("Invalid D-GBDT model: {e}")))
     }
 
     /// Get model metadata
     pub fn metadata(&self) -> ModelMetadata {
+        let model = self.model.model();
         ModelMetadata {
-            num_trees: self.model.trees.len(),
+            num_trees: model.trees.len(),
             num_features: 6,
-            scale: self.model.scale,
-            bias: self.model.bias,
+            scale: model.scale,
+            bias: model.bias,
         }
     }
 
@@ -249,7 +270,7 @@ impl FairnessModel {
 
     /// Optional human-readable model version string.
     pub fn model_version(&self) -> Option<String> {
-        Some(self.model.version.to_string())
+        Some(self.model.model().version.to_string())
     }
 
     pub fn testing_stub() -> Self {
@@ -473,5 +494,54 @@ mod tests {
         let score_b = fairness.score_deterministic(&metrics);
         assert_eq!(score_a, score_b);
         assert!(score_a >= 0 && score_a <= 10_000);
+    }
+
+    #[test]
+    fn test_registry_activation_from_config_and_scoring() {
+        use ippan_ai_core::gbdt::{Node as DNode, Tree as DTree, SCALE};
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        let config_dir = root.join("config");
+        let models_dir = root.join("models");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(&models_dir).unwrap();
+
+        let tree = DTree::new(
+            vec![
+                DNode::internal(0, 0, 50 * SCALE, 1, 2),
+                DNode::leaf(1, 500_000),
+                DNode::leaf(2, 900_000),
+            ],
+            SCALE,
+        );
+        let model = ippan_ai_core::gbdt::Model::new(vec![tree], 0);
+        let model_path = models_dir.join("model.json");
+        std::fs::write(&model_path, serde_json::to_string(&model).unwrap()).unwrap();
+        let hash = compute_model_hash(&model).unwrap();
+
+        let config_path = config_dir.join("dlc.toml");
+        let config_contents = format!(
+            r#"
+[dgbdt]
+  [dgbdt.model]
+  path = "models/model.json"
+  expected_hash = "{hash}"
+"#
+        );
+        std::fs::write(&config_path, config_contents).unwrap();
+
+        let db_path = root.join("registry");
+        let db = sled::open(&db_path).unwrap();
+        let mut registry = DGBDTRegistry::new(db);
+
+        let (fairness, loaded_hash) =
+            FairnessModel::from_registry_with_config(&mut registry, &config_path).unwrap();
+        assert_eq!(loaded_hash, hash);
+
+        let metrics = ValidatorMetrics::default();
+        let score = fairness.score_deterministic(&metrics);
+        assert_eq!(score, 5_000);
     }
 }

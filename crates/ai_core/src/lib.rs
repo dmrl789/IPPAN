@@ -10,6 +10,7 @@ pub mod determinism;
 pub mod deterministic_gbdt;
 pub mod errors;
 pub mod execution;
+pub mod fairness;
 pub mod feature_engineering;
 pub mod features;
 pub mod fixed;
@@ -38,6 +39,7 @@ pub use crate::deterministic_gbdt::{
     DeterministicGBDT, GBDTTree, ValidatorFeatures,
 };
 pub use crate::errors::{AiCoreError, Result as AiCoreResult};
+pub use crate::fairness::{DeterministicFairnessModel, ValidatorFeatureVector};
 pub use crate::features::{extract_features, FeatureConfig, FeatureVector, ValidatorTelemetry};
 pub use crate::fixed::{hash_fixed, hash_fixed_slice, Fixed, SCALE as FIXED_SCALE};
 pub use crate::gbdt::{

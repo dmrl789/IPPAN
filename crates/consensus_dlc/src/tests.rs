@@ -89,6 +89,7 @@ async fn test_ai_status_reports_real_model_metadata() {
 
     let temp = TempDir::new().unwrap();
     let registry_path = temp.path().join("registry");
+    let config_path = temp.path().join("dlc.toml");
 
     let db = sled::open(&registry_path).unwrap();
     let mut registry = DGBDTRegistry::new(db);
@@ -106,9 +107,25 @@ async fn test_ai_status_reports_real_model_metadata() {
     registry.store_active_model(model, hash.clone()).unwrap();
     drop(registry);
 
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"
+[dgbdt]
+
+[dgbdt.model]
+path = "models/dlc/dlc_model_example.json"
+expected_hash = "{hash}"
+"#
+        ),
+    )
+    .unwrap();
+
     std::env::set_var("IPPAN_DGBDT_REGISTRY_PATH", &registry_path);
+    std::env::set_var("IPPAN_DLC_CONFIG_PATH", &config_path);
     let consensus = DlcConsensus::new(DlcConfig::default());
     std::env::remove_var("IPPAN_DGBDT_REGISTRY_PATH");
+    std::env::remove_var("IPPAN_DLC_CONFIG_PATH");
 
     let status = consensus.ai_status();
     assert!(status.enabled);

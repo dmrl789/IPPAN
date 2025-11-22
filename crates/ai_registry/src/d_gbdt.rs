@@ -122,6 +122,65 @@ impl DGBDTRegistry {
         Ok((activated_model, hash))
     }
 
+    /// Ensure an active model exists, activating from a config file if needed.
+    ///
+    /// Returns the active `(Model, hash)` pair either from the registry or by
+    /// loading and activating the model specified in the provided config file.
+    pub fn ensure_active_model_from_config<P: AsRef<Path>>(
+        &mut self,
+        config_path: P,
+    ) -> Result<(Model, String)> {
+        let config_path = config_path.as_ref();
+        let config = read_config(config_path)?;
+        let (model_path, expected_hash) = extract_model_entry(&config)?;
+        let resolved_path = resolve_model_path(config_path, Path::new(&model_path));
+
+        match self.get_active_model() {
+            Ok((active_model, _stored_hash)) => {
+                let computed_active_hash = compute_model_hash(&active_model)?;
+
+                if let Some(expected) = expected_hash.as_ref() {
+                    if computed_active_hash.eq_ignore_ascii_case(expected) {
+                        return Ok((active_model, computed_active_hash));
+                    }
+
+                    info!(
+                        "Configured expected hash {} does not match active hash {}; reloading",
+                        expected, computed_active_hash
+                    );
+
+                    let (configured_model, configured_hash) = load_model_from_path(&resolved_path)?;
+                    if !configured_hash.eq_ignore_ascii_case(expected) {
+                        return Err(RegistryError::InvalidInput(format!(
+                            "Configured expected hash {} does not match model hash {}",
+                            expected, configured_hash
+                        )));
+                    }
+
+                    let activated_model = configured_model.clone();
+                    self.store_active_model(configured_model, configured_hash.clone())?;
+                    return Ok((activated_model, configured_hash));
+                }
+
+                let (configured_model, configured_hash) = load_model_from_path(&resolved_path)?;
+                if computed_active_hash.eq_ignore_ascii_case(&configured_hash) {
+                    return Ok((active_model, computed_active_hash));
+                }
+
+                info!(
+                    "Configured model hash {} differs from active hash {}; updating active model",
+                    configured_hash, computed_active_hash
+                );
+
+                let updated_model = configured_model.clone();
+                self.store_active_model(configured_model, configured_hash.clone())?;
+                Ok((updated_model, configured_hash))
+            }
+            Err(RegistryError::ModelNotFound(_)) => self.load_and_activate_from_config(config_path),
+            Err(err) => Err(err),
+        }
+    }
+
     /// Get the currently active model with its hash
     pub fn get_active_model(&self) -> Result<(Model, String)> {
         let data = self.db.get(ACTIVE_MODEL_KEY).map_err(|err| {
@@ -263,21 +322,7 @@ fn current_timestamp() -> u64 {
 ///
 /// Reads the `d_gbdt_model_path` from the config and loads the model
 pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
-    let config_content = std::fs::read_to_string(config_path).map_err(|err| {
-        RegistryError::Internal(format!(
-            "Failed to read config file {}: {}",
-            config_path.display(),
-            err
-        ))
-    })?;
-
-    let config: toml::Value = toml::from_str(&config_content).map_err(|err| {
-        RegistryError::Internal(format!(
-            "Failed to parse config TOML {}: {}",
-            config_path.display(),
-            err
-        ))
-    })?;
+    let config = read_config(config_path)?;
 
     let (model_path_str, expected_hash) = extract_model_entry(&config)?;
 
@@ -294,6 +339,32 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
     }
 
     Ok((model, hash))
+}
+
+fn read_config(config_path: &Path) -> Result<toml::Value> {
+    let config_content = std::fs::read_to_string(config_path).map_err(|err| {
+        RegistryError::Internal(format!(
+            "Failed to read config file {}: {}",
+            config_path.display(),
+            err
+        ))
+    })?;
+
+    toml::from_str(&config_content).map_err(|err| {
+        RegistryError::Internal(format!(
+            "Failed to parse config TOML {}: {}",
+            config_path.display(),
+            err
+        ))
+    })
+}
+
+/// Convenience helper to activate a model using an existing registry handle.
+pub fn load_and_activate_from_config<P: AsRef<Path>>(
+    registry: &mut DGBDTRegistry,
+    config_path: P,
+) -> Result<(Model, String)> {
+    registry.load_and_activate_from_config(config_path)
 }
 
 fn extract_model_entry(config: &toml::Value) -> Result<(String, Option<String>)> {
@@ -486,6 +557,89 @@ mod tests {
         assert_eq!(loaded_model.version, model.version);
         assert_eq!(loaded_model.scale, model.scale);
         assert_eq!(hash.len(), 64); // BLAKE3 hash hex length
+    }
+
+    #[test]
+    fn test_ensure_active_model_respects_expected_hash() {
+        let (mut registry, temp_dir) = create_test_registry();
+
+        // Seed registry with an outdated model
+        let initial_model = create_test_model();
+        let initial_hash = compute_model_hash(&initial_model).unwrap();
+        registry
+            .store_active_model(initial_model.clone(), initial_hash.clone())
+            .unwrap();
+
+        // Create a newer model referenced in config with an expected hash
+        let newer_model = Model::new(initial_model.trees.clone(), 42);
+        let newer_hash = compute_model_hash(&newer_model).unwrap();
+        let model_path = temp_dir.path().join("dgbdt_new.json");
+        std::fs::write(
+            &model_path,
+            serde_json::to_string_pretty(&newer_model).unwrap(),
+        )
+        .unwrap();
+
+        let config_path = temp_dir.path().join("config_expected.toml");
+        std::fs::write(
+            &config_path,
+            format!(
+                "[dgbdt.model]\npath = \"{}\"\nexpected_hash = \"{}\"\n",
+                model_path.display(),
+                newer_hash
+            ),
+        )
+        .unwrap();
+
+        let (active_model, active_hash) = registry
+            .ensure_active_model_from_config(&config_path)
+            .unwrap();
+
+        assert_eq!(active_hash, newer_hash);
+        assert_eq!(active_model.bias, 42);
+
+        let (_, stored_hash) = registry.get_active_model().unwrap();
+        assert_eq!(stored_hash, newer_hash);
+        assert_ne!(stored_hash, initial_hash);
+    }
+
+    #[test]
+    fn test_ensure_active_model_reloads_when_expected_missing() {
+        let (mut registry, temp_dir) = create_test_registry();
+
+        // Seed registry with an outdated model
+        let initial_model = create_test_model();
+        let initial_hash = compute_model_hash(&initial_model).unwrap();
+        registry
+            .store_active_model(initial_model.clone(), initial_hash.clone())
+            .unwrap();
+
+        // Create a newer model referenced in config without an expected hash
+        let newer_model = Model::new(initial_model.trees.clone(), 99);
+        let newer_hash = compute_model_hash(&newer_model).unwrap();
+        let model_path = temp_dir.path().join("dgbdt_latest.json");
+        std::fs::write(
+            &model_path,
+            serde_json::to_string_pretty(&newer_model).unwrap(),
+        )
+        .unwrap();
+
+        let config_path = temp_dir.path().join("config_no_expected.toml");
+        std::fs::write(
+            &config_path,
+            format!("[dgbdt.model]\npath = \"{}\"\n", model_path.display()),
+        )
+        .unwrap();
+
+        let (active_model, active_hash) = registry
+            .ensure_active_model_from_config(&config_path)
+            .unwrap();
+
+        assert_eq!(active_hash, newer_hash);
+        assert_eq!(active_model.bias, 99);
+
+        let (_, stored_hash) = registry.get_active_model().unwrap();
+        assert_eq!(stored_hash, newer_hash);
     }
 
     #[test]
