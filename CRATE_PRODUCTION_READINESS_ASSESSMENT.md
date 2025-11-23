@@ -97,6 +97,7 @@ According to `PRODUCTION_CODE_IMPROVEMENTS.md`, the following issues **were fixe
 - Chain state persistence
 - L2 network and round certificate support
 - Genesis block initialization
+- Restart and DAG-conflict persistence covered by sled + memory tests (restart, fork retention, and reorg state checks)
 
 #### 3. RPC (`crates/rpc/src/lib.rs`)
 - 930 lines of production networking code

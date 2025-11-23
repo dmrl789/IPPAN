@@ -130,6 +130,17 @@ This flow ensures sled flushes + replay logic are healthy: the restarted node
 should immediately expose the same accounts and files without needing to
 re-ingest blocks.
 
+## Test coverage checkpoints
+
+* `crates/storage/tests/persistence_conflicts.rs` runs sled-backed restart
+  tests that reopen the database after clean shutdowns and crash-like drops.
+  Canonical state (chain state + balances) and side branches are all
+  reloaded, ensuring forks remain queryable for audit while the canonical head
+  survives a restart.
+* The same suite models DAG conflicts and explicit reorgs with the in-memory
+  backend to prove state updates are not double-applied when consensus changes
+  the canonical branch.
+
 ## Operator workflow summary
 
 1. **Before maintenance/migration**: run `ippan-node snapshot export --dir ...`
