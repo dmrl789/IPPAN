@@ -270,7 +270,7 @@ impl EmissionTracker {
             total_reward: distributed_total.min(u64::MAX as u128) as u64,
             blocks_in_round: contributions.len() as u32,
             validator_rewards,
-            fees_collected: distributable_fee_pool as u64, // 25% immediate distribution
+            fees_collected: distributable_fee_pool, // 25% immediate distribution
             network_pool_allocation: {
                 let pooled_fees = (capped_fees.saturating_sub(distributable_fee_pool)) as u128
                     + transaction_fees.saturating_sub(capped_fees as u128);
