@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 const FINALIZATION_LAG_ROUNDS: u64 = 2;
 const FINALIZATION_DEPTH: u64 = 2;
+const MAX_REORG_DEPTH: u64 = 2;
 
 /// A block in the DAG
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -296,6 +297,51 @@ impl BlockDAG {
         finalized_ids
     }
 
+    /// Select the canonical tip using deterministic fork-choice rules.
+    pub fn select_canonical_tip(
+        &self,
+        validator_weights: &HashMap<String, i64>,
+        shadow_flags: &HashSet<String>,
+        current_head: Option<&str>,
+    ) -> Option<String> {
+        let mut candidates: Vec<(u64, &HashTimer, i128, String)> = Vec::new();
+
+        for block in self.get_tips() {
+            let weight_score = self.path_weight_score(&block.id, validator_weights, shadow_flags);
+            candidates.push((
+                block.height,
+                &block.timestamp,
+                weight_score,
+                block.id.clone(),
+            ));
+        }
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        candidates.sort_by(|a, b| {
+            b.0.cmp(&a.0) // height first
+                .then_with(|| a.1.cmp(b.1)) // then HashTimer ordering (earlier first)
+                .then_with(|| b.2.cmp(&a.2)) // then cumulative validator weight
+                .then_with(|| a.3.cmp(&b.3)) // deterministic tie-breaker on id
+        });
+
+        let selected = candidates.first().unwrap().3.clone();
+
+        if let Some(current) = current_head {
+            if current != selected {
+                if let Some(depth) = self.reorg_depth(current, &selected) {
+                    if depth > MAX_REORG_DEPTH {
+                        return Some(current.to_string());
+                    }
+                }
+            }
+        }
+
+        Some(selected)
+    }
+
     /// Get a block by ID
     pub fn get_block(&self, id: &str) -> Option<&Block> {
         self.blocks.get(id)
@@ -336,6 +382,40 @@ impl BlockDAG {
         }
 
         intersection
+    }
+
+    fn path_weight_score(
+        &self,
+        tip_id: &str,
+        validator_weights: &HashMap<String, i64>,
+        shadow_flags: &HashSet<String>,
+    ) -> i128 {
+        let mut score: i128 = 0;
+        for block_id in self.get_path_to_genesis(tip_id) {
+            if let Some(block) = self.blocks.get(&block_id) {
+                let weight = *validator_weights.get(&block.proposer).unwrap_or(&0) as i128;
+                score += weight;
+                if shadow_flags.contains(&block_id) {
+                    // Penalize branches flagged by shadow verifiers without removing them entirely
+                    score -= 1_000_000i128;
+                }
+            }
+        }
+        score
+    }
+
+    fn reorg_depth(&self, current_head: &str, candidate_head: &str) -> Option<u64> {
+        let current_path: HashSet<String> =
+            self.get_path_to_genesis(current_head).into_iter().collect();
+
+        for ancestor in self.get_path_to_genesis(candidate_head) {
+            if current_path.contains(&ancestor) {
+                let current_height = self.blocks.get(current_head)?.height;
+                let ancestor_height = self.blocks.get(&ancestor)?.height;
+                return Some(current_height.saturating_sub(ancestor_height));
+            }
+        }
+        None
     }
 
     fn ancestors_beyond_depth(&self, tip_id: &str, depth: u64) -> HashSet<String> {
@@ -454,6 +534,7 @@ pub struct DagStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{Duration, TimeZone, Utc};
 
     #[test]
     fn test_block_creation() {
@@ -573,5 +654,155 @@ mod tests {
         assert!(finalized.is_empty());
         assert!(!dag.finalized.contains(&branch_a_parent));
         assert!(!dag.finalized.contains(&branch_b_parent));
+    }
+
+    fn build_block_with_timer(
+        parents: Vec<String>,
+        timestamp: chrono::DateTime<Utc>,
+        round: u64,
+        proposer: &str,
+    ) -> Block {
+        let data = vec![1u8, 2, 3];
+        let hashtimer = HashTimer::new(timestamp, round);
+        let merkle_root = Block::compute_merkle_root(&data);
+        let id = Block::compute_id(&parents, &hashtimer, &merkle_root, proposer);
+        let mut block = Block {
+            id,
+            parents,
+            timestamp: hashtimer,
+            data,
+            height: 0,
+            proposer: proposer.to_string(),
+            signature: None,
+            merkle_root,
+        };
+        block.sign(vec![0u8; 64]);
+        block
+    }
+
+    #[test]
+    fn selects_canonical_by_height_time_and_weight() {
+        let mut dag = BlockDAG::new();
+        let genesis_id = dag.genesis_id.clone().unwrap();
+        let base = Utc.timestamp_nanos(1_000_000);
+
+        let block_a1 = build_block_with_timer(vec![genesis_id.clone()], base, 1, "alice");
+        dag.insert(block_a1.clone()).unwrap();
+
+        let block_b1 = build_block_with_timer(
+            vec![genesis_id.clone()],
+            base + Duration::nanoseconds(50),
+            1,
+            "bob",
+        );
+        dag.insert(block_b1.clone()).unwrap();
+
+        let block_a2 = build_block_with_timer(
+            vec![block_a1.id.clone()],
+            base + Duration::nanoseconds(75),
+            2,
+            "alice",
+        );
+        dag.insert(block_a2.clone()).unwrap();
+
+        let block_b2 = build_block_with_timer(
+            vec![block_b1.id.clone()],
+            base + Duration::nanoseconds(150),
+            2,
+            "bob",
+        );
+        dag.insert(block_b2.clone()).unwrap();
+
+        let mut weights = HashMap::new();
+        weights.insert("alice".to_string(), 10);
+        weights.insert("bob".to_string(), 100);
+
+        let tip = dag
+            .select_canonical_tip(&weights, &HashSet::new(), None)
+            .expect("tip");
+
+        // Earlier HashTimer wins when heights match, even if weight is lower
+        assert_eq!(tip, block_a2.id);
+    }
+
+    #[test]
+    fn rejects_deep_reorg_and_penalizes_shadow_flags() {
+        let mut dag = BlockDAG::new();
+        let genesis_id = dag.genesis_id.clone().unwrap();
+        let base = Utc.timestamp_nanos(2_000_000);
+
+        let c1 = build_block_with_timer(vec![genesis_id.clone()], base, 1, "canon");
+        dag.insert(c1.clone()).unwrap();
+        let c2 = build_block_with_timer(
+            vec![c1.id.clone()],
+            base + Duration::nanoseconds(10),
+            2,
+            "canon",
+        );
+        dag.insert(c2.clone()).unwrap();
+        let c3 = build_block_with_timer(
+            vec![c2.id.clone()],
+            base + Duration::nanoseconds(20),
+            3,
+            "canon",
+        );
+        dag.insert(c3.clone()).unwrap();
+
+        // Competing deeper fork that would exceed the reorg depth
+        let f1 = build_block_with_timer(
+            vec![genesis_id.clone()],
+            base + Duration::nanoseconds(5),
+            1,
+            "fork",
+        );
+        dag.insert(f1.clone()).unwrap();
+        let f2 = build_block_with_timer(
+            vec![f1.id.clone()],
+            base + Duration::nanoseconds(15),
+            2,
+            "fork",
+        );
+        dag.insert(f2.clone()).unwrap();
+        let f3 = build_block_with_timer(
+            vec![f2.id.clone()],
+            base + Duration::nanoseconds(25),
+            3,
+            "fork",
+        );
+        dag.insert(f3.clone()).unwrap();
+        let f4 = build_block_with_timer(
+            vec![f3.id.clone()],
+            base + Duration::nanoseconds(35),
+            4,
+            "fork",
+        );
+        dag.insert(f4.clone()).unwrap();
+
+        let mut weights = HashMap::new();
+        weights.insert("canon".to_string(), 5);
+        weights.insert("fork".to_string(), 50);
+
+        // Despite better weight/height, reorg depth guard keeps current head
+        let tip = dag
+            .select_canonical_tip(&weights, &HashSet::new(), Some(&c3.id))
+            .expect("tip");
+        assert_eq!(tip, c3.id);
+
+        // Shallow competing block flagged by shadow verifiers should be ignored
+        let suspicious = build_block_with_timer(
+            vec![c2.id.clone()],
+            base + Duration::nanoseconds(18),
+            3,
+            "fork",
+        );
+        dag.insert(suspicious.clone()).unwrap();
+
+        let mut shadow_flags = HashSet::new();
+        shadow_flags.insert(suspicious.id.clone());
+
+        let tip = dag
+            .select_canonical_tip(&weights, &shadow_flags, Some(&c3.id))
+            .expect("tip");
+        assert_eq!(tip, c3.id);
     }
 }

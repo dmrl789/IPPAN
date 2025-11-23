@@ -230,6 +230,11 @@ DlcConsensus
 └── RewardDistributor     # Block reward distribution
 ```
 
+### Fork choice / canonical DAG selection
+- Canonical tip selection now follows the documented order: highest height first, then HashTimer ordering, then cumulative validator weight (D-GBDT scores), and finally block ID as a deterministic tie-breaker.
+- Shadow-verifier alerts are treated as penalties during selection rather than hard bans, allowing honest branches to remain favored while avoiding PoA shortcuts.
+- Reorgs are bounded to the finalized horizon (2 rounds) to avoid replacing finalized history.
+
 ### Consensus Flow
 1. **Round Start:** HashTimer generates deterministic round time
 2. **Validator Selection:** FairnessModel scores and selects top validators
