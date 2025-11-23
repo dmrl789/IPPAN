@@ -481,10 +481,12 @@ async fn test_long_run_consensus_simulation_stability() {
 
     init_dlc();
 
-    let mut config = DlcConfig::default();
-    config.validators_per_round = 11;
-    config.unstaking_lock_rounds = 256;
-    config.min_reputation = 2500;
+    let config = DlcConfig {
+        validators_per_round: 11,
+        unstaking_lock_rounds: 256,
+        min_reputation: 2500,
+        ..Default::default()
+    };
 
     let validators_per_round = config.validators_per_round;
     let mut consensus = DlcConsensus::new(config);

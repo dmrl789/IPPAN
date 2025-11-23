@@ -52,9 +52,11 @@ fn deterministic_metrics(index: usize) -> ValidatorMetrics {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn long_run_emission_and_fairness_invariants() -> Result<()> {
     let _guard = EnvVarGuard::new("IPPAN_DGBDT_ALLOW_STUB", "1");
-    let mut config = DlcConfig::default();
-    config.validators_per_round = VALIDATOR_COUNT;
-    config.min_reputation = 2_500;
+    let config = DlcConfig {
+        validators_per_round: VALIDATOR_COUNT,
+        min_reputation: 2_500,
+        ..Default::default()
+    };
 
     let mut consensus = DlcConsensus::new(config);
 
