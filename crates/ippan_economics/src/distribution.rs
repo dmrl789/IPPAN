@@ -93,9 +93,7 @@ impl RoundRewards {
             .round_emission
             .saturating_add(immediate_fees)
             .saturating_add(composition.ai_commissions);
-        let pool_allocation = composition
-            .network_dividend
-            .saturating_add(deferred_fees);
+        let pool_allocation = composition.network_dividend.saturating_add(deferred_fees);
 
         info!(
             "Distributed rewards for round {}: {} µIPN to {} validators, routed to pool: {}",

@@ -153,8 +153,8 @@ impl EmissionTracker {
             .unwrap_or(0)
             .min(10000); // Clamp to 100%
         let transaction_fees_capped = transaction_fees.min(u64::MAX as u128) as u64;
-        let fee_cap_limit = (distributable_emission as u128 * fee_fraction_bps as u128 / 10000)
-            as u64;
+        let fee_cap_limit =
+            (distributable_emission as u128 * fee_fraction_bps as u128 / 10000) as u64;
         let capped_fees = transaction_fees_capped.min(fee_cap_limit);
         let ai_commissions_capped = ai_commissions.min(u64::MAX as u128) as u64;
 
@@ -190,16 +190,14 @@ impl EmissionTracker {
 
                 let emission_share = if total_weight > 0 {
                     if is_last {
-                        (distributable_emission as u128).saturating_sub(
-                            emission_allocated.min(distributable_emission as u128),
-                        )
+                        (distributable_emission as u128)
+                            .saturating_sub(emission_allocated.min(distributable_emission as u128))
                     } else {
                         ((distributable_emission as u128) * *weight) / total_weight
                     }
                 } else if is_last {
-                    (distributable_emission as u128).saturating_sub(
-                        emission_allocated.min(distributable_emission as u128),
-                    )
+                    (distributable_emission as u128)
+                        .saturating_sub(emission_allocated.min(distributable_emission as u128))
                 } else {
                     (distributable_emission as u128) / validators_count as u128
                 };
@@ -285,9 +283,10 @@ impl EmissionTracker {
         // distribution.validate()?;
 
         // Update cumulative supply (includes fees and commissions)
-        self.cumulative_supply = self
-            .cumulative_supply
-            .saturating_add(distribution.total_reward as u128);
+        let round_supply = (distribution.total_reward as u128)
+            .saturating_add(distribution.network_pool_allocation as u128);
+
+        self.cumulative_supply = self.cumulative_supply.saturating_add(round_supply);
 
         // Update cumulative base emission (for consistency checks)
         self.cumulative_base_emission = self
@@ -317,7 +316,10 @@ impl EmissionTracker {
 
         // Track per-period weights for dividend redistribution
         for (validator_id, weight) in &weight_map {
-            let entry = self.period_validator_weights.entry(*validator_id).or_insert(0);
+            let entry = self
+                .period_validator_weights
+                .entry(*validator_id)
+                .or_insert(0);
             *entry = entry.saturating_add(*weight);
         }
 
@@ -576,6 +578,28 @@ mod tests {
     }
 
     #[test]
+    fn test_cumulative_supply_includes_pool_allocation() {
+        let params = EmissionParams::default();
+        let mut tracker = EmissionTracker::new(params.clone(), 10);
+
+        let contributions = vec![ValidatorContribution {
+            validator_id: [1u8; 32],
+            blocks_proposed: 3,
+            blocks_verified: 3,
+            reputation_score: 5000,
+        }];
+
+        let distribution = tracker.process_round(1, &contributions, 1_000, 0).unwrap();
+
+        assert!(distribution.network_pool_allocation > 0);
+
+        let expected_supply =
+            distribution.total_reward as u128 + distribution.network_pool_allocation as u128;
+
+        assert_eq!(tracker.cumulative_supply, expected_supply);
+    }
+
+    #[test]
     fn test_network_dividend_redistribution_happens_on_interval() {
         let params = EmissionParams::default();
         let mut tracker = EmissionTracker::new(params.clone(), 2);
@@ -595,12 +619,8 @@ mod tests {
             },
         ];
 
-        tracker
-            .process_round(1, &contributions, 1_000, 0)
-            .unwrap();
-        tracker
-            .process_round(2, &contributions, 1_000, 0)
-            .unwrap();
+        tracker.process_round(1, &contributions, 1_000, 0).unwrap();
+        tracker.process_round(2, &contributions, 1_000, 0).unwrap();
 
         // Redistribution should have been triggered at round 2 (audit interval)
         assert_eq!(tracker.network_pool_balance, 0);
