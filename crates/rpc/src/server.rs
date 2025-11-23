@@ -4053,10 +4053,7 @@ mod tests {
             .expect("oversized body request");
         request.extensions_mut().insert(ConnectInfo(addr));
 
-        let response = router
-            .oneshot(request)
-            .await
-            .expect("oversized response");
+        let response = router.oneshot(request).await.expect("oversized response");
 
         let status = response.status();
         let (_parts, body) = response.into_parts();
