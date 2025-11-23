@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 
 use anyhow::Result;
+use ippan_ai_core::fairness::DeterministicFairnessModel;
 use ippan_ai_core::gbdt::{Node as DNode, Tree as DTree, SCALE};
 use ippan_ai_registry::d_gbdt::{compute_model_hash, DGBDTRegistry};
 use ippan_consensus_dlc::{bond, dgbdt::FairnessModel, DlcConfig, DlcConsensus};
@@ -68,6 +69,14 @@ fn long_run_fairness_roles_remain_balanced() -> Result<()> {
 
     let fairness_scores = reload_scores(&registry_path, consensus.validators.all_validators())?;
 
+    let score_high_a = *fairness_scores.get(HIGH_A).expect("score for high A");
+    let score_high_b = *fairness_scores.get(HIGH_B).expect("score for high B");
+    let score_medium = *fairness_scores.get(MEDIUM).expect("score for medium");
+    let score_low = *fairness_scores.get(LOW).expect("score for low");
+    let score_adversarial = *fairness_scores
+        .get(ADVERSARIAL)
+        .expect("score for adversarial");
+
     let high_a_primary = tally.primary(HIGH_A);
     let high_b_primary = tally.primary(HIGH_B);
     let medium_primary = tally.primary(MEDIUM);
@@ -80,6 +89,21 @@ fn long_run_fairness_roles_remain_balanced() -> Result<()> {
     } else {
         high_b_primary - high_a_primary
     };
+    eprintln!(
+        "primary counts -> high_a: {high_a_primary}, high_b: {high_b_primary}, medium: {medium_primary}, low: {low_primary}, adversarial: {adversarial_primary}",
+    );
+    eprintln!(
+        "shadow coverage -> high_a: {}, high_b: {}, medium: {}, low: {}",
+        tally.shadow(HIGH_A),
+        tally.shadow(HIGH_B),
+        tally.shadow(MEDIUM),
+        tally.shadow(LOW)
+    );
+
+    eprintln!(
+        "fairness scores -> high_a: {score_high_a}, high_b: {score_high_b}, medium: {score_medium}, low: {score_low}, adversarial: {score_adversarial}"
+    );
+
     assert!(
         high_diff <= high_average / 5 + 1,
         "high contributors should remain balanced: a={}, b={}, diff={}",
@@ -108,14 +132,6 @@ fn long_run_fairness_roles_remain_balanced() -> Result<()> {
             && tally.shadow(LOW) > 0,
         "all honest validators should receive shadow coverage"
     );
-
-    let score_high_a = *fairness_scores.get(HIGH_A).expect("score for high A");
-    let score_high_b = *fairness_scores.get(HIGH_B).expect("score for high B");
-    let score_medium = *fairness_scores.get(MEDIUM).expect("score for medium");
-    let score_low = *fairness_scores.get(LOW).expect("score for low");
-    let score_adversarial = *fairness_scores
-        .get(ADVERSARIAL)
-        .expect("score for adversarial");
 
     assert!(
         score_high_a >= score_high_b
@@ -255,14 +271,14 @@ fn validator_profiles() -> Vec<ValidatorProfile> {
         },
         ValidatorProfile {
             id: HIGH_B.to_string(),
-            stake: Amount::from_micro_ipn(39_000_000),
+            stake: Amount::from_micro_ipn(40_000_000),
             initial_metrics: ValidatorMetrics::new(
-                9_850,
-                420,
-                9_550,
+                9_900,
+                400,
+                9_600,
                 2,
-                2,
-                Amount::from_micro_ipn(39_000_000),
+                3,
+                Amount::from_micro_ipn(40_000_000),
                 1,
             ),
             behavior: ContributionPattern::High,
@@ -338,25 +354,43 @@ expected_hash = "{}"
 }
 
 fn build_fairness_model() -> ippan_ai_core::gbdt::Model {
+    let feature_scale = DeterministicFairnessModel::FEATURE_SCALE;
+
+    // Weight proposal productivity most heavily to keep primary roles balanced
     let proposal_tree = DTree::new(
         vec![
-            DNode::internal(0, 3, 600_000, 1, 2),
-            DNode::leaf(1, 150_000),
-            DNode::leaf(2, 350_000),
+            // Feature 3 = proposal rate (scaled 0-10000)
+            // High-rate contributors get a higher leaf score
+            DNode::internal(0, 3, 7_500 * feature_scale, 1, 2),
+            DNode::leaf(1, 140_000),
+            DNode::leaf(2, 360_000),
         ],
         SCALE,
     );
 
-    let honesty_tree = DTree::new(
+    // Verification rate ensures consistently validating nodes outrank sporadic ones
+    let verification_tree = DTree::new(
         vec![
-            DNode::internal(0, 2, 800_000, 1, 2),
-            DNode::leaf(1, 70_000),
-            DNode::leaf(2, 240_000),
+            // Feature 4 = verification rate (scaled 0-10000)
+            DNode::internal(0, 4, 8_000 * feature_scale, 1, 2),
+            DNode::leaf(1, 110_000),
+            DNode::leaf(2, 300_000),
         ],
         SCALE,
     );
 
-    ippan_ai_core::gbdt::Model::new(vec![proposal_tree, honesty_tree], 0)
+    // Uptime stabilizer keeps high-availability validators ahead of degraded nodes
+    let uptime_tree = DTree::new(
+        vec![
+            // Feature 0 = uptime (scaled 0-10000)
+            DNode::internal(0, 0, 9_700 * feature_scale, 1, 2),
+            DNode::leaf(1, 80_000),
+            DNode::leaf(2, 320_000),
+        ],
+        SCALE,
+    );
+
+    ippan_ai_core::gbdt::Model::new(vec![proposal_tree, verification_tree, uptime_tree], 0)
 }
 
 struct EnvGuard {
