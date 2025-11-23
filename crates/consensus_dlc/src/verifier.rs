@@ -73,8 +73,7 @@ impl VerifierSet {
             let band_pick = entropy % 10;
             if band_pick < 8 || top_band_len == selection_count {
                 // 80% probability shared across equally scored top validators
-                let band_idx = ((entropy / 10) % top_band_len as u64) as usize;
-                band_idx
+                ((entropy / 10) % top_band_len as u64) as usize
             } else {
                 // 20% probability gives the next ranked validator a chance
                 top_band_len.min(selection_count - 1)
@@ -89,7 +88,13 @@ impl VerifierSet {
         let rest: Vec<String> = scored
             .iter()
             .enumerate()
-            .filter_map(|(idx, (id, _))| if idx == primary_index { None } else { Some(id.clone()) })
+            .filter_map(|(idx, (id, _))| {
+                if idx == primary_index {
+                    None
+                } else {
+                    Some(id.clone())
+                }
+            })
             .collect();
 
         let mut shadows = Vec::new();

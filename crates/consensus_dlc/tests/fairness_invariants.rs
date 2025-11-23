@@ -84,11 +84,7 @@ fn long_run_fairness_roles_remain_balanced() -> Result<()> {
     let adversarial_primary = tally.primary(ADVERSARIAL);
 
     let high_average = (high_a_primary + high_b_primary) / 2;
-    let high_diff = if high_a_primary > high_b_primary {
-        high_a_primary - high_b_primary
-    } else {
-        high_b_primary - high_a_primary
-    };
+    let high_diff = high_a_primary.abs_diff(high_b_primary);
     eprintln!(
         "primary counts -> high_a: {high_a_primary}, high_b: {high_b_primary}, medium: {medium_primary}, low: {low_primary}, adversarial: {adversarial_primary}",
     );
@@ -211,20 +207,20 @@ impl ContributionPattern {
             ContributionPattern::Medium => ContributionSample {
                 uptime: 9_500,
                 latency: 650,
-                proposed: if round % 2 == 0 { 1 } else { 0 },
+                proposed: if round.is_multiple_of(2) { 1 } else { 0 },
                 verified: 1,
             },
             ContributionPattern::Low => ContributionSample {
                 uptime: 9_050,
                 latency: 900,
-                proposed: if round % 4 == 0 { 1 } else { 0 },
-                verified: if round % 3 == 0 { 1 } else { 0 },
+                proposed: if round.is_multiple_of(4) { 1 } else { 0 },
+                verified: if round.is_multiple_of(3) { 1 } else { 0 },
             },
             ContributionPattern::Adversarial => ContributionSample {
                 uptime: 8_200,
                 latency: 1_800,
-                proposed: if round % 5 == 0 { 1 } else { 0 },
-                verified: if round % 6 == 0 { 1 } else { 0 },
+                proposed: if round.is_multiple_of(5) { 1 } else { 0 },
+                verified: if round.is_multiple_of(6) { 1 } else { 0 },
             },
         }
     }

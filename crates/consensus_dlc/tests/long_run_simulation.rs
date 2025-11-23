@@ -296,7 +296,7 @@ async fn process_round_with_behaviour(
 
     let plans = assemble_block_plans(
         &consensus.dag,
-        &verifier_set,
+        verifier_set,
         split_context.as_ref(),
         rng,
         round,
@@ -369,7 +369,7 @@ async fn process_round_with_behaviour(
     }
 
     let finalized_ids = consensus.dag.finalize_round(round_time.clone());
-    if !finalized_ids.is_empty() && (round % 8 == 0 || finalized_ids.len() > 1) {
+    if !finalized_ids.is_empty() && (round.is_multiple_of(8) || finalized_ids.len() > 1) {
         logs.finality.push(format!(
             "round {} finalized {} blocks",
             round,
@@ -385,7 +385,7 @@ async fn process_round_with_behaviour(
                 &verified.block.proposer,
                 &verified.verified_by,
             ) {
-                if round % 64 == 0 {
+                if round.is_multiple_of(64) {
                     logs.finality.push(format!(
                         "round {} rewards {} total {}",
                         round, verified.block.proposer, distribution.total_distributed
@@ -400,13 +400,13 @@ async fn process_round_with_behaviour(
         .update(round, verified_blocks.len() as u64)?;
 
     let dag_stats = consensus.dag.stats();
-    if round % 32 == 0 {
+    if round.is_multiple_of(32) {
         logs.finality.push(format!(
             "round {} finality snapshot finalized={}, tips={}, pending={}",
             round, dag_stats.finalized_blocks, dag_stats.tips_count, dag_stats.pending_blocks
         ));
     }
-    if round % 16 == 0 {
+    if round.is_multiple_of(16) {
         logs.convergence.push(format!(
             "round {} tips={}, finalized={}, pending={}",
             round, dag_stats.tips_count, dag_stats.finalized_blocks, dag_stats.pending_blocks
