@@ -56,12 +56,41 @@ impl VerifierSet {
 
         let selection_count = max_set_size.max(1).min(scored.len());
 
+        // Bias primary rotation toward the top scorers while still letting the next
+        // ranked validators occasionally surface. This keeps long-running fairness
+        // simulations from starving mid-tier contributors.
+        let entropy = Self::id_entropy(&seed_string, round, "primary_selection");
+        let max_score = scored.first().map(|(_, score)| *score).unwrap_or(0);
+        let top_band_len = scored
+            .iter()
+            .take_while(|(_, score)| *score == max_score)
+            .count()
+            .max(1);
+
+        let primary_index = if selection_count == 1 {
+            0
+        } else {
+            let band_pick = entropy % 10;
+            if band_pick < 8 || top_band_len == selection_count {
+                // 80% probability shared across equally scored top validators
+                let band_idx = ((entropy / 10) % top_band_len as u64) as usize;
+                band_idx
+            } else {
+                // 20% probability gives the next ranked validator a chance
+                top_band_len.min(selection_count - 1)
+            }
+        };
+
         let primary = scored
-            .first()
+            .get(primary_index)
             .map(|(id, _)| id.clone())
             .ok_or_else(|| DlcError::InvalidVerifierSet("No primary validator".to_string()))?;
 
-        let rest: Vec<String> = scored.iter().skip(1).map(|(id, _)| id.clone()).collect();
+        let rest: Vec<String> = scored
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (id, _))| if idx == primary_index { None } else { Some(id.clone()) })
+            .collect();
 
         let mut shadows = Vec::new();
         if selection_count > 1 && !rest.is_empty() {
