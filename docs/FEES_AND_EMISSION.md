@@ -131,3 +131,11 @@ Even the smallest block contributor still receives a precise amount — no loss 
 ---
 
 ## 3. DAG-Fair Emission System
+
+### Weekly redistribution and no-burn handling
+
+- 5% of each round’s emission is reserved for the network dividend pool.
+- 25% of collected fees are paid immediately in the round; the remaining 75%
+  (including any amount above the per-round cap) is routed to the pool.
+- The pool is redistributed on the weekly audit cadence, ensuring every fee and
+  dividend slice returns to participants instead of being burned.

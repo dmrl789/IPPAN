@@ -84,6 +84,12 @@ pub struct EmissionTracker {
 
     /// Fees collected since last audit checkpoint
     audit_period_fees: u128,
+
+    /// Weights accumulated since the last redistribution interval
+    period_validator_weights: HashMap<[u8; 32], u128>,
+
+    /// Last round where dividends were redistributed
+    last_dividend_round: u64,
 }
 
 impl EmissionTracker {
@@ -104,6 +110,8 @@ impl EmissionTracker {
             last_audit_round: 0,
             audit_history: Vec::new(),
             audit_period_fees: 0,
+            period_validator_weights: HashMap::new(),
+            last_dividend_round: 0,
         }
     }
 
@@ -134,6 +142,8 @@ impl EmissionTracker {
         }
 
         let base_reward = self.compute_base_reward(round);
+        let emission_dividend = (base_reward as u128) / 20; // 5% routed to weekly pool
+        let distributable_emission = base_reward.saturating_sub(emission_dividend as u64);
         // Convert Decimal to integer basis points (0-10000) for deterministic arithmetic
         let fee_fraction_bps = self
             .params
@@ -143,10 +153,9 @@ impl EmissionTracker {
             .unwrap_or(0)
             .min(10000); // Clamp to 100%
         let transaction_fees_capped = transaction_fees.min(u64::MAX as u128) as u64;
-        let fee_cap_limit = (base_reward as u128 * fee_fraction_bps as u128 / 10000) as u64;
+        let fee_cap_limit =
+            (distributable_emission as u128 * fee_fraction_bps as u128 / 10000) as u64;
         let capped_fees = transaction_fees_capped.min(fee_cap_limit);
-        let excess_burned = transaction_fees_capped.saturating_sub(capped_fees);
-
         let ai_commissions_capped = ai_commissions.min(u64::MAX as u128) as u64;
 
         let mut validator_rewards = HashMap::new();
@@ -168,9 +177,11 @@ impl EmissionTracker {
         let mut fee_allocated: u128 = 0;
         let mut ai_allocated: u128 = 0;
 
-        let total_reward = base_reward
-            .saturating_add(capped_fees)
-            .saturating_add(ai_commissions_capped);
+        // Only 25% of capped fees are distributed immediately to validators; the
+        // remainder (plus uncapped overflow) is routed to the network pool.
+        let distributable_fee_pool = capped_fees / 4;
+
+        let mut distributed_total: u128 = 0;
 
         if !weight_map.is_empty() {
             let validators_count = weight_map.len();
@@ -179,29 +190,31 @@ impl EmissionTracker {
 
                 let emission_share = if total_weight > 0 {
                     if is_last {
-                        (base_reward as u128)
-                            .saturating_sub(emission_allocated.min(base_reward as u128))
+                        (distributable_emission as u128)
+                            .saturating_sub(emission_allocated.min(distributable_emission as u128))
                     } else {
-                        ((base_reward as u128) * *weight) / total_weight
+                        ((distributable_emission as u128) * *weight) / total_weight
                     }
                 } else if is_last {
-                    (base_reward as u128)
-                        .saturating_sub(emission_allocated.min(base_reward as u128))
+                    (distributable_emission as u128)
+                        .saturating_sub(emission_allocated.min(distributable_emission as u128))
                 } else {
-                    (base_reward as u128) / validators_count as u128
+                    (distributable_emission as u128) / validators_count as u128
                 };
                 emission_allocated = emission_allocated.saturating_add(emission_share);
 
                 let fee_share = if total_weight > 0 {
                     if is_last {
-                        (capped_fees as u128).saturating_sub(fee_allocated.min(capped_fees as u128))
+                        (distributable_fee_pool as u128)
+                            .saturating_sub(fee_allocated.min(distributable_fee_pool as u128))
                     } else {
-                        ((capped_fees as u128) * *weight) / total_weight
+                        ((distributable_fee_pool as u128) * *weight) / total_weight
                     }
                 } else if is_last {
-                    (capped_fees as u128).saturating_sub(fee_allocated.min(capped_fees as u128))
+                    (distributable_fee_pool as u128)
+                        .saturating_sub(fee_allocated.min(distributable_fee_pool as u128))
                 } else {
-                    (capped_fees as u128) / validators_count as u128
+                    (distributable_fee_pool as u128) / validators_count as u128
                 };
                 fee_allocated = fee_allocated.saturating_add(fee_share);
 
@@ -223,6 +236,8 @@ impl EmissionTracker {
                 let total_share = emission_share
                     .saturating_add(fee_share)
                     .saturating_add(ai_share);
+
+                distributed_total = distributed_total.saturating_add(total_share);
 
                 let validator_id = ValidatorId::new(hex::encode(validator_raw));
                 // Use integer-scaled Decimal creation (scale 18 for precision)
@@ -252,20 +267,26 @@ impl EmissionTracker {
 
         let distribution = RoundRewardDistribution {
             round_index: round,
-            total_reward,
+            total_reward: distributed_total.min(u64::MAX as u128) as u64,
             blocks_in_round: contributions.len() as u32,
             validator_rewards,
-            fees_collected: capped_fees,
-            excess_burned,
+            fees_collected: distributable_fee_pool as u64, // 25% immediate distribution
+            network_pool_allocation: {
+                let pooled_fees = (capped_fees.saturating_sub(distributable_fee_pool)) as u128
+                    + transaction_fees.saturating_sub(capped_fees as u128);
+                let total_pool = pooled_fees.saturating_add(emission_dividend);
+                total_pool.min(u64::MAX as u128) as u64
+            }, // 5% emission dividend + deferred fees
         };
 
         // Validate distribution
         // distribution.validate()?;
 
         // Update cumulative supply (includes fees and commissions)
-        self.cumulative_supply = self
-            .cumulative_supply
-            .saturating_add(distribution.total_reward as u128);
+        let round_supply = (distribution.total_reward as u128)
+            .saturating_add(distribution.network_pool_allocation as u128);
+
+        self.cumulative_supply = self.cumulative_supply.saturating_add(round_supply);
 
         // Update cumulative base emission (for consistency checks)
         self.cumulative_base_emission = self
@@ -288,17 +309,19 @@ impl EmissionTracker {
 
         self.total_ai_commissions = self.total_ai_commissions.saturating_add(ai_commissions);
 
-        // Update network pool (add new dividends, subtract distributed)
+        // Update network pool with dividends and deferred fees
         self.network_pool_balance = self
             .network_pool_balance
-            .saturating_add((capped_fees as u128) / 20); // 5% of fees go to pool
-                                                         // .saturating_sub(distribution.network_dividend); // Field doesn't exist
+            .saturating_add(distribution.network_pool_allocation as u128);
 
-        // Track total network dividends distributed
-        // Note: network_dividend field doesn't exist in RoundRewardDistribution
-        // self.total_network_dividends = self
-        //     .total_network_dividends
-        //     .saturating_add(distribution.network_dividend);
+        // Track per-period weights for dividend redistribution
+        for (validator_id, weight) in &weight_map {
+            let entry = self
+                .period_validator_weights
+                .entry(*validator_id)
+                .or_insert(0);
+            *entry = entry.saturating_add(*weight);
+        }
 
         // Update validator earnings
         for (validator_id, reward) in &distribution.validator_rewards {
@@ -316,6 +339,7 @@ impl EmissionTracker {
 
         // Check if audit checkpoint is due
         if round >= self.last_audit_round + self.audit_interval {
+            self.redistribute_network_pool(round);
             self.create_audit_checkpoint(round)?;
         }
 
@@ -376,7 +400,48 @@ impl EmissionTracker {
         // Reset audit period fee counter
         self.audit_period_fees = 0;
 
+        // Reset weights after redistribution window closes
+        self.period_validator_weights.clear();
+
         Ok(())
+    }
+
+    /// Redistribute the accumulated network pool based on observed weights
+    fn redistribute_network_pool(&mut self, round: u64) {
+        if round <= self.last_dividend_round
+            || self.network_pool_balance == 0
+            || self.period_validator_weights.is_empty()
+        {
+            return;
+        }
+
+        let total_weight: u128 = self.period_validator_weights.values().copied().sum();
+        if total_weight == 0 {
+            return;
+        }
+
+        let pool = self.network_pool_balance;
+        let mut distributed: u128 = 0;
+
+        let mut weights: Vec<_> = self.period_validator_weights.iter().collect();
+        weights.sort_by(|(a, _), (b, _)| a.cmp(b));
+        let last_index = weights.len().saturating_sub(1);
+
+        for (idx, (validator, weight)) in weights.into_iter().enumerate() {
+            let share = if idx == last_index {
+                pool.saturating_sub(distributed)
+            } else {
+                (pool * *weight) / total_weight
+            };
+            distributed = distributed.saturating_add(share);
+
+            let entry = self.validator_earnings.entry(*validator).or_insert(0);
+            *entry = entry.saturating_add(share);
+        }
+
+        self.total_network_dividends = self.total_network_dividends.saturating_add(distributed);
+        self.network_pool_balance = pool.saturating_sub(distributed);
+        self.last_dividend_round = round;
     }
 
     /// Verify emission consistency against expected schedule
@@ -454,6 +519,9 @@ impl EmissionTracker {
         self.last_audit_round = 0;
         self.audit_history.clear();
         self.audit_period_fees = 0;
+        self.period_validator_weights.clear();
+        self.network_pool_balance = 0;
+        self.last_dividend_round = 0;
     }
 }
 
@@ -507,6 +575,60 @@ mod tests {
         assert!(dist.total_reward > 0);
         assert_eq!(tracker.last_round, 1);
         assert!(tracker.cumulative_supply > 0);
+    }
+
+    #[test]
+    fn test_cumulative_supply_includes_pool_allocation() {
+        let params = EmissionParams::default();
+        let mut tracker = EmissionTracker::new(params.clone(), 10);
+
+        let contributions = vec![ValidatorContribution {
+            validator_id: [1u8; 32],
+            blocks_proposed: 3,
+            blocks_verified: 3,
+            reputation_score: 5000,
+        }];
+
+        let distribution = tracker.process_round(1, &contributions, 1_000, 0).unwrap();
+
+        assert!(distribution.network_pool_allocation > 0);
+
+        let expected_supply =
+            distribution.total_reward as u128 + distribution.network_pool_allocation as u128;
+
+        assert_eq!(tracker.cumulative_supply, expected_supply);
+    }
+
+    #[test]
+    fn test_network_dividend_redistribution_happens_on_interval() {
+        let params = EmissionParams::default();
+        let mut tracker = EmissionTracker::new(params.clone(), 2);
+
+        let contributions = vec![
+            ValidatorContribution {
+                validator_id: [1u8; 32],
+                blocks_proposed: 5,
+                blocks_verified: 5,
+                reputation_score: 8000,
+            },
+            ValidatorContribution {
+                validator_id: [2u8; 32],
+                blocks_proposed: 5,
+                blocks_verified: 5,
+                reputation_score: 8000,
+            },
+        ];
+
+        tracker.process_round(1, &contributions, 1_000, 0).unwrap();
+        tracker.process_round(2, &contributions, 1_000, 0).unwrap();
+
+        // Redistribution should have been triggered at round 2 (audit interval)
+        assert_eq!(tracker.network_pool_balance, 0);
+        assert_eq!(tracker.last_dividend_round, 2);
+        assert!(tracker.total_network_dividends > 0);
+
+        let earnings_sum: u128 = tracker.validator_earnings.values().sum();
+        assert!(earnings_sum >= tracker.total_network_dividends);
     }
 
     #[test]

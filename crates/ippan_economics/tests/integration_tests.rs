@@ -261,22 +261,21 @@ fn test_round_reward_distribution_components() {
         .get(&ValidatorId::new("validator1"))
         .unwrap();
 
-    // Check that all components are present
+    // Check that all direct components are present and dividends are routed to the pool
     assert!(reward.round_emission > 0);
     assert!(reward.transaction_fees > 0);
     assert!(reward.ai_commissions > 0);
-    assert!(reward.network_dividend > 0);
+    assert_eq!(reward.network_dividend, 0);
+    assert!(distribution.network_pool_allocation > 0);
 
-    let total = reward.round_emission
-        + reward.transaction_fees
-        + reward.ai_commissions
-        + reward.network_dividend;
+    let total = reward.round_emission + reward.transaction_fees + reward.ai_commissions;
 
     assert_eq!(reward.total_reward, total);
+    assert_eq!(distribution.total_reward, total);
 }
 
 #[test]
-fn test_treasury_balance_via_network_dividend() {
+fn test_network_pool_allocation_matches_dividend_policy() {
     let round_rewards = RoundRewards::new(EmissionParams::default());
 
     let participations = vec![
@@ -299,12 +298,36 @@ fn test_treasury_balance_via_network_dividend() {
         .distribute_round_rewards(9, round_reward, participations, 0)
         .unwrap();
 
-    let treasury_balance: RewardAmount = distribution
+    let expected_treasury = (round_reward * 5) / 100;
+    assert_eq!(distribution.network_pool_allocation, expected_treasury);
+}
+
+#[test]
+fn test_no_burn_fee_and_emission_accounting() {
+    let round_rewards = RoundRewards::new(EmissionParams::default());
+
+    let participations = vec![ValidatorParticipation {
+        validator_id: ValidatorId::new("validator_unique"),
+        role: ValidatorRole::Proposer,
+        blocks_contributed: 10,
+        uptime_score: Decimal::ONE,
+    }];
+
+    let round_reward = 10_000;
+    let fees_collected = 2_000;
+
+    let distribution = round_rewards
+        .distribute_round_rewards(3, round_reward, participations, fees_collected)
+        .unwrap();
+
+    let distributed: RewardAmount = distribution
         .validator_rewards
         .values()
-        .map(|reward| reward.network_dividend)
+        .map(|reward| reward.total_reward)
         .sum();
 
-    let expected_treasury = (round_reward * 5) / 100;
-    assert_eq!(treasury_balance, expected_treasury);
+    assert_eq!(
+        distributed + distribution.network_pool_allocation,
+        round_reward + fees_collected
+    );
 }
