@@ -80,7 +80,7 @@ const MAX_PAYMENT_HISTORY_LIMIT: usize = 200;
 const PAYMENT_ENDPOINT: &str = "/tx/payment";
 const HANDLE_REGISTER_ENDPOINT: &str = "/handle/register";
 const HANDLE_LOOKUP_ENDPOINT: &str = "/handle/:handle";
-const MAX_BODY_BYTES: usize = 64 * 1024; // 64 KiB
+const MAX_BODY_BYTES: usize = 64 * 1024; // 64 KiB default when security manager not configured
 const REQUEST_TIMEOUT_SECS: u64 = 10;
 const MAX_CONCURRENT_REQUESTS: usize = 128;
 
@@ -601,7 +601,17 @@ async fn handle_service_error(err: BoxError) -> (StatusCode, Json<ApiError>) {
             StatusCode::PAYLOAD_TOO_LARGE,
             Json(ApiError::new(
                 "body_too_large",
-                format!("request body exceeds {MAX_BODY_BYTES} bytes"),
+                "request body exceeds configured limit",
+            )),
+        );
+    }
+
+    if message_lower.contains("failed to buffer the request body") {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(ApiError::new(
+                "body_too_large",
+                "request body exceeds configured limit",
             )),
         );
     }
@@ -1180,11 +1190,14 @@ async fn bind_listener(addr: &str) -> Result<tokio::net::TcpListener> {
 
 /// Build router and endpoints
 fn build_router(state: Arc<AppState>) -> Router {
+    let max_body_bytes = configured_body_limit(&state);
+    let request_timeout = configured_request_timeout(&state);
+    let global_rps = configured_global_rps(&state);
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    let rate_limiter = RateLimiterLayer::new(RATE_LIMIT_PER_SECOND, Duration::from_secs(1));
+    let rate_limiter = RateLimiterLayer::new(global_rps, Duration::from_secs(1));
     let circuit_breaker = CircuitBreakerLayer::new(
         CIRCUIT_BREAKER_FAILURE_THRESHOLD,
         Duration::from_secs(CIRCUIT_BREAKER_OPEN_SECS),
@@ -1246,8 +1259,8 @@ fn build_router(state: Arc<AppState>) -> Router {
     let middleware_stack = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(handle_service_error))
         .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
-        .layer(TimeoutLayer::new(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
-        .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES));
+        .layer(TimeoutLayer::new(request_timeout))
+        .layer(RequestBodyLimitLayer::new(max_body_bytes));
 
     router
         .layer(middleware_stack)
@@ -1256,6 +1269,30 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(circuit_breaker)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+fn configured_body_limit(state: &Arc<AppState>) -> usize {
+    state
+        .security
+        .as_ref()
+        .map(|manager| manager.max_request_size().max(1))
+        .unwrap_or(MAX_BODY_BYTES)
+}
+
+fn configured_request_timeout(state: &Arc<AppState>) -> Duration {
+    state
+        .security
+        .as_ref()
+        .map(|manager| manager.request_timeout())
+        .unwrap_or_else(|| Duration::from_secs(REQUEST_TIMEOUT_SECS))
+}
+
+fn configured_global_rps(state: &Arc<AppState>) -> u64 {
+    state
+        .security
+        .as_ref()
+        .map(|manager| manager.global_rps())
+        .unwrap_or(RATE_LIMIT_PER_SECOND)
 }
 
 async fn guard_request(
@@ -3982,6 +4019,96 @@ mod tests {
             .expect("response for wrong method");
 
         assert!(response.status().is_client_error());
+    }
+
+    #[tokio::test]
+    async fn oversized_body_is_rejected_before_state_changes() {
+        let mut security_config = SecurityConfig::default();
+        security_config.max_request_size = 64;
+        security_config.audit_log_path = "/tmp/ippan-security-tests.log".into();
+        let security = Arc::new(SecurityManager::new(security_config).expect("security"));
+
+        let state = build_app_state(Some(security), None);
+        let router = build_router(state.clone());
+
+        let addr: SocketAddr = "127.0.0.1:9410".parse().unwrap();
+        let initial_mempool_size = state.mempool.size();
+        let signer = sample_private_key([41u8; 32]);
+        let payload = serde_json::json!({
+            "from": encode_address(&signer.verifying_key().to_bytes()),
+            "to": encode_address(&sample_public_key([42u8; 32])),
+            "amount": 1,
+            "fee": 1,
+            "nonce": 1,
+            "memo": serde_json::Value::Null,
+            "signing_key": hex::encode(signer.to_bytes()),
+        });
+        let body = payload.to_string();
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/tx/payment")
+            .header(CONTENT_TYPE, "application/json")
+            .header(axum::http::header::CONTENT_LENGTH, body.len())
+            .body(Body::from(body))
+            .expect("oversized body request");
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let response = router
+            .oneshot(request)
+            .await
+            .expect("oversized response");
+
+        let status = response.status();
+        let (_parts, body) = response.into_parts();
+        let bytes = body.collect().await.expect("body bytes").to_bytes();
+        assert!(status.is_client_error());
+        if let Ok(parsed) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if let Some(code) = parsed.get("code").and_then(|value| value.as_str()) {
+                assert_eq!(code, "body_too_large");
+            }
+        }
+        assert_eq!(state.mempool.size(), initial_mempool_size);
+    }
+
+    #[tokio::test]
+    async fn security_manager_rate_limits_spammy_client() {
+        let mut rate_limit = RateLimitConfig::default();
+        rate_limit.requests_per_second = 1;
+        rate_limit.burst_capacity = 1;
+        rate_limit.endpoint_limits.clear();
+        rate_limit.global_requests_per_second = Some(1);
+
+        let mut security_config = SecurityConfig::default();
+        security_config.rate_limit = rate_limit;
+        security_config.audit_log_path = "/tmp/ippan-security-tests.log".into();
+
+        let security = Arc::new(SecurityManager::new(security_config).expect("security"));
+        let state = build_app_state(Some(security), None);
+        let router = build_router(state);
+        let addr: SocketAddr = "127.0.0.1:9411".parse().unwrap();
+
+        let make_request = |uri: &str| {
+            let mut request = Request::builder()
+                .method("GET")
+                .uri(uri)
+                .body(Body::empty())
+                .expect("request");
+            request.extensions_mut().insert(ConnectInfo(addr));
+            request
+        };
+
+        let first = router
+            .clone()
+            .oneshot(make_request("/health"))
+            .await
+            .expect("first response");
+        assert!(first.status().is_success());
+
+        let second = router
+            .oneshot(make_request("/health"))
+            .await
+            .expect("second response");
+        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]

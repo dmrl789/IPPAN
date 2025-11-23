@@ -109,6 +109,25 @@ impl SecurityManager {
         })
     }
 
+    /// Maximum configured request size in bytes.
+    pub fn max_request_size(&self) -> usize {
+        self.config.max_request_size
+    }
+
+    /// Maximum request handling duration.
+    pub fn request_timeout(&self) -> Duration {
+        Duration::from_secs(self.config.request_timeout.max(1))
+    }
+
+    /// Global rate limit (requests/second) if enabled; otherwise falls back to the per-IP limit.
+    pub fn global_rps(&self) -> u64 {
+        self.config
+            .rate_limit
+            .global_requests_per_second
+            .unwrap_or(self.config.rate_limit.requests_per_second)
+            .max(1) as u64
+    }
+
     /// Check if a request should be allowed
     pub async fn check_request(&self, ip: IpAddr, endpoint: &str) -> Result<bool, SecurityError> {
         // Check if IP is blocked due to failed attempts

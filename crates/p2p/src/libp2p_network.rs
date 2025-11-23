@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use blake3;
@@ -38,6 +38,11 @@ use tracing::{debug, info, trace, warn};
 /// Default gossip topics propagated across the libp2p fabric.
 pub const DEFAULT_GOSSIP_TOPICS: &[&str] =
     &["ippan/blocks", "ippan/transactions", "ippan/peer-info"];
+
+const GOSSIP_MAX_MESSAGE_BYTES: usize = 512 * 1024;
+const GOSSIP_PER_PEER_LIMIT: u64 = 2_048;
+const GOSSIP_GLOBAL_LIMIT: u64 = 8_192;
+const GOSSIP_WINDOW: Duration = Duration::from_secs(60);
 
 /// Configuration for the libp2p network.
 #[derive(Debug, Clone)]
@@ -350,6 +355,86 @@ impl DhtQueryBook {
     }
 }
 
+#[derive(Debug)]
+struct MessageWindow {
+    count: u64,
+    window_start: Instant,
+}
+
+impl MessageWindow {
+    fn new() -> Self {
+        Self {
+            count: 0,
+            window_start: Instant::now(),
+        }
+    }
+
+    fn reset_if_elapsed(&mut self, window: Duration) {
+        if self.window_start.elapsed() >= window {
+            self.count = 0;
+            self.window_start = Instant::now();
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum GossipGuardError {
+    Oversized(usize),
+    PeerRate,
+    GlobalRate,
+}
+
+#[derive(Debug)]
+struct GossipIngressGuards {
+    max_message_bytes: usize,
+    max_messages_per_peer: u64,
+    global_message_limit: u64,
+    window: Duration,
+    peer_windows: HashMap<PeerId, MessageWindow>,
+    global_window: MessageWindow,
+}
+
+impl GossipIngressGuards {
+    fn check(&mut self, peer: &PeerId, size: usize) -> Result<(), GossipGuardError> {
+        if size > self.max_message_bytes {
+            return Err(GossipGuardError::Oversized(size));
+        }
+
+        self.global_window.reset_if_elapsed(self.window);
+
+        let window = self
+            .peer_windows
+            .entry(peer.clone())
+            .or_insert_with(MessageWindow::new);
+        window.reset_if_elapsed(self.window);
+
+        if self.global_message_limit > 0 && self.global_window.count >= self.global_message_limit {
+            return Err(GossipGuardError::GlobalRate);
+        }
+
+        if self.max_messages_per_peer > 0 && window.count >= self.max_messages_per_peer {
+            return Err(GossipGuardError::PeerRate);
+        }
+
+        self.global_window.count = self.global_window.count.saturating_add(1);
+        window.count = window.count.saturating_add(1);
+        Ok(())
+    }
+}
+
+impl Default for GossipIngressGuards {
+    fn default() -> Self {
+        Self {
+            max_message_bytes: GOSSIP_MAX_MESSAGE_BYTES,
+            max_messages_per_peer: GOSSIP_PER_PEER_LIMIT,
+            global_message_limit: GOSSIP_GLOBAL_LIMIT,
+            window: GOSSIP_WINDOW,
+            peer_windows: HashMap::new(),
+            global_window: MessageWindow::new(),
+        }
+    }
+}
+
 /// Main libp2p network controller.
 pub struct Libp2pNetwork {
     peer_id: PeerId,
@@ -449,6 +534,7 @@ impl Libp2pNetwork {
             .collect::<Vec<_>>();
         let bootstrap_retry_interval = config.bootstrap_retry_interval;
         let bootstrap_max_retries = config.bootstrap_max_retries;
+        let mut gossip_guards = GossipIngressGuards::default();
 
         let listen_task = listen_addresses.clone();
         let events_tx_task = event_tx.clone();
@@ -493,7 +579,8 @@ impl Libp2pNetwork {
                             &events_tx_task,
                             &listen_task,
                             &relay_peer_ids,
-                            &dht_queries_for_events
+                            &dht_queries_for_events,
+                            &mut gossip_guards,
                         );
                     }
                     cmd = command_rx.recv() => {
@@ -619,6 +706,7 @@ fn handle_swarm_event(
     listen_addresses: &Arc<RwLock<HashSet<Multiaddr>>>,
     relay_peers: &HashSet<PeerId>,
     dht_queries: &Arc<DhtQueryBook>,
+    gossip_guards: &mut GossipIngressGuards,
 ) {
     match event {
         SwarmEvent::Behaviour(ComposedEvent::Gossipsub(event)) => {
@@ -628,6 +716,18 @@ fn handle_swarm_event(
                 ..
             } = *event
             {
+                if let Err(reason) = gossip_guards.check(&propagation_source, message.data.len()) {
+                    warn!(
+                        peer = %propagation_source,
+                        topic = %message.topic,
+                        len = message.data.len(),
+                        ?reason,
+                        "Dropping inbound gossipsub message",
+                    );
+                    let _ = swarm.disconnect_peer_id(propagation_source);
+                    return;
+                }
+
                 let _ = event_tx.send(Libp2pEvent::Gossip {
                     peer: propagation_source,
                     topic: message.topic.to_string(),
@@ -859,5 +959,36 @@ mod tests {
         let network = Libp2pNetwork::new(config).expect("expected network to initialise");
         assert!(!network.listen_addresses().is_empty());
         network.shutdown();
+    }
+
+    #[test]
+    fn gossip_guards_reject_oversized_messages() {
+        let peer = PeerId::from(identity::Keypair::generate_ed25519().public());
+        let mut guards = GossipIngressGuards::default();
+
+        assert!(guards.check(&peer, GOSSIP_MAX_MESSAGE_BYTES).is_ok());
+        assert_eq!(
+            guards.check(&peer, GOSSIP_MAX_MESSAGE_BYTES + 1),
+            Err(GossipGuardError::Oversized(GOSSIP_MAX_MESSAGE_BYTES + 1))
+        );
+    }
+
+    #[test]
+    fn gossip_guards_enforce_peer_and_global_budgets() {
+        let peer_a = PeerId::from(identity::Keypair::generate_ed25519().public());
+        let peer_b = PeerId::from(identity::Keypair::generate_ed25519().public());
+        let mut guards = GossipIngressGuards {
+            max_message_bytes: 128,
+            max_messages_per_peer: 1,
+            global_message_limit: 2,
+            window: Duration::from_secs(60),
+            peer_windows: HashMap::new(),
+            global_window: MessageWindow::new(),
+        };
+
+        assert!(guards.check(&peer_a, 64).is_ok());
+        assert_eq!(guards.check(&peer_a, 64), Err(GossipGuardError::PeerRate));
+        assert!(guards.check(&peer_b, 64).is_ok());
+        assert_eq!(guards.check(&peer_b, 64), Err(GossipGuardError::GlobalRate));
     }
 }

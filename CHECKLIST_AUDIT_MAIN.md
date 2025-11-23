@@ -114,6 +114,8 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [ ] External third-party audit (Phase 2) pending scheduling.
 - [ ] Additional runtime hardening (OS sandboxing, firewall recipes) tracked for post-RC rollout.
 - [x] All RPC routes now share the existing `SecurityManager` guard + rate limiter so read/write endpoints enforce IP/rate policies consistently (`crates/rpc/src/server.rs`).
+- [x] RPC middleware enforces SecurityManager-configured body limits and timeouts, returning 429/413 for abusive clients before state mutation (`crates/rpc/src/server.rs`).
+- [x] libp2p gossip ingress drops oversized or spammy messages with per-peer/global budgets to prevent peer poisoning (`crates/p2p/src/libp2p_network.rs`).
 - [x] Dev-only helpers such as `/dev/fund` are gated by `IPPAN_DEV_MODE`, loopback IP checks, and loopback binding defaults outside dev mode (`node/src/main.rs`).
 - [ ] Advanced authentication (API keys, JWT) remains future work; current deployments rely on IP whitelists + reverse proxies per `docs/SECURITY_GUIDE.md`.
 
