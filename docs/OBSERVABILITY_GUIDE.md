@@ -54,17 +54,34 @@ Example response:
 * **Usage:**
   * Point Prometheus to `http://NODE:8080/metrics`.
   * Example curl: `curl -H 'Accept: text/plain' http://localhost:8080/metrics`.
-  * Metrics include counters/gauges registered via the `metrics` crate
-    (consensus round, mempool size, node health gauge, etc.).
+  * Metrics include counters/gauges registered via the `metrics` crate:
+    * **Node/runtime:** `node_uptime_seconds`, `node_build_info{version,commit}`,
+      `mempool_size`, `node_health`.
+    * **Consensus:** `consensus_blocks_proposed_total`,
+      `consensus_rounds_finalized_total`, `consensus_current_round`,
+      `consensus_finalized_round`, `consensus_forks_total`.
+    * **P2P:** `p2p_connected_peers`, `p2p_peers_connected_total`,
+      `p2p_peers_dropped_total`.
+    * **RPC:** `rpc_requests_total{path,method}`,
+      `rpc_requests_failed_total{path,method}`, and
+      `rpc_request_duration_microseconds{path,method}` (histogram buckets).
   * Sample payload:
 
 ```
-# HELP ippan_mempool_size current mempool size
-# TYPE ippan_mempool_size gauge
-ippan_mempool_size 4
-# HELP ippan_consensus_round last consensus round seen
-# TYPE ippan_consensus_round gauge
-ippan_consensus_round 130
+# HELP rpc_requests_total Total RPC requests processed, labeled by method and path
+# TYPE rpc_requests_total counter
+rpc_requests_total{method="GET",path="/health"} 42
+# HELP rpc_request_duration_microseconds RPC latency histogram (microseconds)
+# TYPE rpc_request_duration_microseconds histogram
+rpc_request_duration_microseconds_bucket{method="GET",path="/metrics",le="250"} 1
+rpc_request_duration_microseconds_sum{method="GET",path="/metrics"} 180
+rpc_request_duration_microseconds_count{method="GET",path="/metrics"} 1
+# HELP p2p_connected_peers Number of peers currently connected via HTTP/libp2p
+# TYPE p2p_connected_peers gauge
+p2p_connected_peers 6
+# HELP consensus_round Current consensus round number observed by the node
+# TYPE consensus_round gauge
+consensus_round 130
 ```
 
 If metrics are disabled the endpoint returns `503` with the message

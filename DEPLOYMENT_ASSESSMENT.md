@@ -118,6 +118,18 @@ impl HttpP2PNetwork {
 
 ---
 
+## 📈 **Observability & Metrics**
+
+- ✅ **Prometheus endpoint** available at `GET /metrics` (enabled with `IPPAN_PROMETHEUS_ENABLED=1` or the equivalent config toggle).
+- ✅ **Core metrics exported**:
+  - **Node/runtime:** `node_build_info{version,commit}`, `node_uptime_seconds`, `node_health`, `mempool_size`.
+  - **Consensus:** `consensus_blocks_proposed_total`, `consensus_rounds_finalized_total`, `consensus_current_round`, `consensus_finalized_round`, `consensus_forks_total`.
+  - **P2P:** `p2p_connected_peers`, `p2p_peers_connected_total`, `p2p_peers_dropped_total`.
+  - **RPC:** `rpc_requests_total{path,method}`, `rpc_requests_failed_total{path,method}`, `rpc_request_duration_microseconds{path,method}`.
+- ✅ **Operator guidance**: scrape `/metrics` with Prometheus and pair with `/health` for round/peer/mempool context; Grafana dashboards can chart RPC latency and peer churn for alerts.
+
+---
+
 ## 🎯 **Conclusion**
 
 **The IPPAN blockchain is now ready for multi-node deployment!**

@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+#[cfg(test)]
+use std::sync::OnceLock;
 use std::task::{Context as TaskContext, Poll};
 use std::time::{Duration, Instant};
 
@@ -17,7 +19,7 @@ use axum::body::Body;
 use axum::error_handling::HandleErrorLayer;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::FromRequest;
-use axum::extract::{ConnectInfo, Path as AxumPath, Query, State};
+use axum::extract::{ConnectInfo, MatchedPath, Path as AxumPath, Query, State};
 use axum::http::header::{HeaderValue, CONTENT_TYPE};
 use axum::http::Request;
 use axum::http::StatusCode;
@@ -27,6 +29,10 @@ use axum::{Json, Router};
 use ed25519_dalek::{Signer, SigningKey};
 #[cfg(test)]
 use http_body_util::BodyExt;
+#[cfg(test)]
+use metrics_exporter_prometheus::PrometheusBuilder;
+#[cfg(test)]
+static TEST_PROMETHEUS: OnceLock<PrometheusHandle> = OnceLock::new();
 use ippan_consensus::PoAConsensus;
 use ippan_consensus_dlc::AiConsensusStatus;
 use ippan_files::{FileDhtService, FileStorage};
@@ -62,7 +68,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, field, info, warn};
 
 use hex::encode as hex_encode;
 
@@ -123,6 +129,98 @@ pub struct AppState {
 }
 
 type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
+
+#[derive(Clone)]
+struct RpcMetricsLayer {
+    state: Arc<AppState>,
+}
+
+impl RpcMetricsLayer {
+    fn new(state: Arc<AppState>) -> Self {
+        Self { state }
+    }
+}
+
+#[derive(Clone)]
+struct RpcMetricsService<S> {
+    inner: S,
+    state: Arc<AppState>,
+}
+
+impl<S> Layer<S> for RpcMetricsLayer {
+    type Service = RpcMetricsService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        RpcMetricsService {
+            inner,
+            state: self.state.clone(),
+        }
+    }
+}
+
+impl<S, ReqBody> Service<Request<ReqBody>> for RpcMetricsService<S>
+where
+    S: Service<Request<ReqBody>, Response = Response> + Clone + Send + 'static,
+    S::Error: Send + 'static,
+    S::Future: Send + 'static,
+    ReqBody: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut TaskContext<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: Request<ReqBody>) -> Self::Future {
+        let mut inner = self.inner.clone();
+        let path = request
+            .extensions()
+            .get::<MatchedPath>()
+            .map(|p| p.as_str().to_owned())
+            .unwrap_or_else(|| request.uri().path().to_owned());
+        let method = request.method().to_string();
+        let state = self.state.clone();
+        let start = Instant::now();
+
+        Box::pin(async move {
+            let result = inner.call(request).await;
+            match result {
+                Ok(response) => {
+                    let status = response.status().as_u16();
+                    state.req_count.fetch_add(1, Ordering::Relaxed);
+                    record_rpc_metrics(&path, &method, status, start.elapsed());
+                    Ok(response)
+                }
+                Err(err) => {
+                    state.req_count.fetch_add(1, Ordering::Relaxed);
+                    let path_label = path.clone();
+                    let method_label = method.clone();
+                    ::metrics::counter!(
+                        "rpc_requests_total",
+                        "path" => path_label.clone(),
+                        "method" => method_label.clone()
+                    )
+                    .increment(1);
+                    ::metrics::counter!(
+                        "rpc_requests_failed_total",
+                        "path" => path_label,
+                        "method" => method_label
+                    )
+                    .increment(1);
+                    warn!(
+                        target: "rpc",
+                        path = path,
+                        method = method,
+                        "RPC service failed before responding"
+                    );
+                    Err(err)
+                }
+            }
+        })
+    }
+}
 
 /// Handle for retrieving AI status snapshots from consensus or stubs.
 #[derive(Clone)]
@@ -1262,12 +1360,41 @@ fn build_router(state: Arc<AppState>) -> Router {
         .layer(TimeoutLayer::new(request_timeout))
         .layer(RequestBodyLimitLayer::new(max_body_bytes));
 
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(|request: &Request<_>| {
+            let matched_path = request
+                .extensions()
+                .get::<MatchedPath>()
+                .map(|p| p.as_str())
+                .unwrap_or_else(|| request.uri().path());
+            let client = request
+                .extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|info| info.0.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            tracing::info_span!(
+                "rpc_request",
+                method = %request.method(),
+                path = %matched_path,
+                client = %client,
+                status = field::Empty,
+                latency_us = field::Empty
+            )
+        })
+        .on_response(
+            |response: &Response, latency: Duration, span: &tracing::Span| {
+                span.record("status", &response.status().as_u16());
+                span.record("latency_us", &(latency.as_micros() as u64));
+            },
+        );
+
     router
         .layer(middleware_stack)
         .layer(cors)
         .layer(rate_limiter)
         .layer(circuit_breaker)
-        .layer(TraceLayer::new_for_http())
+        .layer(trace_layer)
+        .layer(RpcMetricsLayer::new(state.clone()))
         .with_state(state)
 }
 
@@ -1368,8 +1495,11 @@ async fn deny_request(
 ) -> (StatusCode, &'static str) {
     let reason = err.to_string();
     warn!(
-        "Security rejected request {} from {}: {}",
-        endpoint, addr, reason
+        target: "security",
+        endpoint = endpoint,
+        client = %addr,
+        reason = %reason,
+        "Security rejected request"
     );
     record_security_failure(state, addr, endpoint, &reason).await;
     map_security_error(&err)
@@ -1545,6 +1675,79 @@ fn rpc_consensus_mode(mode: &str) -> &'static str {
     }
 }
 
+fn record_rpc_metrics(path: &str, method: &str, status: u16, latency: Duration) {
+    let path_label = path.to_owned();
+    let method_label = method.to_owned();
+    ::metrics::counter!(
+        "rpc_requests_total",
+        "path" => path_label.clone(),
+        "method" => method_label.clone()
+    )
+    .increment(1);
+    if status >= 400 {
+        ::metrics::counter!(
+            "rpc_requests_failed_total",
+            "path" => path_label.clone(),
+            "method" => method_label.clone()
+        )
+        .increment(1);
+    }
+
+    let latency_us = latency.as_micros() as u64;
+    ::metrics::histogram!(
+        "rpc_request_duration_microseconds",
+        "path" => path_label,
+        "method" => method_label
+    )
+    .record(latency_us as f64);
+
+    if status >= 500 {
+        warn!(
+            target: "rpc",
+            path = path,
+            method = method,
+            status = status,
+            latency_us = latency_us,
+            "RPC request returned server error"
+        );
+    } else if status >= 400 {
+        info!(
+            target: "rpc",
+            path = path,
+            method = method,
+            status = status,
+            latency_us = latency_us,
+            "RPC request returned client error"
+        );
+    } else {
+        debug!(
+            target: "rpc",
+            path = path,
+            method = method,
+            status = status,
+            latency_us = latency_us,
+            "RPC request completed"
+        );
+    }
+}
+
+async fn record_runtime_metrics(state: &Arc<AppState>) {
+    ::metrics::gauge!("node_uptime_seconds").set(state.start_time.elapsed().as_secs() as f64);
+    ::metrics::gauge!("p2p_connected_peers").set(state.peer_count.load(Ordering::Relaxed) as f64);
+    ::metrics::gauge!("mempool_size").set(state.mempool.size() as f64);
+    ::metrics::gauge!("node_health").set(1.0);
+
+    if let Some(consensus) = &state.consensus {
+        if let Ok(view) = consensus.snapshot().await {
+            ::metrics::gauge!("consensus_round").set(view.round as f64);
+        }
+    }
+
+    if let Ok(Some(finalized)) = state.storage.get_latest_round_finalization() {
+        ::metrics::gauge!("consensus_finalized_round").set(finalized.round as f64);
+    }
+}
+
 async fn handle_metrics(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -1555,6 +1758,7 @@ async fn handle_metrics(
     }
 
     if let Some(handle) = &state.metrics {
+        record_runtime_metrics(&state).await;
         let mut response = Response::new(Body::from(handle.render()));
         *response.status_mut() = StatusCode::OK;
         response.headers_mut().insert(
@@ -3171,6 +3375,16 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
         })
+    }
+
+    fn install_test_recorder() -> PrometheusHandle {
+        TEST_PROMETHEUS
+            .get_or_init(|| {
+                PrometheusBuilder::new()
+                    .install_recorder()
+                    .expect("install prometheus recorder")
+            })
+            .clone()
     }
 
     fn make_app_state() -> Arc<AppState> {
@@ -5101,15 +5315,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_metrics_basic() {
-        use metrics::{Key, Level, Metadata, Recorder};
-        use metrics_exporter_prometheus::PrometheusBuilder;
-
-        let recorder = PrometheusBuilder::new().build_recorder();
-        let handle = recorder.handle();
-        let key = Key::from_static_name("rpc_test_counter");
-        let metadata = Metadata::new("rpc::tests", Level::INFO, Some(module_path!()));
-        let counter = recorder.register_counter(&key, &metadata);
-        counter.increment(1);
+        let handle = install_test_recorder();
+        ::metrics::counter!("rpc_test_counter").increment(1);
 
         let mut state = (*make_app_state()).clone();
         state.metrics = Some(handle);
@@ -5125,7 +5332,10 @@ mod tests {
             .await
             .expect("collect metrics body")
             .to_bytes();
-        assert!(!body.is_empty());
+        let body_str = String::from_utf8(body.to_vec()).expect("utf8 body");
+        assert!(!body_str.is_empty());
+        assert!(body_str.contains("rpc_test_counter"));
+        assert!(body_str.contains("node_uptime_seconds"));
     }
 
     #[tokio::test]

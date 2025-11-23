@@ -21,7 +21,7 @@ use ippan_storage::{export_snapshot, import_snapshot, SledStorage, Storage};
 use ippan_types::{
     ippan_time_init, ippan_time_now, Block, HashTimer, IppanTimeMicros, Transaction,
 };
-use metrics::describe_gauge;
+use metrics::{describe_counter, describe_gauge, gauge};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -1201,6 +1201,7 @@ async fn main() -> Result<()> {
                 interval.tick().await;
                 let count = network.get_peer_count();
                 peer_count.store(count, Ordering::Relaxed);
+                gauge!("p2p_connected_peers").set(count as f64);
             }
         })
     };
@@ -1321,6 +1322,19 @@ fn init_metrics(config: &AppConfig) -> Option<PrometheusHandle> {
     match PrometheusBuilder::new().install_recorder() {
         Ok(handle) => {
             info!("Prometheus metrics exporter registered");
+            describe_counter!(
+                "rpc_requests_total",
+                "Total RPC requests processed, labeled by method and path"
+            );
+            describe_counter!(
+                "rpc_requests_failed_total",
+                "Total RPC requests that returned client/server errors"
+            );
+            describe_counter!(
+                "p2p_peers_connected_total",
+                "Total peers observed joining the node"
+            );
+            describe_counter!("p2p_peers_dropped_total", "Total peers removed or dropped");
             describe_gauge!("node_health", "Overall node health indicator (1 = healthy)");
             describe_gauge!(
                 "consensus_round",
@@ -1330,6 +1344,24 @@ fn init_metrics(config: &AppConfig) -> Option<PrometheusHandle> {
                 "mempool_size",
                 "Current number of transactions pending in the mempool"
             );
+            describe_gauge!(
+                "p2p_connected_peers",
+                "Number of peers currently connected via HTTP/libp2p"
+            );
+            describe_gauge!(
+                "node_uptime_seconds",
+                "Node uptime in seconds since process start"
+            );
+            describe_gauge!(
+                "consensus_finalized_round",
+                "Last finalized consensus round id"
+            );
+            describe_gauge!(
+                "node_build_info",
+                "Build metadata gauge (labels: version, commit)"
+            );
+            gauge!("node_build_info", "version" => IPPAN_VERSION, "commit" => git_commit_hash())
+                .set(1.0);
             Some(handle)
         }
         Err(err) => {

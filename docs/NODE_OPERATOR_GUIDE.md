@@ -49,11 +49,12 @@ Flags such as `--log-level`, `--log-format`, `--network`, `--rpc-port`, `--p2p-p
 ## Observability tips
 - **Logs:** control verbosity with `--log-level info|debug|trace` and select `--log-format json` for log aggregation systems. Startup logs enumerate the network ID, RPC/P2P bindings, and DHT mode selection.
 - **Key metrics:**
-  - `node_health` (1 when the node reports healthy dependencies)
-  - `consensus_round` (latest observed round/slot)
-  - `mempool_size` (transactions pending)
+  - `node_build_info{version,commit}`, `node_uptime_seconds`, `node_health`
+  - `p2p_connected_peers`, `p2p_peers_connected_total`, `p2p_peers_dropped_total`
+  - `consensus_current_round`, `consensus_finalized_round`, `consensus_blocks_proposed_total`, `consensus_forks_total`
+  - `rpc_requests_total{path,method}`, `rpc_requests_failed_total{path,method}`, `rpc_request_duration_microseconds{path,method}`
   - `/health` payload fields such as `peer_count` and `uptime_seconds` expose live connectivity and runtime duration.
-- **Dashboards:** scrape `/metrics` with Prometheus and visualize `mempool_size` alongside `/health` peer counts in Grafana to alert on stalled gossip or consensus.
+- **Dashboards:** scrape `/metrics` with Prometheus and visualize consensus round/finalized gauges, P2P peer counts, RPC latency histograms, and mempool size alongside `/health` peer counts in Grafana to alert on stalled gossip or consensus.
 
 ## Troubleshooting
 - **Port conflicts:** if `/health` fails immediately after startup, re-run `ippan-node --check --rpc-port <alt> --p2p-port <alt>` to find open ports.

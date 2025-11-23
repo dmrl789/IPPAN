@@ -429,6 +429,8 @@ impl HttpP2PNetwork {
             }
             if peers.insert(peer.clone()) {
                 *self.peer_count.write() = peers.len();
+                ::metrics::gauge!("p2p_connected_peers").set(peers.len() as f64);
+                ::metrics::counter!("p2p_peers_connected_total").increment(1);
                 was_new = true;
             }
         }
@@ -454,6 +456,8 @@ impl HttpP2PNetwork {
             let mut peers = self.peers.write();
             if peers.remove(&peer) {
                 *self.peer_count.write() = peers.len();
+                ::metrics::gauge!("p2p_connected_peers").set(peers.len() as f64);
+                ::metrics::counter!("p2p_peers_dropped_total").increment(1);
             }
             self.peer_metadata.write().remove(&peer);
         }
@@ -687,6 +691,13 @@ impl HttpP2PNetwork {
                                     // Enforce max_peers limit in discovery loop
                                     if guard.len() < max_peers && guard.insert(candidate.clone()) {
                                         *peer_count.write() = guard.len();
+                                        ::metrics::gauge!(
+                                            "p2p_connected_peers",
+                                            "bootstrap" => "discovery"
+                                        )
+                                        .set(guard.len() as f64);
+                                        ::metrics::counter!("p2p_peers_connected_total")
+                                            .increment(1);
                                         added = true;
                                     }
                                 }

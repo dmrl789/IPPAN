@@ -123,7 +123,8 @@ Once deployed, the following endpoints are available:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Health check |
-| `/status` | Node status and metrics |
+| `/status` | GET | Node status and metrics |
+| `/metrics` | GET | Prometheus metrics (enable with `PROMETHEUS_ENABLED` or `--prometheus-enabled`) |
 | `/time` | GET | Current IPPAN time |
 | `/block?hash=<hash>` | GET | Get block by hash |
 | `/block?height=<height>` | GET | Get block by height |
@@ -187,6 +188,25 @@ sudo journalctl -u ippan-node -f
 sudo journalctl -u ippan-node --since "1 hour ago"
 ```
 
+### **Observability & Metrics**
+
+- Enable Prometheus metrics with `PROMETHEUS_ENABLED=true` (or the CLI flag `--prometheus-enabled`).
+- Scrape `http://<host>:8080/metrics` (adjust port/host per your deployment) for the following key series:
+  - Node/runtime: `node_build_info{version,commit}`, `node_uptime_seconds`, `node_health`, `mempool_size`
+  - Consensus: `consensus_current_round`, `consensus_finalized_round`, `consensus_blocks_proposed_total`, `consensus_forks_total`
+  - P2P: `p2p_connected_peers`, `p2p_peers_connected_total`, `p2p_peers_dropped_total`
+  - RPC: `rpc_requests_total{path,method}`, `rpc_requests_failed_total{path,method}`, `rpc_request_duration_microseconds{path,method}`
+- Example Prometheus scrape job:
+
+```yaml
+- job_name: ippan
+  metrics_path: /metrics
+  static_configs:
+    - targets: ["localhost:8080"]
+```
+
+- Pair `/metrics` with `/health` to gate alerts on peer count, mempool size, and finalized rounds.
+
 ---
 
 ## 🛡️ **Security Considerations**
@@ -198,7 +218,7 @@ sudo journalctl -u ippan-node --since "1 hour ago"
 - [ ] **User Permissions**: Run as non-root user (`ippan`)
 - [ ] **File Permissions**: Restrict access to configuration and data files
 - [ ] **Network Security**: Use VPN or private networks for P2P communication
-- [ ] **Monitoring**: Set up log monitoring and alerting
+- [x] **Monitoring**: Log and metrics monitoring documented; configure alerts in Prometheus/Grafana
 - [ ] **Backup**: Implement regular database backups
 - [ ] **Updates**: Plan for security updates and node upgrades
 
@@ -324,7 +344,7 @@ ls -la /var/lib/ippan/db/
 - [ ] **Storage**: Data directory created with proper permissions
 - [ ] **Network**: Ports 8080 and 9000 accessible
 - [ ] **Security**: Running as non-root user
-- [ ] **Monitoring**: Log monitoring configured
+- [x] **Monitoring**: Log monitoring configured and Prometheus scrape defined for `/metrics`
 - [ ] **Backup**: Database backup strategy in place
 - [ ] **Health checks**: API endpoints responding
 - [ ] **Consensus**: Blocks being produced (check `/status`)
@@ -337,7 +357,7 @@ ls -la /var/lib/ippan/db/
 1. **Deploy to staging environment** first
 2. **Test all API endpoints** thoroughly  
 3. **Monitor consensus behavior** and block production
-4. **Set up monitoring and alerting**
+4. **Set up monitoring and alerting** (wire Prometheus/Grafana to `/metrics` and alert on peer count/finalized rounds)
 5. **Plan for multi-node deployment**
 6. **Implement libp2p networking** for full P2P functionality
 7. **Add more sophisticated consensus algorithms**

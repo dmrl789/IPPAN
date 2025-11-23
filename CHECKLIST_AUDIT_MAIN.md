@@ -136,6 +136,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `/health` endpoint surfaces consensus/DHT/RPC/storage status as a structured `HealthStatus` payload (`crates/rpc/src/server.rs`).
 - [x] `/metrics` endpoint serves Prometheus text output whenever the exporter is enabled (`crates/rpc/src/server.rs`).
 - [x] `/health` endpoint contract validated via tests covering healthy + degraded dependencies.
+- [x] Prometheus metrics now cover consensus (round/finalization/forks), P2P (peer counts, churn), RPC (requests/latency/errors), and runtime (uptime/build info) with structured logging on critical paths.
 - [ ] Advanced dashboards/alert policies are tracked separately (future work).
 
 ## 11b. Explorer & Ops API

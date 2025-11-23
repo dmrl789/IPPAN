@@ -568,12 +568,16 @@ impl PoAConsensus {
 
         // Record metrics
         metrics.record_block_proposed();
+        ::metrics::counter!("consensus_blocks_proposed_total", "role" => "proposer").increment(1);
+        ::metrics::gauge!("consensus_current_round").set(block.header.round as f64);
 
         info!(
-            "Proposed block {} at height {} ({} txs)",
-            hex::encode(block.hash()),
-            block.header.round,
-            block.transactions.len()
+            target: "consensus",
+            round = block.header.round,
+            height = block.header.round,
+            txs = block.transactions.len(),
+            "Proposed block {id}",
+            id = hex::encode(block.hash())
         );
         Ok(())
     }
@@ -729,6 +733,8 @@ impl PoAConsensus {
             start_us: start,
             end_us: end,
         };
+        let conflict_count = conflicts.len();
+
         let record = RoundFinalizationRecord {
             round: round_id,
             window,
@@ -744,10 +750,20 @@ impl PoAConsensus {
                 .then_some(payment_stats.rejected as u64),
         };
         storage.store_round_finalization(record)?;
+        ::metrics::counter!("consensus_rounds_finalized_total").increment(1);
+        ::metrics::counter!("consensus_finalized_blocks_total").increment(block_ids.len() as u64);
+        if conflict_count > 0 {
+            ::metrics::counter!("consensus_forks_total").increment(conflict_count as u64);
+        }
+        ::metrics::gauge!("consensus_finalized_round").set(round_id as f64);
+        ::metrics::gauge!("consensus_current_round").set((round_id + 1) as f64);
         info!(
-            "Finalized round {} -> state root {}",
-            round_id,
-            hex::encode(state_root)
+            target: "consensus",
+            round = round_id,
+            finalized_blocks = block_ids.len(),
+            conflict_txs = conflict_count,
+            state_root = %hex::encode(state_root),
+            "Finalized round"
         );
         if payment_stats.applied > 0 || payment_stats.rejected > 0 {
             info!(
