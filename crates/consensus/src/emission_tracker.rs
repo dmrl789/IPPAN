@@ -177,6 +177,10 @@ impl EmissionTracker {
         let mut fee_allocated: u128 = 0;
         let mut ai_allocated: u128 = 0;
 
+        // Only 25% of capped fees are distributed immediately to validators; the
+        // remainder (plus uncapped overflow) is routed to the network pool.
+        let distributable_fee_pool = capped_fees / 4;
+
         let mut distributed_total: u128 = 0;
 
         if !weight_map.is_empty() {
@@ -203,14 +207,16 @@ impl EmissionTracker {
 
                 let fee_share = if total_weight > 0 {
                     if is_last {
-                        (capped_fees as u128).saturating_sub(fee_allocated.min(capped_fees as u128))
+                        (distributable_fee_pool as u128)
+                            .saturating_sub(fee_allocated.min(distributable_fee_pool as u128))
                     } else {
-                        ((capped_fees as u128) * *weight) / total_weight
+                        ((distributable_fee_pool as u128) * *weight) / total_weight
                     }
                 } else if is_last {
-                    (capped_fees as u128).saturating_sub(fee_allocated.min(capped_fees as u128))
+                    (distributable_fee_pool as u128)
+                        .saturating_sub(fee_allocated.min(distributable_fee_pool as u128))
                 } else {
-                    (capped_fees as u128) / validators_count as u128
+                    (distributable_fee_pool as u128) / validators_count as u128
                 };
                 fee_allocated = fee_allocated.saturating_add(fee_share);
 
@@ -266,9 +272,9 @@ impl EmissionTracker {
             total_reward: distributed_total.min(u64::MAX as u128) as u64,
             blocks_in_round: contributions.len() as u32,
             validator_rewards,
-            fees_collected: (capped_fees / 4) as u64, // 25% immediate distribution
+            fees_collected: distributable_fee_pool as u64, // 25% immediate distribution
             network_pool_allocation: {
-                let pooled_fees = (capped_fees.saturating_sub(capped_fees / 4)) as u128
+                let pooled_fees = (capped_fees.saturating_sub(distributable_fee_pool)) as u128
                     + transaction_fees.saturating_sub(capped_fees as u128);
                 let total_pool = pooled_fees.saturating_add(emission_dividend);
                 total_pool.min(u64::MAX as u128) as u64
