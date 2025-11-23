@@ -48,11 +48,16 @@ impl RoundRewards {
             return Ok(self.create_empty_distribution(round_index, round_reward, fees_collected));
         }
 
-        // Apply fee cap to collected fees
+        // Apply fee cap to collected fees for immediate distribution (excess is deferred to the pool)
         let capped_fees = self.apply_fee_cap(fees_collected, round_reward);
 
-        // Build composition
+        // Build composition and split fees between immediate distribution and the network pool
         let composition = RewardComposition::new_with_fees(round_reward, capped_fees);
+        let immediate_fees = composition.transaction_fees;
+        let deferred_fees = fees_collected
+            .min(capped_fees)
+            .saturating_sub(immediate_fees)
+            .saturating_add(fees_collected.saturating_sub(capped_fees));
 
         // Proportional distribution
         let mut validator_rewards = HashMap::new();
@@ -64,19 +69,17 @@ impl RoundRewards {
                 round_emission: self
                     .calculate_component_reward(composition.round_emission, weight_fraction)?,
                 transaction_fees: self
-                    .calculate_component_reward(composition.transaction_fees, weight_fraction)?,
+                    .calculate_component_reward(immediate_fees, weight_fraction)?,
                 ai_commissions: self
                     .calculate_component_reward(composition.ai_commissions, weight_fraction)?,
-                network_dividend: self
-                    .calculate_component_reward(composition.network_dividend, weight_fraction)?,
+                network_dividend: 0,
                 total_reward: 0,
                 weight_factor: weight,
             };
 
             let total_reward = validator_reward.round_emission
                 + validator_reward.transaction_fees
-                + validator_reward.ai_commissions
-                + validator_reward.network_dividend;
+                + validator_reward.ai_commissions;
 
             let mut final_reward = validator_reward;
             final_reward.total_reward = total_reward;
@@ -86,16 +89,20 @@ impl RoundRewards {
         // Compute totals
         let total_distributed: RewardAmount =
             validator_rewards.values().map(|r| r.total_reward).sum();
-        let total_available = round_reward + capped_fees;
-        let excess = total_distributed.saturating_sub(total_available);
-        let excess_fees = fees_collected.saturating_sub(capped_fees);
+        let total_available = composition
+            .round_emission
+            .saturating_add(immediate_fees)
+            .saturating_add(composition.ai_commissions);
+        let pool_allocation = composition
+            .network_dividend
+            .saturating_add(deferred_fees);
 
         info!(
-            "Distributed rewards for round {}: {} µIPN to {} validators, excess burned: {}",
+            "Distributed rewards for round {}: {} µIPN to {} validators, routed to pool: {}",
             round_index,
             total_distributed,
             validator_rewards.len(),
-            excess + excess_fees
+            pool_allocation
         );
 
         Ok(RoundRewardDistribution {
@@ -103,8 +110,8 @@ impl RoundRewards {
             total_reward: total_available,
             blocks_in_round: participations.iter().map(|p| p.blocks_contributed).sum(),
             validator_rewards,
-            fees_collected: capped_fees,
-            excess_burned: excess + excess_fees,
+            fees_collected: immediate_fees,
+            network_pool_allocation: pool_allocation,
         })
     }
 
@@ -206,7 +213,7 @@ impl RoundRewards {
             blocks_in_round: 0,
             validator_rewards: HashMap::new(),
             fees_collected: 0,
-            excess_burned: round_reward + fees_collected,
+            network_pool_allocation: round_reward + fees_collected,
         }
     }
 
@@ -269,8 +276,23 @@ mod tests {
             .unwrap();
 
         assert_eq!(distribution.round_index, 1);
-        assert_eq!(distribution.total_reward, 11_000);
         assert_eq!(distribution.validator_rewards.len(), 2);
+
+        let distributed: RewardAmount = distribution
+            .validator_rewards
+            .values()
+            .map(|r| r.total_reward)
+            .sum();
+        assert_eq!(distribution.total_reward, distributed);
+
+        // Nothing is burned; pool + direct payments equal emission + collected fees
+        assert_eq!(
+            distribution.total_reward + distribution.network_pool_allocation,
+            11_000,
+            "totals {:?} {:?}",
+            distribution.total_reward,
+            distribution.network_pool_allocation
+        );
 
         let proposer = distribution
             .validator_rewards

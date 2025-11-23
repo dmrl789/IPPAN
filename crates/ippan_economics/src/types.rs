@@ -135,7 +135,8 @@ pub struct RoundRewardDistribution {
     pub blocks_in_round: u32,
     pub validator_rewards: HashMap<ValidatorId, ValidatorReward>,
     pub fees_collected: RewardAmount,
-    pub excess_burned: RewardAmount,
+    /// Amount reserved for the weekly redistribution pool (network dividend + deferred fees)
+    pub network_pool_allocation: RewardAmount,
 }
 
 /// Detailed breakdown of a validator’s reward
@@ -177,10 +178,17 @@ pub struct RewardComposition {
 impl RewardComposition {
     /// Create composition from round emission only (no fees)
     pub fn new(round_emission: RewardAmount) -> Self {
-        // Split emission: 85% direct, 10% AI, 5% dividend
-        let direct_emission = (round_emission * 85) / 100;
+        // Split emission: 60% direct, 10% AI, 5% dividend; any remainder is
+        // routed to direct emission to preserve the full round amount.
+        let base_direct = (round_emission * 60) / 100;
         let ai_commissions = (round_emission * 10) / 100;
         let network_dividend = (round_emission * 5) / 100;
+
+        let allocated = base_direct
+            .saturating_add(ai_commissions)
+            .saturating_add(network_dividend);
+        let direct_emission = base_direct.saturating_add(round_emission.saturating_sub(allocated));
+
         Self {
             round_emission: direct_emission,
             transaction_fees: 0,
@@ -191,20 +199,25 @@ impl RewardComposition {
 
     /// Create composition with both emission and fees
     pub fn new_with_fees(round_emission: RewardAmount, actual_fees: RewardAmount) -> Self {
-        // Base emission split: 85% direct, 10% AI, 5% dividend
-        let direct_emission = (round_emission * 85) / 100;
+        // Base emission split: 60% direct, 10% AI, 5% dividend; any leftover
+        // goes to direct emission to maintain exact accounting.
+        let base_direct = (round_emission * 60) / 100;
         let ai_from_emission = (round_emission * 10) / 100;
         let dividend_from_emission = (round_emission * 5) / 100;
 
-        // Fees split: 90% direct to validators, 10% to dividend pool
-        let direct_fees = (actual_fees * 90) / 100;
-        let dividend_from_fees = actual_fees.saturating_sub(direct_fees);
+        // Fees split: 25% direct to validators, 75% deferred to the dividend pool
+        let direct_fees = (actual_fees * 25) / 100;
+
+        let allocated = base_direct
+            .saturating_add(ai_from_emission)
+            .saturating_add(dividend_from_emission);
+        let direct_emission = base_direct.saturating_add(round_emission.saturating_sub(allocated));
 
         Self {
             round_emission: direct_emission,
             transaction_fees: direct_fees,
             ai_commissions: ai_from_emission,
-            network_dividend: dividend_from_emission + dividend_from_fees,
+            network_dividend: dividend_from_emission,
         }
     }
 

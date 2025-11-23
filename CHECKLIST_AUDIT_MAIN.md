@@ -25,6 +25,7 @@ _Generated: 2025-11-15_
 - [x] Centralized integer-only fee logic via `ippan_l1_fees::FeePolicy` (`crates/l1_fees/src/lib.rs`).
 - [x] Tests verify min-fee validation, per-byte estimates, validator/treasury split (`crates/l1_fees/src/lib.rs`).
 - [x] Payment pipeline credits validator + treasury on apply (`crates/consensus/src/payments.rs`) with stats exported to telemetry/metrics.
+- [x] DAG-Fair emission cap + fee recycling now match the economics spec: no burns, 5% emission + 75% of fees accrue to the dividend pool with weekly redistribution (`crates/ippan_economics`, `crates/consensus/src/emission_tracker.rs`).
 
 ## 3. D-GBDT & AI Core
 - [x] `crates/ai_core/src/lib.rs` re-exports the fixed-point + GBDT surface (no more empty lib) so downstream crates compile again.
