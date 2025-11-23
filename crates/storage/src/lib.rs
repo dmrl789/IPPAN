@@ -935,8 +935,19 @@ impl Storage for SledStorage {
         let data = serde_json::to_vec(&block)?;
         self.blocks.insert(&hash[..], data)?;
         let height = block.header.round;
-        self.metadata
-            .insert(b"latest_height", &height.to_be_bytes())?;
+
+        let latest_height = self.get_latest_height()?;
+        debug_assert!(
+            height >= latest_height,
+            "latest height cannot decrease (current={}, new={})",
+            latest_height,
+            height
+        );
+
+        if height >= latest_height {
+            self.metadata
+                .insert(b"latest_height", &height.to_be_bytes())?;
+        }
         Ok(())
     }
 

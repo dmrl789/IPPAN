@@ -179,6 +179,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `export_snapshot` / `import_snapshot` cover blocks, transactions, accounts, files, and metadata.
 - [x] `ippan-node snapshot export/import` subcommands run maintenance flows without starting networking.
 - [x] `docs/STORAGE_AND_SNAPSHOTS.md` documents the layout, snapshot workflow, and crash-restart scenario.
+- [x] Restart/fork persistence verified via sled + memory integration tests (`crates/storage/tests/persistence_conflicts.rs`).
 - [ ] Automated snapshot/restore CI soak tests (future).
 
 ## 14. Network Resilience
