@@ -8,6 +8,8 @@
 - Security crate exercised with rate limits (per-IP, per-endpoint, global), IP whitelist enforcement, and lockout recovery paths.
 - RPC guard coverage for abusive clients (rate-limit bursts and repeated failures) with integration tests tied to `SecurityManager`.
 - P2P abuse scenarios covered in unit tests (malformed peer spam, rapid connect/disconnect) to ensure state remains healthy.
+- RPC middleware now enforces SecurityManager-configured body limits/timeouts and returns 429/413 before any state changes.
+- libp2p gossip ingress guards drop oversized payloads and spammy peers using per-peer and global budgets.
 
 ## How to run the checks
 
