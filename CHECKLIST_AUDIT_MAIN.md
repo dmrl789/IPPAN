@@ -148,6 +148,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] Handle registration/lookup tests drive transactions through the consensus pipeline and assert stub DHT publication state.
 - [x] File RPC tests validate publish/store flows and DHT fallback lookups via recording stubs.
 - [x] AI/DLC determinism covered via canonical JSON/hash tests, registry activation/history assertions, and fairness model scoring from sled-backed registries.
+- [x] DLC long-run fairness simulation (`crates/consensus_dlc/tests/fairness_invariants.rs`) exercises registry-backed scoring across 240 rounds to assert primary/shadow balance and bounded adversarial selection.
 - [x] `/health` endpoint tested for both healthy and degraded dependencies to mirror operator expectations.
 - [ ] Long-running chaos/resilience tests in CI (future work).
 

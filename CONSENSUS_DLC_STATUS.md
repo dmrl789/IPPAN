@@ -172,6 +172,9 @@ pub fn select(
 - ✅ Reward distribution
 - ✅ HashTimer ordering
 - ✅ Full consensus cycles
+- ✅ **Long-run fairness simulation** — `crates/consensus_dlc/tests/fairness_invariants.rs` drives 240 deterministic rounds using a
+  registry-backed D-GBDT model to assert primary/shadow balance, role fairness for honest validators, and bounded adversarial
+  selection.
 
 ---
 

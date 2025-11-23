@@ -605,6 +605,12 @@ cargo test
 
 See [CONTRIBUTING.md](../../CONTRIBUTING.md) in the workspace root.
 
+## Testing & Verification Updates
+
+- Added a DLC long-run fairness simulation note (`crates/consensus_dlc/tests/fairness_invariants.rs`).
+  The scenario runs 240 deterministic rounds with registry-backed D-GBDT scoring to ensure balanced primary/shadow rotation and
+  bounded adversarial selection. Execute with `cargo test -p ippan-consensus-dlc --tests -- --nocapture`.
+
 ## License
 
 See [LICENSE](../../LICENSE) in the workspace root.
