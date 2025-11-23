@@ -421,7 +421,8 @@ impl EmissionTracker {
         let pool = self.network_pool_balance;
         let mut distributed: u128 = 0;
 
-        let weights: Vec<_> = self.period_validator_weights.iter().collect();
+        let mut weights: Vec<_> = self.period_validator_weights.iter().collect();
+        weights.sort_by(|(a, _), (b, _)| a.cmp(b));
         let last_index = weights.len().saturating_sub(1);
 
         for (idx, (validator, weight)) in weights.into_iter().enumerate() {
