@@ -6,6 +6,13 @@
 - **Release Candidate:** v0.9.0-rc1 (Audit Candidate)
 - **Target Commit:** `<commit hash to be inserted by maintainer when selecting the audit snapshot>`
 
+## Canonical Protocol Specification
+
+**NEW:** The normative protocol specification is now available at:
+- [`docs/spec/IPPAN_PROTOCOL_SPEC.md`](./docs/spec/IPPAN_PROTOCOL_SPEC.md)
+
+This document defines the implementation-agnostic protocol rules using RFC 2119 normative language (MUST/SHOULD/MAY). All auditors and implementers MUST refer to this specification as the canonical source of truth.
+
 ## Components In Scope
 - **Consensus (DLC + D-GBDT):** fairness model activation, shadow verifiers, and deterministic model hashing.
 - **Networking / DHT:** libp2p/IPNDHT publish/find flows, descriptor validation, and peer resilience guards.

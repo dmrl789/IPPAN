@@ -312,14 +312,20 @@ curl http://localhost:9615/metrics | grep ippan_consensus_rounds_total
 ### Documentation Index
 
 1. **Audit Package (this file):** `AUDIT_PACKAGE_V1_RC1_2025_11_24.md`
-2. **Coverage Report:** `TEST_COVERAGE_REPORT_2025_11_24.md`
-3. **DLC Simulations:** `ACT_DLC_SIMULATION_REPORT_2025_11_24.md`
-4. **AI Determinism:** `AI_DETERMINISM_X86_REPORT_2025_11_24.md`, `AI_DETERMINISM_REPRO_REPORT_2025_11_24.md`
-5. **Developer Guide:** `docs/dev_guide.md`
-6. **Architecture:** `docs/architecture_overview.md`
-7. **Feature Checklist:** `CHECKLIST_AUDIT_MAIN.md`
-8. **Threat Model:** `SECURITY_THREAT_MODEL.md`
-9. **Observability:** `docs/operators/monitoring.md`
+2. **Protocol Specification:** `docs/spec/IPPAN_PROTOCOL_SPEC.md` ⭐ **NEW: Canonical spec**
+3. **Go/No-Go Checklist:** `GO_NO_GO_CHECKLIST.md` ⭐ **NEW: Launch criteria**
+4. **Coverage Report:** `TEST_COVERAGE_REPORT_2025_11_24.md`
+5. **DLC Simulations:** `ACT_DLC_SIMULATION_REPORT_2025_11_24.md`
+6. **AI Determinism:** `AI_DETERMINISM_X86_REPORT_2025_11_24.md`, `AI_DETERMINISM_REPRO_REPORT_2025_11_24.md`
+7. **Adversarial Testing:** `docs/testing/adversarial-and-fuzzing.md` ⭐ **NEW: Property tests + fuzzing**
+8. **Release Process:** `docs/release/RELEASE_PROCESS.md` ⭐ **NEW: Deployment pipeline**
+9. **Upgrades & Migrations:** `docs/operators/upgrades-and-migrations.md` ⭐ **NEW: Schema versioning**
+10. **Developer Guide:** `docs/dev_guide.md`
+11. **Architecture:** `docs/architecture_overview.md`
+12. **Feature Checklist:** `CHECKLIST_AUDIT_MAIN.md`
+13. **Threat Model:** `SECURITY_THREAT_MODEL.md`
+14. **Observability:** `docs/operators/monitoring.md`
+15. **Ecosystem Launch Kit:** `docs/ECOSYSTEM_LAUNCH_KIT_2025_11_24.md`
 
 ---
 

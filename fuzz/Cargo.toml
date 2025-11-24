@@ -1,0 +1,47 @@
+[package]
+name = "ippan-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.ippan-rpc]
+path = "../crates/rpc"
+
+[dependencies.ippan-p2p]
+path = "../crates/p2p"
+
+[dependencies.ippan-types]
+path = "../crates/types"
+
+[dependencies.ippan-consensus]
+path = "../crates/consensus"
+
+[[bin]]
+name = "fuzz_rpc_payment"
+path = "fuzz_targets/fuzz_rpc_payment.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_rpc_handle"
+path = "fuzz_targets/fuzz_rpc_handle.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_transaction_decode"
+path = "fuzz_targets/fuzz_transaction_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_p2p_message"
+path = "fuzz_targets/fuzz_p2p_message.rs"
+test = false
+doc = false

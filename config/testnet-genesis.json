@@ -1,0 +1,85 @@
+{
+  "version": "1.0",
+  "network_id": "ippan-testnet-v1",
+  "genesis_time": "2025-12-01T00:00:00Z",
+  "initial_supply": 0,
+  "chain_id": "ippan-testnet",
+  "consensus_params": {
+    "round_duration_ms": 200,
+    "finality_depth": 2,
+    "max_reorg_depth": 2,
+    "min_validator_bond_micro_ipn": 10000000000,
+    "max_validators": 100,
+    "shadow_verifier_count": 3
+  },
+  "emission_params": {
+    "r0_micro_ipn": 10000,
+    "halving_rounds": 315000000,
+    "supply_cap_micro_ipn": 21000000000000,
+    "base_emission_bps": 6000,
+    "tx_fee_bps": 2500,
+    "ai_commission_bps": 1000,
+    "network_pool_bps": 500
+  },
+  "fee_params": {
+    "min_fee_micro_ipn": 1000,
+    "max_fee_micro_ipn": 1000000,
+    "fee_cap_bps": 1000
+  },
+  "genesis_accounts": [
+    {
+      "address": "i0x1111111111111111111111111111111111111111111111111111111111111111",
+      "balance_micro_ipn": 1000000000000,
+      "nonce": 0,
+      "note": "Testnet faucet"
+    },
+    {
+      "address": "i0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "balance_micro_ipn": 100000000000,
+      "nonce": 0,
+      "note": "Testnet treasury"
+    }
+  ],
+  "genesis_validators": [
+    {
+      "id": "seed-validator-1",
+      "public_key": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "bond_micro_ipn": 10000000000,
+      "initial_reputation": 9000,
+      "p2p_multiaddr": "/ip4/seed1.testnet.ippan.io/tcp/9000"
+    },
+    {
+      "id": "seed-validator-2",
+      "public_key": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "bond_micro_ipn": 10000000000,
+      "initial_reputation": 9000,
+      "p2p_multiaddr": "/ip4/seed2.testnet.ippan.io/tcp/9000"
+    },
+    {
+      "id": "seed-validator-3",
+      "public_key": "0x4444444444444444444444444444444444444444444444444444444444444444",
+      "bond_micro_ipn": 10000000000,
+      "initial_reputation": 9000,
+      "p2p_multiaddr": "/ip4/seed3.testnet.ippan.io/tcp/9000"
+    }
+  ],
+  "bootstrap_nodes": [
+    "/ip4/seed1.testnet.ippan.io/tcp/9000/p2p/12D3KooWRm8J8W...",
+    "/ip4/seed2.testnet.ippan.io/tcp/9000/p2p/12D3KooWSd7H9P...",
+    "/ip4/seed3.testnet.ippan.io/tcp/9000/p2p/12D3KooWTq5N2K..."
+  ],
+  "ai_params": {
+    "model_path": "models/deterministic_gbdt_model.json",
+    "model_hash": "9a3f2e1c...",
+    "enable_fairness": true,
+    "enable_shadow_verification": true
+  },
+  "network_params": {
+    "max_peers": 50,
+    "min_peers": 3,
+    "max_block_size_bytes": 1048576,
+    "max_tx_per_block": 10000,
+    "gossipsub_heartbeat_ms": 700,
+    "kad_query_timeout_ms": 10000
+  }
+}
