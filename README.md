@@ -18,6 +18,7 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - Current RC: **v0.9.0-rc1**
 - To run a local RC testnet, see: [docs/operators/ippan-rc-testnet-guide.md](docs/operators/ippan-rc-testnet-guide.md)
 - To report issues or feedback: use the "RC Bug Report" or "RC Feedback / UX" GitHub issue templates.
+- Understand how wallet `@handles` map to addresses and how to test handle-based payments in [docs/users/handles-and-addresses.md](docs/users/handles-and-addresses.md) (also linked at [handles-and-addresses.md](handles-and-addresses.md)).
 
 ## 🚀 Features
 
