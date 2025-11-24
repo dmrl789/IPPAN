@@ -205,7 +205,7 @@ pub struct SendPaymentArgs {
     #[command(flatten)]
     pub password: PasswordArgs,
 
-    /// Recipient address (Base58Check or hex)
+    /// Recipient address/handle (Base58Check, hex, or `@handle`)
     #[arg(long)]
     pub to: String,
 
@@ -349,7 +349,9 @@ async fn handle_send_payment(rpc_url: &str, args: SendPaymentArgs) -> Result<()>
     let unlocked = keyfile.unlock(password.as_deref())?;
     let amount_atomic = args.amount.to_atomic("amount")?;
     let fee_atomic = args.fee.to_atomic()?;
-    decode_any_address(&args.to)?;
+    if !args.to.starts_with('@') {
+        decode_any_address(&args.to)?;
+    }
     let memo = args.memo.clone();
     if let Some(memo_value) = &memo {
         if memo_value.as_bytes().len() > 256 {
