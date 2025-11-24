@@ -300,24 +300,80 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 
 ### 17. External Audit Integration
 
-- [ ] **External Audit Engagement**: Contract with reputable blockchain security firm for comprehensive audit of:
-  - Consensus safety and liveness properties
-  - Cryptographic primitives usage
-  - P2P network attack surface
-  - Economic model correctness (emission, fees, rewards)
-  - AI determinism guarantees
+- [x] **External Audit Package (Phase E - Step 4)**: Comprehensive audit package prepared for external security firms:
+  - **Document:** [`EXTERNAL_AUDIT_PACKAGE.md`](EXTERNAL_AUDIT_PACKAGE.md)
+  - **Scope:** Consensus (DLC, DAG, emission), cryptography (Ed25519, BLAKE3), P2P network (libp2p, DHT), economics (supply cap, fees), AI determinism (D-GBDT)
+  - **Audit Objectives:**
+    - Consensus safety & liveness validation
+    - Cryptographic primitive review (Ed25519, BLAKE3, key management)
+    - P2P network security assessment (eclipse attacks, Sybil resistance, DoS)
+    - Economic model correctness (emission, supply cap enforcement, fee distribution)
+    - AI determinism guarantees (bit-for-bit determinism across platforms)
+  - **Testing Infrastructure:**
+    - 6 fuzz targets (consensus, crypto, P2P, RPC, transactions)
+    - 34 property-based tests (consensus invariants, DLC fairness, transaction validation, wallet ops)
+    - Long-run gates (1200-round DLC simulation, cross-architecture determinism)
+    - Chaos testing (packet drop, latency, node churn)
+  - **Known Limitations:** Documented (deferred chaos CI, ARM determinism hardware pending, 24h fuzz corpus)
+  - **Contact Info:** Lead Architect, Product Lead, Network Engineer + communication channels
+  - **Deliverables:** Executive summary, technical report, appendices (coverage, attack surface, threat model)
 
-- [ ] **Bug Triage Flow**: Establish clear process for:
-  - Severity classification (critical, high, medium, low, informational)
-  - Response timelines for each severity level
-  - Patch development and verification workflow
-  - Regression test requirements for all fixes
+- [x] **Bug Triage Flow (Phase E - Step 4)**: Systematic process for handling audit findings:
+  - **Document:** [`AUDIT_BUG_TRIAGE_WORKFLOW.md`](AUDIT_BUG_TRIAGE_WORKFLOW.md)
+  - **Severity Classification:**
+    - **Critical** (24h SLA): Direct loss of funds, consensus failure, network halt, RCE
+    - **High** (72h SLA): Potential loss of funds, DoS, significant security bypass, validator manipulation
+    - **Medium** (1 week SLA): Logic errors, limited DoS, minor security impact
+    - **Low** (2 weeks SLA): Best practices, code quality issues
+    - **Informational** (no SLA): Documentation, suggestions
+  - **Triage Process:**
+    - Initial triage within 24 hours (review, classify, assign DRI)
+    - Tracking via private GitHub Security Advisory
+    - Weekly sync with auditor during active audit
+    - Emergency escalation path for Critical findings
+  - **Fix Workflow:**
+    - Minimal fix principle (no refactoring for Critical/High)
+    - Unit test + regression test required
+    - Fuzz target updates (if applicable)
+    - Long-run gate re-run (if consensus/economics)
+    - Code review: Lead Architect + 1 team member
+    - Auditor review + approval before merge
+  - **Regression Prevention:**
+    - Every fix requires test coverage
+    - Fuzz corpus updated with PoC inputs
+    - Property tests added for invariant violations
+  - **Metrics:** Total findings by severity, median fix time, re-test pass rate, regression count
 
-- [ ] **Patch Window & Re-Testing**: After addressing audit findings:
-  - Re-run all long-run simulations (DLC, determinism, chaos)
-  - Verify no regressions introduced by patches
-  - Provide updated audit package to auditors for verification
-  - Obtain auditor sign-off on all critical/high findings
+- [x] **Patch Window & Re-Testing Protocol (Phase E - Step 4)**: Comprehensive validation after audit fixes:
+  - **Document:** [`AUDIT_PATCH_RETEST_PROTOCOL.md`](AUDIT_PATCH_RETEST_PROTOCOL.md)
+  - **Pre-Patch Baseline:**
+    - Capture baseline: full test suite, property tests, long-run DLC gate, determinism gate, fuzz targets (5 min each)
+    - Tag baseline commit: `audit-baseline-v1.0`
+    - Store baseline logs in `audit-baseline/` directory
+  - **Fix Development:**
+    - Branch strategy: `fix/audit-[ID]-[desc]`
+    - Minimal fix principle (Critical/High)
+    - Fix checklist: code fix, unit test, docs update, changelog, coverage, fuzz update
+  - **Post-Patch Re-Testing:**
+    - **Phase 1 (30 min):** Full workspace tests, property tests, lints, format check, no-float check
+    - **Phase 2 (30 min):** All 6 fuzz targets (5 min each)
+    - **Phase 3 (3 hours):** Long-run DLC gate (1200 rounds), determinism gate (BLAKE3 digest comparison)
+    - **Phase 4 (1 hour, optional):** Chaos tests (packet drop, latency, node churn)
+  - **Regression Detection:**
+    - Criteria: test failures, gate violations, >20% perf slowdown, coverage decrease, linter warnings
+    - Response: revert if Critical/High, root cause analysis, revised fix, auditor re-review
+  - **Auditor Re-Review:**
+    - Fix package: git diff, FIX_SUMMARY.md, re-test logs, coverage delta
+    - Submission via secure channel (private GitHub / encrypted email)
+    - Timeline: 1-2 weeks (targeted), 2-4 weeks (full re-audit)
+  - **Final Sign-Off:**
+    - All Critical/High fixed + auditor-approved
+    - ≥90% Medium fixed (or documented as acceptable risk)
+    - All gates passing, no regressions
+    - Auditor provides signed letter confirming mainnet readiness
+  - **Post-Launch:** Weekly gate runs, bug bounty program (Immunefi)
+
+- [ ] **External Audit Engagement**: Contract with reputable blockchain security firm (pending selection)
 
 ### 18. Final Go/No-Go Checklist & Mainnet Promotion
 
