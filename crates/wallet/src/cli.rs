@@ -350,6 +350,7 @@ async fn handle_send_payment(rpc_url: &str, args: SendPaymentArgs) -> Result<()>
     let amount_atomic = args.amount.to_atomic("amount")?;
     let fee_atomic = args.fee.to_atomic()?;
     let memo = args.memo.clone();
+    validate_recipient_identifier(&args.to)?;
     if let Some(memo_value) = &memo {
         if memo_value.as_bytes().len() > 256 {
             return Err(WalletError::InvalidCliUsage(
@@ -455,6 +456,26 @@ fn confirm(prompt: &str) -> Result<bool> {
     Ok(matches!(input.trim(), "y" | "Y" | "yes" | "YES"))
 }
 
+fn validate_recipient_identifier(value: &str) -> Result<()> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(WalletError::InvalidCliUsage(
+            "recipient identifier cannot be empty".into(),
+        ));
+    }
+    if is_handle_identifier(trimmed) {
+        return Ok(());
+    }
+    decode_any_address(trimmed).map(|_| ()).map_err(|err| {
+        WalletError::InvalidAddress(format!("invalid recipient `{value}`: {err}"))
+    })
+}
+
+fn is_handle_identifier(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.starts_with('@') && trimmed.len() > 1
+}
+
 fn decode_any_address(input: &str) -> Result<[u8; 32]> {
     decode_address(input).or_else(|err| {
         let normalized = input
@@ -498,5 +519,15 @@ mod tests {
             amount_atomic: Some(42),
         };
         assert_eq!(arg.to_atomic("amount").unwrap(), 42);
+    }
+
+    #[test]
+    fn recipient_validation_allows_handles() {
+        assert!(validate_recipient_identifier("@alice.ipn").is_ok());
+    }
+
+    #[test]
+    fn recipient_validation_rejects_empty() {
+        assert!(validate_recipient_identifier("  ").is_err());
     }
 }
