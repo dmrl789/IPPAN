@@ -6,12 +6,16 @@
 pub mod cli;
 pub mod crypto;
 pub mod errors;
+pub mod keyfile;
 pub mod operations;
+pub mod rpc;
 pub mod storage;
 pub mod types;
 
 pub use errors::*;
+pub use keyfile::*;
 pub use operations::*;
+pub use rpc::*;
 pub use types::*;
 
 /// Re-export commonly used types

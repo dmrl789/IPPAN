@@ -105,69 +105,60 @@ let total_balance = wallet.get_total_balance()?;
 
 ## CLI Usage
 
-### Initialize Wallet
+The revamped `ippan-wallet` CLI focuses on four core tasks: key generation,
+address inspection, signing, and payments.
+
+### 1. Generate a password-protected key
 
 ```bash
-# Create new wallet with password
-ippan-wallet init --name "My Wallet" --password
-
-# Create wallet without password
-ippan-wallet init --name "My Wallet"
+# Create an encrypted key file for devnet and store it under ./keys
+ippan-wallet \
+  --network devnet \
+  generate-key \
+  --out ./keys/devnet.key \
+  --prompt-password
 ```
 
-### Generate Addresses
+To generate a plaintext key (not recommended outside automated tests), pass
+`--insecure-plaintext`.
+
+### 2. Show the derived address
 
 ```bash
-# Generate single address
-ippan-wallet new-address --label "My Address"
-
-# Generate multiple addresses
-ippan-wallet new-address --count 10 --label "Batch"
+ippan-wallet show-address --key ./keys/devnet.key --prompt-password --json
 ```
 
-### List Addresses
+### 3. Sign payloads or files
 
 ```bash
-ippan-wallet list-addresses
+# Sign an inline message
+ippan-wallet sign \
+  --key ./keys/devnet.key \
+  --prompt-password \
+  --message "hello ipn" \
+  --out signature.hex
+
+# Sign raw bytes from a file
+ippan-wallet sign \
+  --key ./keys/devnet.key \
+  --prompt-password \
+  --file unsigned_tx.bin
 ```
 
-### Send Transaction
+### 4. Send a payment through the node RPC
 
 ```bash
-ippan-wallet send \
-  --from "i1234..." \
-  --to "i5678..." \
-  --amount 1000
+ippan-wallet --rpc-url http://127.0.0.1:18080 send-payment \
+  --key ./keys/devnet.key \
+  --prompt-password \
+  --to ippan1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx00d \
+  --amount 0.5 \
+  --memo "coffee"
 ```
 
-### Check Balance
-
-```bash
-# Total wallet balance
-ippan-wallet balance
-
-# Specific address balance
-ippan-wallet balance i1234...
-```
-
-### Backup & Restore
-
-```bash
-# Create backup
-ippan-wallet backup
-
-# List backups
-ippan-wallet list-backups
-
-# Restore from backup
-ippan-wallet restore /path/to/backup.json
-```
-
-### View Statistics
-
-```bash
-ippan-wallet stats
-```
+The CLI automatically fetches the next nonce, signs the payment, and submits it
+to `/tx/payment`. Use `--yes` to skip the confirmation prompt or `--fee` /
+`--fee-atomic` to set a fee cap.
 
 ## API Reference
 

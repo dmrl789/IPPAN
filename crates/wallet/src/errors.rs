@@ -46,6 +46,18 @@ pub enum WalletError {
 
     #[error("Crypto error: {0}")]
     CryptoError(String),
+
+    #[error("RPC error: {0}")]
+    RpcError(String),
+
+    #[error("Invalid CLI usage: {0}")]
+    InvalidCliUsage(String),
 }
 
 pub type Result<T> = std::result::Result<T, WalletError>;
+
+impl From<reqwest::Error> for WalletError {
+    fn from(err: reqwest::Error) -> Self {
+        WalletError::RpcError(err.to_string())
+    }
+}

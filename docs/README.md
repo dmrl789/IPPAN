@@ -5,6 +5,7 @@ This directory houses canonical references for the IPPAN network. Documentation 
 ## Quick Start for Developers
 
 - Read the [Developer Guide](./DEVELOPER_GUIDE.md) for environment setup, builds, and workflow expectations.
+- Learn the wallet & signing flows in [`dev/wallet-cli.md`](./dev/wallet-cli.md) before wiring payments or SDKs.
 - Build the Rust workspace with `cargo check --workspace` before you branch into feature work.
 - Run the unified UI locally (`apps/unified-ui`) with `npm install && npm run dev` to validate end-to-end flows when your change touches the frontend.
 - Keep the Agent Charter ([`.cursor/AGENT_CHARTER.md`](../.cursor/AGENT_CHARTER.md)) in mind—determinism, reproducibility, and scope isolation apply to documentation updates too.
