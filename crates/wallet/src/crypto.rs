@@ -90,11 +90,15 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
 
 /// Encrypt data with AES-GCM
 pub fn encrypt_data(data: &[u8], password: &str) -> Result<(String, String, String)> {
-    // Derive key from password
-    let key = derive_encryption_key(password)?;
+    // Generate per-entry salt to avoid hard-coded cryptographic material
+    let mut rng = OsRng;
+    let mut salt = [0u8; 16];
+    rng.fill_bytes(&mut salt);
+
+    // Derive key from password and salt
+    let key = derive_encryption_key(password, &salt)?;
 
     // Generate random nonce
-    let mut rng = OsRng;
     let mut nonce_bytes = [0u8; 12];
     rng.fill_bytes(&mut nonce_bytes);
 
@@ -109,12 +113,12 @@ pub fn encrypt_data(data: &[u8], password: &str) -> Result<(String, String, Stri
     Ok((
         general_purpose::STANDARD.encode(&ciphertext),
         general_purpose::STANDARD.encode(nonce_bytes),
-        general_purpose::STANDARD.encode(key),
+        general_purpose::STANDARD.encode(salt),
     ))
 }
 
 /// Decrypt data with AES-GCM
-pub fn decrypt_data(ciphertext: &str, nonce: &str, password: &str) -> Result<Vec<u8>> {
+pub fn decrypt_data(ciphertext: &str, nonce: &str, salt: &str, password: &str) -> Result<Vec<u8>> {
     let ciphertext_bytes = general_purpose::STANDARD
         .decode(ciphertext)
         .map_err(|e| WalletError::DecryptionError(format!("Invalid ciphertext: {}", e)))?;
@@ -123,7 +127,11 @@ pub fn decrypt_data(ciphertext: &str, nonce: &str, password: &str) -> Result<Vec
         .decode(nonce)
         .map_err(|e| WalletError::DecryptionError(format!("Invalid nonce: {}", e)))?;
 
-    let key = derive_encryption_key(password)?;
+    let salt_bytes = general_purpose::STANDARD
+        .decode(salt)
+        .map_err(|e| WalletError::DecryptionError(format!("Invalid salt: {}", e)))?;
+
+    let key = derive_encryption_key(password, &salt_bytes)?;
 
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|e| WalletError::DecryptionError(format!("Cipher init failed: {}", e)))?;
@@ -139,8 +147,7 @@ pub fn decrypt_data(ciphertext: &str, nonce: &str, password: &str) -> Result<Vec
 }
 
 /// Derive encryption key from password
-fn derive_encryption_key(password: &str) -> Result<[u8; 32]> {
-    let salt = b"ippan_wallet_salt_2024";
+fn derive_encryption_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
     let argon2 = Argon2::default();
 
     let mut key = [0u8; 32];
@@ -230,10 +237,37 @@ mod tests {
         let data = b"test data";
         let password = "test_password";
 
-        let (ciphertext, nonce, _) = encrypt_data(data, password).unwrap();
-        let decrypted = decrypt_data(&ciphertext, &nonce, password).unwrap();
+        let (ciphertext, nonce, salt) = encrypt_data(data, password).unwrap();
+        let decrypted = decrypt_data(&ciphertext, &nonce, &salt, password).unwrap();
 
         assert_eq!(data, decrypted.as_slice());
+    }
+
+    #[test]
+    fn test_encryption_uses_unique_salt() {
+        let data = b"deterministic";
+        let password = "strong_password";
+
+        let (ciphertext_one, nonce_one, salt_one) = encrypt_data(data, password).unwrap();
+        let (ciphertext_two, nonce_two, salt_two) = encrypt_data(data, password).unwrap();
+
+        assert_ne!(
+            salt_one, salt_two,
+            "salts must differ for distinct encryptions"
+        );
+        assert_ne!(
+            ciphertext_one, ciphertext_two,
+            "ciphertext should differ with unique salt/nonce"
+        );
+
+        let decrypted_one = decrypt_data(&ciphertext_one, &nonce_one, &salt_one, password).unwrap();
+        let decrypted_two = decrypt_data(&ciphertext_two, &nonce_two, &salt_two, password).unwrap();
+
+        assert_eq!(data, decrypted_one.as_slice());
+        assert_eq!(data, decrypted_two.as_slice());
+
+        let wrong_password = decrypt_data(&ciphertext_one, &nonce_one, &salt_one, "wrong");
+        assert!(wrong_password.is_err());
     }
 
     #[test]

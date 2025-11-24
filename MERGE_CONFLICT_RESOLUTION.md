@@ -26,13 +26,13 @@ Our branch had already fixed the indentation issue in the same job, causing a me
 
 **Before Resolution**:
 ```yaml
-<<<<<<< HEAD (Our Branch - Correct Indentation)
+&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD (Our Branch - Correct Indentation)
   dependency-scan:
     name: Dependency Vulnerability Scan
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-=======
+======= (incoming branch)
     dependency-scan:  # ❌ Wrong indentation (4 spaces)
       name: Dependency Vulnerability Scan
       if: github.event_name == 'pull_request'
@@ -40,7 +40,7 @@ Our branch had already fixed the indentation issue in the same job, causing a me
       env:
         NVD_API_KEY: ${{ secrets.NVD_API_KEY || '' }}  # ✅ New feature
       steps:
->>>>>>> origin/fix/stabilize-2025-11-08
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; origin/fix/stabilize-2025-11-08
 ```
 
 **After Resolution**:

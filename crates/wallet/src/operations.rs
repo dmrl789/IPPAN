@@ -190,12 +190,14 @@ impl WalletManager {
             decrypt_data(
                 &wallet_address.encrypted_private_key.ciphertext,
                 &wallet_address.encrypted_private_key.nonce,
+                &wallet_address.encrypted_private_key.salt,
                 pwd,
             )?
         } else {
             decrypt_data(
                 &wallet_address.encrypted_private_key.ciphertext,
                 &wallet_address.encrypted_private_key.nonce,
+                &wallet_address.encrypted_private_key.salt,
                 "default_password",
             )?
         };
