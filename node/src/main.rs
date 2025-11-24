@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::{value_parser, Arg, ArgAction, Command};
-use config::{Config, File};
+use config::{Config, File as ConfigFile};
 use fs2::FileExt;
 use hex::encode as hex_encode;
 use ippan_consensus::{
@@ -180,7 +180,7 @@ impl AppConfig {
         let mut builder = Config::builder();
 
         if let Some(path) = config_path {
-            builder = builder.add_source(File::from(Path::new(path)));
+            builder = builder.add_source(ConfigFile::from(Path::new(path)));
         }
 
         builder = builder.add_source(config::Environment::with_prefix("IPPAN"));
