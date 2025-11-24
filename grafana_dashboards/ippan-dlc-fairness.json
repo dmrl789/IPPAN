@@ -1,0 +1,58 @@
+{
+  "dashboard": {
+    "title": "IPPAN DLC & D-GBDT Fairness",
+    "tags": ["ippan", "dlc", "dgbdt", "ai"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "D-GBDT Score Distribution",
+        "type": "heatmap",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "ippan_dgbdt_score_bucket",
+            "legendFormat": "Score distribution"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Primary Selection Frequency",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(ippan_dlc_primary_selections_total[1h])",
+            "legendFormat": "{{validator}}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Shadow Verifier Events",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "ippan_dlc_shadow_events_total",
+            "legendFormat": "Shadow events"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Shadow Disagreements",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "rate(ippan_dlc_shadow_disagreements_total[5m])",
+            "legendFormat": "Disagreements/sec"
+          }
+        ]
+      }
+    ],
+    "refresh": "10s"
+  }
+}

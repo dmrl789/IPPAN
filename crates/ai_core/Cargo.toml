@@ -50,3 +50,7 @@ criterion = "0.5"
 name = "dgbdt_inference_bench"
 path = "benches/dgbdt_inference_bench.rs"
 harness = false
+
+[[bin]]
+name = "determinism_harness"
+path = "src/bin/determinism_harness.rs"

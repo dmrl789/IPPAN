@@ -1,0 +1,58 @@
+{
+  "dashboard": {
+    "title": "IPPAN Network & P2P Health",
+    "tags": ["ippan", "network", "p2p", "libp2p"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Peer Count",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "ippan_network_peers_total",
+            "legendFormat": "Peers"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Message Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(ippan_network_messages_total[5m])",
+            "legendFormat": "{{direction}}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "DHT Operations",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(ippan_dht_operations_total[5m])",
+            "legendFormat": "{{operation}}"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Network Failures",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(ippan_network_failures_total[5m])",
+            "legendFormat": "Failures/sec"
+          }
+        ]
+      }
+    ],
+    "refresh": "10s"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "dashboard": {
+    "title": "IPPAN HashTimer & Time Sync",
+    "tags": ["ippan", "hashtimer", "time"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Clock Skew",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "ippan_hashtimer_clock_skew_ms",
+            "legendFormat": "Skew (ms)"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Outlier Count",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "ippan_hashtimer_outliers_total",
+            "legendFormat": "Outliers"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Correction Events",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(ippan_hashtimer_corrections_total[5m])",
+            "legendFormat": "Corrections/sec"
+          }
+        ]
+      }
+    ],
+    "refresh": "10s"
+  }
+}

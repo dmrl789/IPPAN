@@ -1,0 +1,70 @@
+{
+  "dashboard": {
+    "title": "IPPAN Consensus Health",
+    "tags": ["ippan", "consensus", "dlc"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Rounds Per Second",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(ippan_consensus_rounds_total[5m])",
+            "legendFormat": "Rounds/sec"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Finality Latency",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "ippan_consensus_finality_latency_seconds",
+            "legendFormat": "Finality latency"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Fork Count",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "ippan_consensus_forks_total",
+            "legendFormat": "Forks"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "DAG Tips",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "ippan_dag_tips_count",
+            "legendFormat": "Tips"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Finalized Blocks",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {
+            "expr": "rate(ippan_consensus_finalized_blocks_total[5m])",
+            "legendFormat": "Blocks/sec"
+          }
+        ]
+      }
+    ],
+    "refresh": "10s"
+  }
+}
