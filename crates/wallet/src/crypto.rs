@@ -163,17 +163,21 @@ fn derive_compatible_key(password: &str, salt_bytes: &[u8]) -> Result<[u8; 32]> 
     match salt_bytes.len() {
         // New format: a randomly generated 16-byte salt stored alongside the ciphertext.
         16 => derive_encryption_key(password, salt_bytes),
-        // Legacy format: a 32-byte derived key was stored instead of a salt; recompute with the
-        // historical fixed salt to preserve backwards compatibility.
+        // Legacy format: a 32-byte derived key was stored instead of a salt. Prefer using the
+        // stored key directly, but keep the historical fixed-salt derivation for deterministic
+        // wallets created before this change.
         32 => {
             let legacy_key = derive_encryption_key(password, LEGACY_SALT)?;
 
             if salt_bytes == legacy_key {
-                Ok(legacy_key)
-            } else {
-                // Unexpected 32-byte salt; fall back to treating it as a salt value.
-                derive_encryption_key(password, salt_bytes)
+                return Ok(legacy_key);
             }
+
+            let key: [u8; 32] = salt_bytes
+                .try_into()
+                .map_err(|_| WalletError::DecryptionError("Invalid legacy key length".into()))?;
+
+            Ok(key)
         }
         _ => derive_encryption_key(password, salt_bytes),
     }
