@@ -45,3 +45,4 @@ dirs = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
+fs2 = { workspace = true }

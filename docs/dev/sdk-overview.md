@@ -1,8 +1,11 @@
-## Developer SDKs & Typed Clients
+# SDK Overview
 
-Phase 5 introduces first-class SDKs for Rust (crate `ippan-sdk`) and TypeScript (`apps/sdk-ts`). Both wrappers provide consistent error handling and typed responses for the REST/RPC surface that operators and app developers touch most frequently.
+IPPAN ships two first-class SDKs that expose the same typed RPC surface:
 
-### Canonical RPC Surface
+- **Rust** (`crates/sdk`) – async `IppanClient` for querying chain state and submitting transactions.
+- **TypeScript** (`apps/sdk-ts`) – browser/Node-friendly `fetch` wrapper with typed DTOs.
+
+## Canonical RPC Surface
 
 | Endpoint | Method | Description |
 | --- | --- | --- |
@@ -14,20 +17,19 @@ Phase 5 introduces first-class SDKs for Rust (crate `ippan-sdk`) and TypeScript 
 | `/tx/payment` | POST | Submit signed payments (addresses or `@handle`) |
 | `/handle/{@alias}` | GET | Resolve handles to account data |
 
-> Tip: When developing against the gateway (`apps/gateway`), the same routes are exposed under `/api/*`. Point the SDK base URL at `http://localhost:8081/api/` when running the full-stack compose stack.
+> Tip: when working through the gateway (`apps/gateway`), the same routes appear under `/api/*`. Use `http://localhost:8081/api/` whenever the Docker full-stack is running.
 
-### Rust crate `ippan-sdk`
+## Rust crate `ippan-sdk`
 
-Location: `crates/sdk`
+Add to your binary crate:
 
-Key features:
+```toml
+[dependencies]
+ippan-sdk = { path = "crates/sdk" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```
 
-- `IppanClient` with async helpers `get_account`, `get_block`, `get_transaction`, `get_time`, `submit_payment`.
-- Strongly typed responses that translate RPC payloads into `Amount`-aware structs.
-- Rich `SdkError` enumerations (invalid URL, HTTP transport, server `code/message`, parse errors).
-- Example program: `cargo run -p ippan-sdk --example sdk_rust_payment`.
-
-Quick glance:
+Example (see `crates/sdk/examples/sdk_rust_payment.rs` for the complete flow):
 
 ```rust
 use ippan_sdk::{IppanClient, PaymentRequest};
@@ -35,11 +37,11 @@ use ippan_sdk::{IppanClient, PaymentRequest};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let client = IppanClient::new("http://localhost:8081/api/")?;
-    let account = client.get_account("b4f3...").await?;
+    let account = client.get_account("i1z...").await?;
 
     let receipt = client
         .submit_payment(
-            PaymentRequest::new(account.address.clone(), "@friend.ipn", 100_000, "<key>")
+            PaymentRequest::new(account.address.clone(), "@friend.ipn", 100_000, "<hex-signing-key>")
                 .with_nonce(account.nonce + 1)
                 .with_memo(Some("sdk demo".into())),
         )
@@ -50,14 +52,27 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-### TypeScript SDK (`@ippan/sdk`)
+Highlights:
+
+- Async helpers for `get_account`, `get_block`, `get_transaction`, `get_time`, `submit_payment`, `resolve_handle`, and more.
+- Strongly typed responses convert JSON payloads into IPPAN domain structs.
+- Rich `SdkError` enum differentiates transport vs. RPC vs. parse failures.
+- `IppanClient::with_http_client` lets you inject a mocked `reqwest::Client` (great for `wiremock`).
+
+## TypeScript SDK (`@ippan/sdk`)
 
 Location: `apps/sdk-ts`
 
-- Zero-runtime-dependency wrapper built around `fetch`.
-- Works in Node 18+ (native fetch) or browsers; pass `fetchImpl` for custom environments.
-- Typed request/response models that mirror the JSON payloads (snake_case).
-- Example script lives in `examples/sdk_ts_payment.ts`.
+- Zero-runtime-dependency wrapper built around `fetch` (works in Node 18+ or browsers; supply `fetchImpl` for custom runtimes).
+- Typed request/response models derived from the RPC schema.
+- Example script: `apps/sdk-ts/examples/sdk_ts_payment.ts`.
+
+Install/build:
+
+```bash
+npm install --prefix apps/sdk-ts
+npm run --prefix apps/sdk-ts build
+```
 
 Usage:
 
@@ -72,38 +87,31 @@ await client.sendPayment({
   to: "@friend.ipn",
   amount: "500000000000000000",
   signingKey: process.env.IPPAN_SIGNING_KEY!,
-  nonce: account.nonce + 1
+  nonce: account.nonce + 1,
+  memo: "sdk demo"
 });
 ```
 
-Build it once with:
+## Example Journeys
 
-```bash
-npm install --prefix apps/sdk-ts
-npm run --prefix apps/sdk-ts build
-```
+1. **Rust** – Ensure the [local full-stack](./local-full-stack.md) is running, export wallet env vars, and run `cargo run -p ippan-sdk --example sdk_rust_payment`.
+2. **TypeScript** – Build the TS SDK, set `IPPAN_SIGNING_KEY`, and execute `npx ts-node apps/sdk-ts/examples/sdk_ts_payment.ts`.
 
-### Example Journeys
+## Testing & Mocking
 
-1. **Query + Submit with Rust**
-   - Ensure the local stack is running (`scripts/run-local-full-stack.sh`).
-   - `export IPPAN_FROM_ADDRESS=<hex>` etc.
-   - `cargo run -p ippan-sdk --example sdk_rust_payment`.
-2. **Query + Submit with TypeScript**
-   - Build the TS SDK as above.
-   - `export IPPAN_SIGNING_KEY=...`
-   - `npx ts-node examples/sdk_ts_payment.ts`.
+- **Rust** – Inject your own HTTP client via `IppanClient::with_http_client` (e.g., a `reqwest::Client` backed by `wiremock`).
+- **TypeScript** – Provide a custom `fetchImpl` (e.g., `node-fetch`, `whatwg-fetch`) or substitute a Jest mock for deterministic tests.
 
-### Error Surface
+## Error Surface
 
-Both SDKs expose the same semantics:
+Both SDKs align on error semantics:
 
-- HTTP layer/transport errors bubble up as `SdkError::Http` (`IppanSdkError` in TS).
-- API errors returned by the server include `{code, message}`; both SDKs parse these and attach HTTP status.
-- Parse/conversion failures (e.g., malformed atomic strings) return `SdkError::Parse`.
+- Transport failures bubble up as `SdkError::Http` (`IppanSdkError` in TS) with HTTP status codes.
+- Server-side `{code, message}` replies become typed RPC errors.
+- Parse/conversion issues return `SdkError::Parse`.
 
-### Next Steps
+## Next Steps
 
-- Expand coverage to `/handles` mutation endpoints once the governance rules land.
-- Layer in typed helpers for staking/governance RPCs after those APIs stabilize.
-- Upstream both SDKs to crates.io/npm once we lock API compatibility for v1.0.
+- Follow the [Developer Journey](./developer-journey.md) for a complete onboarding path.
+- Expand coverage to handles/governance endpoints as those APIs stabilize.
+- Publish to crates.io/npm once API compatibility is locked for v1.0.

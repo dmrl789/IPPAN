@@ -20,9 +20,14 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { workspace = true }
+rand = { workspace = true }
 
 [[bench]]
 name = "hash_timer_bench"
 path = "benches/hash_timer_bench.rs"
+harness = false
+
+[[bench]]
+name = "hashtimer_ordering"
 harness = false

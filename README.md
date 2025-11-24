@@ -30,6 +30,14 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 
 > **Single-branch development**: All day-to-day work lands directly on `main`. Temporary topic branches should remain short-lived and are deleted after their changes fast-forward onto `main`.
 
+## 📚 Onboarding Guides
+
+- [Developer Journey](docs/dev/developer-journey.md)
+- [Local Full-Stack Guide](docs/dev/local-full-stack.md)
+- [SDK Overview](docs/dev/sdk-overview.md)
+- [User Getting Started](docs/users/getting-started.md)
+- [Handles & Addresses](docs/users/handles-and-addresses.md)
+
 ## 🧭 IPPAN Codebase Readiness Dashboard
 
 *(Snapshot: November 2025)*
@@ -60,6 +68,8 @@ cargo test --workspace --all-features -- --nocapture
 cargo tarpaulin --out Html
 cargo bench --workspace
 ```
+
+- `scripts/run-local-full-stack.sh` – build the workspace and start the three-node localnet for end-to-end testing.
 
 ## 🏗️ Architecture
 

@@ -17,7 +17,8 @@ This directory houses canonical references for the IPPAN network. Documentation 
 
 - **Protocol & Architecture** – Deep technical references such as [`AI_IMPLEMENTATION_GUIDE.md`](./AI_IMPLEMENTATION_GUIDE.md), [`CONSENSUS_RESEARCH_SUMMARY.md`](./CONSENSUS_RESEARCH_SUMMARY.md), and [`DAG_FAIR_EMISSION_SYSTEM.md`](./DAG_FAIR_EMISSION_SYSTEM.md).
 - **Product Requirements** – Strategic and functional direction captured under [`prd/`](./prd/README.md).
-- **Operational Runbooks** – Deployment and maintenance playbooks including [`automated-deployment-guide.md`](./automated-deployment-guide.md) and [`server-health-check.md`](./server-health-check.md).
+- **Operational Runbooks** – Deployment and maintenance playbooks including [`automated-deployment-guide.md`](./automated-deployment-guide.md), [`server-health-check.md`](./server-health-check.md), [`operators/production-validator-runbook.md`](./operators/production-validator-runbook.md), [`operators/gateway-explorer-runbook.md`](./operators/gateway-explorer-runbook.md), and [`operators/disaster-recovery.md`](./operators/disaster-recovery.md).
+- **Onboarding & SDKs** – Quickstarts for developers and end users: [`dev/developer-journey.md`](./dev/developer-journey.md), [`dev/local-full-stack.md`](./dev/local-full-stack.md), [`dev/sdk-overview.md`](./dev/sdk-overview.md), [`users/getting-started.md`](./users/getting-started.md), and [`users/handles-and-addresses.md`](./users/handles-and-addresses.md).
 - **Visual Resources** – Mermaid and SVG diagrams in [`diagrams/`](./diagrams/README.md) for architecture storytelling and reviews.
 - **Research & Open Issues** – Exploratory work and design proposals under [`issues/`](./issues/README.md).
 
@@ -27,6 +28,8 @@ This directory houses canonical references for the IPPAN network. Documentation 
 - [`prd/`](./prd/README.md) – Product requirements documents and their change management process.
 - [`diagrams/`](./diagrams/README.md) – Authoritative diagram sources and export workflow.
 - [`issues/`](./issues/README.md) – Active RFCs, scale plans, and research notes awaiting implementation.
+- [`dev/`](./dev) – Developer journey, local full-stack instructions, SDK overview.
+- [`users/`](./users) – Non-technical onboarding and handle guidance.
 
 ## Maintenance Guidelines
 

@@ -1,5 +1,7 @@
 # IPPAN Audit-Ready Snapshot
 
+- **Operational note:** Operational readiness items (validators, gateways, DR, security) are tracked in [`PRODUCTION_READINESS_CHECKLIST.md`](./PRODUCTION_READINESS_CHECKLIST.md). Complete that checklist before certifying this snapshot as “audit ready”, and continue to use [`CHECKLIST_AUDIT_MAIN.md`](./CHECKLIST_AUDIT_MAIN.md) for feature-specific verification.
+
 - **Project:** IPPAN distributed ledger with DLC-driven consensus and deterministic AI (D-GBDT).
 - **Release Candidate:** v0.9.0-rc1 (Audit Candidate)
 - **Target Commit:** `<commit hash to be inserted by maintainer when selecting the audit snapshot>`

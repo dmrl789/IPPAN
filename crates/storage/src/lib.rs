@@ -5,8 +5,9 @@
 //!
 use anyhow::{anyhow, Result};
 use ippan_types::{
-    ippan_time_now, Address, Block, ChainState, FileDescriptor, FileDescriptorId, L2Commit,
-    L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord, RoundId, Transaction,
+    ippan_time_now, Address, Block, ChainState, FileDescriptor, FileDescriptorId, HashTimer,
+    L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord, RoundId,
+    Transaction,
 };
 use parking_lot::RwLock;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -51,6 +52,8 @@ pub enum SnapshotError {
     NetworkMismatch { expected: String, actual: String },
     #[error("storage not empty; start from a clean database before importing")]
     StorageNotEmpty,
+    #[error("requested snapshot height {requested} does not match storage tip {available}")]
+    HeightMismatch { requested: u64, available: u64 },
 }
 
 /// Versioned manifest describing snapshot metadata and record counts.
@@ -67,6 +70,16 @@ pub struct SnapshotManifest {
     pub handles_count: u64,
     pub files_count: u64,
     pub ai_model_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tip_block_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hashtimer_start: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hashtimer_end: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_start_us: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_end_us: Option<u64>,
 }
 
 /// Minimal @handle representation for snapshot exports.
@@ -78,7 +91,7 @@ pub struct HandleSnapshotRecord {
     pub expires_at: u64,
 }
 
-const SNAPSHOT_MANIFEST_VERSION: u32 = 1;
+const SNAPSHOT_MANIFEST_VERSION: u32 = 2;
 const MANIFEST_FILE: &str = "manifest.json";
 const BLOCKS_FILE: &str = "blocks.jsonl";
 const PAYMENTS_FILE: &str = "payments.jsonl";
@@ -92,23 +105,7 @@ impl SnapshotManifest {
     pub fn new_from_storage(storage: &impl StorageLike) -> Result<Self, SnapshotError> {
         let collections = collect_snapshot_data(storage)?;
         let height = storage.get_latest_height()?;
-        let last_round_id = collections
-            .rounds
-            .last()
-            .map(|record| record.round.to_string());
-        Ok(Self {
-            version: SNAPSHOT_MANIFEST_VERSION,
-            network_id: storage.snapshot_network_id(),
-            height,
-            last_round_id,
-            timestamp_us: ippan_time_now(),
-            accounts_count: collections.accounts.len() as u64,
-            payments_count: collections.transactions.len() as u64,
-            blocks_count: collections.blocks.len() as u64,
-            handles_count: collections.handles.len() as u64,
-            files_count: collections.files.len() as u64,
-            ai_model_hash: storage.snapshot_ai_model_hash()?,
-        })
+        build_manifest_from_collections(storage, &collections, height)
     }
 
     pub fn validate_against_storage(
@@ -169,6 +166,34 @@ impl SnapshotManifest {
                 "AI model hash mismatch".to_string(),
             ));
         }
+        if self.version >= 2 {
+            let bounds = compute_snapshot_bounds(&collections.blocks, self.height);
+            if self.tip_block_hash != bounds.tip_block_hash {
+                return Err(SnapshotError::InvalidManifest(
+                    "tip block hash mismatch".to_string(),
+                ));
+            }
+            if self.hashtimer_start != bounds.hashtimer_start {
+                return Err(SnapshotError::InvalidManifest(
+                    "hashtimer_start mismatch".to_string(),
+                ));
+            }
+            if self.hashtimer_end != bounds.hashtimer_end {
+                return Err(SnapshotError::InvalidManifest(
+                    "hashtimer_end mismatch".to_string(),
+                ));
+            }
+            if self.timestamp_start_us != bounds.timestamp_start_us {
+                return Err(SnapshotError::InvalidManifest(
+                    "timestamp_start_us mismatch".to_string(),
+                ));
+            }
+            if self.timestamp_end_us != bounds.timestamp_end_us {
+                return Err(SnapshotError::InvalidManifest(
+                    "timestamp_end_us mismatch".to_string(),
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -214,6 +239,14 @@ struct SnapshotCollections {
     chain_state: ChainState,
 }
 
+struct SnapshotBounds {
+    tip_block_hash: Option<String>,
+    hashtimer_start: Option<String>,
+    hashtimer_end: Option<String>,
+    timestamp_start_us: Option<u64>,
+    timestamp_end_us: Option<u64>,
+}
+
 fn collect_snapshot_data(storage: &impl StorageLike) -> Result<SnapshotCollections, SnapshotError> {
     storage.flush_storage()?;
     let mut accounts = storage.snapshot_accounts()?;
@@ -239,24 +272,52 @@ fn collect_snapshot_data(storage: &impl StorageLike) -> Result<SnapshotCollectio
     })
 }
 
-pub fn export_snapshot(
-    storage: &impl StorageLike,
-    path: &Path,
-) -> Result<SnapshotManifest, SnapshotError> {
-    ensure_export_directory(path)?;
-    let collections = collect_snapshot_data(storage)?;
-    write_jsonl(&path.join(BLOCKS_FILE), &collections.blocks)?;
-    write_jsonl(&path.join(PAYMENTS_FILE), &collections.transactions)?;
-    write_jsonl(&path.join(ACCOUNTS_FILE), &collections.accounts)?;
-    write_jsonl(&path.join(HANDLES_FILE), &collections.handles)?;
-    write_jsonl(&path.join(FILES_FILE), &collections.files)?;
-    write_jsonl(&path.join(ROUNDS_FILE), &collections.rounds)?;
-    write_json_file(&path.join(CHAIN_STATE_FILE), &collections.chain_state)?;
+fn compute_snapshot_bounds(blocks: &[Block], snapshot_height: u64) -> SnapshotBounds {
+    let tip_block_hash = blocks
+        .iter()
+        .rev()
+        .find(|block| block.header.round == snapshot_height)
+        .map(|block| hex::encode(block.hash()));
+    let hashtimer_start = blocks
+        .first()
+        .map(|block| hex::encode(block.header.hashtimer.digest()));
+    let hashtimer_end = blocks
+        .last()
+        .map(|block| hex::encode(block.header.hashtimer.digest()));
+    let timestamp_start_us = blocks
+        .first()
+        .map(|block| hashtimer_timestamp_us(&block.header.hashtimer));
+    let timestamp_end_us = blocks
+        .last()
+        .map(|block| hashtimer_timestamp_us(&block.header.hashtimer));
 
-    let manifest = SnapshotManifest {
+    SnapshotBounds {
+        tip_block_hash,
+        hashtimer_start,
+        hashtimer_end,
+        timestamp_start_us,
+        timestamp_end_us,
+    }
+}
+
+fn hashtimer_timestamp_us(timer: &HashTimer) -> u64 {
+    if timer.timestamp_us.is_negative() {
+        0
+    } else {
+        timer.timestamp_us as u64
+    }
+}
+
+fn build_manifest_from_collections(
+    storage: &impl StorageLike,
+    collections: &SnapshotCollections,
+    snapshot_height: u64,
+) -> Result<SnapshotManifest, SnapshotError> {
+    let bounds = compute_snapshot_bounds(&collections.blocks, snapshot_height);
+    Ok(SnapshotManifest {
         version: SNAPSHOT_MANIFEST_VERSION,
         network_id: storage.snapshot_network_id(),
-        height: storage.get_latest_height()?,
+        height: snapshot_height,
         last_round_id: collections
             .rounds
             .last()
@@ -268,8 +329,38 @@ pub fn export_snapshot(
         handles_count: collections.handles.len() as u64,
         files_count: collections.files.len() as u64,
         ai_model_hash: storage.snapshot_ai_model_hash()?,
-    };
+        tip_block_hash: bounds.tip_block_hash,
+        hashtimer_start: bounds.hashtimer_start,
+        hashtimer_end: bounds.hashtimer_end,
+        timestamp_start_us: bounds.timestamp_start_us,
+        timestamp_end_us: bounds.timestamp_end_us,
+    })
+}
 
+pub fn export_snapshot(
+    storage: &impl StorageLike,
+    path: &Path,
+    height_hint: Option<u64>,
+) -> Result<SnapshotManifest, SnapshotError> {
+    ensure_export_directory(path)?;
+    let latest_height = storage.get_latest_height()?;
+    let snapshot_height = height_hint.unwrap_or(latest_height);
+    if snapshot_height != latest_height {
+        return Err(SnapshotError::HeightMismatch {
+            requested: snapshot_height,
+            available: latest_height,
+        });
+    }
+    let collections = collect_snapshot_data(storage)?;
+    write_jsonl(&path.join(BLOCKS_FILE), &collections.blocks)?;
+    write_jsonl(&path.join(PAYMENTS_FILE), &collections.transactions)?;
+    write_jsonl(&path.join(ACCOUNTS_FILE), &collections.accounts)?;
+    write_jsonl(&path.join(HANDLES_FILE), &collections.handles)?;
+    write_jsonl(&path.join(FILES_FILE), &collections.files)?;
+    write_jsonl(&path.join(ROUNDS_FILE), &collections.rounds)?;
+    write_json_file(&path.join(CHAIN_STATE_FILE), &collections.chain_state)?;
+
+    let manifest = build_manifest_from_collections(storage, &collections, snapshot_height)?;
     write_json_file(&path.join(MANIFEST_FILE), &manifest)?;
     Ok(manifest)
 }

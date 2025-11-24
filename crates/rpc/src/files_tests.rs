@@ -105,6 +105,7 @@ mod tests {
             file_dht: Some(file_dht),
             dht_file_mode: "stub".into(),
             dev_mode: true,
+            rpc_allowed_origins: vec!["http://localhost:3000".into()],
             handle_registry,
             handle_anchors,
             handle_dht: Some(handle_dht),

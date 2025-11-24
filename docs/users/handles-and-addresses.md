@@ -1,29 +1,25 @@
 # IPN Handles vs. Addresses
 
-Human-readable handles (for example `@alice.ipn`) wrap the same 32-byte Ed25519
-public keys that back standard IPPAN addresses. They make life easier for wallet
-users, explorers, and operators without changing the underlying security model.
+IPPAN lets you reference recipients in two ways:
 
-This guide explains how handles relate to raw addresses, how to register and
-resolve them, and how to use handles in the wallet CLI or RPC calls.
+1. **Addresses** – 32-byte Ed25519 public keys rendered as Base58Check (`i...`) or 64-char hex strings (optionally `0x`-prefixed).
+2. **Handles** – human-readable aliases such as `@alice.ipn` that resolve back to the same 32-byte keys.
+
+Use addresses for low-level tooling or SDK integrations that already manage keys, and prefer handles anywhere you expose flows to end users (wallets, explorers, payments). The gateway/RPC layer translates handles into canonical addresses at runtime, so you never lose determinism.
 
 ---
 
 ## 1. Address Recap
 
-- **Format:** Base58Check strings that start with `i…` plus a hex variant (64
-  lowercase characters with an optional `0x` prefix).
-- **Canonical form:** Every address ultimately resolves to a 32-byte Ed25519
-  public key stored in the node’s state database.
-- **Where they appear:** Node RPC (`/account/:address`, `/tx`, `/block`),
-  gateway/explorer API responses, validator IDs, and the wallet CLI.
+- **Format:** Base58Check strings that start with `i…` plus a hex variant (64 lowercase characters with an optional `0x` prefix).
+- **Canonical form:** Every address ultimately resolves to a 32-byte Ed25519 public key stored in the node’s state database.
+- **Where they appear:** Node RPC (`/account/:address`, `/tx`, `/block`), gateway/explorer API responses, validator IDs, and the wallet CLI.
 
 ---
 
 ## 2. Handle Format & Validation
 
-Validation is enforced by `crates/types/src/handle.rs` and
-`crates/l2_handle_registry`:
+Validation is enforced by `crates/types/src/handle.rs` and `crates/l2_handle_registry`:
 
 | Rule | Description |
 |------|-------------|
@@ -33,16 +29,13 @@ Validation is enforced by `crates/types/src/handle.rs` and
 | Character set | ASCII alphanumerics plus `_` and `.` (trimmed before validation). |
 | Premium TLDs | `.cyborg`, `.iot`, `.m` are flagged as premium via `Handle::is_premium`. |
 
-Handles are stored on **Layer 2** (see [`L2_HANDLE_SYSTEM.md`](../L2_HANDLE_SYSTEM.md)),
-while Layer 1 only keeps lightweight ownership anchors that prove who controls a
-given handle.
+Handles are stored on **Layer 2** (see [`L2_HANDLE_SYSTEM.md`](../L2_HANDLE_SYSTEM.md)), while Layer 1 only keeps lightweight ownership anchors that prove who controls a given handle.
 
 ---
 
 ## 3. Registering a Handle
 
-Use the RPC’s `POST /handle/register` endpoint (available when a node runs with
-`--dev` or via validator/gateway instances) to submit a `HandleOperation::Register`.
+Use the RPC’s `POST /handle/register` endpoint (available when a node runs with `--dev` or via validator/gateway instances) to submit a `HandleOperation::Register`.
 
 ```bash
 SIGNING_KEY=$(cat signer.hex) # 32-byte private key in hex
@@ -66,12 +59,13 @@ To inspect metadata later:
 curl -sS http://localhost:8080/handle/%40alice.ipn | jq
 ```
 
+Behind the scenes the registry stores metadata in sled and replicates it to the handle DHT so other nodes can resolve the alias.
+
 ---
 
 ## 4. Payment Flow with Handles
 
-Phase 3 added automatic handle resolution to `/tx/payment`. You can now supply
-`@handles` anywhere an address is accepted:
+Phase 3 added automatic handle resolution to `/tx/payment`. You can now supply `@handles` anywhere an address is accepted:
 
 ```jsonc
 {
@@ -88,8 +82,7 @@ The RPC will:
 
 1. Normalize the handle string.
 2. Resolve it via `L2HandleRegistry`.
-3. Replace it with the owner’s 32-byte address before signing and forwarding the
-   transaction to consensus.
+3. Replace it with the owner’s 32-byte address before signing and forwarding the transaction to consensus.
 
 Errors are surfaced with specific codes:
 
@@ -103,7 +96,7 @@ Errors are surfaced with specific codes:
 
 ## 5. Wallet CLI Support
 
-The Phase 2 wallet CLI now accepts handles transparently:
+The wallet CLI accepts handles transparently:
 
 ```bash
 ippan-wallet --rpc-url http://localhost:8081 send-payment \
@@ -116,8 +109,7 @@ ippan-wallet --rpc-url http://localhost:8081 send-payment \
   --yes
 ```
 
-The CLI simply forwards the handle strings to `/tx/payment`; the node performs
-the final resolution.
+The CLI forwards the handle strings to `/tx/payment`; the node performs the final resolution.
 
 ---
 
@@ -127,10 +119,18 @@ the final resolution.
 2. Generate a key and register `@alice.ipn`.
 3. Fund it via `/dev/fund`.
 4. Send a payment from `@alice.ipn` to `@friend.ipn`.
-5. Watch the transaction appear in the unified UI (http://localhost:3000).
+5. Watch the transaction appear in the unified UI (`http://localhost:3000`).
 
-For a scripted version see `scripts/smoke_wallet_cli.sh` (set
-`TO_ADDRESS='@friend.ipn'` to test handle payments).
+For a scripted version see `scripts/smoke_wallet_cli.sh` (set `TO_ADDRESS='@friend.ipn'` to test handle payments).
+
+---
+
+## 7. Best Practices & Security Notes
+
+- Treat handles as public data; do not embed secrets or PII inside the metadata payload.
+- Renew handles before `expires_at` to avoid squatting. The CLI prints the expiry timestamp after each registration.
+- Store wallet files with `chmod 600`; the same key signs payments and handle registrations.
+- When building SDK flows, surface both the handle and canonical address so users can verify the resolved recipient.
 
 ---
 
