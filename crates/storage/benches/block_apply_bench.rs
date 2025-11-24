@@ -19,7 +19,7 @@ fn synthetic_block(tx_count: usize, round: u64) -> Block {
 
 fn apply_block(storage: &MemoryStorage, block: Block) {
     storage.store_block(block.clone()).expect("store block");
-    for tx in block.transactions.iter().cloned() {
+    for tx in &block.transactions {
         storage
             .store_transaction(tx.clone())
             .expect("store transaction");

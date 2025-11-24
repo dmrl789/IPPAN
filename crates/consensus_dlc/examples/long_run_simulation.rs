@@ -12,10 +12,12 @@ async fn main() -> Result<()> {
     const TOTAL_ROUNDS: u64 = 1_024;
     const VALIDATOR_COUNT: usize = 48;
 
-    let mut config = DlcConfig::default();
-    config.validators_per_round = 17;
-    config.unstaking_lock_rounds = 720;
-    config.min_reputation = 2_500;
+    let config = DlcConfig {
+        validators_per_round: 17,
+        unstaking_lock_rounds: 720,
+        min_reputation: 2_500,
+        ..DlcConfig::default()
+    };
 
     let mut consensus = DlcConsensus::new(config);
 

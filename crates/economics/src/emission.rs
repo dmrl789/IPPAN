@@ -92,9 +92,11 @@ mod tests {
 
     #[test]
     fn emission_respects_halving_schedule() {
-        let mut params = EconomicsParams::default();
-        params.initial_round_reward_micro = 128;
-        params.halving_interval_rounds = 2;
+        let params = EconomicsParams {
+            initial_round_reward_micro: 128,
+            halving_interval_rounds: 2,
+            ..EconomicsParams::default()
+        };
 
         assert_eq!(emission_for_round(0, &params), 0);
         assert_eq!(emission_for_round(1, &params), 128);
@@ -106,9 +108,11 @@ mod tests {
 
     #[test]
     fn capped_emission_honors_remaining_supply() {
-        let mut params = EconomicsParams::default();
-        params.initial_round_reward_micro = 1_000;
-        params.max_supply_micro = 10_000;
+        let params = EconomicsParams {
+            initial_round_reward_micro: 1_000,
+            max_supply_micro: 10_000,
+            ..EconomicsParams::default()
+        };
 
         let emission = emission_for_round_capped(1, 5_000, &params).unwrap();
         assert_eq!(emission, 1_000);
@@ -139,9 +143,11 @@ mod tests {
 
     #[test]
     fn project_total_supply_matches_manual_summation() {
-        let mut params = EconomicsParams::default();
-        params.initial_round_reward_micro = 100;
-        params.halving_interval_rounds = 3;
+        let params = EconomicsParams {
+            initial_round_reward_micro: 100,
+            halving_interval_rounds: 3,
+            ..EconomicsParams::default()
+        };
 
         // Manual summation for first 6 rounds: 100 + 100 + 100 + 50 + 50 + 50 = 450
         assert_eq!(project_total_supply(0, &params), 0);
@@ -150,10 +156,12 @@ mod tests {
 
     #[test]
     fn emission_details_reports_remaining_supply() {
-        let mut params = EconomicsParams::default();
-        params.initial_round_reward_micro = 1_000;
-        params.halving_interval_rounds = 4;
-        params.max_supply_micro = 5_000;
+        let params = EconomicsParams {
+            initial_round_reward_micro: 1_000,
+            halving_interval_rounds: 4,
+            max_supply_micro: 5_000,
+            ..EconomicsParams::default()
+        };
 
         let result = get_emission_details(3, 2_000, &params).unwrap();
         assert_eq!(result.round, 3);
