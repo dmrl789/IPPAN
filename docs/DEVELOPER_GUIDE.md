@@ -109,6 +109,7 @@ npm --version
 - Start with the [`docs/README.md`](./README.md) index to find module-specific references.
 - Protocol deep dives live in [`AI_IMPLEMENTATION_GUIDE.md`](./AI_IMPLEMENTATION_GUIDE.md), [`CONSENSUS_RESEARCH_SUMMARY.md`](./CONSENSUS_RESEARCH_SUMMARY.md), and the `consensus/` module.
 - Product direction, acceptance criteria, and roadmap are under [`prd/`](./prd/README.md).
+- Wallet CLI workflows and smoke tests are documented in [`dev/wallet-cli.md`](./dev/wallet-cli.md).
 - For agent governance and scope rules, revisit [`.cursor/AGENT_CHARTER.md`](../.cursor/AGENT_CHARTER.md).
 
 When in doubt, prefer discussion in code reviews or issue threads so knowledge stays visible to other contributors.
