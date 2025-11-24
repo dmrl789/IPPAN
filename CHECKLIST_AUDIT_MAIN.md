@@ -238,19 +238,65 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
   - All property tests pass (9 tests, 100+ iterations each via proptest)
   - Fuzz targets cover: JSON deserialization, handle resolution, address formats, amount precision
 
-- [ ] **Consensus Fuzz Testing**: Add property-based tests and fuzz targets for consensus-critical paths:
-  - Round finalization logic (payments, handles, slashing)
-  - Fork choice and conflict resolution
-  - Supply cap enforcement under adversarial inputs
-  - Validator selection and rotation fairness
+- [x] **Consensus Fuzz Testing (Phase E - Step 3)**: Comprehensive property-based tests and fuzz targets for consensus-critical paths:
+  - **New fuzz target**: `fuzz/fuzz_targets/fuzz_consensus_round.rs`
+    - Round number parsing and validation (overflow checks)
+    - Supply cap enforcement (21 billion IPN cap, emission arithmetic)
+    - Validator selection seed handling (deterministic hash-based selection)
+    - Reward distribution ratio validation (basis points 0-10000)
+    - Validator count bounds (1-10,000 validators)
+    - Block reward halving calculation
+    - Fork choice weight calculation (height, verifier count, timestamp)
+  - **New property tests**: `crates/consensus/tests/phase_e_property_gates.rs` (15 tests)
+    - Supply cap never exceeded by emission
+    - Reward distribution never overflows
+    - Round numbers monotonically increase
+    - Validator selection seed produces deterministic output
+    - Fork choice weight calculation never overflows
+    - Transaction fee validation prevents overflow
+    - Balance deduction never goes negative
+    - DAG parent count stays bounded (≤20)
+    - Timestamp ordering within consensus round (clock skew ≤5s)
+    - Validator bond arithmetic never overflows
+    - Slashing penalty stays within bond amount
+    - Block hash collisions astronomically unlikely (BLAKE3)
+    - Emission halving calculation never underflows
+    - Verifier set size bounded by total validator count
+    - Nonce increment prevents replay attacks
+  - Run with: `cargo test -p ippan-consensus --test phase_e_property_gates`
 
-- [ ] **RPC & Network Fuzz Testing**: Extend fuzz coverage for:
-  - P2P message handling (DHT, gossip, discovery)
-  - Transaction validation and mempool admission
+- [x] **RPC & Network Fuzz Testing (Phase E - Step 3)**: Extended fuzz coverage for network and transaction validation:
+  - **Enhanced fuzz target**: `fuzz/fuzz_targets/fuzz_p2p_message.rs`
+    - Message size limits (10MB max message, 5MB max block, 1MB max tx)
+    - Message type dispatch (6 types: block, tx, peer announcement, DHT query, gossipsub, block request)
+    - Multiaddr parsing (libp2p addresses: /ip4/, /ip6/, /dns/)
+    - Peer ID validation (32-byte hash, no all-zeros)
+    - Rate limiting metadata (timestamp, message count per second/minute)
+  - **Enhanced fuzz target**: `fuzz/fuzz_targets/fuzz_transaction_decode.rs`
+    - JSON transaction parsing (from/to/amount/fee/nonce/signature fields)
+    - Handle transaction detection (@handle.suffix)
+    - Binary signature format validation (Ed25519 64 bytes)
+    - Transaction size limits (1MB max)
+    - Amount parsing (u128 atomic units, decimal precision up to 24 decimals)
+    - Nonce handling and overflow prevention
+  - Run with: `cargo +nightly fuzz run fuzz_p2p_message` and `fuzz_transaction_decode`
 
-- [ ] **Wallet & Crypto Fuzz Testing**: Add fuzz targets for:
-  - Ed25519 signature validation edge cases
-  - Transaction serialization/deserialization
+- [x] **Wallet & Crypto Fuzz Testing (Phase E - Step 3)**: Comprehensive fuzz targets for cryptographic operations:
+  - **New fuzz target**: `fuzz/fuzz_targets/fuzz_crypto_signatures.rs`
+    - Ed25519 signature format validation (64 bytes)
+    - Ed25519 public key format (32 bytes)
+    - Address parsing (Base58Check with 'i' prefix, hex with optional 0x)
+    - Public key derivation from 32-byte seeds
+    - BLAKE3 hash operations (arbitrary input up to 1MB)
+    - Checksum validation (4-byte little-endian)
+    - Key format conversion (hex, Base58)
+    - Signature malleability checks (canonical form, zero signatures rejected)
+    - Multi-signature threshold validation (1 ≤ threshold ≤ total_signers ≤ 255)
+  - Run with: `cargo +nightly fuzz run fuzz_crypto_signatures`
+  
+  **Documentation**: All fuzz targets, property tests, invariants, and running instructions are documented in [`PHASE_E_STEP3_FUZZ_RESULTS.md`](PHASE_E_STEP3_FUZZ_RESULTS.md).
+  
+  **Total Coverage**: 6 fuzz targets + 34 property tests across consensus, transactions, network/P2P, crypto/wallet, and DLC.
 
 ### 17. External Audit Integration
 
