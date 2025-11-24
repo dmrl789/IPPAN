@@ -645,9 +645,21 @@ fn parse_multiaddrs(values: &[String], label: &str) -> Vec<Multiaddr> {
 }
 
 fn load_config_with_overrides(matches: &clap::ArgMatches) -> Result<AppConfig> {
-    let profile = *matches
-        .get_one::<NetworkProfile>("network")
-        .unwrap_or(&NetworkProfile::Devnet);
+    // Check environment variable first, then fall back to CLI arg
+    let profile = if let Ok(env_network) = std::env::var("IPPAN_NETWORK") {
+        match env_network.to_lowercase().as_str() {
+            "devnet" => NetworkProfile::Devnet,
+            "testnet" => NetworkProfile::Testnet,
+            "mainnet" => NetworkProfile::Mainnet,
+            _ => *matches
+                .get_one::<NetworkProfile>("network")
+                .unwrap_or(&NetworkProfile::Devnet),
+        }
+    } else {
+        *matches
+            .get_one::<NetworkProfile>("network")
+            .unwrap_or(&NetworkProfile::Devnet)
+    };
     let config_path = matches
         .get_one::<String>("config")
         .map(|value| value.as_str());
