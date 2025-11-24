@@ -52,6 +52,12 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 | **Documentation & Onboarding** | Whitepaper and PRDs complete; code-level docs improving | – | **0.80** | 🟢 Mature | Add `docs/dev_guide.md` and architecture diagrams |
 | **Overall Readiness** | Weighted composite across all modules | **100 %** | **≈ 0.69 (≈ 70 %)** | 🟡 Beta-ready | Push toward 85 %+ before mainnet audit |
 
+### 📋 Audit Hardening Progress
+
+**Phases A–D Complete:** The initial audit-hardening wave (economics integration, AI determinism, network/storage hardening, and governance/audit preparation) has been completed. See [`PHASE_A_D_COMPLETION_SUMMARY.md`](PHASE_A_D_COMPLETION_SUMMARY.md) for the full breakdown of work completed across all four phases.
+
+**Status:** This represents the first four phases of internal hardening. The codebase is now audit-ready, but **Phase E** (External Audit & Launch Gate) remains before we can claim 100% production readiness. Phase E scope is defined in [`CHECKLIST_AUDIT_MAIN.md`](CHECKLIST_AUDIT_MAIN.md).
+
 ### 🧩 Next Milestones
 
 - [ ] Achieve ≥ 80 % test coverage for critical crates

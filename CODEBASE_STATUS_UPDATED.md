@@ -399,3 +399,53 @@ crates/*/src/lib.rs  # Look for #[cfg(test)] blocks
 - **Snapshot Readiness (from README dashboard):** Overall ≈ 0.69 (≈ 70 %), with Implementation at 0.80, Testing & Verification at 0.45, Operational Hardening at 0.75, AI Determinism at 0.70, CI/CD at 0.90, and Documentation at 0.80.
 - **Focus for this pass:** finish fork resolution and DAG-Fair treasury distribution, raise critical-crate coverage to ≥ 80 % with DAG conflict and persistence tests, wire security manager + metrics, validate AI determinism across aarch64/x86_64, and publish updated developer/onboarding docs alongside refreshed audit checklists.
 - **Target Outcome:** Transition readiness categories to audit-ready / mainnet-ready, removing remaining beta qualifiers and ensuring documentation and scripts match the hardened runtime.
+
+---
+
+## 2025-11-24 Audit Hardening Status
+
+### Phases A–D: Complete ✅
+
+The initial audit-hardening wave has been completed across four major phases. See [`PHASE_A_D_COMPLETION_SUMMARY.md`](PHASE_A_D_COMPLETION_SUMMARY.md) for comprehensive details:
+
+- **Phase A**: Economics Crate Integration (DAG-Fair emission) – 83 tests passing, single source of truth established
+- **Phase B**: AI Core + Registry Determinism – 151 tests passing, golden vectors validated, cross-platform determinism documented
+- **Phase C**: Network & Storage Hardening – 66 tests passing, comprehensive P2P/DHT and storage layer coverage
+- **Phase D**: Governance & External Audit Preparation – Audit package ready, Go/No-Go checklist complete
+
+**Test Coverage**: 300+ tests across all phases with 80-90% coverage for critical paths.
+
+**Documentation**: Comprehensive specs, test reports, threat models, and operational guides in place.
+
+### Phase E: Active Focus 🔄
+
+Phase E (External Audit & Launch Gate) is now the active phase and defines what remains before claiming 100% production readiness. See [`CHECKLIST_AUDIT_MAIN.md`](CHECKLIST_AUDIT_MAIN.md) for the complete Phase E scope.
+
+**Phase E High-Level Scope**:
+- Long-run DLC and determinism simulations as gates (not just reports)
+- Property-based and fuzz testing for consensus, RPC, wallet, and DHT critical paths
+- External audit engagement, bug triage flow, and patch verification
+- Final Go/No-Go sign-off and testnet → mainnet promotion criteria
+
+**Timeline**: Phase E expected to take 8-12 weeks, depending on external audit scheduling and findings.
+
+### Readiness Assessment Update
+
+**Current State**: The codebase is **audit-ready** (Phases A–D complete) but not yet **production-ready** (Phase E pending).
+
+**Numeric Readiness**: ~70% overall (unchanged from previous snapshot), but the nature of remaining work is now clearly scoped:
+- Internal hardening: Complete (Phases A–D)
+- External validation gates: Pending (Phase E)
+- Mainnet promotion criteria: Defined but not yet met
+
+**What Changed**: We now have a clear roadmap (Phase E) for the final pass to 100% readiness, with explicit gates and acceptance criteria rather than vague "remaining work" items.
+
+### For External Auditors
+
+IPPAN is ready for external audit engagement. The audit package, threat model, test coverage reports, and DLC simulation results are documented in the Phase A–D summary and supporting materials.
+
+**Starting Point**: Review [`PHASE_A_D_COMPLETION_SUMMARY.md`](PHASE_A_D_COMPLETION_SUMMARY.md) and [`AUDIT_SUMMARY.md`](AUDIT_SUMMARY.md) for context, scope, and focus areas.
+
+### For Next Agent
+
+Phase E work can begin immediately. Pick a concrete item from the Phase E section in [`CHECKLIST_AUDIT_MAIN.md`](CHECKLIST_AUDIT_MAIN.md) (e.g., long-run DLC gate implementation, fuzz target addition, or cross-architecture determinism validation) and implement it. The Phase A–D summary provides context and baseline for all future work.

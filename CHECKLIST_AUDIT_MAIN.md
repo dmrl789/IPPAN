@@ -192,3 +192,90 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `scripts/localnet_chaos_start.sh` + `scripts/localnet_chaos_scenario.sh` exercise payments, handles, and files while drops/latency are active.
 - [x] Node restart/churn walkthrough (`scripts/localnet_churn_scenario.sh`) documents the manual stop/start flow and validates RPC convergence after reboot.
 - [ ] Automated, long-running chaos suites wired into CI remain future work.
+
+---
+
+## Phase E – External Audit & Launch Gate
+
+**Context:** Phases A–D (see [`PHASE_A_D_COMPLETION_SUMMARY.md`](PHASE_A_D_COMPLETION_SUMMARY.md)) covered internal hardening across economics, AI determinism, network/storage, and governance. Phase E defines the remaining high-level tasks required before claiming 100% production readiness and transitioning to mainnet.
+
+### 15. Long-Run DLC & Determinism Simulations (Gate)
+
+- [ ] **DLC Long-Run Simulations as a Gate**: Run multi-round (512+) DLC simulations with full fairness scoring, validator rotation, and reward distribution. These must pass consistently (no panics, no drift) before proceeding to external audit.
+  - Target: 1000+ rounds with full validator set and AI model scoring
+  - Validation: Supply cap enforcement, reward distribution correctness, no time-ordering violations
+  - Documentation: Results published as part of audit package
+
+- [ ] **Cross-Architecture Determinism Validation**: Re-run AI determinism harness and DLC simulations on multiple architectures (x86_64, aarch64, ARM) to verify bit-for-bit identical behavior.
+  - Target: All determinism tests produce identical golden vectors across architectures
+  - Validation: BLAKE3 hashes match across platforms for same inputs
+  - Documentation: Cross-platform determinism report published
+
+### 16. Property-Based & Fuzz Testing (Critical Paths)
+
+- [ ] **Consensus Fuzz Testing**: Add property-based tests and fuzz targets for consensus-critical paths:
+  - Round finalization logic (payments, handles, slashing)
+  - Fork choice and conflict resolution
+  - Supply cap enforcement under adversarial inputs
+  - Validator selection and rotation fairness
+
+- [ ] **RPC & Network Fuzz Testing**: Extend fuzz coverage for:
+  - RPC endpoint parsing (malformed JSON, oversized payloads)
+  - P2P message handling (DHT, gossip, discovery)
+  - Transaction validation and mempool admission
+
+- [ ] **Wallet & Crypto Fuzz Testing**: Add fuzz targets for:
+  - Ed25519 signature validation edge cases
+  - Address parsing and validation
+  - Transaction serialization/deserialization
+
+### 17. External Audit Integration
+
+- [ ] **External Audit Engagement**: Contract with reputable blockchain security firm for comprehensive audit of:
+  - Consensus safety and liveness properties
+  - Cryptographic primitives usage
+  - P2P network attack surface
+  - Economic model correctness (emission, fees, rewards)
+  - AI determinism guarantees
+
+- [ ] **Bug Triage Flow**: Establish clear process for:
+  - Severity classification (critical, high, medium, low, informational)
+  - Response timelines for each severity level
+  - Patch development and verification workflow
+  - Regression test requirements for all fixes
+
+- [ ] **Patch Window & Re-Testing**: After addressing audit findings:
+  - Re-run all long-run simulations (DLC, determinism, chaos)
+  - Verify no regressions introduced by patches
+  - Provide updated audit package to auditors for verification
+  - Obtain auditor sign-off on all critical/high findings
+
+### 18. Final Go/No-Go Checklist & Mainnet Promotion
+
+- [ ] **Complete Go/No-Go Sign-Off**: All items in the Go/No-Go checklist (referenced in [`PHASE_A_D_COMPLETION_SUMMARY.md`](PHASE_A_D_COMPLETION_SUMMARY.md)) must be signed off by:
+  - Lead architect (consensus & economics)
+  - Security lead (audit findings resolution)
+  - Network lead (P2P resilience validation)
+  - External auditors (final report approval)
+
+- [ ] **Testnet → Mainnet Promotion Criteria**:
+  - Minimum testnet runtime: 30 days without critical issues
+  - Minimum validator count: 10+ independent operators
+  - Demonstrated network resilience (chaos testing, node churn)
+  - All Phase E gates passed
+  - Community/operator readiness (documentation, tooling, support channels)
+
+- [ ] **Launch Preparation**:
+  - Mainnet genesis parameters finalized and reviewed
+  - Validator onboarding process documented and tested
+  - Emergency response procedures established
+  - Monitoring and alerting infrastructure operational
+  - Post-launch support plan in place
+
+---
+
+**Phase E Owner**: External audit coordination by lead architect; internal gate execution by consensus/network/security leads.
+
+**Timeline**: Phase E is expected to take 8-12 weeks from kick-off to mainnet launch, depending on external audit scheduling and findings severity.
+
+**Next Agent Instructions**: Pick a concrete Phase E item (e.g., long-run DLC gate implementation, fuzz target addition, or audit package finalization) and implement it. Use [`PHASE_A_D_COMPLETION_SUMMARY.md`](PHASE_A_D_COMPLETION_SUMMARY.md) and this checklist as the source of truth for scope and context.
