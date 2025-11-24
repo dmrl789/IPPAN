@@ -2960,6 +2960,7 @@ dependencies = [
  "ippan-ai-registry",
  "ippan-crypto",
  "ippan-types",
+ "ippan_economics",
  "log",
  "num-bigint",
  "num-traits",

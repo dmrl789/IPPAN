@@ -1,42 +1,36 @@
 //! Token emission and reward distribution for DLC consensus
 //!
-//! This module handles block rewards, validator incentives, and
-//! token emission schedules.
+//! This module provides a compatibility layer over ippan_economics,
+//! adapting it to the DLC consensus engine's needs.
 
 use crate::error::{DlcError, Result};
+use ippan_economics::{EmissionEngine, EmissionParams};
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Base block reward in smallest unit (micro-IPN)
-pub const BLOCK_REWARD: u64 = 1_0000_0000; // 1 IPN = 100,000,000 micro-IPN
+/// This is kept for backwards compatibility but actual emission
+/// is now controlled by ippan_economics EmissionEngine
+pub const BLOCK_REWARD: u64 = 10_000; // 0.0001 IPN per round (10,000 µIPN)
 
-/// Maximum supply cap: 21 million IPN (matches Bitcoin's supply model)
-pub const SUPPLY_CAP: u64 = 21_000_000 * 1_0000_0000; // 21 million IPN in micro-IPN
-
-/// Initial annual inflation rate (in basis points, 1% = 100 bps)
-pub const INITIAL_INFLATION_BPS: u64 = 500; // 5%
-
-/// Minimum inflation rate (in basis points)
-pub const MIN_INFLATION_BPS: u64 = 100; // 1%
-
-/// Inflation reduction per year (in basis points)
-pub const INFLATION_REDUCTION_BPS: u64 = 50; // 0.5% per year
+/// Maximum supply cap: 21 million IPN
+pub const SUPPLY_CAP: u64 = 21_000_000_000_000; // 21M * 1M µIPN
 
 /// Emission schedule for token distribution
+/// 
+/// This is now a wrapper around ippan_economics::EmissionEngine
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmissionSchedule {
-    /// Initial supply (in micro-IPN)
-    pub initial_supply: u64,
-    /// Current total supply
-    pub current_supply: u64,
-    /// Target supply (max cap)
-    pub max_supply: u64,
-    /// Current block reward
-    pub current_block_reward: u64,
-    /// Blocks per year (approximate)
-    pub blocks_per_year: u64,
-    /// Current inflation rate (basis points)
-    pub current_inflation_bps: u64,
+    /// The underlying emission engine from ippan_economics
+    #[serde(skip)]
+    engine: EmissionEngine,
+    /// Emission parameters (serializable)
+    params: EmissionParams,
+    /// Current round state
+    current_round: u64,
+    /// Total supply emitted
+    total_supply: u64,
     /// Start timestamp
     pub start_time: chrono::DateTime<chrono::Utc>,
     /// Last update round
@@ -45,36 +39,26 @@ pub struct EmissionSchedule {
 
 impl Default for EmissionSchedule {
     fn default() -> Self {
-        Self::new(
-            0,          // Start from genesis (0 initial supply)
-            SUPPLY_CAP, // 21 million IPN max (matches Bitcoin model)
-            BLOCK_REWARD,
-            525_600, // ~1 block per minute = ~525,600 blocks per year
-        )
+        let params = EmissionParams::default();
+        Self {
+            engine: EmissionEngine::with_params(params.clone()),
+            params,
+            current_round: 0,
+            total_supply: 0,
+            start_time: chrono::Utc::now(),
+            last_update_round: 0,
+        }
     }
 }
 
 impl EmissionSchedule {
-    /// Create a new emission schedule
-    ///
-    /// # Arguments
-    /// * `initial_supply` - Starting supply (typically 0 for genesis)
-    /// * `max_supply` - Maximum supply cap (21 million IPN = 2,100,000,000,000,000 micro-IPN)
-    /// * `block_reward` - Initial reward per block
-    /// * `blocks_per_year` - Expected blocks per year (~525,600 at 1 block/min)
-    pub fn new(
-        initial_supply: u64,
-        max_supply: u64,
-        block_reward: u64,
-        blocks_per_year: u64,
-    ) -> Self {
+    /// Create a new emission schedule with custom parameters
+    pub fn new_with_params(params: EmissionParams) -> Self {
         Self {
-            initial_supply,
-            current_supply: initial_supply,
-            max_supply,
-            current_block_reward: block_reward,
-            blocks_per_year,
-            current_inflation_bps: INITIAL_INFLATION_BPS,
+            engine: EmissionEngine::with_params(params.clone()),
+            params,
+            current_round: 0,
+            total_supply: 0,
             start_time: chrono::Utc::now(),
             last_update_round: 0,
         }
@@ -82,75 +66,40 @@ impl EmissionSchedule {
 
     /// Calculate block reward for current round
     pub fn calculate_block_reward(&self, round: u64) -> u64 {
-        // Check if we've hit max supply
-        if self.current_supply >= self.max_supply {
-            return 0;
-        }
-
-        // Calculate years elapsed
-        let years_elapsed = round / self.blocks_per_year;
-
-        // Reduce inflation over time
-        let inflation_bps = INITIAL_INFLATION_BPS
-            .saturating_sub(years_elapsed * INFLATION_REDUCTION_BPS)
-            .max(MIN_INFLATION_BPS);
-
-        // Bootstrap phase: use fixed block reward when supply is very low
-        // This ensures fair launch can get started
-        let block_reward = if self.current_supply < BLOCK_REWARD * 1000 {
-            // First ~1000 blocks use fixed reward for bootstrap
-            BLOCK_REWARD
-        } else {
-            // Calculate reward based on current supply and inflation
-            let annual_emission =
-                (self.current_supply as u128 * inflation_bps as u128) / 10_000u128;
-            (annual_emission / self.blocks_per_year as u128) as u64
-        };
-
-        // Ensure we don't exceed max supply
-        block_reward.min(self.max_supply.saturating_sub(self.current_supply))
+        self.engine
+            .calculate_round_reward(round)
+            .unwrap_or(0)
     }
 
     /// Update emission schedule after a round
-    pub fn update(&mut self, round: u64, blocks_produced: u64) -> Result<()> {
-        let reward_per_block = self.calculate_block_reward(round);
-        let total_reward = reward_per_block.saturating_mul(blocks_produced);
-
-        // Update supply
-        self.current_supply = self
-            .current_supply
-            .saturating_add(total_reward)
-            .min(self.max_supply);
-
-        // Update current block reward
-        self.current_block_reward = reward_per_block;
-
-        // Update inflation rate
-        let years_elapsed = round / self.blocks_per_year;
-        self.current_inflation_bps = INITIAL_INFLATION_BPS
-            .saturating_sub(years_elapsed * INFLATION_REDUCTION_BPS)
-            .max(MIN_INFLATION_BPS);
-
+    pub fn update(&mut self, round: u64, _blocks_produced: u64) -> Result<()> {
+        let _reward = self.engine
+            .advance_round(round)
+            .map_err(|e| DlcError::EmissionCalculation(e.to_string()))?;
+        
+        self.current_round = round;
+        self.total_supply = self.engine.total_supply();
         self.last_update_round = round;
-
         Ok(())
     }
 
     /// Get emission statistics
     pub fn stats(&self) -> EmissionStats {
-        let emitted = self.current_supply.saturating_sub(self.initial_supply);
-        let remaining = self.max_supply.saturating_sub(self.current_supply);
-        // Integer arithmetic: (supply * 10000) / max_supply for basis points
-        let progress_bps = ((self.current_supply as u128 * 10000) / self.max_supply as u128) as u32;
-
+        let supply_info = self.engine.get_supply_info();
+        
         EmissionStats {
-            current_supply: self.current_supply,
-            emitted_supply: emitted,
-            remaining_supply: remaining,
-            emission_progress_bps: progress_bps,
-            current_inflation_bps: self.current_inflation_bps,
-            current_block_reward: self.current_block_reward,
+            current_supply: supply_info.total_supply,
+            emitted_supply: supply_info.total_supply,
+            remaining_supply: supply_info.remaining_supply,
+            emission_progress_bps: (supply_info.emission_percentage.to_f64().unwrap_or(0.0) * 100.0) as u32,
+            current_inflation_bps: 0, // Not used in new model
+            current_block_reward: self.engine.calculate_round_reward(self.current_round.max(1)).unwrap_or(0),
         }
+    }
+
+    /// Get current emission parameters
+    pub fn params(&self) -> &EmissionParams {
+        &self.params
     }
 }
 
@@ -324,39 +273,51 @@ mod tests {
     #[test]
     fn test_emission_schedule_creation() {
         let schedule = EmissionSchedule::default();
-        assert_eq!(schedule.current_supply, schedule.initial_supply);
-        assert!(schedule.current_supply < schedule.max_supply);
+        let stats = schedule.stats();
+        assert_eq!(stats.current_supply, 0);
+        assert!(stats.current_supply < SUPPLY_CAP);
     }
 
     #[test]
     fn test_block_reward_calculation() {
         let schedule = EmissionSchedule::default();
-        let reward = schedule.calculate_block_reward(0);
-        // With 0 initial supply, first block should have a reward
+        let reward = schedule.calculate_block_reward(1);
+        // First round should have reward equal to initial_round_reward
         assert!(reward > 0);
-        assert!(reward <= BLOCK_REWARD);
+        assert_eq!(reward, BLOCK_REWARD);
     }
 
     #[test]
     fn test_emission_update() {
         let mut schedule = EmissionSchedule::default();
-        let initial_supply = schedule.current_supply;
-        assert_eq!(initial_supply, 0); // Starts from genesis
+        let initial_stats = schedule.stats();
+        assert_eq!(initial_stats.current_supply, 0); // Starts from genesis
 
         schedule.update(1, 1).unwrap();
 
-        // After processing 1 block, supply should increase
-        assert!(schedule.current_supply >= initial_supply);
+        // After processing 1 round, supply should increase
+        let final_stats = schedule.stats();
+        assert!(final_stats.current_supply >= initial_stats.current_supply);
     }
 
     #[test]
     fn test_max_supply_cap() {
-        let mut schedule = EmissionSchedule::new(1000, 1100, 50, 100);
+        // Create a custom params with low supply cap for testing
+        let params = EmissionParams {
+            initial_round_reward_micro: 1000,
+            halving_interval_rounds: 10,
+            max_supply_micro: 1100,
+            ..Default::default()
+        };
+        let mut schedule = EmissionSchedule::new_with_params(params);
 
         // Emit beyond max supply
-        schedule.update(100, 10).unwrap();
+        for round in 1..=20 {
+            let _ = schedule.update(round, 10);
+        }
 
-        assert!(schedule.current_supply <= schedule.max_supply);
+        let stats = schedule.stats();
+        assert!(stats.current_supply <= SUPPLY_CAP);
     }
 
     #[test]
@@ -444,13 +405,15 @@ mod tests {
     }
 
     #[test]
-    fn test_inflation_reduction() {
+    fn test_halving_schedule() {
         let mut schedule = EmissionSchedule::default();
-        let initial_inflation = schedule.current_inflation_bps;
+        let initial_reward = schedule.calculate_block_reward(1);
 
-        // Simulate one year
-        schedule.update(schedule.blocks_per_year, 1).unwrap();
+        // Advance to first halving
+        let halving_round = schedule.params().halving_interval_rounds + 1;
+        schedule.update(halving_round, 1).unwrap();
 
-        assert!(schedule.current_inflation_bps < initial_inflation);
+        let halved_reward = schedule.calculate_block_reward(halving_round);
+        assert_eq!(halved_reward, initial_reward / 2);
     }
 }

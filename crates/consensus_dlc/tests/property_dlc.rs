@@ -217,7 +217,7 @@ proptest! {
                 validator_ids.push(id);
             }
 
-            let baseline_supply = consensus.emission.current_supply;
+            let baseline_supply = consensus.emission.stats().current_supply;
 
             for (idx, (add_block, proposer_hint)) in events.into_iter().enumerate() {
                 if add_block {
@@ -241,8 +241,9 @@ proptest! {
 
                 let result = consensus.process_round().await.expect("round result");
                 prop_assert!(result.round >= 1);
-                prop_assert!(consensus.emission.current_supply >= baseline_supply);
-                prop_assert!(consensus.emission.current_supply <= emission::SUPPLY_CAP);
+                let current_supply = consensus.emission.stats().current_supply;
+                prop_assert!(current_supply >= baseline_supply);
+                prop_assert!(current_supply <= emission::SUPPLY_CAP);
 
                 for vid in &validator_ids {
                     prop_assert!(consensus.reputation.score(vid) >= 0);

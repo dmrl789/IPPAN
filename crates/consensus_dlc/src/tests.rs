@@ -226,20 +226,20 @@ async fn test_bonding_and_slashing() {
 #[tokio::test]
 async fn test_emission_schedule() {
     let mut emission = EmissionSchedule::default();
-    let initial_supply = emission.current_supply;
-    assert_eq!(initial_supply, 0); // Starts from genesis (0 supply)
+    let initial_stats = emission.stats();
+    assert_eq!(initial_stats.current_supply, 0); // Starts from genesis (0 supply)
 
     // Process several rounds
     for round in 1..=100 {
         emission.update(round, 1).unwrap();
     }
 
+    let final_stats = emission.stats();
     // Supply should have increased from 0
-    assert!(emission.current_supply >= initial_supply);
+    assert!(final_stats.current_supply > initial_stats.current_supply);
 
     // Should not exceed max supply (21 million)
-    assert!(emission.current_supply <= emission.max_supply);
-    assert!(emission.current_supply <= emission::SUPPLY_CAP);
+    assert!(final_stats.current_supply <= emission::SUPPLY_CAP);
 }
 
 #[tokio::test]
@@ -543,7 +543,9 @@ async fn test_long_run_consensus_simulation_stability() {
 
         assert_eq!(result.round, round);
         total_blocks += result.blocks_processed as u64;
-        total_emission += (result.block_reward as u128) * (result.blocks_processed as u128);
+        // In the new economics model, block_reward is the total round reward,
+        // not per-block, so we add it once per round
+        total_emission += result.block_reward as u128;
         reward_history.push(result.block_reward);
 
         if round % 32 == 0 {
@@ -587,16 +589,17 @@ async fn test_long_run_consensus_simulation_stability() {
 }
 
 #[tokio::test]
-async fn test_emission_inflation_reduction() {
+async fn test_emission_halving() {
     let mut emission = EmissionSchedule::default();
-    let initial_inflation = emission.current_inflation_bps;
+    let initial_reward = emission.calculate_block_reward(1);
 
-    // Simulate one year of blocks
-    let blocks_per_year = emission.blocks_per_year;
-    emission.update(blocks_per_year, 1).unwrap();
+    // Simulate reaching first halving
+    let halving_round = emission.params().halving_interval_rounds + 1;
+    emission.update(halving_round, 1).unwrap();
 
-    // Inflation should have decreased
-    assert!(emission.current_inflation_bps < initial_inflation);
+    // Reward should have halved
+    let halved_reward = emission.calculate_block_reward(halving_round);
+    assert_eq!(halved_reward, initial_reward / 2);
 }
 
 #[test]
