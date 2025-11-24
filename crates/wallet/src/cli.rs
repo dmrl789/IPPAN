@@ -466,9 +466,9 @@ fn validate_recipient_identifier(value: &str) -> Result<()> {
     if is_handle_identifier(trimmed) {
         return Ok(());
     }
-    decode_any_address(trimmed).map(|_| ()).map_err(|err| {
-        WalletError::InvalidAddress(format!("invalid recipient `{value}`: {err}"))
-    })
+    decode_any_address(trimmed)
+        .map(|_| ())
+        .map_err(|err| WalletError::InvalidAddress(format!("invalid recipient `{value}`: {err}")))
 }
 
 fn is_handle_identifier(value: &str) -> bool {
