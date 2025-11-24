@@ -7,8 +7,10 @@ use chrono::{serde::ts_seconds, DateTime, Utc};
 use ed25519_dalek::SigningKey;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 use std::fs;
 use std::path::{Path, PathBuf};
+use zeroize::Zeroizing;
 
 /// Current on-disk key file schema version.
 const KEYFILE_VERSION: u8 = 1;
@@ -156,15 +158,11 @@ impl KeyFile {
             KeySecret::Plain { private_key_hex } => {
                 let bytes = hex::decode(private_key_hex)
                     .map_err(|err| WalletError::InvalidPrivateKey(err.to_string()))?;
-                if bytes.len() != 32 {
-                    return Err(WalletError::InvalidPrivateKey(format!(
-                        "expected 32 bytes, got {}",
-                        bytes.len()
-                    )));
-                }
-                let mut key = [0u8; 32];
-                key.copy_from_slice(&bytes);
-                key
+                let slice: &[u8; 32] = bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| WalletError::InvalidPrivateKey("expected 32 bytes".into()))?;
+                *slice
             }
             KeySecret::PasswordProtected {
                 ciphertext,
@@ -224,7 +222,7 @@ fn encrypt_private_key(private_key: &[u8; 32], password: &str) -> Result<KeySecr
     OsRng.fill_bytes(&mut nonce_bytes);
 
     let key = derive_encryption_key(password, &salt)?;
-    let cipher = Aes256Gcm::new_from_slice(&key)
+    let cipher = Aes256Gcm::new_from_slice(key.as_ref())
         .map_err(|err| WalletError::EncryptionError(format!("cipher init failed: {err}")))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
@@ -256,7 +254,7 @@ fn decrypt_private_key(
         .map_err(|err| WalletError::DecryptionError(format!("invalid salt: {err}")))?;
 
     let key = derive_encryption_key(password, &salt_bytes)?;
-    let cipher = Aes256Gcm::new_from_slice(&key)
+    let cipher = Aes256Gcm::new_from_slice(key.as_ref())
         .map_err(|err| WalletError::DecryptionError(format!("cipher init failed: {err}")))?;
     let nonce_array: [u8; 12] = nonce_bytes
         .as_slice()
@@ -271,16 +269,16 @@ fn decrypt_private_key(
             plaintext.len()
         )));
     }
-    let mut key_bytes = [0u8; 32];
-    key_bytes.copy_from_slice(&plaintext);
-    Ok(key_bytes)
+    let mut key_bytes = Zeroizing::new([0u8; 32]);
+    key_bytes.as_mut().copy_from_slice(&plaintext);
+    Ok(*key_bytes)
 }
 
-fn derive_encryption_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
-    let mut key = [0u8; 32];
+fn derive_encryption_key(password: &str, salt: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
+    let mut key = Zeroizing::new([0u8; 32]);
     let argon2 = argon2::Argon2::default();
     argon2
-        .hash_password_into(password.as_bytes(), salt, &mut key)
+        .hash_password_into(password.as_bytes(), salt, key.as_mut())
         .map_err(|err| WalletError::CryptoError(format!("key derivation failed: {err}")))?;
     Ok(key)
 }
