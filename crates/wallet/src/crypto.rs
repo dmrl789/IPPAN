@@ -5,11 +5,20 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{engine::general_purpose, Engine as _};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand_core::{OsRng, RngCore};
+#[cfg(test)]
+use std::cell::RefCell;
+use std::env;
 
 use crate::errors::*;
 use ippan_types::address::{decode_address, encode_address, ADDRESS_BYTES};
 
-const LEGACY_SALT: &[u8] = b"ippan_wallet_salt_2024";
+const LEGACY_SALT_ENV: &str = "IPPAN_WALLET_LEGACY_SALT_B64";
+const LEGACY_SALT_FALLBACK: &[u8] = b"ippan_wallet_salt_2024";
+
+#[cfg(test)]
+thread_local! {
+    static LEGACY_SALT_OVERRIDE: RefCell<Option<Vec<u8>>> = RefCell::new(None);
+}
 
 /// Generate a new Ed25519 key pair
 pub fn generate_keypair() -> ([u8; 32], [u8; 32]) {
@@ -187,7 +196,8 @@ fn derive_compatible_keys(
         // stored key directly, but keep the historical fixed-salt derivation for deterministic
         // wallets created before this change.
         32 => {
-            let legacy_key = derive_encryption_key(password, LEGACY_SALT)?;
+            let legacy_salt = load_legacy_salt()?;
+            let legacy_key = derive_encryption_key(password, &legacy_salt)?;
 
             let key: [u8; 32] = salt_bytes
                 .try_into()
@@ -201,6 +211,31 @@ fn derive_compatible_keys(
         }
         _ => Ok((derive_encryption_key(password, salt_bytes)?, None)),
     }
+}
+
+fn load_legacy_salt() -> Result<Vec<u8>> {
+    #[cfg(test)]
+    if let Some(override_bytes) = LEGACY_SALT_OVERRIDE.with(|cell| cell.borrow().clone()) {
+        return Ok(override_bytes);
+    }
+
+    if let Ok(encoded) = env::var(LEGACY_SALT_ENV) {
+        let trimmed = encoded.trim();
+        if trimmed.is_empty() {
+            return Err(WalletError::CryptoError(
+                "Legacy salt override cannot be empty".to_string(),
+            ));
+        }
+
+        return general_purpose::STANDARD.decode(trimmed).map_err(|e| {
+            WalletError::CryptoError(format!(
+                "Failed to decode legacy salt override as base64: {}",
+                e
+            ))
+        });
+    }
+
+    Ok(LEGACY_SALT_FALLBACK.to_vec())
 }
 
 /// Sign a message with a private key
@@ -321,7 +356,7 @@ mod tests {
         let password = "legacy_password";
 
         // Legacy wallets stored the derived key in the `salt` field and used a fixed salt during derivation.
-        let legacy_key = derive_encryption_key(password, LEGACY_SALT).unwrap();
+        let legacy_key = derive_encryption_key(password, LEGACY_SALT_FALLBACK).unwrap();
 
         let mut nonce_bytes = [0u8; 12];
         OsRng.fill_bytes(&mut nonce_bytes);
@@ -345,7 +380,7 @@ mod tests {
         let data = b"legacy fallback data";
         let password = "legacy_password";
 
-        let legacy_key = derive_encryption_key(password, LEGACY_SALT).unwrap();
+        let legacy_key = derive_encryption_key(password, LEGACY_SALT_FALLBACK).unwrap();
 
         let mut nonce_bytes = [0u8; 12];
         OsRng.fill_bytes(&mut nonce_bytes);
@@ -368,6 +403,21 @@ mod tests {
     }
 
     #[test]
+    fn test_legacy_salt_can_be_overridden() {
+        let override_salt = b"custom_legacy_salt__"; // 20 bytes to mirror the legacy format
+        let encoded_override = general_purpose::STANDARD.encode(override_salt);
+        let _guard = LegacySaltOverrideGuard::new(&encoded_override);
+
+        let password = "legacy_password";
+        let derived_key = derive_encryption_key(password, override_salt).unwrap();
+
+        let (key, fallback) = derive_compatible_keys(password, &derived_key).unwrap();
+
+        assert_eq!(key, derived_key);
+        assert!(fallback.is_none());
+    }
+
+    #[test]
     fn test_signature_verification() {
         let (private_key, public_key) = generate_keypair();
         let message = b"test message";
@@ -383,5 +433,28 @@ mod tests {
         let (address, _, _) = generate_new_address().unwrap();
         assert!(validate_address(&address));
         assert!(!validate_address("invalid_address"));
+    }
+
+    struct LegacySaltOverrideGuard {
+        previous_override: Option<Vec<u8>>,
+    }
+
+    impl LegacySaltOverrideGuard {
+        fn new(value: &str) -> Self {
+            let decoded_override = general_purpose::STANDARD
+                .decode(value)
+                .expect("legacy salt override should decode");
+            let previous_override =
+                LEGACY_SALT_OVERRIDE.with(|cell| cell.replace(Some(decoded_override)));
+            Self { previous_override }
+        }
+    }
+
+    impl Drop for LegacySaltOverrideGuard {
+        fn drop(&mut self) {
+            LEGACY_SALT_OVERRIDE.with(|cell| {
+                cell.replace(self.previous_override.take());
+            });
+        }
     }
 }
