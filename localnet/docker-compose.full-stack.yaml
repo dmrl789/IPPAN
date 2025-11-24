@@ -1,0 +1,87 @@
+version: "3.9"
+
+services:
+  ippan-node:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.node
+    container_name: ippan-node-local
+    entrypoint: ["/app/ippan-node"]
+    command: ["start", "--network", "devnet", "--dev"]
+    environment:
+      IPPAN_RPC_HOST: "0.0.0.0"
+      IPPAN_RPC_PORT: "8080"
+      IPPAN_P2P_HOST: "0.0.0.0"
+      IPPAN_P2P_PORT: "9000"
+      IPPAN_DATA_DIR: "/var/lib/ippan/data"
+      IPPAN_DB_PATH: "/var/lib/ippan/data/db"
+      IPPAN_LOG_LEVEL: "info"
+      IPPAN_LOG_FORMAT: "pretty"
+      IPPAN_DEV_MODE: "true"
+      IPPAN_ENABLE_SECURITY: "false"
+      IPPAN_BOOTSTRAP_NODES: ""
+    volumes:
+      - ./data/node:/var/lib/ippan/data
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ippan-local
+
+  ippan-gateway:
+    build:
+      context: ../apps/gateway
+      dockerfile: Dockerfile
+    container_name: ippan-gateway-local
+    depends_on:
+      ippan-node:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      TARGET_RPC_URL: "http://ippan-node:8080"
+      TARGET_WS_URL: "ws://ippan-node:8080/ws"
+      TARGET_HEALTH_PATH: "/health"
+      API_PREFIX: "/api"
+      WS_PREFIX: "/ws"
+      ENABLE_EXPLORER: "true"
+      EXPLORER_PREFIX: "/explorer/api"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      HEALTH_TIMEOUT_MS: "5000"
+      PROXY_LOG_LEVEL: "info"
+      JSON_BODY_LIMIT: "2mb"
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ippan-local
+
+  ippan-explorer:
+    build:
+      context: ../apps/unified-ui
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: "http://localhost:8081/api"
+        NEXT_PUBLIC_WS_URL: "ws://localhost:8081/ws"
+        NEXT_PUBLIC_GATEWAY_URL: "http://localhost:8081/api"
+        NEXT_PUBLIC_NETWORK_NAME: "IPPAN Devnet"
+        NEXT_PUBLIC_ENABLE_FULL_UI: "1"
+    container_name: ippan-explorer-local
+    depends_on:
+      - ippan-gateway
+    ports:
+      - "3000:80"
+    networks:
+      - ippan-local
+
+networks:
+  ippan-local:
+    driver: bridge
