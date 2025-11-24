@@ -4023,9 +4023,11 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_body_is_rejected_before_state_changes() {
-        let mut security_config = SecurityConfig::default();
-        security_config.max_request_size = 64;
-        security_config.audit_log_path = "/tmp/ippan-security-tests.log".into();
+        let security_config = SecurityConfig {
+            max_request_size: 64,
+            audit_log_path: "/tmp/ippan-security-tests.log".into(),
+            ..Default::default()
+        };
         let security = Arc::new(SecurityManager::new(security_config).expect("security"));
 
         let state = build_app_state(Some(security), None);
@@ -4069,15 +4071,18 @@ mod tests {
 
     #[tokio::test]
     async fn security_manager_rate_limits_spammy_client() {
-        let mut rate_limit = RateLimitConfig::default();
-        rate_limit.requests_per_second = 1;
-        rate_limit.burst_capacity = 1;
-        rate_limit.endpoint_limits.clear();
-        rate_limit.global_requests_per_second = Some(1);
+        let rate_limit = RateLimitConfig {
+            requests_per_second: 1,
+            burst_capacity: 1,
+            global_requests_per_second: Some(1),
+            ..Default::default()
+        };
 
-        let mut security_config = SecurityConfig::default();
-        security_config.rate_limit = rate_limit;
-        security_config.audit_log_path = "/tmp/ippan-security-tests.log".into();
+        let security_config = SecurityConfig {
+            rate_limit,
+            audit_log_path: "/tmp/ippan-security-tests.log".into(),
+            ..Default::default()
+        };
 
         let security = Arc::new(SecurityManager::new(security_config).expect("security"));
         let state = build_app_state(Some(security), None);
