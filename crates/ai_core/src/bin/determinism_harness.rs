@@ -26,22 +26,22 @@
 //! - Boundary conditions (reputation thresholds)
 
 use blake3::Hasher;
-use ippan_ai_core::gbdt::{model_hash_hex, Model, SCALE};
-use ippan_ai_core::DeterministicModel;
+use clap::Parser;
+use ippan_ai_core::gbdt::{Model, SCALE};
+use ippan_ai_core::model_hash_hex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use structopt::StructOpt;
 
-#[derive(StructOpt, Debug)]
-#[structopt(name = "determinism_harness")]
+#[derive(Parser, Debug)]
+#[command(name = "determinism_harness")]
 struct Opt {
     /// Path to the D-GBDT model JSON file
-    #[structopt(short, long, parse(from_os_str))]
+    #[arg(short, long)]
     model: Option<PathBuf>,
 
     /// Output format: text or json
-    #[structopt(short, long, default_value = "text")]
+    #[arg(short, long, default_value = "text")]
     format: String,
 }
 
@@ -72,7 +72,7 @@ struct DeterminismReport {
 }
 
 fn main() -> anyhow::Result<()> {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     // Load or create default model
     let model = if let Some(model_path) = opt.model {
@@ -331,7 +331,7 @@ fn create_golden_vectors() -> Vec<GoldenVector> {
         GoldenVector {
             id: "vec_031".to_string(),
             description: "Edge: 100% uptime, 1ms latency (perfect)".to_string(),
-            features: vec![100 * SCALE, 1 * SCALE],
+            features: vec![100 * SCALE, SCALE],
         },
         GoldenVector {
             id: "vec_032".to_string(),
@@ -346,7 +346,7 @@ fn create_golden_vectors() -> Vec<GoldenVector> {
         GoldenVector {
             id: "vec_034".to_string(),
             description: "Edge: 1% uptime, 1ms latency".to_string(),
-            features: vec![1 * SCALE, 1 * SCALE],
+            features: vec![SCALE, SCALE],
         },
         GoldenVector {
             id: "vec_035".to_string(),

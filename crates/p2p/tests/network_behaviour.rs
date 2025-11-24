@@ -7,7 +7,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use ippan_p2p::{HttpP2PNetwork, NetworkEvent, NetworkMessage, P2PConfig, PeerInfo};
+use ippan_p2p::{DhtConfig, HttpP2PNetwork, NetworkEvent, NetworkMessage, P2PConfig, PeerInfo};
 use parking_lot::RwLock;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::oneshot;
@@ -90,17 +90,22 @@ fn next_port() -> u16 {
 }
 
 fn test_config(listen_port: u16) -> P2PConfig {
-    let mut config = P2PConfig::default();
-    config.listen_address = format!("http://127.0.0.1:{listen_port}");
-    config.dht.bootstrap_peers = Vec::new();
-    config.peer_discovery_interval = Duration::from_millis(50);
-    config.message_timeout = Duration::from_millis(100);
-    config.retry_attempts = 1;
-    config.dht.public_host = Some(config.listen_address.clone());
-    config.dht.enable_upnp = false;
-    config.dht.external_ip_services = Vec::new();
-    config.dht.announce_interval = Duration::from_secs(60);
-    config
+    let listen_address = format!("http://127.0.0.1:{listen_port}");
+
+    P2PConfig {
+        listen_address: listen_address.clone(),
+        peer_discovery_interval: Duration::from_millis(50),
+        message_timeout: Duration::from_millis(100),
+        retry_attempts: 1,
+        dht: DhtConfig {
+            bootstrap_peers: Vec::new(),
+            public_host: Some(listen_address),
+            enable_upnp: false,
+            external_ip_services: Vec::new(),
+            announce_interval: Duration::from_secs(60),
+        },
+        ..Default::default()
+    }
 }
 
 fn metadata_by_address(metadata: Vec<PeerInfo>) -> HashMap<String, PeerInfo> {

@@ -159,14 +159,16 @@ impl DhtTestNode {
     ) -> Result<(), String> {
         let start = std::time::Instant::now();
         while start.elapsed() < timeout_duration {
-            let events = self.events.read();
-            if events
-                .iter()
-                .any(|e| matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &peer_id))
-            {
+            let peer_connected = {
+                let events = self.events.read();
+                events
+                    .iter()
+                    .any(|e| matches!(e, Libp2pEvent::PeerConnected { peer } if peer == &peer_id))
+            };
+
+            if peer_connected {
                 return Ok(());
             }
-            drop(events);
             sleep(Duration::from_millis(50)).await;
         }
         Err(format!(
@@ -183,17 +185,20 @@ impl DhtTestNode {
     ) -> Result<(), String> {
         let start = std::time::Instant::now();
         while start.elapsed() < timeout_duration {
-            let events = self.events.read();
-            if events.iter().any(|e| {
-                if let Libp2pEvent::PeerDiscovered { peers } = e {
-                    peers.iter().any(|(p, _)| p == &peer_id)
-                } else {
-                    false
-                }
-            }) {
+            let discovered = {
+                let events = self.events.read();
+                events.iter().any(|e| {
+                    if let Libp2pEvent::PeerDiscovered { peers } = e {
+                        peers.iter().any(|(p, _)| p == &peer_id)
+                    } else {
+                        false
+                    }
+                })
+            };
+
+            if discovered {
                 return Ok(());
             }
-            drop(events);
             sleep(Duration::from_millis(50)).await;
         }
         Err(format!(
@@ -210,15 +215,19 @@ impl DhtTestNode {
     ) -> Result<Vec<u8>, String> {
         let start = std::time::Instant::now();
         while start.elapsed() < timeout_duration {
-            let events = self.events.read();
-            for event in events.iter() {
-                if let Libp2pEvent::Gossip { topic: t, data, .. } = event {
-                    if t == topic {
-                        return Ok(data.clone());
+            if let Some(data) = {
+                let events = self.events.read();
+                events.iter().find_map(|event| {
+                    if let Libp2pEvent::Gossip { topic: t, data, .. } = event {
+                        if t == topic {
+                            return Some(data.clone());
+                        }
                     }
-                }
+                    None
+                })
+            } {
+                return Ok(data);
             }
-            drop(events);
             sleep(Duration::from_millis(50)).await;
         }
         Err(format!(
@@ -688,7 +697,7 @@ async fn test_3_node_full_mesh() {
         let next = (i + 1) % nodes.len();
         connect_nodes(&nodes[i], &nodes[next])
             .await
-            .expect(&format!("connect node {} to {}", i, next));
+            .unwrap_or_else(|_| panic!("connect node {} to {}", i, next));
     }
 
     // Wait for full mesh
@@ -708,7 +717,7 @@ async fn test_3_node_full_mesh() {
         let received = node
             .wait_for_gossip("ippan/files", Duration::from_secs(10))
             .await
-            .expect(&format!("node {} receives gossip", i));
+            .unwrap_or_else(|_| panic!("node {} receives gossip", i));
         assert_eq!(received, test_msg, "node {} received correct message", i);
     }
 

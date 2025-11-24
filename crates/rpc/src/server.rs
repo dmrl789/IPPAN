@@ -58,7 +58,7 @@ use tower::BoxError;
 use tower::Layer;
 use tower::Service;
 use tower::ServiceBuilder;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -116,6 +116,7 @@ pub struct AppState {
     pub file_dht: Option<Arc<dyn FileDhtService>>,
     pub dht_file_mode: String,
     pub dev_mode: bool,
+    pub rpc_allowed_origins: Vec<String>,
     pub handle_registry: Arc<L2HandleRegistry>,
     pub handle_anchors: Arc<L1HandleAnchorStorage>,
     pub handle_dht: Option<Arc<dyn HandleDhtService>>,
@@ -1206,10 +1207,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     let max_body_bytes = configured_body_limit(&state);
     let request_timeout = configured_request_timeout(&state);
     let global_rps = configured_global_rps(&state);
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = build_cors_layer(&state);
     let rate_limiter = RateLimiterLayer::new(global_rps, Duration::from_secs(1));
     let circuit_breaker = CircuitBreakerLayer::new(
         CIRCUIT_BREAKER_FAILURE_THRESHOLD,
@@ -1306,6 +1304,38 @@ fn configured_global_rps(state: &Arc<AppState>) -> u64 {
         .as_ref()
         .map(|manager| manager.global_rps())
         .unwrap_or(RATE_LIMIT_PER_SECOND)
+}
+
+fn build_cors_layer(state: &AppState) -> CorsLayer {
+    let mut layer = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    if state.dev_mode && state.rpc_allowed_origins.iter().any(|origin| origin == "*") {
+        return layer.allow_origin(Any);
+    }
+
+    let mut origins = Vec::new();
+    for origin in &state.rpc_allowed_origins {
+        if origin == "*" {
+            warn!(
+                "Ignoring wildcard RPC origin '*' because dev_mode is disabled. Set RPC_ALLOWED_ORIGINS to concrete origins instead."
+            );
+            continue;
+        }
+        match HeaderValue::from_str(origin) {
+            Ok(value) => origins.push(value),
+            Err(err) => warn!(
+                "Ignoring invalid RPC_ALLOWED_ORIGINS entry '{}': {}",
+                origin, err
+            ),
+        }
+    }
+
+    if origins.is_empty() {
+        warn!("RPC allowed origins list empty; defaulting to http://127.0.0.1:3000 for safety");
+        origins.push(HeaderValue::from_static("http://127.0.0.1:3000"));
+    }
+
+    layer.allow_origin(AllowOrigin::list(origins))
+}
 }
 
 async fn guard_request(
@@ -3079,6 +3109,7 @@ mod tests {
             file_dht: Some(file_dht),
             dht_file_mode: "stub".into(),
             dev_mode: true,
+            rpc_allowed_origins: vec!["http://localhost:3000".into()],
             handle_registry,
             handle_anchors,
             handle_dht: Some(handle_dht),
@@ -3214,6 +3245,7 @@ mod tests {
             file_dht: Some(file_dht),
             dht_file_mode: "stub".into(),
             dev_mode: true,
+            rpc_allowed_origins: vec!["http://localhost:3000".into()],
             handle_registry,
             handle_anchors,
             handle_dht: Some(handle_dht),
@@ -4201,9 +4233,11 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_body_is_rejected_before_state_changes() {
-        let mut security_config = SecurityConfig::default();
-        security_config.max_request_size = 64;
-        security_config.audit_log_path = "/tmp/ippan-security-tests.log".into();
+        let security_config = SecurityConfig {
+            max_request_size: 64,
+            audit_log_path: "/tmp/ippan-security-tests.log".into(),
+            ..Default::default()
+        };
         let security = Arc::new(SecurityManager::new(security_config).expect("security"));
 
         let state = build_app_state(Some(security), None);
@@ -4247,15 +4281,18 @@ mod tests {
 
     #[tokio::test]
     async fn security_manager_rate_limits_spammy_client() {
-        let mut rate_limit = RateLimitConfig::default();
-        rate_limit.requests_per_second = 1;
-        rate_limit.burst_capacity = 1;
-        rate_limit.endpoint_limits.clear();
-        rate_limit.global_requests_per_second = Some(1);
+        let rate_limit = RateLimitConfig {
+            requests_per_second: 1,
+            burst_capacity: 1,
+            global_requests_per_second: Some(1),
+            ..Default::default()
+        };
 
-        let mut security_config = SecurityConfig::default();
-        security_config.rate_limit = rate_limit;
-        security_config.audit_log_path = "/tmp/ippan-security-tests.log".into();
+        let security_config = SecurityConfig {
+            rate_limit,
+            audit_log_path: "/tmp/ippan-security-tests.log".into(),
+            ..Default::default()
+        };
 
         let security = Arc::new(SecurityManager::new(security_config).expect("security"));
         let state = build_app_state(Some(security), None);
@@ -5500,6 +5537,7 @@ mod tests {
             file_dht: Some(file_dht),
             dht_file_mode: "stub".into(),
             dev_mode: true,
+            rpc_allowed_origins: vec!["http://localhost:3000".into()],
             handle_registry,
             handle_anchors,
             handle_dht: Some(handle_dht),

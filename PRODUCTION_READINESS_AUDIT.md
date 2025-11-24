@@ -4,6 +4,8 @@
 
 This report provides a comprehensive assessment of the production readiness of IPPAN crates. The audit reveals that while the project has a solid architectural foundation, significant work is required to bring most crates to production quality.
 
+> Checklist reference: use the [Production Readiness Checklist](./PRODUCTION_READINESS_CHECKLIST.md) to track operational action items that fall out of this report.
+
 ## Audit Methodology
 
 - **Compilation Status**: Tested each crate's ability to compile without errors

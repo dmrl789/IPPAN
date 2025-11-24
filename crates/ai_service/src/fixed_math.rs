@@ -100,8 +100,8 @@ pub fn ratio_to_fixed(numerator: u64, denominator: u64) -> Fixed {
     if denominator == 0 {
         return Fixed::ZERO;
     }
-    let num = i128::from(numerator.min(u64::MAX)) * i128::from(FIXED_SCALE);
-    let denom = i128::from(denominator.min(u64::MAX));
+    let num = i128::from(numerator) * i128::from(FIXED_SCALE);
+    let denom = i128::from(denominator);
     clamp_to_fixed(num / denom)
 }
 

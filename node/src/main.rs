@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use clap::{value_parser, Arg, ArgAction, Command, ValueEnum};
 use config::{Config, File};
+use fs2::FileExt;
 use hex::encode as hex_encode;
 use ippan_consensus::{
     DLCConfig, DLCIntegratedConsensus, PoAConfig, PoAConsensus, Validator, VALIDATOR_BOND_AMOUNT,
@@ -24,7 +25,7 @@ use ippan_types::{
 use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::fmt;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::net::{IpAddr, TcpListener};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -219,6 +220,7 @@ struct AppConfig {
     // Network
     rpc_host: String,
     rpc_port: u16,
+    rpc_allowed_origins: Vec<String>,
     p2p_host: String,
     p2p_port: u16,
 
@@ -351,6 +353,18 @@ impl AppConfig {
             external_ip_services.push("https://ifconfig.me/ip".to_string());
         }
 
+        let allowed_origins_value =
+            get_string_value(&config, &["RPC_ALLOWED_ORIGINS", "rpc.allowed_origins"])
+                .unwrap_or_else(|| "http://127.0.0.1:3000,http://localhost:3000".to_string());
+        let mut rpc_allowed_origins: Vec<String> = allowed_origins_value
+            .split(',')
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect();
+        if rpc_allowed_origins.is_empty() {
+            rpc_allowed_origins.push("http://127.0.0.1:3000".to_string());
+        }
+
         let file_dht_mode_value = get_string_value(&config, &["FILE_DHT_MODE", "dht.mode"])
             .unwrap_or_else(|| "stub".to_string());
         let file_dht_mode = FileDhtMode::from_env(&file_dht_mode_value);
@@ -453,6 +467,7 @@ impl AppConfig {
             rpc_port: get_string_value(&config, &["RPC_PORT", "rpc.port"])
                 .unwrap_or_else(|| defaults.rpc_port.to_string())
                 .parse()?,
+            rpc_allowed_origins,
             p2p_host: get_string_value(&config, &["P2P_HOST", "p2p.bind", "p2p.host"])
                 .unwrap_or_else(|| defaults.p2p_host.to_string()),
             p2p_port: get_string_value(&config, &["P2P_PORT", "p2p.port"])
@@ -924,6 +939,18 @@ async fn main() -> Result<()> {
                                 .value_name("PATH")
                                 .required(true)
                                 .help("Directory to write the snapshot into"),
+                        )
+                        .arg(
+                            Arg::new("height")
+                                .long("height")
+                                .value_parser(clap::value_parser!(u64))
+                                .help("Require the snapshot height to match this round"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help("Remove the snapshot directory before exporting"),
                         ),
                 )
                 .subcommand(
@@ -935,6 +962,12 @@ async fn main() -> Result<()> {
                                 .value_name("PATH")
                                 .required(true)
                                 .help("Directory previously created via `snapshot export`"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help("Delete the existing database before importing"),
                         ),
                 ),
         )
@@ -1034,6 +1067,7 @@ async fn main() -> Result<()> {
 
     // Create data directory
     fs::create_dir_all(&config.data_dir)?;
+    let _data_dir_lock = DataDirLock::acquire(&config.data_dir, "node-runtime")?;
 
     // Initialize storage
     let storage = Arc::new(SledStorage::new(&config.db_path)?);
@@ -1337,6 +1371,7 @@ async fn main() -> Result<()> {
         file_dht: Some(file_dht),
         dht_file_mode: config.file_dht_mode.to_string(),
         dev_mode: config.dev_mode,
+        rpc_allowed_origins: config.rpc_allowed_origins.clone(),
         handle_registry: handle_registry.clone(),
         handle_anchors: handle_anchors.clone(),
         handle_dht: Some(handle_dht.clone()),
@@ -1661,15 +1696,25 @@ fn run_self_check(config: &AppConfig) -> Result<()> {
 }
 
 fn handle_snapshot_subcommand(matches: &clap::ArgMatches, config: &AppConfig) -> Result<()> {
+    fs::create_dir_all(&config.data_dir)?;
+    let _lock = DataDirLock::acquire(&config.data_dir, "snapshot-maintenance")?;
     match matches.subcommand() {
         Some(("export", export_matches)) => {
             let dir = export_matches
                 .get_one::<String>("dir")
                 .ok_or_else(|| anyhow!("--dir is required"))?;
             let dir_path = PathBuf::from(dir);
+            if export_matches.get_flag("force") && dir_path.exists() {
+                eprintln!(
+                    "Warning: removing existing snapshot directory {} (--force)",
+                    dir_path.display()
+                );
+                fs::remove_dir_all(&dir_path)?;
+            }
             let storage = SledStorage::new(&config.db_path)?;
             storage.set_network_id(&config.network_id)?;
-            let manifest = export_snapshot(&storage, &dir_path)?;
+            let height = export_matches.get_one::<u64>("height").copied();
+            let manifest = export_snapshot(&storage, &dir_path, height)?;
             println!(
                 "Snapshot exported to {} (height {}, accounts {}, files {})",
                 dir_path.display(),
@@ -1688,6 +1733,13 @@ fn handle_snapshot_subcommand(matches: &clap::ArgMatches, config: &AppConfig) ->
                 .get_one::<String>("dir")
                 .ok_or_else(|| anyhow!("--dir is required"))?;
             let dir_path = PathBuf::from(dir);
+            if import_matches.get_flag("force") && Path::new(&config.db_path).exists() {
+                eprintln!(
+                    "Warning: deleting existing database at {} (--force)",
+                    config.db_path
+                );
+                fs::remove_dir_all(&config.db_path)?;
+            }
             let mut storage = SledStorage::new(&config.db_path)?;
             storage.set_network_id(&config.network_id)?;
             let manifest = import_snapshot(&mut storage, &dir_path)?;
@@ -1755,6 +1807,55 @@ fn ensure_storage_directory(path: &str) -> Result<(), String> {
     }
     let _ = fs::remove_file(&probe);
     Ok(())
+}
+
+struct DataDirLock {
+    path: PathBuf,
+    file: File,
+}
+
+impl DataDirLock {
+    fn acquire<P: AsRef<Path>>(data_dir: P, purpose: &str) -> Result<Self> {
+        let dir = data_dir.as_ref();
+        fs::create_dir_all(dir)?;
+        let lock_path = dir.join(".ippan.lock");
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)?;
+
+        if let Err(err) = file.try_lock_exclusive() {
+            return Err(anyhow!(
+                "Data directory {} is locked by another process ({}). \
+                 Stop the running node or remove {} if you are sure it is stale.",
+                dir.display(),
+                err,
+                lock_path.display()
+            ));
+        }
+
+        file.set_len(0)?;
+        writeln!(
+            &file,
+            "pid={};purpose={};started_us={}",
+            std::process::id(),
+            purpose,
+            ippan_time_now()
+        )?;
+
+        Ok(Self {
+            path: lock_path,
+            file,
+        })
+    }
+}
+
+impl Drop for DataDirLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 #[cfg(test)]

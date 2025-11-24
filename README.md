@@ -18,6 +18,7 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - Current RC: **v0.9.0-rc1**
 - To run a local RC testnet, see: [docs/operators/ippan-rc-testnet-guide.md](docs/operators/ippan-rc-testnet-guide.md)
 - To report issues or feedback: use the "RC Bug Report" or "RC Feedback / UX" GitHub issue templates.
+- Understand how wallet `@handles` map to addresses and how to test handle-based payments in [docs/users/handles-and-addresses.md](docs/users/handles-and-addresses.md) (also linked at [handles-and-addresses.md](handles-and-addresses.md)).
 
 ## 🚀 Features
 
@@ -28,6 +29,14 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - **Release Candidate Hardening**: Docker, systemd, and CI/CD configurations validated via nightly workflows
 
 > **Single-branch development**: All day-to-day work lands directly on `main`. Temporary topic branches should remain short-lived and are deleted after their changes fast-forward onto `main`.
+
+## 📚 Onboarding Guides
+
+- [Developer Journey](docs/dev/developer-journey.md)
+- [Local Full-Stack Guide](docs/dev/local-full-stack.md)
+- [SDK Overview](docs/dev/sdk-overview.md)
+- [User Getting Started](docs/users/getting-started.md)
+- [Handles & Addresses](docs/users/handles-and-addresses.md)
 
 ## 🧭 IPPAN Codebase Readiness Dashboard
 
@@ -59,6 +68,8 @@ cargo test --workspace --all-features -- --nocapture
 cargo tarpaulin --out Html
 cargo bench --workspace
 ```
+
+- `scripts/run-local-full-stack.sh` – build the workspace and start the three-node localnet for end-to-end testing.
 
 ## 🏗️ Architecture
 

@@ -1,6 +1,8 @@
 # Main Branch Feature Audit Checklist
 
 > For mainnet launch gating, see also: `docs/release/v1-mainnet-checklist.md`
+>
+> Operator note: the operational portions of this audit now defer to the [Production Readiness Checklist](./PRODUCTION_READINESS_CHECKLIST.md). Complete that checklist before marking infra items here as ✅.
 
 _Generated: 2025-11-15_
 

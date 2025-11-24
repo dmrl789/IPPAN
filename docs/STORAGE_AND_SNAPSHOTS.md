@@ -43,23 +43,29 @@ Snapshots are described by a JSON manifest stored at
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "network_id": "ippan-devnet",
-  "height": 420,
-  "last_round_id": "419",
+  "height": 4200,
+  "last_round_id": "4199",
   "timestamp_us": 1731500000000,
   "accounts_count": 12,
   "payments_count": 64,
-  "blocks_count": 421,
+  "blocks_count": 4201,
   "handles_count": 0,
   "files_count": 5,
-  "ai_model_hash": "b3f3..."
+  "ai_model_hash": "b3f3...",
+  "tip_block_hash": "9d9b1a...d3",
+  "hashtimer_start": "1c2a...",
+  "hashtimer_end": "7ff0...",
+  "timestamp_start_us": 1731400000000,
+  "timestamp_end_us": 1731500000000
 }
 ```
 
 `SnapshotManifest::new_from_storage` derives this data directly from storage
 and `validate_against_storage` re-counts everything to make sure a manifest
-matches what is on disk.
+matches what is on disk. Version 2 adds the `tip_block_hash` plus HashTimer/timestamp bounds
+so operators can prove the time window captured by a snapshot.
 
 ## Snapshot directory layout
 
@@ -93,18 +99,28 @@ disk database—no networking or consensus services are started.
 # Export a snapshot
 IPPAN_NETWORK_ID=ippan-devnet ippan-node \
   --config deployments/testnet/configs/testnet-node-1.toml \
-  snapshot export --dir /var/backups/ippan-2025-11-15
+  snapshot export \
+  --dir /var/backups/ippan-2025-11-15 \
+  --height 4200
 
 # Import a snapshot into a fresh data directory
 IPPAN_NETWORK_ID=ippan-devnet ippan-node \
   --config deployments/testnet/configs/testnet-node-1.toml \
-  snapshot import --dir /var/backups/ippan-2025-11-15
+  snapshot import \
+  --dir /var/backups/ippan-2025-11-15 \
+  --force
 ```
 
 Notes:
 
+* Snapshot subcommands acquire `data/.ippan.lock` to make sure the online node
+  is stopped. If the lock remains after a crash, delete the file before
+  re-running the command.
+* `--height` guards against drifting beyond the intended round.
+* Use `--force` with import to delete an existing database before restoring.
 * The snapshot directory must be empty before exporting and must already
-  exist before importing.
+  exist before importing. Pass `--force` to let the exporter remove the directory
+  for you.
 * Importing requires an empty database (no blocks, accounts, or transactions).
   Start from a clean data directory or delete the old `db/` folder first.
 * Network IDs must match. Importing a `ippan-testnet` snapshot into a

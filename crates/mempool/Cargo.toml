@@ -18,3 +18,9 @@ hex = { workspace = true }
 
 [dev-dependencies]
 ed25519-dalek = { workspace = true }
+criterion = { workspace = true }
+rand = { workspace = true }
+
+[[bench]]
+name = "tx_validation"
+harness = false
