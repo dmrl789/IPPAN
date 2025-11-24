@@ -1,0 +1,30 @@
+# IPPAN Testnet Profile
+# Targets the public RC/test network. RPC binds to all interfaces by default so
+# operators can expose it behind TLS or load balancers.
+
+[node]
+id = "ippan-testnet-node"
+
+[network]
+id = "ippan-testnet"
+
+[rpc]
+host = "0.0.0.0"
+port = 28080
+
+[p2p]
+host = "0.0.0.0"
+port = 29000
+# Replace with current RC peers as needed.
+bootstrap_nodes = "http://rc-node1.testnet.ippan.network:29000,http://rc-node2.testnet.ippan.network:29000"
+
+[storage]
+data_dir = "./data/testnet"
+db_path = "./data/testnet/db"
+
+[logging]
+level = "info"
+format = "json"
+
+[metrics]
+enabled = true

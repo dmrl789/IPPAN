@@ -22,6 +22,9 @@ cargo build --release -p node
 
 ## Configuration
 - Example config path: `config/node.toml` (copy and adjust for your environment).
+- Prefer the new profile-aware configs (`config/devnet.toml`, `config/testnet.toml`,
+  `config/mainnet.toml`). See `docs/operators/node-configuration-profiles.md`
+  for defaults and selection guidance.
 - Key settings to review:
   - `node_id`: unique identifier for your validator/observer.
   - `rpc.addr` / `rpc.port`: external RPC endpoint for operators.

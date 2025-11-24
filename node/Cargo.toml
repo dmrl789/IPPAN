@@ -45,3 +45,6 @@ dirs = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

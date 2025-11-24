@@ -146,8 +146,8 @@ fn create_default_model() -> Model {
     let tree1 = Tree::new(
         vec![
             Node::internal(0, 0, 50 * SCALE, 1, 2),
-            Node::leaf(1, 8500 * SCALE),  // High reputation
-            Node::leaf(2, 5000 * SCALE),  // Medium reputation
+            Node::leaf(1, 8500 * SCALE), // High reputation
+            Node::leaf(2, 5000 * SCALE), // Medium reputation
         ],
         SCALE,
     );
