@@ -9,6 +9,8 @@ use rand_core::{OsRng, RngCore};
 use crate::errors::*;
 use ippan_types::address::{decode_address, encode_address, ADDRESS_BYTES};
 
+const LEGACY_SALT: &[u8] = b"ippan_wallet_salt_2024";
+
 /// Generate a new Ed25519 key pair
 pub fn generate_keypair() -> ([u8; 32], [u8; 32]) {
     let mut rng = OsRng;
@@ -130,8 +132,7 @@ pub fn decrypt_data(ciphertext: &str, nonce: &str, salt: &str, password: &str) -
     let salt_bytes = general_purpose::STANDARD
         .decode(salt)
         .map_err(|e| WalletError::DecryptionError(format!("Invalid salt: {}", e)))?;
-
-    let key = derive_encryption_key(password, &salt_bytes)?;
+    let key = derive_compatible_key(password, &salt_bytes)?;
 
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|e| WalletError::DecryptionError(format!("Cipher init failed: {}", e)))?;
@@ -156,6 +157,26 @@ fn derive_encryption_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
         .map_err(|e| WalletError::CryptoError(format!("Key derivation failed: {}", e)))?;
 
     Ok(key)
+}
+
+fn derive_compatible_key(password: &str, salt_bytes: &[u8]) -> Result<[u8; 32]> {
+    match salt_bytes.len() {
+        // New format: a randomly generated 16-byte salt stored alongside the ciphertext.
+        16 => derive_encryption_key(password, salt_bytes),
+        // Legacy format: a 32-byte derived key was stored instead of a salt; recompute with the
+        // historical fixed salt to preserve backwards compatibility.
+        32 => {
+            let legacy_key = derive_encryption_key(password, LEGACY_SALT)?;
+
+            if salt_bytes == legacy_key {
+                Ok(legacy_key)
+            } else {
+                // Unexpected 32-byte salt; fall back to treating it as a salt value.
+                derive_encryption_key(password, salt_bytes)
+            }
+        }
+        _ => derive_encryption_key(password, salt_bytes),
+    }
 }
 
 /// Sign a message with a private key
@@ -268,6 +289,31 @@ mod tests {
 
         let wrong_password = decrypt_data(&ciphertext_one, &nonce_one, &salt_one, "wrong");
         assert!(wrong_password.is_err());
+    }
+
+    #[test]
+    fn test_legacy_encryption_is_still_decryptable() {
+        let data = b"legacy format data";
+        let password = "legacy_password";
+
+        // Legacy wallets stored the derived key in the `salt` field and used a fixed salt during derivation.
+        let legacy_key = derive_encryption_key(password, LEGACY_SALT).unwrap();
+
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let cipher = Aes256Gcm::new_from_slice(&legacy_key).unwrap();
+        let nonce = Nonce::from(nonce_bytes);
+        let ciphertext = cipher.encrypt(&nonce, data.as_ref()).unwrap();
+
+        let decoded = decrypt_data(
+            &general_purpose::STANDARD.encode(ciphertext),
+            &general_purpose::STANDARD.encode(nonce_bytes),
+            &general_purpose::STANDARD.encode(legacy_key),
+            password,
+        )
+        .unwrap();
+
+        assert_eq!(data, decoded.as_slice());
     }
 
     #[test]
