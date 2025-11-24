@@ -1323,7 +1323,6 @@ fn build_cors_layer(state: &AppState) -> CorsLayer {
 
     layer.allow_origin(AllowOrigin::list(origins))
 }
-}
 
 async fn guard_request(
     state: &Arc<AppState>,
