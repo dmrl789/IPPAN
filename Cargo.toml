@@ -33,6 +33,7 @@ members = [
   # Security and user wallet layer
   "crates/security",
   "crates/wallet",
+  "crates/sdk",
 
   # Node orchestration
   "node",                    # Re-enabled: fixed dependencies

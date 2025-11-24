@@ -7,6 +7,7 @@ This directory houses canonical references for the IPPAN network. Documentation 
 - Read the [Developer Guide](./DEVELOPER_GUIDE.md) for environment setup, builds, and workflow expectations.
 - Understand how wallet addresses and `@handles` relate via [`users/handles-and-addresses.md`](./users/handles-and-addresses.md).
 - Learn the wallet & signing flows in [`dev/wallet-cli.md`](./dev/wallet-cli.md) before wiring payments or SDKs.
+- Explore the typed client options in [`dev/sdk-overview.md`](./dev/sdk-overview.md) when integrating Rust or TypeScript services.
 - Spin up the [local full-stack environment](./dev/local-full-stack.md) to run a node, gateway, and explorer with one command.
 - Build the Rust workspace with `cargo check --workspace` before you branch into feature work.
 - Run the unified UI locally (`apps/unified-ui`) with `npm install && npm run dev` to validate end-to-end flows when your change touches the frontend.

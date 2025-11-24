@@ -3316,6 +3316,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ippan-sdk"
+version = "0.1.0"
+dependencies = [
+ "ippan-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "ippan-security"
 version = "0.1.0"
 dependencies = [
