@@ -1,4 +1,4 @@
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::{Aead, AeadCore, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::password_hash::{rand_core::OsRng as ArgonOsRng, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -132,19 +132,23 @@ pub fn decrypt_data(ciphertext: &str, nonce: &str, salt: &str, password: &str) -
     let salt_bytes = general_purpose::STANDARD
         .decode(salt)
         .map_err(|e| WalletError::DecryptionError(format!("Invalid salt: {}", e)))?;
-    let key = derive_compatible_key(password, &salt_bytes)?;
-
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| WalletError::DecryptionError(format!("Cipher init failed: {}", e)))?;
+    let (key, legacy_fallback_key) = derive_compatible_keys(password, &salt_bytes)?;
     let nonce_array: [u8; 12] = nonce_bytes
         .as_slice()
         .try_into()
         .map_err(|_| WalletError::DecryptionError("Invalid nonce length".to_string()))?;
     let nonce = Nonce::from(nonce_array);
 
-    cipher
-        .decrypt(&nonce, ciphertext_bytes.as_ref())
-        .map_err(|e| WalletError::DecryptionError(format!("Decryption failed: {}", e)))
+    let primary_attempt = decrypt_with_key(&ciphertext_bytes, &nonce, &key);
+
+    if primary_attempt.is_ok() {
+        return primary_attempt;
+    }
+
+    match legacy_fallback_key {
+        Some(fallback_key) => decrypt_with_key(&ciphertext_bytes, &nonce, &fallback_key),
+        None => primary_attempt,
+    }
 }
 
 /// Derive encryption key from password
@@ -159,27 +163,43 @@ fn derive_encryption_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
     Ok(key)
 }
 
-fn derive_compatible_key(password: &str, salt_bytes: &[u8]) -> Result<[u8; 32]> {
+fn decrypt_with_key(
+    ciphertext_bytes: &[u8],
+    nonce: &Nonce<<Aes256Gcm as AeadCore>::NonceSize>,
+    key: &[u8; 32],
+) -> Result<Vec<u8>> {
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| WalletError::DecryptionError(format!("Cipher init failed: {}", e)))?;
+
+    cipher
+        .decrypt(nonce, ciphertext_bytes.as_ref())
+        .map_err(|e| WalletError::DecryptionError(format!("Decryption failed: {}", e)))
+}
+
+fn derive_compatible_keys(
+    password: &str,
+    salt_bytes: &[u8],
+) -> Result<([u8; 32], Option<[u8; 32]>)> {
     match salt_bytes.len() {
         // New format: a randomly generated 16-byte salt stored alongside the ciphertext.
-        16 => derive_encryption_key(password, salt_bytes),
+        16 => Ok((derive_encryption_key(password, salt_bytes)?, None)),
         // Legacy format: a 32-byte derived key was stored instead of a salt. Prefer using the
         // stored key directly, but keep the historical fixed-salt derivation for deterministic
         // wallets created before this change.
         32 => {
             let legacy_key = derive_encryption_key(password, LEGACY_SALT)?;
 
-            if salt_bytes == legacy_key {
-                return Ok(legacy_key);
-            }
-
             let key: [u8; 32] = salt_bytes
                 .try_into()
                 .map_err(|_| WalletError::DecryptionError("Invalid legacy key length".into()))?;
 
-            Ok(key)
+            if key == legacy_key {
+                Ok((legacy_key, None))
+            } else {
+                Ok((key, Some(legacy_key)))
+            }
         }
-        _ => derive_encryption_key(password, salt_bytes),
+        _ => Ok((derive_encryption_key(password, salt_bytes)?, None)),
     }
 }
 
@@ -313,6 +333,33 @@ mod tests {
             &general_purpose::STANDARD.encode(ciphertext),
             &general_purpose::STANDARD.encode(nonce_bytes),
             &general_purpose::STANDARD.encode(legacy_key),
+            password,
+        )
+        .unwrap();
+
+        assert_eq!(data, decoded.as_slice());
+    }
+
+    #[test]
+    fn test_legacy_encryption_with_corrupted_salt_falls_back() {
+        let data = b"legacy fallback data";
+        let password = "legacy_password";
+
+        let legacy_key = derive_encryption_key(password, LEGACY_SALT).unwrap();
+
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let cipher = Aes256Gcm::new_from_slice(&legacy_key).unwrap();
+        let nonce = Nonce::from(nonce_bytes);
+        let ciphertext = cipher.encrypt(&nonce, data.as_ref()).unwrap();
+
+        // Simulate older wallets that persisted the derived key but later mutated the field.
+        let corrupted_salt = [0u8; 32];
+
+        let decoded = decrypt_data(
+            &general_purpose::STANDARD.encode(ciphertext),
+            &general_purpose::STANDARD.encode(nonce_bytes),
+            &general_purpose::STANDARD.encode(corrupted_salt),
             password,
         )
         .unwrap();
