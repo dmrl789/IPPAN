@@ -51,7 +51,7 @@ fn snapshot_replay_roundtrip_preserves_state() {
     let chain_state = apply_chain(&storage, &blocks, &txs);
 
     let snapshot_dir = TempDir::new().expect("snapshot dir");
-    let manifest = export_snapshot(&storage, snapshot_dir.path()).expect("export snapshot");
+    let manifest = export_snapshot(&storage, snapshot_dir.path(), None).expect("export snapshot");
 
     let mut replay_storage = MemoryStorage::new();
     let imported_manifest =
