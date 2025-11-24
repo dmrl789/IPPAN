@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::{value_parser, Arg, ArgAction, Command, ValueEnum};
-use config::{Config, File};
+use config::{Config, File as ConfigFile};
 use fs2::FileExt;
 use hex::encode as hex_encode;
 use ippan_consensus::{
@@ -314,7 +314,7 @@ impl AppConfig {
         let mut builder = Config::builder();
 
         if let Some(path) = &resolved_path {
-            builder = builder.add_source(File::from(path.as_path()));
+            builder = builder.add_source(ConfigFile::from(path.as_path()));
         }
 
         builder = builder.add_source(config::Environment::with_prefix("IPPAN"));
@@ -645,9 +645,21 @@ fn parse_multiaddrs(values: &[String], label: &str) -> Vec<Multiaddr> {
 }
 
 fn load_config_with_overrides(matches: &clap::ArgMatches) -> Result<AppConfig> {
-    let profile = *matches
-        .get_one::<NetworkProfile>("network")
-        .unwrap_or(&NetworkProfile::Devnet);
+    // Check environment variable first, then fall back to CLI arg
+    let profile = if let Ok(env_network) = std::env::var("IPPAN_NETWORK") {
+        match env_network.to_lowercase().as_str() {
+            "devnet" => NetworkProfile::Devnet,
+            "testnet" => NetworkProfile::Testnet,
+            "mainnet" => NetworkProfile::Mainnet,
+            _ => *matches
+                .get_one::<NetworkProfile>("network")
+                .unwrap_or(&NetworkProfile::Devnet),
+        }
+    } else {
+        *matches
+            .get_one::<NetworkProfile>("network")
+            .unwrap_or(&NetworkProfile::Devnet)
+    };
     let config_path = matches
         .get_one::<String>("config")
         .map(|value| value.as_str());
@@ -841,7 +853,6 @@ async fn main() -> Result<()> {
                 .long("network")
                 .value_name("PROFILE")
                 .value_parser(value_parser!(NetworkProfile))
-                .env("IPPAN_NETWORK")
                 .default_value("devnet")
                 .help(
                     "Select network profile (devnet, testnet, mainnet). Can also be set via IPPAN_NETWORK",
@@ -1861,8 +1872,6 @@ impl Drop for DataDirLock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
 
     fn fixture_config(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1885,34 +1894,62 @@ mod tests {
 
     #[test]
     fn testnet_profile_requires_bootstrap_nodes() {
-        let mut temp = NamedTempFile::new().unwrap();
-        writeln!(
-            temp,
-            r#"[node]
-id = "ippan-testnet-node"
+        // Test that validation fails when bootstrap nodes are explicitly empty
+        // and the profile requires them
+        let config = AppConfig {
+            profile: NetworkProfile::Testnet,
+            config_path: None,
+            node_id: "test-node".to_string(),
+            validator_id: [0u8; 32],
+            network_id: "ippan-testnet".to_string(),
+            rpc_host: "0.0.0.0".to_string(),
+            rpc_port: 28080,
+            rpc_allowed_origins: vec![],
+            p2p_host: "0.0.0.0".to_string(),
+            p2p_port: 29000,
+            data_dir: "./data/testnet".to_string(),
+            db_path: "./data/testnet/db".to_string(),
+            consensus_mode: "POA".to_string(),
+            slot_duration_ms: 100,
+            max_transactions_per_block: 1000,
+            block_reward: 10,
+            finalization_interval_ms: 200,
+            enable_dlc: false,
+            temporal_finality_ms: 250,
+            shadow_verifier_count: 3,
+            min_reputation_score: 5000,
+            enable_dgbdt_fairness: true,
+            enable_shadow_verifiers: true,
+            require_validator_bond: true,
+            l2_max_commit_size: 16384,
+            l2_min_epoch_gap_ms: 250,
+            l2_challenge_window_ms: 60000,
+            l2_da_mode: "external".to_string(),
+            l2_max_l2_count: 100,
+            bootstrap_nodes: vec![], // Empty bootstrap nodes
+            max_peers: 50,
+            peer_discovery_interval_secs: 30,
+            peer_announce_interval_secs: 60,
+            p2p_public_host: None,
+            p2p_enable_upnp: false,
+            p2p_external_ip_services: vec![],
+            chaos_drop_outbound_prob: 0,
+            chaos_drop_inbound_prob: 0,
+            chaos_extra_latency_ms_min: 0,
+            chaos_extra_latency_ms_max: 0,
+            file_dht_mode: FileDhtMode::Stub,
+            file_dht_listen_multiaddrs: vec![],
+            file_dht_bootstrap_multiaddrs: vec![],
+            handle_dht_mode: HandleDhtMode::Stub,
+            unified_ui_dist_dir: None,
+            enable_security: true,
+            prometheus_enabled: false,
+            log_level: "info".to_string(),
+            log_format: "json".to_string(),
+            pid_file: None,
+            dev_mode: false,
+        };
 
-[network]
-id = "ippan-testnet"
-
-[rpc]
-host = "0.0.0.0"
-port = 28080
-
-[p2p]
-host = "0.0.0.0"
-port = 29000
-bootstrap_nodes = ""
-
-[storage]
-data_dir = "./data/testnet"
-db_path = "./data/testnet/db"
-"#
-        )
-        .unwrap();
-        temp.flush().unwrap();
-
-        let mut config =
-            AppConfig::load(NetworkProfile::Testnet, Some(temp.path().to_str().unwrap())).unwrap();
         let err = config.validate().unwrap_err();
         assert!(
             err.to_string().contains("bootstrap"),

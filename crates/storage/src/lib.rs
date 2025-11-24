@@ -1666,7 +1666,8 @@ mod tests {
             .expect("store finalization");
 
         let snapshot_dir = tempdir().expect("temp snapshot dir");
-        let manifest = export_snapshot(&storage, snapshot_dir.path()).expect("export snapshot");
+        let manifest =
+            export_snapshot(&storage, snapshot_dir.path(), None).expect("export snapshot");
 
         let mut replay_storage = MemoryStorage::new();
         let imported =

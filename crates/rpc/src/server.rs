@@ -33,8 +33,8 @@ use ippan_files::{FileDhtService, FileStorage};
 use ippan_l1_fees::FeePolicy;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{
-    dht::HandleDhtService, Handle, HandleMetadata, HandleRegistration, HandleRegistryError,
-    HandleStatus, L2HandleRegistry, PublicKey,
+    dht::HandleDhtService, Handle, HandleMetadata, HandleRegistryError, HandleStatus,
+    L2HandleRegistry,
 };
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
@@ -1307,7 +1307,7 @@ fn configured_global_rps(state: &Arc<AppState>) -> u64 {
 }
 
 fn build_cors_layer(state: &AppState) -> CorsLayer {
-    let mut layer = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    let layer = CorsLayer::new().allow_methods(Any).allow_headers(Any);
     if state.dev_mode && state.rpc_allowed_origins.iter().any(|origin| origin == "*") {
         return layer.allow_origin(Any);
     }
@@ -3296,7 +3296,7 @@ mod tests {
             handle,
             owner: owner_pk,
             signature,
-            metadata: BTreeMap::new(),
+            metadata: HashMap::new(),
             expires_at: None,
         };
 
