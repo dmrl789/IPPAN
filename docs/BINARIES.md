@@ -257,13 +257,14 @@ cargo build --release --bin ippan-wallet
 # Sign a file
 ./target/release/ippan-wallet sign --key ./keys/dev.key --prompt-password --file unsigned.tx --out sig.hex
 
-# Submit a payment
+# Submit a payment (addresses or @handles)
 ./target/release/ippan-wallet \
   --rpc-url http://127.0.0.1:18080 \
   send-payment \
   --key ./keys/dev.key \
   --prompt-password \
-  --to ippan1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx00d \
+  --from @alice.ipn \
+  --to @friend.ipn \
   --amount 0.1 \
   --memo "devnet test"
 ```
