@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::{value_parser, Arg, ArgAction, Command, ValueEnum};
-use config::{Config, File};
+use config::{Config, File as ConfigFile};
 use fs2::FileExt;
 use hex::encode as hex_encode;
 use ippan_consensus::{
@@ -314,7 +314,7 @@ impl AppConfig {
         let mut builder = Config::builder();
 
         if let Some(path) = &resolved_path {
-            builder = builder.add_source(File::from(path.as_path()));
+            builder = builder.add_source(ConfigFile::from(path.as_path()));
         }
 
         builder = builder.add_source(config::Environment::with_prefix("IPPAN"));
@@ -841,7 +841,6 @@ async fn main() -> Result<()> {
                 .long("network")
                 .value_name("PROFILE")
                 .value_parser(value_parser!(NetworkProfile))
-                .env("IPPAN_NETWORK")
                 .default_value("devnet")
                 .help(
                     "Select network profile (devnet, testnet, mainnet). Can also be set via IPPAN_NETWORK",
@@ -1911,7 +1910,7 @@ db_path = "./data/testnet/db"
         .unwrap();
         temp.flush().unwrap();
 
-        let mut config =
+        let config =
             AppConfig::load(NetworkProfile::Testnet, Some(temp.path().to_str().unwrap())).unwrap();
         let err = config.validate().unwrap_err();
         assert!(
