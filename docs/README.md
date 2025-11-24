@@ -5,6 +5,7 @@ This directory houses canonical references for the IPPAN network. Documentation 
 ## Quick Start for Developers
 
 - Read the [Developer Guide](./DEVELOPER_GUIDE.md) for environment setup, builds, and workflow expectations.
+- Understand how `@handles` map to addresses in [`users/handles-and-addresses.md`](./users/handles-and-addresses.md).
 - Learn the wallet & signing flows in [`dev/wallet-cli.md`](./dev/wallet-cli.md) before wiring payments or SDKs.
 - Build the Rust workspace with `cargo check --workspace` before you branch into feature work.
 - Run the unified UI locally (`apps/unified-ui`) with `npm install && npm run dev` to validate end-to-end flows when your change touches the frontend.
@@ -15,6 +16,7 @@ This directory houses canonical references for the IPPAN network. Documentation 
 - **Protocol & Architecture** – Deep technical references such as [`AI_IMPLEMENTATION_GUIDE.md`](./AI_IMPLEMENTATION_GUIDE.md), [`CONSENSUS_RESEARCH_SUMMARY.md`](./CONSENSUS_RESEARCH_SUMMARY.md), and [`DAG_FAIR_EMISSION_SYSTEM.md`](./DAG_FAIR_EMISSION_SYSTEM.md).
 - **Product Requirements** – Strategic and functional direction captured under [`prd/`](./prd/README.md).
 - **Operational Runbooks** – Deployment and maintenance playbooks including [`automated-deployment-guide.md`](./automated-deployment-guide.md) and [`server-health-check.md`](./server-health-check.md).
+- **User Guides** – End-user documentation such as [`users/handles-and-addresses.md`](./users/handles-and-addresses.md) for handle/UX flows.
 - **Visual Resources** – Mermaid and SVG diagrams in [`diagrams/`](./diagrams/README.md) for architecture storytelling and reviews.
 - **Research & Open Issues** – Exploratory work and design proposals under [`issues/`](./issues/README.md).
 

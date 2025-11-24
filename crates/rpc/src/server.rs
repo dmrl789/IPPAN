@@ -33,8 +33,8 @@ use ippan_files::{FileDhtService, FileStorage};
 use ippan_l1_fees::FeePolicy;
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{
-    dht::HandleDhtService, Handle, HandleMetadata, HandleRegistryError, HandleStatus,
-    L2HandleRegistry,
+    dht::HandleDhtService, Handle, HandleMetadata, HandleRegistration, HandleRegistryError,
+    HandleStatus, L2HandleRegistry, PublicKey,
 };
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
@@ -383,7 +383,9 @@ struct AccountResponse {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PaymentRequest {
+    /// Sender identifier (Base58Check, hex, or @handle)
     from: String,
+    /// Recipient identifier (Base58Check, hex, or @handle)
     to: String,
     #[serde(deserialize_with = "deserialize_u128_from_any")]
     amount: u128,
@@ -650,6 +652,12 @@ enum PaymentError {
     InvalidSigningKey(String),
     #[error("invalid account address: {0}")]
     InvalidAddress(String),
+    #[error("invalid handle identifier: {0}")]
+    InvalidHandle(String),
+    #[error("handle not found: {0}")]
+    HandleNotFound(String),
+    #[error("failed to resolve handle: {0}")]
+    HandleLookupFailed(String),
     #[error("memo exceeds {0} bytes")]
     MemoTooLong(usize),
     #[error("amount must be greater than zero")]
@@ -729,6 +737,11 @@ impl PaymentError {
             PaymentError::MissingSigningKey => (StatusCode::BAD_REQUEST, "missing_signing_key"),
             PaymentError::InvalidSigningKey(_) => (StatusCode::BAD_REQUEST, "invalid_signing_key"),
             PaymentError::InvalidAddress(_) => (StatusCode::BAD_REQUEST, "invalid_address"),
+            PaymentError::InvalidHandle(_) => (StatusCode::BAD_REQUEST, "invalid_handle"),
+            PaymentError::HandleNotFound(_) => (StatusCode::NOT_FOUND, "handle_not_found"),
+            PaymentError::HandleLookupFailed(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "handle_lookup_failed")
+            }
             PaymentError::MemoTooLong(_) => (StatusCode::BAD_REQUEST, "memo_too_long"),
             PaymentError::ZeroAmount => (StatusCode::BAD_REQUEST, "invalid_amount"),
             PaymentError::AccountNotFound => (StatusCode::NOT_FOUND, "account_not_found"),
@@ -1835,10 +1848,8 @@ fn build_payment_transaction(
     state: &Arc<AppState>,
     request: PaymentRequest,
 ) -> Result<BuiltPayment, PaymentError> {
-    let from_bytes = decode_address(&request.from)
-        .map_err(|err| PaymentError::InvalidAddress(format!("from: {err}")))?;
-    let to_bytes = decode_address(&request.to)
-        .map_err(|err| PaymentError::InvalidAddress(format!("to: {err}")))?;
+    let from_bytes = resolve_address_or_handle(state, "from", &request.from)?;
+    let to_bytes = resolve_address_or_handle(state, "to", &request.to)?;
 
     if request.amount == 0 {
         return Err(PaymentError::ZeroAmount);
@@ -2633,6 +2644,43 @@ fn decode_any_address(input: &str) -> Result<[u8; 32], String> {
     }
 }
 
+fn is_handle_identifier(input: &str) -> bool {
+    let trimmed = input.trim();
+    trimmed.starts_with('@') || trimmed.contains('.')
+}
+
+fn resolve_address_or_handle(
+    state: &Arc<AppState>,
+    field: &'static str,
+    raw: &str,
+) -> Result<[u8; 32], PaymentError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(PaymentError::InvalidAddress(format!(
+            "{field} cannot be empty"
+        )));
+    }
+
+    if is_handle_identifier(trimmed) {
+        let normalized = normalize_handle_input(trimmed)
+            .map_err(|_| PaymentError::InvalidHandle(trimmed.to_string()))?;
+        let handle = Handle::new(normalized.clone());
+        match state.handle_registry.get_metadata(&handle) {
+            Ok(metadata) => {
+                let mut owner = [0u8; 32];
+                owner.copy_from_slice(metadata.owner.as_bytes());
+                Ok(owner)
+            }
+            Err(HandleRegistryError::HandleNotFound { .. }) => {
+                Err(PaymentError::HandleNotFound(normalized))
+            }
+            Err(err) => Err(PaymentError::HandleLookupFailed(err.to_string())),
+        }
+    } else {
+        decode_any_address(trimmed).map_err(|err| PaymentError::InvalidAddress(err))
+    }
+}
+
 enum BlockIdentifier {
     Hash([u8; 32]),
     Height(u64),
@@ -3197,6 +3245,34 @@ mod tests {
         let private_bytes = signing_key.to_bytes();
         tx.sign(&private_bytes).expect("sign sample transaction");
         tx
+    }
+
+    fn register_test_handle(state: &Arc<AppState>, signer: &SigningKey, handle_str: &str) {
+        use sha2::Digest;
+
+        let owner = signer.verifying_key().to_bytes();
+        let owner_pk = PublicKey::new(owner);
+        let handle = Handle::new(handle_str.to_string());
+
+        let mut message = Vec::new();
+        message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
+        message.extend_from_slice(handle.as_str().as_bytes());
+        message.extend_from_slice(owner_pk.as_bytes());
+        let message_hash = Sha256::digest(&message);
+        let signature = signer.sign(&message_hash).to_bytes().to_vec();
+
+        let registration = HandleRegistration {
+            handle,
+            owner: owner_pk,
+            signature,
+            metadata: BTreeMap::new(),
+            expires_at: None,
+        };
+
+        state
+            .handle_registry
+            .register(registration)
+            .expect("register test handle");
     }
 
     struct FailingStorage {
@@ -3916,6 +3992,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_handle_payment_tx_accepts_handles() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = PoAConfig::default();
+        config.validators.push(Validator {
+            id: sample_public_key([50u8; 32]),
+            address: sample_public_key([51u8; 32]),
+            stake: 1_000,
+            is_active: true,
+        });
+
+        let poa = PoAConsensus::new(config, storage.clone(), sample_public_key([52u8; 32]));
+        let mempool = poa.mempool();
+        let consensus = Arc::new(Mutex::new(poa));
+
+        let (tx_sender, mut rx) = mpsc::unbounded_channel();
+        let handle = ConsensusHandle::new(consensus.clone(), tx_sender.clone(), mempool.clone());
+
+        let mut app_state = (*build_app_state(None, None)).clone();
+        app_state.storage = storage.clone();
+        app_state.consensus = Some(handle);
+        app_state.tx_sender = Some(tx_sender);
+        app_state.mempool = mempool.clone();
+        let state = Arc::new(app_state);
+
+        let signer = sample_private_key([53u8; 32]);
+        let from_public = signer.verifying_key().to_bytes();
+        state
+            .storage
+            .update_account(Account {
+                address: from_public,
+                balance: 10_000,
+                nonce: 0,
+            })
+            .expect("account");
+
+        let to_signer = sample_private_key([54u8; 32]);
+        let to_public = to_signer.verifying_key().to_bytes();
+
+        register_test_handle(&state, &signer, "@alice.ipn");
+        register_test_handle(&state, &to_signer, "@bob.ipn");
+
+        let request = PaymentRequest {
+            from: "@alice.ipn".into(),
+            to: "@bob.ipn".into(),
+            amount: 500,
+            fee: None,
+            nonce: None,
+            memo: Some("handle flow".into()),
+            signing_key: Some(hex::encode(signer.to_bytes())),
+        };
+
+        let addr: SocketAddr = "127.0.0.1:9403".parse().unwrap();
+        let response = handle_payment_tx(
+            State(state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(request),
+        )
+        .await
+        .expect("payment ok")
+        .0;
+
+        assert_eq!(response.status, PaymentStatus::AcceptedToMempool);
+        assert_eq!(response.from, encode_address(&from_public));
+        assert_eq!(response.to, encode_address(&to_public));
+        assert_eq!(response.memo.as_deref(), Some("handle flow"));
+
+        let dispatched = rx.recv().await.expect("consensus dispatch");
+        assert_eq!(dispatched.nonce, 1);
+    }
+
+    #[tokio::test]
     async fn test_handle_payment_tx_missing_signing_key() {
         let state = make_app_state();
         let addr: SocketAddr = "127.0.0.1:9401".parse().unwrap();
@@ -3974,6 +4121,37 @@ mod tests {
             .await
             .expect_err("zero amount");
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_payment_tx_unknown_handle() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9404".parse().unwrap();
+        let signer = sample_private_key([60u8; 32]);
+        let from_public = signer.verifying_key().to_bytes();
+        state
+            .storage
+            .update_account(Account {
+                address: from_public,
+                balance: 2_000,
+                nonce: 0,
+            })
+            .expect("account");
+
+        let request = PaymentRequest {
+            from: encode_address(&from_public),
+            to: "@missing.ipn".into(),
+            amount: 1,
+            fee: None,
+            nonce: Some(1),
+            memo: None,
+            signing_key: Some(hex::encode(signer.to_bytes())),
+        };
+
+        let err = handle_payment_tx(State(state), ConnectInfo(addr), ValidatedJson(request))
+            .await
+            .expect_err("missing handle");
+        assert_eq!(err.0, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

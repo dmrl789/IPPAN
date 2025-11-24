@@ -39,8 +39,8 @@ Submit an L1 payment that transfers funds and pays the deterministic fee.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `from` | string | ✅ | Sender account (hex-encoded 32-byte address or Base58Check with `i` prefix). |
-| `to` | string | ✅ | Recipient account (same encoding rules as `from`). |
+| `from` | string | ✅ | Sender identifier (Base58Check, hex, or `@handle`). |
+| `to` | string | ✅ | Recipient identifier (same rules as `from`). |
 | `amount` | `u128` (JSON number or string) | ✅ | Atomic IPN amount to transfer; must be > 0. |
 | `fee` | `u128` (JSON number or string) | optional | Max fee you are willing to pay. Handler enforces `FeePolicy`; omit to let the server estimate. |
 | `nonce` | `u64` | optional | Explicit nonce. If omitted the handler fetches/derives the next nonce. |
@@ -86,7 +86,7 @@ HTTP/1.1 400 Bad Request
 curl -sS -X POST http://127.0.0.1:8080/tx/payment \
   -H "Content-Type: application/json" \
   -d '{
-        "from": "i8f72...c5",
+        "from": "@alice.ipn",
         "to": "idf09...77",
         "amount": "250000000000000000000000",
         "fee": "2000",
@@ -95,6 +95,9 @@ curl -sS -X POST http://127.0.0.1:8080/tx/payment \
         "signing_key": "'$SIGNING_KEY_HEX'"
       }'
 ```
+
+> Handles are normalized and resolved via the L2 registry before signing. When a
+> handle cannot be found the RPC returns `404 handle_not_found`.
 
 ---
 

@@ -110,7 +110,10 @@ Highlights:
 | `--memo` | Attach a topic/memo (≤256 bytes). |
 | `--yes` | Skip the interactive confirmation prompt. |
 
-If the key file is stored unencrypted (dev/test), omit the password flags.
+If the key file is stored unencrypted (dev/test), omit the password flags. Both
+`--from` and `--to` accept any identifier that the RPC understands: Base58Check,
+hex (`0x…`), or `@handle` strings (e.g. `@alice.ipn`). Handles are normalized
+and resolved on the node before signing.
 
 ---
 
