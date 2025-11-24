@@ -1101,11 +1101,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_configure_announce_address_prefers_public_host() {
-        let mut config = P2PConfig::default();
-        config.listen_address = "http://127.0.0.1:9101".into();
-        config.dht.public_host = Some("https://example.com:9101".into());
-        config.dht.external_ip_services.clear();
-        config.dht.enable_upnp = false;
+        let config = P2PConfig {
+            listen_address: "http://127.0.0.1:9101".into(),
+            dht: DhtConfig {
+                public_host: Some("https://example.com:9101".into()),
+                external_ip_services: Vec::new(),
+                enable_upnp: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9101".into()).expect("network");
         let override_addr = network.configure_announce_address().await;
@@ -1130,8 +1135,10 @@ mod tests {
 
     #[tokio::test]
     async fn peer_limit_prevents_unbounded_growth() {
-        let mut config = P2PConfig::default();
-        config.max_peers = 2;
+        let config = P2PConfig {
+            max_peers: 2,
+            ..Default::default()
+        };
         let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9200".into()).expect("network");
 
         network

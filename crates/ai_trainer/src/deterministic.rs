@@ -108,7 +108,7 @@ mod tests {
         let mut rng = LcgRng::new(42);
         for _ in 0..100 {
             let val = rng.next_range(10);
-            assert!(val >= 0 && val < 10);
+            assert!((0..10).contains(&val));
         }
     }
 

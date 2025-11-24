@@ -404,7 +404,7 @@ impl GossipIngressGuards {
 
         let window = self
             .peer_windows
-            .entry(peer.clone())
+            .entry(*peer)
             .or_insert_with(MessageWindow::new);
         window.reset_if_elapsed(self.window);
 
