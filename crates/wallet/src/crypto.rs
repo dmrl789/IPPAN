@@ -13,6 +13,8 @@ use crate::errors::*;
 use ippan_types::address::{decode_address, encode_address, ADDRESS_BYTES};
 
 const LEGACY_SALT_ENV: &str = "IPPAN_WALLET_LEGACY_SALT_B64";
+
+#[cfg(test)]
 const LEGACY_SALT_FALLBACK: &[u8] = b"ippan_wallet_salt_2024";
 
 #[cfg(test)]
@@ -196,27 +198,30 @@ fn derive_compatible_keys(
         // stored key directly, but keep the historical fixed-salt derivation for deterministic
         // wallets created before this change.
         32 => {
-            let legacy_salt = load_legacy_salt()?;
-            let legacy_key = derive_encryption_key(password, &legacy_salt)?;
-
             let key: [u8; 32] = salt_bytes
                 .try_into()
                 .map_err(|_| WalletError::DecryptionError("Invalid legacy key length".into()))?;
 
-            if key == legacy_key {
-                Ok((legacy_key, None))
+            if let Some(legacy_salt) = load_legacy_salt()? {
+                let legacy_key = derive_encryption_key(password, &legacy_salt)?;
+
+                if key == legacy_key {
+                    Ok((legacy_key, None))
+                } else {
+                    Ok((key, Some(legacy_key)))
+                }
             } else {
-                Ok((key, Some(legacy_key)))
+                Ok((key, None))
             }
         }
         _ => Ok((derive_encryption_key(password, salt_bytes)?, None)),
     }
 }
 
-fn load_legacy_salt() -> Result<Vec<u8>> {
+fn load_legacy_salt() -> Result<Option<Vec<u8>>> {
     #[cfg(test)]
     if let Some(override_bytes) = LEGACY_SALT_OVERRIDE.with(|cell| cell.borrow().clone()) {
-        return Ok(override_bytes);
+        return Ok(Some(override_bytes));
     }
 
     if let Ok(encoded) = env::var(LEGACY_SALT_ENV) {
@@ -227,15 +232,26 @@ fn load_legacy_salt() -> Result<Vec<u8>> {
             ));
         }
 
-        return general_purpose::STANDARD.decode(trimmed).map_err(|e| {
-            WalletError::CryptoError(format!(
-                "Failed to decode legacy salt override as base64: {}",
-                e
-            ))
-        });
+        return general_purpose::STANDARD
+            .decode(trimmed)
+            .map(Some)
+            .map_err(|e| {
+                WalletError::CryptoError(format!(
+                    "Failed to decode legacy salt override as base64: {}",
+                    e
+                ))
+            });
     }
 
-    Ok(LEGACY_SALT_FALLBACK.to_vec())
+    #[cfg(test)]
+    {
+        return Ok(Some(LEGACY_SALT_FALLBACK.to_vec()));
+    }
+
+    #[cfg(not(test))]
+    {
+        Ok(None)
+    }
 }
 
 /// Sign a message with a private key
