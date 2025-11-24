@@ -15,11 +15,7 @@
 
 use anyhow::Result;
 use ippan_consensus_dlc::{
-    bond,
-    dag::Block,
-    dgbdt::ValidatorMetrics,
-    hashtimer::HashTimer,
-    verifier::VerifiedBlock,
+    bond, dag::Block, dgbdt::ValidatorMetrics, hashtimer::HashTimer, verifier::VerifiedBlock,
     DlcConfig, DlcConsensus,
 };
 use ippan_types::Amount;
@@ -81,7 +77,10 @@ impl GateMetrics {
     }
 
     fn record_selection(&mut self, primary: &str, shadows: &[String]) {
-        *self.primary_selections.entry(primary.to_string()).or_insert(0) += 1;
+        *self
+            .primary_selections
+            .entry(primary.to_string())
+            .or_insert(0) += 1;
         for shadow in shadows {
             *self.shadow_selections.entry(shadow.clone()).or_insert(0) += 1;
         }
@@ -131,8 +130,8 @@ impl GateMetrics {
 
         // Invariant 5: Fairness balance (no single validator dominates)
         if let Some(max_primary) = self.primary_selections.values().max() {
-            let avg_primary = self.primary_selections.values().sum::<u64>() / 
-                (self.primary_selections.len() as u64).max(1);
+            let avg_primary = self.primary_selections.values().sum::<u64>()
+                / (self.primary_selections.len() as u64).max(1);
             let max_ratio = (*max_primary * 100) / avg_primary.max(1);
             anyhow::ensure!(
                 max_ratio <= 300, // No more than 3x average
@@ -163,7 +162,7 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
         enable_slashing: true,
     });
 
-    let mut rng = StdRng::seed_from_u64(0xPHASE_E_GATE);
+    let mut rng = StdRng::seed_from_u64(0x5048_4153_4545_4741);
     let mut metrics = GateMetrics::default();
 
     // Bootstrap validator set
@@ -239,7 +238,10 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
             ) {
                 metrics.record_reward(&verified.block.proposer, block_reward as u128);
                 for v in &verified.verified_by {
-                    metrics.record_reward(v, block_reward as u128 / (verified.verified_by.len() as u128).max(1));
+                    metrics.record_reward(
+                        v,
+                        block_reward as u128 / (verified.verified_by.len() as u128).max(1),
+                    );
                 }
             }
         }
@@ -290,15 +292,30 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
     eprintln!("\n=== Gate Results ===");
     eprintln!("✅ Rounds completed: {}/{}", GATE_ROUNDS, GATE_ROUNDS);
     eprintln!("✅ Rounds finalized: {}", metrics.rounds_finalized);
-    eprintln!("✅ Validators rewarded: {}/{}", metrics.validators_rewarded.len(), VALIDATOR_COUNT);
-    eprintln!("✅ Total rewards: {} atomic units", metrics.total_rewards_distributed);
-    eprintln!("✅ Final supply: {}/{} ({:.2}%)",
+    eprintln!(
+        "✅ Validators rewarded: {}/{}",
+        metrics.validators_rewarded.len(),
+        VALIDATOR_COUNT
+    );
+    eprintln!(
+        "✅ Total rewards: {} atomic units",
+        metrics.total_rewards_distributed
+    );
+    eprintln!(
+        "✅ Final supply: {}/{} ({:.2}%)",
         final_stats.emission_stats.current_supply,
         supply_cap,
         (final_stats.emission_stats.current_supply as f64 / supply_cap as f64) * 100.0
     );
-    eprintln!("✅ Max pending blocks: {} (bound: {})", metrics.max_pending_blocks, VALIDATORS_PER_ROUND * 4);
-    eprintln!("✅ DAG finalized blocks: {}", final_stats.dag_stats.finalized_blocks);
+    eprintln!(
+        "✅ Max pending blocks: {} (bound: {})",
+        metrics.max_pending_blocks,
+        VALIDATORS_PER_ROUND * 4
+    );
+    eprintln!(
+        "✅ DAG finalized blocks: {}",
+        final_stats.dag_stats.finalized_blocks
+    );
     eprintln!("✅ DAG tips: {}", final_stats.dag_stats.tips_count);
     eprintln!("\n=== Phase E Gate: PASSED ===\n");
 

@@ -186,6 +186,8 @@ docker-compose up -d
 
 **Document:** `SECURITY_THREAT_MODEL.md` (existing) + updates below
 
+**Operational Playbook:** `docs/SECURITY_AND_AUDIT_PLAYBOOK.md` (external audit inputs, disclosure channel, and baseline hardening steps)
+
 **Threat Actors:**
 1. **Malicious Validator:** <33% stake, attempts double-signing, equivocation
 2. **Network Adversary:** Can partition, delay, drop messages

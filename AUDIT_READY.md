@@ -29,3 +29,4 @@ This document defines the implementation-agnostic protocol rules using RFC 2119 
 - Feature development is paused for the selected commit; only documentation/tagging changes should occur before audit start.
 - Please record the final commit hash above when the audit scope is frozen.
 - Cross-reference `AUDIT_SUMMARY.md` and `SECURITY_THREAT_MODEL.md` for prior hardening context and Phase 2 deferrals.
+- See `docs/SECURITY_AND_AUDIT_PLAYBOOK.md` for external audit inputs, disclosure channel, and baseline hardening guidance.
