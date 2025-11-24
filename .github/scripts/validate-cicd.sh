@@ -3,19 +3,15 @@ set -euo pipefail
 
 echo "🔍 Validating CI/CD Pipeline Configuration..."
 
-# Check if all required workflows exist
+# Check if all required workflows exist (active set)
 REQUIRED_WORKFLOWS=(
   "ci.yml"
-  "test-suite.yml"
-  "build.yml"
-  "security-suite.yml"
   "ai-determinism.yml"
-  "ai-service.yml"
-  "unified-ui.yml"
-  "mobile.yml"
-  "release.yml"
-  "check-nodes.yml"
-  "dependabot.yml"
+  "codeql.yml"
+  "auto-cleanup.yml"
+  "no-float-runtime.yml"
+  "nightly-validation.yml"
+  "ippan-test-suite.yml"
 )
 
 echo "📋 Checking required workflows..."
