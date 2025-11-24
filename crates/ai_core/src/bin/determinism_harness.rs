@@ -26,22 +26,22 @@
 //! - Boundary conditions (reputation thresholds)
 
 use blake3::Hasher;
-use ippan_ai_core::gbdt::{model_hash_hex, Model, SCALE};
-use ippan_ai_core::DeterministicModel;
+use clap::Parser;
+use ippan_ai_core::gbdt::{Model, SCALE};
+use ippan_ai_core::model_hash_hex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use structopt::StructOpt;
 
-#[derive(StructOpt, Debug)]
-#[structopt(name = "determinism_harness")]
+#[derive(Parser, Debug)]
+#[command(name = "determinism_harness")]
 struct Opt {
     /// Path to the D-GBDT model JSON file
-    #[structopt(short, long, parse(from_os_str))]
+    #[arg(short, long)]
     model: Option<PathBuf>,
 
     /// Output format: text or json
-    #[structopt(short, long, default_value = "text")]
+    #[arg(short, long, default_value = "text")]
     format: String,
 }
 
@@ -72,7 +72,7 @@ struct DeterminismReport {
 }
 
 fn main() -> anyhow::Result<()> {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     // Load or create default model
     let model = if let Some(model_path) = opt.model {
@@ -146,8 +146,8 @@ fn create_default_model() -> Model {
     let tree1 = Tree::new(
         vec![
             Node::internal(0, 0, 50 * SCALE, 1, 2),
-            Node::leaf(1, 8500 * SCALE),  // High reputation
-            Node::leaf(2, 5000 * SCALE),  // Medium reputation
+            Node::leaf(1, 8500 * SCALE), // High reputation
+            Node::leaf(2, 5000 * SCALE), // Medium reputation
         ],
         SCALE,
     );

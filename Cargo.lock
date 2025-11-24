@@ -2775,6 +2775,7 @@ dependencies = [
  "bincode",
  "blake3",
  "chrono",
+ "clap",
  "criterion",
  "ed25519-dalek",
  "hex",
