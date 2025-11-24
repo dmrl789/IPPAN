@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
-use clap::{value_parser, Arg, ArgAction, Command};
-use config::{Config, File as ConfigFile};
+use clap::{value_parser, Arg, ArgAction, Command, ValueEnum};
+use config::{Config, File};
 use fs2::FileExt;
 use hex::encode as hex_encode;
 use ippan_consensus::{
@@ -93,9 +93,125 @@ impl fmt::Display for HandleDhtMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum NetworkProfile {
+    Devnet,
+    Testnet,
+    Mainnet,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ProfileDefaults {
+    name: &'static str,
+    config_filename: &'static str,
+    node_id: &'static str,
+    network_id: &'static str,
+    rpc_host: &'static str,
+    rpc_port: u16,
+    p2p_host: &'static str,
+    p2p_port: u16,
+    data_dir: &'static str,
+    db_path: &'static str,
+    log_level: &'static str,
+    log_format: &'static str,
+    bootstrap_nodes: &'static [&'static str],
+    require_bootstrap: bool,
+    prometheus_enabled: bool,
+    dev_mode: bool,
+}
+
+impl ProfileDefaults {
+    fn config_path(&self) -> PathBuf {
+        PathBuf::from("config").join(self.config_filename)
+    }
+}
+
+const DEVNET_BOOTSTRAPS: &[&str] = &[];
+const TESTNET_BOOTSTRAPS: &[&str] = &[
+    "http://rc-node1.testnet.ippan.network:29000",
+    "http://rc-node2.testnet.ippan.network:29000",
+];
+const MAINNET_BOOTSTRAPS: &[&str] = &[
+    "https://bootstrap1.mainnet.ippan.network:39000",
+    "https://bootstrap2.mainnet.ippan.network:39000",
+];
+
+impl NetworkProfile {
+    fn defaults(&self) -> ProfileDefaults {
+        match self {
+            NetworkProfile::Devnet => ProfileDefaults {
+                name: "devnet",
+                config_filename: "devnet.toml",
+                node_id: "ippan-devnet-node",
+                network_id: "ippan-devnet",
+                rpc_host: "127.0.0.1",
+                rpc_port: 18_080,
+                p2p_host: "0.0.0.0",
+                p2p_port: 19_000,
+                data_dir: "./data/devnet",
+                db_path: "./data/devnet/db",
+                log_level: "debug",
+                log_format: "pretty",
+                bootstrap_nodes: DEVNET_BOOTSTRAPS,
+                require_bootstrap: false,
+                prometheus_enabled: true,
+                dev_mode: true,
+            },
+            NetworkProfile::Testnet => ProfileDefaults {
+                name: "testnet",
+                config_filename: "testnet.toml",
+                node_id: "ippan-testnet-node",
+                network_id: "ippan-testnet",
+                rpc_host: "0.0.0.0",
+                rpc_port: 28_080,
+                p2p_host: "0.0.0.0",
+                p2p_port: 29_000,
+                data_dir: "./data/testnet",
+                db_path: "./data/testnet/db",
+                log_level: "info",
+                log_format: "json",
+                bootstrap_nodes: TESTNET_BOOTSTRAPS,
+                require_bootstrap: true,
+                prometheus_enabled: true,
+                dev_mode: false,
+            },
+            NetworkProfile::Mainnet => ProfileDefaults {
+                name: "mainnet",
+                config_filename: "mainnet.toml",
+                node_id: "ippan-mainnet-node",
+                network_id: "ippan-mainnet",
+                rpc_host: "127.0.0.1",
+                rpc_port: 38_080,
+                p2p_host: "0.0.0.0",
+                p2p_port: 39_000,
+                data_dir: "/var/lib/ippan",
+                db_path: "/var/lib/ippan/db",
+                log_level: "warn",
+                log_format: "json",
+                bootstrap_nodes: MAINNET_BOOTSTRAPS,
+                require_bootstrap: true,
+                prometheus_enabled: true,
+                dev_mode: false,
+            },
+        }
+    }
+
+    fn requires_bootstrap(&self) -> bool {
+        self.defaults().require_bootstrap
+    }
+}
+
+impl fmt::Display for NetworkProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.defaults().name)
+    }
+}
+
 /// Application configuration
 #[derive(Debug, Clone)]
 struct AppConfig {
+    profile: NetworkProfile,
+    config_path: Option<PathBuf>,
     // Node identity
     node_id: String,
     validator_id: [u8; 32],
@@ -175,12 +291,30 @@ struct AppConfig {
 }
 
 impl AppConfig {
-    fn load(config_path: Option<&str>) -> Result<Self> {
-        // Load from optional file first (so env vars can override)
+    fn load(profile: NetworkProfile, config_path_override: Option<&str>) -> Result<Self> {
+        let defaults = profile.defaults();
+        let resolved_path = if let Some(path) = config_path_override {
+            let path = PathBuf::from(path);
+            if !path.exists() {
+                anyhow::bail!(
+                    "Configuration file {} not found (specified via --config)",
+                    path.display()
+                );
+            }
+            Some(path)
+        } else {
+            let path = defaults.config_path();
+            if path.exists() {
+                Some(path)
+            } else {
+                None
+            }
+        };
+
         let mut builder = Config::builder();
 
-        if let Some(path) = config_path {
-            builder = builder.add_source(ConfigFile::from(Path::new(path)));
+        if let Some(path) = &resolved_path {
+            builder = builder.add_source(File::from(path.as_path()));
         }
 
         builder = builder.add_source(config::Environment::with_prefix("IPPAN"));
@@ -278,20 +412,38 @@ impl AppConfig {
                 }
             });
 
-        let dev_mode = get_bool_value(&config, &["DEV_MODE", "rpc.dev_mode"], false);
+        let dev_mode = get_bool_value(&config, &["DEV_MODE", "rpc.dev_mode"], defaults.dev_mode);
 
-        let default_rpc_host = if dev_mode {
-            "0.0.0.0".to_string()
-        } else {
-            "127.0.0.1".to_string()
-        };
+        let mut default_rpc_host = defaults.rpc_host.to_string();
+        if dev_mode && default_rpc_host == "127.0.0.1" {
+            default_rpc_host = "0.0.0.0".to_string();
+        }
+
+        let bootstrap_nodes =
+            get_string_value(&config, &["BOOTSTRAP_NODES", "p2p.bootstrap_nodes"])
+                .map(|value| {
+                    value
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|| {
+                    defaults
+                        .bootstrap_nodes
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                });
 
         Ok(Self {
+            profile,
+            config_path: resolved_path,
             node_id: get_string_value(&config, &["NODE_ID", "node.id"])
-                .unwrap_or_else(|| "ippan_node".to_string()),
+                .unwrap_or_else(|| defaults.node_id.to_string()),
             validator_id,
             network_id: get_string_value(&config, &["NETWORK_ID", "network.id", "network_id"])
-                .unwrap_or_else(|| "ippan-devnet".to_string()),
+                .unwrap_or_else(|| defaults.network_id.to_string()),
             consensus_mode: get_string_value(&config, &["CONSENSUS_MODE", "consensus.mode"])
                 .unwrap_or_else(|| "POA".to_string()),
             enable_dlc: get_bool_value(&config, &["ENABLE_DLC", "consensus.enable_dlc"], false),
@@ -313,18 +465,18 @@ impl AppConfig {
             rpc_host: get_string_value(&config, &["RPC_HOST", "rpc.bind", "rpc.host"])
                 .unwrap_or(default_rpc_host),
             rpc_port: get_string_value(&config, &["RPC_PORT", "rpc.port"])
-                .unwrap_or_else(|| "8080".to_string())
+                .unwrap_or_else(|| defaults.rpc_port.to_string())
                 .parse()?,
             rpc_allowed_origins,
             p2p_host: get_string_value(&config, &["P2P_HOST", "p2p.bind", "p2p.host"])
-                .unwrap_or_else(|| "0.0.0.0".to_string()),
+                .unwrap_or_else(|| defaults.p2p_host.to_string()),
             p2p_port: get_string_value(&config, &["P2P_PORT", "p2p.port"])
-                .unwrap_or_else(|| "9000".to_string())
+                .unwrap_or_else(|| defaults.p2p_port.to_string())
                 .parse()?,
             data_dir: get_string_value(&config, &["DATA_DIR", "storage.data_dir"])
-                .unwrap_or_else(|| "./data".to_string()),
+                .unwrap_or_else(|| defaults.data_dir.to_string()),
             db_path: get_string_value(&config, &["DB_PATH", "storage.db_path"])
-                .unwrap_or_else(|| "./data/db".to_string()),
+                .unwrap_or_else(|| defaults.db_path.to_string()),
             slot_duration_ms: config
                 .get_string("SLOT_DURATION_MS")
                 .unwrap_or_else(|_| "100".to_string())
@@ -360,12 +512,7 @@ impl AppConfig {
                 .get_string("L2_MAX_L2_COUNT")
                 .unwrap_or_else(|_| "100".to_string())
                 .parse()?,
-            bootstrap_nodes: get_string_value(&config, &["BOOTSTRAP_NODES", "p2p.bootstrap_nodes"])
-                .unwrap_or_default()
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect(),
+            bootstrap_nodes,
             max_peers: get_string_value(&config, &["MAX_PEERS", "p2p.max_peers"])
                 .unwrap_or_else(|| "50".to_string())
                 .parse()?,
@@ -406,16 +553,52 @@ impl AppConfig {
             handle_dht_mode,
             unified_ui_dist_dir,
             enable_security: get_bool_value(&config, &["ENABLE_SECURITY", "security.enable"], true),
-            prometheus_enabled: config.get_bool("PROMETHEUS_ENABLED").unwrap_or(true),
+            prometheus_enabled: get_bool_value(
+                &config,
+                &[
+                    "PROMETHEUS_ENABLED",
+                    "metrics.enabled",
+                    "observability.prometheus_enabled",
+                ],
+                defaults.prometheus_enabled,
+            ),
             log_level: config
                 .get_string("LOG_LEVEL")
-                .unwrap_or_else(|_| "info".to_string()),
+                .unwrap_or_else(|_| defaults.log_level.to_string()),
             log_format: config
                 .get_string("LOG_FORMAT")
-                .unwrap_or_else(|_| "pretty".to_string()),
+                .unwrap_or_else(|_| defaults.log_format.to_string()),
             dev_mode,
             pid_file: get_string_value(&config, &["PID_FILE", "node.pid_file"]).map(PathBuf::from),
         })
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.node_id.trim().is_empty() {
+            anyhow::bail!("NODE_ID must not be empty");
+        }
+        if self.data_dir.trim().is_empty() {
+            anyhow::bail!("DATA_DIR must not be empty");
+        }
+        if self.db_path.trim().is_empty() {
+            anyhow::bail!("DB_PATH must not be empty");
+        }
+        if self.rpc_port == 0 {
+            anyhow::bail!("RPC_PORT must be greater than zero");
+        }
+        if self.p2p_port == 0 {
+            anyhow::bail!("P2P_PORT must be greater than zero");
+        }
+        if self.rpc_port == self.p2p_port {
+            anyhow::bail!("RPC_PORT and P2P_PORT must be different values");
+        }
+        if self.profile.requires_bootstrap() && self.bootstrap_nodes.is_empty() {
+            anyhow::bail!(
+                "Profile '{}' requires at least one bootstrap node; set p2p.bootstrap_nodes in the config or IPPAN_BOOTSTRAP_NODES",
+                self.profile
+            );
+        }
+        Ok(())
     }
 }
 
@@ -462,15 +645,20 @@ fn parse_multiaddrs(values: &[String], label: &str) -> Vec<Multiaddr> {
 }
 
 fn load_config_with_overrides(matches: &clap::ArgMatches) -> Result<AppConfig> {
+    let profile = *matches
+        .get_one::<NetworkProfile>("network")
+        .unwrap_or(&NetworkProfile::Devnet);
     let config_path = matches
         .get_one::<String>("config")
         .map(|value| value.as_str());
-    let mut config = AppConfig::load(config_path)?;
+    let mut config = AppConfig::load(profile, config_path)?;
     apply_overrides(matches, &mut config);
 
     if config.pid_file.is_none() {
         config.pid_file = Some(PathBuf::from(&config.data_dir).join("ippan-node.pid"));
     }
+
+    config.validate()?;
 
     Ok(config)
 }
@@ -479,10 +667,6 @@ fn apply_overrides(matches: &clap::ArgMatches, config: &mut AppConfig) {
     if let Some(data_dir) = matches.get_one::<String>("data-dir") {
         config.data_dir = data_dir.clone();
         config.db_path = format!("{data_dir}/db");
-    }
-
-    if let Some(network) = matches.get_one::<String>("network") {
-        config.network_id = network.clone();
     }
 
     if let Some(log_level) = matches.get_one::<String>("log-level") {
@@ -655,8 +839,13 @@ async fn main() -> Result<()> {
         .arg(
             Arg::new("network")
                 .long("network")
-                .value_name("NETWORK")
-                .help("Network identifier (e.g. localnet or testnet)")
+                .value_name("PROFILE")
+                .value_parser(value_parser!(NetworkProfile))
+                .env("IPPAN_NETWORK")
+                .default_value("devnet")
+                .help(
+                    "Select network profile (devnet, testnet, mainnet). Can also be set via IPPAN_NETWORK",
+                )
                 .global(true),
         )
         .arg(
@@ -855,7 +1044,13 @@ async fn main() -> Result<()> {
 
     info!("Starting IPPAN node: {}", config.node_id);
     info!("Validator ID: {}", hex::encode(config.validator_id));
+    info!("Network profile: {}", config.profile);
     info!("Network ID: {}", config.network_id);
+    if let Some(path) = &config.config_path {
+        info!("Config file: {}", path.display());
+    } else {
+        info!("Config file: (built-in defaults)");
+    }
     info!("Data directory: {}", config.data_dir);
     info!("Development mode: {}", config.dev_mode);
 
@@ -1660,5 +1855,68 @@ impl Drop for DataDirLock {
     fn drop(&mut self) {
         let _ = self.file.unlock();
         let _ = fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn fixture_config(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("config")
+            .join(name)
+    }
+
+    #[test]
+    fn devnet_profile_loads_defaults() {
+        let path = fixture_config("devnet.toml");
+        let config = AppConfig::load(NetworkProfile::Devnet, Some(path.to_str().unwrap())).unwrap();
+
+        assert_eq!(config.profile, NetworkProfile::Devnet);
+        assert_eq!(config.network_id, "ippan-devnet");
+        assert_eq!(config.rpc_port, 18_080);
+        assert_eq!(config.p2p_port, 19_000);
+        assert_eq!(config.data_dir, "./data/devnet");
+    }
+
+    #[test]
+    fn testnet_profile_requires_bootstrap_nodes() {
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(
+            temp,
+            r#"[node]
+id = "ippan-testnet-node"
+
+[network]
+id = "ippan-testnet"
+
+[rpc]
+host = "0.0.0.0"
+port = 28080
+
+[p2p]
+host = "0.0.0.0"
+port = 29000
+bootstrap_nodes = ""
+
+[storage]
+data_dir = "./data/testnet"
+db_path = "./data/testnet/db"
+"#
+        )
+        .unwrap();
+        temp.flush().unwrap();
+
+        let mut config =
+            AppConfig::load(NetworkProfile::Testnet, Some(temp.path().to_str().unwrap())).unwrap();
+        let err = config.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("bootstrap"),
+            "unexpected error: {err}"
+        );
     }
 }

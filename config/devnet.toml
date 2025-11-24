@@ -1,0 +1,29 @@
+# IPPAN Devnet Profile
+# Local developer-friendly defaults. Safe to run multiple nodes on the same host
+# by overriding RPC/P2P ports via CLI args or IPPAN_* env vars.
+
+[node]
+id = "ippan-devnet-node"
+
+[network]
+id = "ippan-devnet"
+
+[rpc]
+host = "127.0.0.1"
+port = 18080
+
+[p2p]
+host = "0.0.0.0"
+port = 19000
+bootstrap_nodes = ""
+
+[storage]
+data_dir = "./data/devnet"
+db_path = "./data/devnet/db"
+
+[logging]
+level = "debug"
+format = "pretty"
+
+[metrics]
+enabled = true
