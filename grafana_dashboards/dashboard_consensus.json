@@ -1,0 +1,85 @@
+{
+  "dashboard": {
+    "title": "IPPAN Consensus Overview",
+    "tags": ["ippan", "consensus", "dlc"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Finalized Rounds / s",
+        "type": "graph",
+        "gridPos": {"h": 7, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(ippan_rounds_finalized_total[5m])",
+            "legendFormat": "Rounds finalized"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Blocks Proposed vs Validated",
+        "type": "graph",
+        "gridPos": {"h": 7, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(ippan_blocks_proposed_total[5m])",
+            "legendFormat": "Proposed"
+          },
+          {
+            "expr": "rate(ippan_blocks_validated_total[5m])",
+            "legendFormat": "Validated"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Consensus Forks / 5m",
+        "type": "graph",
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 7},
+        "targets": [
+          {
+            "expr": "rate(ippan_consensus_forks_total[5m])",
+            "legendFormat": "Forks"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Peer Count",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 7},
+        "targets": [
+          {
+            "expr": "avg(ippan_peer_count)",
+            "legendFormat": "Peers"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto"
+        }
+      },
+      {
+        "id": 5,
+        "title": "Finalized Height",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 7},
+        "targets": [
+          {
+            "expr": "max(ippan_finalized_height)",
+            "legendFormat": "Height"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "justifyMode": "auto"
+        }
+      }
+    ],
+    "schemaVersion": 36,
+    "version": 1
+  }
+}

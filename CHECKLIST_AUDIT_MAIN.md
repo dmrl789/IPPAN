@@ -50,8 +50,9 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
       `ai_registry` can reject mismatches at startup.
 - [x] `docs/AI_MODEL_LIFECYCLE.md` and `docs/AI_TRAINING_DATASET.md` describe
       the dataset schema and full model lifecycle.
-- [ ] CI automation to cross-check `expected_hash` values against the on-disk
-      JSON artifacts (future work).
+- [x] CI automation cross-checks `expected_hash` values against on-disk JSON
+      artifacts via `verify_model_hash` (`crates/ai_core/src/bin`) and the
+      `Verify model hash` step in `.github/workflows/ai-determinism.yml`.
 
 ## 3b. Shadow Verifiers (DLC Redundancy)
 - [x] Primary + shadow verifier selection is deterministic and repeats across runs (tested in `crates/consensus/tests/dlc_integration_tests.rs`).
@@ -127,7 +128,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] RPC guardrails consolidated on `SecurityManager` (per-IP/per-endpoint rate limits, allow/deny lists, dev-mode gating).
 - [x] Deterministic AI pipeline enforced (no floats in runtime paths, canonical JSON + BLAKE3 hashing, determinism tests).
 - [ ] CI expansion for cross-crate no-float scanning and long-run chaos/soak coverage (Phase 2).
-- [ ] External audit, bug bounty/red-team, and OS/network hardening playbooks (Phase 2).
+- [x] External audit, bug bounty/red-team, and OS/network hardening playbooks documented in `docs/SECURITY_AND_AUDIT_PLAYBOOK.md` (roles, triage SLAs, and baseline hardening captured; external engagement remains Phase 2).
 
 ### Next phase
 - External security/cryptography audit and formal review of DLC/HashTimer assumptions.
@@ -138,6 +139,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] `/health` endpoint surfaces consensus/DHT/RPC/storage status as a structured `HealthStatus` payload (`crates/rpc/src/server.rs`).
 - [x] `/metrics` endpoint serves Prometheus text output whenever the exporter is enabled (`crates/rpc/src/server.rs`).
 - [x] `/health` endpoint contract validated via tests covering healthy + degraded dependencies.
+- [x] Baseline Grafana dashboards + alert examples published (`grafana_dashboards/` and `docs/operators/monitoring-and-alerts.md`).
 - [ ] Advanced dashboards/alert policies are tracked separately (future work).
 
 ## 11b. Explorer & Ops API
@@ -145,7 +147,7 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 - [x] Core DTOs for blocks/txs/accounts/payments/handles/files are consistent, integer-based, and stable.
 - [x] Observability endpoints (`/health`, `/ai/status`, `/metrics`) documented for dashboards.
 - [x] Dev-only endpoints explicitly marked and dev-gated.
-- [ ] Strong versioning / deprecation policy for RPC (future).
+- [x] Strong versioning / deprecation policy for RPC documented in `docs/API_VERSIONING_POLICY.md` with `/version` exposing `protocol_version`.
 
 ## Tests & Coverage
 - [x] L1 payment RPC tests exercise `/tx/payment` success/error cases plus `/account/:address/payments` pagination & direction handling.

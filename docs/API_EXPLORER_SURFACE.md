@@ -3,7 +3,11 @@
 This catalog lists the read-only RPC routes that explorers, dashboards, and
 mobile clients can safely expose. All payloads return integers for amounts,
 counts, and timestamps (microseconds) and never mutate node state. Paths are
-relative to the RPC base URL (default `http://127.0.0.1:8080`).
+relative to the RPC base URL (default `http://127.0.0.1:8080`). The canonical
+version contract for these routes is described in
+[`API_VERSIONING_POLICY.md`](./API_VERSIONING_POLICY.md); use the `/version`
+endpoint to confirm the active protocol version before enabling writes or
+rolling out client changes.
 
 ## Public explorer endpoints
 

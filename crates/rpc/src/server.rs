@@ -78,11 +78,24 @@ const MAX_MEMO_BYTES: usize = 256;
 const DEFAULT_PAYMENT_HISTORY_LIMIT: usize = 25;
 const MAX_PAYMENT_HISTORY_LIMIT: usize = 200;
 const PAYMENT_ENDPOINT: &str = "/tx/payment";
+const RPC_PROTOCOL_VERSION: &str = "v1";
 const HANDLE_REGISTER_ENDPOINT: &str = "/handle/register";
 const HANDLE_LOOKUP_ENDPOINT: &str = "/handle/:handle";
 const MAX_BODY_BYTES: usize = 64 * 1024; // 64 KiB default when security manager not configured
 const REQUEST_TIMEOUT_SECS: u64 = 10;
 const MAX_CONCURRENT_REQUESTS: usize = 128;
+
+/// Stable response payload for the `/version` endpoint.
+/// Keep this schema backward-compatible; bump `protocol_version` before
+/// adding breaking fields or changing semantics.
+#[derive(Debug, Serialize)]
+struct VersionInfo {
+    protocol_version: &'static str,
+    version: &'static str,
+    commit: &'static str,
+    mode: &'static str,
+    network: String,
+}
 
 /// Layer 2 configuration
 #[derive(Clone, Debug, Serialize)]
@@ -1560,18 +1573,21 @@ async fn handle_time(
 async fn handle_version(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
+) -> Result<Json<VersionInfo>, (StatusCode, &'static str)> {
     const ENDPOINT: &str = "/version";
     if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
         return Err(deny_request(&state, &addr, ENDPOINT, err).await);
     }
 
     record_security_success(&state, &addr, ENDPOINT).await;
-    Ok(Json(serde_json::json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "commit": git_commit_hash(),
-        "mode": rpc_consensus_mode(&state.consensus_mode)
-    })))
+    let payload = VersionInfo {
+        protocol_version: RPC_PROTOCOL_VERSION,
+        version: env!("CARGO_PKG_VERSION"),
+        commit: git_commit_hash(),
+        mode: rpc_consensus_mode(&state.consensus_mode),
+        network: rpc_network(&state),
+    };
+    Ok(Json(payload))
 }
 
 /// Optional Git commit hash set by CI (GIT_COMMIT_HASH env var) during builds.
@@ -1584,6 +1600,21 @@ fn rpc_consensus_mode(mode: &str) -> &'static str {
         "DLC"
     } else {
         "PoA"
+    }
+}
+
+fn rpc_network(state: &AppState) -> String {
+    if let Ok(name) = std::env::var("IPPAN_NETWORK") {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    if state.dev_mode {
+        "devnet".to_string()
+    } else {
+        "mainnet".to_string()
     }
 }
 
@@ -5297,15 +5328,11 @@ mod tests {
         let Json(version) = handle_version(State(state.clone()), ConnectInfo(addr))
             .await
             .expect("version");
-        assert_eq!(
-            version.get("version"),
-            Some(&serde_json::json!(env!("CARGO_PKG_VERSION")))
-        );
-        assert_eq!(
-            version.get("commit"),
-            Some(&serde_json::json!(git_commit_hash()))
-        );
-        assert_eq!(version.get("mode"), Some(&serde_json::json!("PoA")));
+        assert_eq!(version.protocol_version, RPC_PROTOCOL_VERSION);
+        assert_eq!(version.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(version.commit, git_commit_hash());
+        assert_eq!(version.mode, "PoA");
+        assert_eq!(version.network, "devnet");
 
         let metrics_response = handle_metrics(State(state), ConnectInfo(addr))
             .await

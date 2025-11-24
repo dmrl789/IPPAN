@@ -175,10 +175,7 @@ jobs:
 
       - name: Verify model hash
         run: |
-          cd models
-          sha256sum reputation_v1.json > model_hash.txt
-          echo "Model hash: $(cat model_hash.txt)"
-          echo "✅ Model hash verification completed"
+          cargo run -p ippan-ai-core --bin verify_model_hash -- config/dlc.toml
 
   test-fee-caps:
     name: Fee Cap & Validation Tests

@@ -1,0 +1,109 @@
+{
+  "dashboard": {
+    "title": "IPPAN Node Health",
+    "tags": ["ippan", "ops", "rpc"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Process CPU (5m avg)",
+        "type": "graph",
+        "gridPos": {"h": 7, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total[5m])",
+            "legendFormat": "CPU seconds"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Resident Memory",
+        "type": "graph",
+        "gridPos": {"h": 7, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes",
+            "legendFormat": "RSS bytes"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "RPC Error Rate",
+        "type": "graph",
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 7},
+        "targets": [
+          {
+            "expr": "rate(ippan_rpc_errors_total[5m])",
+            "legendFormat": "RPC errors"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "RPC Request Volume",
+        "type": "graph",
+        "gridPos": {"h": 6, "w": 12, "x": 12, "y": 7},
+        "targets": [
+          {
+            "expr": "rate(ippan_rpc_requests_total[5m])",
+            "legendFormat": "Requests"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "/health Status",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 13},
+        "targets": [
+          {
+            "expr": "max(ippan_health_status)",
+            "legendFormat": "Health"
+          }
+        ],
+        "options": {
+          "colorMode": "background",
+          "reduceOptions": {
+            "calcs": ["last"],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "value"
+        }
+      },
+      {
+        "id": 6,
+        "title": "Peer Connectivity",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 13},
+        "targets": [
+          {
+            "expr": "avg(ippan_peer_count)",
+            "legendFormat": "Peers"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto"
+        }
+      },
+      {
+        "id": 7,
+        "title": "Mempool Depth",
+        "type": "graph",
+        "gridPos": {"h": 6, "w": 12, "x": 12, "y": 13},
+        "targets": [
+          {
+            "expr": "avg(ippan_mempool_transactions)",
+            "legendFormat": "Transactions"
+          }
+        ]
+      }
+    ],
+    "schemaVersion": 36,
+    "version": 1
+  }
+}

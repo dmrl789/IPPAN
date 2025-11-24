@@ -14,6 +14,7 @@ All critical compilation errors have been resolved, and the system builds succes
 - ✅ **Systemd service unit**
 - ✅ **CI/CD workflow**
 - ✅ **Environment configuration**
+- ✅ **Security & audit coordination playbook** (`docs/SECURITY_AND_AUDIT_PLAYBOOK.md`)
 
 ---
 
@@ -197,6 +198,7 @@ sudo journalctl -u ippan-node --since "1 hour ago"
 - [ ] **SSL/TLS**: Enable TLS for RPC endpoints in production
 - [ ] **User Permissions**: Run as non-root user (`ippan`)
 - [ ] **File Permissions**: Restrict access to configuration and data files
+- [ ] **Playbook Ready**: Keep `docs/SECURITY_AND_AUDIT_PLAYBOOK.md` handy for disclosure channels, incident coordination, and baseline hardening steps
 - [ ] **Network Security**: Use VPN or private networks for P2P communication
 - [ ] **Monitoring**: Set up log monitoring and alerting
 - [ ] **Backup**: Implement regular database backups

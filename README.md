@@ -192,6 +192,9 @@ The command queries `/health`, `/status`, and `/peers` on every target, prints a
 - `GET /time` - Get current IPPAN Time
 
 Need a concrete example flow? See [`docs/payments/demo_end_to_end_payment.md`](docs/payments/demo_end_to_end_payment.md).
+For integrators, `/version` is the canonical way to confirm the active
+protocol contract; see [`docs/API_VERSIONING_POLICY.md`](docs/API_VERSIONING_POLICY.md)
+for expectations around `v1` stability and deprecation windows.
 
 ## 🔄 Releases & CI Automation
 
