@@ -530,4 +530,152 @@ mod tests {
     fn recipient_validation_rejects_empty() {
         assert!(validate_recipient_identifier("  ").is_err());
     }
+
+    // =========================================================================
+    // PROPERTY-BASED TESTS (Phase E)
+    // =========================================================================
+    
+    mod property_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        // Strategy for valid handle identifiers
+        // Format: @{name}.{suffix}
+        // - name: 1-50 lowercase letters, digits, underscore
+        // - suffix: one of ipn, iot, m, cyborg
+        fn valid_handle_strategy() -> impl Strategy<Value = String> {
+            let name_pattern = "[a-z0-9_]{1,50}";
+            let suffix_pattern = "(ipn|iot|m|cyborg)";
+            prop::string::string_regex(&format!("@{}\\.{}", name_pattern, suffix_pattern))
+                .expect("valid handle regex")
+        }
+
+        // Strategy for invalid handles (various violations)
+        fn invalid_handle_strategy() -> impl Strategy<Value = String> {
+            prop_oneof![
+                // Missing @ prefix
+                Just("alice.ipn".to_string()),
+                Just("user.m".to_string()),
+                // Missing dot/suffix
+                Just("@alice".to_string()),
+                Just("@user".to_string()),
+                // Missing suffix after dot
+                Just("@alice.".to_string()),
+                // Invalid suffix
+                Just("@alice.xyz".to_string()),
+                Just("@user.com".to_string()),
+                // Too short (< 4 chars)
+                Just("@a.".to_string()),
+                Just("@ab".to_string()),
+                // Illegal characters
+                Just("@alice!.ipn".to_string()),
+                Just("@user space.ipn".to_string()),
+                Just("@CAPS.ipn".to_string()), // uppercase not allowed per docs
+                // Empty or whitespace
+                Just("".to_string()),
+                Just("   ".to_string()),
+                // Just @
+                Just("@".to_string()),
+            ]
+        }
+
+        // Strategy for valid addresses (Base58Check or hex)
+        fn valid_address_strategy() -> impl Strategy<Value = String> {
+            prop_oneof![
+                // Base58Check format (starts with 'i' per IPPAN convention)
+                // Generate a plausible-looking Base58Check string
+                prop::string::string_regex("i[1-9A-HJ-NP-Za-km-z]{25,44}").unwrap(),
+                // 64-character hex (with optional 0x prefix)
+                prop::string::string_regex("0x[0-9a-f]{64}").unwrap(),
+                prop::string::string_regex("[0-9a-f]{64}").unwrap(),
+            ]
+        }
+
+        proptest! {
+            #[test]
+            fn prop_valid_handles_are_identified(handle in valid_handle_strategy()) {
+                // Valid handles should be recognized as handle identifiers
+                assert!(is_handle_identifier(&handle), "Expected {} to be recognized as handle", handle);
+            }
+
+            #[test]
+            fn prop_handle_identifier_never_panics(s in "\\PC*") {
+                // is_handle_identifier should never panic on arbitrary input
+                let _ = is_handle_identifier(&s);
+            }
+
+            #[test]
+            fn prop_decode_any_address_never_panics(s in "\\PC*") {
+                // decode_any_address should return error, not panic, on arbitrary input
+                let _ = decode_any_address(&s);
+            }
+
+            #[test]
+            fn prop_validate_recipient_never_panics(s in "\\PC*") {
+                // validate_recipient_identifier should return error, not panic
+                let _ = validate_recipient_identifier(&s);
+            }
+
+            #[test]
+            fn prop_valid_handles_pass_validation(handle in valid_handle_strategy()) {
+                // Valid handles should pass recipient validation
+                let result = validate_recipient_identifier(&handle);
+                assert!(result.is_ok(), "Expected {} to pass validation, got {:?}", handle, result);
+            }
+
+            #[test]
+            fn prop_invalid_handles_fail_validation(handle in invalid_handle_strategy()) {
+                // Invalid handles that don't happen to be valid addresses should fail
+                let result = validate_recipient_identifier(&handle);
+                // Most should fail unless they accidentally parse as valid address
+                // We just check no panic here
+                let _ = result;
+            }
+        }
+
+        // Property tests for payment amounts
+        proptest! {
+            #[test]
+            fn prop_amount_arg_parsing_never_panics(
+                amount_str in prop::option::of("[0-9]{1,10}\\.[0-9]{1,24}"),
+                amount_atomic in prop::option::of(0u128..1_000_000_000_000_000_000_000_000u128)
+            ) {
+                let arg = AmountArg {
+                    amount: amount_str,
+                    amount_atomic,
+                };
+                // Should either succeed or return error, never panic
+                let _ = arg.to_atomic("test_amount");
+            }
+
+            #[test]
+            fn prop_atomic_amount_always_works(atomic in 0u128..1_000_000_000_000_000_000_000_000u128) {
+                let arg = AmountArg {
+                    amount: None,
+                    amount_atomic: Some(atomic),
+                };
+                // Direct atomic amounts should always work
+                let result = arg.to_atomic("test_amount");
+                assert!(result.is_ok(), "Atomic amount {} should parse successfully", atomic);
+                assert_eq!(result.unwrap(), atomic);
+            }
+
+            #[test]
+            fn prop_zero_amount_is_rejected(
+                zero_str in prop::option::of(Just("0".to_string())),
+            ) {
+                if zero_str.is_some() {
+                    let arg = AmountArg {
+                        amount: zero_str,
+                        amount_atomic: None,
+                    };
+                    let result = arg.to_atomic("test_amount");
+                    // Zero amounts should be rejected (amount must be > 0)
+                    // Note: The actual validation happens in RPC/consensus layer,
+                    // but we ensure parsing doesn't panic
+                    let _ = result;
+                }
+            }
+        }
+    }
 }

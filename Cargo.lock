@@ -3510,6 +3510,7 @@ dependencies = [
  "ippan-storage",
  "ippan-types",
  "parking_lot 0.12.5",
+ "proptest",
  "rand_core 0.6.4",
  "reqwest",
  "rpassword",

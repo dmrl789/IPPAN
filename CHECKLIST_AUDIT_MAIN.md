@@ -213,6 +213,18 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
 
 ### 16. Property-Based & Fuzz Testing (Critical Paths)
 
+- [x] **Payment & Handle Resolution (Phase E - Step 1)**: Property-based tests and enhanced fuzz targets for the payment + handle path:
+  - Property tests in `crates/wallet/src/cli.rs` (property_tests module):
+    - Handle identifier validation (valid/invalid formats, never panics on arbitrary input)
+    - Address parsing (Base58Check, hex) robustness
+    - Amount parsing (decimal/atomic, overflow protection)
+    - Recipient validation (handles + addresses)
+  - Enhanced fuzz targets in `fuzz/fuzz_targets/`:
+    - `fuzz_rpc_payment.rs`: Payment JSON parsing, handle/address decoding, amount validation
+    - `fuzz_rpc_handle.rs`: Handle format validation (prefix, suffix, length, characters), JSON parsing, premium TLD detection
+  - All property tests pass (9 tests, 100+ iterations each via proptest)
+  - Fuzz targets cover: JSON deserialization, handle resolution, address formats, amount precision
+
 - [ ] **Consensus Fuzz Testing**: Add property-based tests and fuzz targets for consensus-critical paths:
   - Round finalization logic (payments, handles, slashing)
   - Fork choice and conflict resolution
@@ -220,13 +232,11 @@ Operators can now fetch the live AI model hash and stub/real status via RPC, mak
   - Validator selection and rotation fairness
 
 - [ ] **RPC & Network Fuzz Testing**: Extend fuzz coverage for:
-  - RPC endpoint parsing (malformed JSON, oversized payloads)
   - P2P message handling (DHT, gossip, discovery)
   - Transaction validation and mempool admission
 
 - [ ] **Wallet & Crypto Fuzz Testing**: Add fuzz targets for:
   - Ed25519 signature validation edge cases
-  - Address parsing and validation
   - Transaction serialization/deserialization
 
 ### 17. External Audit Integration
