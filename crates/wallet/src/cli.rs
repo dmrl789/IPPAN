@@ -349,9 +349,6 @@ async fn handle_send_payment(rpc_url: &str, args: SendPaymentArgs) -> Result<()>
     let unlocked = keyfile.unlock(password.as_deref())?;
     let amount_atomic = args.amount.to_atomic("amount")?;
     let fee_atomic = args.fee.to_atomic()?;
-    if !args.to.starts_with('@') {
-        decode_any_address(&args.to)?;
-    }
     let memo = args.memo.clone();
     if let Some(memo_value) = &memo {
         if memo_value.as_bytes().len() > 256 {
