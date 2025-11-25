@@ -1,5 +1,5 @@
 id = "ippan_d_gbdt_v1"
-hash = "TO_BE_FILLED_WITH_BLAKE3"
+hash = "ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d"
 scale = 1000000
 feature_cols = [
   "uptime_ratio_7d",
