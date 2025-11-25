@@ -1834,7 +1834,6 @@ impl DataDirLock {
             .create(true)
             .read(true)
             .write(true)
-            .truncate(true)
             .open(&lock_path)?;
 
         if let Err(err) = file.try_lock_exclusive() {
