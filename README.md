@@ -2,7 +2,7 @@
 
 A real blockchain implementation with **IPPAN Time** and **HashTimer** systems for temporal ordering and validation.
 
-> **Development Workflow**: IPPAN uses trunk-based development on `main`. See [MAIN_BRANCH_DEVELOPMENT.md](MAIN_BRANCH_DEVELOPMENT.md) for complete guidelines.
+> **Development Workflow**: IPPAN uses trunk-based development on the trunk branch (currently `master`, will be `main`). See [MAIN_BRANCH_DEVELOPMENT.md](docs/dev_workflow/MAIN_BRANCH_DEVELOPMENT.md) for complete guidelines.
 
 ## Status
 
@@ -18,7 +18,7 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - Current RC: **v0.9.0-rc1**
 - To run a local RC testnet, see: [docs/operators/ippan-rc-testnet-guide.md](docs/operators/ippan-rc-testnet-guide.md)
 - To report issues or feedback: use the "RC Bug Report" or "RC Feedback / UX" GitHub issue templates.
-- Understand how wallet `@handles` map to addresses and how to test handle-based payments in [docs/users/handles-and-addresses.md](docs/users/handles-and-addresses.md) (also linked at [handles-and-addresses.md](handles-and-addresses.md)).
+- Understand how wallet `@handles` map to addresses and how to test handle-based payments in [docs/users/handles-and-addresses.md](docs/users/handles-and-addresses.md) (also linked at [docs/overview/handles-and-addresses.md](docs/overview/handles-and-addresses.md)).
 
 ## 🚀 Features
 
@@ -28,7 +28,7 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - **Web Explorer**: Hosted blockchain explorer at https://ippan.com/explorer for transaction and block visibility
 - **Release Candidate Hardening**: Docker, systemd, and CI/CD configurations validated via nightly workflows
 
-> **Single-branch development**: All day-to-day work lands directly on `main`. Temporary topic branches should remain short-lived and are deleted after their changes fast-forward onto `main`.
+> **Single-branch development**: All day-to-day work lands directly on the trunk branch (`master` today, `main` after the rename). Temporary topic branches should remain short-lived and are deleted after their changes fast-forward onto trunk.
 
 ## 📚 Onboarding Guides
 
@@ -37,6 +37,10 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - [SDK Overview](docs/dev/sdk-overview.md)
 - [User Getting Started](docs/users/getting-started.md)
 - [Handles & Addresses](docs/users/handles-and-addresses.md)
+
+## 📖 Documentation
+
+Start at [docs/README.md](docs/README.md) for the curated index that links protocol references, operator runbooks, AI/DLC evidence, audit artifacts, and contributor workflows.
 
 ## 🧭 IPPAN Codebase Readiness Dashboard
 
@@ -54,9 +58,9 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 
 ### 📋 Audit Hardening Progress
 
-**Phases A–D Complete:** The initial audit-hardening wave (economics integration, AI determinism, network/storage hardening, and governance/audit preparation) has been completed. See [`PHASE_A_D_COMPLETION_SUMMARY.md`](PHASE_A_D_COMPLETION_SUMMARY.md) for the full breakdown of work completed across all four phases.
+**Phases A–D Complete:** The initial audit-hardening wave (economics integration, AI determinism, network/storage hardening, and governance/audit preparation) has been completed. See [`PHASE_A_D_COMPLETION_SUMMARY.md`](docs/archive/2025_rc1/PHASE_A_D_COMPLETION_SUMMARY.md) for the full breakdown of work completed across all four phases.
 
-**Status:** This represents the first four phases of internal hardening. The codebase is now audit-ready, but **Phase E** (External Audit & Launch Gate) remains before we can claim 100% production readiness. Phase E scope is defined in [`CHECKLIST_AUDIT_MAIN.md`](CHECKLIST_AUDIT_MAIN.md).
+**Status:** This represents the first four phases of internal hardening. The codebase is now audit-ready, but **Phase E** (External Audit & Launch Gate) remains before we can claim 100% production readiness. Phase E scope is defined in [`CHECKLIST_AUDIT_MAIN.md`](docs/audit/CHECKLIST_AUDIT_MAIN.md).
 
 ### 🧩 Next Milestones
 

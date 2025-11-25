@@ -1,34 +1,34 @@
-# Master Branch Development Workflow
+# Trunk Branch Development Workflow
 
 ## Overview
 
-IPPAN follows a **trunk-based development** workflow where all development occurs directly on the `master` branch. This document outlines the configuration, rationale, and guidelines for this approach.
+IPPAN follows a **trunk-based development** workflow where all development occurs directly on the trunk branch (currently `master`, will transition to `main`). This document outlines the configuration, rationale, and guidelines for this approach.
 
-## Branch Policy (MASTER ONLY)
+## Branch Policy (Trunk Only)
 
-- Work **ONLY** on the `master` branch.
+- Work **ONLY** on the trunk branch (`master` today, `main` after the rename).
 - Do **NOT** create or use `develop`, `feature/*`, or any other branches for agent work.
-- Agent tasks commit directly to `master`.
+- Agent tasks commit directly to the trunk branch.
 
 ## Configuration
 
 ### Branch Strategy
 
-- **Primary Branch**: `master`
+- **Primary Branch**: trunk (`master` currently, `main` after rename)
 - **Feature Branches**: Not required for most changes
-- **Release Strategy**: Direct commits to `master`
-- **CI/CD Triggers**: All workflows run on the `master` branch
+- **Release Strategy**: Direct commits to trunk
+- **CI/CD Triggers**: All workflows run on the trunk branch
 
 ### CI/CD Configuration
 
-All GitHub Actions workflows are configured to trigger on the `master` branch:
+All GitHub Actions workflows are configured to trigger on the trunk branch:
 
-- **Build & Test** (`ci.yml`): Runs on every push and PR to `master`
-- **AI Determinism** (`ai-determinism.yml`): Validates AI determinism on `master` changes
-- **No Float Runtime** (`no-float-runtime.yml`): Ensures no f32/f64 in runtime code on `master`
+- **Build & Test** (`ci.yml`): Runs on every push and PR to trunk
+- **AI Determinism** (`ai-determinism.yml`): Validates AI determinism on trunk changes
+- **No Float Runtime** (`no-float-runtime.yml`): Ensures no f32/f64 in runtime code on trunk
 - **IPPAN Test Suite** (`ippan-test-suite.yml`): Manual trigger for comprehensive testing
 - **Nightly Validation** (`nightly-validation.yml`): Automated nightly validation
-- **CodeQL Security** (`codeql.yml`): Security analysis on `master` commits
+- **CodeQL Security** (`codeql.yml`): Security analysis on trunk commits
 - **Auto Cleanup** (`auto-cleanup.yml`): Scheduled cleanup of old workflow runs
 
 ### Removed Branch References
@@ -44,7 +44,7 @@ The following branch references have been removed from CI workflows:
 
 ### Making Changes
 
-1. **Work directly on `master`**:
+1. **Work directly on the trunk branch (`master` now, `main` later)**:
    ```bash
    git checkout master
    git pull origin master
@@ -55,9 +55,9 @@ The following branch references have been removed from CI workflows:
    ```
 
 2. **For Cursor AI Development**:
-   - Ensure Cursor is configured to use `master` as the base branch
+- Ensure Cursor is configured to use the trunk branch as the base
    - Disable automatic feature branch creation
-   - All commits should target `master` directly
+   - All commits should target the trunk branch directly
 
 3. **Code Quality Gates**:
    - All commits must pass CI checks before merge
