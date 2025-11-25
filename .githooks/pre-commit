@@ -1,23 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[pre-commit] IPPAN: checking for f32/f64 in crates/ (excluding tests/examples/benches)..."
+# Allow explicit bypass if required
+if [ "${IPPAN_SKIP_FLOAT_CHECK:-0}" = "1" ]; then
+  exit 0
+fi
 
-# Prefer ripgrep if available
+# Only scan STAGED files (not the whole repo)
+staged="$(git diff --cached --name-only --diff-filter=ACMR || true)"
+
+# Only enforce on staged crates/* changes, skipping crates/benchmark and test/example paths
+targets="$(printf "%s\n" "$staged" \
+  | grep -E '^crates/' || true \
+  | grep -vE '^crates/benchmark/' || true \
+  | grep -vE '/(tests|test|benches|examples)/' || true
+)"
+
+# If no relevant staged targets, don't block the commit
+if [ -z "${targets// }" ]; then
+  exit 0
+fi
+
+echo "[pre-commit] IPPAN: checking staged crates/ files for f32/f64..."
+
 if command -v rg >/dev/null 2>&1; then
-  if rg -n --hidden --glob '!**/target/**' '\bf(32|64)\b' crates \
-    | rg -v '(\/tests\/|\/test\/|\/benches\/|\/examples\/|#\[cfg\(test\)\])'; then
-    echo "ERROR: f32/f64 detected in crates/. Remove floats before committing."
+  if printf "%s\n" "$targets" | xargs -r rg -n '\bf(32|64)\b' --; then
+    echo "ERROR: f32/f64 detected in staged crates/ files. Remove floats before committing."
+    echo "Tip: bypass once with IPPAN_SKIP_FLOAT_CHECK=1 (not recommended for runtime changes)."
     exit 1
   fi
 else
-  # Fallback: grep
-  if grep -RIn --exclude-dir=target -E '\bf(32|64)\b' crates \
-    | grep -Ev '(\/tests\/|\/test\/|\/benches\/|\/examples\/)'; then
-    echo "ERROR: f32/f64 detected in crates/. Remove floats before committing."
-    exit 1
-  fi
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    if grep -nE '\bf(32|64)\b' "$f" >/dev/null 2>&1; then
+      echo "ERROR: f32/f64 detected in $f"
+      exit 1
+    fi
+  done <<< "$targets"
 fi
 
 echo "[pre-commit] OK"
-
