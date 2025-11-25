@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "[pre-commit] IPPAN: checking for f32/f64 in crates/ (excluding tests/examples/benches)..."
+
+# Prefer ripgrep if available
+if command -v rg >/dev/null 2>&1; then
+  if rg -n --hidden --glob '!**/target/**' '\bf(32|64)\b' crates \
+    | rg -v '(\/tests\/|\/test\/|\/benches\/|\/examples\/|#\[cfg\(test\)\])'; then
+    echo "ERROR: f32/f64 detected in crates/. Remove floats before committing."
+    exit 1
+  fi
+else
+  # Fallback: grep
+  if grep -RIn --exclude-dir=target -E '\bf(32|64)\b' crates \
+    | grep -Ev '(\/tests\/|\/test\/|\/benches\/|\/examples\/)'; then
+    echo "ERROR: f32/f64 detected in crates/. Remove floats before committing."
+    exit 1
+  fi
+fi
+
+echo "[pre-commit] OK"
+
