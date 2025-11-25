@@ -77,5 +77,18 @@ fn resolve_model_path(config_path: &Path, model_path: &Path) -> PathBuf {
     }
 
     let base = config_path.parent().unwrap_or_else(|| Path::new("."));
-    base.join(model_path)
+    let candidate = base.join(model_path);
+    if candidate.exists() {
+        return candidate;
+    }
+
+    let cwd_candidate = env::current_dir()
+        .map(|cwd| cwd.join(model_path))
+        .unwrap_or_else(|_| model_path.to_path_buf());
+
+    if cwd_candidate.exists() {
+        return cwd_candidate;
+    }
+
+    model_path.to_path_buf()
 }

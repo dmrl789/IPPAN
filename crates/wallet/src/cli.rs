@@ -160,8 +160,7 @@ impl AmountArg {
             return Ok(value);
         }
         if let Some(text) = &self.amount {
-            let amount =
-                Amount::from_str_ipn(text).map_err(|err| WalletError::InvalidCliUsage(err))?;
+            let amount = Amount::from_str_ipn(text).map_err(WalletError::InvalidCliUsage)?;
             return Ok(amount.atomic());
         }
         Err(WalletError::InvalidCliUsage(format!(
@@ -188,8 +187,7 @@ impl FeeArg {
             return Ok(Some(value));
         }
         if let Some(text) = &self.fee {
-            let amount =
-                Amount::from_str_ipn(text).map_err(|err| WalletError::InvalidCliUsage(err))?;
+            let amount = Amount::from_str_ipn(text).map_err(WalletError::InvalidCliUsage)?;
             return Ok(Some(amount.atomic()));
         }
         Ok(None)
@@ -352,7 +350,7 @@ async fn handle_send_payment(rpc_url: &str, args: SendPaymentArgs) -> Result<()>
     let memo = args.memo.clone();
     validate_recipient_identifier(&args.to)?;
     if let Some(memo_value) = &memo {
-        if memo_value.as_bytes().len() > 256 {
+        if memo_value.len() > 256 {
             return Err(WalletError::InvalidCliUsage(
                 "memo length exceeds 256 bytes".into(),
             ));
@@ -534,7 +532,7 @@ mod tests {
     // =========================================================================
     // PROPERTY-BASED TESTS (Phase E)
     // =========================================================================
-    
+
     mod property_tests {
         use super::*;
         use proptest::prelude::*;
@@ -576,18 +574,6 @@ mod tests {
                 Just("   ".to_string()),
                 // Just @
                 Just("@".to_string()),
-            ]
-        }
-
-        // Strategy for valid addresses (Base58Check or hex)
-        fn valid_address_strategy() -> impl Strategy<Value = String> {
-            prop_oneof![
-                // Base58Check format (starts with 'i' per IPPAN convention)
-                // Generate a plausible-looking Base58Check string
-                prop::string::string_regex("i[1-9A-HJ-NP-Za-km-z]{25,44}").unwrap(),
-                // 64-character hex (with optional 0x prefix)
-                prop::string::string_regex("0x[0-9a-f]{64}").unwrap(),
-                prop::string::string_regex("[0-9a-f]{64}").unwrap(),
             ]
         }
 

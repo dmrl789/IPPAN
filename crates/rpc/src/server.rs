@@ -2737,7 +2737,7 @@ fn resolve_address_or_handle(
             Err(err) => Err(PaymentError::HandleLookupFailed(err.to_string())),
         }
     } else {
-        decode_any_address(trimmed).map_err(|err| PaymentError::InvalidAddress(err))
+        decode_any_address(trimmed).map_err(PaymentError::InvalidAddress)
     }
 }
 

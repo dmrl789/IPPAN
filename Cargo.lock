@@ -2935,6 +2935,7 @@ dependencies = [
  "ippan-types",
  "ippan_economics",
  "parking_lot 0.12.5",
+ "proptest",
  "rand 0.8.5",
  "rayon",
  "rust_decimal",
