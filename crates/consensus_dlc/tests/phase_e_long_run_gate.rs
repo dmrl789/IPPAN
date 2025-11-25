@@ -61,6 +61,7 @@ struct GateMetrics {
     validators_rewarded: HashSet<String>,
     rounds_finalized: u64,
     max_pending_blocks: usize,
+    #[allow(dead_code)]
     total_slashing_events: u64,
     primary_selections: HashMap<String, u64>,
     shadow_selections: HashMap<String, u64>,
@@ -92,6 +93,7 @@ impl GateMetrics {
         }
     }
 
+    #[allow(dead_code)]
     fn record_slashing(&mut self) {
         self.total_slashing_events += 1;
     }
@@ -231,7 +233,7 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
 
         let block_reward = consensus.emission.calculate_block_reward(round);
         if block_reward > 0 {
-            if let Ok(distribution) = consensus.rewards.distribute_block_reward(
+            if let Ok(_distribution) = consensus.rewards.distribute_block_reward(
                 block_reward,
                 &verified.block.proposer,
                 &verified.verified_by,

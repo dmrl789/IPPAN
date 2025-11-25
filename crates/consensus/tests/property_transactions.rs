@@ -21,8 +21,8 @@ fn arbitrary_transaction() -> impl Strategy<Value = TestTransaction> {
         arbitrary_address(),
         arbitrary_address(),
         0u64..=1_000_000_000_000, // Max 1M IPN
-        0u64..=1_000_000,          // Reasonable nonce range
-        0u64..=1_000_000,          // Fee range (0.001-1 IPN)
+        0u64..=1_000_000,         // Reasonable nonce range
+        0u64..=1_000_000,         // Fee range (0.001-1 IPN)
     )
         .prop_map(|(sender, recipient, amount, nonce, fee)| TestTransaction {
             sender,
@@ -42,7 +42,7 @@ proptest! {
         // Check that amount + fee doesn't overflow
         let total = amount.checked_add(fee);
         prop_assert!(total.is_some());
-        
+
         if let Some(t) = total {
             prop_assert!(t >= amount);
             prop_assert!(t >= fee);
@@ -58,7 +58,7 @@ proptest! {
         // Validate transaction twice
         let valid1 = validate_transaction(&tx);
         let valid2 = validate_transaction(&tx);
-        
+
         prop_assert_eq!(valid1, valid2);
     }
 }
@@ -71,7 +71,7 @@ proptest! {
         let mut sorted = nonces.clone();
         sorted.sort();
         sorted.dedup();
-        
+
         // Process transactions in order
         let mut expected_nonce = 0u64;
         for nonce in sorted {
@@ -90,9 +90,9 @@ proptest! {
     ) {
         let min_fee = 1_000; // 0.001 IPN
         let max_fee = 1_000_000; // 1 IPN
-        
+
         let is_valid = fee >= min_fee && fee <= max_fee;
-        
+
         if is_valid {
             prop_assert!(fee >= min_fee);
             prop_assert!(fee <= max_fee);
@@ -110,10 +110,10 @@ proptest! {
         // Sender balance check
         if amount + fee <= initial_balance {
             let new_balance = initial_balance - amount - fee;
-            
+
             // Conservation: sender loses amount + fee
             prop_assert_eq!(new_balance + amount + fee, initial_balance);
-            
+
             // No negative balances
             prop_assert!(new_balance <= initial_balance);
         }
@@ -129,7 +129,7 @@ proptest! {
     ) {
         // Reflexive
         prop_assert_eq!(addr1, addr1);
-        
+
         // Transitive
         if addr1 == addr2 && addr2 == addr3 {
             prop_assert_eq!(addr1, addr3);
@@ -140,7 +140,11 @@ proptest! {
 // Helper function (stub for demonstration)
 fn validate_transaction(tx: &TestTransaction) -> bool {
     // Check basic constraints
-    tx.amount > 0 && tx.fee >= 1_000 && tx.fee <= 1_000_000 && tx.sender != tx.recipient
+    tx.amount > 0
+        && tx.fee >= 1_000
+        && tx.fee <= 1_000_000
+        && tx.sender != tx.recipient
+        && tx.nonce <= 1_000_000
 }
 
 #[cfg(test)]
@@ -156,7 +160,7 @@ mod tests {
             nonce: 1,
             fee: 10_000,
         };
-        
+
         assert!(validate_transaction(&tx));
     }
 }

@@ -3,6 +3,7 @@ use crate::errors::*;
 use crate::keyfile::KeyFile;
 use crate::rpc::{AccountState, WalletRpcClient};
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
+use hex;
 use ippan_types::address::decode_address;
 use ippan_types::currency::Amount;
 use rpassword::prompt_password;
@@ -534,7 +535,7 @@ mod tests {
     // =========================================================================
     // PROPERTY-BASED TESTS (Phase E)
     // =========================================================================
-    
+
     mod property_tests {
         use super::*;
         use proptest::prelude::*;
@@ -579,16 +580,10 @@ mod tests {
             ]
         }
 
-        // Strategy for valid addresses (Base58Check or hex)
+        // Strategy for valid addresses (hex form to guarantee decodeability)
         fn valid_address_strategy() -> impl Strategy<Value = String> {
-            prop_oneof![
-                // Base58Check format (starts with 'i' per IPPAN convention)
-                // Generate a plausible-looking Base58Check string
-                prop::string::string_regex("i[1-9A-HJ-NP-Za-km-z]{25,44}").unwrap(),
-                // 64-character hex (with optional 0x prefix)
-                prop::string::string_regex("0x[0-9a-f]{64}").unwrap(),
-                prop::string::string_regex("[0-9a-f]{64}").unwrap(),
-            ]
+            prop::array::uniform32(any::<u8>())
+                .prop_map(|bytes| format!("0x{}", hex::encode(bytes)))
         }
 
         proptest! {
@@ -630,6 +625,13 @@ mod tests {
                 // Most should fail unless they accidentally parse as valid address
                 // We just check no panic here
                 let _ = result;
+            }
+
+            #[test]
+            fn prop_valid_addresses_decode(address in valid_address_strategy()) {
+                // Known-good address formats should parse without errors
+                let result = decode_any_address(&address);
+                assert!(result.is_ok(), "Expected {} to decode", address);
             }
         }
 
