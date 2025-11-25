@@ -1,0 +1,16 @@
+id = "ippan_d_gbdt_v1"
+hash = "TO_BE_FILLED_WITH_BLAKE3"
+scale = 1000000
+feature_cols = [
+  "uptime_ratio_7d",
+  "validated_blocks_7d",
+  "missed_blocks_7d",
+  "avg_latency_ms",
+  "slashing_events_90d",
+  "stake_normalized",
+  "peer_reports_quality",
+]
+target_col = "fairness_score"
+notes = """Bootstrap synthetic fairness model trained on generated data.
+Used to validate D-GBDT integration and deterministic inference.
+Runtime never trains; it only loads the frozen JSON and does integer inference."""
