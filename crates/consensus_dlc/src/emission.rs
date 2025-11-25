@@ -5,7 +5,7 @@
 
 use crate::error::{DlcError, Result};
 use ippan_economics::{EmissionEngine, EmissionParams};
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ pub const BLOCK_REWARD: u64 = 10_000; // 0.0001 IPN per round (10,000 µIPN)
 pub const SUPPLY_CAP: u64 = 21_000_000_000_000; // 21M * 1M µIPN
 
 /// Emission schedule for token distribution
-/// 
+///
 /// This is now a wrapper around ippan_economics::EmissionEngine
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmissionSchedule {
@@ -66,17 +66,16 @@ impl EmissionSchedule {
 
     /// Calculate block reward for current round
     pub fn calculate_block_reward(&self, round: u64) -> u64 {
-        self.engine
-            .calculate_round_reward(round)
-            .unwrap_or(0)
+        self.engine.calculate_round_reward(round).unwrap_or(0)
     }
 
     /// Update emission schedule after a round
     pub fn update(&mut self, round: u64, _blocks_produced: u64) -> Result<()> {
-        let _reward = self.engine
+        let _reward = self
+            .engine
             .advance_round(round)
             .map_err(|e| DlcError::EmissionCalculation(e.to_string()))?;
-        
+
         self.current_round = round;
         self.total_supply = self.engine.total_supply();
         self.last_update_round = round;
@@ -86,14 +85,21 @@ impl EmissionSchedule {
     /// Get emission statistics
     pub fn stats(&self) -> EmissionStats {
         let supply_info = self.engine.get_supply_info();
-        
+
         EmissionStats {
             current_supply: supply_info.total_supply,
             emitted_supply: supply_info.total_supply,
             remaining_supply: supply_info.remaining_supply,
-            emission_progress_bps: (supply_info.emission_percentage.to_f64().unwrap_or(0.0) * 100.0) as u32,
+            emission_progress_bps: supply_info
+                .emission_percentage
+                .checked_mul(Decimal::from(10_000u32))
+                .and_then(|value| value.to_u32())
+                .unwrap_or(0),
             current_inflation_bps: 0, // Not used in new model
-            current_block_reward: self.engine.calculate_round_reward(self.current_round.max(1)).unwrap_or(0),
+            current_block_reward: self
+                .engine
+                .calculate_round_reward(self.current_round.max(1))
+                .unwrap_or(0),
         }
     }
 

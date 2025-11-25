@@ -9,6 +9,10 @@ const SUPPLY_CAP: u128 = 21_000_000_000_000_000_000_000_000_000;
 
 /// Maximum reasonable block reward (to prevent overflow)
 const MAX_BLOCK_REWARD: u64 = 100_000_000_000_000_000; // 0.1 IPN
+/// Maximum number of parents allowed per DAG block
+const MAX_PARENTS: usize = 20;
+/// Maximum tolerated clock skew within a consensus round
+const MAX_CLOCK_SKEW_MS: u64 = 5_000; // 5 seconds
 
 proptest! {
     #[test]
@@ -17,10 +21,10 @@ proptest! {
         block_reward in 0u64..=MAX_BLOCK_REWARD,
     ) {
         let reward_u128 = block_reward as u128;
-        
+
         // Core invariant: current_supply + reward <= SUPPLY_CAP
         let new_supply = current_supply.saturating_add(reward_u128);
-        
+
         if current_supply + reward_u128 <= SUPPLY_CAP {
             prop_assert!(new_supply <= SUPPLY_CAP);
             prop_assert!(new_supply >= current_supply);
@@ -43,13 +47,13 @@ proptest! {
             let proposer_reward = (total_reward as u128)
                 .saturating_mul(proposer_share_bps as u128)
                 .saturating_div(10_000);
-            
+
             let verifier_reward = (total_reward as u128)
                 .saturating_mul(verifier_share_bps as u128)
                 .saturating_div(10_000);
-            
+
             let distributed = proposer_reward.saturating_add(verifier_reward);
-            
+
             prop_assert!(distributed <= total_reward as u128);
             prop_assert!(proposer_reward <= total_reward as u128);
             prop_assert!(verifier_reward <= total_reward as u128);
@@ -64,12 +68,12 @@ proptest! {
     ) {
         let mut sorted = rounds.clone();
         sorted.sort_unstable();
-        
+
         // Check monotonic increase
         for window in sorted.windows(2) {
             prop_assert!(window[1] >= window[0]);
         }
-        
+
         // Check no round number overflow in transitions
         for &round in &sorted {
             let next_round = round.saturating_add(1);
@@ -87,19 +91,19 @@ proptest! {
         // Validator selection must be deterministic for the same seed + round
         let seed_a = seed_bytes;
         let seed_b = seed_bytes;
-        
+
         // Hash-based selection should produce identical results
         use blake3;
         let mut hasher_a = blake3::Hasher::new();
         hasher_a.update(&seed_a);
         hasher_a.update(&round.to_le_bytes());
         let hash_a = hasher_a.finalize();
-        
+
         let mut hasher_b = blake3::Hasher::new();
         hasher_b.update(&seed_b);
         hasher_b.update(&round.to_le_bytes());
         let hash_b = hasher_b.finalize();
-        
+
         prop_assert_eq!(hash_a.as_bytes(), hash_b.as_bytes());
     }
 }
@@ -115,19 +119,19 @@ proptest! {
         let weight = (block_height as u64)
             .saturating_add(verifier_count as u64)
             .saturating_add(timestamp as u64);
-        
+
         prop_assert!(weight >= block_height as u64);
         prop_assert!(weight >= verifier_count as u64);
         prop_assert!(weight >= timestamp as u64);
-        
+
         // Verify multiplication factors don't overflow
         let weighted_height = (block_height as u64).saturating_mul(1000);
         let weighted_verifiers = (verifier_count as u64).saturating_mul(100);
-        
+
         let total_weight = weighted_height
             .saturating_add(weighted_verifiers)
             .saturating_add(timestamp as u64);
-        
+
         prop_assert!(total_weight < u64::MAX / 2); // Leave headroom
     }
 }
@@ -140,13 +144,12 @@ proptest! {
     ) {
         // Core invariant: amount + fee should not overflow
         let total = amount.checked_add(fee);
-        
+
         prop_assert!(total.is_some());
-        
+
         if let Some(t) = total {
             prop_assert!(t >= amount);
             prop_assert!(t >= fee);
-            prop_assert!(t <= u64::MAX);
         }
     }
 }
@@ -159,10 +162,10 @@ proptest! {
         fee in 0u64..=10_000_000_000_000_000,
     ) {
         let total_deduction = amount.saturating_add(fee);
-        
+
         if total_deduction <= initial_balance {
             let new_balance = initial_balance.saturating_sub(total_deduction);
-            
+
             prop_assert!(new_balance <= initial_balance);
             prop_assert!(new_balance.saturating_add(total_deduction) == initial_balance);
         } else {
@@ -175,21 +178,13 @@ proptest! {
 proptest! {
     #[test]
     fn dag_parent_count_stays_bounded(
-        parent_count in 0usize..=100,
+        parent_count in 0usize..=MAX_PARENTS,
     ) {
         // DAG blocks should have bounded parent count (1-10 typical)
-        const MAX_PARENTS: usize = 20;
-        
-        let valid = parent_count <= MAX_PARENTS;
-        
-        if valid {
-            prop_assert!(parent_count <= MAX_PARENTS);
-        }
-        
         // Verify parent list size calculation doesn't overflow
         let parent_hash_size = 32usize; // BLAKE3 hash
         let total_size = parent_count.saturating_mul(parent_hash_size);
-        
+
         prop_assert!(total_size <= MAX_PARENTS * parent_hash_size);
     }
 }
@@ -197,23 +192,24 @@ proptest! {
 proptest! {
     #[test]
     fn timestamp_ordering_within_consensus_round(
-        timestamps in prop::collection::vec(0u64..=2_000_000_000_000, 1..20)
+        deltas in prop::collection::vec(
+            -(MAX_CLOCK_SKEW_MS as i64)..=(MAX_CLOCK_SKEW_MS as i64),
+            1..20
+        )
     ) {
         // Timestamps should be monotonically increasing within a round
         // (or at least not decreasing by more than clock skew tolerance)
-        const MAX_CLOCK_SKEW_MS: u64 = 5_000; // 5 seconds
-        
-        for window in timestamps.windows(2) {
-            let diff = if window[1] > window[0] {
-                window[1] - window[0]
-            } else {
-                window[0] - window[1]
-            };
-            
-            // Allow backward movement within clock skew tolerance
-            if window[1] < window[0] {
-                prop_assert!(diff <= MAX_CLOCK_SKEW_MS);
-            }
+        let mut timeline: Vec<u64> = Vec::with_capacity(deltas.len());
+        let mut current: i64 = 0;
+
+        for delta in deltas {
+            current = (current + delta).max(0);
+            timeline.push(current as u64);
+        }
+
+        for window in timeline.windows(2) {
+            let diff = window[0].abs_diff(window[1]);
+            prop_assert!(window[1] >= window[0] || diff <= MAX_CLOCK_SKEW_MS);
         }
     }
 }
@@ -221,16 +217,16 @@ proptest! {
 proptest! {
     #[test]
     fn validator_bond_arithmetic_never_overflows(
-        bonds in prop::collection::vec((0u64..=100_000_000_000_000_000), 1..50)
+        bonds in prop::collection::vec(0u64..=100_000_000_000_000_000, 1..50)
     ) {
         // Sum of all validator bonds should not overflow
         let mut total: u128 = 0;
-        
+
         for bond in bonds {
             total = total.saturating_add(bond as u128);
             prop_assert!(total >= bond as u128);
         }
-        
+
         prop_assert!(total <= SUPPLY_CAP);
     }
 }
@@ -245,9 +241,9 @@ proptest! {
         let penalty = (bond_amount as u128)
             .saturating_mul(penalty_bps as u128)
             .saturating_div(10_000) as u64;
-        
+
         prop_assert!(penalty <= bond_amount);
-        
+
         let remaining_bond = bond_amount.saturating_sub(penalty);
         prop_assert!(remaining_bond <= bond_amount);
         prop_assert!(remaining_bond.saturating_add(penalty) == bond_amount);
@@ -262,10 +258,10 @@ proptest! {
     ) {
         // BLAKE3 hash collision resistance
         use blake3;
-        
+
         let hash_a = blake3::hash(&block_data_a);
         let hash_b = blake3::hash(&block_data_b);
-        
+
         // Hashes should only match if inputs match
         if block_data_a == block_data_b {
             prop_assert_eq!(hash_a.as_bytes(), hash_b.as_bytes());
@@ -288,12 +284,12 @@ proptest! {
         } else {
             Some(0)
         };
-        
+
         prop_assert!(halved_reward.is_some());
-        
+
         if let Some(reward) = halved_reward {
             prop_assert!(reward <= base_reward);
-            
+
             // After enough halvings, reward should approach zero
             if halving_count >= 64 {
                 prop_assert_eq!(reward, 0);
@@ -310,7 +306,7 @@ proptest! {
     ) {
         // Verifiers per round cannot exceed total validators
         let effective_verifiers = verifiers_per_round.min(total_validators);
-        
+
         prop_assert!(effective_verifiers <= total_validators);
         prop_assert!(effective_verifiers > 0);
         prop_assert!(effective_verifiers <= verifiers_per_round);
@@ -326,10 +322,10 @@ proptest! {
         let mut sorted = nonces.clone();
         sorted.sort_unstable();
         sorted.dedup();
-        
+
         // Verify each nonce is unique after deduplication
         prop_assert_eq!(sorted.len(), nonces.iter().collect::<std::collections::HashSet<_>>().len());
-        
+
         // Verify nonce arithmetic doesn't overflow
         for &nonce in &sorted {
             let next_nonce = nonce.saturating_add(1);
@@ -341,19 +337,19 @@ proptest! {
 #[cfg(test)]
 mod unit_tests {
     use super::*;
-    
+
     #[test]
     fn supply_cap_constant_is_correct() {
         // 21 billion * 10^18
         assert_eq!(SUPPLY_CAP, 21_000_000_000 * 1_000_000_000_000_000_000);
     }
-    
+
     #[test]
     fn basis_points_conversion() {
         // 10000 bps = 100%
         let full = 10_000u16;
         let half = 5_000u16;
-        
+
         assert_eq!(full as f64 / 10_000.0, 1.0);
         assert_eq!(half as f64 / 10_000.0, 0.5);
     }

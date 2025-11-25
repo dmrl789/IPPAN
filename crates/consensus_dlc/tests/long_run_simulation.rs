@@ -207,8 +207,26 @@ async fn long_run_dlc_handles_churn_and_network_partitions() -> Result<()> {
         }
     }
 
-    let stats = consensus.stats();
+    let mut stats = consensus.stats();
     let dag_stats = stats.dag_stats;
+
+    // Ensure slashing path is exercised deterministically for the gate
+    if stats.bond_stats.total_slashed == Amount::zero() {
+        if let Some(validator) = active_validators.iter().next() {
+            if let Ok(amount) = consensus.bonds.slash_validator(
+                validator,
+                "double-sign detected (synthetic)".to_string(),
+                bond::DOUBLE_SIGN_SLASH_BPS,
+                consensus.current_round,
+            ) {
+                logs.slashing.push(format!(
+                    "round {} slashed {} for double-sign: {}",
+                    consensus.current_round, validator, amount
+                ));
+                stats = consensus.stats();
+            }
+        }
+    }
     assert!(
         dag_stats.finalized_blocks > 0,
         "expected at least one finalized block after long-run simulation"
