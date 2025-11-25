@@ -7,7 +7,7 @@
 _Generated: 2025-11-15_
 
 ## Process / Governance
-- Audit updates are committed directly to `master` in line with `MAIN_BRANCH_DEVELOPMENT.md`; no alternate branches or PRs unless maintainers explicitly request them.
+- Audit updates are committed directly to the trunk branch (`master` today, `main` after rename) in line with `docs/dev_workflow/MAIN_BRANCH_DEVELOPMENT.md`; no alternate branches or PRs unless maintainers explicitly request them.
 
 ## Audit-Ready Snapshot
 - The canonical scope, RC version, and commit placeholder for the external audit are recorded in `AUDIT_READY.md`.
