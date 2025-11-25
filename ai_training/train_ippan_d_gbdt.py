@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import lightgbm as lgb
 import numpy as np
@@ -25,19 +25,55 @@ FEATURE_COLS = [
     "peer_reports_quality",
 ]
 TARGET_COL = "fairness_score"
+FEATURE_SCALE = {feature: SCALE for feature in FEATURE_COLS}
 
 
-# LightGBM training is not bit-for-bit reproducible across all hardware, but the exported
-# JSON artifact is what matters. IPPAN runtime will only use the quantized integer model
-# for deterministic inference; no training occurs on validators.
-def quantize_node(node: Dict[str, Any]) -> None:
-    if "leaf_value" in node:
-        node["leaf_value"] = int(round(node["leaf_value"] * SCALE))
-    else:
-        if "left_child" in node:
-            quantize_node(node["left_child"])
-        if "right_child" in node:
-            quantize_node(node["right_child"])
+def quantize_tree_structure(tree: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Convert a LightGBM tree structure into deterministic integer nodes."""
+
+    nodes: List[Dict[str, Any]] = []
+
+    def visit(node: Dict[str, Any]) -> int:
+        node_id = len(nodes)
+
+        if "leaf_value" in node:
+            leaf_value = int(round(float(node["leaf_value"]) * SCALE))
+            nodes.append(
+                {
+                    "id": node_id,
+                    "left": -1,
+                    "right": -1,
+                    "feature_idx": -1,
+                    "threshold": 0,
+                    "leaf": leaf_value,
+                }
+            )
+            return node_id
+
+        feature_idx = int(node["split_feature"])
+        feature_name = FEATURE_COLS[feature_idx]
+        threshold_scale = FEATURE_SCALE[feature_name]
+        threshold = int(round(float(node["threshold"]) * threshold_scale))
+
+        nodes.append(
+            {
+                "id": node_id,
+                "left": -1,
+                "right": -1,
+                "feature_idx": feature_idx,
+                "threshold": threshold,
+                "leaf": None,
+            }
+        )
+
+        left_id = visit(node["left_child"])
+        right_id = visit(node["right_child"])
+        nodes[node_id]["left"] = left_id
+        nodes[node_id]["right"] = right_id
+        return node_id
+
+    visit(tree)
+    return nodes
 
 
 def main() -> None:
@@ -68,16 +104,25 @@ def main() -> None:
     print(f"Validation MSE: {mse:.6f}")
 
     raw = model.booster_.dump_model()
+
+    deterministic_trees = []
     for tree in raw.get("tree_info", []):
-        quantize_node(tree["tree_structure"])
+        nodes = quantize_tree_structure(tree["tree_structure"])
+        weight = int(round(float(tree.get("shrinkage", 1.0)) * SCALE))
+        deterministic_trees.append({"nodes": nodes, "weight": weight})
+
+    bias = int(round(float(raw.get("average_output", 0.0)) * SCALE))
 
     export = {
-        "type": "ippan_d_gbdt_v1",
+        "version": 1,
         "scale": SCALE,
-        "feature_cols": FEATURE_COLS,
-        "target_col": TARGET_COL,
+        "trees": deterministic_trees,
+        "bias": bias,
+        "post_scale": SCALE,
+        "features": FEATURE_COLS,
+        "feature_scale": FEATURE_SCALE,
+        "target": TARGET_COL,
         "lightgbm_format_version": raw.get("version", "unknown"),
-        "tree_ensemble": raw.get("tree_info", []),
     }
 
     output_path = "ai_training/ippan_d_gbdt_v1.json"
