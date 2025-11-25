@@ -20,7 +20,7 @@ fn tx_payload(from: &[u8; 32], to: &[u8; 32], amount: Amount, nonce: u64) -> Vec
 fn build_transaction(to: [u8; 32], nonce: u64) -> Transaction {
     let signing_key = SigningKey::from_bytes(&SIGNING_SEED);
     let from = signing_key.verifying_key().to_bytes();
-    let amount = Amount::from_micro_ipn(10 + nonce as u64);
+    let amount = Amount::from_micro_ipn(10 + nonce);
     let timestamp = IppanTimeMicros(1_700_000_000 + nonce);
     let payload = tx_payload(&from, &to, amount, nonce);
     let nonce_bytes = nonce.to_be_bytes();

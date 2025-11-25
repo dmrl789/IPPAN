@@ -55,7 +55,7 @@ impl WalletRpcClient {
         let body = response
             .json::<serde_json::Value>()
             .await
-            .unwrap_or_else(|_| serde_json::Value::Null);
+            .unwrap_or(serde_json::Value::Null);
 
         if status.is_success() {
             Ok(body)

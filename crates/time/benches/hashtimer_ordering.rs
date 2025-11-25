@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 const SAMPLE_SIZE: usize = 256;
 
 fn generate_hash_timers(count: usize) -> Vec<HashTimer> {
-    let mut rng = StdRng::seed_from_u64(4_210_1337);
+    let mut rng = StdRng::seed_from_u64(42_101_337);
     (0..count)
         .map(|idx| {
             let mut node_id = [0u8; 32];
@@ -40,7 +40,7 @@ fn benchmark_hashtimer_ordering(c: &mut Criterion) {
     group.bench_function("sort_batch_256", |b| {
         b.iter(|| {
             let mut batch = timers.clone();
-            batch.sort_by(|a, b| compare_timers(a, b));
+            batch.sort_by(compare_timers);
             black_box(batch);
         });
     });
