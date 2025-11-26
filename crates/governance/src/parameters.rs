@@ -105,7 +105,7 @@ impl ParameterManager {
             self.change_history.push(proposal);
             Ok(())
         } else {
-            Err(anyhow::anyhow!("Proposal {} not found", proposal_id))
+            Err(anyhow::anyhow!("Proposal {proposal_id} not found"))
         }
     }
 
@@ -139,7 +139,7 @@ impl ParameterManager {
             "economics.verifier_weight_bps",
         ];
         if !valid.contains(&name) {
-            return Err(anyhow::anyhow!("Invalid parameter: {}", name));
+            return Err(anyhow::anyhow!("Invalid parameter: {name}"));
         }
         Ok(())
     }
@@ -151,7 +151,7 @@ impl ParameterManager {
             }
             _ => {
                 if !value.is_number() {
-                    return Err(anyhow::anyhow!("{} must be numeric", name));
+                    return Err(anyhow::anyhow!("{name} must be numeric"));
                 }
             }
         }

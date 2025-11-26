@@ -115,7 +115,7 @@ impl ProposalManager {
         let state = self
             .proposals
             .get_mut(id)
-            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {id}"))?;
 
         if state.status != ProposalStatus::Pending {
             return Err(anyhow::anyhow!("Proposal is not in pending state"));
@@ -129,7 +129,7 @@ impl ProposalManager {
         let state = self
             .proposals
             .get_mut(id)
-            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {id}"))?;
 
         if state.status != ProposalStatus::Voting {
             return Err(anyhow::anyhow!("Proposal is not accepting votes"));
@@ -166,7 +166,7 @@ impl ProposalManager {
         let state = self
             .proposals
             .get_mut(id)
-            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {}", id))?;
+            .ok_or_else(|| anyhow::anyhow!("Proposal not found: {id}"))?;
 
         if state.status != ProposalStatus::Approved {
             return Err(anyhow::anyhow!("Proposal is not approved for execution"));
@@ -239,7 +239,7 @@ impl ModelRegistry {
         let state = self
             .models
             .get_mut(id)
-            .ok_or_else(|| anyhow::anyhow!("Model not found: {}", id))?;
+            .ok_or_else(|| anyhow::anyhow!("Model not found: {id}"))?;
 
         if state.activated {
             return Err(anyhow::anyhow!("Model already activated"));
@@ -293,7 +293,7 @@ impl ActivationManager {
 
     pub fn schedule_activation(&mut self, model_id: String, round: u64) -> Result<()> {
         if self.activated_models.contains_key(&model_id) {
-            return Err(anyhow::anyhow!("Model already activated: {}", model_id));
+            return Err(anyhow::anyhow!("Model already activated: {model_id}"));
         }
 
         self.pending_activations
