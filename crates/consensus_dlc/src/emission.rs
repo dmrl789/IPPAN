@@ -3,8 +3,12 @@
 //! This module provides a compatibility layer over ippan_economics,
 //! adapting it to the DLC consensus engine's needs.
 
+use crate::dgbdt::FairnessModel;
 use crate::error::{DlcError, Result};
+use crate::fairness_features::features_for_validator;
+use crate::reward_weighting::{compute_reward_weights, distribute_by_weights, SCALE};
 use ippan_economics::{EmissionEngine, EmissionParams};
+use ippan_types::Amount;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -163,12 +167,14 @@ impl RewardDistributor {
         }
     }
 
-    /// Distribute rewards for a block
+    /// Distribute rewards for a block (with fairness-based weighting)
     pub fn distribute_block_reward(
         &mut self,
         block_reward: u64,
         proposer: &str,
         verifiers: &[String],
+        model: &FairnessModel,
+        validator_metrics: &HashMap<String, crate::dgbdt::ValidatorMetrics>,
     ) -> Result<DistributionResult> {
         if block_reward == 0 {
             return Err(DlcError::EmissionCalculation(
@@ -183,21 +189,50 @@ impl RewardDistributor {
             .saturating_sub(proposer_reward)
             .saturating_sub(verifiers_reward);
 
-        // Distribute to proposer
+        // Distribute to proposer (unweighted for now, could add weighting later)
         *self
             .pending_rewards
             .entry(proposer.to_string())
             .or_insert(0) += proposer_reward;
 
-        // Distribute to verifiers
-        let reward_per_verifier = if !verifiers.is_empty() {
-            verifiers_reward / verifiers.len() as u64
-        } else {
-            0
-        };
+        // Distribute to verifiers with fairness-based weights
+        if !verifiers.is_empty() && verifiers_reward > 0 {
+            // Compute scores for all verifiers
+            let max_stake = validator_metrics
+                .values()
+                .map(|m| m.stake)
+                .max()
+                .unwrap_or(Amount::from_micro_ipn(1));
 
-        for verifier in verifiers {
-            *self.pending_rewards.entry(verifier.clone()).or_insert(0) += reward_per_verifier;
+            let mut scores = Vec::with_capacity(verifiers.len());
+            let mut validator_ids = Vec::with_capacity(verifiers.len());
+
+            for verifier_id in verifiers {
+                if let Some(metrics) = validator_metrics.get(verifier_id) {
+                    // Extract 7 features and compute score
+                    let features = features_for_validator(metrics, max_stake);
+                    let raw_model = model.raw_model();
+                    let score = raw_model.score(&features);
+                    // Clamp score to [0..SCALE]
+                    let clamped_score = score.clamp(0, SCALE);
+                    scores.push(clamped_score);
+                    validator_ids.push(verifier_id.clone());
+                } else {
+                    // If metrics not found, use neutral score
+                    scores.push(SCALE / 2);
+                    validator_ids.push(verifier_id.clone());
+                }
+            }
+
+            // Compute weights
+            let weights = compute_reward_weights(&scores, &validator_ids);
+
+            // Distribute verifiers_reward using weights
+            let payouts = distribute_by_weights(verifiers_reward, &weights, &validator_ids);
+
+            for (validator_id, amount) in payouts {
+                *self.pending_rewards.entry(validator_id).or_insert(0) += amount;
+            }
         }
 
         Ok(DistributionResult {
@@ -328,13 +363,21 @@ mod tests {
 
     #[test]
     fn test_reward_distribution() {
+        use crate::dgbdt::FairnessModel;
         let mut distributor = RewardDistributor::default();
+        let model = FairnessModel::testing_stub();
+        let mut metrics = std::collections::HashMap::new();
+        metrics.insert("proposer1".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert("v1".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert("v2".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
         let result = distributor
             .distribute_block_reward(
                 BLOCK_REWARD,
                 "proposer1",
                 &["v1".to_string(), "v2".to_string()],
+                &model,
+                &metrics,
             )
             .unwrap();
 
@@ -345,10 +388,15 @@ mod tests {
 
     #[test]
     fn test_pending_rewards() {
+        use crate::dgbdt::FairnessModel;
         let mut distributor = RewardDistributor::default();
+        let model = FairnessModel::testing_stub();
+        let mut metrics = std::collections::HashMap::new();
+        metrics.insert("proposer1".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert("v1".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
         distributor
-            .distribute_block_reward(BLOCK_REWARD, "proposer1", &["v1".to_string()])
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &["v1".to_string()], &model, &metrics)
             .unwrap();
 
         assert!(distributor.get_pending("proposer1") > 0);
@@ -357,10 +405,14 @@ mod tests {
 
     #[test]
     fn test_claim_rewards() {
+        use crate::dgbdt::FairnessModel;
         let mut distributor = RewardDistributor::default();
+        let model = FairnessModel::testing_stub();
+        let mut metrics = std::collections::HashMap::new();
+        metrics.insert("proposer1".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
         distributor
-            .distribute_block_reward(BLOCK_REWARD, "proposer1", &[])
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &[], &model, &metrics)
             .unwrap();
 
         let pending = distributor.get_pending("proposer1");
@@ -372,6 +424,7 @@ mod tests {
 
     #[test]
     fn test_reward_splits() {
+        use crate::dgbdt::FairnessModel;
         let splits = RewardSplits {
             proposer_bps: 6000,
             verifiers_bps: 3000,
@@ -379,9 +432,13 @@ mod tests {
         };
 
         let mut distributor = RewardDistributor::new(splits);
+        let model = FairnessModel::testing_stub();
+        let mut metrics = std::collections::HashMap::new();
+        metrics.insert("proposer".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert("v1".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
         let result = distributor
-            .distribute_block_reward(10_000, "proposer", &["v1".to_string()])
+            .distribute_block_reward(10_000, "proposer", &["v1".to_string()], &model, &metrics)
             .unwrap();
 
         assert_eq!(result.proposer_reward, 6000);
@@ -399,10 +456,15 @@ mod tests {
 
     #[test]
     fn test_distributor_stats() {
+        use crate::dgbdt::FairnessModel;
         let mut distributor = RewardDistributor::default();
+        let model = FairnessModel::testing_stub();
+        let mut metrics = std::collections::HashMap::new();
+        metrics.insert("proposer1".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert("v1".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
         distributor
-            .distribute_block_reward(BLOCK_REWARD, "proposer1", &["v1".to_string()])
+            .distribute_block_reward(BLOCK_REWARD, "proposer1", &["v1".to_string()], &model, &metrics)
             .unwrap();
 
         let stats = distributor.stats();

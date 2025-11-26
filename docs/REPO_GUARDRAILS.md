@@ -60,3 +60,11 @@ Shadow verifier selection is score-ranked using the deterministic GBDT model v1:
 - Shadows are selected deterministically by highest score first, with validator ID as tie-breaker
 - Model is hash-verified at startup; mismatch => node refuses to start
 
+### Reward Weighting
+
+Reward distribution is weighted by fairness model v1 score:
+- Multiplier cap 0.8x–1.2x (MIN_MULT/MAX_MULT) applied to validator scores
+- Weights normalized to keep total payout unchanged (sum(weights) == SCALE)
+- Deterministic remainder distribution with tie-break by validator ID
+- Strict model hash verification remains startup-critical (no fallback)
+

@@ -246,10 +246,19 @@ async fn test_emission_schedule() {
 async fn test_reward_distribution() {
     let mut rewards = RewardDistributor::default();
 
+    let model = FairnessModel::testing_stub();
+    let mut metrics = std::collections::HashMap::new();
+    metrics.insert("proposer".to_string(), ValidatorMetrics::default());
+    metrics.insert("v1".to_string(), ValidatorMetrics::default());
+    metrics.insert("v2".to_string(), ValidatorMetrics::default());
+    metrics.insert("v3".to_string(), ValidatorMetrics::default());
+
     let result = rewards.distribute_block_reward(
         emission::BLOCK_REWARD,
         "proposer",
         &["v1".to_string(), "v2".to_string(), "v3".to_string()],
+        &model,
+        &metrics,
     );
 
     assert!(result.is_ok());

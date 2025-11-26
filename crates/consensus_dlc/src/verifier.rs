@@ -357,6 +357,11 @@ impl ValidatorSetManager {
         &self.validators
     }
 
+    /// Get the fairness model (for reward weighting)
+    pub fn model(&self) -> &FairnessModel {
+        &self.model
+    }
+
     /// Get validator count
     pub fn validator_count(&self) -> usize {
         self.validators.len()

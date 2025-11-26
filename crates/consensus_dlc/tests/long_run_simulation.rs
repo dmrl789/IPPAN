@@ -402,6 +402,8 @@ async fn process_round_with_behaviour(
                 block_reward,
                 &verified.block.proposer,
                 &verified.verified_by,
+                consensus.validators.model(),
+                consensus.validators.all_validators(),
             ) {
                 if round.is_multiple_of(64) {
                     logs.finality.push(format!(

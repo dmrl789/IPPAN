@@ -235,6 +235,8 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
                 block_reward,
                 &verified.block.proposer,
                 &verified.verified_by,
+                consensus.validators.model(),
+                consensus.validators.all_validators(),
             ) {
                 metrics.record_reward(&verified.block.proposer, block_reward as u128);
                 for v in &verified.verified_by {
@@ -302,10 +304,11 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
         metrics.total_rewards_distributed
     );
     eprintln!(
-        "✅ Final supply: {}/{} ({:.2}%)",
+        "✅ Final supply: {}/{} ({}.{:02}%)",
         final_stats.emission_stats.current_supply,
         supply_cap,
-        (final_stats.emission_stats.current_supply as f64 / supply_cap as f64) * 100.0
+        (final_stats.emission_stats.current_supply * 100) / supply_cap,
+        ((final_stats.emission_stats.current_supply * 10000) / supply_cap) % 100
     );
     eprintln!(
         "✅ Max pending blocks: {} (bound: {})",

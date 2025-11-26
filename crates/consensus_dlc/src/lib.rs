@@ -49,6 +49,7 @@ pub mod error;
 pub mod fairness_features;
 pub mod hashtimer;
 pub mod reputation;
+pub mod reward_weighting;
 pub mod verifier;
 
 #[cfg(test)]
@@ -277,15 +278,24 @@ impl DlcConsensus {
         // Finalize blocks
         let finalized_ids = self.dag.finalize_round(round_time.clone());
 
+        // Store verifier set size before dropping the borrow
+        let verifier_set_size = verifier_set.size();
+
         // Calculate and distribute rewards
         let block_reward = self.emission.calculate_block_reward(self.current_round);
 
         if !verified_blocks.is_empty() && block_reward > 0 {
+            // Get model and metrics after verifier selection (no longer borrowing mutably)
+            let model = self.validators.model();
+            let validator_metrics = self.validators.all_validators();
+
             for verified in &verified_blocks {
                 let distribution = self.rewards.distribute_block_reward(
                     block_reward,
                     &verified.block.proposer,
                     &verified.verified_by,
+                    model,
+                    validator_metrics,
                 )?;
 
                 // Update reputation for participants
@@ -311,7 +321,7 @@ impl DlcConsensus {
             round: self.current_round,
             blocks_processed: verified_blocks.len(),
             blocks_finalized: finalized_ids.len(),
-            verifiers: verifier_set.size(),
+            verifiers: verifier_set_size,
             block_reward,
         })
     }
