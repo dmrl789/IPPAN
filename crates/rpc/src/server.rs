@@ -325,7 +325,7 @@ fn hash_u32(seed: u64, tag: &str, validator_id: &str, round: u64) -> u32 {
 }
 
 fn clamp_0_10000(x: i32) -> u16 {
-    x.max(0).min(10000) as u16
+    x.clamp(0, 10000) as u16
 }
 
 #[allow(dead_code)]
