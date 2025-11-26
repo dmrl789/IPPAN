@@ -149,15 +149,13 @@ impl SmartContractService {
             // Check for gas optimization opportunities
             if line.contains("for (uint i = 0; i < array.length; i++)") {
                 recommendations.push(format!(
-                    "Line {}: Consider caching array.length to save gas",
-                    line_num
+                    "Line {line_num}: Consider caching array.length to save gas"
                 ));
             }
 
             if line.contains("require(") && line.contains("&&") {
                 recommendations.push(format!(
-                    "Line {}: Consider splitting complex require statements for better error messages",
-                    line_num
+                    "Line {line_num}: Consider splitting complex require statements for better error messages"
                 ));
             }
         }
@@ -215,8 +213,7 @@ impl SmartContractService {
             // Check for clone() usage
             if line.contains(".clone()") {
                 recommendations.push(format!(
-                    "Line {}: Consider if clone() is necessary or if references can be used",
-                    line_num
+                    "Line {line_num}: Consider if clone() is necessary or if references can be used"
                 ));
             }
         }
@@ -251,16 +248,14 @@ impl SmartContractService {
             // Check for console.log in production
             if line.contains("console.log") {
                 recommendations.push(format!(
-                    "Line {}: Remove console.log statements in production code",
-                    line_num
+                    "Line {line_num}: Remove console.log statements in production code"
                 ));
             }
 
             // Check for var usage
             if line.contains("var ") {
                 recommendations.push(format!(
-                    "Line {}: Consider using let or const instead of var",
-                    line_num
+                    "Line {line_num}: Consider using let or const instead of var"
                 ));
             }
         }

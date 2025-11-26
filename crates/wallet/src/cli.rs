@@ -164,8 +164,7 @@ impl AmountArg {
             return Ok(amount.atomic());
         }
         Err(WalletError::InvalidCliUsage(format!(
-            "missing {}; specify --{} or --{}-atomic",
-            label, label, label
+            "missing {label}; specify --{label} or --{label}-atomic"
         )))
     }
 }
@@ -367,7 +366,7 @@ async fn handle_send_payment(rpc_url: &str, args: SendPaymentArgs) -> Result<()>
     println!("📤 Preparing payment");
     println!("   From: {}", unlocked.address);
     println!("   To: {}", args.to);
-    println!("   Amount (atomic): {}", amount_atomic);
+    println!("   Amount (atomic): {amount_atomic}");
     if let Some(fee) = fee_atomic {
         println!("   Fee limit (atomic): {fee}");
     }

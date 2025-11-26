@@ -939,7 +939,7 @@ fn ensure_http_scheme(address: &str) -> String {
     if address.starts_with("http://") || address.starts_with("https://") {
         address.to_string()
     } else {
-        format!("http://{}", address)
+        format!("http://{address}")
     }
 }
 
@@ -962,7 +962,7 @@ fn normalize_peer(address: &str) -> Result<String> {
 }
 
 async fn fetch_peer_list(client: &Client, peer: &str) -> Result<Vec<String>> {
-    let url = format!("{}/p2p/peers", peer);
+    let url = format!("{peer}/p2p/peers");
     let response = client.get(url).send().await?;
     if !response.status().is_success() {
         return Err(anyhow!(
@@ -984,7 +984,7 @@ async fn post_message(client: &Client, peer: &str, message: &NetworkMessage) -> 
         NetworkMessage::BlockResponse { .. } => "/p2p/block-response",
     };
 
-    let url = format!("{}{}", peer, endpoint);
+    let url = format!("{peer}{endpoint}");
     let response = client.post(url).json(message).send().await?;
     if !response.status().is_success() {
         return Err(anyhow!(

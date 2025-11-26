@@ -54,8 +54,7 @@ impl LLMService {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             return Err(AIServiceError::LLMError(format!(
-                "API request failed: {} - {}",
-                status, error_text
+                "API request failed: {status} - {error_text}"
             )));
         }
 
@@ -125,10 +124,7 @@ impl LLMService {
     ) -> Result<String, AIServiceError> {
         let request = LLMRequest {
             prompt: format!(
-                "Generate comprehensive documentation for this {} smart contract:\n\n```{}\n{}\n```\n\nInclude:\n- Overview and purpose\n- Function descriptions\n- Parameters and return values\n- Usage examples\n- Security considerations",
-                language,
-                language,
-                contract_code
+                "Generate comprehensive documentation for this {language} smart contract:\n\n```{language}\n{contract_code}\n```\n\nInclude:\n- Overview and purpose\n- Function descriptions\n- Parameters and return values\n- Usage examples\n- Security considerations"
             ),
             context: None,
             max_tokens: Some(3000),

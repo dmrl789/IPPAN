@@ -41,8 +41,7 @@ impl WalletRpcClient {
             }
             StatusCode::NOT_FOUND => Ok(None),
             status => Err(WalletError::RpcError(format!(
-                "account lookup failed (status {})",
-                status
+                "account lookup failed (status {status})"
             ))),
         }
     }

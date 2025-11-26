@@ -65,7 +65,7 @@ impl FileStorage for MemoryFileStorage {
         // Validate before storing
         descriptor
             .validate()
-            .map_err(|e| anyhow::anyhow!("Validation failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Validation failed: {e}"))?;
 
         let id = descriptor.id;
         let owner = descriptor.owner;

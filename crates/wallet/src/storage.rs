@@ -56,10 +56,10 @@ impl WalletStorage {
         }
 
         let data = fs::read_to_string(&self.wallet_path)
-            .map_err(|e| WalletError::StorageError(format!("Failed to read wallet: {}", e)))?;
+            .map_err(|e| WalletError::StorageError(format!("Failed to read wallet: {e}")))?;
 
         let state: WalletState = serde_json::from_str(&data)
-            .map_err(|e| WalletError::StorageError(format!("Failed to parse wallet: {}", e)))?;
+            .map_err(|e| WalletError::StorageError(format!("Failed to parse wallet: {e}")))?;
 
         // Verify password if encryption is enabled
         if state.config.encryption_enabled {
@@ -83,16 +83,16 @@ impl WalletStorage {
         let state = self.wallet_state.read();
         if let Some(ref wallet_state) = *state {
             let data = serde_json::to_string_pretty(wallet_state).map_err(|e| {
-                WalletError::StorageError(format!("Failed to serialize wallet: {}", e))
+                WalletError::StorageError(format!("Failed to serialize wallet: {e}"))
             })?;
 
             // Write to temporary file first, then rename for atomicity
             let temp_path = self.wallet_path.with_extension("tmp");
             fs::write(&temp_path, data)
-                .map_err(|e| WalletError::StorageError(format!("Failed to write wallet: {}", e)))?;
+                .map_err(|e| WalletError::StorageError(format!("Failed to write wallet: {e}")))?;
 
             fs::rename(&temp_path, &self.wallet_path).map_err(|e| {
-                WalletError::StorageError(format!("Failed to rename wallet file: {}", e))
+                WalletError::StorageError(format!("Failed to rename wallet file: {e}"))
             })?;
         }
 
@@ -154,13 +154,13 @@ impl WalletStorage {
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
         let backup_file = self
             .backup_path
-            .join(format!("wallet_backup_{}.json", timestamp));
+            .join(format!("wallet_backup_{timestamp}.json"));
 
         let data = serde_json::to_string_pretty(&backup)
-            .map_err(|e| WalletError::StorageError(format!("Failed to serialize backup: {}", e)))?;
+            .map_err(|e| WalletError::StorageError(format!("Failed to serialize backup: {e}")))?;
 
         fs::write(&backup_file, data)
-            .map_err(|e| WalletError::StorageError(format!("Failed to write backup: {}", e)))?;
+            .map_err(|e| WalletError::StorageError(format!("Failed to write backup: {e}")))?;
 
         // Update last backup time
         self.update_wallet_state(|state| {
@@ -174,10 +174,10 @@ impl WalletStorage {
     /// Restore wallet from backup
     pub fn restore_from_backup(&self, backup_path: &Path, password: Option<&str>) -> Result<()> {
         let data = fs::read_to_string(backup_path)
-            .map_err(|e| WalletError::StorageError(format!("Failed to read backup: {}", e)))?;
+            .map_err(|e| WalletError::StorageError(format!("Failed to read backup: {e}")))?;
 
         let backup: WalletBackup = serde_json::from_str(&data)
-            .map_err(|e| WalletError::StorageError(format!("Failed to parse backup: {}", e)))?;
+            .map_err(|e| WalletError::StorageError(format!("Failed to parse backup: {e}")))?;
 
         if !backup.verify_checksum() {
             return Err(WalletError::StorageError(
@@ -209,12 +209,12 @@ impl WalletStorage {
 
         if self.backup_path.exists() {
             let entries = fs::read_dir(&self.backup_path).map_err(|e| {
-                WalletError::StorageError(format!("Failed to read backup directory: {}", e))
+                WalletError::StorageError(format!("Failed to read backup directory: {e}"))
             })?;
 
             for entry in entries {
                 let entry = entry.map_err(|e| {
-                    WalletError::StorageError(format!("Failed to read backup entry: {}", e))
+                    WalletError::StorageError(format!("Failed to read backup entry: {e}"))
                 })?;
                 let path = entry.path();
 

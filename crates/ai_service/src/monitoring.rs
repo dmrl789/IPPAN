@@ -456,9 +456,9 @@ impl AlertHandler for FileAlertHandler {
             .create(true)
             .append(true)
             .open(&self.file_path)
-            .map_err(|e| AIServiceError::Io(format!("Failed to open alert file: {}", e)))?
+            .map_err(|e| AIServiceError::Io(format!("Failed to open alert file: {e}")))?
             .write_all(entry.as_bytes())
-            .map_err(|e| AIServiceError::Io(format!("Failed to write alert: {}", e)))?;
+            .map_err(|e| AIServiceError::Io(format!("Failed to write alert: {e}")))?;
         Ok(())
     }
     fn name(&self) -> &str {
@@ -503,7 +503,7 @@ impl MonitoringService {
                         alert_type: "high_memory_usage".to_string(),
                         severity: SeverityLevel::High,
                         title: "High Memory Usage".to_string(),
-                        description: format!("Memory usage is at {}%", latest),
+                        description: format!("Memory usage is at {latest}%"),
                         metrics: [("memory_usage".to_string(), latest)].into(),
                         timestamp: chrono::Utc::now(),
                         status: AlertStatus::Active,
@@ -523,7 +523,7 @@ impl MonitoringService {
                         alert_type: "high_cpu_usage".to_string(),
                         severity: SeverityLevel::High,
                         title: "High CPU Usage".to_string(),
-                        description: format!("CPU usage is at {}%", latest),
+                        description: format!("CPU usage is at {latest}%"),
                         metrics: [("cpu_usage".to_string(), latest)].into(),
                         timestamp: chrono::Utc::now(),
                         status: AlertStatus::Active,
@@ -548,8 +548,7 @@ impl MonitoringService {
             Ok(())
         } else {
             Err(AIServiceError::ValidationError(format!(
-                "Alert {} not found",
-                alert_id
+                "Alert {alert_id} not found"
             )))
         }
     }
@@ -565,8 +564,7 @@ impl MonitoringService {
             Ok(())
         } else {
             Err(AIServiceError::ValidationError(format!(
-                "Alert {} not found",
-                alert_id
+                "Alert {alert_id} not found"
             )))
         }
     }

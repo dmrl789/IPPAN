@@ -205,7 +205,7 @@ impl AIService {
                 let duration = start.elapsed().unwrap_or_default();
                 CheckResult {
                     status: CheckStatus::Warn,
-                    message: Some(format!("LLM service warning: {}", e)),
+                    message: Some(format!("LLM service warning: {e}")),
                     duration_ms: duration.as_millis() as u64,
                 }
             }
@@ -237,7 +237,7 @@ impl AIService {
                 let duration = start.elapsed().unwrap_or_default();
                 CheckResult {
                     status: CheckStatus::Warn,
-                    message: Some(format!("Smart contract service warning: {}", e)),
+                    message: Some(format!("Smart contract service warning: {e}")),
                     duration_ms: duration.as_millis() as u64,
                 }
             }

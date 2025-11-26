@@ -166,14 +166,12 @@ impl WalletManager {
     ) -> Result<String> {
         if !validate_address(from_address) {
             return Err(WalletError::InvalidAddress(format!(
-                "Invalid from address: {}",
-                from_address
+                "Invalid from address: {from_address}"
             )));
         }
         if !validate_address(to_address) {
             return Err(WalletError::InvalidAddress(format!(
-                "Invalid to address: {}",
-                to_address
+                "Invalid to address: {to_address}"
             )));
         }
 
@@ -216,9 +214,9 @@ impl WalletManager {
         };
 
         let from_bytes = decode_address(from_address)
-            .map_err(|e| WalletError::InvalidAddress(format!("Invalid from address: {}", e)))?;
+            .map_err(|e| WalletError::InvalidAddress(format!("Invalid from address: {e}")))?;
         let to_bytes = decode_address(to_address)
-            .map_err(|e| WalletError::InvalidAddress(format!("Invalid to address: {}", e)))?;
+            .map_err(|e| WalletError::InvalidAddress(format!("Invalid to address: {e}")))?;
         let mut transaction = Transaction::new(
             from_bytes,
             to_bytes,

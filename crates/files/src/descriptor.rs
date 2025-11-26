@@ -38,7 +38,7 @@ impl FileId {
                 hex_str.len()
             ));
         }
-        let bytes = hex::decode(hex_str).map_err(|e| format!("Invalid hex: {}", e))?;
+        let bytes = hex::decode(hex_str).map_err(|e| format!("Invalid hex: {e}"))?;
         if bytes.len() != 32 {
             return Err("FileId must be 32 bytes".to_string());
         }
@@ -82,7 +82,7 @@ impl ContentHash {
                 hex_str.len()
             ));
         }
-        let bytes = hex::decode(hex_str).map_err(|e| format!("Invalid hex: {}", e))?;
+        let bytes = hex::decode(hex_str).map_err(|e| format!("Invalid hex: {e}"))?;
         if bytes.len() != 32 {
             return Err("ContentHash must be 32 bytes".to_string());
         }

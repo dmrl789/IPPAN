@@ -128,10 +128,9 @@ impl AnalyticsService {
             Some(AnalyticsInsight {
                 id: Uuid::new_v4().to_string(),
                 insight_type: InsightType::Performance,
-                title: format!("{} trend detected", metric),
+                title: format!("{metric} trend detected"),
                 description: format!(
-                    "{} is {} with strength {}",
-                    metric, trend_direction, trend_strength
+                    "{metric} is {trend_direction} with strength {trend_strength}"
                 ),
                 confidence: trend_strength.clamp(Fixed::ZERO, Fixed::ONE),
                 severity,
@@ -178,7 +177,7 @@ impl AnalyticsService {
             Some(AnalyticsInsight {
                 id: Uuid::new_v4().to_string(),
                 insight_type: InsightType::Performance,
-                title: format!("Anomalies detected in {}", metric),
+                title: format!("Anomalies detected in {metric}"),
                 description: format!(
                     "Found {} anomalous values in {} data points. Mean: {}, StdDev: {}",
                     outliers.len(),
@@ -237,7 +236,7 @@ impl AnalyticsService {
             Some(AnalyticsInsight {
                 id: Uuid::new_v4().to_string(),
                 insight_type: InsightType::Performance,
-                title: format!("Performance issue detected in {}", metric),
+                title: format!("Performance issue detected in {metric}"),
                 description: format!(
                     "{} average value {} is {} threshold {}",
                     metric,
@@ -295,10 +294,9 @@ impl AnalyticsService {
             Some(AnalyticsInsight {
                 id: Uuid::new_v4().to_string(),
                 insight_type: InsightType::Performance,
-                title: format!("Strong correlation between {} and {}", metric1, metric2),
+                title: format!("Strong correlation between {metric1} and {metric2}"),
                 description: format!(
-                    "Found {} correlation ({}) between {} and {}",
-                    relationship, correlation, metric1, metric2
+                    "Found {relationship} correlation ({correlation}) between {metric1} and {metric2}"
                 ),
                 confidence: correlation.abs().clamp(Fixed::ZERO, Fixed::ONE),
                 severity: SeverityLevel::Medium,

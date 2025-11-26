@@ -72,7 +72,7 @@ pub fn hash_password(password: &str) -> Result<String> {
 
     let password_hash = argon2
         .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| WalletError::CryptoError(format!("Password hashing failed: {}", e)))?;
+        .map_err(|e| WalletError::CryptoError(format!("Password hashing failed: {e}")))?;
 
     Ok(password_hash.to_string())
 }
@@ -80,7 +80,7 @@ pub fn hash_password(password: &str) -> Result<String> {
 /// Verify a password against its hash
 pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
     let parsed_hash = PasswordHash::new(hash)
-        .map_err(|e| WalletError::CryptoError(format!("Invalid hash format: {}", e)))?;
+        .map_err(|e| WalletError::CryptoError(format!("Invalid hash format: {e}")))?;
 
     let argon2 = Argon2::default();
     Ok(argon2
@@ -99,12 +99,12 @@ pub fn encrypt_data(data: &[u8], password: &str) -> Result<(String, String, Stri
     rng.fill_bytes(&mut nonce_bytes);
 
     let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| WalletError::EncryptionError(format!("Cipher init failed: {}", e)))?;
+        .map_err(|e| WalletError::EncryptionError(format!("Cipher init failed: {e}")))?;
     let nonce = Nonce::from(nonce_bytes);
 
     let ciphertext = cipher
         .encrypt(&nonce, data)
-        .map_err(|e| WalletError::EncryptionError(format!("Encryption failed: {}", e)))?;
+        .map_err(|e| WalletError::EncryptionError(format!("Encryption failed: {e}")))?;
 
     Ok((
         general_purpose::STANDARD.encode(&ciphertext),
@@ -117,16 +117,16 @@ pub fn encrypt_data(data: &[u8], password: &str) -> Result<(String, String, Stri
 pub fn decrypt_data(ciphertext: &str, nonce: &str, password: &str) -> Result<Vec<u8>> {
     let ciphertext_bytes = general_purpose::STANDARD
         .decode(ciphertext)
-        .map_err(|e| WalletError::DecryptionError(format!("Invalid ciphertext: {}", e)))?;
+        .map_err(|e| WalletError::DecryptionError(format!("Invalid ciphertext: {e}")))?;
 
     let nonce_bytes = general_purpose::STANDARD
         .decode(nonce)
-        .map_err(|e| WalletError::DecryptionError(format!("Invalid nonce: {}", e)))?;
+        .map_err(|e| WalletError::DecryptionError(format!("Invalid nonce: {e}")))?;
 
     let key = derive_encryption_key(password)?;
 
     let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| WalletError::DecryptionError(format!("Cipher init failed: {}", e)))?;
+        .map_err(|e| WalletError::DecryptionError(format!("Cipher init failed: {e}")))?;
     let nonce_array: [u8; 12] = nonce_bytes
         .as_slice()
         .try_into()
@@ -135,7 +135,7 @@ pub fn decrypt_data(ciphertext: &str, nonce: &str, password: &str) -> Result<Vec
 
     cipher
         .decrypt(&nonce, ciphertext_bytes.as_ref())
-        .map_err(|e| WalletError::DecryptionError(format!("Decryption failed: {}", e)))
+        .map_err(|e| WalletError::DecryptionError(format!("Decryption failed: {e}")))
 }
 
 /// Derive encryption key from password
@@ -146,7 +146,7 @@ fn derive_encryption_key(password: &str) -> Result<[u8; 32]> {
     let mut key = [0u8; 32];
     argon2
         .hash_password_into(password.as_bytes(), salt, &mut key)
-        .map_err(|e| WalletError::CryptoError(format!("Key derivation failed: {}", e)))?;
+        .map_err(|e| WalletError::CryptoError(format!("Key derivation failed: {e}")))?;
 
     Ok(key)
 }
@@ -165,10 +165,10 @@ pub fn verify_signature(
     public_key: &[u8; 32],
 ) -> Result<bool> {
     let verifying_key = VerifyingKey::from_bytes(public_key)
-        .map_err(|e| WalletError::CryptoError(format!("Invalid public key: {}", e)))?;
+        .map_err(|e| WalletError::CryptoError(format!("Invalid public key: {e}")))?;
 
     let signature = Signature::from_slice(signature)
-        .map_err(|e| WalletError::CryptoError(format!("Invalid signature: {}", e)))?;
+        .map_err(|e| WalletError::CryptoError(format!("Invalid signature: {e}")))?;
 
     Ok(verifying_key.verify(message, &signature).is_ok())
 }

@@ -81,8 +81,7 @@ impl ConfigManager {
             "testing" | "test" => Ok(Environment::Testing),
             "development" | "dev" => Ok(Environment::Development),
             _ => Err(AIServiceError::Internal(format!(
-                "Unknown environment: {}",
-                env_str
+                "Unknown environment: {env_str}"
             ))),
         }
     }
@@ -106,11 +105,11 @@ impl ConfigManager {
     /// Load configuration from TOML file
     fn load_config_from_file(path: &str) -> Result<AIServiceConfig, AIServiceError> {
         let content = fs::read_to_string(path).map_err(|e| {
-            AIServiceError::Io(format!("Failed to read config file {}: {}", path, e))
+            AIServiceError::Io(format!("Failed to read config file {path}: {e}"))
         })?;
 
         let config: ConfigFile = toml::from_str(&content).map_err(|e| {
-            AIServiceError::SerializationError(format!("Failed to parse config file: {}", e))
+            AIServiceError::SerializationError(format!("Failed to parse config file: {e}"))
         })?;
 
         Ok(config.into())
@@ -197,7 +196,7 @@ impl ConfigManager {
 
         if Path::new(secret_file).exists() {
             let content = fs::read_to_string(secret_file)
-                .map_err(|e| AIServiceError::Io(format!("Failed to read secrets file: {}", e)))?;
+                .map_err(|e| AIServiceError::Io(format!("Failed to read secrets file: {e}")))?;
 
             for line in content.lines() {
                 if let Some((key, value)) = line.split_once('=') {
