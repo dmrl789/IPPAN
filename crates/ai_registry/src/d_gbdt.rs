@@ -152,8 +152,7 @@ impl DGBDTRegistry {
                     let (configured_model, configured_hash) = load_model_from_path(&resolved_path)?;
                     if !configured_hash.eq_ignore_ascii_case(expected) {
                         return Err(RegistryError::InvalidInput(format!(
-                            "Configured expected hash {} does not match model hash {}",
-                            expected, configured_hash
+                            "Configured expected hash {expected} does not match model hash {configured_hash}"
                         )));
                     }
 
@@ -332,8 +331,7 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
     if let Some(expected) = expected_hash {
         if !hash.eq_ignore_ascii_case(&expected) {
             return Err(RegistryError::InvalidInput(format!(
-                "Configured expected hash {} does not match model hash {}",
-                expected, hash
+                "Configured expected hash {expected} does not match model hash {hash}"
             )));
         }
     }
@@ -381,8 +379,7 @@ pub fn load_fairness_model_strict(
     // Verify hash matches (case-insensitive comparison)
     if !computed_hash.eq_ignore_ascii_case(expected_hash) {
         return Err(RegistryError::InvalidInput(format!(
-            "Model hash mismatch: expected {}, computed {}",
-            expected_hash, computed_hash
+            "Model hash mismatch: expected {expected_hash}, computed {computed_hash}"
         )));
     }
 
@@ -635,7 +632,7 @@ mod tests {
             &config_path,
             format!(
                 "[dgbdt.model]\npath = \"{}\"\nexpected_hash = \"{}\"\n",
-                model_path.display(),
+                model_path.to_string_lossy().replace('\\', "/"),
                 newer_hash
             ),
         )
@@ -677,7 +674,7 @@ mod tests {
         let config_path = temp_dir.path().join("config_no_expected.toml");
         std::fs::write(
             &config_path,
-            format!("[dgbdt.model]\npath = \"{}\"\n", model_path.display()),
+            format!("[dgbdt.model]\npath = \"{}\"\n", model_path.to_string_lossy().replace('\\', "/")),
         )
         .unwrap();
 

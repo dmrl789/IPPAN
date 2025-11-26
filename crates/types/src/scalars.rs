@@ -57,14 +57,14 @@ impl fmt::Display for RatioDisplay {
         let fractional = self.ratio % RATIO_SCALE;
 
         if fractional == 0 {
-            write!(f, "{}", whole)
+            write!(f, "{whole}")
         } else {
             // Trim trailing zeros for cleaner formatting.
             let mut frac_str = format!("{fractional:06}");
             while frac_str.ends_with('0') {
                 frac_str.pop();
             }
-            write!(f, "{}.{}", whole, frac_str)
+            write!(f, "{whole}.{frac_str}")
         }
     }
 }

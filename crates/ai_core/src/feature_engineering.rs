@@ -503,7 +503,7 @@ pub mod utils {
     ) -> RawFeatureData {
         let mut names = Vec::with_capacity(features);
         for i in 0..features {
-            names.push(format!("feature_{}", i));
+            names.push(format!("feature_{i}"));
         }
 
         let mut data = Vec::with_capacity(samples);

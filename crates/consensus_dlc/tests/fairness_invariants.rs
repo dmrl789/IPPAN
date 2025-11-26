@@ -340,7 +340,7 @@ fn write_registry_and_config(root: &Path, registry_path: &Path, config_path: &Pa
 path = "{}"
 expected_hash = "{}"
 "#,
-        model_path.display(),
+        model_path.to_string_lossy().replace('\\', "/"),
         hash
     );
     fs::write(config_path, config_contents)?;

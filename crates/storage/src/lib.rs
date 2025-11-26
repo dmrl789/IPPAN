@@ -1030,9 +1030,7 @@ impl Storage for SledStorage {
         let latest_height = self.get_latest_height()?;
         debug_assert!(
             height >= latest_height,
-            "latest height cannot decrease (current={}, new={})",
-            latest_height,
-            height
+            "latest height cannot decrease (current={latest_height}, new={height})"
         );
 
         if height >= latest_height {

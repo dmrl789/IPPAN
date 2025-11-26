@@ -206,7 +206,7 @@ impl ModelValidator {
             if dim == 0 {
                 return Err(ValidationError {
                     error_type: "ShapeValidation".into(),
-                    message: format!("Input dimension {} cannot be zero", i),
+                    message: format!("Input dimension {i} cannot be zero"),
                     severity: ErrorSeverity::High,
                 });
             }
@@ -215,7 +215,7 @@ impl ModelValidator {
             if dim == 0 {
                 return Err(ValidationError {
                     error_type: "ShapeValidation".into(),
-                    message: format!("Output dimension {} cannot be zero", i),
+                    message: format!("Output dimension {i} cannot be zero"),
                     severity: ErrorSeverity::High,
                 });
             }

@@ -176,13 +176,13 @@ impl fmt::Display for Fixed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let int_part = self.0 / SCALE;
         let frac = (self.0 % SCALE).abs();
-        write!(f, "{}.{:06}", int_part, frac)
+        write!(f, "{int_part}.{frac:06}")
     }
 }
 
 impl fmt::Debug for Fixed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Fixed({})", self)
+        write!(f, "Fixed({self})")
     }
 }
 

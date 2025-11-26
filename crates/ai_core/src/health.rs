@@ -118,7 +118,7 @@ impl HealthMonitor {
                 Err(e) => HealthCheck {
                     name: name.clone(),
                     status: HealthStatus::Unhealthy,
-                    message: format!("Health check failed: {}", e),
+                    message: format!("Health check failed: {e}"),
                     duration_us: check_start.elapsed().as_micros() as u64,
                     timestamp: SystemTime::now()
                         .duration_since(UNIX_EPOCH)
@@ -275,7 +275,7 @@ impl HealthChecker for MemoryUsageChecker {
 
     fn check(&self) -> Result<HealthCheck> {
         let memory_usage = get_memory_usage()
-            .map_err(|e| AiCoreError::Internal(format!("Failed to get memory usage: {}", e)))?;
+            .map_err(|e| AiCoreError::Internal(format!("Failed to get memory usage: {e}")))?;
 
         let status = if memory_usage > self.threshold {
             HealthStatus::Unhealthy
@@ -291,7 +291,7 @@ impl HealthChecker for MemoryUsageChecker {
                 memory_usage, self.threshold
             )
         } else {
-            format!("Memory usage {} is within limits", memory_usage)
+            format!("Memory usage {memory_usage} is within limits")
         };
 
         Ok(HealthCheck {

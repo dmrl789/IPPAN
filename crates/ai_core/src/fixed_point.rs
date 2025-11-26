@@ -115,7 +115,7 @@ impl fmt::Display for FixedPoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let int_part = self.0 / Self::SCALE;
         let frac = (self.0 % Self::SCALE).abs();
-        write!(f, "{}.{:06}", int_part, frac)
+        write!(f, "{int_part}.{frac:06}")
     }
 }
 

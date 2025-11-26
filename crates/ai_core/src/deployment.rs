@@ -229,7 +229,7 @@ impl ProductionDeployment {
                 Err(e) => {
                     error!("Failed to load model {}: {}", model_path, e);
                     Err(GBDTError::ModelValidationFailed {
-                        reason: format!("Error loading {}: {}", model_path, e),
+                        reason: format!("Error loading {model_path}: {e}"),
                     })
                 }
             }

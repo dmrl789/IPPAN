@@ -147,7 +147,7 @@ impl ModelManager {
         let file_size = path
             .metadata()
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to get file metadata: {}", e),
+                reason: format!("Failed to get file metadata: {e}"),
             })?
             .len();
 
@@ -184,7 +184,7 @@ impl ModelManager {
 
         let serialized_size =
             bincode::serialized_size(model).map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to compute serialized size: {}", e),
+                reason: format!("Failed to compute serialized size: {e}"),
             })?;
         if serialized_size > self.config.max_model_size_bytes {
             return Err(GBDTError::ModelValidationFailed {
@@ -198,21 +198,21 @@ impl ModelManager {
         fs::create_dir_all(&self.config.model_directory)
             .await
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to create model directory: {}", e),
+                reason: format!("Failed to create model directory: {e}"),
             })?;
 
         let path = self.get_model_path(model_id);
         let model_hash = GBDTModel::calculate_model_hash(&model.trees, model.bias, model.scale)?;
         let hash_bytes =
             hex::decode(&model_hash).map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Invalid model hash hex: {}", e),
+                reason: format!("Invalid model hash hex: {e}"),
             })?;
         let hash_len = hash_bytes.len();
         let hash_sha256: [u8; 32] =
             hash_bytes
                 .try_into()
                 .map_err(|_| GBDTError::ModelValidationFailed {
-                    reason: format!("Model hash length {} != 32 bytes", hash_len),
+                    reason: format!("Model hash length {hash_len} != 32 bytes"),
                 })?;
 
         let metadata = crate::model::ModelMetadata {
@@ -232,13 +232,13 @@ impl ModelManager {
         };
 
         let data = bincode::serialize(&package).map_err(|e| GBDTError::ModelValidationFailed {
-            reason: format!("Serialization failed: {}", e),
+            reason: format!("Serialization failed: {e}"),
         })?;
 
         fs::write(&path, &data)
             .await
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Write failed: {}", e),
+                reason: format!("Write failed: {e}"),
             })?;
 
         self.cache_model(model_id, model, &path).await?;
@@ -285,11 +285,11 @@ impl ModelManager {
         let bytes = fs::read(path)
             .await
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to read model file: {}", e),
+                reason: format!("Failed to read model file: {e}"),
             })?;
         let package: ModelPackage =
             bincode::deserialize(&bytes).map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Deserialization failed: {}", e),
+                reason: format!("Deserialization failed: {e}"),
             })?;
         Ok(package.model)
     }
@@ -332,7 +332,7 @@ impl ModelManager {
         let file_size = path
             .metadata()
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Metadata read failed: {}", e),
+                reason: format!("Metadata read failed: {e}"),
             })?
             .len();
 
@@ -363,7 +363,7 @@ impl ModelManager {
     }
 
     fn get_model_path(&self, id: &str) -> PathBuf {
-        self.config.model_directory.join(format!("{}.model", id))
+        self.config.model_directory.join(format!("{id}.model"))
     }
 
     fn update_cache_metrics(&self, hit: bool) {
@@ -426,7 +426,7 @@ impl ModelManager {
         let mut entries = fs::read_dir(&self.config.model_directory)
             .await
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Read dir failed: {}", e),
+                reason: format!("Read dir failed: {e}"),
             })?;
 
         while let Some(entry) =
@@ -434,7 +434,7 @@ impl ModelManager {
                 .next_entry()
                 .await
                 .map_err(|e| GBDTError::ModelValidationFailed {
-                    reason: format!("Read entry failed: {}", e),
+                    reason: format!("Read entry failed: {e}"),
                 })?
         {
             let path = entry.path();
@@ -456,7 +456,7 @@ impl ModelManager {
             fs::remove_file(&path)
                 .await
                 .map_err(|e| GBDTError::ModelValidationFailed {
-                    reason: format!("Failed to delete model file: {}", e),
+                    reason: format!("Failed to delete model file: {e}"),
                 })?;
         }
         info!("Model {} deleted", id);

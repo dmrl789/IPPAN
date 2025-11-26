@@ -237,7 +237,7 @@ impl TestSuite {
         self.results.insert(name.to_string(), test_result);
 
         if passed {
-            println!("✓ {} passed in {:?}", name, duration);
+            println!("✓ {name} passed in {duration:?}");
         } else {
             println!(
                 "✗ {} failed in {:?}: {}",
@@ -319,9 +319,9 @@ impl BenchmarkSuite {
         let evals_per_sec = Fixed::from_ratio((iterations as i64) * 1_000_000, duration_us);
 
         println!("GBDT Evaluation Benchmark:");
-        println!("  Iterations: {}", iterations);
-        println!("  Duration: {:?}", duration);
-        println!("  Evaluations/sec: {}", evals_per_sec);
+        println!("  Iterations: {iterations}");
+        println!("  Duration: {duration:?}");
+        println!("  Evaluations/sec: {evals_per_sec}");
         Ok(())
     }
 
@@ -336,7 +336,7 @@ impl BenchmarkSuite {
         let raw_data = RawFeatureData {
             features,
             feature_names: (0..feature_count)
-                .map(|i| format!("feature_{}", i))
+                .map(|i| format!("feature_{i}"))
                 .collect(),
             sample_count,
             feature_count,
@@ -348,7 +348,7 @@ impl BenchmarkSuite {
         let duration = start.elapsed();
 
         println!("Feature Engineering Benchmark:");
-        println!("  Duration: {:?}", duration);
+        println!("  Duration: {duration:?}");
         Ok(())
     }
 
@@ -372,9 +372,9 @@ impl BenchmarkSuite {
         let records_per_sec = Fixed::from_ratio((iterations as i64) * 1_000_000, duration_us);
 
         println!("Monitoring Benchmark:");
-        println!("  Iterations: {}", iterations);
-        println!("  Duration: {:?}", duration);
-        println!("  Records/sec: {}", records_per_sec);
+        println!("  Iterations: {iterations}");
+        println!("  Duration: {duration:?}");
+        println!("  Records/sec: {records_per_sec}");
         Ok(())
     }
 
@@ -394,9 +394,9 @@ impl BenchmarkSuite {
             Fixed::from_ratio((iterations as i64) * 1_000_000, duration_us);
 
         println!("Security Benchmark:");
-        println!("  Iterations: {}", iterations);
-        println!("  Duration: {:?}", duration);
-        println!("  Validations/sec: {}", validations_per_second);
+        println!("  Iterations: {iterations}");
+        println!("  Duration: {duration:?}");
+        println!("  Validations/sec: {validations_per_second}");
         Ok(())
     }
 }
@@ -417,7 +417,7 @@ pub mod test_utils {
     pub fn create_test_data(size: usize) -> RawFeatureData {
         RawFeatureData {
             features: vec![vec![Fixed::from_int(1); 10]; size],
-            feature_names: (0..10).map(|i| format!("feature_{}", i)).collect(),
+            feature_names: (0..10).map(|i| format!("feature_{i}")).collect(),
             sample_count: size,
             feature_count: 10,
             metadata: HashMap::new(),

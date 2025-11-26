@@ -270,10 +270,10 @@ impl ConfigManager {
         info!("Loading configuration from: {}", path.display());
 
         let content = std::fs::read_to_string(path)
-            .map_err(|e| AiCoreError::Io(format!("Failed to read config file: {}", e)))?;
+            .map_err(|e| AiCoreError::Io(format!("Failed to read config file: {e}")))?;
 
         let config: AiCoreConfig = toml::from_str(&content)
-            .map_err(|e| AiCoreError::Serialization(format!("Failed to parse config: {}", e)))?;
+            .map_err(|e| AiCoreError::Serialization(format!("Failed to parse config: {e}")))?;
 
         self.update_config(config)?;
         info!("Configuration loaded successfully");
@@ -474,11 +474,11 @@ impl ConfigManager {
         let config = self.get_config();
 
         let content = toml::to_string_pretty(&config).map_err(|e| {
-            AiCoreError::Serialization(format!("Failed to serialize config: {}", e))
+            AiCoreError::Serialization(format!("Failed to serialize config: {e}"))
         })?;
 
         std::fs::write(path, content)
-            .map_err(|e| AiCoreError::Io(format!("Failed to write config file: {}", e)))?;
+            .map_err(|e| AiCoreError::Io(format!("Failed to write config file: {e}")))?;
 
         info!("Configuration saved to: {}", path.display());
         Ok(())

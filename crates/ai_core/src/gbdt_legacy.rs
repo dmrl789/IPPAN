@@ -384,7 +384,7 @@ impl GBDTModel {
             }
             if depth > self.security_constraints.max_tree_depth {
                 return Err(GBDTError::SecurityValidationFailed {
-                    reason: format!("Tree depth {} exceeds max", depth),
+                    reason: format!("Tree depth {depth} exceeds max"),
                 });
             }
             let node = &tree.nodes[idx];
@@ -430,7 +430,7 @@ impl GBDTModel {
                     warn!("Feature {} out of allowed bounds: {}", i, f);
                 }
                 return Err(GBDTError::SecurityValidationFailed {
-                    reason: format!("Feature {} out of range", i),
+                    reason: format!("Feature {i} out of range"),
                 });
             }
         }
@@ -497,13 +497,13 @@ impl GBDTModel {
         for (t_idx, t) in self.trees.iter().enumerate() {
             if t.nodes.is_empty() {
                 return Err(GBDTError::ModelValidationFailed {
-                    reason: format!("Tree {} is empty", t_idx),
+                    reason: format!("Tree {t_idx} is empty"),
                 });
             }
             for (n_idx, n) in t.nodes.iter().enumerate() {
                 if n.feature_index as usize >= self.metadata.feature_count {
                     return Err(GBDTError::ModelValidationFailed {
-                        reason: format!("Invalid feature {} in tree {}", n_idx, t_idx),
+                        reason: format!("Invalid feature {n_idx} in tree {t_idx}"),
                     });
                 }
             }

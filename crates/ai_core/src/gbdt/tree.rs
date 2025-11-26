@@ -171,7 +171,7 @@ impl Tree {
             } else {
                 // Leaf node must have a leaf value
                 if node.leaf.is_none() {
-                    return Err(format!("Leaf node {} has no leaf value", i));
+                    return Err(format!("Leaf node {i} has no leaf value"));
                 }
             }
         }

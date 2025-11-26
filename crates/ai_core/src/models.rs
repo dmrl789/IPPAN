@@ -173,13 +173,13 @@ impl ModelManager {
         if let Some(data) = url.strip_prefix("data:application/octet-stream;base64,") {
             let bytes = STANDARD
                 .decode(data)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 data: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64 data: {e}")))?;
             return Ok(bytes);
         }
 
         if let Some(hex_data) = url.strip_prefix("hex://") {
             let bytes = hex::decode(hex_data)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid hex payload: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid hex payload: {e}")))?;
             return Ok(bytes);
         }
 
@@ -236,7 +236,7 @@ impl ModelManager {
         if let Some(b64) = hash.strip_prefix("base64:") {
             let bytes = STANDARD
                 .decode(b64)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64: {e}")))?;
             return Ok(bytes);
         }
 
@@ -302,7 +302,7 @@ impl ModelManager {
         if let Some(b64) = storage_key.strip_prefix("base64:") {
             let bytes = STANDARD
                 .decode(b64)
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64: {}", e)))?;
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Invalid base64: {e}")))?;
             return Ok(bytes);
         }
 
@@ -320,8 +320,7 @@ impl ModelManager {
         }
 
         Err(AiCoreError::ExecutionFailed(format!(
-            "Blockchain model loading requires RPC or IPPAN_GATEWAY_URL (key: {})",
-            storage_key
+            "Blockchain model loading requires RPC or IPPAN_GATEWAY_URL (key: {storage_key})"
         )))
     }
 

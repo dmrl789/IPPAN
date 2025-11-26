@@ -231,7 +231,7 @@ impl SecurityManager {
         let expires_at = now + self.config.token_expiration;
 
         let token = AuthToken {
-            token: format!("ai_registry_{}_{}", user_id, now),
+            token: format!("ai_registry_{user_id}_{now}"),
             token_type: "Bearer".to_string(),
             expires_at,
             scope: scope.clone(),

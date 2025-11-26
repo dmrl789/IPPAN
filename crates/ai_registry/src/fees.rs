@@ -138,8 +138,7 @@ impl FeeManager {
 
         let fee_structure = self.fee_structures.get(&fee_type).ok_or_else(|| {
             RegistryError::FeeCalculationError(format!(
-                "Fee structure not found for type: {:?}",
-                fee_type
+                "Fee structure not found for type: {fee_type:?}"
             ))
         })?;
 

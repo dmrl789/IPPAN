@@ -320,13 +320,13 @@ impl ProductionConfigManager {
             .await
             .context("Failed to read configuration file")
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to read configuration file: {}", e),
+                reason: format!("Failed to read configuration file: {e}"),
             })?;
 
         let config: ProductionConfig = toml::from_str(&config_data)
             .context("Failed to parse configuration file")
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to parse configuration file: {}", e),
+                reason: format!("Failed to parse configuration file: {e}"),
             })?;
 
         let validation = config.validate();
@@ -360,14 +360,14 @@ impl ProductionConfigManager {
         let config_data = toml::to_string_pretty(&config)
             .context("Failed to serialize configuration")
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to serialize configuration: {}", e),
+                reason: format!("Failed to serialize configuration: {e}"),
             })?;
 
         fs::write(&self.config_path, config_data)
             .await
             .context("Failed to write configuration file")
             .map_err(|e| GBDTError::ModelValidationFailed {
-                reason: format!("Failed to write configuration file: {}", e),
+                reason: format!("Failed to write configuration file: {e}"),
             })?;
 
         info!(

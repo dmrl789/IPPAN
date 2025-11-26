@@ -109,7 +109,7 @@ impl Model {
         // Validate each tree
         for (i, tree) in self.trees.iter().enumerate() {
             tree.validate().map_err(|e| {
-                ModelError::ValidationFailed(format!("Tree {} validation failed: {}", i, e))
+                ModelError::ValidationFailed(format!("Tree {i} validation failed: {e}"))
             })?;
         }
 

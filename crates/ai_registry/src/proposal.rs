@@ -137,12 +137,11 @@ impl ProposalManager {
                 Ok(())
             } else {
                 Err(anyhow::anyhow!(
-                    "Proposal {} is not in pending status",
-                    proposal_id
+                    "Proposal {proposal_id} is not in pending status"
                 ))
             }
         } else {
-            Err(anyhow::anyhow!("Proposal {} not found", proposal_id))
+            Err(anyhow::anyhow!("Proposal {proposal_id} not found"))
         }
     }
 
@@ -157,8 +156,7 @@ impl ProposalManager {
         if let Some((_proposal, status)) = self.proposals.get_mut(proposal_id) {
             if *status != ProposalStatus::Voting {
                 return Err(anyhow::anyhow!(
-                    "Proposal {} is not in voting status",
-                    proposal_id
+                    "Proposal {proposal_id} is not in voting status"
                 ));
             }
 
@@ -166,7 +164,7 @@ impl ProposalManager {
             // For now, we'll just simulate the voting process
             Ok(())
         } else {
-            Err(anyhow::anyhow!("Proposal {} not found", proposal_id))
+            Err(anyhow::anyhow!("Proposal {proposal_id} not found"))
         }
     }
 
@@ -182,7 +180,7 @@ impl ProposalManager {
         let (proposal_data, model_size) = {
             if let Some((proposal, status)) = self.proposals.get(proposal_id) {
                 if *status != ProposalStatus::Approved {
-                    return Err(anyhow::anyhow!("Proposal {} is not approved", proposal_id));
+                    return Err(anyhow::anyhow!("Proposal {proposal_id} is not approved"));
                 }
 
                 // Clone proposal data we need
@@ -192,7 +190,7 @@ impl ProposalManager {
                 );
                 (data.0, data.1)
             } else {
-                return Err(anyhow::anyhow!("Proposal {} not found", proposal_id));
+                return Err(anyhow::anyhow!("Proposal {proposal_id} not found"));
             }
         };
 
@@ -278,7 +276,7 @@ impl ProposalManager {
         // Validate signature
         use ed25519_dalek::{Signature, VerifyingKey};
         let verifying_key = VerifyingKey::from_bytes(&proposal.signer_pubkey)
-            .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid public key: {e}"))?;
         let signature = Signature::from_bytes(&proposal.signature);
 
         if verifying_key
