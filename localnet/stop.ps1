@@ -34,4 +34,4 @@ try {
 }
 
 Write-Host ""
-Write-Host "✓ Localnet stopped successfully" -ForegroundColor Green
+Write-Host "Localnet stopped successfully" -ForegroundColor Green
