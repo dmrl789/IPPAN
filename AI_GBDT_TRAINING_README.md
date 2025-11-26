@@ -124,14 +124,52 @@ cargo test -p ippan-ai-registry --lib d_gbdt::tests::test_load_fairness_model_st
 cargo test -p ippan-consensus-dlc --lib
 ```
 
-### Step 5: Commit and push
+### Step 5: Promote with guard (recommended)
+
+Use the promotion tool which automatically:
+- Computes BLAKE3 hash
+- Compares to current pinned hash in config
+- **Refuses promotion if hash unchanged** (prevents fake "new" versions)
+- Updates config and copies model file
+
+```powershell
+# Windows PowerShell
+.\localnet\promote-model.ps1 -Model ai_training\ippan_d_gbdt_v3.json -Version v3
+
+# Or direct Python
+python ai_training/promote_fairness_model.py `
+  --model ai_training/ippan_d_gbdt_v3.json `
+  --runtime-dest crates/ai_registry/models/ippan_d_gbdt_v3.json
+```
+
+**Hash guard behavior**:
+- If the new model hash matches the currently pinned hash, promotion is **refused** (exit code 2)
+- This prevents accidentally creating "fake" new versions when the model hasn't changed
+- To override (use with caution): add `--allow-same-hash` flag
+
+**What happens when hash is unchanged**:
+```
+======================================================================
+REFUSING promotion: hash unchanged.
+
+You did not produce a new model. The hash matches the currently
+pinned model in config. This prevents creating fake 'new' versions.
+
+Options:
+  1. Train with different data/parameters to get a new hash
+  2. Do not bump the version number
+  3. Use --allow-same-hash to override (use with caution)
+======================================================================
+```
+
+### Step 6: Commit and push
 
 ```bash
-git add ai_training/ippan_d_gbdt_v2.json
-git add ai_training/model_card_ippan_d_gbdt_v2.toml
-git add crates/ai_registry/models/ippan_d_gbdt_v2.json
+git add ai_training/ippan_d_gbdt_v3.json
+git add ai_training/model_card_ippan_d_gbdt_v3.toml
+git add crates/ai_registry/models/ippan_d_gbdt_v3.json
 git add config/dlc.toml
-git commit -m "ai: promote GBDT v2 with strict hash verification"
+git commit -m "ai: promote GBDT v3 with strict hash verification"
 git push origin master
 ```
 

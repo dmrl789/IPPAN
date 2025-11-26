@@ -61,6 +61,17 @@ The fairness model v2 is loaded via strict hash verification at node startup:
 - **No Fallbacks**: There is no code path that silently continues without the strict model - consensus will not start without a valid, hash-verified model
 - **Training Source**: v2 trained on synthetic dataset (deterministic seed 42); can be retrained from `ai_training/data/ippan_training.csv`
 
+### Model Promotion Guard
+
+Model promotion is guarded by BLAKE3 hash change check:
+
+- **Tool**: `ai_training/promote_fairness_model.py` (or `localnet/promote-model.ps1` wrapper)
+- **Guard**: Promotion is **refused** if the new model hash matches the currently pinned hash in `config/dlc.toml`
+- **Purpose**: Prevents accidentally creating "fake" new versions when the model hasn't actually changed
+- **Pinned Hash Authority**: The hash in `config/dlc.toml` `[dgbdt.model].expected_hash` is authoritative
+- **Strict Loader Verification**: Runtime strict loader verifies hash; mismatch → fail-fast at node startup
+- **Override**: Use `--allow-same-hash` flag only if truly intended (e.g., re-vendoring same model)
+
 ### Shadow Verifier Selection
 
 Shadow verifier selection is score-ranked using the deterministic GBDT model v2:
