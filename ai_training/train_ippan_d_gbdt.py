@@ -15,7 +15,7 @@ from sklearn.model_selection import train_test_split
 
 RANDOM_SEED = 42
 SCALE = 1_000_000
-DEFAULT_CSV_PATH = "data/ippan_gbdt_training.csv"
+DEFAULT_CSV_PATH = "ai_training/data/ippan_training.csv"
 DEFAULT_OUTPUT_PATH = "ai_training/ippan_d_gbdt_v1.json"
 FEATURE_COLS = [
     "uptime_ratio_7d",
@@ -124,6 +124,9 @@ def main() -> None:
         n_jobs=1,
         deterministic=True,
         force_col_wise=True,
+        feature_fraction_seed=RANDOM_SEED,
+        bagging_seed=RANDOM_SEED,
+        data_random_seed=RANDOM_SEED,
     )
 
     print("Training model...")

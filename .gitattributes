@@ -3,3 +3,8 @@ ai_assets/**/*.csv filter=lfs diff=lfs merge=lfs -text
 ai_assets/**/*.parquet filter=lfs diff=lfs merge=lfs -text
 ai_assets/**/*.json filter=lfs diff=lfs merge=lfs -text
 ai_assets/**/*.bin filter=lfs diff=lfs merge=lfs -text
+
+# Large AI training artifacts (only if >100MB)
+ai_training/*.bin filter=lfs diff=lfs merge=lfs -text
+ai_training/*.json.gz filter=lfs diff=lfs merge=lfs -text
+crates/ai_registry/models/*.json.gz filter=lfs diff=lfs merge=lfs -text

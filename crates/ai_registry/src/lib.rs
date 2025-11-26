@@ -53,8 +53,9 @@ pub mod types;
 // Re-export commonly used types
 pub use activation::ActivationManager;
 pub use d_gbdt::{
-    compute_model_hash, load_and_activate_from_config, load_model_from_config,
-    load_model_from_path, DGBDTRegistry, HistoryEntry, StoredModel, MAX_HISTORY_VERSIONS,
+    compute_model_hash, load_and_activate_from_config, load_fairness_model_strict,
+    load_model_from_config, load_model_from_path, DGBDTRegistry, HistoryEntry, StoredModel,
+    MAX_HISTORY_VERSIONS,
 };
 pub use errors::{RegistryError, Result};
 pub use fees::{FeeCalculation, FeeManager, FeeStats};

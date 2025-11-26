@@ -10,7 +10,7 @@ import pandas as pd
 
 SEED = 42
 N_ROWS = 100_000
-CSV_PATH = os.path.join("data", "ippan_gbdt_training.csv")
+CSV_PATH = os.path.join("ai_training", "data", "ippan_training.csv")
 
 
 def main() -> None:

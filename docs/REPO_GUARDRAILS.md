@@ -45,13 +45,21 @@ Runtime model artifacts (e.g., `crates/ai_registry/models/*.json`) are versioned
 
 ### Strict Model Loading (v2)
 
-The fairness model v2 is loaded via config-based strict loading:
-- **Location**: `crates/ai_registry/models/ippan_d_gbdt_v2.json`
+The fairness model v2 is loaded via strict hash verification at node startup:
+
+- **Location**: `crates/ai_registry/models/ippan_d_gbdt_v2.json` (vendored in repo)
 - **Pinned Hash**: `ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d` (set in `config/dlc.toml` under `[dgbdt.model]`)
-- **Behavior**: Consensus initialization loads model from config with hash verification at startup
-- **Failure Mode**: If the model file is missing, hash mismatches, or JSON cannot be deserialized, the node **FAILS FAST** (startup/init returns error)
+- **Loader Function**: `ippan_ai_registry::d_gbdt::load_fairness_model_strict(path, expected_hash)`
+- **Verification Steps**:
+  1. Read model file bytes
+  2. Compute BLAKE3 hash of raw bytes
+  3. Compare to `expected_hash` (case-insensitive)
+  4. If mismatch → return error immediately (fail-fast)
+  5. Only then deserialize JSON and validate structure
+- **Behavior**: Consensus initialization calls strict loader; if it fails, node startup aborts
+- **Failure Mode**: Missing file, hash mismatch, or invalid JSON → node **FAILS FAST** (panic in non-test mode)
 - **No Fallbacks**: There is no code path that silently continues without the strict model - consensus will not start without a valid, hash-verified model
-- **Training Source**: v2 trained on localnet dataset (proxy windowed metrics from /status endpoint)
+- **Training Source**: v2 trained on synthetic dataset (deterministic seed 42); can be retrained from `ai_training/data/ippan_training.csv`
 
 ### Shadow Verifier Selection
 

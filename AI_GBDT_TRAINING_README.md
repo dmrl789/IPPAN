@@ -1,31 +1,58 @@
 # IPPAN D-GBDT Training Bootstrap (Offline Only)
 
-This guide describes how to generate a synthetic dataset and train the first IPPAN D-GBDT fairness model on a **separate, trusted machine** (e.g., Hetzner or local Linux). IPPAN nodes **never train models**; they only load the frozen JSON artifact and perform deterministic integer inference.
+This guide describes how to generate a synthetic dataset and train IPPAN D-GBDT fairness models on a **separate, trusted machine** (e.g., Hetzner or local laptop). IPPAN nodes **never train models**; they only load the frozen JSON artifact and perform deterministic integer inference.
+
+## Prerequisites
+
+- Python 3.8+ with `pip`
+- Rust toolchain (for runtime verification only)
+- Git LFS installed (`git lfs install --local`)
 
 ## Environment setup
 
-```bash
-# Clone the repository and enter it
-git clone https://github.com/dmrl789/IPPAN.git
-cd IPPAN
+### Local Laptop (Windows PowerShell)
 
-# Create and activate a Python virtual environment
+```powershell
+# Create and activate virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install --upgrade pip
+pip install "numpy==1.26.4" "pandas==2.2.2" "scikit-learn==1.5.2" "lightgbm==4.3.0" "blake3==0.4.1"
+```
+
+### Hetzner Server (Linux)
+
+```bash
+# Install system dependencies
+sudo apt-get update
+sudo apt-get install -y python3 python3-venv python3-pip build-essential
+
+# Create and activate virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install required Python dependencies
-pip install "numpy==1.26.4" "pandas==2.2.2" "scikit-learn==1.5.2" "lightgbm==4.3.0"
+# Install Python dependencies
+pip install --upgrade pip
+pip install "numpy==1.26.4" "pandas==2.2.2" "scikit-learn==1.5.2" "lightgbm==4.3.0" "blake3==0.4.1"
 ```
 
 ## Generate the training dataset
 
 ### Option 1: Synthetic dataset (bootstrap)
 
-This uses a fixed RNG seed and writes `data/ippan_gbdt_training.csv`.
+This uses a fixed RNG seed (42) and writes `ai_training/data/ippan_training.csv` (gitignored).
 
 ```bash
+# Windows PowerShell
 python ai_training/generate_synthetic_dataset.py
+
+# Linux/macOS
+python3 ai_training/generate_synthetic_dataset.py
 ```
+
+**Output**: `ai_training/data/ippan_training.csv` (100,000 rows, deterministic)
 
 ### Option 2: Localnet dataset (real-world proxy)
 
@@ -55,52 +82,137 @@ Export validator metrics from a running localnet to generate training data:
 
 **Note**: Localnet exports produce "proxy 7d" features (windowed deltas from current metrics) suitable for bootstrap/testing. For production training, use longer collection periods or aggregate historical data from testnet/mainnet.
 
-### Promoting v2 to Runtime
+## Promote model to runtime (strict hash-pinned)
 
-After training v2 from localnet data:
+After training and hashing, vendor the model into the runtime path:
 
-1. **Compute BLAKE3 hash**:
-   ```bash
-   python -c "from blake3 import blake3; p='ai_training/ippan_d_gbdt_v2.json'; print(blake3(open(p,'rb').read()).hexdigest())"
-   ```
-
-2. **Vendor model to runtime**:
-   ```bash
-   cp ai_training/ippan_d_gbdt_v2.json crates/ai_registry/models/ippan_d_gbdt_v2.json
-   ```
-
-3. **Update config** (`config/dlc.toml`):
-   ```toml
-   [dgbdt.model]
-   path = "crates/ai_registry/models/ippan_d_gbdt_v2.json"
-   expected_hash = "<computed_hash>"
-   ```
-
-4. **Update model card** (`ai_training/model_card_ippan_d_gbdt_v2.toml`) with the hash.
-
-5. **Verify**: Runtime nodes will fail-fast on startup if the model hash doesn't match the pinned hash in config.
-
-## Train the bootstrap fairness model
-
-This trains LightGBM offline, quantizes leaves to integers, and writes `ai_training/ippan_d_gbdt_v1.json`.
+### Step 1: Copy model to runtime location
 
 ```bash
+# Windows PowerShell
+Copy-Item ai_training\ippan_d_gbdt_v2.json crates\ai_registry\models\ippan_d_gbdt_v2.json
+
+# Linux/macOS
+cp ai_training/ippan_d_gbdt_v2.json crates/ai_registry/models/ippan_d_gbdt_v2.json
+```
+
+### Step 2: Update config with pinned hash
+
+Edit `config/dlc.toml`:
+
+```toml
+[dgbdt.model]
+path = "crates/ai_registry/models/ippan_d_gbdt_v2.json"
+expected_hash = "<computed_hash_from_step_above>"
+```
+
+### Step 3: Verify strict loading
+
+The runtime uses `ippan_ai_registry::d_gbdt::load_fairness_model_strict()` which:
+- Reads model file bytes
+- Computes BLAKE3 hash
+- Compares to `expected_hash` in config
+- **Fails fast** (returns error) if hash mismatch
+- Only then deserializes JSON
+
+**Node startup behavior**: If hash doesn't match, consensus initialization fails and the node refuses to start. This ensures all nodes use the exact same model bytes.
+
+### Step 4: Test runtime loading
+
+```bash
+cargo test -p ippan-ai-registry --lib d_gbdt::tests::test_load_fairness_model_strict
+cargo test -p ippan-consensus-dlc --lib
+```
+
+### Step 5: Commit and push
+
+```bash
+git add ai_training/ippan_d_gbdt_v2.json
+git add ai_training/model_card_ippan_d_gbdt_v2.toml
+git add crates/ai_registry/models/ippan_d_gbdt_v2.json
+git add config/dlc.toml
+git commit -m "ai: promote GBDT v2 with strict hash verification"
+git push origin master
+```
+
+**Important**: Do NOT commit CSV datasets (`ai_training/data/` is gitignored).
+
+## Train the model
+
+Train a deterministic GBDT model from the CSV dataset. The training script uses fixed seeds and deterministic LightGBM parameters to ensure reproducibility.
+
+```bash
+# Train v2 model (example)
+python ai_training/train_ippan_d_gbdt.py --csv ai_training/data/ippan_training.csv --out ai_training/ippan_d_gbdt_v2.json
+
+# Or use default paths
 python ai_training/train_ippan_d_gbdt.py
 ```
 
-## Compute the canonical model hash (BLAKE3)
+**Output**: `ai_training/ippan_d_gbdt_v2.json` (deterministic integer-only JSON)
 
-Use `b3sum` (or another BLAKE3 tool) to compute the hash for pinning.
+**Training parameters** (fixed for reproducibility):
+- Random seed: 42
+- LightGBM: `deterministic=True`, `num_threads=1`, `force_col_wise=True`
+- Feature/bagging/data seeds: all set to 42
+- Scale factor: 1,000,000 (for integer quantization)
+
+## Compute BLAKE3 hash
+
+Compute the canonical BLAKE3 hash of the model file for pinning:
 
 ```bash
-b3sum ai_training/ippan_d_gbdt_v1.json
+# Python (recommended)
+python -c "from blake3 import blake3; p='ai_training/ippan_d_gbdt_v2.json'; print(blake3(open(p,'rb').read()).hexdigest())"
+
+# Or using b3sum (if installed)
+b3sum ai_training/ippan_d_gbdt_v2.json
 ```
 
-Record the hash and update `ai_training/model_card_ippan_d_gbdt_v1.toml` by replacing the placeholder value. Store both the JSON and hash securely for later governance/consensus pinning.
+**Output**: 64-character hex string (e.g., `ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d`)
 
-## Next steps (manual, offline)
+## Create model card
 
-- Copy `ai_training/ippan_d_gbdt_v1.json` and its BLAKE3 hash to a safe location.
-- Later, governance/DLC configuration will pin the `id` and `hash` so all nodes load the same model.
-- This pipeline is intentionally outside CI and must be run manually in a trusted environment.
-- Deterministic behavior in IPPAN comes from freezing the JSON, using integer-only inference, and hashing the artifact; runtime nodes **do not** perform any training.
+Create or update `ai_training/model_card_ippan_d_gbdt_v2.toml`:
+
+```toml
+id = "ippan_d_gbdt_v2"
+hash = "<computed_hash_from_above>"
+scale = 1000000
+feature_cols = ["uptime_ratio_7d", "validated_blocks_7d", "missed_blocks_7d", "avg_latency_ms", "slashing_events_90d", "stake_normalized", "peer_reports_quality"]
+target_col = "fairness_score"
+notes = "Training provenance and parameters..."
+```
+
+## Reproducibility
+
+The entire pipeline is deterministic:
+
+1. **Dataset generation**: Fixed seed (42) → same CSV every time
+2. **Training**: Fixed seeds for LightGBM → same model JSON every time
+3. **Hashing**: BLAKE3 of exact file bytes → same hash every time
+4. **Runtime**: Hash verification ensures all nodes load identical bytes
+
+**To retrain from scratch**:
+
+```bash
+# 1. Generate dataset (deterministic)
+python ai_training/generate_synthetic_dataset.py
+
+# 2. Train model (deterministic)
+python ai_training/train_ippan_d_gbdt.py --csv ai_training/data/ippan_training.csv --out ai_training/ippan_d_gbdt_v2.json
+
+# 3. Compute hash
+python -c "from blake3 import blake3; p='ai_training/ippan_d_gbdt_v2.json'; print(blake3(open(p,'rb').read()).hexdigest())"
+
+# 4. Update config and model card with hash
+# 5. Vendor to crates/ai_registry/models/
+# 6. Test and commit
+```
+
+## Notes
+
+- Training is **OFFLINE ONLY**; runtime nodes never train
+- Models are vendored in the repo (tracked in Git, LFS only if >100MB)
+- Hash verification is **mandatory** at node startup (fail-fast)
+- Deterministic behavior comes from: frozen JSON + integer-only inference + pinned hash

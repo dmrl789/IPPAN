@@ -341,6 +341,59 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
     Ok((model, hash))
 }
 
+/// Strict loader: Load model with mandatory hash verification (fail-fast)
+///
+/// This function enforces that the model file exists, is valid JSON, and matches
+/// the expected BLAKE3 hash. If any check fails, it returns an error immediately.
+/// This is used at node startup to ensure all nodes load the exact same model.
+///
+/// # Arguments
+/// * `model_path` - Path to the model JSON file
+/// * `expected_hash` - Expected BLAKE3 hash (64 hex characters)
+///
+/// # Returns
+/// * `Ok((Model, String))` - Model and computed hash if verification passes
+/// * `Err(RegistryError)` - If file missing, invalid JSON, or hash mismatch
+///
+/// # Example
+/// ```no_run
+/// use ippan_ai_registry::d_gbdt::load_fairness_model_strict;
+/// use std::path::Path;
+///
+/// let (model, hash) = load_fairness_model_strict(
+///     Path::new("crates/ai_registry/models/ippan_d_gbdt_v2.json"),
+///     "ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d"
+/// )?;
+/// ```
+pub fn load_fairness_model_strict(
+    model_path: &Path,
+    expected_hash: &str,
+) -> Result<(Model, String)> {
+    info!(
+        "Loading fairness model with strict hash verification: {} (expected: {})",
+        model_path.display(),
+        expected_hash
+    );
+
+    // Load model and compute hash
+    let (model, computed_hash) = load_model_from_path(model_path)?;
+
+    // Verify hash matches (case-insensitive comparison)
+    if !computed_hash.eq_ignore_ascii_case(expected_hash) {
+        return Err(RegistryError::InvalidInput(format!(
+            "Model hash mismatch: expected {}, computed {}",
+            expected_hash, computed_hash
+        )));
+    }
+
+    info!(
+        "Strict hash verification passed: {}",
+        computed_hash
+    );
+
+    Ok((model, computed_hash))
+}
+
 fn read_config(config_path: &Path) -> Result<toml::Value> {
     let config_content = std::fs::read_to_string(config_path).map_err(|err| {
         RegistryError::Internal(format!(
@@ -796,5 +849,31 @@ mod tests {
         registry.clear().unwrap();
         assert!(registry.get_active_model().is_err());
         assert_eq!(registry.get_history().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_load_fairness_model_strict() {
+        let (_registry, temp_dir) = create_test_registry();
+        let root = temp_dir.path();
+        let models_dir = root.join("models");
+        std::fs::create_dir_all(&models_dir).unwrap();
+
+        let model = create_test_model();
+        let model_path = models_dir.join("model.json");
+        std::fs::write(&model_path, serde_json::to_string(&model).unwrap()).unwrap();
+        let hash = compute_model_hash(&model).unwrap();
+
+        // Test successful load with correct hash
+        let (loaded_model, loaded_hash) =
+            load_fairness_model_strict(&model_path, &hash).unwrap();
+        assert_eq!(loaded_model.trees.len(), model.trees.len());
+        assert_eq!(loaded_hash, hash);
+
+        // Test failure with wrong hash
+        let result = load_fairness_model_strict(&model_path, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+        assert!(matches!(result, Err(RegistryError::InvalidInput(_))));
+        if let Err(RegistryError::InvalidInput(msg)) = result {
+            assert!(msg.contains("hash mismatch"));
+        }
     }
 }
