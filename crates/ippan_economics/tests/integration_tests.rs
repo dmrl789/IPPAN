@@ -222,7 +222,7 @@ fn test_mathematical_precision() {
 
     for round in 1..=1_000_000 {
         let reward = emission_engine.calculate_round_reward(round).unwrap();
-        assert!(reward >= 1, "Reward at round {} was {}", round, reward);
+        assert!(reward >= 1, "Reward at round {round} was {reward}");
     }
 }
 
@@ -236,7 +236,7 @@ fn test_overflow_protection() {
     match result {
         Ok(_) => {}
         Err(EmissionError::CalculationOverflow(_)) => {}
-        Err(e) => panic!("Unexpected error: {:?}", e),
+        Err(e) => panic!("Unexpected error: {e:?}"),
     }
 }
 

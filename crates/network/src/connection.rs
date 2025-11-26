@@ -369,7 +369,7 @@ impl ConnectionManager {
                 error!("Invalid address {}: {}", address, e);
                 let _ = message_sender.send(NetworkMessage::Error {
                     peer_id: peer_id.to_string(),
-                    error: format!("Invalid address: {}", e),
+                    error: format!("Invalid address: {e}"),
                 });
                 return;
             }

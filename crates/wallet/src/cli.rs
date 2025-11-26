@@ -543,7 +543,7 @@ mod tests {
         fn valid_handle_strategy() -> impl Strategy<Value = String> {
             let name_pattern = "[a-z0-9_]{1,50}";
             let suffix_pattern = "(ipn|iot|m|cyborg)";
-            prop::string::string_regex(&format!("@{}\\.{}", name_pattern, suffix_pattern))
+            prop::string::string_regex(&format!("@{name_pattern}\\.{suffix_pattern}"))
                 .expect("valid handle regex")
         }
 
@@ -580,7 +580,7 @@ mod tests {
             #[test]
             fn prop_valid_handles_are_identified(handle in valid_handle_strategy()) {
                 // Valid handles should be recognized as handle identifiers
-                assert!(is_handle_identifier(&handle), "Expected {} to be recognized as handle", handle);
+                assert!(is_handle_identifier(&handle), "Expected {handle} to be recognized as handle");
             }
 
             #[test]
@@ -605,7 +605,7 @@ mod tests {
             fn prop_valid_handles_pass_validation(handle in valid_handle_strategy()) {
                 // Valid handles should pass recipient validation
                 let result = validate_recipient_identifier(&handle);
-                assert!(result.is_ok(), "Expected {} to pass validation, got {:?}", handle, result);
+                assert!(result.is_ok(), "Expected {handle} to pass validation, got {result:?}");
             }
 
             #[test]
@@ -641,7 +641,7 @@ mod tests {
                 };
                 // Direct atomic amounts should always work
                 let result = arg.to_atomic("test_amount");
-                assert!(result.is_ok(), "Atomic amount {} should parse successfully", atomic);
+                assert!(result.is_ok(), "Atomic amount {atomic} should parse successfully");
                 assert_eq!(result.unwrap(), atomic);
             }
 

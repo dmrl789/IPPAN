@@ -200,12 +200,12 @@ impl NetworkMessage {
 
     /// Serialize the message
     pub fn serialize(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self).map_err(|e| anyhow!("Failed to serialize message: {}", e))
+        bincode::serialize(self).map_err(|e| anyhow!("Failed to serialize message: {e}"))
     }
 
     /// Deserialize a message
     pub fn deserialize(data: &[u8]) -> Result<Self> {
-        bincode::deserialize(data).map_err(|e| anyhow!("Failed to deserialize message: {}", e))
+        bincode::deserialize(data).map_err(|e| anyhow!("Failed to deserialize message: {e}"))
     }
 }
 

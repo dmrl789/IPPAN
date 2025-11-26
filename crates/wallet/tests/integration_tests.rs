@@ -113,7 +113,7 @@ async fn test_multiple_address_generation() {
         .filter_map(|addr| addr.label.clone())
         .collect();
     let expected: std::collections::HashSet<String> =
-        (1..=10).map(|i| format!("Batch_{}", i)).collect();
+        (1..=10).map(|i| format!("Batch_{i}")).collect();
     assert_eq!(labels, expected);
 }
 
