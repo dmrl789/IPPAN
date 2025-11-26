@@ -56,7 +56,7 @@ impl AuditLogger {
         // Log to file
         {
             let mut file = self.log_file.lock().await;
-            writeln!(file, "{}", log_entry)?;
+            writeln!(file, "{log_entry}")?;
             file.flush()?;
         }
 
@@ -289,8 +289,7 @@ impl AuditAnalyzer {
                 patterns.push(SuspiciousPattern {
                     pattern_type: "brute_force".to_string(),
                     description: format!(
-                        "IP {} has {} failed attempts in the last hour",
-                        ip, count
+                        "IP {ip} has {count} failed attempts in the last hour"
                     ),
                     severity: "high".to_string(),
                     ip_address: Some(ip),
@@ -333,8 +332,7 @@ impl AuditAnalyzer {
                 patterns.push(SuspiciousPattern {
                     pattern_type: "distributed_attack".to_string(),
                     description: format!(
-                        "Endpoint {} has {} failures in the last 10 minutes",
-                        endpoint, count
+                        "Endpoint {endpoint} has {count} failures in the last 10 minutes"
                     ),
                     severity: "high".to_string(),
                     ip_address: None,

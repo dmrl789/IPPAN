@@ -106,9 +106,9 @@ impl InputValidator {
             Value::Array(items) => {
                 for (idx, item) in items.iter().enumerate() {
                     let child_path = if path.is_empty() {
-                        format!("[{}]", idx)
+                        format!("[{idx}]")
                     } else {
-                        format!("{}[{}]", path, idx)
+                        format!("{path}[{idx}]")
                     };
                     self.inspect_for_injection(item, &child_path)?;
                 }
@@ -118,7 +118,7 @@ impl InputValidator {
                     let child_path = if path.is_empty() {
                         key.clone()
                     } else {
-                        format!("{}.{}", path, key)
+                        format!("{path}.{key}")
                     };
                     self.inspect_for_injection(item, &child_path)?;
                 }
@@ -159,7 +159,7 @@ impl InputValidator {
                     if s.chars().count() < *min {
                         return Err(ValidationError::RuleViolation {
                             field: field.clone(),
-                            reason: format!("length must be at least {} characters", min),
+                            reason: format!("length must be at least {min} characters"),
                         });
                     }
                 } else {
@@ -175,7 +175,7 @@ impl InputValidator {
                     if s.chars().count() > *max {
                         return Err(ValidationError::RuleViolation {
                             field: field.clone(),
-                            reason: format!("length must be at most {} characters", max),
+                            reason: format!("length must be at most {max} characters"),
                         });
                     }
                 } else {
@@ -244,7 +244,7 @@ impl InputValidator {
                 if !values.iter().any(|allowed| allowed == &candidate) {
                     return Err(ValidationError::RuleViolation {
                         field: field.clone(),
-                        reason: format!("value `{}` is not allowed", candidate),
+                        reason: format!("value `{candidate}` is not allowed"),
                     });
                 }
             }
@@ -254,7 +254,7 @@ impl InputValidator {
                     if items.len() > *max {
                         return Err(ValidationError::RuleViolation {
                             field: field.clone(),
-                            reason: format!("array length must be <= {}", max),
+                            reason: format!("array length must be <= {max}"),
                         });
                     }
                 } else {
