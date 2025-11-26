@@ -35,3 +35,28 @@ git lfs install
 
 **Note**: If Git LFS is not installed, you must install it on your machine before pushing large files.
 
+## Runtime Model Artifacts
+
+Runtime model artifacts (e.g., `crates/ai_registry/models/*.json`) are versioned and hash-verified:
+- Models are vendored in the `ai_registry` crate for deterministic loading
+- BLAKE3 hashes are pinned in code and verified at runtime
+- Hash mismatches cause load failures (fail-fast security)
+- Training scripts in `ai_training/` are **OFFLINE ONLY**; runtime never trains
+
+### Strict Model Loading (v1)
+
+The fairness model v1 is loaded via `ippan_ai_registry::d_gbdt::get_active_fairness_model_strict()`:
+- **Location**: `crates/ai_registry/models/ippan_d_gbdt_v1.json`
+- **Pinned Hash**: `ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d`
+- **Behavior**: Consensus initialization calls the strict loader at startup
+- **Failure Mode**: If the model file is missing, hash mismatches, or JSON cannot be deserialized, the node **FAILS FAST** (startup/init returns error)
+- **No Fallbacks**: There is no code path that silently continues without the strict model - consensus will not start without a valid, hash-verified model
+
+### Shadow Verifier Selection
+
+Shadow verifier selection is score-ranked using the deterministic GBDT model v1:
+- Features are fixed-point i64 scaled by 1_000_000 (SCALE)
+- Model scores all validators using 7 features: uptime_ratio_7d, validated_blocks_7d, missed_blocks_7d, avg_latency_ms, slashing_events_90d, stake_normalized, peer_reports_quality
+- Shadows are selected deterministically by highest score first, with validator ID as tie-breaker
+- Model is hash-verified at startup; mismatch => node refuses to start
+

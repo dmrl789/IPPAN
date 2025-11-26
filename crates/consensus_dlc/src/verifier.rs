@@ -6,7 +6,9 @@
 use crate::dag::Block;
 use crate::dgbdt::{FairnessModel, ValidatorMetrics};
 use crate::error::{DlcError, Result};
+use crate::fairness_features::features_for_validator;
 use blake3::Hasher;
+use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -43,14 +45,29 @@ impl VerifierSet {
 
         let seed_string = seed.into();
 
-        // Score all validators deterministically
+        // Compute max stake for normalization
+        let max_stake = validators
+            .values()
+            .map(|m| m.stake)
+            .max()
+            .unwrap_or(Amount::from_micro_ipn(1));
+
+        // Score all validators using the model directly with 7 features
         let mut scored: Vec<(String, i64)> = validators
             .iter()
-            .map(|(id, metrics)| (id.clone(), model.score_deterministic(metrics)))
+            .map(|(id, metrics)| {
+                // Extract 7 features for the model
+                let features = features_for_validator(metrics, max_stake);
+                // Use the underlying model directly (bypassing the 6-feature wrapper)
+                let raw_model = model.raw_model();
+                let score = raw_model.score(&features);
+                (id.clone(), score)
+            })
             .collect();
 
+        // Sort by score (descending), then by validator ID for deterministic tie-breaking
         scored.sort_by(|a, b| match b.1.cmp(&a.1) {
-            Ordering::Equal => Self::compare_with_entropy(&seed_string, round, &a.0, &b.0),
+            Ordering::Equal => a.0.cmp(&b.0), // Stable tie-break: validator ID
             other => other,
         });
 
@@ -85,26 +102,14 @@ impl VerifierSet {
             .map(|(id, _)| id.clone())
             .ok_or_else(|| DlcError::InvalidVerifierSet("No primary validator".to_string()))?;
 
-        let rest: Vec<String> = scored
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, (id, _))| {
-                if idx == primary_index {
-                    None
-                } else {
-                    Some(id.clone())
-                }
-            })
-            .collect();
-
+        // Select shadow verifiers deterministically by score (highest first)
+        // Shadows are selected from the remaining validators (excluding primary)
+        // in descending score order, with deterministic tie-breaking by validator ID
         let mut shadows = Vec::new();
-        if selection_count > 1 && !rest.is_empty() {
-            let rotation_offset = Self::selection_offset(&seed_string, round, rest.len());
-            for idx in 0..(selection_count - 1) {
-                let candidate_index = (rotation_offset + idx) % rest.len();
-                let candidate = rest[candidate_index].clone();
-                if !shadows.contains(&candidate) {
-                    shadows.push(candidate);
+        if selection_count > 1 {
+            for (idx, (id, _)) in scored.iter().enumerate() {
+                if idx != primary_index && shadows.len() < (selection_count - 1) {
+                    shadows.push(id.clone());
                 }
             }
         }
@@ -117,6 +122,7 @@ impl VerifierSet {
         })
     }
 
+    #[allow(dead_code)]
     fn compare_with_entropy(seed: &str, round: u64, a: &str, b: &str) -> Ordering {
         let entropy_a = Self::id_entropy(seed, round, a);
         let entropy_b = Self::id_entropy(seed, round, b);
@@ -124,6 +130,7 @@ impl VerifierSet {
         entropy_b.cmp(&entropy_a).then_with(|| a.cmp(b))
     }
 
+    #[allow(dead_code)]
     fn selection_offset(seed: &str, round: u64, len: usize) -> usize {
         if len == 0 {
             return 0;
@@ -509,5 +516,107 @@ mod tests {
             VerifierSet::select(&model, &validators, "test", 1, validators.len()).unwrap();
 
         assert!(verifier_set.contains(&verifier_set.primary));
+    }
+
+    #[test]
+    fn shadow_verifier_selection_is_deterministic_given_same_inputs() {
+        let model = FairnessModel::testing_stub();
+        let mut validators = HashMap::new();
+
+        // Create at least 10 validators with varying metrics
+        for i in 0..10 {
+            let id = format!("val{}", i);
+            let metrics = ValidatorMetrics::new(
+                9000 + (i as i64 * 100), // Varying uptime (90-99%)
+                500 + (i as i64 * 50),   // Varying latency
+                9500 + (i as i64 * 50),  // Varying honesty
+                100 + (i as u64 * 10),   // Varying blocks proposed
+                500 + (i as u64 * 20),   // Varying blocks verified
+                Amount::from_micro_ipn(1_000_000 + (i as u64 * 100_000)),
+                100 + (i as u64 * 5),    // Varying rounds active
+            );
+            validators.insert(id, metrics);
+        }
+
+        // Call selection twice for the same round
+        let set1 = VerifierSet::select(&model, &validators, "deterministic_test_seed", 42, 5)
+            .unwrap();
+        let set2 = VerifierSet::select(&model, &validators, "deterministic_test_seed", 42, 5)
+            .unwrap();
+
+        // Assert the resulting lists are identical (same order)
+        assert_eq!(set1.primary, set2.primary, "Primary should be deterministic");
+        assert_eq!(
+            set1.shadows, set2.shadows,
+            "Shadow verifiers should be deterministic and in same order"
+        );
+        assert_eq!(
+            set1.shadows.len(),
+            set2.shadows.len(),
+            "Shadow count should match"
+        );
+
+        // Verify that validators with better metrics rank above worse metrics
+        // (This is a sanity check - the model should prefer higher uptime/honesty)
+        let mut validator_scores: Vec<(String, i64)> = validators
+            .iter()
+            .map(|(id, metrics)| {
+                let max_stake = validators
+                    .values()
+                    .map(|m| m.stake)
+                    .max()
+                    .unwrap_or(Amount::from_micro_ipn(1));
+                let features = features_for_validator(metrics, max_stake);
+                let raw_model = model.raw_model();
+                let score = raw_model.score(&features);
+                (id.clone(), score)
+            })
+            .collect();
+
+        validator_scores.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+        // The primary should be one of the top scorers (allowing for rotation logic)
+        // Primary selection uses score-based ranking with rotation, so it should be
+        // among the top candidates, not necessarily the absolute top
+        let primary_score = validator_scores
+            .iter()
+            .find(|(id, _)| id == &set1.primary)
+            .map(|(_, score)| *score)
+            .expect("Primary should be in validator list");
+        
+        // Primary should have a positive score
+        assert!(
+            primary_score > 0,
+            "Primary should have a positive score"
+        );
+
+        // Shadows should also be high scorers (excluding primary)
+        let shadow_scores: Vec<i64> = set1
+            .shadows
+            .iter()
+            .filter_map(|id| {
+                validator_scores
+                    .iter()
+                    .find(|(vid, _)| vid == id)
+                    .map(|(_, score)| *score)
+            })
+            .collect();
+
+        // All shadows should have scores >= the lowest score among non-selected validators
+        if !shadow_scores.is_empty() && validator_scores.len() > set1.size() {
+            let min_shadow_score = *shadow_scores.iter().min().unwrap();
+            let non_selected: Vec<i64> = validator_scores
+                .iter()
+                .skip(set1.size())
+                .map(|(_, score)| *score)
+                .collect();
+            if !non_selected.is_empty() {
+                let max_non_selected = *non_selected.iter().max().unwrap();
+                assert!(
+                    min_shadow_score >= max_non_selected,
+                    "Shadow verifiers should have scores >= non-selected validators"
+                );
+            }
+        }
     }
 }

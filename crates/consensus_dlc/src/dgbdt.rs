@@ -263,6 +263,11 @@ impl FairnessModel {
         }
     }
 
+    /// Access the underlying deterministic model (for direct scoring with custom features)
+    pub fn raw_model(&self) -> &DgbdtModel {
+        self.model.model()
+    }
+
     /// Access the underlying model hash when loaded from a registry.
     pub fn active_hash(&self) -> Option<&str> {
         self.active_hash.as_deref()

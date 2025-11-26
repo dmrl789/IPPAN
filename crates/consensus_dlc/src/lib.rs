@@ -46,6 +46,7 @@ pub mod dag;
 pub mod dgbdt;
 pub mod emission;
 pub mod error;
+pub mod fairness_features;
 pub mod hashtimer;
 pub mod reputation;
 pub mod verifier;
