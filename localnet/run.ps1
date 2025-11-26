@@ -1,0 +1,92 @@
+# IPPAN Localnet Runner for Windows
+# Starts the full-stack localnet using Docker Compose
+
+$ErrorActionPreference = "Stop"
+
+$ComposeFile = "localnet/docker-compose.full-stack.yaml"
+$ProjectName = "ippan-local"
+
+Write-Host "=== IPPAN Localnet Runner ===" -ForegroundColor Cyan
+Write-Host ""
+
+# Step 1: Verify Docker is available
+Write-Host "[1/4] Checking Docker..." -ForegroundColor Yellow
+try {
+    $dockerVersion = docker version --format '{{.Server.Version}}' 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker daemon is not running"
+    }
+    Write-Host "  ✓ Docker is running (version: $dockerVersion)" -ForegroundColor Green
+} catch {
+    Write-Host "  ✗ Docker is not available or not running" -ForegroundColor Red
+    Write-Host "  Please start Docker Desktop and ensure 'Use WSL2 based engine' is enabled" -ForegroundColor Yellow
+    exit 1
+}
+
+# Step 2: Verify Docker Compose is available
+Write-Host "[2/4] Checking Docker Compose..." -ForegroundColor Yellow
+try {
+    $composeVersion = docker compose version --short 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker Compose is not available"
+    }
+    Write-Host "  ✓ Docker Compose is available (version: $composeVersion)" -ForegroundColor Green
+} catch {
+    Write-Host "  ✗ Docker Compose is not available" -ForegroundColor Red
+    Write-Host "  Please ensure Docker Desktop includes the Compose plugin" -ForegroundColor Yellow
+    exit 1
+}
+
+# Step 3: Validate compose file
+Write-Host "[3/4] Validating compose file..." -ForegroundColor Yellow
+if (-not (Test-Path $ComposeFile)) {
+    Write-Host "  ✗ Compose file not found: $ComposeFile" -ForegroundColor Red
+    exit 1
+}
+
+try {
+    docker compose -f $ComposeFile config > $null 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Compose file validation failed"
+    }
+    Write-Host "  ✓ Compose file is valid" -ForegroundColor Green
+} catch {
+    Write-Host "  ✗ Compose file validation failed" -ForegroundColor Red
+    Write-Host "  Run: docker compose -f $ComposeFile config" -ForegroundColor Yellow
+    exit 1
+}
+
+# Step 4: Start the stack
+Write-Host "[4/4] Starting localnet services..." -ForegroundColor Yellow
+Write-Host "  This may take a few minutes on first run (building images)..." -ForegroundColor Gray
+
+try {
+    docker compose -f $ComposeFile -p $ProjectName up -d --remove-orphans
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start services"
+    }
+    Write-Host "  ✓ Services started successfully" -ForegroundColor Green
+} catch {
+    Write-Host "  ✗ Failed to start services" -ForegroundColor Red
+    Write-Host "  Check logs with: docker compose -f $ComposeFile -p $ProjectName logs" -ForegroundColor Yellow
+    exit 1
+}
+
+Write-Host ""
+Write-Host "=== Localnet Status ===" -ForegroundColor Cyan
+docker compose -f $ComposeFile -p $ProjectName ps
+
+Write-Host ""
+Write-Host "=== Endpoints ===" -ForegroundColor Cyan
+Write-Host "  Node RPC:        http://localhost:8080" -ForegroundColor White
+Write-Host "  Gateway API:     http://localhost:8081/api" -ForegroundColor White
+Write-Host "  Unified UI:     http://localhost:3000" -ForegroundColor White
+Write-Host ""
+
+Write-Host "=== Quick Commands ===" -ForegroundColor Cyan
+Write-Host "  View logs:       docker compose -f $ComposeFile -p $ProjectName logs -f" -ForegroundColor Gray
+Write-Host "  Check health:    curl http://localhost:8080/health" -ForegroundColor Gray
+Write-Host "  Stop localnet:   .\localnet\stop.ps1" -ForegroundColor Gray
+Write-Host ""
+
+Write-Host "✓ Localnet is running!" -ForegroundColor Green

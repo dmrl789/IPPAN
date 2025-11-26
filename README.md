@@ -32,6 +32,7 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 
 ## 📚 Onboarding Guides
 
+- [Localnet Quickstart](docs/LOCALNET_QUICKSTART.md) - Get localnet running on Windows in <10 minutes
 - [Developer Journey](docs/dev/developer-journey.md)
 - [Local Full-Stack Guide](docs/dev/local-full-stack.md)
 - [SDK Overview](docs/dev/sdk-overview.md)

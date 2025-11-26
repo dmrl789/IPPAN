@@ -153,3 +153,10 @@ temp/
 # SBOM files
 *.cdx.json
 *-sbom.json
+
+# Localnet data and logs
+localnet/data/
+localnet/.logs/
+localnet/.pids.json
+localnet/node*.log
+localnet/node*.pid

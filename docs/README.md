@@ -18,6 +18,7 @@ This directory is the single entrypoint for IPPAN knowledge. Start here to navig
 - [Economics integration and tokenomics](./protocol/ECONOMICS_INTEGRATION_SUMMARY.md) and [Tokenomics](./protocol/TOKENOMICS.md)
 
 ### Operators (Deployment & Operations)
+- [Localnet Quickstart](./LOCALNET_QUICKSTART.md) - Get localnet running on Windows in <10 minutes
 - [Node operator guide](./operators/NODE_OPERATOR_GUIDE.md)
 - [Deployment readiness and assessments](./operators/DEPLOYMENT_READY.md)
 - [Explorer deployment guide](./operators/EXPLORER_DEPLOYMENT_GUIDE.md)
