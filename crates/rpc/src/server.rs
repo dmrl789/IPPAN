@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::task::{Context as TaskContext, Poll};
 use std::time::{Duration, Instant};
 
+use crate::iil::{handle_iil_get, handle_iil_query, handle_iil_resolve, handle_iil_status};
 use anyhow::{anyhow, Context as AnyhowContext, Result};
 use axum::async_trait;
 use axum::body::Body;
@@ -575,9 +576,11 @@ fn map_json_rejection(rejection: &JsonRejection) -> (StatusCode, &'static str, S
             "unsupported_media_type",
             "missing or invalid content-type; expected application/json".to_string(),
         ),
-        JsonRejection::BytesRejection(err) => {
-            (StatusCode::BAD_REQUEST, "invalid_body", err.to_string())
-        }
+        JsonRejection::BytesRejection(err) => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "body_too_large",
+            err.to_string(),
+        ),
         _ => (
             StatusCode::BAD_REQUEST,
             "invalid_json",
@@ -1218,6 +1221,7 @@ async fn bind_listener(addr: &str) -> Result<tokio::net::TcpListener> {
 /// Build router and endpoints
 fn build_router(state: Arc<AppState>) -> Router {
     let max_body_bytes = configured_body_limit(&state);
+    let iil_body_bytes = configured_iil_body_limit();
     let request_timeout = configured_request_timeout(&state);
     let global_rps = configured_global_rps(&state);
     let cors = build_cors_layer(&state);
@@ -1227,7 +1231,7 @@ fn build_router(state: Arc<AppState>) -> Router {
         Duration::from_secs(CIRCUIT_BREAKER_OPEN_SECS),
     );
 
-    let mut router = Router::new()
+    let base_router = Router::new()
         .route("/health", get(handle_get_health))
         .route("/status", get(handle_status))
         .route("/time", get(handle_time))
@@ -1258,7 +1262,17 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/l2/config", get(handle_get_l2_config))
         .route("/l2/networks", get(handle_list_l2_networks))
         .route("/l2/commits", get(handle_list_l2_commits))
-        .route("/l2/exits", get(handle_list_l2_exits));
+        .route("/l2/exits", get(handle_list_l2_exits))
+        .layer(RequestBodyLimitLayer::new(max_body_bytes));
+
+    let iil_router = Router::new()
+        .route("/iil/status", get(handle_iil_status))
+        .route("/iil/resolve/:handle", get(handle_iil_resolve))
+        .route("/iil/get/:hashid", get(handle_iil_get))
+        .route("/iil/query", post(handle_iil_query))
+        .layer(RequestBodyLimitLayer::new(iil_body_bytes));
+
+    let mut router = Router::new().merge(base_router).merge(iil_router);
 
     if state.dev_mode {
         router = router.route("/dev/fund", post(handle_dev_fund));
@@ -1283,8 +1297,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     let middleware_stack = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(handle_service_error))
         .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
-        .layer(TimeoutLayer::new(request_timeout))
-        .layer(RequestBodyLimitLayer::new(max_body_bytes));
+        .layer(TimeoutLayer::new(request_timeout));
 
     router
         .layer(middleware_stack)
@@ -1301,6 +1314,17 @@ fn configured_body_limit(state: &Arc<AppState>) -> usize {
         .as_ref()
         .map(|manager| manager.max_request_size().max(1))
         .unwrap_or(MAX_BODY_BYTES)
+}
+
+fn configured_iil_body_limit() -> usize {
+    const DEFAULT_IIL_LIMIT: usize = 1024 * 1024; // 1 MiB
+    match std::env::var("IPPAN_IIL_MAX_BODY_BYTES") {
+        Ok(value) => value
+            .parse::<usize>()
+            .map(|parsed| parsed.max(1))
+            .unwrap_or(DEFAULT_IIL_LIMIT),
+        Err(_) => DEFAULT_IIL_LIMIT,
+    }
 }
 
 fn configured_request_timeout(state: &Arc<AppState>) -> Duration {
@@ -1350,7 +1374,7 @@ fn build_cors_layer(state: &AppState) -> CorsLayer {
     layer.allow_origin(AllowOrigin::list(origins))
 }
 
-async fn guard_request(
+pub(crate) async fn guard_request(
     state: &Arc<AppState>,
     addr: &SocketAddr,
     endpoint: &str,
@@ -1362,7 +1386,11 @@ async fn guard_request(
     Ok(())
 }
 
-async fn record_security_success(state: &Arc<AppState>, addr: &SocketAddr, endpoint: &str) {
+pub(crate) async fn record_security_success(
+    state: &Arc<AppState>,
+    addr: &SocketAddr,
+    endpoint: &str,
+) {
     if let Some(security) = &state.security {
         if let Err(err) = security.record_success(addr.ip(), endpoint).await {
             warn!(
@@ -1373,7 +1401,7 @@ async fn record_security_success(state: &Arc<AppState>, addr: &SocketAddr, endpo
     }
 }
 
-async fn record_security_failure(
+pub(crate) async fn record_security_failure(
     state: &Arc<AppState>,
     addr: &SocketAddr,
     endpoint: &str,
@@ -1415,7 +1443,7 @@ fn map_security_error(err: &SecurityError) -> (StatusCode, &'static str) {
     }
 }
 
-async fn deny_request(
+pub(crate) async fn deny_request(
     state: &Arc<AppState>,
     addr: &SocketAddr,
     endpoint: &str,
@@ -4307,6 +4335,169 @@ mod tests {
             }
         }
         assert_eq!(state.mempool.size(), initial_mempool_size);
+    }
+
+    #[tokio::test]
+    async fn iil_resolve_returns_finality_and_proof() {
+        let state = make_app_state();
+        let signer = sample_private_key([9u8; 32]);
+        register_test_handle(&state, &signer, "@alice.ipn");
+        let router = build_router(state);
+
+        let addr: SocketAddr = "127.0.0.1:9507".parse().unwrap();
+        let mut request = Request::builder()
+            .method("GET")
+            .uri("/iil/resolve/%40alice.ipn")
+            .body(Body::empty())
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let response = router.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let (_parts, body) = response.into_parts();
+        let bytes = body.collect().await.expect("body bytes").to_bytes();
+        let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(
+            payload.get("iil_version").and_then(|v| v.as_str()),
+            Some("0.1")
+        );
+        assert!(payload.get("finality").is_some());
+        assert!(payload
+            .get("proof")
+            .and_then(|value| value.get("finality"))
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn iil_resolve_rejects_invalid_handle() {
+        let state = make_app_state();
+        let router = build_router(state);
+        let addr: SocketAddr = "127.0.0.1:9508".parse().unwrap();
+
+        let mut request = Request::builder()
+            .method("GET")
+            .uri("/iil/resolve/not-valid")
+            .body(Body::empty())
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let response = router.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let (_parts, body) = response.into_parts();
+        let bytes = body.collect().await.expect("body bytes").to_bytes();
+        let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(
+            payload.get("code").and_then(|v| v.as_str()),
+            Some("invalid_handle")
+        );
+    }
+
+    #[tokio::test]
+    async fn iil_get_rejects_invalid_hashid() {
+        let state = make_app_state();
+        let router = build_router(state);
+        let addr: SocketAddr = "127.0.0.1:9509".parse().unwrap();
+
+        let mut request = Request::builder()
+            .method("GET")
+            .uri("/iil/get/1234")
+            .body(Body::empty())
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let response = router.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let (_parts, body) = response.into_parts();
+        let bytes = body.collect().await.expect("body bytes").to_bytes();
+        let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(
+            payload.get("code").and_then(|v| v.as_str()),
+            Some("invalid_hashid")
+        );
+    }
+
+    #[tokio::test]
+    async fn iil_query_orders_by_score_then_hash() {
+        let state = make_app_state();
+        let signer_a = sample_private_key([10u8; 32]);
+        let signer_b = sample_private_key([11u8; 32]);
+        let signer_c = sample_private_key([12u8; 32]);
+        register_test_handle(&state, &signer_a, "@short.ipn");
+        register_test_handle(&state, &signer_b, "@medium.ipn");
+        register_test_handle(&state, &signer_c, "@lengthy-name.ipn");
+
+        let router = build_router(state);
+        let addr: SocketAddr = "127.0.0.1:9510".parse().unwrap();
+        let payload = serde_json::json!({
+            "handles": ["@short.ipn", "@medium.ipn", "@lengthy-name.ipn"],
+            "kinds": ["identity"],
+            "limit": 10
+        })
+        .to_string();
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/iil/query")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(payload))
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let response = router.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let (_parts, body) = response.into_parts();
+        let bytes = body.collect().await.expect("body bytes").to_bytes();
+        let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        let results = payload
+            .get("results")
+            .and_then(|value| value.as_array())
+            .expect("array");
+        assert_eq!(results.len(), 3);
+
+        let observed: Vec<(i64, String)> = results
+            .iter()
+            .map(|entry| {
+                let score = entry
+                    .get("score")
+                    .and_then(|value| value.as_i64())
+                    .unwrap_or(0);
+                let hashid = entry
+                    .get("record")
+                    .and_then(|value| value.get("hashid"))
+                    .and_then(|value| value.as_str())
+                    .expect("hashid")
+                    .to_string();
+                (score, hashid)
+            })
+            .collect();
+
+        let mut expected = observed.clone();
+        expected.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        assert_eq!(observed, expected);
+    }
+
+    #[tokio::test]
+    async fn iil_query_rejects_oversized_body() {
+        let state = make_app_state();
+        let router = build_router(state);
+        let addr: SocketAddr = "127.0.0.1:9511".parse().unwrap();
+        let padding = vec!['x'; 1_100_000].into_iter().collect::<String>();
+        let oversized = serde_json::json!({
+            "handles": ["@short.ipn"],
+            "kinds": ["identity"],
+            "pad": padding,
+        })
+        .to_string();
+
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/iil/query")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(oversized))
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let response = router.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     #[tokio::test]

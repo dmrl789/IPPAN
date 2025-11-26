@@ -212,6 +212,17 @@ impl L2HandleRegistry {
             })
     }
 
+    /// Snapshot all registered handles and metadata (deterministic order)
+    pub fn snapshot(&self) -> Vec<(Handle, HandleMetadata)> {
+        let handles = self.handles.read();
+        let mut entries: Vec<(Handle, HandleMetadata)> = handles
+            .iter()
+            .map(|(handle, metadata)| (handle.clone(), metadata.clone()))
+            .collect();
+        entries.sort_by(|(left, _), (right, _)| left.as_str().cmp(right.as_str()));
+        entries
+    }
+
     /// List all handles owned by a public key
     pub fn list_owner_handles(&self, owner: &PublicKey) -> Vec<Handle> {
         let map = self.owner_to_handles.read();

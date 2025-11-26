@@ -3,6 +3,7 @@
 //! helper plus shared types for peer snapshots consumed by explorers and tooling.
 //!
 pub mod files;
+pub mod iil;
 pub mod server;
 
 #[cfg(test)]
