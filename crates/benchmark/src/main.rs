@@ -82,10 +82,7 @@ async fn main() -> Result<()> {
 
 async fn check_node(rpc_url: &str) -> Result<()> {
     let client = reqwest::Client::new();
-    client
-        .get(format!("{rpc_url}/node/status"))
-        .send()
-        .await?;
+    client.get(format!("{rpc_url}/node/status")).send().await?;
     Ok(())
 }
 

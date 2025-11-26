@@ -48,9 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (features, label) in test_cases {
         let score = model.score(&features);
         let normalized = Fixed::from_micro(score);
-        println!(
-            "   {label} -> Score: {score} (normalized: {normalized})"
-        );
+        println!("   {label} -> Score: {score} (normalized: {normalized})");
     }
 
     // 3. Demonstrate determinism
@@ -67,9 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!(
-        "   All scores match: {all_match} (Score: {first_score})"
-    );
+    println!("   All scores match: {all_match} (Score: {first_score})");
 
     // 4. Canonical JSON serialization
     println!("\n4. Testing canonical JSON serialization...");

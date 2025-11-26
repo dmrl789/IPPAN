@@ -181,19 +181,9 @@ async fn handle_node_commands(cmd: NodeCommands, rpc_url: &str) -> Result<()> {
     let client = reqwest::Client::new();
 
     let response = match cmd {
-        NodeCommands::Status => {
-            client
-                .get(format!("{rpc_url}/node/status"))
-                .send()
-                .await?
-        }
+        NodeCommands::Status => client.get(format!("{rpc_url}/node/status")).send().await?,
         NodeCommands::Peers => client.get(format!("{rpc_url}/node/peers")).send().await?,
-        NodeCommands::Version => {
-            client
-                .get(format!("{rpc_url}/node/version"))
-                .send()
-                .await?
-        }
+        NodeCommands::Version => client.get(format!("{rpc_url}/node/version")).send().await?,
         NodeCommands::Info => client.get(format!("{rpc_url}/node/info")).send().await?,
     };
 
@@ -284,18 +274,8 @@ async fn handle_query_commands(cmd: QueryCommands, rpc_url: &str) -> Result<()> 
     let client = reqwest::Client::new();
 
     let response = match cmd {
-        QueryCommands::Block { id } => {
-            client
-                .get(format!("{rpc_url}/block/{id}"))
-                .send()
-                .await?
-        }
-        QueryCommands::LatestBlock => {
-            client
-                .get(format!("{rpc_url}/block/latest"))
-                .send()
-                .await?
-        }
+        QueryCommands::Block { id } => client.get(format!("{rpc_url}/block/{id}")).send().await?,
+        QueryCommands::LatestBlock => client.get(format!("{rpc_url}/block/latest")).send().await?,
         QueryCommands::Info => {
             client
                 .get(format!("{rpc_url}/blockchain/info"))

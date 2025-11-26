@@ -98,11 +98,11 @@ fn generate_keypair(output: &Path, name: &str, stdout: bool) -> Result<()> {
 
     if stdout {
         println!("\n⚠️  WARNING: Printing keys to stdout is insecure!");
-        println!("Private key: {}", private_hex);
-        println!("Public key:  {}", public_hex);
+        println!("Private key: {private_hex}");
+        println!("Public key:  {public_hex}");
     } else {
-        let private_path = output.join(format!("{}_private.key", name));
-        let public_path = output.join(format!("{}_public.key", name));
+        let private_path = output.join(format!("{name}_private.key"));
+        let public_path = output.join(format!("{name}_public.key"));
 
         // Write private key
         fs::write(&private_path, &private_hex).context("Failed to write private key")?;

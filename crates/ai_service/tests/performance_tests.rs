@@ -68,10 +68,7 @@ contract Test {
         duration < Duration::from_secs(10),
         "Smart contract analysis took too long: {duration:?}"
     );
-    assert!(
-        result.is_ok(),
-        "Smart contract analysis failed: {result:?}"
-    );
+    assert!(result.is_ok(), "Smart contract analysis failed: {result:?}");
 
     service.stop().await.expect("Failed to stop service");
 }
@@ -143,10 +140,7 @@ async fn test_concurrent_requests_performance() {
     // Wait for all to complete
     for handle in handles {
         let result = handle.await.expect("Task panicked");
-        assert!(
-            result.is_ok(),
-            "Concurrent health check failed: {result:?}"
-        );
+        assert!(result.is_ok(), "Concurrent health check failed: {result:?}");
     }
 
     let duration = start.elapsed();

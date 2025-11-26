@@ -202,9 +202,7 @@ fn main() -> Result<()> {
     println!("Transactions requested: {total}");
     println!("Completed: {completed} | Failed: {failed}");
     println!("Elapsed: {duration:.2?} | TPS: {tps:.2}");
-    println!(
-        "Mean latency: {mean_latency:.2} ms | p95 latency: {p95:.2} ms"
-    );
+    println!("Mean latency: {mean_latency:.2} ms | p95 latency: {p95:.2} ms");
 
     Ok(())
 }

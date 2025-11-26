@@ -104,9 +104,8 @@ impl ConfigManager {
 
     /// Load configuration from TOML file
     fn load_config_from_file(path: &str) -> Result<AIServiceConfig, AIServiceError> {
-        let content = fs::read_to_string(path).map_err(|e| {
-            AIServiceError::Io(format!("Failed to read config file {path}: {e}"))
-        })?;
+        let content = fs::read_to_string(path)
+            .map_err(|e| AIServiceError::Io(format!("Failed to read config file {path}: {e}")))?;
 
         let config: ConfigFile = toml::from_str(&content).map_err(|e| {
             AIServiceError::SerializationError(format!("Failed to parse config file: {e}"))

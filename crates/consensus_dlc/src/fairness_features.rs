@@ -110,10 +110,7 @@ mod tests {
 
         // All features should be in reasonable range (0 to SCALE or reasonable multiples)
         for (i, &feat) in features.iter().enumerate() {
-            assert!(
-                feat >= 0,
-                "Feature {i} should be non-negative, got {feat}"
-            );
+            assert!(feat >= 0, "Feature {i} should be non-negative, got {feat}");
             // Features can exceed SCALE for counts (validated_blocks, missed_blocks, latency_ms)
             // but ratios should be in [0..SCALE]
             if i == 0 || i == 5 || i == 6 {

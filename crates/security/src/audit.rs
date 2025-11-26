@@ -288,9 +288,7 @@ impl AuditAnalyzer {
             if count > 10 {
                 patterns.push(SuspiciousPattern {
                     pattern_type: "brute_force".to_string(),
-                    description: format!(
-                        "IP {ip} has {count} failed attempts in the last hour"
-                    ),
+                    description: format!("IP {ip} has {count} failed attempts in the last hour"),
                     severity: "high".to_string(),
                     ip_address: Some(ip),
                     timestamp: SystemTime::now(),
