@@ -1,6 +1,11 @@
 # IPPAN Localnet Runner for Windows
 # Starts the full-stack localnet using Docker Compose
 
+param(
+    [ValidateSet("none","tiers","rotate","noise")] [string]$DriftMode = "none",
+    [UInt64]$DriftSeed = 0
+)
+
 $ErrorActionPreference = "Stop"
 
 $ComposeFile = "localnet/docker-compose.full-stack.yaml"
@@ -46,8 +51,20 @@ if (-not (Test-Path $ComposeFile)) {
 }
 Write-Host "  Compose file found" -ForegroundColor Green
 
-# Step 4: Start the stack
-Write-Host "[4/4] Starting localnet services..." -ForegroundColor Yellow
+# Step 4: Configure metrics drift (if enabled)
+if ($DriftMode -ne "none") {
+    $env:IPPAN_STATUS_METRICS_DRIFT = "1"
+    $env:IPPAN_STATUS_METRICS_DRIFT_MODE = $DriftMode
+    $env:IPPAN_STATUS_METRICS_DRIFT_SEED = "$DriftSeed"
+    Write-Host "  Metrics drift enabled: mode=$DriftMode seed=$DriftSeed" -ForegroundColor Cyan
+} else {
+    $env:IPPAN_STATUS_METRICS_DRIFT = "0"
+    $env:IPPAN_STATUS_METRICS_DRIFT_MODE = "none"
+    $env:IPPAN_STATUS_METRICS_DRIFT_SEED = "0"
+}
+
+# Step 5: Start the stack
+Write-Host "[5/5] Starting localnet services..." -ForegroundColor Yellow
 Write-Host "  This may take a few minutes on first run (building images)..." -ForegroundColor Gray
 
 try {
@@ -76,7 +93,12 @@ Write-Host ""
 Write-Host "=== Quick Commands ===" -ForegroundColor Cyan
 Write-Host "  View logs:       docker compose -f $ComposeFile -p $ProjectName logs -f" -ForegroundColor Gray
 Write-Host "  Check health:    curl http://localhost:8080/health" -ForegroundColor Gray
+Write-Host "  Check status:   Invoke-WebRequest -Uri http://localhost:8080/status -UseBasicParsing" -ForegroundColor Gray
 Write-Host "  Stop localnet:   .\localnet\stop.ps1" -ForegroundColor Gray
+Write-Host ""
+
+Write-Host "=== Verification ===" -ForegroundColor Cyan
+Write-Host "  Verify /status: status_schema_version=2 and metrics_available=true" -ForegroundColor Yellow
 Write-Host ""
 
 Write-Host "Localnet is running!" -ForegroundColor Green

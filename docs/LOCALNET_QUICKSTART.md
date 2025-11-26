@@ -69,6 +69,36 @@ Verify metrics are available:
 Invoke-WebRequest -Uri http://localhost:8080/status -UseBasicParsing
 ```
 
+### Metrics Drift (for training data)
+
+To generate richer training datasets with varied validator behavior, you can enable metrics drift:
+
+```powershell
+.\localnet\run.ps1 -DriftMode tiers -DriftSeed 1
+```
+
+**Drift modes:**
+- `tiers`: Validators are assigned to good/ok/bad tiers with different behavior patterns
+- `rotate`: One validator per round is marked as "worst" with degraded metrics
+- `noise`: Small random variations applied to all validators
+- `none`: No drift (default)
+
+**Verify drift is working:**
+
+```powershell
+Invoke-WebRequest -Uri http://localhost:8080/status -UseBasicParsing
+```
+
+Confirm: `status_schema_version=2`, `metrics_available=true`, and metrics differ per validator.
+
+**Export dataset:**
+
+```powershell
+.\localnet\export-dataset.ps1
+```
+
+**Note:** Drift affects only `/status` metrics for localnet dataset generation; disabled by default and does not affect consensus safety rules.
+
 Or using curl (if available):
 
 ```powershell

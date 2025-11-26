@@ -66,6 +66,8 @@ use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, warn};
 
 use hex::encode as hex_encode;
+use blake3::Hasher as Blake3Hasher;
+use std::env;
 
 use crate::{
     files::{handle_get_file, handle_publish_file},
@@ -256,6 +258,169 @@ pub struct ValidatorMetricsView {
 pub struct StakeView {
     #[serde(rename = "micro_ipn")]
     pub micro_ipn: String,
+}
+
+// ============================================================================
+// Metrics Drift (for localnet training data generation)
+// ============================================================================
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DriftMode {
+    None,
+    Tiers,
+    Rotate,
+    Noise,
+}
+
+struct DriftCfg {
+    enabled: bool,
+    mode: DriftMode,
+    seed: u64,
+}
+
+fn read_drift_cfg() -> DriftCfg {
+    let enabled = env::var("IPPAN_STATUS_METRICS_DRIFT")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse::<u8>()
+        .unwrap_or(0)
+        == 1
+        || env::var("IPPAN_STATUS_METRICS_DRIFT")
+            .unwrap_or_else(|_| "0".to_string())
+            .to_lowercase()
+            == "true";
+
+    let mode_str = env::var("IPPAN_STATUS_METRICS_DRIFT_MODE")
+        .unwrap_or_else(|_| "none".to_string())
+        .to_lowercase();
+
+    let mode = match mode_str.as_str() {
+        "tiers" => DriftMode::Tiers,
+        "rotate" => DriftMode::Rotate,
+        "noise" => DriftMode::Noise,
+        _ => DriftMode::None,
+    };
+
+    let seed = env::var("IPPAN_STATUS_METRICS_DRIFT_SEED")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse::<u64>()
+        .unwrap_or(0);
+
+    DriftCfg { enabled, mode, seed }
+}
+
+fn hash_u32(seed: u64, tag: &str, validator_id: &str, round: u64) -> u32 {
+    let mut hasher = Blake3Hasher::new();
+    hasher.update(&seed.to_le_bytes());
+    hasher.update(tag.as_bytes());
+    hasher.update(validator_id.as_bytes());
+    hasher.update(&round.to_le_bytes());
+    let hash = hasher.finalize();
+    let bytes = hash.as_bytes();
+    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+}
+
+fn clamp_0_10000(x: i32) -> u16 {
+    x.max(0).min(10000) as u16
+}
+
+fn apply_metrics_drift(
+    cfg: &DriftCfg,
+    round: u64,
+    validator_id: &str,
+    m: &ValidatorMetricsView,
+    validator_count: usize,
+    validator_index: usize,
+) -> ValidatorMetricsView {
+    if !cfg.enabled || cfg.mode == DriftMode::None {
+        return m.clone();
+    }
+
+    let mut out = m.clone();
+
+    match cfg.mode {
+        DriftMode::Tiers => {
+            let tier = (hash_u32(cfg.seed, "tier", validator_id, 0) % 3) as u8;
+            let h = hash_u32(cfg.seed, "tier_delta", validator_id, round);
+
+            match tier {
+                0 => {
+                    // Good: uptime +0..+50, honesty +0..+100, latency -0..-50
+                    let uptime_delta = (h % 51) as i32;
+                    let honesty_delta = ((h >> 8) % 101) as i32;
+                    let latency_delta = -(((h >> 16) % 51) as i32);
+
+                    out.uptime = clamp_0_10000(out.uptime as i32 + uptime_delta);
+                    out.honesty = clamp_0_10000(out.honesty as i32 + honesty_delta);
+                    out.latency = clamp_0_10000(out.latency as i32 + latency_delta);
+                }
+                1 => {
+                    // OK: small noise around baseline
+                    let uptime_delta = ((h % 101) as i32) - 50;
+                    let honesty_delta = (((h >> 8) % 101) as i32) - 50;
+                    let latency_delta = (((h >> 16) % 101) as i32) - 50;
+
+                    out.uptime = clamp_0_10000(out.uptime as i32 + uptime_delta);
+                    out.honesty = clamp_0_10000(out.honesty as i32 + honesty_delta);
+                    out.latency = clamp_0_10000(out.latency as i32 + latency_delta);
+                }
+                _ => {
+                    // Bad: uptime -200..-700, honesty -200..-800, latency +200..+1500
+                    let uptime_delta = -((h % 501) as i32 + 200);
+                    let honesty_delta = -(((h >> 8) % 601) as i32 + 200);
+                    let latency_delta = ((h >> 16) % 1301) as i32 + 200;
+
+                    out.uptime = clamp_0_10000(out.uptime as i32 + uptime_delta);
+                    out.honesty = clamp_0_10000(out.honesty as i32 + honesty_delta);
+                    out.latency = clamp_0_10000(out.latency as i32 + latency_delta);
+                }
+            }
+
+            // Blocks deltas
+            let blk_h = hash_u32(cfg.seed, "blk", validator_id, round);
+            let blk_delta = (blk_h % 5) as u64;
+            out.blocks_proposed = out.blocks_proposed.saturating_add(blk_delta);
+            out.blocks_verified = out.blocks_verified.saturating_add(blk_delta);
+        }
+        DriftMode::Rotate => {
+            let worst_index = (hash_u32(cfg.seed, "worst", "", round) as usize) % validator_count.max(1);
+            let is_worst = validator_index == worst_index;
+
+            let h = hash_u32(cfg.seed, "rotate", validator_id, round);
+
+            if is_worst {
+                // Bad offsets
+                let uptime_delta = -((h % 501) as i32 + 200);
+                let honesty_delta = -(((h >> 8) % 601) as i32 + 200);
+                let latency_delta = ((h >> 16) % 1301) as i32 + 200;
+
+                out.uptime = clamp_0_10000(out.uptime as i32 + uptime_delta);
+                out.honesty = clamp_0_10000(out.honesty as i32 + honesty_delta);
+                out.latency = clamp_0_10000(out.latency as i32 + latency_delta);
+            } else {
+                // Good/OK offsets
+                let uptime_delta = (h % 51) as i32;
+                let honesty_delta = ((h >> 8) % 101) as i32;
+                let latency_delta = -(((h >> 16) % 51) as i32);
+
+                out.uptime = clamp_0_10000(out.uptime as i32 + uptime_delta);
+                out.honesty = clamp_0_10000(out.honesty as i32 + honesty_delta);
+                out.latency = clamp_0_10000(out.latency as i32 + latency_delta);
+            }
+        }
+        DriftMode::Noise => {
+            let h = hash_u32(cfg.seed, "noise", validator_id, round);
+            let uptime_delta = ((h % 101) as i32) - 50;
+            let honesty_delta = (((h >> 8) % 101) as i32) - 50;
+            let latency_delta = (((h >> 16) % 101) as i32) - 50;
+
+            out.uptime = clamp_0_10000(out.uptime as i32 + uptime_delta);
+            out.honesty = clamp_0_10000(out.honesty as i32 + honesty_delta);
+            out.latency = clamp_0_10000(out.latency as i32 + latency_delta);
+        }
+        DriftMode::None => {}
+    }
+
+    out
 }
 
 #[derive(Debug, Serialize)]
@@ -5764,6 +5929,69 @@ mod tests {
         assert_eq!(validator_b["uptime"], 9200);
         assert_eq!(validator_b["slashing_events_90d"], 1);
         assert_eq!(validator_b["stake"]["micro_ipn"], "2000000000");
+    }
+
+    #[test]
+    fn test_status_drift_is_deterministic() {
+        use std::collections::BTreeMap;
+
+        let cfg = DriftCfg {
+            enabled: true,
+            mode: DriftMode::Tiers,
+            seed: 1,
+        };
+
+        let baseline = ValidatorMetricsView {
+            uptime: 9500,
+            latency: 500,
+            honesty: 9800,
+            blocks_proposed: 100,
+            blocks_verified: 95,
+            rounds_active: 120,
+            slashing_events_90d: 0,
+            stake: StakeView {
+                micro_ipn: "1000000000".to_string(),
+            },
+        };
+
+        let result1 = apply_metrics_drift(&cfg, 5, "a", &baseline, 3, 0);
+        let result2 = apply_metrics_drift(&cfg, 5, "a", &baseline, 3, 0);
+
+        assert_eq!(result1.uptime, result2.uptime);
+        assert_eq!(result1.latency, result2.latency);
+        assert_eq!(result1.honesty, result2.honesty);
+        assert_eq!(result1.blocks_proposed, result2.blocks_proposed);
+    }
+
+    #[test]
+    fn test_status_drift_clamps_bounds() {
+        let cfg = DriftCfg {
+            enabled: true,
+            mode: DriftMode::Tiers,
+            seed: 1,
+        };
+
+        let baseline = ValidatorMetricsView {
+            uptime: 5,
+            latency: 9999,
+            honesty: 3,
+            blocks_proposed: 0,
+            blocks_verified: 0,
+            rounds_active: 0,
+            slashing_events_90d: 0,
+            stake: StakeView {
+                micro_ipn: "0".to_string(),
+            },
+        };
+
+        let result = apply_metrics_drift(&cfg, 1, "test", &baseline, 3, 0);
+
+        assert!(result.uptime <= 10000);
+        assert!(result.honesty <= 10000);
+        assert!(result.latency <= 10000);
+        assert!(result.uptime >= 0);
+        assert!(result.honesty >= 0);
+        assert!(result.latency >= 0);
     }
 
     #[tokio::test]

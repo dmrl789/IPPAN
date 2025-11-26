@@ -82,6 +82,14 @@ Export validator metrics from a running localnet to generate training data:
    
    **Note**: The exporter requires `consensus.validators` to be a map/object. If the endpoint only returns `validator_ids` array, the exporter will error with a clear message. The `stake.micro_ipn` field may be serialized as a string (JSON u128 limitation).
 
+   **Metrics drift**: You can enable deterministic metrics drift to generate richer datasets with varied validator behavior:
+   
+   ```powershell
+   .\localnet\run.ps1 -DriftMode tiers -DriftSeed 1
+   ```
+   
+   This produces different metrics per validator and evolves deterministically by round, enabling non-identical model hashes across training runs.
+
 3. **Train as usual** (see below).
 
 **Note**: Localnet exports produce "proxy 7d" features (windowed deltas from current metrics) suitable for bootstrap/testing. For production training, use longer collection periods or aggregate historical data from testnet/mainnet.
