@@ -6011,7 +6011,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_status_response_metrics_available_false() {
-
         // Create a ConsensusStateView without metrics
         let view = ConsensusStateView {
             round: 1,
