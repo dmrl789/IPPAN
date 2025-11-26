@@ -3,7 +3,6 @@
 //! This module computes deterministic reward weights based on validator fairness scores.
 //! Weights are normalized to preserve total payout while allowing ±20% variation.
 
-
 /// Fixed-point scale factor (1e6)
 pub const SCALE: i64 = 1_000_000;
 
@@ -42,10 +41,7 @@ fn score_to_multiplier(score: i64) -> i64 {
 /// 1. Convert scores to multipliers
 /// 2. Normalize so sum equals SCALE
 /// 3. Distribute any remainder deterministically by validator ID
-pub fn compute_reward_weights(
-    scores: &[i64],
-    validator_ids: &[String],
-) -> Vec<i64> {
+pub fn compute_reward_weights(scores: &[i64], validator_ids: &[String]) -> Vec<i64> {
     if scores.is_empty() || validator_ids.is_empty() {
         return Vec::new();
     }
@@ -55,7 +51,10 @@ pub fn compute_reward_weights(
     }
 
     // Step 1: Convert scores to multipliers
-    let multipliers: Vec<i64> = scores.iter().map(|&score| score_to_multiplier(score)).collect();
+    let multipliers: Vec<i64> = scores
+        .iter()
+        .map(|&score| score_to_multiplier(score))
+        .collect();
 
     // Step 2: Compute raw weights (equal baseline, scaled by multiplier)
     // For simplicity, use multiplier directly as raw weight
@@ -96,9 +95,8 @@ pub fn compute_reward_weights(
     if leftover > 0 {
         // Sort by remainder (descending), then by validator ID (ascending) for tie-break
         remainders.sort_by(|a, b| {
-            b.1.cmp(&a.1).then_with(|| {
-                validator_ids[a.0].cmp(&validator_ids[b.0])
-            })
+            b.1.cmp(&a.1)
+                .then_with(|| validator_ids[a.0].cmp(&validator_ids[b.0]))
         });
 
         // Distribute +1 to validators with largest remainders
@@ -157,9 +155,8 @@ pub fn distribute_by_weights(
     if leftover > 0 {
         // Sort by remainder (descending), then by validator ID (ascending)
         shares.sort_by(|a, b| {
-            b.2.cmp(&a.2).then_with(|| {
-                validator_ids[a.0].cmp(&validator_ids[b.0])
-            })
+            b.2.cmp(&a.2)
+                .then_with(|| validator_ids[a.0].cmp(&validator_ids[b.0]))
         });
 
         // Distribute +1 to validators with largest remainders
@@ -275,4 +272,3 @@ mod tests {
         assert!(compute_reward_weights(&scores, &ids).is_empty());
     }
 }
-

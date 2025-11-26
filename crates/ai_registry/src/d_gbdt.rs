@@ -386,10 +386,7 @@ pub fn load_fairness_model_strict(
         )));
     }
 
-    info!(
-        "Strict hash verification passed: {}",
-        computed_hash
-    );
+    info!("Strict hash verification passed: {}", computed_hash);
 
     Ok((model, computed_hash))
 }
@@ -864,13 +861,15 @@ mod tests {
         let hash = compute_model_hash(&model).unwrap();
 
         // Test successful load with correct hash
-        let (loaded_model, loaded_hash) =
-            load_fairness_model_strict(&model_path, &hash).unwrap();
+        let (loaded_model, loaded_hash) = load_fairness_model_strict(&model_path, &hash).unwrap();
         assert_eq!(loaded_model.trees.len(), model.trees.len());
         assert_eq!(loaded_hash, hash);
 
         // Test failure with wrong hash
-        let result = load_fairness_model_strict(&model_path, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+        let result = load_fairness_model_strict(
+            &model_path,
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        );
         assert!(matches!(result, Err(RegistryError::InvalidInput(_))));
         if let Err(RegistryError::InvalidInput(msg)) = result {
             assert!(msg.contains("hash mismatch"));
