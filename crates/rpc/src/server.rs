@@ -2533,7 +2533,7 @@ async fn handle_p2p_blocks(
                 "Unexpected payload on /p2p/blocks from {}: {:?}",
                 from, other
             );
-            let reason = format!("Unexpected payload: {:?}", other);
+            let reason = format!("Unexpected payload: {other:?}");
             record_security_failure(&state, &addr, "/p2p/blocks", &reason).await;
             Err((
                 StatusCode::BAD_REQUEST,
@@ -2580,7 +2580,7 @@ async fn handle_p2p_block_response(
                 "Unexpected payload on /p2p/block-response from {}: {:?}",
                 from, other
             );
-            let reason = format!("Unexpected payload: {:?}", other);
+            let reason = format!("Unexpected payload: {other:?}");
             record_security_failure(&state, &addr, "/p2p/block-response", &reason).await;
             Err((
                 StatusCode::BAD_REQUEST,
@@ -2629,7 +2629,7 @@ async fn handle_p2p_transactions(
                 "Unexpected payload on /p2p/transactions from {}: {:?}",
                 from, other
             );
-            let reason = format!("Unexpected payload: {:?}", other);
+            let reason = format!("Unexpected payload: {other:?}");
             record_security_failure(&state, &addr, "/p2p/transactions", &reason).await;
             Err((
                 StatusCode::BAD_REQUEST,
@@ -2665,7 +2665,7 @@ async fn handle_p2p_peer_info(
                 "Unexpected payload on /p2p/peer-info from {}: {:?}",
                 from, other
             );
-            let reason = format!("Unexpected payload: {:?}", other);
+            let reason = format!("Unexpected payload: {other:?}");
             record_security_failure(&state, &addr, "/p2p/peer-info", &reason).await;
             Err((
                 StatusCode::BAD_REQUEST,
@@ -2701,7 +2701,7 @@ async fn handle_p2p_peer_discovery(
                 "Unexpected payload on /p2p/peer-discovery from {}: {:?}",
                 from, other
             );
-            let reason = format!("Unexpected payload: {:?}", other);
+            let reason = format!("Unexpected payload: {other:?}");
             record_security_failure(&state, &addr, "/p2p/peer-discovery", &reason).await;
             Err((
                 StatusCode::BAD_REQUEST,
@@ -2766,7 +2766,7 @@ async fn handle_p2p_block_request(
                 "Unexpected payload on /p2p/block-request from {}: {:?}",
                 from, other
             );
-            let reason = format!("Unexpected payload: {:?}", other);
+            let reason = format!("Unexpected payload: {other:?}");
             record_security_failure(&state, &addr, "/p2p/block-request", &reason).await;
             Err((
                 StatusCode::BAD_REQUEST,

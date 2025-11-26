@@ -98,7 +98,7 @@ fn run_train(args: TrainArgs) -> Result<()> {
 
     let hash = model_hash_hex(&model).context("failed to hash model")?;
     info!(model_hash = %hash);
-    println!("model_hash={}", hash);
+    println!("model_hash={hash}");
 
     Ok(())
 }
