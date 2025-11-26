@@ -87,8 +87,7 @@ impl BondingManager {
     pub fn add_bond(&mut self, validator_id: ValidatorId, amount: u64) -> Result<()> {
         if amount < VALIDATOR_BOND_AMOUNT {
             return Err(anyhow::anyhow!(
-                "Bond amount must be at least {} micro-IPN (10 IPN)",
-                VALIDATOR_BOND_AMOUNT
+                "Bond amount must be at least {VALIDATOR_BOND_AMOUNT} micro-IPN (10 IPN)"
             ));
         }
 

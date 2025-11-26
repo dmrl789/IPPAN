@@ -386,8 +386,7 @@ impl ConsensusMetrics {
         output.push_str("# TYPE ippan_validator_selected_total counter\n");
         for (validator, count) in self.get_validator_selection_distribution() {
             output.push_str(&format!(
-                "ippan_validator_selected_total{{validator=\"{}\"}} {}\n",
-                validator, count
+                "ippan_validator_selected_total{{validator=\"{validator}\"}} {count}\n"
             ));
         }
 
@@ -480,8 +479,7 @@ impl ConsensusMetrics {
         output.push_str("# TYPE ippan_fee_validator_total counter\n");
         for (validator, amount) in self.get_fee_validator_distribution() {
             output.push_str(&format!(
-                "ippan_fee_validator_total{{validator=\"{}\"}} {}\n",
-                validator, amount
+                "ippan_fee_validator_total{{validator=\"{validator}\"}} {amount}\n"
             ));
         }
 
@@ -491,8 +489,7 @@ impl ConsensusMetrics {
         output.push_str("# TYPE ippan_fee_application_failures_total counter\n");
         for (reason, count) in self.get_fee_failure_counts() {
             output.push_str(&format!(
-                "ippan_fee_application_failures_total{{reason=\"{:?}\"}} {}\n",
-                reason, count
+                "ippan_fee_application_failures_total{{reason=\"{reason:?}\"}} {count}\n"
             ));
         }
 

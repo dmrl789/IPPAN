@@ -59,8 +59,7 @@ impl DAGEmissionParams {
             + self.network_pool_bps;
         if total_bps != 10_000 {
             return Err(anyhow::anyhow!(
-                "Percentages must sum to 10_000 bps, got {}",
-                total_bps
+                "Percentages must sum to 10_000 bps, got {total_bps}"
             ));
         }
         Ok(())
