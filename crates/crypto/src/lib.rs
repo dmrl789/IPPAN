@@ -107,7 +107,7 @@ impl KeyPair {
     /// Create KeyPair from hex-encoded private key
     pub fn from_private_key_hex(hex_key: &str) -> Result<Self, CryptoError> {
         let bytes = hex::decode(hex_key)
-            .map_err(|e| CryptoError::DecodingError(format!("Invalid hex: {}", e)))?;
+            .map_err(|e| CryptoError::DecodingError(format!("Invalid hex: {e}")))?;
 
         if bytes.len() != 32 {
             return Err(CryptoError::InvalidKeyLength {
@@ -152,7 +152,7 @@ impl KeyPair {
         public_key: &[u8; 32],
     ) -> Result<(), CryptoError> {
         let verifying_key = VerifyingKey::from_bytes(public_key)
-            .map_err(|e| CryptoError::InvalidPublicKey(format!("{}", e)))?;
+            .map_err(|e| CryptoError::InvalidPublicKey(format!("{e}")))?;
 
         let sig = Signature::from_bytes(signature);
         verifying_key

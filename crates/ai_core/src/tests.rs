@@ -335,9 +335,7 @@ impl BenchmarkSuite {
         let features = vec![vec![Fixed::from_int(1); feature_count]; sample_count];
         let raw_data = RawFeatureData {
             features,
-            feature_names: (0..feature_count)
-                .map(|i| format!("feature_{i}"))
-                .collect(),
+            feature_names: (0..feature_count).map(|i| format!("feature_{i}")).collect(),
             sample_count,
             feature_count,
             metadata: HashMap::new(),

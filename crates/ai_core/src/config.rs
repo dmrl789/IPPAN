@@ -473,9 +473,8 @@ impl ConfigManager {
         let path = path.as_ref();
         let config = self.get_config();
 
-        let content = toml::to_string_pretty(&config).map_err(|e| {
-            AiCoreError::Serialization(format!("Failed to serialize config: {e}"))
-        })?;
+        let content = toml::to_string_pretty(&config)
+            .map_err(|e| AiCoreError::Serialization(format!("Failed to serialize config: {e}")))?;
 
         std::fs::write(path, content)
             .map_err(|e| AiCoreError::Io(format!("Failed to write config file: {e}")))?;

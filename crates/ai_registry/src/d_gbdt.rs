@@ -674,7 +674,10 @@ mod tests {
         let config_path = temp_dir.path().join("config_no_expected.toml");
         std::fs::write(
             &config_path,
-            format!("[dgbdt.model]\npath = \"{}\"\n", model_path.to_string_lossy().replace('\\', "/")),
+            format!(
+                "[dgbdt.model]\npath = \"{}\"\n",
+                model_path.to_string_lossy().replace('\\', "/")
+            ),
         )
         .unwrap();
 
