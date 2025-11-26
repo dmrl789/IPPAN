@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_hashtimer_display() {
         let ht = HashTimer::for_round(42);
-        let display = format!("{}", ht);
+        let display = format!("{ht}");
         assert!(display.contains("round=42"));
     }
 }

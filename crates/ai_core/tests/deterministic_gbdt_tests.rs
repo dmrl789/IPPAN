@@ -109,8 +109,7 @@ fn test_deterministic_prediction_consistency() {
     for i in 1..predictions.len() {
         assert_eq!(
             predictions[0], predictions[i],
-            "Prediction {} differs from first",
-            i
+            "Prediction {i} differs from first"
         );
     }
 }
@@ -240,7 +239,7 @@ fn test_model_hash_consistency() {
         .map(|_| model.model_hash(round_hash).unwrap())
         .collect();
     for i in 1..hashes.len() {
-        assert_eq!(hashes[0], hashes[i], "Hash {} differs from first", i);
+        assert_eq!(hashes[0], hashes[i], "Hash {i} differs from first");
     }
 
     let different_hash = model.model_hash("different_round_hash").unwrap();
@@ -403,9 +402,9 @@ fn test_deterministic_golden_model_hash_matches_reference_on_x86_64() {
         .trim()
         .to_string();
 
-    println!("Computed model hash : {}", computed_hash);
-    println!("Golden hash (x86_64): {}", golden_hash);
-    println!("Golden hash (aarch64): {}", golden_hash_aarch64);
+    println!("Computed model hash : {computed_hash}");
+    println!("Golden hash (x86_64): {golden_hash}");
+    println!("Golden hash (aarch64): {golden_hash_aarch64}");
 
     let update_requested = std::env::var("IPPAN_UPDATE_GOLDEN_HASH").as_deref() == Ok("1");
     for (arch, expected, path) in [
@@ -414,14 +413,13 @@ fn test_deterministic_golden_model_hash_matches_reference_on_x86_64() {
     ] {
         if &computed_hash != expected {
             if update_requested {
-                fs::write(path, format!("{}\n", computed_hash))
+                fs::write(path, format!("{computed_hash}\n"))
                     .unwrap_or_else(|e| panic!("Failed to update {arch} golden hash: {e}"));
                 println!("Updated {arch} golden hash file.");
             } else {
                 panic!(
-                    "Deterministic model hash mismatch for {arch}. Expected {}, got {}. \
-                     Re-run with IPPAN_UPDATE_GOLDEN_HASH=1 to refresh the reference.",
-                    expected, computed_hash
+                    "Deterministic model hash mismatch for {arch}. Expected {expected}, got {computed_hash}. \
+                     Re-run with IPPAN_UPDATE_GOLDEN_HASH=1 to refresh the reference."
                 );
             }
         }

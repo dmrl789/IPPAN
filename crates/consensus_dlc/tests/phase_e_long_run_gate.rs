@@ -135,8 +135,7 @@ impl GateMetrics {
             let max_ratio = (*max_primary * 100) / avg_primary.max(1);
             anyhow::ensure!(
                 max_ratio <= 300, // No more than 3x average
-                "Gate failure: Primary selection imbalance (max/avg ratio: {}%)",
-                max_ratio
+                "Gate failure: Primary selection imbalance (max/avg ratio: {max_ratio}%)"
             );
         }
 
@@ -150,8 +149,8 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
     let _stub_guard = EnvVarGuard::new("IPPAN_DGBDT_ALLOW_STUB", "1");
 
     eprintln!("\n=== Phase E Long-Run DLC Gate ===");
-    eprintln!("Target rounds: {}", GATE_ROUNDS);
-    eprintln!("Validator count: {}", VALIDATOR_COUNT);
+    eprintln!("Target rounds: {GATE_ROUNDS}");
+    eprintln!("Validator count: {VALIDATOR_COUNT}");
     eprintln!("This test serves as a GATE for external audit readiness.\n");
 
     let mut consensus = DlcConsensus::new(DlcConfig {
@@ -166,9 +165,9 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
     let mut metrics = GateMetrics::default();
 
     // Bootstrap validator set
-    eprintln!("Bootstrapping {} validators...", VALIDATOR_COUNT);
+    eprintln!("Bootstrapping {VALIDATOR_COUNT} validators...");
     for i in 0..VALIDATOR_COUNT {
-        let id = format!("gate-val-{:03}", i);
+        let id = format!("gate-val-{i:03}");
         let stake_micro = rng.gen_range(15_000_000u64..=80_000_000u64);
         let stake = Amount::from_micro_ipn(stake_micro);
         let validator_metrics = random_validator_metrics(&mut rng, stake_micro);
@@ -181,16 +180,14 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
     let supply_cap = ippan_consensus_dlc::emission::SUPPLY_CAP;
     let mut previous_round = 0u64;
 
-    eprintln!("Running {}-round simulation...", GATE_ROUNDS);
+    eprintln!("Running {GATE_ROUNDS}-round simulation...");
     for round_idx in 0..GATE_ROUNDS {
         let round = consensus.current_round + 1;
 
         // Time-ordering invariant: rounds must be monotonic
         anyhow::ensure!(
             round > previous_round,
-            "Gate failure: Time-ordering violation (round {} <= previous {})",
-            round,
-            previous_round
+            "Gate failure: Time-ordering violation (round {round} <= previous {previous_round})"
         );
         previous_round = round;
 
@@ -292,7 +289,7 @@ async fn phase_e_long_run_dlc_gate() -> Result<()> {
 
     let final_stats = consensus.stats();
     eprintln!("\n=== Gate Results ===");
-    eprintln!("✅ Rounds completed: {}/{}", GATE_ROUNDS, GATE_ROUNDS);
+    eprintln!("✅ Rounds completed: {GATE_ROUNDS}/{GATE_ROUNDS}");
     eprintln!("✅ Rounds finalized: {}", metrics.rounds_finalized);
     eprintln!(
         "✅ Validators rewarded: {}/{}",

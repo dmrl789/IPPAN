@@ -129,7 +129,7 @@ async fn long_run_dlc_handles_churn_and_network_partitions() -> Result<()> {
             &mut active_validators,
             &mut logs,
         ) {
-            logs.convergence.push(format!("bootstrapped {}", id));
+            logs.convergence.push(format!("bootstrapped {id}"));
         }
     }
 
@@ -524,7 +524,7 @@ fn register_validator(
     active_validators: &mut HashSet<String>,
     logs: &mut SimulationLogs,
 ) -> Option<String> {
-    let id = format!("val-{}", next_validator_id);
+    let id = format!("val-{next_validator_id}");
     *next_validator_id += 1;
 
     let stake_micro = rng.gen_range(10_000_000u64..=60_000_000u64);
@@ -534,12 +534,12 @@ fn register_validator(
     match consensus.register_validator(id.clone(), stake, metrics) {
         Ok(()) => {
             active_validators.insert(id.clone());
-            logs.convergence.push(format!("registered {}", id));
+            logs.convergence.push(format!("registered {id}"));
             Some(id)
         }
         Err(err) => {
             logs.convergence
-                .push(format!("failed to register {}: {}", id, err));
+                .push(format!("failed to register {id}: {err}"));
             None
         }
     }
@@ -566,7 +566,7 @@ fn remove_random_validator(
             );
             consensus.reputation.scores.remove(&id);
             active_validators.remove(&id);
-            logs.convergence.push(format!("removed {}", id));
+            logs.convergence.push(format!("removed {id}"));
         }
     }
 }

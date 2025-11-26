@@ -102,10 +102,7 @@ fn long_run_fairness_roles_remain_balanced() -> Result<()> {
 
     assert!(
         high_diff <= high_average / 5 + 1,
-        "high contributors should remain balanced: a={}, b={}, diff={}",
-        high_a_primary,
-        high_b_primary,
-        high_diff
+        "high contributors should remain balanced: a={high_a_primary}, b={high_b_primary}, diff={high_diff}"
     );
 
     assert!(

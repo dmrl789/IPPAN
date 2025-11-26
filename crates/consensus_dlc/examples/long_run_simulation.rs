@@ -91,7 +91,7 @@ async fn main() -> Result<()> {
         "Active validators: {}",
         stats.reputation_stats.active_validators
     );
-    println!("Blocks processed: {}", total_blocks);
+    println!("Blocks processed: {total_blocks}");
     println!(
         "Emission produced (µIPN): {}",
         stats.emission_stats.emitted_supply
@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
     );
     println!(
         "Emission progress: {:.2}%",
-        stats.emission_stats.emission_progress_bps as f64 / 100.0 // Convert BPS to percentage
+        (stats.emission_stats.emission_progress_bps as u64 * 100) / 10_000 // Convert BPS to percentage (scaled by 100)
     );
     println!(
         "Tracked reward entries: {}",

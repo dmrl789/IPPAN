@@ -112,9 +112,7 @@ mod tests {
         for (i, &feat) in features.iter().enumerate() {
             assert!(
                 feat >= 0,
-                "Feature {} should be non-negative, got {}",
-                i,
-                feat
+                "Feature {i} should be non-negative, got {feat}"
             );
             // Features can exceed SCALE for counts (validated_blocks, missed_blocks, latency_ms)
             // but ratios should be in [0..SCALE]
@@ -122,9 +120,7 @@ mod tests {
                 // uptime_ratio, stake_normalized, peer_reports_quality should be <= SCALE
                 assert!(
                     feat <= SCALE,
-                    "Feature {} (ratio) should be <= SCALE, got {}",
-                    i,
-                    feat
+                    "Feature {i} (ratio) should be <= SCALE, got {feat}"
                 );
             }
         }

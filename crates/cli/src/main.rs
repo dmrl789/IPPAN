@@ -183,18 +183,18 @@ async fn handle_node_commands(cmd: NodeCommands, rpc_url: &str) -> Result<()> {
     let response = match cmd {
         NodeCommands::Status => {
             client
-                .get(format!("{}/node/status", rpc_url))
+                .get(format!("{rpc_url}/node/status"))
                 .send()
                 .await?
         }
-        NodeCommands::Peers => client.get(format!("{}/node/peers", rpc_url)).send().await?,
+        NodeCommands::Peers => client.get(format!("{rpc_url}/node/peers")).send().await?,
         NodeCommands::Version => {
             client
-                .get(format!("{}/node/version", rpc_url))
+                .get(format!("{rpc_url}/node/version"))
                 .send()
                 .await?
         }
-        NodeCommands::Info => client.get(format!("{}/node/info", rpc_url)).send().await?,
+        NodeCommands::Info => client.get(format!("{rpc_url}/node/info")).send().await?,
     };
 
     let json: Value = response.json().await?;
@@ -209,7 +209,7 @@ async fn handle_wallet_commands(cmd: WalletCommands, rpc_url: &str) -> Result<()
     match cmd {
         WalletCommands::Balance { address } => {
             let response = client
-                .get(format!("{}/wallet/{}/balance", rpc_url, address))
+                .get(format!("{rpc_url}/wallet/{address}/balance"))
                 .send()
                 .await?;
 
@@ -224,7 +224,7 @@ async fn handle_wallet_commands(cmd: WalletCommands, rpc_url: &str) -> Result<()
             });
 
             let response = client
-                .post(format!("{}/transaction", rpc_url))
+                .post(format!("{rpc_url}/transaction"))
                 .json(&payload)
                 .send()
                 .await?;
@@ -244,7 +244,7 @@ async fn handle_tx_commands(cmd: TxCommands, rpc_url: &str) -> Result<()> {
     match cmd {
         TxCommands::Get { hash } => {
             let response = client
-                .get(format!("{}/transaction/{}", rpc_url, hash))
+                .get(format!("{rpc_url}/transaction/{hash}"))
                 .send()
                 .await?;
 
@@ -257,7 +257,7 @@ async fn handle_tx_commands(cmd: TxCommands, rpc_url: &str) -> Result<()> {
             });
 
             let response = client
-                .post(format!("{}/transaction", rpc_url))
+                .post(format!("{rpc_url}/transaction"))
                 .json(&payload)
                 .send()
                 .await?;
@@ -268,7 +268,7 @@ async fn handle_tx_commands(cmd: TxCommands, rpc_url: &str) -> Result<()> {
         }
         TxCommands::Pending => {
             let response = client
-                .get(format!("{}/transactions/pending", rpc_url))
+                .get(format!("{rpc_url}/transactions/pending"))
                 .send()
                 .await?;
 
@@ -286,25 +286,25 @@ async fn handle_query_commands(cmd: QueryCommands, rpc_url: &str) -> Result<()> 
     let response = match cmd {
         QueryCommands::Block { id } => {
             client
-                .get(format!("{}/block/{}", rpc_url, id))
+                .get(format!("{rpc_url}/block/{id}"))
                 .send()
                 .await?
         }
         QueryCommands::LatestBlock => {
             client
-                .get(format!("{}/block/latest", rpc_url))
+                .get(format!("{rpc_url}/block/latest"))
                 .send()
                 .await?
         }
         QueryCommands::Info => {
             client
-                .get(format!("{}/blockchain/info", rpc_url))
+                .get(format!("{rpc_url}/blockchain/info"))
                 .send()
                 .await?
         }
         QueryCommands::Stats => {
             client
-                .get(format!("{}/blockchain/stats", rpc_url))
+                .get(format!("{rpc_url}/blockchain/stats"))
                 .send()
                 .await?
         }
@@ -327,7 +327,7 @@ async fn handle_validator_commands(cmd: ValidatorCommands, rpc_url: &str) -> Res
             });
 
             let response = client
-                .post(format!("{}/validator/register", rpc_url))
+                .post(format!("{rpc_url}/validator/register"))
                 .json(&payload)
                 .send()
                 .await?;
@@ -337,14 +337,14 @@ async fn handle_validator_commands(cmd: ValidatorCommands, rpc_url: &str) -> Res
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
         ValidatorCommands::List => {
-            let response = client.get(format!("{}/validators", rpc_url)).send().await?;
+            let response = client.get(format!("{rpc_url}/validators")).send().await?;
 
             let json: Value = response.json().await?;
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
         ValidatorCommands::Info { validator_id } => {
             let response = client
-                .get(format!("{}/validator/{}", rpc_url, validator_id))
+                .get(format!("{rpc_url}/validator/{validator_id}"))
                 .send()
                 .await?;
 
@@ -404,7 +404,7 @@ async fn handle_pay_command(cmd: PayCommand, rpc_url: &str) -> Result<()> {
 
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("{}/tx/payment", rpc_url))
+        .post(format!("{rpc_url}/tx/payment"))
         .json(&payload_value)
         .send()
         .await?;
@@ -414,7 +414,7 @@ async fn handle_pay_command(cmd: PayCommand, rpc_url: &str) -> Result<()> {
 
     if status.is_success() {
         if let Some(tx_hash) = body.get("tx_hash").and_then(|v| v.as_str()) {
-            println!("Payment accepted: {}", tx_hash);
+            println!("Payment accepted: {tx_hash}");
         } else {
             println!("{}", serde_json::to_string_pretty(&body)?);
         }

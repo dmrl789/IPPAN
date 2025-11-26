@@ -601,7 +601,7 @@ mod tests {
                 vec![previous.clone()],
                 HashTimer::for_round(round),
                 vec![],
-                format!("validator{}", round),
+                format!("validator{round}"),
             );
             block.sign(vec![0u8; 64]);
             if round == 1 {
@@ -631,7 +631,7 @@ mod tests {
                 vec![branch_a_parent.clone()],
                 HashTimer::for_round(round),
                 vec![],
-                format!("validator_a{}", round),
+                format!("validator_a{round}"),
             );
             block_a.sign(vec![0u8; 64]);
             branch_a_parent = block_a.id.clone();
@@ -641,7 +641,7 @@ mod tests {
                 vec![branch_b_parent.clone()],
                 HashTimer::for_round(round),
                 vec![],
-                format!("validator_b{}", round),
+                format!("validator_b{round}"),
             );
             block_b.sign(vec![0u8; 64]);
             branch_b_parent = block_b.id.clone();

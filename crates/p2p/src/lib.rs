@@ -1315,7 +1315,7 @@ mod tests {
         let network = HttpP2PNetwork::new(config, "http://127.0.0.1:9320".into()).expect("network");
 
         for i in 0..20 {
-            let peer = format!("http://127.0.0.1:94{:02}", i);
+            let peer = format!("http://127.0.0.1:94{i:02}");
             let _ = network.add_peer(peer.clone()).await;
             network.remove_peer(&peer);
         }

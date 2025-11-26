@@ -257,7 +257,7 @@ pub async fn spawn_test_nodes(count: usize) -> anyhow::Result<Vec<DhtTestNode>> 
     let mut nodes = Vec::new();
     for i in 0..count {
         let config = DhtNodeConfig {
-            node_id: format!("node-{}", i),
+            node_id: format!("node-{i}"),
             listen_addresses: vec![Multiaddr::from_str("/ip4/127.0.0.1/tcp/0")?],
             bootstrap_peers: Vec::new(),
             enable_mdns: false,
@@ -697,7 +697,7 @@ async fn test_3_node_full_mesh() {
         let next = (i + 1) % nodes.len();
         connect_nodes(&nodes[i], &nodes[next])
             .await
-            .unwrap_or_else(|_| panic!("connect node {} to {}", i, next));
+            .unwrap_or_else(|_| panic!("connect node {i} to {next}"));
     }
 
     // Wait for full mesh
@@ -717,8 +717,8 @@ async fn test_3_node_full_mesh() {
         let received = node
             .wait_for_gossip("ippan/files", Duration::from_secs(10))
             .await
-            .unwrap_or_else(|_| panic!("node {} receives gossip", i));
-        assert_eq!(received, test_msg, "node {} received correct message", i);
+            .unwrap_or_else(|_| panic!("node {i} receives gossip"));
+        assert_eq!(received, test_msg, "node {i} received correct message");
     }
 
     info!("✓ All nodes received broadcast message");

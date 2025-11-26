@@ -58,9 +58,7 @@ fn test_supply_convergence() {
     let tolerance = expected_year1 / 100; // 1% tolerance
     assert!(
         s1 > expected_year1 - tolerance && s1 < expected_year1 + tolerance,
-        "Year 1 emission: expected ~{}, got {}",
-        expected_year1,
-        s1
+        "Year 1 emission: expected ~{expected_year1}, got {s1}"
     );
 }
 
@@ -157,9 +155,7 @@ fn test_fair_distribution_among_equals() {
     for &reward in &rewards {
         assert!(
             (reward as i128 - avg_reward as i128).abs() <= tolerance as i128,
-            "Reward {} differs too much from average {}",
-            reward,
-            avg_reward
+            "Reward {reward} differs too much from average {avg_reward}"
         );
     }
 }
@@ -199,8 +195,7 @@ fn test_proposer_bonus() {
     let ratio = proposer_reward as f64 / verifier_reward as f64;
     assert!(
         (ratio - 1.2).abs() < 0.05,
-        "Proposer/verifier ratio {} should be ~1.2",
-        ratio
+        "Proposer/verifier ratio {ratio} should be ~1.2"
     );
 }
 
@@ -236,8 +231,7 @@ fn test_reputation_impact_on_rewards() {
     let ratio = high_reward as f64 / low_reward as f64;
     assert!(
         (ratio - 2.0).abs() < 0.1,
-        "Reputation impact ratio {} should be ~2.0",
-        ratio
+        "Reputation impact ratio {ratio} should be ~2.0"
     );
 }
 
@@ -264,7 +258,7 @@ fn test_emission_tracker_integration() {
         ];
 
         let result = tracker.process_round(round, &contributions, 100, 50);
-        assert!(result.is_ok(), "Round {} failed: {:?}", round, result);
+        assert!(result.is_ok(), "Round {round} failed: {result:?}");
     }
 
     // Verify state consistency

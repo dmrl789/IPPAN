@@ -200,7 +200,7 @@ mod tests {
 
         // Assert all weights are non-negative
         for (i, &w) in weights.iter().enumerate() {
-            assert!(w >= 0, "Weight {} must be non-negative, got {}", i, w);
+            assert!(w >= 0, "Weight {i} must be non-negative, got {w}");
         }
 
         // Assert relative ordering roughly matches score ordering

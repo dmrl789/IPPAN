@@ -163,7 +163,7 @@ fn main() -> Result<()> {
                     }
                     Err(err) => {
                         failures.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("Request {} errored: {}", idx, err);
+                        eprintln!("Request {idx} errored: {err}");
                     }
                 }
             });
@@ -196,15 +196,14 @@ fn main() -> Result<()> {
         sorted_latencies[idx.min(sorted_latencies.len() - 1)]
     };
 
-    println!("RPC endpoint: {}", rpc_endpoint);
-    println!("From: {}", from_address);
-    println!("To: {}", to_address);
-    println!("Transactions requested: {}", total);
-    println!("Completed: {} | Failed: {}", completed, failed);
-    println!("Elapsed: {:.2?} | TPS: {:.2}", duration, tps);
+    println!("RPC endpoint: {rpc_endpoint}");
+    println!("From: {from_address}");
+    println!("To: {to_address}");
+    println!("Transactions requested: {total}");
+    println!("Completed: {completed} | Failed: {failed}");
+    println!("Elapsed: {duration:.2?} | TPS: {tps:.2}");
     println!(
-        "Mean latency: {:.2} ms | p95 latency: {:.2} ms",
-        mean_latency, p95
+        "Mean latency: {mean_latency:.2} ms | p95 latency: {p95:.2} ms"
     );
 
     Ok(())

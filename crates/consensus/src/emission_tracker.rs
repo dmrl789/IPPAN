@@ -646,7 +646,7 @@ mod tests {
         // Process 10 rounds
         for round in 1..=10 {
             let result = tracker.process_round(round, &contributions, 100, 50);
-            assert!(result.is_ok(), "Round {} failed", round);
+            assert!(result.is_ok(), "Round {round} failed");
         }
 
         assert_eq!(tracker.last_round, 10);

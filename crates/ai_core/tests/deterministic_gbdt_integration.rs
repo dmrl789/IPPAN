@@ -89,7 +89,7 @@ fn test_deterministic_gbdt_usage_example() {
     // Results must be identical bit-for-bit
     assert_eq!(scores, scores2);
 
-    println!("✅ Validator scores: {:?}", scores);
+    println!("✅ Validator scores: {scores:?}");
 }
 
 /// Test with the actual model file from the models directory
@@ -116,11 +116,11 @@ fn test_with_actual_model_file() {
             assert_eq!(scores.len(), 1);
             assert!(scores.contains_key("test_node"));
 
-            println!("Loaded model prediction: {:?}", scores);
+            println!("Loaded model prediction: {scores:?}");
         }
         Err(e) => {
             // If the model file doesn't exist, skip this test
-            println!("Skipping test with model file: {}", e);
+            println!("Skipping test with model file: {e}");
         }
     }
 }
@@ -211,7 +211,7 @@ fn test_realistic_validator_scenarios() {
 
     // All scores should be finite
     for (validator, score) in &scores {
-        println!("{}: {}", validator, score);
+        println!("{validator}: {score}");
     }
 
     // Verify determinism
@@ -243,8 +243,8 @@ fn test_model_hash_certificate_generation() {
     assert!(!hash_1.is_empty());
     assert!(!hash_2.is_empty());
 
-    println!("Model hash for round {}: {}", round_hash_1, hash_1);
-    println!("Model hash for round {}: {}", round_hash_2, hash_2);
+    println!("Model hash for round {round_hash_1}: {hash_1}");
+    println!("Model hash for round {round_hash_2}: {hash_2}");
 }
 
 fn sample_consensus_digest() -> String {

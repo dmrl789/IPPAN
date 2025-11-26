@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
 async fn check_node(rpc_url: &str) -> Result<()> {
     let client = reqwest::Client::new();
     client
-        .get(format!("{}/node/status", rpc_url))
+        .get(format!("{rpc_url}/node/status"))
         .send()
         .await?;
     Ok(())
@@ -129,7 +129,7 @@ async fn benchmark_tps(cli: &Cli) -> Result<()> {
                 });
 
                 match client
-                    .post(format!("{}/transaction", rpc_url))
+                    .post(format!("{rpc_url}/transaction"))
                     .json(&tx)
                     .timeout(Duration::from_secs(5))
                     .send()
@@ -163,13 +163,13 @@ async fn benchmark_tps(cli: &Cli) -> Result<()> {
     println!("║           TPS Results                 ║");
     println!("╠═══════════════════════════════════════╣");
     println!("║ Total transactions:    {:>14} ║", cli.count);
-    println!("║ Successful:            {:>14} ║", total_success);
-    println!("║ Failed:                {:>14} ║", total_errors);
+    println!("║ Successful:            {total_success:>14} ║");
+    println!("║ Failed:                {total_errors:>14} ║");
     println!(
         "║ Total time:            {:>11.2}s ║",
         duration.as_secs_f64()
     );
-    println!("║ TPS:                   {:>14.2} ║", tps);
+    println!("║ TPS:                   {tps:>14.2} ║");
     println!(
         "║ Avg latency:           {:>11.2}ms ║",
         duration.as_millis() as f64 / total_success as f64
@@ -366,7 +366,7 @@ async fn benchmark_storage(cli: &Cli) -> Result<()> {
         "║ P95 read time:         {:>11.2}ms ║",
         p95.as_secs_f64() * 1000.0
     );
-    println!("║ Reads/sec:             {:>14.0} ║", reads_per_sec);
+    println!("║ Reads/sec:             {reads_per_sec:>14.0} ║");
     println!("╚═══════════════════════════════════════╝");
 
     Ok(())
@@ -377,7 +377,7 @@ async fn warmup_requests(rpc_url: &str, count: usize) -> Result<()> {
 
     for _ in 0..count {
         let _ = client
-            .get(format!("{}/block/latest", rpc_url))
+            .get(format!("{rpc_url}/block/latest"))
             .timeout(Duration::from_secs(2))
             .send()
             .await;

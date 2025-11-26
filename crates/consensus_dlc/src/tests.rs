@@ -57,7 +57,7 @@ async fn test_consensus_round_processing() {
             100,
         );
         consensus
-            .register_validator(format!("validator{}", i), bond::VALIDATOR_BOND, metrics)
+            .register_validator(format!("validator{i}"), bond::VALIDATOR_BOND, metrics)
             .unwrap();
     }
 
@@ -161,7 +161,7 @@ async fn test_verifier_selection_determinism() {
 
     for i in 1..=5 {
         validators.insert(
-            format!("val{}", i),
+            format!("val{i}"),
             ValidatorMetrics::new(
                 9900,  // 99% uptime (scaled by 10000)
                 500,   // 5% latency (scaled by 10000)
@@ -305,7 +305,7 @@ async fn test_dag_topological_sort() {
             vec![parent.clone()],
             HashTimer::for_round(i),
             vec![],
-            format!("validator{}", i),
+            format!("validator{i}"),
         );
         block.sign(vec![0u8; 64]);
         parent = block.id.clone();
@@ -410,7 +410,7 @@ async fn test_full_consensus_cycle() {
 
         consensus
             .register_validator(
-                format!("validator{}", i),
+                format!("validator{i}"),
                 bond::VALIDATOR_BOND * i as u128,
                 metrics,
             )
@@ -448,7 +448,7 @@ async fn test_concurrent_block_production() {
             vec![genesis_id.clone()],
             HashTimer::for_round(1),
             vec![i as u8],
-            format!("validator{}", i),
+            format!("validator{i}"),
         );
         block.sign(vec![0u8; 64]);
         dag.insert(block).unwrap();

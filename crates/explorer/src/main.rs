@@ -191,7 +191,7 @@ async fn get_blocks(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -199,7 +199,7 @@ async fn get_blocks(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 
@@ -218,7 +218,7 @@ async fn get_block(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -226,7 +226,7 @@ async fn get_block(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 
@@ -248,7 +248,7 @@ async fn get_transactions(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -256,7 +256,7 @@ async fn get_transactions(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 
@@ -275,7 +275,7 @@ async fn get_transaction(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -283,7 +283,7 @@ async fn get_transaction(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 
@@ -301,7 +301,7 @@ async fn get_validators(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -309,7 +309,7 @@ async fn get_validators(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 
@@ -328,7 +328,7 @@ async fn get_validator(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -336,7 +336,7 @@ async fn get_validator(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 
@@ -354,7 +354,7 @@ async fn get_stats(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -362,7 +362,7 @@ async fn get_stats(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 
@@ -380,7 +380,7 @@ async fn get_node_status(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -388,7 +388,7 @@ async fn get_node_status(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 
@@ -406,7 +406,7 @@ async fn get_node_peers(
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to connect to node: {}", e),
+                format!("Failed to connect to node: {e}"),
             )
         })?
         .json()
@@ -414,7 +414,7 @@ async fn get_node_peers(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response: {}", e),
+                format!("Failed to parse response: {e}"),
             )
         })?;
 

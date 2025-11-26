@@ -153,5 +153,5 @@ fn test_usage_example() {
         "Expected at least one positive validator score"
     );
 
-    println!("✅ Validator scores: {:?}", scores);
+    println!("✅ Validator scores: {scores:?}");
 }

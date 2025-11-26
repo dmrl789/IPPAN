@@ -586,7 +586,7 @@ mod tests {
 
     fn create_test_proposal(model_id: &str) -> AiModelProposal {
         AiModelProposal {
-            proposal_id: format!("proposal-{}", model_id),
+            proposal_id: format!("proposal-{model_id}"),
             model_id: model_id.to_string(),
             version: 1,
             model_url: "https://example.com/model".to_string(),

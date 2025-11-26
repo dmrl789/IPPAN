@@ -289,12 +289,12 @@ mod tests {
 
         match received_a.payload {
             GossipPayload::Block(inner) => assert_eq!(inner.hash(), block.hash()),
-            other => panic!("Expected Block payload, got: {:?}", other),
+            other => panic!("Expected Block payload, got: {other:?}"),
         }
 
         match received_b.payload {
             GossipPayload::Block(inner) => assert_eq!(inner.hash(), block.hash()),
-            other => panic!("Expected Block payload, got: {:?}", other),
+            other => panic!("Expected Block payload, got: {other:?}"),
         }
 
         let metrics = network.metrics();

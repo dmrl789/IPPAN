@@ -529,7 +529,7 @@ mod tests {
 
         // Create at least 10 validators with varying metrics
         for i in 0..10 {
-            let id = format!("val{}", i);
+            let id = format!("val{i}");
             let metrics = ValidatorMetrics::new(
                 9000 + (i as i64 * 100), // Varying uptime (90-99%)
                 500 + (i as i64 * 50),   // Varying latency

@@ -49,8 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let score = model.score(&features);
         let normalized = Fixed::from_micro(score);
         println!(
-            "   {} -> Score: {} (normalized: {})",
-            label, score, normalized
+            "   {label} -> Score: {score} (normalized: {normalized})"
         );
     }
 
@@ -69,8 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!(
-        "   All scores match: {} (Score: {})",
-        all_match, first_score
+        "   All scores match: {all_match} (Score: {first_score})"
     );
 
     // 4. Canonical JSON serialization
@@ -82,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 5. Model hashing
     println!("\n5. Computing model hash...");
     let hash = model.hash_hex()?;
-    println!("   Blake3 hash: {}", hash);
+    println!("   Blake3 hash: {hash}");
     println!("   Hash length: {} chars (32 bytes)", hash.len());
 
     // Verify hash stability
@@ -129,15 +127,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let neg_score = simple_model.score(&[-100]);
     let pos_score = simple_model.score(&[100]);
 
-    println!("   Input: [-100] -> Score: {} (expected: -500)", neg_score);
-    println!("   Input: [100]  -> Score: {} (expected: 2500)", pos_score);
+    println!("   Input: [-100] -> Score: {neg_score} (expected: -500)");
+    println!("   Input: [100]  -> Score: {pos_score} (expected: 2500)");
     println!("   Exact match: {}", neg_score == -500 && pos_score == 2500);
 
     // 8. Model validation
     println!("\n8. Model validation...");
     match model.validate() {
         Ok(_) => println!("   ✓ Model validation passed"),
-        Err(e) => println!("   ✗ Model validation failed: {}", e),
+        Err(e) => println!("   ✗ Model validation failed: {e}"),
     }
 
     // 9. Create a custom model from JSON
@@ -162,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let custom_model: Model = serde_json::from_str(json_model)?;
     let custom_score = custom_model.score(&[30 * SCALE]);
     println!("   Custom model loaded");
-    println!("   Score for [30]: {}", custom_score);
+    println!("   Score for [30]: {custom_score}");
 
     println!("\n=== Demo Complete ===");
     println!("\nKey Features Demonstrated:");

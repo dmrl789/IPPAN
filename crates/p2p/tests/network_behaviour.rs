@@ -49,7 +49,7 @@ impl MockPeerServer {
         });
 
         Self {
-            address: format!("http://{}", addr),
+            address: format!("http://{addr}"),
             shutdown: Some(shutdown_tx),
         }
     }
@@ -149,8 +149,7 @@ async fn wait_for_discovery_event(
     match timeout(timeout_duration, discovery).await {
         Ok(result) => result,
         Err(_) => Err(format!(
-            "no discovery event for {peer} within {:?}",
-            timeout_duration
+            "no discovery event for {peer} within {timeout_duration:?}"
         )),
     }
 }
