@@ -101,11 +101,13 @@ def extract_validators_from_status(status_data: Dict[str, Any]) -> Dict[str, Dic
     """
     Extract validator metrics from /status response.
     
-    Expected structure (new format):
+    Expected structure (schema version 2):
     {
+        "status_schema_version": 2,
         "consensus": {
             "round": <round_id>,
             "validator_ids": ["<id1>", "<id2>", ...],  // backward compatibility
+            "metrics_available": true,                  // NEW: indicates metrics are present
             "validators": {                            // NEW: full metrics map
                 "<validator_id>": {
                     "uptime": <0-10000>,
@@ -121,14 +123,38 @@ def extract_validators_from_status(status_data: Dict[str, Any]) -> Dict[str, Dic
         }
     }
     
-    Old format (array only) will raise an error.
+    Old schema versions or missing metrics will raise an error.
     """
+    # Check schema version
+    schema_version = status_data.get("status_schema_version", 0)
+    if schema_version < 2:
+        print(
+            "ERROR: This node's /status schema is too old.",
+            "Please git pull and restart localnet.",
+            f"Required status_schema_version >= 2, got {schema_version}.",
+            sep="\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    
     validators = {}
     
     if "consensus" not in status_data:
         return validators
     
     consensus = status_data["consensus"]
+    
+    # Check if metrics are available
+    metrics_available = consensus.get("metrics_available", False)
+    if not metrics_available:
+        print(
+            "ERROR: This node is not exposing validator metrics yet (consensus.metrics_available=false).",
+            "Ensure DLC consensus is enabled or restart the correct localnet compose.",
+            sep="\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    
     round_id = consensus.get("round", 0)
     
     # Check for new format: validators is a dict/object

@@ -49,6 +49,16 @@ Press `Ctrl+C` to stop following logs.
 Invoke-WebRequest -Uri http://localhost:8080/health -UseBasicParsing
 ```
 
+### Status Schema Check
+
+Verify the `/status` endpoint has schema version 2 and metrics available:
+
+```powershell
+(Invoke-WebRequest -Uri http://localhost:8080/status -UseBasicParsing).Content | ConvertFrom-Json | Select-Object status_schema_version, @{Name='consensus.metrics_available';Expression={$_.consensus.metrics_available}}
+```
+
+Expected: `status_schema_version = 2` and `consensus.metrics_available = true`
+
 Or using curl (if available):
 
 ```powershell

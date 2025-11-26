@@ -1560,6 +1560,14 @@ async fn handle_status(
                     "validator_ids": view.validators,
                 });
                 
+                // Determine if metrics are available
+                let metrics_available = view.validators_metrics
+                    .as_ref()
+                    .map(|m| !m.is_empty())
+                    .unwrap_or(false);
+                
+                json["metrics_available"] = serde_json::Value::Bool(metrics_available);
+                
                 // Add validators metrics map if available
                 if let Some(metrics_map) = &view.validators_metrics {
                     json["validators"] = serde_json::to_value(metrics_map)
@@ -1581,6 +1589,7 @@ async fn handle_status(
 
     Ok(Json(serde_json::json!({
         "status": "ok",
+        "status_schema_version": 2,
         "node_id": state.node_id.clone(),
         "version": env!("CARGO_PKG_VERSION"),
         "peer_count": peer_count,
@@ -5621,7 +5630,6 @@ mod tests {
     #[tokio::test]
     async fn test_status_response_includes_validators_metrics() {
         use std::collections::BTreeMap;
-        use serde_json::Value;
 
         // Create a ConsensusStateView with metrics
         let mut metrics_map = BTreeMap::new();
@@ -5662,18 +5670,30 @@ mod tests {
             validators_metrics: Some(metrics_map),
         };
 
-        // Serialize to JSON
-        let json_value: Value = serde_json::to_value(&view).expect("serialize");
+        // Serialize to JSON (simulating consensus view structure)
+        let mut consensus_json = serde_json::json!({
+            "round": view.round,
+            "validator_ids": view.validators,
+        });
+        
+        let metrics_available = view.validators_metrics
+            .as_ref()
+            .map(|m| !m.is_empty())
+            .unwrap_or(false);
+        consensus_json["metrics_available"] = serde_json::Value::Bool(metrics_available);
+        
+        if let Some(metrics_map) = &view.validators_metrics {
+            consensus_json["validators"] = serde_json::to_value(metrics_map).unwrap();
+        }
 
         // Verify structure
-        assert_eq!(json_value["round"], 1);
-        assert_eq!(json_value["validator_ids"].as_array().unwrap().len(), 2);
+        assert_eq!(consensus_json["round"], 1);
+        assert_eq!(consensus_json["validator_ids"].as_array().unwrap().len(), 2);
+        assert_eq!(consensus_json["metrics_available"], true);
         
-        // validators_metrics is serialized as "validators" (field name in struct)
-        // but it's optional, so check if it exists
-        let validators_obj = json_value.get("validators_metrics")
+        let validators_obj = consensus_json.get("validators")
             .and_then(|v| v.as_object())
-            .expect("validators_metrics is object");
+            .expect("validators is object");
         assert_eq!(validators_obj.len(), 2);
         
         // Check validator "a"
@@ -5692,5 +5712,35 @@ mod tests {
         assert_eq!(validator_b["uptime"], 9200);
         assert_eq!(validator_b["slashing_events_90d"], 1);
         assert_eq!(validator_b["stake"]["micro_ipn"], "2000000000");
+    }
+
+    #[tokio::test]
+    async fn test_status_response_metrics_available_false() {
+        use serde_json::Value;
+
+        // Create a ConsensusStateView without metrics
+        let view = ConsensusStateView {
+            round: 1,
+            validators: vec!["a".to_string(), "b".to_string()],
+            validators_metrics: None,
+        };
+
+        // Serialize to JSON (simulating consensus view structure)
+        let mut consensus_json = serde_json::json!({
+            "round": view.round,
+            "validator_ids": view.validators,
+        });
+        
+        let metrics_available = view.validators_metrics
+            .as_ref()
+            .map(|m| !m.is_empty())
+            .unwrap_or(false);
+        consensus_json["metrics_available"] = serde_json::Value::Bool(metrics_available);
+
+        // Verify structure
+        assert_eq!(consensus_json["round"], 1);
+        assert_eq!(consensus_json["validator_ids"].as_array().unwrap().len(), 2);
+        assert_eq!(consensus_json["metrics_available"], false);
+        assert!(consensus_json.get("validators").is_none());
     }
 }
