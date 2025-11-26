@@ -176,7 +176,7 @@ mod tests {
 
         // Store files for owner1
         for i in 0..3 {
-            let content = format!("content{}", i);
+            let content = format!("content{i}");
             let hash = ContentHash::from_data(content.as_bytes());
             let desc = FileDescriptor::new(hash, owner1, 100 + i as u64, None, vec![]);
             storage.store(desc).unwrap();
@@ -184,7 +184,7 @@ mod tests {
 
         // Store files for owner2
         for i in 0..2 {
-            let content = format!("other{}", i);
+            let content = format!("other{i}");
             let hash = ContentHash::from_data(content.as_bytes());
             let desc = FileDescriptor::new(hash, owner2, 200 + i as u64, None, vec![]);
             storage.store(desc).unwrap();
@@ -209,7 +209,7 @@ mod tests {
         assert_eq!(storage.count().unwrap(), 0);
 
         for i in 0..5 {
-            let content = format!("file{}", i);
+            let content = format!("file{i}");
             let hash = ContentHash::from_data(content.as_bytes());
             let desc = FileDescriptor::new(hash, [1u8; 32], 100, None, vec![]);
             storage.store(desc).unwrap();
@@ -225,7 +225,7 @@ mod tests {
 
         // Create 10 files at different times
         for i in 0..10 {
-            let content = format!("file{}", i);
+            let content = format!("file{i}");
             let hash = ContentHash::from_data(content.as_bytes());
             let time = IppanTimeMicros(1000000 + i * 1000);
             let desc = FileDescriptor::new_at_time(hash, owner, 100, time, None, vec![]);

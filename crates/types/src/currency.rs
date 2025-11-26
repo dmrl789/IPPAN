@@ -357,13 +357,13 @@ mod tests {
     #[test]
     fn test_display_format() {
         let one_ipn = Amount::from_ipn(1);
-        assert_eq!(format!("{}", one_ipn), "1 IPN");
+        assert_eq!(format!("{one_ipn}"), "1 IPN");
 
         let half_ipn = Amount(ATOMIC_PER_IPN / 2);
-        assert_eq!(format!("{}", half_ipn), "0.5 IPN");
+        assert_eq!(format!("{half_ipn}"), "0.5 IPN");
 
         let micro = Amount::from_micro_ipn(1);
-        assert_eq!(format!("{}", micro), "0.000001 IPN");
+        assert_eq!(format!("{micro}"), "0.000001 IPN");
     }
 
     #[test]

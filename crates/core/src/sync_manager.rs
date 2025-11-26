@@ -640,7 +640,7 @@ fn format_performance_score(score: u32) -> String {
         while frac_str.ends_with('0') {
             frac_str.pop();
         }
-        format!("{whole}.{}", frac_str)
+        format!("{whole}.{frac_str}")
     }
 }
 

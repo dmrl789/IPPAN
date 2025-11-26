@@ -272,7 +272,7 @@ mod tests {
             owner,
             100,
             None,
-            (0..33).map(|i| format!("tag{}", i)).collect(),
+            (0..33).map(|i| format!("tag{i}")).collect(),
         );
         assert!(desc_many_tags.validate().is_err());
 

@@ -58,7 +58,7 @@ mod integration_tests {
         // Create files at different times
         let mut ids = Vec::new();
         for i in 0..5 {
-            let content = format!("file{}", i);
+            let content = format!("file{i}");
             let hash = ContentHash::from_data(content.as_bytes());
             let time = IppanTimeMicros(1000000 + i * 1000);
             let desc = FileDescriptor::new_at_time(hash, owner, 100, time, None, vec![]);
