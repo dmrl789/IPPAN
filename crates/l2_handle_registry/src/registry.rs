@@ -577,7 +577,7 @@ mod tests {
         let owner = PublicKey::new(signing_key.verifying_key().to_bytes());
 
         for suffix in ["one", "two", "three"] {
-            let handle = Handle::new(format!("@multi-{}.ipn", suffix));
+            let handle = Handle::new(format!("@multi-{suffix}.ipn"));
             let mut message = Vec::new();
             message.extend_from_slice(b"IPPAN_HANDLE_REGISTRATION");
             message.extend_from_slice(handle.as_str().as_bytes());

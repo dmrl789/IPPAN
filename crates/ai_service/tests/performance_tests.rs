@@ -30,8 +30,7 @@ async fn test_llm_performance() {
 
     assert!(
         duration < Duration::from_secs(30),
-        "LLM request took too long: {:?}",
-        duration
+        "LLM request took too long: {duration:?}"
     );
     assert!(result.is_ok() || result.is_err()); // Should not panic
 
@@ -67,13 +66,11 @@ contract Test {
 
     assert!(
         duration < Duration::from_secs(10),
-        "Smart contract analysis took too long: {:?}",
-        duration
+        "Smart contract analysis took too long: {duration:?}"
     );
     assert!(
         result.is_ok(),
-        "Smart contract analysis failed: {:?}",
-        result
+        "Smart contract analysis failed: {result:?}"
     );
 
     service.stop().await.expect("Failed to stop service");
@@ -112,13 +109,11 @@ async fn test_transaction_optimization_performance() {
 
     assert!(
         duration < Duration::from_secs(5),
-        "Transaction optimization took too long: {:?}",
-        duration
+        "Transaction optimization took too long: {duration:?}"
     );
     assert!(
         result.is_ok(),
-        "Transaction optimization failed: {:?}",
-        result
+        "Transaction optimization failed: {result:?}"
     );
 
     service.stop().await.expect("Failed to stop service");
@@ -150,8 +145,7 @@ async fn test_concurrent_requests_performance() {
         let result = handle.await.expect("Task panicked");
         assert!(
             result.is_ok(),
-            "Concurrent health check failed: {:?}",
-            result
+            "Concurrent health check failed: {result:?}"
         );
     }
 
@@ -164,9 +158,7 @@ async fn test_concurrent_requests_performance() {
     // occasional scheduler jitter in shared runners.
     assert!(
         per_request_ms <= 50,
-        "Concurrent requests averaged {} ms per health check (total {:?})",
-        per_request_ms,
-        duration
+        "Concurrent requests averaged {per_request_ms} ms per health check (total {duration:?})"
     );
 
     service.stop().await.expect("Failed to stop service");
@@ -248,8 +240,7 @@ async fn test_startup_time() {
 
     assert!(
         duration < Duration::from_secs(5),
-        "Service startup took too long: {:?}",
-        duration
+        "Service startup took too long: {duration:?}"
     );
 
     service.stop().await.expect("Failed to stop service");
@@ -267,8 +258,7 @@ async fn test_shutdown_time() {
 
     assert!(
         duration < Duration::from_secs(5),
-        "Service shutdown took too long: {:?}",
-        duration
+        "Service shutdown took too long: {duration:?}"
     );
 }
 

@@ -219,7 +219,7 @@ mod tests {
         // Publish multiple files
         let rt = Runtime::new().expect("tokio runtime");
         for i in 0..5 {
-            let content = format!("file content {}", i);
+            let content = format!("file content {i}");
             let hash = ContentHash::from_data(content.as_bytes());
             let desc = FileDescriptor::new(hash, owner, 100 + i, None, vec![]);
 

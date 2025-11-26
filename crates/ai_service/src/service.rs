@@ -466,7 +466,7 @@ mod tests {
         );
         for i in 0..5 {
             let mut t = HashMap::new();
-            t.insert("node".to_string(), format!("node{}", i));
+            t.insert("node".to_string(), format!("node{i}"));
             service.add_analytics_data(
                 "cpu_usage".to_string(),
                 Fixed::from_int(70 + i as i64),
