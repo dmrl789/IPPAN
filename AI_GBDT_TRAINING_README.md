@@ -17,13 +17,43 @@ source .venv/bin/activate
 pip install "numpy==1.26.4" "pandas==2.2.2" "scikit-learn==1.5.2" "lightgbm==4.3.0"
 ```
 
-## Generate the synthetic training dataset
+## Generate the training dataset
+
+### Option 1: Synthetic dataset (bootstrap)
 
 This uses a fixed RNG seed and writes `data/ippan_gbdt_training.csv`.
 
 ```bash
 python ai_training/generate_synthetic_dataset.py
 ```
+
+### Option 2: Localnet dataset (real-world proxy)
+
+Export validator metrics from a running localnet to generate training data:
+
+1. **Start localnet** (see [Localnet Quickstart](../docs/LOCALNET_QUICKSTART.md)):
+   ```bash
+   # Windows PowerShell
+   .\localnet\run.ps1
+   
+   # Linux/macOS
+   scripts/run-local-full-stack.sh
+   ```
+
+2. **Export dataset**:
+   ```bash
+   # Windows PowerShell
+   .\localnet\export-dataset.ps1
+   
+   # Linux/macOS (or direct Python)
+   python ai_training/export_localnet_dataset.py --mode rpc --rpc http://localhost:8080 --samples 120 --interval 5 --out ai_training/localnet_training.csv
+   ```
+
+   This fetches validator metrics from the RPC endpoint (`/status`) and exports to `ai_training/localnet_training.csv` (gitignored).
+
+3. **Train as usual** (see below).
+
+**Note**: Localnet exports produce "proxy 7d" features (windowed deltas from current metrics) suitable for bootstrap/testing. For production training, use longer collection periods or aggregate historical data from testnet/mainnet.
 
 ## Train the bootstrap fairness model
 

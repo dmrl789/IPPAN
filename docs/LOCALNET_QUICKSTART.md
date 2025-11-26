@@ -140,6 +140,29 @@ Common issues:
 - **Image pull errors**: Check internet connection and Docker registry access
 - **Permission errors**: Run PowerShell as Administrator (rarely needed)
 
+## Export Training Dataset
+
+You can export validator metrics from the running localnet to generate training data for the GBDT model:
+
+1. **Ensure localnet is running**: `.\localnet\run.ps1`
+
+2. **Export dataset**:
+   ```powershell
+   .\localnet\export-dataset.ps1
+   ```
+
+   This script:
+   - Fetches validator metrics from the RPC endpoint (`http://localhost:8080/status`)
+   - Collects 120 samples at 5-second intervals (default)
+   - Exports to `ai_training/localnet_training.csv` (gitignored)
+
+3. **Train the model**:
+   ```powershell
+   python ai_training\train_ippan_d_gbdt.py
+   ```
+
+**Note**: The exported features are "proxy 7d" approximations (windowed deltas from current metrics) suitable for bootstrap/testing. For production training, use longer collection periods or aggregate historical data.
+
 ## Next Steps
 
 - **Send a test transaction**: See [Local Full-Stack Guide](./dev/local-full-stack.md) for end-to-end examples
