@@ -367,7 +367,10 @@ mod tests {
         let mut distributor = RewardDistributor::default();
         let model = FairnessModel::testing_stub();
         let mut metrics = std::collections::HashMap::new();
-        metrics.insert("proposer1".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert(
+            "proposer1".to_string(),
+            crate::dgbdt::ValidatorMetrics::default(),
+        );
         metrics.insert("v1".to_string(), crate::dgbdt::ValidatorMetrics::default());
         metrics.insert("v2".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
@@ -392,11 +395,20 @@ mod tests {
         let mut distributor = RewardDistributor::default();
         let model = FairnessModel::testing_stub();
         let mut metrics = std::collections::HashMap::new();
-        metrics.insert("proposer1".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert(
+            "proposer1".to_string(),
+            crate::dgbdt::ValidatorMetrics::default(),
+        );
         metrics.insert("v1".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
         distributor
-            .distribute_block_reward(BLOCK_REWARD, "proposer1", &["v1".to_string()], &model, &metrics)
+            .distribute_block_reward(
+                BLOCK_REWARD,
+                "proposer1",
+                &["v1".to_string()],
+                &model,
+                &metrics,
+            )
             .unwrap();
 
         assert!(distributor.get_pending("proposer1") > 0);
@@ -409,7 +421,10 @@ mod tests {
         let mut distributor = RewardDistributor::default();
         let model = FairnessModel::testing_stub();
         let mut metrics = std::collections::HashMap::new();
-        metrics.insert("proposer1".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert(
+            "proposer1".to_string(),
+            crate::dgbdt::ValidatorMetrics::default(),
+        );
 
         distributor
             .distribute_block_reward(BLOCK_REWARD, "proposer1", &[], &model, &metrics)
@@ -434,7 +449,10 @@ mod tests {
         let mut distributor = RewardDistributor::new(splits);
         let model = FairnessModel::testing_stub();
         let mut metrics = std::collections::HashMap::new();
-        metrics.insert("proposer".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert(
+            "proposer".to_string(),
+            crate::dgbdt::ValidatorMetrics::default(),
+        );
         metrics.insert("v1".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
         let result = distributor
@@ -460,11 +478,20 @@ mod tests {
         let mut distributor = RewardDistributor::default();
         let model = FairnessModel::testing_stub();
         let mut metrics = std::collections::HashMap::new();
-        metrics.insert("proposer1".to_string(), crate::dgbdt::ValidatorMetrics::default());
+        metrics.insert(
+            "proposer1".to_string(),
+            crate::dgbdt::ValidatorMetrics::default(),
+        );
         metrics.insert("v1".to_string(), crate::dgbdt::ValidatorMetrics::default());
 
         distributor
-            .distribute_block_reward(BLOCK_REWARD, "proposer1", &["v1".to_string()], &model, &metrics)
+            .distribute_block_reward(
+                BLOCK_REWARD,
+                "proposer1",
+                &["v1".to_string()],
+                &model,
+                &metrics,
+            )
             .unwrap();
 
         let stats = distributor.stats();

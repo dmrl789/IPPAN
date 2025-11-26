@@ -538,19 +538,22 @@ mod tests {
                 100 + (i as u64 * 10),   // Varying blocks proposed
                 500 + (i as u64 * 20),   // Varying blocks verified
                 Amount::from_micro_ipn(1_000_000 + (i as u64 * 100_000)),
-                100 + (i as u64 * 5),    // Varying rounds active
+                100 + (i as u64 * 5), // Varying rounds active
             );
             validators.insert(id, metrics);
         }
 
         // Call selection twice for the same round
-        let set1 = VerifierSet::select(&model, &validators, "deterministic_test_seed", 42, 5)
-            .unwrap();
-        let set2 = VerifierSet::select(&model, &validators, "deterministic_test_seed", 42, 5)
-            .unwrap();
+        let set1 =
+            VerifierSet::select(&model, &validators, "deterministic_test_seed", 42, 5).unwrap();
+        let set2 =
+            VerifierSet::select(&model, &validators, "deterministic_test_seed", 42, 5).unwrap();
 
         // Assert the resulting lists are identical (same order)
-        assert_eq!(set1.primary, set2.primary, "Primary should be deterministic");
+        assert_eq!(
+            set1.primary, set2.primary,
+            "Primary should be deterministic"
+        );
         assert_eq!(
             set1.shadows, set2.shadows,
             "Shadow verifiers should be deterministic and in same order"
@@ -588,12 +591,9 @@ mod tests {
             .find(|(id, _)| id == &set1.primary)
             .map(|(_, score)| *score)
             .expect("Primary should be in validator list");
-        
+
         // Primary should have a positive score
-        assert!(
-            primary_score > 0,
-            "Primary should have a positive score"
-        );
+        assert!(primary_score > 0, "Primary should have a positive score");
 
         // Shadows should also be high scorers (excluding primary)
         let shadow_scores: Vec<i64> = set1

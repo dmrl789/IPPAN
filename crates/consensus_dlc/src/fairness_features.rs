@@ -27,10 +27,7 @@ pub const SCALE: i64 = 1_000_000;
 /// 5. slashing_events_90d: events * SCALE
 /// 6. stake_normalized: [0..SCALE] (normalized by max stake)
 /// 7. peer_reports_quality: [0..SCALE] (0-100%)
-pub fn features_for_validator(
-    metrics: &ValidatorMetrics,
-    max_stake: Amount,
-) -> [i64; 7] {
+pub fn features_for_validator(metrics: &ValidatorMetrics, max_stake: Amount) -> [i64; 7] {
     // 1. uptime_ratio_7d: Use uptime field (already scaled 0-10000), convert to SCALE
     let uptime_ratio_7d = if metrics.uptime > 0 {
         // Convert from 0-10000 scale to 0-SCALE scale
@@ -144,4 +141,3 @@ mod tests {
         assert_eq!(features1, features2, "Features should be deterministic");
     }
 }
-

@@ -1233,11 +1233,11 @@ async fn main() -> Result<()> {
 
         // Start DLC consensus
         dlc_integrated.start().await?;
-        
+
         // Store DLC handle before moving dlc_integrated
         // get_dlc() returns Arc<RwLock<DLCConsensus>>, which is what we need
         dlc_handle = Some(dlc_integrated.get_dlc());
-        
+
         consensus = Arc::new(Mutex::new(dlc_integrated.poa));
         ai_status_handle = build_dlc_ai_status_handle();
 
