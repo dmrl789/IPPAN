@@ -36,7 +36,7 @@ fn canonical_manifest_matches_artifacts() {
 
         let recomputed = recompute_inference_hash(entry, &root).expect("recompute hash");
         for (arch, hash) in &entry.inference.architectures {
-            assert_eq!(hash, &recomputed, "architecture {} mismatch", arch);
+            assert_eq!(hash, &recomputed, "architecture {arch} mismatch");
         }
     }
 }
@@ -50,7 +50,7 @@ fn architecture_hash_files_match_manifest() {
 
     let architectures = ["x86_64", "aarch64"];
     for arch in architectures {
-        let file_path = root.join(format!("models/deterministic_gbdt_model.{}.sha256", arch));
+        let file_path = root.join(format!("models/deterministic_gbdt_model.{arch}.sha256"));
         let contents = fs::read_to_string(&file_path).expect("hash file must exist");
         assert_eq!(contents.trim(), entry.artifact.sha256);
     }

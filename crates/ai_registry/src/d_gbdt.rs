@@ -751,9 +751,8 @@ mod tests {
 [dgbdt]
   [dgbdt.model]
   path = "models/model.json"
-  expected_hash = "{}"
-"#,
-            hash
+  expected_hash = "{hash}"
+"#
         );
         std::fs::write(&config_path, config_contents).unwrap();
 
@@ -788,9 +787,8 @@ mod tests {
 [dgbdt]
   [dgbdt.model]
   path = "models/model.json"
-  expected_hash = "{}"
-"#,
-            hash
+  expected_hash = "{hash}"
+"#
         );
         std::fs::write(&config_path, config_contents).unwrap();
 
