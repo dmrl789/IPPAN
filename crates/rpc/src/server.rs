@@ -1294,6 +1294,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         router = router.fallback(handle_not_found);
     }
 
+    router = router.layer(RequestBodyLimitLayer::new(max_body_bytes));
+
     let middleware_stack = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(handle_service_error))
         .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
