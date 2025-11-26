@@ -1,6 +1,6 @@
+use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use parking_lot::RwLock;
 use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -65,8 +65,8 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, warn};
 
-use hex::encode as hex_encode;
 use blake3::Hasher as Blake3Hasher;
+use hex::encode as hex_encode;
 use std::env;
 
 use crate::{
@@ -206,17 +206,17 @@ impl ConsensusHandle {
             .iter()
             .map(|v| hex::encode(v.id))
             .collect();
-        
+
         // Metrics will be populated from DLC consensus if available (see handle_status)
         let validators_metrics = None;
-        
+
         Ok(ConsensusStateView {
             round: state.current_round,
             validators,
             validators_metrics,
         })
     }
-    
+
     /// Get DLC consensus handle if available
     pub fn get_dlc_handle(&self) -> Option<Arc<RwLock<DLCConsensus>>> {
         // This will be set by the node when DLC is enabled
@@ -278,6 +278,7 @@ struct DriftCfg {
     seed: u64,
 }
 
+#[allow(dead_code)]
 fn read_drift_cfg() -> DriftCfg {
     let enabled = env::var("IPPAN_STATUS_METRICS_DRIFT")
         .unwrap_or_else(|_| "0".to_string())
@@ -305,7 +306,11 @@ fn read_drift_cfg() -> DriftCfg {
         .parse::<u64>()
         .unwrap_or(0);
 
-    DriftCfg { enabled, mode, seed }
+    DriftCfg {
+        enabled,
+        mode,
+        seed,
+    }
 }
 
 fn hash_u32(seed: u64, tag: &str, validator_id: &str, round: u64) -> u32 {
@@ -323,6 +328,7 @@ fn clamp_0_10000(x: i32) -> u16 {
     x.max(0).min(10000) as u16
 }
 
+#[allow(dead_code)]
 fn apply_metrics_drift(
     cfg: &DriftCfg,
     round: u64,
@@ -382,7 +388,8 @@ fn apply_metrics_drift(
             out.blocks_verified = out.blocks_verified.saturating_add(blk_delta);
         }
         DriftMode::Rotate => {
-            let worst_index = (hash_u32(cfg.seed, "worst", "", round) as usize) % validator_count.max(1);
+            let worst_index =
+                (hash_u32(cfg.seed, "worst", "", round) as usize) % validator_count.max(1);
             let is_worst = validator_index == worst_index;
 
             let h = hash_u32(cfg.seed, "rotate", validator_id, round);
@@ -1732,22 +1739,24 @@ async fn handle_status(
                 if let Some(dlc_handle) = &state.dlc_consensus {
                     let dlc = dlc_handle.read();
                     let dlc_metrics = dlc.validator_metrics.read();
-                    
+
                     if !dlc_metrics.is_empty() {
                         let mut metrics_map = BTreeMap::new();
-                        
+
                         for (validator_id, metrics) in dlc_metrics.iter() {
                             let validator_id_str = hex::encode(validator_id);
-                            
+
                             // Convert ippan_consensus::dgbdt::ValidatorMetrics to ValidatorMetricsView
                             // Map fields: uptime_percentage (1_000_000 scale) -> uptime (10000 scale)
                             // Map fields: avg_latency_us -> latency (approximate conversion to 0-10000 scale)
                             // Map fields: recent_performance -> honesty (approximate)
-                            let uptime = ((metrics.uptime_percentage * 10000) / 1_000_000).min(10000) as u16;
+                            let uptime =
+                                ((metrics.uptime_percentage * 10000) / 1_000_000).min(10000) as u16;
                             // Convert latency: assume 1000ms = 10000 scale, so 1ms = 10 scale units
                             let latency = ((metrics.avg_latency_us / 100).min(10000)) as u16;
-                            let honesty = ((metrics.recent_performance * 10000) / 1_000_000).min(10000) as u16;
-                            
+                            let honesty = ((metrics.recent_performance * 10000) / 1_000_000)
+                                .min(10000) as u16;
+
                             metrics_map.insert(
                                 validator_id_str,
                                 ValidatorMetricsView {
@@ -1764,30 +1773,31 @@ async fn handle_status(
                                 },
                             );
                         }
-                        
+
                         view.validators_metrics = Some(metrics_map);
                     }
                 }
-                
+
                 let mut json = serde_json::json!({
                     "round": view.round,
                     "validator_ids": view.validators,
                 });
-                
+
                 // Determine if metrics are available
-                let metrics_available = view.validators_metrics
+                let metrics_available = view
+                    .validators_metrics
                     .as_ref()
                     .map(|m| !m.is_empty())
                     .unwrap_or(false);
-                
+
                 json["metrics_available"] = serde_json::Value::Bool(metrics_available);
-                
+
                 // Add validators metrics map if available
                 if let Some(metrics_map) = &view.validators_metrics {
                     json["validators"] = serde_json::to_value(metrics_map)
                         .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
                 }
-                
+
                 Some(json)
             }
             Err(err) => {
@@ -5892,13 +5902,14 @@ mod tests {
             "round": view.round,
             "validator_ids": view.validators,
         });
-        
-        let metrics_available = view.validators_metrics
+
+        let metrics_available = view
+            .validators_metrics
             .as_ref()
             .map(|m| !m.is_empty())
             .unwrap_or(false);
         consensus_json["metrics_available"] = serde_json::Value::Bool(metrics_available);
-        
+
         if let Some(metrics_map) = &view.validators_metrics {
             consensus_json["validators"] = serde_json::to_value(metrics_map).unwrap();
         }
@@ -5907,14 +5918,19 @@ mod tests {
         assert_eq!(consensus_json["round"], 1);
         assert_eq!(consensus_json["validator_ids"].as_array().unwrap().len(), 2);
         assert_eq!(consensus_json["metrics_available"], true);
-        
-        let validators_obj = consensus_json.get("validators")
+
+        let validators_obj = consensus_json
+            .get("validators")
             .and_then(|v| v.as_object())
             .expect("validators is object");
         assert_eq!(validators_obj.len(), 2);
-        
+
         // Check validator "a"
-        let validator_a = validators_obj.get("a").expect("validator a exists").as_object().unwrap();
+        let validator_a = validators_obj
+            .get("a")
+            .expect("validator a exists")
+            .as_object()
+            .unwrap();
         assert_eq!(validator_a["uptime"], 9500);
         assert_eq!(validator_a["latency"], 500);
         assert_eq!(validator_a["honesty"], 9800);
@@ -5923,9 +5939,13 @@ mod tests {
         assert_eq!(validator_a["rounds_active"], 120);
         assert_eq!(validator_a["slashing_events_90d"], 0);
         assert_eq!(validator_a["stake"]["micro_ipn"], "1000000000");
-        
+
         // Check validator "b"
-        let validator_b = validators_obj.get("b").expect("validator b exists").as_object().unwrap();
+        let validator_b = validators_obj
+            .get("b")
+            .expect("validator b exists")
+            .as_object()
+            .unwrap();
         assert_eq!(validator_b["uptime"], 9200);
         assert_eq!(validator_b["slashing_events_90d"], 1);
         assert_eq!(validator_b["stake"]["micro_ipn"], "2000000000");
@@ -5933,8 +5953,6 @@ mod tests {
 
     #[test]
     fn test_status_drift_is_deterministic() {
-        use std::collections::BTreeMap;
-
         let cfg = DriftCfg {
             enabled: true,
             mode: DriftMode::Tiers,
@@ -5989,14 +6007,10 @@ mod tests {
         assert!(result.uptime <= 10000);
         assert!(result.honesty <= 10000);
         assert!(result.latency <= 10000);
-        assert!(result.uptime >= 0);
-        assert!(result.honesty >= 0);
-        assert!(result.latency >= 0);
     }
 
     #[tokio::test]
     async fn test_status_response_metrics_available_false() {
-        use serde_json::Value;
 
         // Create a ConsensusStateView without metrics
         let view = ConsensusStateView {
@@ -6010,8 +6024,9 @@ mod tests {
             "round": view.round,
             "validator_ids": view.validators,
         });
-        
-        let metrics_available = view.validators_metrics
+
+        let metrics_available = view
+            .validators_metrics
             .as_ref()
             .map(|m| !m.is_empty())
             .unwrap_or(false);
