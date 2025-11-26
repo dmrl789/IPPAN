@@ -1872,7 +1872,7 @@ impl DataDirLock {
 
 impl Drop for DataDirLock {
     fn drop(&mut self) {
-        let _ = self.file.unlock();
+        let _ = FileExt::unlock(&self.file);
         let _ = fs::remove_file(&self.path);
     }
 }
