@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use parking_lot::RwLock;
 use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -27,7 +28,7 @@ use axum::{Json, Router};
 use ed25519_dalek::{Signer, SigningKey};
 #[cfg(test)]
 use http_body_util::BodyExt;
-use ippan_consensus::PoAConsensus;
+use ippan_consensus::{DLCConsensus, PoAConsensus};
 use ippan_consensus_dlc::AiConsensusStatus;
 use ippan_files::{FileDhtService, FileStorage};
 use ippan_l1_fees::FeePolicy;
@@ -134,6 +135,8 @@ pub struct AppState {
     pub handle_anchors: Arc<L1HandleAnchorStorage>,
     pub handle_dht: Option<Arc<dyn HandleDhtService>>,
     pub dht_handle_mode: String,
+    /// DLC consensus handle (if DLC mode is enabled)
+    pub dlc_consensus: Option<Arc<parking_lot::RwLock<DLCConsensus>>>,
 }
 
 type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
@@ -202,8 +205,7 @@ impl ConsensusHandle {
             .map(|v| hex::encode(v.id))
             .collect();
         
-        // For now, metrics are None (PoAConsensus doesn't have DLC metrics)
-        // This will be populated when DLC consensus is available
+        // Metrics will be populated from DLC consensus if available (see handle_status)
         let validators_metrics = None;
         
         Ok(ConsensusStateView {
@@ -211,6 +213,12 @@ impl ConsensusHandle {
             validators,
             validators_metrics,
         })
+    }
+    
+    /// Get DLC consensus handle if available
+    pub fn get_dlc_handle(&self) -> Option<Arc<RwLock<DLCConsensus>>> {
+        // This will be set by the node when DLC is enabled
+        None
     }
 
     pub fn submit_transaction(&self, tx: Transaction) -> Result<()> {
@@ -1554,7 +1562,48 @@ async fn handle_status(
 
     let consensus_view = if let Some(consensus) = &state.consensus {
         match consensus.snapshot().await {
-            Ok(view) => {
+            Ok(mut view) => {
+                // Try to extract metrics from DLC consensus if available
+                if let Some(dlc_handle) = &state.dlc_consensus {
+                    let dlc = dlc_handle.read();
+                    let dlc_metrics = dlc.validator_metrics.read();
+                    
+                    if !dlc_metrics.is_empty() {
+                        let mut metrics_map = BTreeMap::new();
+                        
+                        for (validator_id, metrics) in dlc_metrics.iter() {
+                            let validator_id_str = hex::encode(validator_id);
+                            
+                            // Convert ippan_consensus::dgbdt::ValidatorMetrics to ValidatorMetricsView
+                            // Map fields: uptime_percentage (1_000_000 scale) -> uptime (10000 scale)
+                            // Map fields: avg_latency_us -> latency (approximate conversion to 0-10000 scale)
+                            // Map fields: recent_performance -> honesty (approximate)
+                            let uptime = ((metrics.uptime_percentage * 10000) / 1_000_000).min(10000) as u16;
+                            // Convert latency: assume 1000ms = 10000 scale, so 1ms = 10 scale units
+                            let latency = ((metrics.avg_latency_us / 100).min(10000)) as u16;
+                            let honesty = ((metrics.recent_performance * 10000) / 1_000_000).min(10000) as u16;
+                            
+                            metrics_map.insert(
+                                validator_id_str,
+                                ValidatorMetricsView {
+                                    uptime,
+                                    latency,
+                                    honesty,
+                                    blocks_proposed: metrics.blocks_proposed,
+                                    blocks_verified: metrics.blocks_verified,
+                                    rounds_active: metrics.rounds_active,
+                                    slashing_events_90d: metrics.slash_count,
+                                    stake: StakeView {
+                                        micro_ipn: metrics.stake_amount.to_string(),
+                                    },
+                                },
+                            );
+                        }
+                        
+                        view.validators_metrics = Some(metrics_map);
+                    }
+                }
+                
                 let mut json = serde_json::json!({
                     "round": view.round,
                     "validator_ids": view.validators,
@@ -3191,6 +3240,7 @@ mod tests {
             handle_anchors,
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
+            dlc_consensus: None,
         });
 
         let addr: SocketAddr = "127.0.0.1:6000".parse().unwrap();
@@ -3327,6 +3377,7 @@ mod tests {
             handle_anchors,
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
+            dlc_consensus: None,
         })
     }
 
@@ -5615,6 +5666,7 @@ mod tests {
             handle_anchors,
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
+            dlc_consensus: None,
         });
 
         let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();

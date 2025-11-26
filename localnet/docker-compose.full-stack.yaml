@@ -20,8 +20,11 @@ services:
       IPPAN_DEV_MODE: "true"
       IPPAN_ENABLE_SECURITY: "false"
       IPPAN_BOOTSTRAP_NODES: ""
+      CONSENSUS_MODE: "DLC"
+      ENABLE_DLC: "true"
     volumes:
       - ./data/node:/var/lib/ippan/data
+      - ../config/dlc.toml:/app/config/dlc.toml:ro
     ports:
       - "8080:8080"
       - "9000:9000"

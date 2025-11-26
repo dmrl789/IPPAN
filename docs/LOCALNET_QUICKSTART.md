@@ -59,6 +59,16 @@ Verify the `/status` endpoint has schema version 2 and metrics available:
 
 Expected: `status_schema_version = 2` and `consensus.metrics_available = true`
 
+### DLC Metrics Enabled
+
+Localnet runs with DLC consensus by default. The `/status` endpoint exposes per-validator metrics under `consensus.validators` when `consensus.metrics_available` is `true`.
+
+Verify metrics are available:
+
+```powershell
+Invoke-WebRequest -Uri http://localhost:8080/status -UseBasicParsing
+```
+
 Or using curl (if available):
 
 ```powershell

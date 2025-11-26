@@ -1183,6 +1183,7 @@ async fn main() -> Result<()> {
     // Initialize consensus based on mode
     let (tx_sender, mempool, consensus);
     let mut ai_status_handle: Option<AiStatusHandle> = None;
+    let mut dlc_handle: Option<Arc<ippan_consensus::DLCConsensus>> = None;
 
     if config.consensus_mode.to_uppercase() == "DLC" || config.enable_dlc {
         info!("Starting DLC consensus mode");
@@ -1232,6 +1233,11 @@ async fn main() -> Result<()> {
 
         // Start DLC consensus
         dlc_integrated.start().await?;
+        
+        // Store DLC handle before moving dlc_integrated
+        // get_dlc() returns Arc<RwLock<DLCConsensus>>, which is what we need
+        dlc_handle = Some(dlc_integrated.get_dlc());
+        
         consensus = Arc::new(Mutex::new(dlc_integrated.poa));
         ai_status_handle = build_dlc_ai_status_handle();
 
@@ -1387,6 +1393,7 @@ async fn main() -> Result<()> {
         handle_anchors: handle_anchors.clone(),
         handle_dht: Some(handle_dht.clone()),
         dht_handle_mode: config.handle_dht_mode.to_string(),
+        dlc_consensus: dlc_handle,
     };
 
     let rpc_host = &config.rpc_host;

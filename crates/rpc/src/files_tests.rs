@@ -80,6 +80,7 @@ mod tests {
         let handle_dht: Arc<dyn HandleDhtService> = Arc::new(StubHandleDhtService::new());
 
         AppState {
+            dlc_consensus: None,
             storage,
             start_time: Instant::now(),
             peer_count: Arc::new(AtomicUsize::new(0)),
