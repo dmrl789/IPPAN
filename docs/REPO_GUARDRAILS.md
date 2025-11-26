@@ -43,18 +43,19 @@ Runtime model artifacts (e.g., `crates/ai_registry/models/*.json`) are versioned
 - Hash mismatches cause load failures (fail-fast security)
 - Training scripts in `ai_training/` are **OFFLINE ONLY**; runtime never trains
 
-### Strict Model Loading (v1)
+### Strict Model Loading (v2)
 
-The fairness model v1 is loaded via `ippan_ai_registry::d_gbdt::get_active_fairness_model_strict()`:
-- **Location**: `crates/ai_registry/models/ippan_d_gbdt_v1.json`
-- **Pinned Hash**: `ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d`
-- **Behavior**: Consensus initialization calls the strict loader at startup
+The fairness model v2 is loaded via config-based strict loading:
+- **Location**: `crates/ai_registry/models/ippan_d_gbdt_v2.json`
+- **Pinned Hash**: `ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d` (set in `config/dlc.toml` under `[dgbdt.model]`)
+- **Behavior**: Consensus initialization loads model from config with hash verification at startup
 - **Failure Mode**: If the model file is missing, hash mismatches, or JSON cannot be deserialized, the node **FAILS FAST** (startup/init returns error)
 - **No Fallbacks**: There is no code path that silently continues without the strict model - consensus will not start without a valid, hash-verified model
+- **Training Source**: v2 trained on localnet dataset (proxy windowed metrics from /status endpoint)
 
 ### Shadow Verifier Selection
 
-Shadow verifier selection is score-ranked using the deterministic GBDT model v1:
+Shadow verifier selection is score-ranked using the deterministic GBDT model v2:
 - Features are fixed-point i64 scaled by 1_000_000 (SCALE)
 - Model scores all validators using 7 features: uptime_ratio_7d, validated_blocks_7d, missed_blocks_7d, avg_latency_ms, slashing_events_90d, stake_normalized, peer_reports_quality
 - Shadows are selected deterministically by highest score first, with validator ID as tie-breaker
@@ -62,7 +63,7 @@ Shadow verifier selection is score-ranked using the deterministic GBDT model v1:
 
 ### Reward Weighting
 
-Reward distribution is weighted by fairness model v1 score:
+Reward distribution is weighted by fairness model v2 score:
 - Multiplier cap 0.8x–1.2x (MIN_MULT/MAX_MULT) applied to validator scores
 - Weights normalized to keep total payout unchanged (sum(weights) == SCALE)
 - Deterministic remainder distribution with tie-break by validator ID

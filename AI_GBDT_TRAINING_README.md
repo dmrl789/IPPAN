@@ -55,6 +55,31 @@ Export validator metrics from a running localnet to generate training data:
 
 **Note**: Localnet exports produce "proxy 7d" features (windowed deltas from current metrics) suitable for bootstrap/testing. For production training, use longer collection periods or aggregate historical data from testnet/mainnet.
 
+### Promoting v2 to Runtime
+
+After training v2 from localnet data:
+
+1. **Compute BLAKE3 hash**:
+   ```bash
+   python -c "from blake3 import blake3; p='ai_training/ippan_d_gbdt_v2.json'; print(blake3(open(p,'rb').read()).hexdigest())"
+   ```
+
+2. **Vendor model to runtime**:
+   ```bash
+   cp ai_training/ippan_d_gbdt_v2.json crates/ai_registry/models/ippan_d_gbdt_v2.json
+   ```
+
+3. **Update config** (`config/dlc.toml`):
+   ```toml
+   [dgbdt.model]
+   path = "crates/ai_registry/models/ippan_d_gbdt_v2.json"
+   expected_hash = "<computed_hash>"
+   ```
+
+4. **Update model card** (`ai_training/model_card_ippan_d_gbdt_v2.toml`) with the hash.
+
+5. **Verify**: Runtime nodes will fail-fast on startup if the model hash doesn't match the pinned hash in config.
+
 ## Train the bootstrap fairness model
 
 This trains LightGBM offline, quantizes leaves to integers, and writes `ai_training/ippan_d_gbdt_v1.json`.

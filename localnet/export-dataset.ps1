@@ -18,7 +18,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Python not found"
     }
-    Write-Host "  ✓ Python is available ($pythonVersion)" -ForegroundColor Green
+    Write-Host "  Python is available ($pythonVersion)" -ForegroundColor Green
 } catch {
     Write-Host "  ✗ Python is not available" -ForegroundColor Red
     Write-Host "  Please install Python 3 and ensure it's in your PATH" -ForegroundColor Yellow
@@ -32,9 +32,9 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "requests library not found"
     }
-    Write-Host "  ✓ Python dependencies OK" -ForegroundColor Green
+    Write-Host "  Python dependencies OK" -ForegroundColor Green
 } catch {
-    Write-Host "  ✗ Missing 'requests' library" -ForegroundColor Red
+    Write-Host "  Missing 'requests' library" -ForegroundColor Red
     Write-Host "  Install with: pip install requests" -ForegroundColor Yellow
     exit 1
 }
@@ -44,7 +44,7 @@ Write-Host "[3/3] Checking RPC endpoint..." -ForegroundColor Yellow
 try {
     $response = Invoke-WebRequest -Uri "$RpcUrl/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
     if ($response.StatusCode -eq 200) {
-        Write-Host "  ✓ RPC endpoint is reachable" -ForegroundColor Green
+        Write-Host "  RPC endpoint is reachable" -ForegroundColor Green
     } else {
         throw "RPC endpoint returned status $($response.StatusCode)"
     }
@@ -75,12 +75,12 @@ python $scriptPath `
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
-    Write-Host "✗ Export failed" -ForegroundColor Red
+    Write-Host "Export failed" -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
-Write-Host "✓ Dataset exported successfully to $OutputPath" -ForegroundColor Green
+Write-Host "Dataset exported successfully to $OutputPath" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  Train model: python ai_training\train_ippan_d_gbdt.py" -ForegroundColor Gray

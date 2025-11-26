@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from typing import Any, Dict, List
 
@@ -14,7 +15,8 @@ from sklearn.model_selection import train_test_split
 
 RANDOM_SEED = 42
 SCALE = 1_000_000
-CSV_PATH = "data/ippan_gbdt_training.csv"
+DEFAULT_CSV_PATH = "data/ippan_gbdt_training.csv"
+DEFAULT_OUTPUT_PATH = "ai_training/ippan_d_gbdt_v1.json"
 FEATURE_COLS = [
     "uptime_ratio_7d",
     "validated_blocks_7d",
@@ -77,13 +79,39 @@ def quantize_tree_structure(tree: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def main() -> None:
-    df = pd.read_csv(CSV_PATH)
+    parser = argparse.ArgumentParser(
+        description="Train IPPAN D-GBDT fairness model from CSV dataset"
+    )
+    parser.add_argument(
+        "--csv",
+        default=DEFAULT_CSV_PATH,
+        help=f"Input CSV file path (default: {DEFAULT_CSV_PATH})",
+    )
+    parser.add_argument(
+        "--out",
+        default=DEFAULT_OUTPUT_PATH,
+        help=f"Output JSON model file path (default: {DEFAULT_OUTPUT_PATH})",
+    )
+    args = parser.parse_args()
+
+    csv_path = args.csv
+    output_path = args.out
+
+    print(f"Loading dataset from: {csv_path}")
+    df = pd.read_csv(csv_path)
     X = df[FEATURE_COLS]
     y = df[TARGET_COL]
+
+    print(f"Dataset size: {len(df)} rows")
+    print(f"Features: {len(FEATURE_COLS)}")
+    print(f"Target: {TARGET_COL}")
 
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=0.2, random_state=RANDOM_SEED, shuffle=True
     )
+
+    print(f"Training set: {len(X_train)} rows")
+    print(f"Validation set: {len(X_val)} rows")
 
     model = lgb.LGBMRegressor(
         n_estimators=300,
@@ -98,6 +126,7 @@ def main() -> None:
         force_col_wise=True,
     )
 
+    print("Training model...")
     model.fit(X_train, y_train)
     preds = model.predict(X_val)
     mse = mean_squared_error(y_val, preds)
@@ -125,7 +154,6 @@ def main() -> None:
         "lightgbm_format_version": raw.get("version", "unknown"),
     }
 
-    output_path = "ai_training/ippan_d_gbdt_v1.json"
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(export, f, sort_keys=True, separators=(",", ":"))
 

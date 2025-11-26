@@ -156,12 +156,24 @@ You can export validator metrics from the running localnet to generate training 
    - Collects 120 samples at 5-second intervals (default)
    - Exports to `ai_training/localnet_training.csv` (gitignored)
 
-3. **Train the model**:
+3. **Train the model v2**:
    ```powershell
-   python ai_training\train_ippan_d_gbdt.py
+   python ai_training\train_ippan_d_gbdt.py --csv ai_training/localnet_training.csv --out ai_training/ippan_d_gbdt_v2.json
    ```
 
-**Note**: The exported features are "proxy 7d" approximations (windowed deltas from current metrics) suitable for bootstrap/testing. For production training, use longer collection periods or aggregate historical data.
+4. **Compute model hash and promote to runtime**:
+   ```powershell
+   # Compute BLAKE3 hash
+   python -c "from blake3 import blake3; p='ai_training/ippan_d_gbdt_v2.json'; print(blake3(open(p,'rb').read()).hexdigest())"
+   
+   # Copy to runtime location
+   Copy-Item ai_training\ippan_d_gbdt_v2.json crates\ai_registry\models\ippan_d_gbdt_v2.json
+   
+   # Update config/dlc.toml with the hash
+   # Update ai_training/model_card_ippan_d_gbdt_v2.toml with the hash
+   ```
+
+**Note**: The exported features are "proxy 7d" approximations (windowed deltas from current metrics) suitable for bootstrap/testing. For production training, use longer collection periods or aggregate historical data. The v2 model is vendored under `crates/ai_registry/models/` and enforced via strict hash verification at startup.
 
 ## Next Steps
 
