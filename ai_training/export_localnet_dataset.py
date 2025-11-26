@@ -101,23 +101,27 @@ def extract_validators_from_status(status_data: Dict[str, Any]) -> Dict[str, Dic
     """
     Extract validator metrics from /status response.
     
-    Expected structure:
+    Expected structure (new format):
     {
         "consensus": {
             "round": <round_id>,
-            "validators": {
+            "validator_ids": ["<id1>", "<id2>", ...],  // backward compatibility
+            "validators": {                            // NEW: full metrics map
                 "<validator_id>": {
                     "uptime": <0-10000>,
                     "latency": <0-10000>,
                     "honesty": <0-10000>,
                     "blocks_proposed": <u64>,
                     "blocks_verified": <u64>,
-                    "stake": { "micro_ipn": <u128> },
-                    "rounds_active": <u64>
+                    "stake": { "micro_ipn": "<u128-as-string>" },
+                    "rounds_active": <u64>,
+                    "slashing_events_90d": <u32>
                 }
             }
         }
     }
+    
+    Old format (array only) will raise an error.
     """
     validators = {}
     
@@ -127,8 +131,33 @@ def extract_validators_from_status(status_data: Dict[str, Any]) -> Dict[str, Dic
     consensus = status_data["consensus"]
     round_id = consensus.get("round", 0)
     
-    # Try different possible structures
-    validators_raw = consensus.get("validators", {})
+    # Check for new format: validators is a dict/object
+    validators_raw = consensus.get("validators")
+    
+    if validators_raw is None:
+        # Check if old format (array) exists
+        validator_ids = consensus.get("validator_ids", consensus.get("validators", []))
+        if isinstance(validator_ids, list) and len(validator_ids) > 0:
+            print(
+                "ERROR: Status endpoint does not expose metrics yet.",
+                "Update node to include consensus.validators map.",
+                f"Found {len(validator_ids)} validator IDs but no metrics.",
+                sep="\n",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return validators
+    
+    if isinstance(validators_raw, list):
+        # Old format: array of IDs only
+        print(
+            "ERROR: Status endpoint does not expose metrics yet.",
+            "Update node to include consensus.validators map.",
+            f"Found {len(validators_raw)} validator IDs but no metrics.",
+            sep="\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     
     if isinstance(validators_raw, dict):
         for validator_id, metrics in validators_raw.items():
@@ -142,6 +171,7 @@ def extract_validators_from_status(status_data: Dict[str, Any]) -> Dict[str, Dic
                     "blocks_verified": metrics.get("blocks_verified", 0),
                     "stake": metrics.get("stake", {}),
                     "rounds_active": metrics.get("rounds_active", 0),
+                    "slashing_events_90d": metrics.get("slashing_events_90d", 0),
                 }
     
     return validators
@@ -150,7 +180,9 @@ def extract_validators_from_status(status_data: Dict[str, Any]) -> Dict[str, Dic
 def extract_stake_micro(stake_data: Any) -> int:
     """Extract stake in micro-IPN from various possible formats."""
     if isinstance(stake_data, dict):
-        return int(stake_data.get("micro_ipn", stake_data.get("atomic", 0)))
+        micro_ipn = stake_data.get("micro_ipn", stake_data.get("atomic", 0))
+        # Handle string or int (JSON may serialize u128 as string)
+        return int(micro_ipn) if micro_ipn is not None else 0
     elif isinstance(stake_data, (int, str)):
         return int(stake_data)
     return 0
@@ -183,13 +215,17 @@ def convert_validator_to_row(
     latency_ms_norm = (latency_scaled * 100) / 10_000.0  # Approximate: 10000 = 1000ms
     stake_norm = stake_micro / max(max_stake_micro, 1) if max_stake_micro > 0 else 1.0
     
+    # Get slashing events (now available in metrics)
+    slashing_events = metrics.get("slashing_events_90d", 0)
+    slashing_norm = min(slashing_events, 3) / 3.0 if slashing_events > 0 else 0.0
+    
     # Compute fairness score
     fairness_score = compute_fairness_score(
         uptime_ratio,
         validated_blocks_norm,
         missed_blocks_norm,
         latency_ms_norm / 1000.0,  # Convert to seconds for score
-        0.0,  # slashing_events_90d (not available)
+        slashing_norm,
         stake_norm,
         peer_quality,
     )
@@ -203,7 +239,7 @@ def convert_validator_to_row(
         "validated_blocks_7d": int(blocks_verified * SCALE),
         "missed_blocks_7d": int(max(0, rounds_active - blocks_proposed) * SCALE),
         "avg_latency_ms": int(latency_ms_norm * SCALE),
-        "slashing_events_90d": 0,  # Not available in current metrics
+        "slashing_events_90d": slashing_events,
         "stake_normalized": int(min(stake_norm, 1.0) * SCALE),
         "peer_reports_quality": int(peer_quality * SCALE),
         "fairness_score": fairness_score,

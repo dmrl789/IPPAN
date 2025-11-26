@@ -201,9 +201,15 @@ impl ConsensusHandle {
             .iter()
             .map(|v| hex::encode(v.id))
             .collect();
+        
+        // For now, metrics are None (PoAConsensus doesn't have DLC metrics)
+        // This will be populated when DLC consensus is available
+        let validators_metrics = None;
+        
         Ok(ConsensusStateView {
             round: state.current_round,
             validators,
+            validators_metrics,
         })
     }
 
@@ -218,7 +224,30 @@ impl ConsensusHandle {
 #[derive(Clone, Debug, Serialize)]
 pub struct ConsensusStateView {
     pub round: u64,
+    #[serde(rename = "validator_ids")]
     pub validators: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validators_metrics: Option<std::collections::BTreeMap<String, ValidatorMetricsView>>,
+}
+
+/// Validator metrics view for JSON serialization
+#[derive(Clone, Debug, Serialize)]
+pub struct ValidatorMetricsView {
+    pub uptime: u16,
+    pub latency: u16,
+    pub honesty: u16,
+    pub blocks_proposed: u64,
+    pub blocks_verified: u64,
+    pub rounds_active: u64,
+    pub slashing_events_90d: u32,
+    pub stake: StakeView,
+}
+
+/// Stake view with micro-IPN as string
+#[derive(Clone, Debug, Serialize)]
+pub struct StakeView {
+    #[serde(rename = "micro_ipn")]
+    pub micro_ipn: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1525,11 +1554,20 @@ async fn handle_status(
 
     let consensus_view = if let Some(consensus) = &state.consensus {
         match consensus.snapshot().await {
-            Ok(view) => Some(serde_json::json!({
-                "round": view.round,
-                "validator_count": view.validators.len(),
-                "validators": view.validators,
-            })),
+            Ok(view) => {
+                let mut json = serde_json::json!({
+                    "round": view.round,
+                    "validator_ids": view.validators,
+                });
+                
+                // Add validators metrics map if available
+                if let Some(metrics_map) = &view.validators_metrics {
+                    json["validators"] = serde_json::to_value(metrics_map)
+                        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+                }
+                
+                Some(json)
+            }
             Err(err) => {
                 warn!("Failed to snapshot consensus state: {}", err);
                 None
@@ -5578,5 +5616,81 @@ mod tests {
         );
 
         assert!(resolved.contains("203.0.113.10"));
+    }
+
+    #[tokio::test]
+    async fn test_status_response_includes_validators_metrics() {
+        use std::collections::BTreeMap;
+        use serde_json::Value;
+
+        // Create a ConsensusStateView with metrics
+        let mut metrics_map = BTreeMap::new();
+        metrics_map.insert(
+            "a".to_string(),
+            ValidatorMetricsView {
+                uptime: 9500,
+                latency: 500,
+                honesty: 9800,
+                blocks_proposed: 100,
+                blocks_verified: 95,
+                rounds_active: 120,
+                slashing_events_90d: 0,
+                stake: StakeView {
+                    micro_ipn: "1000000000".to_string(),
+                },
+            },
+        );
+        metrics_map.insert(
+            "b".to_string(),
+            ValidatorMetricsView {
+                uptime: 9200,
+                latency: 800,
+                honesty: 9500,
+                blocks_proposed: 80,
+                blocks_verified: 75,
+                rounds_active: 100,
+                slashing_events_90d: 1,
+                stake: StakeView {
+                    micro_ipn: "2000000000".to_string(),
+                },
+            },
+        );
+
+        let view = ConsensusStateView {
+            round: 1,
+            validators: vec!["b".to_string(), "a".to_string()],
+            validators_metrics: Some(metrics_map),
+        };
+
+        // Serialize to JSON
+        let json_value: Value = serde_json::to_value(&view).expect("serialize");
+
+        // Verify structure
+        assert_eq!(json_value["round"], 1);
+        assert_eq!(json_value["validator_ids"].as_array().unwrap().len(), 2);
+        
+        // validators_metrics is serialized as "validators" (field name in struct)
+        // but it's optional, so check if it exists
+        let validators_obj = json_value.get("validators_metrics")
+            .and_then(|v| v.as_object())
+            .expect("validators_metrics is object");
+        assert_eq!(validators_obj.len(), 2);
+        
+        // Check validator "a"
+        let validator_a = validators_obj.get("a").expect("validator a exists").as_object().unwrap();
+        assert_eq!(validator_a["uptime"], 9500);
+        assert_eq!(validator_a["latency"], 500);
+        assert_eq!(validator_a["honesty"], 9800);
+        assert_eq!(validator_a["blocks_proposed"], 100);
+        assert_eq!(validator_a["blocks_verified"], 95);
+        assert_eq!(validator_a["rounds_active"], 120);
+        assert_eq!(validator_a["slashing_events_90d"], 0);
+        assert_eq!(validator_a["stake"]["micro_ipn"], "1000000000");
+        
+        // Check validator "b"
+        let validator_b = validators_obj.get("b").expect("validator b exists").as_object().unwrap();
+        assert_eq!(validator_b["uptime"], 9200);
+        assert_eq!(validator_b["slashing_events_90d"], 1);
+        assert_eq!(validator_b["stake"]["micro_ipn"], "2000000000");
     }
 }

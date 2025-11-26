@@ -146,13 +146,21 @@ You can export validator metrics from the running localnet to generate training 
 
 1. **Ensure localnet is running**: `.\localnet\run.ps1`
 
-2. **Export dataset**:
+2. **Verify /status endpoint**:
+   ```powershell
+   Invoke-WebRequest -Uri http://localhost:8080/status -UseBasicParsing
+   ```
+   
+   The `/status` endpoint now provides per-validator metrics under `consensus.validators` map.
+
+3. **Export dataset**:
    ```powershell
    .\localnet\export-dataset.ps1
    ```
 
    This script:
    - Fetches validator metrics from the RPC endpoint (`http://localhost:8080/status`)
+   - Requires `consensus.validators` map (not just `validator_ids` array)
    - Collects 120 samples at 5-second intervals (default)
    - Exports to `ai_training/localnet_training.csv` (gitignored)
 

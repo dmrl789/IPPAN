@@ -58,6 +58,8 @@ python3 ai_training/generate_synthetic_dataset.py
 
 Export validator metrics from a running localnet to generate training data:
 
+**Prerequisites**: The `/status` endpoint must expose `consensus.validators` map (not just `validator_ids` array). Update node to latest version if metrics are missing.
+
 1. **Start localnet** (see [Localnet Quickstart](../docs/LOCALNET_QUICKSTART.md)):
    ```bash
    # Windows PowerShell
@@ -77,6 +79,8 @@ Export validator metrics from a running localnet to generate training data:
    ```
 
    This fetches validator metrics from the RPC endpoint (`/status`) and exports to `ai_training/localnet_training.csv` (gitignored).
+   
+   **Note**: The exporter requires `consensus.validators` to be a map/object. If the endpoint only returns `validator_ids` array, the exporter will error with a clear message. The `stake.micro_ipn` field may be serialized as a string (JSON u128 limitation).
 
 3. **Train as usual** (see below).
 
