@@ -158,8 +158,7 @@ impl ReputationDB {
     pub fn initialize_validator(&mut self, validator_id: String) -> Result<()> {
         if self.scores.contains_key(&validator_id) {
             return Err(DlcError::ReputationUpdate(format!(
-                "Validator {} already has reputation",
-                validator_id
+                "Validator {validator_id} already has reputation"
             )));
         }
 

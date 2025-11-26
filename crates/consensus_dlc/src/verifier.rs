@@ -297,8 +297,7 @@ impl ValidatorSetManager {
     ) -> Result<()> {
         if self.validators.contains_key(&validator_id) {
             return Err(DlcError::InvalidVerifierSet(format!(
-                "Validator {} already registered",
-                validator_id
+                "Validator {validator_id} already registered"
             )));
         }
 
@@ -315,7 +314,7 @@ impl ValidatorSetManager {
         self.validators
             .insert(validator_id.to_string(), metrics)
             .ok_or_else(|| {
-                DlcError::ValidatorNotFound(format!("Validator {} not found", validator_id))
+                DlcError::ValidatorNotFound(format!("Validator {validator_id} not found"))
             })?;
         Ok(())
     }
@@ -323,7 +322,7 @@ impl ValidatorSetManager {
     /// Remove a validator
     pub fn remove_validator(&mut self, validator_id: &str) -> Result<()> {
         self.validators.remove(validator_id).ok_or_else(|| {
-            DlcError::ValidatorNotFound(format!("Validator {} not found", validator_id))
+            DlcError::ValidatorNotFound(format!("Validator {validator_id} not found"))
         })?;
         Ok(())
     }

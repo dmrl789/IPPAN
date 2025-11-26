@@ -31,7 +31,7 @@ pub fn features_for_validator(metrics: &ValidatorMetrics, max_stake: Amount) -> 
     // 1. uptime_ratio_7d: Use uptime field (already scaled 0-10000), convert to SCALE
     let uptime_ratio_7d = if metrics.uptime > 0 {
         // Convert from 0-10000 scale to 0-SCALE scale
-        (metrics.uptime as i64 * SCALE) / 10_000
+        (metrics.uptime * SCALE) / 10_000
     } else {
         SCALE / 2 // Default to neutral (50%) if no data
     };
@@ -81,7 +81,7 @@ pub fn features_for_validator(metrics: &ValidatorMetrics, max_stake: Amount) -> 
     // 7. peer_reports_quality: Use honesty field as proxy (already scaled 0-10000)
     // Convert from 0-10000 scale to 0-SCALE scale
     let peer_reports_quality = if metrics.honesty > 0 {
-        (metrics.honesty as i64 * SCALE) / 10_000
+        (metrics.honesty * SCALE) / 10_000
     } else {
         SCALE / 2 // Default to neutral (50%) if no data
     };

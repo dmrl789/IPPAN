@@ -67,15 +67,13 @@ impl ValidatorBond {
 
         if amount < MIN_VALIDATOR_BOND {
             return Err(DlcError::InvalidBond(format!(
-                "Bond amount {} is below minimum {}",
-                amount, MIN_VALIDATOR_BOND
+                "Bond amount {amount} is below minimum {MIN_VALIDATOR_BOND}"
             )));
         }
 
         if amount > MAX_VALIDATOR_BOND {
             return Err(DlcError::InvalidBond(format!(
-                "Bond amount {} exceeds maximum {}",
-                amount, MAX_VALIDATOR_BOND
+                "Bond amount {amount} exceeds maximum {MAX_VALIDATOR_BOND}"
             )));
         }
 
@@ -112,8 +110,7 @@ impl ValidatorBond {
 
         if new_amount > MAX_VALIDATOR_BOND {
             return Err(DlcError::InvalidBond(format!(
-                "Total bond {} would exceed maximum {}",
-                new_amount, MAX_VALIDATOR_BOND
+                "Total bond {new_amount} would exceed maximum {MAX_VALIDATOR_BOND}"
             )));
         }
 
@@ -157,8 +154,7 @@ impl ValidatorBond {
             BondStatus::Unstaking { unlock_round } => {
                 if current_round < *unlock_round {
                     return Err(DlcError::InvalidBond(format!(
-                        "Cannot withdraw before unlock round {}",
-                        unlock_round
+                        "Cannot withdraw before unlock round {unlock_round}"
                     )));
                 }
 
@@ -306,8 +302,7 @@ impl BondManager {
     pub fn create_bond(&mut self, validator_id: String, amount: Amount) -> Result<()> {
         if self.bonds.contains_key(&validator_id) {
             return Err(DlcError::InvalidBond(format!(
-                "Validator {} already has a bond",
-                validator_id
+                "Validator {validator_id} already has a bond"
             )));
         }
 

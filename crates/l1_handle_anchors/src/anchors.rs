@@ -109,7 +109,7 @@ impl L1HandleAnchorStorage {
 
         // Create merkle tree
         let tree = MerkleTree::new(leaves.clone()).map_err(|e| {
-            HandleAnchorError::StorageError(anyhow::anyhow!("Failed to build merkle tree: {}", e))
+            HandleAnchorError::StorageError(anyhow::anyhow!("Failed to build merkle tree: {e}"))
         })?;
 
         let state_root_vec = tree.root().ok_or_else(|| {
@@ -137,7 +137,7 @@ impl L1HandleAnchorStorage {
 
         // Generate merkle proof
         let proof = tree.generate_proof(index).map_err(|e| {
-            HandleAnchorError::StorageError(anyhow::anyhow!("Failed to generate proof: {}", e))
+            HandleAnchorError::StorageError(anyhow::anyhow!("Failed to generate proof: {e}"))
         })?;
 
         // Convert proof path to fixed-size arrays

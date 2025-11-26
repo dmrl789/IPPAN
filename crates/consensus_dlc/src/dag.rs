@@ -187,8 +187,7 @@ impl BlockDAG {
             for parent_id in &block.parents {
                 if !self.blocks.contains_key(parent_id) {
                     return Err(DlcError::BlockValidation(format!(
-                        "Parent block {} not found",
-                        parent_id
+                        "Parent block {parent_id} not found"
                     )));
                 }
             }

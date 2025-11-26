@@ -155,7 +155,7 @@ impl FairnessModel {
         use ippan_ai_registry::d_gbdt::load_model_from_path;
 
         let (model, _hash) = load_model_from_path(path)
-            .map_err(|e| DlcError::Model(format!("Failed to load D-GBDT model: {}", e)))?;
+            .map_err(|e| DlcError::Model(format!("Failed to load D-GBDT model: {e}")))?;
         Ok(Self::from_d_gbdt_model(model))
     }
 
