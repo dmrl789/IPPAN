@@ -88,12 +88,32 @@ impl VerifierSet {
             0
         } else {
             let band_pick = entropy % 10;
-            if band_pick < 8 || top_band_len == selection_count {
+            if band_pick < 8 || top_band_len >= selection_count {
                 // 80% probability shared across equally scored top validators
                 ((entropy / 10) % top_band_len as u64) as usize
             } else {
                 // 20% probability gives the next ranked validator a chance
-                top_band_len.min(selection_count - 1)
+                // Select from the next tier (after top_band_len), ensuring we don't exceed bounds
+                // We want to select from validators with the next highest score (not just any validator after top_band_len)
+                let next_tier_start = top_band_len;
+                // Find the next score tier
+                let next_score = if next_tier_start < scored.len() {
+                    scored[next_tier_start].1
+                } else {
+                    // Fallback if we're at the end
+                    scored.last().map(|(_, s)| *s).unwrap_or(0)
+                };
+                // Count how many validators have this next score
+                let next_tier_len = scored
+                    .iter()
+                    .skip(next_tier_start)
+                    .take_while(|(_, score)| *score == next_score)
+                    .count()
+                    .max(1);
+                let next_tier_end = (next_tier_start + next_tier_len).min(scored.len());
+                // Use entropy to pick within the next tier
+                let offset = ((entropy / 10) % next_tier_len as u64) as usize;
+                (next_tier_start + offset).min(next_tier_end.saturating_sub(1))
             }
         };
 
