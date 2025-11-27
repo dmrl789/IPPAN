@@ -28,9 +28,9 @@ use axum::{Json, Router};
 use ed25519_dalek::{Signer, SigningKey};
 #[cfg(test)]
 use http_body_util::BodyExt;
-use ippan_consensus::{DLCConsensus, PoAConsensus, ValidatorMetrics as DlcValidatorMetrics};
 #[cfg(test)]
 use ippan_consensus::DLCConfig;
+use ippan_consensus::{DLCConsensus, PoAConsensus, ValidatorMetrics as DlcValidatorMetrics};
 use ippan_consensus_dlc::AiConsensusStatus;
 use ippan_files::{FileDhtService, FileStorage};
 use ippan_l1_fees::FeePolicy;
