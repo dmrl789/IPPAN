@@ -1239,8 +1239,18 @@ async fn main() -> Result<()> {
         // get_dlc() returns Arc<RwLock<DLCConsensus>>, which is what we need
         dlc_handle = Some(dlc_integrated.get_dlc());
 
+        // Seed initial validator metrics for localnet
+        if let Some(ref dlc_arc) = dlc_handle {
+            seed_localnet_validators(dlc_arc.clone());
+        }
+
         consensus = Arc::new(Mutex::new(dlc_integrated.poa));
         ai_status_handle = build_dlc_ai_status_handle();
+
+        // Spawn metrics drift task for localnet if enabled
+        if let Some(ref dlc_arc) = dlc_handle {
+            spawn_metrics_drift_task(dlc_arc.clone());
+        }
 
         info!("DLC consensus engine started");
         info!("  - Temporal finality: {}ms", config.temporal_finality_ms);
@@ -1605,6 +1615,225 @@ fn init_logging(config: &AppConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Seed initial validator metrics for localnet (3 validators with deterministic IDs)
+fn seed_localnet_validators(dlc: Arc<RwLock<ippan_consensus::DLCConsensus>>) {
+    // Localnet validator IDs from localnet/*.toml configs
+    let validator_ids = [
+        "1111111111111111111111111111111111111111111111111111111111111111",
+        "2222222222222222222222222222222222222222222222222222222222222222",
+        "3333333333333333333333333333333333333333333333333333333333333333",
+    ];
+
+    info!(
+        "Seeding {} localnet validators with initial metrics",
+        validator_ids.len()
+    );
+
+    for vid_hex in &validator_ids {
+        if let Ok(vid_bytes) = hex::decode(vid_hex) {
+            if vid_bytes.len() == 32 {
+                let mut vid = [0u8; 32];
+                vid.copy_from_slice(&vid_bytes);
+
+                // Create default metrics (all fields zeroed/baseline)
+                let metrics = ippan_consensus::dgbdt::ValidatorMetrics {
+                    blocks_proposed: 0,
+                    blocks_verified: 0,
+                    rounds_active: 0,
+                    avg_latency_us: 50_000,       // 50ms baseline
+                    uptime_percentage: 1_000_000, // 100%
+                    slash_count: 0,
+                    recent_performance: 1_000_000,   // 100%
+                    network_contribution: 1_000_000, // 100%
+                    stake_amount: 10_000_000,        // 10 IPN in micro-IPN
+                };
+
+                let dlc_guard = dlc.read();
+                dlc_guard.update_validator_metrics(vid, metrics);
+            }
+        }
+    }
+
+    info!("Localnet validators seeded successfully");
+}
+
+/// Spawn a background task to drift metrics every 1s if IPPAN_STATUS_METRICS_DRIFT=1
+fn spawn_metrics_drift_task(dlc: Arc<RwLock<ippan_consensus::DLCConsensus>>) {
+    use std::env;
+
+    let enabled = env::var("IPPAN_STATUS_METRICS_DRIFT")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse::<u8>()
+        .unwrap_or(0)
+        == 1
+        || env::var("IPPAN_STATUS_METRICS_DRIFT")
+            .unwrap_or_else(|_| "0".to_string())
+            .to_lowercase()
+            == "true";
+
+    if !enabled {
+        return;
+    }
+
+    let mode_str = env::var("IPPAN_STATUS_METRICS_DRIFT_MODE")
+        .unwrap_or_else(|_| "tiers".to_string())
+        .to_lowercase();
+
+    let seed = env::var("IPPAN_STATUS_METRICS_DRIFT_SEED")
+        .unwrap_or_else(|_| "42".to_string())
+        .parse::<u64>()
+        .unwrap_or(42);
+
+    info!(
+        "Spawning metrics drift task (mode={}, seed={})",
+        mode_str, seed
+    );
+
+    tokio::spawn(async move {
+        let mut tick: u64 = 0;
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+
+        // Localnet validator IDs (deterministic order)
+        let validator_ids = [
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "3333333333333333333333333333333333333333333333333333333333333333",
+        ];
+
+        loop {
+            interval.tick().await;
+            tick += 1;
+
+            for (idx, vid_hex) in validator_ids.iter().enumerate() {
+                if let Ok(vid_bytes) = hex::decode(vid_hex) {
+                    if vid_bytes.len() == 32 {
+                        let mut vid = [0u8; 32];
+                        vid.copy_from_slice(&vid_bytes);
+
+                        let metrics =
+                            drift_metrics(vid_hex, tick, &mode_str, seed, idx, validator_ids.len());
+
+                        let dlc_guard = dlc.read();
+                        dlc_guard.update_validator_metrics(vid, metrics);
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Generate drifted metrics using integer-only math
+fn drift_metrics(
+    validator_id: &str,
+    tick: u64,
+    mode: &str,
+    seed: u64,
+    validator_index: usize,
+    validator_count: usize,
+) -> ippan_consensus::dgbdt::ValidatorMetrics {
+    use blake3::Hasher as Blake3;
+
+    // Helper to hash deterministically
+    let hash_u64 = |tag: &str, round: u64| -> u64 {
+        let mut hasher = Blake3::new();
+        hasher.update(&seed.to_le_bytes());
+        hasher.update(tag.as_bytes());
+        hasher.update(validator_id.as_bytes());
+        hasher.update(&round.to_le_bytes());
+        let hash = hasher.finalize();
+        let bytes = hash.as_bytes();
+        u64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ])
+    };
+
+    // Baseline metrics
+    let mut uptime = 1_000_000i64; // 100%
+    let mut latency = 50_000u64; // 50ms
+    let mut performance = 1_000_000i64; // 100%
+    let mut blocks_proposed = tick;
+    let mut blocks_verified = tick * 2;
+
+    match mode {
+        "tiers" => {
+            // Assign tier based on validator hash
+            let tier = (hash_u64("tier", 0) % 3) as u8;
+            let h = hash_u64("tier_delta", tick);
+
+            match tier {
+                0 => {
+                    // Good tier
+                    uptime += ((h % 50_000) as i64);
+                    latency = latency.saturating_sub((h >> 16) % 10_000);
+                    performance += ((h >> 32) % 100_000) as i64;
+                }
+                1 => {
+                    // OK tier (small noise)
+                    uptime += (((h % 100_000) as i64) - 50_000);
+                    latency = latency.saturating_add((h >> 16) % 20_000);
+                    performance += (((h >> 32) % 100_000) as i64 - 50_000);
+                }
+                _ => {
+                    // Bad tier
+                    uptime -= ((h % 300_000) as i64 + 100_000);
+                    latency = latency.saturating_add((h >> 16) % 100_000 + 50_000);
+                    performance -= ((h >> 32) % 400_000) as i64 + 100_000;
+                }
+            }
+
+            blocks_proposed += (h % 10);
+            blocks_verified += (h % 20);
+        }
+        "rotate" => {
+            // Rotate which validator is worst each round
+            let worst_idx = (hash_u64("worst", tick) as usize) % validator_count.max(1);
+            let h = hash_u64("rotate", tick);
+
+            if validator_index == worst_idx {
+                uptime -= ((h % 400_000) as i64 + 200_000);
+                latency = latency.saturating_add((h >> 16) % 150_000 + 100_000);
+                performance -= ((h >> 32) % 500_000) as i64 + 200_000;
+            } else {
+                uptime += ((h % 30_000) as i64);
+                latency = latency.saturating_sub((h >> 16) % 5_000);
+                performance += ((h >> 32) % 50_000) as i64;
+            }
+
+            blocks_proposed += (h % 8);
+            blocks_verified += (h % 16);
+        }
+        _ => {
+            // "noise" mode or default
+            let h = hash_u64("noise", tick);
+            uptime += (((h % 200_000) as i64) - 100_000);
+            latency = latency
+                .saturating_add((h >> 16) % 40_000)
+                .saturating_sub(20_000);
+            performance += (((h >> 32) % 200_000) as i64 - 100_000);
+
+            blocks_proposed += (h % 5);
+            blocks_verified += (h % 10);
+        }
+    }
+
+    // Clamp to valid ranges
+    uptime = uptime.clamp(0, 1_000_000);
+    latency = latency.clamp(0, 500_000); // Max 500ms
+    performance = performance.clamp(0, 1_000_000);
+
+    ippan_consensus::dgbdt::ValidatorMetrics {
+        blocks_proposed,
+        blocks_verified,
+        rounds_active: tick,
+        avg_latency_us: latency,
+        uptime_percentage: uptime,
+        slash_count: 0,
+        recent_performance: performance,
+        network_contribution: 1_000_000,
+        stake_amount: 10_000_000,
+    }
 }
 
 fn build_dlc_ai_status_handle() -> Option<AiStatusHandle> {

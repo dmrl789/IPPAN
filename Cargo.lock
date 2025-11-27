@@ -3221,6 +3221,7 @@ name = "ippan-node"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "clap",
  "config",
  "dirs 5.0.1",

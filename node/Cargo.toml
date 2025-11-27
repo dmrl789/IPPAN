@@ -47,6 +47,7 @@ metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 fs2 = { workspace = true }
 parking_lot = { workspace = true }
+blake3 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

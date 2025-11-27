@@ -6037,4 +6037,100 @@ mod tests {
         assert_eq!(consensus_json["metrics_available"], false);
         assert!(consensus_json.get("validators").is_none());
     }
+
+    #[test]
+    fn test_status_dlc_metrics_store_integration() {
+        use ippan_consensus::dgbdt::ValidatorMetrics;
+        use ippan_consensus::{DLCConfig, DLCConsensus};
+        use parking_lot::RwLock;
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+
+        // Create a DLC consensus instance
+        let config = DLCConfig::default();
+        let validator_id = [1u8; 32];
+        let dlc = Arc::new(RwLock::new(DLCConsensus::new(config, validator_id)));
+
+        // Seed 3 validators with metrics (simulating localnet)
+        let validator_ids = [
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "3333333333333333333333333333333333333333333333333333333333333333",
+        ];
+
+        for vid_hex in &validator_ids {
+            let vid_bytes = hex::decode(vid_hex).unwrap();
+            let mut vid = [0u8; 32];
+            vid.copy_from_slice(&vid_bytes);
+
+            let metrics = ValidatorMetrics {
+                blocks_proposed: 100,
+                blocks_verified: 95,
+                rounds_active: 50,
+                avg_latency_us: 50_000,
+                uptime_percentage: 990_000, // 99%
+                slash_count: 0,
+                recent_performance: 950_000, // 95%
+                network_contribution: 900_000,
+                stake_amount: 10_000_000,
+            };
+
+            let dlc_guard = dlc.read();
+            dlc_guard.update_validator_metrics(vid, metrics);
+        }
+
+        // Read back metrics from store
+        let dlc_guard = dlc.read();
+        let dlc_metrics = dlc_guard.validator_metrics.read();
+
+        assert_eq!(dlc_metrics.len(), 3, "Should have 3 validators");
+
+        // Convert to BTreeMap and ValidatorMetricsView (simulating status endpoint logic)
+        let mut metrics_map = BTreeMap::new();
+        for (validator_id_bytes, metrics) in dlc_metrics.iter() {
+            let validator_id_str = hex::encode(validator_id_bytes);
+
+            let uptime = ((metrics.uptime_percentage * 10000) / 1_000_000).min(10000) as u16;
+            let latency = ((metrics.avg_latency_us / 100).min(10000)) as u16;
+            let honesty = ((metrics.recent_performance * 10000) / 1_000_000).min(10000) as u16;
+
+            metrics_map.insert(
+                validator_id_str,
+                ValidatorMetricsView {
+                    uptime,
+                    latency,
+                    honesty,
+                    blocks_proposed: metrics.blocks_proposed,
+                    blocks_verified: metrics.blocks_verified,
+                    rounds_active: metrics.rounds_active,
+                    slashing_events_90d: metrics.slash_count,
+                    stake: StakeView {
+                        micro_ipn: metrics.stake_amount.to_string(),
+                    },
+                },
+            );
+        }
+
+        // Verify metrics_available is true
+        let metrics_available = !metrics_map.is_empty();
+        assert!(metrics_available, "metrics_available should be true");
+        assert_eq!(metrics_map.len(), 3, "Should have 3 validator metrics");
+
+        // Verify specific validator exists
+        assert!(
+            metrics_map
+                .contains_key("1111111111111111111111111111111111111111111111111111111111111111"),
+            "Validator 1 should exist"
+        );
+
+        // Verify converted values are reasonable
+        let v1_metrics = metrics_map
+            .get("1111111111111111111111111111111111111111111111111111111111111111")
+            .unwrap();
+        assert_eq!(v1_metrics.blocks_proposed, 100);
+        assert_eq!(v1_metrics.blocks_verified, 95);
+        assert_eq!(v1_metrics.rounds_active, 50);
+        assert_eq!(v1_metrics.uptime, 9900); // 99% -> 9900/10000
+        assert_eq!(v1_metrics.honesty, 9500); // 95% -> 9500/10000
+    }
 }
