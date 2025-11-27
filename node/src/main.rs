@@ -1183,7 +1183,7 @@ async fn main() -> Result<()> {
     // Initialize consensus based on mode
     let (tx_sender, mempool, consensus);
     let mut ai_status_handle: Option<AiStatusHandle> = None;
-    let mut dlc_handle: Option<Arc<ippan_consensus::DLCConsensus>> = None;
+    let mut dlc_handle: Option<Arc<parking_lot::RwLock<ippan_consensus::DLCConsensus>>> = None;
 
     if config.consensus_mode.to_uppercase() == "DLC" || config.enable_dlc {
         info!("Starting DLC consensus mode");
