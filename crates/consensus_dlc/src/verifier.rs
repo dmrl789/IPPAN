@@ -43,7 +43,7 @@ impl VerifierSet {
 
         let seed_string = seed.into();
 
-        // Score all validators using the deterministic fairness model
+        // Score validators deterministically using the fairness model wrapper
         let mut scored: Vec<(String, i64)> = validators
             .iter()
             .map(|(id, metrics)| (id.clone(), model.score_deterministic(metrics)))
