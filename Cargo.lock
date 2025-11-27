@@ -3221,6 +3221,7 @@ name = "ippan-node"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "clap",
  "config",
  "dirs 5.0.1",
@@ -3247,6 +3248,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]

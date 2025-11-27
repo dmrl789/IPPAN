@@ -46,6 +46,8 @@ reqwest = { workspace = true, features = ["stream"] }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 fs2 = { workspace = true }
+blake3 = { workspace = true }
+toml = { workspace = true }
 parking_lot = { workspace = true }
 
 [dev-dependencies]

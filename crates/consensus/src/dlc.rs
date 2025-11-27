@@ -9,7 +9,7 @@
 
 use anyhow::Result;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{info, warn};
@@ -306,6 +306,15 @@ impl DLCConsensus {
     pub fn update_validator_metrics(&self, validator_id: ValidatorId, metrics: ValidatorMetrics) {
         let mut metrics_map = self.validator_metrics.write();
         metrics_map.insert(validator_id, metrics);
+    }
+
+    /// Get a deterministic snapshot of validator metrics keyed by validator ID.
+    pub fn validator_metrics_snapshot(&self) -> BTreeMap<ValidatorId, ValidatorMetrics> {
+        let metrics_map = self.validator_metrics.read();
+        metrics_map
+            .iter()
+            .map(|(validator_id, metrics)| (*validator_id, metrics.clone()))
+            .collect()
     }
 }
 
