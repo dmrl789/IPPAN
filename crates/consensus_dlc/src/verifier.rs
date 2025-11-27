@@ -6,9 +6,7 @@
 use crate::dag::Block;
 use crate::dgbdt::{FairnessModel, ValidatorMetrics};
 use crate::error::{DlcError, Result};
-use crate::fairness_features::features_for_validator;
 use blake3::Hasher;
-use ippan_types::Amount;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -45,81 +43,23 @@ impl VerifierSet {
 
         let seed_string = seed.into();
 
-        // Compute max stake for normalization
-        let max_stake = validators
-            .values()
-            .map(|m| m.stake)
-            .max()
-            .unwrap_or(Amount::from_micro_ipn(1));
-
-        // Score all validators using the model directly with 7 features
+        // Score all validators using the deterministic fairness model
         let mut scored: Vec<(String, i64)> = validators
             .iter()
-            .map(|(id, metrics)| {
-                // Extract 7 features for the model
-                let features = features_for_validator(metrics, max_stake);
-                // Use the underlying model directly (bypassing the 6-feature wrapper)
-                let raw_model = model.raw_model();
-                let score = raw_model.score(&features);
-                (id.clone(), score)
-            })
+            .map(|(id, metrics)| (id.clone(), model.score_deterministic(metrics)))
             .collect();
 
         // Sort by score (descending), then by validator ID for deterministic tie-breaking
-        scored.sort_by(|a, b| match b.1.cmp(&a.1) {
-            Ordering::Equal => a.0.cmp(&b.0), // Stable tie-break: validator ID
-            other => other,
+        scored.sort_by(|a, b| {
+            b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)) // Stable tie-break: validator ID
         });
 
         let selection_count = max_set_size.max(1).min(scored.len());
 
-        // Bias primary rotation toward the top scorers while still letting the next
-        // ranked validators occasionally surface. This keeps long-running fairness
-        // simulations from starving mid-tier contributors.
-        let entropy = Self::id_entropy(&seed_string, round, "primary_selection");
-        let max_score = scored.first().map(|(_, score)| *score).unwrap_or(0);
-        let top_band_len = scored
+        let primary = Self::select_primary(&scored, &seed_string, round)?;
+        let primary_index = scored
             .iter()
-            .take_while(|(_, score)| *score == max_score)
-            .count()
-            .max(1);
-
-        let primary_index = if selection_count == 1 {
-            0
-        } else {
-            let band_pick = entropy % 10;
-            if band_pick < 8 || top_band_len >= selection_count {
-                // 80% probability shared across equally scored top validators
-                ((entropy / 10) % top_band_len as u64) as usize
-            } else {
-                // 20% probability gives the next ranked validator a chance
-                // Select from the next tier (after top_band_len), ensuring we don't exceed bounds
-                // We want to select from validators with the next highest score (not just any validator after top_band_len)
-                let next_tier_start = top_band_len;
-                // Find the next score tier
-                let next_score = if next_tier_start < scored.len() {
-                    scored[next_tier_start].1
-                } else {
-                    // Fallback if we're at the end
-                    scored.last().map(|(_, s)| *s).unwrap_or(0)
-                };
-                // Count how many validators have this next score
-                let next_tier_len = scored
-                    .iter()
-                    .skip(next_tier_start)
-                    .take_while(|(_, score)| *score == next_score)
-                    .count()
-                    .max(1);
-                let next_tier_end = (next_tier_start + next_tier_len).min(scored.len());
-                // Use entropy to pick within the next tier
-                let offset = ((entropy / 10) % next_tier_len as u64) as usize;
-                (next_tier_start + offset).min(next_tier_end.saturating_sub(1))
-            }
-        };
-
-        let primary = scored
-            .get(primary_index)
-            .map(|(id, _)| id.clone())
+            .position(|(id, _)| id == &primary)
             .ok_or_else(|| DlcError::InvalidVerifierSet("No primary validator".to_string()))?;
 
         // Select shadow verifiers deterministically by score (highest first)
@@ -169,6 +109,106 @@ impl VerifierSet {
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&hash.as_bytes()[..8]);
         u64::from_le_bytes(bytes)
+    }
+
+    fn select_primary(scored: &[(String, i64)], _seed: &str, round: u64) -> Result<String> {
+        if scored.is_empty() {
+            return Err(DlcError::InvalidVerifierSet(
+                "No validators available".to_string(),
+            ));
+        }
+
+        let rotation = Self::build_primary_rotation(scored);
+        if rotation.is_empty() {
+            return Ok(scored[0].0.clone());
+        }
+
+        let rotation_len = rotation.len();
+        let index = ((round as usize).saturating_sub(1)) % rotation_len;
+        Ok(rotation[index].clone())
+    }
+
+    fn build_primary_rotation(scored: &[(String, i64)]) -> Vec<String> {
+        if scored.is_empty() {
+            return Vec::new();
+        }
+
+        let mut slots = scored.len().saturating_mul(8);
+        if slots == 0 {
+            slots = 1;
+        }
+        slots = slots.max(scored.len()).min(4_096);
+        let total_score: i128 = scored
+            .iter()
+            .map(|(_, score)| (*score).max(0) as i128)
+            .sum();
+
+        if total_score <= 0 {
+            return scored.iter().map(|(id, _)| id.clone()).collect();
+        }
+
+        let mut slot_counts = vec![0usize; scored.len()];
+        let mut remainders = Vec::with_capacity(scored.len());
+
+        for (idx, (_, score)) in scored.iter().enumerate() {
+            let positive = (*score).max(0) as i128;
+            let scaled = positive * slots as i128;
+            let base = scaled / total_score;
+            let remainder = scaled % total_score;
+            slot_counts[idx] = base as usize;
+            remainders.push((idx, remainder));
+        }
+
+        let assigned: usize = slot_counts.iter().sum();
+        let remaining = slots.saturating_sub(assigned);
+
+        if remaining > 0 {
+            let mut ordered_remainders = remainders;
+            ordered_remainders.sort_by(|(idx_a, rem_a), (idx_b, rem_b)| {
+                rem_b
+                    .cmp(rem_a)
+                    .then_with(|| scored[*idx_b].1.cmp(&scored[*idx_a].1))
+                    .then_with(|| scored[*idx_a].0.cmp(&scored[*idx_b].0))
+            });
+
+            for (idx, _) in ordered_remainders.into_iter().take(remaining) {
+                slot_counts[idx] += 1;
+            }
+        }
+
+        // Enforce that higher-scoring validators always have strictly more primary slots
+        for i in 0..slot_counts.len() {
+            for j in (i + 1)..slot_counts.len() {
+                if scored[i].1 > scored[j].1 && slot_counts[i] <= slot_counts[j] {
+                    let transfer = (slot_counts[j].saturating_sub(slot_counts[i])) + 1;
+                    let moved = transfer.min(slot_counts[j]);
+                    slot_counts[j] -= moved;
+                    slot_counts[i] += moved;
+                }
+            }
+        }
+
+        let mut rotation = Vec::with_capacity(slots);
+        let mut remaining = slot_counts.clone();
+        while rotation.len() < slots {
+            let mut progressed = false;
+            for (idx, remaining_slots) in remaining.iter_mut().enumerate() {
+                if *remaining_slots > 0 {
+                    rotation.push(scored[idx].0.clone());
+                    *remaining_slots -= 1;
+                    progressed = true;
+                    if rotation.len() == slots {
+                        break;
+                    }
+                }
+            }
+
+            if !progressed {
+                break;
+            }
+        }
+
+        rotation
     }
 
     /// Collect and filter blocks from pool for this verifier set
@@ -587,17 +627,7 @@ mod tests {
         // (This is a sanity check - the model should prefer higher uptime/honesty)
         let mut validator_scores: Vec<(String, i64)> = validators
             .iter()
-            .map(|(id, metrics)| {
-                let max_stake = validators
-                    .values()
-                    .map(|m| m.stake)
-                    .max()
-                    .unwrap_or(Amount::from_micro_ipn(1));
-                let features = features_for_validator(metrics, max_stake);
-                let raw_model = model.raw_model();
-                let score = raw_model.score(&features);
-                (id.clone(), score)
-            })
+            .map(|(id, metrics)| (id.clone(), model.score_deterministic(metrics)))
             .collect();
 
         validator_scores.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -642,5 +672,38 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn primary_rotation_honors_score_ordering() {
+        let mut scored = vec![
+            ("validator-high-a".to_string(), 9_800),
+            ("validator-high-b".to_string(), 9_800),
+            ("validator-medium".to_string(), 5_200),
+            ("validator-low".to_string(), 3_300),
+            ("validator-adversarial".to_string(), 3_300),
+        ];
+
+        scored.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+        let rotation = VerifierSet::build_primary_rotation(&scored);
+        assert!(rotation.len() >= scored.len());
+
+        let count = |id: &str| rotation.iter().filter(|candidate| candidate == &id).count();
+
+        let high_a = count("validator-high-a");
+        let high_b = count("validator-high-b");
+        let medium = count("validator-medium");
+        let low = count("validator-low");
+        let adversarial = count("validator-adversarial");
+
+        assert!(
+            high_a >= medium && high_b >= medium,
+            "high contributors should have at least as many primary slots as medium"
+        );
+        assert!(
+            medium >= low && medium >= adversarial,
+            "medium contributors should outrank low/adversarial slots"
+        );
     }
 }

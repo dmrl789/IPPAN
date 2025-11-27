@@ -48,7 +48,7 @@ Runtime model artifacts (e.g., `crates/ai_registry/models/*.json`) are versioned
 The fairness model v2 is loaded via strict hash verification at node startup:
 
 - **Location**: `crates/ai_registry/models/ippan_d_gbdt_v2.json` (vendored in repo)
-- **Pinned Hash**: `ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d` (set in `config/dlc.toml` under `[dgbdt.model]`)
+- **Pinned Hash**: `80023fc40376e3246489c1d6681108aa96b34543e84c94da47800296ef150b06` (set in `config/dlc.toml` under `[dgbdt.model]`)
 - **Loader Function**: `ippan_ai_registry::d_gbdt::load_fairness_model_strict(path, expected_hash)`
 - **Verification Steps**:
   1. Read model file bytes

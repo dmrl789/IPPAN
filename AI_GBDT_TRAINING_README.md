@@ -219,7 +219,7 @@ python -c "from blake3 import blake3; p='ai_training/ippan_d_gbdt_v2.json'; prin
 b3sum ai_training/ippan_d_gbdt_v2.json
 ```
 
-**Output**: 64-character hex string (e.g., `ac5234082ce1de0c52ae29fab9a43e9c52c0ea184f24a1e830f12f2412c5cb0d`)
+**Output**: 64-character hex string (e.g., `80023fc40376e3246489c1d6681108aa96b34543e84c94da47800296ef150b06`)
 
 ## Create model card
 
