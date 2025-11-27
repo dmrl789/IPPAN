@@ -360,8 +360,7 @@ pub fn load_model_from_config(config_path: &Path) -> Result<(Model, String)> {
 /// let _model = load_fairness_model_strict(
 ///     Path::new("crates/ai_registry/models/ippan_d_gbdt_v2.json"),
 ///     "80023fc40376e3246489c1d6681108aa96b34543e84c94da47800296ef150b06",
-/// )
-/// .unwrap();
+/// ).unwrap();
 /// ```
 pub fn load_fairness_model_strict(
     model_path: &Path,

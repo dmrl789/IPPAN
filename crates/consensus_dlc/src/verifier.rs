@@ -138,74 +138,40 @@ impl VerifierSet {
             slots = 1;
         }
         slots = slots.max(scored.len()).min(4_096);
-        let total_score: i128 = scored
-            .iter()
-            .map(|(_, score)| (*score).max(0) as i128)
-            .sum();
 
-        if total_score <= 0 {
+        let weights: Vec<i64> = scored.iter().map(|(_, score)| (*score).max(0)).collect();
+        let total_weight: i64 = weights.iter().sum();
+        if total_weight <= 0 {
+            // Degenerate case: fall back to deterministic score ordering
             return scored.iter().map(|(id, _)| id.clone()).collect();
         }
 
-        let mut slot_counts = vec![0usize; scored.len()];
-        let mut remainders = Vec::with_capacity(scored.len());
-
-        for (idx, (_, score)) in scored.iter().enumerate() {
-            let positive = (*score).max(0) as i128;
-            let scaled = positive * slots as i128;
-            let base = scaled / total_score;
-            let remainder = scaled % total_score;
-            slot_counts[idx] = base as usize;
-            remainders.push((idx, remainder));
-        }
-
-        let assigned: usize = slot_counts.iter().sum();
-        let remaining = slots.saturating_sub(assigned);
-
-        if remaining > 0 {
-            let mut ordered_remainders = remainders;
-            ordered_remainders.sort_by(|(idx_a, rem_a), (idx_b, rem_b)| {
-                rem_b
-                    .cmp(rem_a)
-                    .then_with(|| scored[*idx_b].1.cmp(&scored[*idx_a].1))
-                    .then_with(|| scored[*idx_a].0.cmp(&scored[*idx_b].0))
-            });
-
-            for (idx, _) in ordered_remainders.into_iter().take(remaining) {
-                slot_counts[idx] += 1;
-            }
-        }
-
-        // Enforce that higher-scoring validators always have strictly more primary slots
-        for i in 0..slot_counts.len() {
-            for j in (i + 1)..slot_counts.len() {
-                if scored[i].1 > scored[j].1 && slot_counts[i] <= slot_counts[j] {
-                    let transfer = (slot_counts[j].saturating_sub(slot_counts[i])) + 1;
-                    let moved = transfer.min(slot_counts[j]);
-                    slot_counts[j] -= moved;
-                    slot_counts[i] += moved;
-                }
-            }
-        }
-
         let mut rotation = Vec::with_capacity(slots);
-        let mut remaining = slot_counts.clone();
-        while rotation.len() < slots {
-            let mut progressed = false;
-            for (idx, remaining_slots) in remaining.iter_mut().enumerate() {
-                if *remaining_slots > 0 {
-                    rotation.push(scored[idx].0.clone());
-                    *remaining_slots -= 1;
-                    progressed = true;
-                    if rotation.len() == slots {
-                        break;
-                    }
+        let mut current: Vec<i128> = vec![0; weights.len()];
+        let total_weight_i128 = i128::from(total_weight);
+
+        for _ in 0..slots {
+            // Smooth weighted round robin: advance each validator's accumulator
+            for (idx, value) in current.iter_mut().enumerate() {
+                *value += i128::from(weights[idx]);
+            }
+
+            // Pick the validator with the highest accumulator (tie => lexicographic ID)
+            let mut best_idx = 0;
+            for idx in 1..current.len() {
+                let cmp = current[idx].cmp(&current[best_idx]);
+                if cmp == Ordering::Greater
+                    || (cmp == Ordering::Equal
+                        && scored[idx].0.as_str() < scored[best_idx].0.as_str())
+                {
+                    best_idx = idx;
                 }
             }
 
-            if !progressed {
-                break;
-            }
+            rotation.push(scored[best_idx].0.clone());
+
+            // Consume total_weight to maintain smoothness
+            current[best_idx] -= total_weight_i128;
         }
 
         rotation
