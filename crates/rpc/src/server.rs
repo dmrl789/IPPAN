@@ -28,7 +28,9 @@ use axum::{Json, Router};
 use ed25519_dalek::{Signer, SigningKey};
 #[cfg(test)]
 use http_body_util::BodyExt;
-use ippan_consensus::{DLCConsensus, PoAConsensus};
+use ippan_consensus::{DLCConsensus, PoAConsensus, ValidatorMetrics as DlcValidatorMetrics};
+#[cfg(test)]
+use ippan_consensus::DLCConfig;
 use ippan_consensus_dlc::AiConsensusStatus;
 use ippan_files::{FileDhtService, FileStorage};
 use ippan_l1_fees::FeePolicy;
@@ -1734,72 +1736,7 @@ async fn handle_status(
 
     let consensus_view = if let Some(consensus) = &state.consensus {
         match consensus.snapshot().await {
-            Ok(mut view) => {
-                // Try to extract metrics from DLC consensus if available
-                if let Some(dlc_handle) = &state.dlc_consensus {
-                    let dlc = dlc_handle.read();
-                    let dlc_metrics = dlc.validator_metrics.read();
-
-                    if !dlc_metrics.is_empty() {
-                        let mut metrics_map = BTreeMap::new();
-
-                        for (validator_id, metrics) in dlc_metrics.iter() {
-                            let validator_id_str = hex::encode(validator_id);
-
-                            // Convert ippan_consensus::dgbdt::ValidatorMetrics to ValidatorMetricsView
-                            // Map fields: uptime_percentage (1_000_000 scale) -> uptime (10000 scale)
-                            // Map fields: avg_latency_us -> latency (approximate conversion to 0-10000 scale)
-                            // Map fields: recent_performance -> honesty (approximate)
-                            let uptime =
-                                ((metrics.uptime_percentage * 10000) / 1_000_000).min(10000) as u16;
-                            // Convert latency: assume 1000ms = 10000 scale, so 1ms = 10 scale units
-                            let latency = ((metrics.avg_latency_us / 100).min(10000)) as u16;
-                            let honesty = ((metrics.recent_performance * 10000) / 1_000_000)
-                                .min(10000) as u16;
-
-                            metrics_map.insert(
-                                validator_id_str,
-                                ValidatorMetricsView {
-                                    uptime,
-                                    latency,
-                                    honesty,
-                                    blocks_proposed: metrics.blocks_proposed,
-                                    blocks_verified: metrics.blocks_verified,
-                                    rounds_active: metrics.rounds_active,
-                                    slashing_events_90d: metrics.slash_count,
-                                    stake: StakeView {
-                                        micro_ipn: metrics.stake_amount.to_string(),
-                                    },
-                                },
-                            );
-                        }
-
-                        view.validators_metrics = Some(metrics_map);
-                    }
-                }
-
-                let mut json = serde_json::json!({
-                    "round": view.round,
-                    "validator_ids": view.validators,
-                });
-
-                // Determine if metrics are available
-                let metrics_available = view
-                    .validators_metrics
-                    .as_ref()
-                    .map(|m| !m.is_empty())
-                    .unwrap_or(false);
-
-                json["metrics_available"] = serde_json::Value::Bool(metrics_available);
-
-                // Add validators metrics map if available
-                if let Some(metrics_map) = &view.validators_metrics {
-                    json["validators"] = serde_json::to_value(metrics_map)
-                        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
-                }
-
-                Some(json)
-            }
+            Ok(view) => build_consensus_payload(view, state.dlc_consensus.as_ref()),
             Err(err) => {
                 warn!("Failed to snapshot consensus state: {}", err);
                 None
@@ -1823,6 +1760,66 @@ async fn handle_status(
         "consensus": consensus_view,
         "mempool_size": mempool_size
     })))
+}
+
+fn build_consensus_payload(
+    mut view: ConsensusStateView,
+    dlc_handle: Option<&Arc<RwLock<DLCConsensus>>>,
+) -> Option<serde_json::Value> {
+    if let Some(dlc_handle) = dlc_handle {
+        let snapshot = {
+            let dlc = dlc_handle.read();
+            dlc.validator_metrics_snapshot()
+        };
+
+        if !snapshot.is_empty() {
+            let mut metrics_map = BTreeMap::new();
+            for (validator_id, metrics) in snapshot {
+                let validator_id_str = hex::encode(validator_id);
+                metrics_map.insert(validator_id_str, convert_validator_metrics(&metrics));
+            }
+            view.validators_metrics = Some(metrics_map);
+        }
+    }
+
+    let mut json = serde_json::json!({
+        "round": view.round,
+        "validator_ids": view.validators,
+    });
+
+    let metrics_available = view
+        .validators_metrics
+        .as_ref()
+        .map(|m| !m.is_empty())
+        .unwrap_or(false);
+
+    json["metrics_available"] = serde_json::Value::Bool(metrics_available);
+
+    if let Some(metrics_map) = &view.validators_metrics {
+        json["validators"] = serde_json::to_value(metrics_map)
+            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+    }
+
+    Some(json)
+}
+
+fn convert_validator_metrics(metrics: &DlcValidatorMetrics) -> ValidatorMetricsView {
+    let uptime_scaled = ((metrics.uptime_percentage * 10000) / 1_000_000).clamp(0, 10_000);
+    let honesty_scaled = ((metrics.recent_performance * 10000) / 1_000_000).clamp(0, 10_000);
+    let latency_scaled = (metrics.avg_latency_us / 100).min(10_000);
+
+    ValidatorMetricsView {
+        uptime: uptime_scaled as u16,
+        latency: latency_scaled as u16,
+        honesty: honesty_scaled as u16,
+        blocks_proposed: metrics.blocks_proposed,
+        blocks_verified: metrics.blocks_verified,
+        rounds_active: metrics.rounds_active,
+        slashing_events_90d: metrics.slash_count,
+        stake: StakeView {
+            micro_ipn: metrics.stake_amount.to_string(),
+        },
+    }
 }
 
 async fn handle_time(
@@ -5949,6 +5946,48 @@ mod tests {
         assert_eq!(validator_b["uptime"], 9200);
         assert_eq!(validator_b["slashing_events_90d"], 1);
         assert_eq!(validator_b["stake"]["micro_ipn"], "2000000000");
+    }
+
+    #[test]
+    fn test_consensus_payload_uses_dlc_snapshot() {
+        fn make_metrics(stake: u64, latency: u64) -> DlcValidatorMetrics {
+            DlcValidatorMetrics {
+                blocks_proposed: 10,
+                blocks_verified: 8,
+                rounds_active: 12,
+                avg_latency_us: latency,
+                uptime_percentage: 900_000,
+                slash_count: 0,
+                recent_performance: 950_000,
+                network_contribution: 800_000,
+                stake_amount: stake,
+            }
+        }
+
+        let dlc = Arc::new(parking_lot::RwLock::new(DLCConsensus::new(
+            DLCConfig::default(),
+            [0u8; 32],
+        )));
+
+        {
+            let mut guard = dlc.write();
+            guard.update_validator_metrics([1u8; 32], make_metrics(10_000_000, 50_000));
+            guard.update_validator_metrics([2u8; 32], make_metrics(12_000_000, 60_000));
+            guard.update_validator_metrics([3u8; 32], make_metrics(14_000_000, 70_000));
+        }
+
+        let view = ConsensusStateView {
+            round: 7,
+            validators: vec![],
+            validators_metrics: None,
+        };
+
+        let payload = build_consensus_payload(view, Some(&dlc)).expect("consensus json");
+        assert_eq!(payload["metrics_available"], true);
+        let validators = payload["validators"]
+            .as_object()
+            .expect("validators map present");
+        assert_eq!(validators.len(), 3);
     }
 
     #[test]

@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Result};
+use blake3::Hasher as Blake3Hasher;
 use clap::{value_parser, Arg, ArgAction, Command, ValueEnum};
 use config::{Config, File as ConfigFile};
 use fs2::FileExt;
 use hex::encode as hex_encode;
 use ippan_consensus::{
-    DLCConfig, DLCIntegratedConsensus, PoAConfig, PoAConsensus, Validator, VALIDATOR_BOND_AMOUNT,
+    DLCConfig, DLCIntegratedConsensus, PoAConfig, PoAConsensus, Validator,
+    ValidatorMetrics as DlcValidatorMetrics, VALIDATOR_BOND_AMOUNT,
 };
 use ippan_consensus_dlc::{DlcConfig as AiDlcConfig, DlcConsensus};
 use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
@@ -25,6 +27,7 @@ use ippan_types::{
 use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use parking_lot::RwLock;
+use std::env;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -1242,6 +1245,33 @@ async fn main() -> Result<()> {
         consensus = Arc::new(Mutex::new(dlc_integrated.poa));
         ai_status_handle = build_dlc_ai_status_handle();
 
+        if let Some(handle) = &dlc_handle {
+            let discovered_validators = discover_validator_ids(&config);
+            info!(
+                "Seeding DLC validator metrics store with {} validators",
+                discovered_validators.len()
+            );
+            seed_dlc_validator_metrics(handle, &discovered_validators);
+
+            let drift_cfg = read_status_metrics_drift_cfg(config.dev_mode);
+            if drift_cfg.enabled {
+                info!(
+                    "Localnet metrics drift enabled (mode={:?}, seed={})",
+                    drift_cfg.mode, drift_cfg.seed
+                );
+                spawn_localnet_metrics_drift(
+                    handle.clone(),
+                    discovered_validators.clone(),
+                    drift_cfg,
+                );
+            } else {
+                info!(
+                    "Localnet metrics drift disabled; validators discovered: {}",
+                    discovered_validators.len()
+                );
+            }
+        }
+
         info!("DLC consensus engine started");
         info!("  - Temporal finality: {}ms", config.temporal_finality_ms);
         info!("  - Shadow verifiers: {}", config.shadow_verifier_count);
@@ -1605,6 +1635,233 @@ fn init_logging(config: &AppConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MetricsDriftCfg {
+    enabled: bool,
+    mode: MetricsDriftMode,
+    seed: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum MetricsDriftMode {
+    None,
+    Tiers,
+    Rotate,
+    Noise,
+}
+
+fn discover_validator_ids(config: &AppConfig) -> Vec<[u8; 32]> {
+    let mut ids = vec![config.validator_id];
+    ids.extend(load_localnet_validator_ids(&config.config_path));
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn load_localnet_validator_ids(config_path: &Option<PathBuf>) -> Vec<[u8; 32]> {
+    let mut ids = Vec::new();
+    let Some(path) = config_path else {
+        return ids;
+    };
+    let Some(parent) = path.parent() else {
+        return ids;
+    };
+    let is_localnet = parent
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.eq_ignore_ascii_case("localnet"))
+        .unwrap_or(false);
+    if !is_localnet {
+        return ids;
+    }
+
+    if let Ok(entries) = fs::read_dir(parent) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            let is_toml = entry_path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("toml"))
+                .unwrap_or(false);
+            if !is_toml {
+                continue;
+            }
+            if let Some(id) = parse_validator_id_from_file(&entry_path) {
+                ids.push(id);
+            }
+        }
+    }
+
+    ids
+}
+
+fn parse_validator_id_from_file(path: &Path) -> Option<[u8; 32]> {
+    let contents = fs::read_to_string(path).ok()?;
+    let value: toml::Value = toml::from_str(&contents).ok()?;
+    let id_value = value
+        .get("VALIDATOR_ID")
+        .or_else(|| value.get("validator_id"))?;
+    let id_str = id_value.as_str()?.trim();
+    parse_hex_validator_id(id_str)
+}
+
+fn parse_hex_validator_id(id: &str) -> Option<[u8; 32]> {
+    if id.len() != 64 {
+        return None;
+    }
+    let mut buf = [0u8; 32];
+    hex::decode_to_slice(id, &mut buf).ok()?;
+    Some(buf)
+}
+
+fn seed_dlc_validator_metrics(
+    handle: &Arc<RwLock<ippan_consensus::DLCConsensus>>,
+    validators: &[[u8; 32]],
+) {
+    let consensus = handle.write();
+    for validator in validators {
+        consensus.update_validator_metrics(*validator, DlcValidatorMetrics::default());
+    }
+}
+
+fn spawn_localnet_metrics_drift(
+    dlc_handle: Arc<RwLock<ippan_consensus::DLCConsensus>>,
+    validator_ids: Vec<[u8; 32]>,
+    cfg: MetricsDriftCfg,
+) {
+    if validator_ids.is_empty() {
+        return;
+    }
+
+    tokio::spawn(async move {
+        let mut tick = 0u64;
+        let mut ticker = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            ticker.tick().await;
+            tick = tick.saturating_add(1);
+            let batch = build_drift_batch(&validator_ids, tick, cfg);
+            let guard = dlc_handle.write();
+            for (validator_id, metrics) in batch {
+                guard.update_validator_metrics(validator_id, metrics);
+            }
+        }
+    });
+}
+
+fn build_drift_batch(
+    validator_ids: &[[u8; 32]],
+    tick: u64,
+    cfg: MetricsDriftCfg,
+) -> Vec<([u8; 32], DlcValidatorMetrics)> {
+    let total = validator_ids.len();
+    validator_ids
+        .iter()
+        .enumerate()
+        .map(|(index, validator_id)| {
+            let tier = tier_for(cfg.mode, index, tick, total);
+            let metrics = drift_validator_metrics(validator_id, tick, tier, cfg);
+            (*validator_id, metrics)
+        })
+        .collect()
+}
+
+fn tier_for(mode: MetricsDriftMode, index: usize, tick: u64, total: usize) -> usize {
+    match mode {
+        MetricsDriftMode::Tiers => index % 3,
+        MetricsDriftMode::Rotate => {
+            let rotation = if total == 0 {
+                0
+            } else {
+                (tick as usize) % total.max(1)
+            };
+            (index + rotation) % 3
+        }
+        MetricsDriftMode::Noise => (index ^ (tick as usize)) % 3,
+        MetricsDriftMode::None => 1,
+    }
+}
+
+fn drift_validator_metrics(
+    validator_id: &[u8; 32],
+    tick: u64,
+    tier: usize,
+    cfg: MetricsDriftCfg,
+) -> DlcValidatorMetrics {
+    let mut hasher = Blake3Hasher::new();
+    hasher.update(&cfg.seed.to_le_bytes());
+    hasher.update(validator_id);
+    hasher.update(&tick.to_le_bytes());
+    let hash = hasher.finalize();
+    let bytes = hash.as_bytes();
+    let base = u64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ]);
+
+    let tier_boost = tier as u64;
+    let uptime = ((850_000
+        + ((base % 120_000) as i64)
+        + (tier_boost as i64 * 10_000)
+        + ((tick % 1_000) as i64) * 50)
+        .min(1_000_000))
+    .max(0);
+    let honesty = ((900_000
+        + ((base % 80_000) as i64)
+        + (tier_boost as i64 * 8_000)
+        + ((tick % 500) as i64) * 40)
+        .min(1_000_000))
+    .max(0);
+    let latency = (40_000
+        + (base % 20_000)
+        + (5_000u64
+            .saturating_sub(tier_boost.saturating_mul(2_000))
+            .saturating_add((tick % 50) * 100)))
+    .clamp(10_000, 150_000);
+
+    let rounds_active = tick + 10 + (base % 15);
+    let blocks_proposed = rounds_active / 2 + (base % 7) + tier_boost;
+    let blocks_verified = blocks_proposed + (tier_boost % 3) + (base % 3);
+    let slash_count = if base % 97 == 0 { 1 } else { 0 };
+    let stake_amount = 10_000_000 + tier_boost * 1_000_000 + (base % 750_000);
+    let network_contribution =
+        ((700_000 + ((base % 200_000) as i64) + (tier_boost as i64 * 15_000)).min(1_000_000))
+            .max(0);
+
+    DlcValidatorMetrics {
+        blocks_proposed,
+        blocks_verified,
+        rounds_active,
+        avg_latency_us: latency,
+        uptime_percentage: uptime,
+        slash_count: slash_count as u32,
+        recent_performance: honesty,
+        network_contribution,
+        stake_amount,
+    }
+}
+
+fn read_status_metrics_drift_cfg(dev_mode: bool) -> MetricsDriftCfg {
+    let enabled = env::var("IPPAN_STATUS_METRICS_DRIFT").unwrap_or_else(|_| "0".to_string());
+    let enabled_flag = matches!(enabled.trim(), "1" | "true" | "TRUE");
+    let mode = env::var("IPPAN_STATUS_METRICS_DRIFT_MODE")
+        .unwrap_or_else(|_| "none".to_string())
+        .to_lowercase();
+    let seed = env::var("IPPAN_STATUS_METRICS_DRIFT_SEED")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse::<u64>()
+        .unwrap_or(0);
+
+    MetricsDriftCfg {
+        enabled: dev_mode && enabled_flag,
+        mode: match mode.as_str() {
+            "tiers" => MetricsDriftMode::Tiers,
+            "rotate" => MetricsDriftMode::Rotate,
+            "noise" => MetricsDriftMode::Noise,
+            _ => MetricsDriftMode::None,
+        },
+        seed,
+    }
 }
 
 fn build_dlc_ai_status_handle() -> Option<AiStatusHandle> {
