@@ -3240,6 +3240,7 @@ dependencies = [
  "ippan-types",
  "metrics",
  "metrics-exporter-prometheus",
+ "parking_lot 0.12.5",
  "reqwest",
  "serde",
  "serde_json",
