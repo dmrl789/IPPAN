@@ -5970,7 +5970,7 @@ mod tests {
         )));
 
         {
-            let mut guard = dlc.write();
+            let guard = dlc.write();
             guard.update_validator_metrics([1u8; 32], make_metrics(10_000_000, 50_000));
             guard.update_validator_metrics([2u8; 32], make_metrics(12_000_000, 60_000));
             guard.update_validator_metrics([3u8; 32], make_metrics(14_000_000, 70_000));
