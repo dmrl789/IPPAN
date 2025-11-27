@@ -1184,7 +1184,6 @@ async fn main() -> Result<()> {
     // Initialize consensus based on mode
     let (tx_sender, mempool, consensus);
     let mut ai_status_handle: Option<AiStatusHandle> = None;
-    use parking_lot::RwLock;
     let mut dlc_handle: Option<Arc<RwLock<ippan_consensus::DLCConsensus>>> = None;
 
     if config.consensus_mode.to_uppercase() == "DLC" || config.enable_dlc {
