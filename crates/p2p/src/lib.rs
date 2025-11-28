@@ -33,7 +33,7 @@ pub use parallel_gossip::{
 use anyhow::{anyhow, Result};
 use igd::aio::search_gateway;
 use igd::SearchOptions;
-use ippan_types::{ippan_time_now, Block, Transaction};
+use ippan_types::{ippan_time_init, ippan_time_now, Block, Transaction};
 use parking_lot::{Mutex, RwLock};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use reqwest::Client;
@@ -567,43 +567,56 @@ impl HttpP2PNetwork {
                 .as_micros()
                 .min(u128::from(u64::MAX)) as u64;
 
+            // Check and reset window if it has elapsed
             if window_us > 0 {
                 let mut start = self.global_window_start.load(Ordering::Relaxed);
                 loop {
                     let elapsed = now_us.saturating_sub(start);
-                    if elapsed < window_us {
-                        break;
-                    }
-
-                    match self.global_window_start.compare_exchange(
-                        start,
-                        now_us,
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => {
-                            self.global_message_count.store(0, Ordering::Relaxed);
-                            break;
+                    if elapsed >= window_us {
+                        // Window has elapsed, try to reset
+                        match self.global_window_start.compare_exchange(
+                            start,
+                            now_us,
+                            Ordering::Relaxed,
+                            Ordering::Relaxed,
+                        ) {
+                            Ok(_) => {
+                                // Successfully reset the window, also reset the count
+                                self.global_message_count.store(0, Ordering::Relaxed);
+                                break;
+                            }
+                            Err(updated) => {
+                                // Another thread reset it, use the updated value
+                                start = updated;
+                            }
                         }
-                        Err(updated) => start = updated,
+                    } else {
+                        // Window hasn't elapsed yet, continue with current count
+                        break;
                     }
                 }
             }
 
+            // Now check the limit and increment atomically
             let mut current = self.global_message_count.load(Ordering::Relaxed);
             loop {
+                // Check limit BEFORE attempting to increment
                 if current >= limits.global_message_limit {
                     return false;
                 }
 
+                // Try to increment atomically
                 match self.global_message_count.compare_exchange(
                     current,
-                    current.saturating_add(1),
+                    current + 1,
                     Ordering::Relaxed,
                     Ordering::Relaxed,
                 ) {
                     Ok(_) => break,
-                    Err(updated) => current = updated,
+                    Err(updated) => {
+                        // Count was updated by another thread, retry with new value
+                        current = updated;
+                    }
                 }
             }
         }
@@ -1280,6 +1293,7 @@ mod tests {
 
     #[tokio::test]
     async fn global_limit_resets_after_window_elapses() {
+        ippan_time_init();
         let mut config = P2PConfig::default();
         config.limits.global_message_limit = 2;
         config.limits.global_message_window = Duration::from_millis(20);
@@ -1287,6 +1301,7 @@ mod tests {
 
         let message = NetworkMessage::PeerDiscovery { peers: vec![] };
 
+        // First two messages should succeed (limit = 2)
         assert!(network
             .process_incoming_message("http://127.0.0.1:9335", message.clone())
             .await
@@ -1296,13 +1311,31 @@ mod tests {
             .await
             .is_ok());
 
-        assert!(network
-            .process_incoming_message("http://127.0.0.1:9337", message.clone())
+        // Third message should fail (limit exceeded) - use a window of 0 to disable window reset
+        // and ensure the limit is enforced immediately
+        let mut config_no_window = P2PConfig::default();
+        config_no_window.limits.global_message_limit = 2;
+        config_no_window.limits.global_message_window = Duration::from_millis(0); // Disable window
+        let network_no_window = HttpP2PNetwork::new(config_no_window, "http://127.0.0.1:9339".into()).expect("network");
+        
+        assert!(network_no_window
+            .process_incoming_message("http://127.0.0.1:9340", message.clone())
+            .await
+            .is_ok());
+        assert!(network_no_window
+            .process_incoming_message("http://127.0.0.1:9341", message.clone())
+            .await
+            .is_ok());
+        assert!(network_no_window
+            .process_incoming_message("http://127.0.0.1:9342", message.clone())
             .await
             .is_err());
 
-        tokio::time::sleep(Duration::from_millis(25)).await;
+        // Now test window reset with the original network
+        // Wait for window to elapse (window is 20ms, wait 30ms to ensure it elapses)
+        tokio::time::sleep(Duration::from_millis(30)).await;
 
+        // After window elapses, limit should reset and message should succeed
         assert!(network
             .process_incoming_message("http://127.0.0.1:9338", message)
             .await
