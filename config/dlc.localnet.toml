@@ -1,8 +1,9 @@
 # IPPAN Deterministic Learning Consensus (DLC) Configuration
 
 [consensus]
-# Consensus model - DLC uses temporal finality instead of voting
-model = "DLC"
+# Consensus mode - DLC uses temporal finality instead of voting
+mode = "DLC"
+enable_dlc = true
 
 # Temporal finality window in milliseconds (100-250ms recommended)
 temporal_finality_ms = 250
@@ -50,9 +51,9 @@ slash_penalty = 0.10
 performance = 0.10
 stake = 0.05
 
-# Deterministic D-GBDT model artifact
+# Deterministic D-GBDT model artifact (use absolute path in container)
 [dgbdt.model]
-path = "crates/ai_registry/models/ippan_d_gbdt_v3.json"
+path = "/app/crates/ai_registry/models/ippan_d_gbdt_v3.json"
 expected_hash = "40c9d88cd0e9526c189593a6b370743fcb7841275dcbfeb765bf03d18eae8b67"
 
 [shadow_verifiers]

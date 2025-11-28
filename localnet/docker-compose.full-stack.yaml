@@ -20,13 +20,15 @@ services:
       IPPAN_DEV_MODE: "true"
       IPPAN_ENABLE_SECURITY: "false"
       IPPAN_BOOTSTRAP_NODES: "http://ippan-node2:9001,http://ippan-node3:9002"
-      CONSENSUS_MODE: "DLC"
-      ENABLE_DLC: "true"
+      IPPAN_CONSENSUS_MODE: "DLC"
+      IPPAN_ENABLE_DLC: "true"
       IPPAN_STATUS_METRICS_DRIFT: "1"
       IPPAN_STATUS_METRICS_DRIFT_MODE: "tiers"
     volumes:
       - ./data/node:/var/lib/ippan/data
       - ../config/dlc.localnet.toml:/app/config/dlc.toml:ro
+      - ../models:/app/models:ro
+      - ../crates/ai_registry/models:/app/crates/ai_registry/models:ro
     ports:
       - "8080:8080"
       - "9000:9000"
@@ -57,8 +59,8 @@ services:
       IPPAN_DEV_MODE: "true"
       IPPAN_ENABLE_SECURITY: "false"
       IPPAN_BOOTSTRAP_NODES: "http://ippan-node:9000"
-      CONSENSUS_MODE: "DLC"
-      ENABLE_DLC: "true"
+      IPPAN_CONSENSUS_MODE: "DLC"
+      IPPAN_ENABLE_DLC: "true"
       IPPAN_STATUS_METRICS_DRIFT: "1"
       IPPAN_STATUS_METRICS_DRIFT_MODE: "tiers"
     volumes:
@@ -96,8 +98,8 @@ services:
       IPPAN_DEV_MODE: "true"
       IPPAN_ENABLE_SECURITY: "false"
       IPPAN_BOOTSTRAP_NODES: "http://ippan-node:9000,http://ippan-node2:9001"
-      CONSENSUS_MODE: "DLC"
-      ENABLE_DLC: "true"
+      IPPAN_CONSENSUS_MODE: "DLC"
+      IPPAN_ENABLE_DLC: "true"
       IPPAN_STATUS_METRICS_DRIFT: "1"
       IPPAN_STATUS_METRICS_DRIFT_MODE: "tiers"
     volumes:
