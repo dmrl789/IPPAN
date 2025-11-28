@@ -53,7 +53,7 @@ stake = 0.05
 # Deterministic D-GBDT model artifact
 [dgbdt.model]
 path = "crates/ai_registry/models/ippan_d_gbdt_localnet_v4.json"
-expected_hash = "2c8e27b2b5d309a518e6eb5217cf057a3a361ecca439831295578cd81ef7a0a7"
+expected_hash = "f684f53e9efbd04f12d5170ef885106b9ea9696987ff83662bbcaeda1bb0470d"
 
 [shadow_verifiers]
 # Maximum number of parallel shadow verifiers
