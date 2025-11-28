@@ -6,8 +6,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.node
     container_name: ippan-node-local
-    entrypoint: ["/app/ippan-node"]
-    command: ["start", "--network", "devnet", "--dev"]
+    entrypoint: ["sh", "-c"]
+    command: ["rm -f /var/lib/ippan/data/*.pid /tmp/*.pid 2>/dev/null || true; exec /app/ippan-node start --network devnet --dev"]
     environment:
       IPPAN_RPC_HOST: "0.0.0.0"
       IPPAN_RPC_PORT: "8080"
@@ -19,12 +19,14 @@ services:
       IPPAN_LOG_FORMAT: "pretty"
       IPPAN_DEV_MODE: "true"
       IPPAN_ENABLE_SECURITY: "false"
-      IPPAN_BOOTSTRAP_NODES: ""
+      IPPAN_BOOTSTRAP_NODES: "http://ippan-node2:9001,http://ippan-node3:9002"
       CONSENSUS_MODE: "DLC"
       ENABLE_DLC: "true"
+      IPPAN_STATUS_METRICS_DRIFT: "1"
+      IPPAN_STATUS_METRICS_DRIFT_MODE: "tiers"
     volumes:
       - ./data/node:/var/lib/ippan/data
-      - ../config/dlc.toml:/app/config/dlc.toml:ro
+      - ../config/dlc.localnet.toml:/app/config/dlc.toml:ro
     ports:
       - "8080:8080"
       - "9000:9000"
@@ -35,6 +37,85 @@ services:
       retries: 5
     networks:
       - ippan-local
+
+  ippan-node2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.node
+    container_name: ippan-node2-local
+    entrypoint: ["sh", "-c"]
+    command: ["rm -f /var/lib/ippan/data/*.pid /tmp/*.pid 2>/dev/null || true; exec /app/ippan-node start --network devnet --dev"]
+    environment:
+      IPPAN_RPC_HOST: "0.0.0.0"
+      IPPAN_RPC_PORT: "8081"
+      IPPAN_P2P_HOST: "0.0.0.0"
+      IPPAN_P2P_PORT: "9001"
+      IPPAN_DATA_DIR: "/var/lib/ippan/data"
+      IPPAN_DB_PATH: "/var/lib/ippan/data/db"
+      IPPAN_LOG_LEVEL: "info"
+      IPPAN_LOG_FORMAT: "pretty"
+      IPPAN_DEV_MODE: "true"
+      IPPAN_ENABLE_SECURITY: "false"
+      IPPAN_BOOTSTRAP_NODES: "http://ippan-node:9000"
+      CONSENSUS_MODE: "DLC"
+      ENABLE_DLC: "true"
+      IPPAN_STATUS_METRICS_DRIFT: "1"
+      IPPAN_STATUS_METRICS_DRIFT_MODE: "tiers"
+    volumes:
+      - ./data/node2:/var/lib/ippan/data
+      - ../config/dlc.localnet.toml:/app/config/dlc.toml:ro
+    ports:
+      - "8082:8081"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ippan-local
+    depends_on:
+      - ippan-node
+
+  ippan-node3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.node
+    container_name: ippan-node3-local
+    entrypoint: ["sh", "-c"]
+    command: ["rm -f /var/lib/ippan/data/*.pid /tmp/*.pid 2>/dev/null || true; exec /app/ippan-node start --network devnet --dev"]
+    environment:
+      IPPAN_RPC_HOST: "0.0.0.0"
+      IPPAN_RPC_PORT: "8082"
+      IPPAN_P2P_HOST: "0.0.0.0"
+      IPPAN_P2P_PORT: "9002"
+      IPPAN_DATA_DIR: "/var/lib/ippan/data"
+      IPPAN_DB_PATH: "/var/lib/ippan/data/db"
+      IPPAN_LOG_LEVEL: "info"
+      IPPAN_LOG_FORMAT: "pretty"
+      IPPAN_DEV_MODE: "true"
+      IPPAN_ENABLE_SECURITY: "false"
+      IPPAN_BOOTSTRAP_NODES: "http://ippan-node:9000,http://ippan-node2:9001"
+      CONSENSUS_MODE: "DLC"
+      ENABLE_DLC: "true"
+      IPPAN_STATUS_METRICS_DRIFT: "1"
+      IPPAN_STATUS_METRICS_DRIFT_MODE: "tiers"
+    volumes:
+      - ./data/node3:/var/lib/ippan/data
+      - ../config/dlc.localnet.toml:/app/config/dlc.toml:ro
+    ports:
+      - "8083:8082"
+      - "9002:9002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ippan-local
+    depends_on:
+      - ippan-node
+      - ippan-node2
 
   ippan-gateway:
     build:
