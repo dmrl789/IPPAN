@@ -14,9 +14,11 @@ is compatible with the deterministic training pipeline.
 import argparse
 import csv
 import json
+import re
 import subprocess
 import sys
 import time
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -40,12 +42,27 @@ CSV_COLUMNS = [
     "slashing_events_90d",
     "stake_normalized",
     "peer_reports_quality",
-    "fairness_score",
+    "fairness_score_scaled",
 ]
 
 # Scale factors
 SCALE = 1_000_000
 UPTIME_SCALE = 10_000  # ValidatorMetrics uses 0-10000 for percentages
+SCORE_SCALE = Decimal("1000000")
+
+# ISO timestamp pattern (YYYY-MM-DDTHH:MM:SS...)
+ISO_TS = re.compile(r"^\d{4}-\d{2}-\d{2}T")
+
+
+def score_to_scaled_int(score_str: str) -> int:
+    """Convert score string to scaled integer using Decimal rounding."""
+    d = Decimal(score_str)
+    return int((d * SCORE_SCALE).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+def is_iso_ts(s: str) -> bool:
+    """Check if string starts with ISO timestamp pattern."""
+    return bool(ISO_TS.match(s))
 
 
 def compute_fairness_score(
@@ -256,6 +273,10 @@ def convert_validator_to_row(
         peer_quality,
     )
     
+    # Convert score to scaled integer using Decimal for deterministic rounding
+    score_str = format(fairness_score, ".18g")
+    fairness_score_scaled = score_to_scaled_int(score_str)
+    
     # Convert to scaled integers for CSV (matching training format)
     return {
         "timestamp_utc": timestamp,
@@ -268,7 +289,7 @@ def convert_validator_to_row(
         "slashing_events_90d": slashing_events,
         "stake_normalized": int(min(stake_norm, 1.0) * SCALE),
         "peer_reports_quality": int(peer_quality * SCALE),
-        "fairness_score": fairness_score,
+        "fairness_score_scaled": fairness_score_scaled,
     }
 
 
@@ -320,14 +341,38 @@ def export_rpc_mode(
     # Sort by timestamp then validator_id
     rows.sort(key=lambda r: (r["timestamp_utc"], r["validator_id"]))
     
+    # Filter malformed rows (first column must be ISO timestamp)
+    valid_rows = []
+    skipped_count = 0
+    for row in rows:
+        ts = str(row.get("timestamp_utc", ""))
+        if not is_iso_ts(ts):
+            skipped_count += 1
+            continue
+        valid_rows.append(row)
+    
+    if skipped_count > 0:
+        print(f"WARNING: Skipped {skipped_count} malformed rows (invalid timestamp)", file=sys.stderr)
+    
     # Write CSV
-    print(f"\nWriting {len(rows)} rows to {output_path}...")
-    with open(output_path, "w", newline="") as f:
+    print(f"\nWriting {len(valid_rows)} rows to {output_path}...")
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         writer.writeheader()
-        writer.writerows(rows)
+        for row in valid_rows:
+            # Ensure all values are serializable strings/ints
+            csv_row = {}
+            for col in CSV_COLUMNS:
+                val = row.get(col)
+                if val is None:
+                    csv_row[col] = ""
+                elif isinstance(val, (int, float)):
+                    csv_row[col] = str(int(val)) if isinstance(val, float) and val.is_integer() else str(val)
+                else:
+                    csv_row[col] = str(val)
+            writer.writerow(csv_row)
     
-    print(f"✓ Exported {len(rows)} rows to {output_path}")
+    print(f"[OK] Exported {len(valid_rows)} rows to {output_path}")
 
 
 def export_logs_mode(

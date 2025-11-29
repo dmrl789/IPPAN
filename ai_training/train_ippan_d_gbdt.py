@@ -26,7 +26,7 @@ FEATURE_COLS = [
     "stake_normalized",
     "peer_reports_quality",
 ]
-TARGET_COL = "fairness_score"
+TARGET_COL = "fairness_score_scaled"
 FEATURE_SCALE = {feature: SCALE for feature in FEATURE_COLS}
 
 
@@ -100,7 +100,8 @@ def main() -> None:
     print(f"Loading dataset from: {csv_path}")
     df = pd.read_csv(csv_path)
     X = df[FEATURE_COLS]
-    y = df[TARGET_COL]
+    # Convert scaled integer target back to float for training (divide by SCALE)
+    y = df[TARGET_COL].astype("float64") / SCALE
 
     print(f"Dataset size: {len(df)} rows")
     print(f"Features: {len(FEATURE_COLS)}")
