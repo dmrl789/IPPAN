@@ -278,7 +278,7 @@ Examples:
         print(f"[DRY-RUN] Would copy {args.model} -> {runtime_dest_path}")
     else:
         shutil.copy2(args.model, runtime_dest_path)
-        print(f"✓ Copied model to {runtime_dest_path}")
+        print(f"[OK] Copied model to {runtime_dest_path}")
     
     # Update config
     update_config_section(
