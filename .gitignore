@@ -168,3 +168,6 @@ ai_training/data/
 ai_training/*.csv
 !ai_training/ippan_d_gbdt_v1.json
 !ai_training/ippan_d_gbdt_v2.json
+
+# Local cargo config (vendoring optional; don't commit)
+.cargo/config.toml
