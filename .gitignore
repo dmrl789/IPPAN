@@ -13,6 +13,7 @@ target/
 **/*.rs.bk
 vendor/
 !ai_assets/vendor/pip_wheels/
+!vendor/cargo/
 
 # Env
 .env
