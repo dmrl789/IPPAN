@@ -14,7 +14,33 @@ jobs:
         with:
           retain_days: 14
           keep_minimum_runs: 10
-      - name: Delete old branches
-        uses: phpdocker-io/github-action-delete-merged-branches@v1.2
+      - name: Delete merged branches
+        uses: actions/github-script@v7
         with:
-          dry_run: false
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const defaultBranch = (await github.rest.repos.get({ owner, repo })).data.default_branch;
+
+            // List closed PRs merged recently (limit 100). Adjust if needed.
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: "closed", per_page: 100
+            });
+
+            let deleted = 0;
+            for (const pr of prs) {
+              if (!pr.merged_at) continue;
+              const ref = pr.head.ref;
+              if (!ref || ref === defaultBranch) continue;
+
+              // Only delete branches in the same repo (not forks)
+              if (pr.head.repo.full_name !== `${owner}/${repo}`) continue;
+
+              try {
+                await github.rest.git.deleteRef({ owner, repo, ref: `heads/${ref}` });
+                deleted++;
+              } catch (e) {
+                // ignore if already deleted or protected
+              }
+            }
+            core.info(`Deleted ${deleted} merged branches`);
