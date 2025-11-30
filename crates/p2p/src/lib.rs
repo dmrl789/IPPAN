@@ -33,7 +33,7 @@ pub use parallel_gossip::{
 use anyhow::{anyhow, Result};
 use igd::aio::search_gateway;
 use igd::SearchOptions;
-use ippan_types::{ippan_time_init, ippan_time_now, Block, Transaction};
+use ippan_types::{ippan_time_now, Block, Transaction};
 use parking_lot::{Mutex, RwLock};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use reqwest::Client;
@@ -1093,6 +1093,7 @@ impl ChaosHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ippan_types::ippan_time_init;
 
     #[tokio::test]
     async fn test_http_p2p_network_creation() {
@@ -1316,8 +1317,9 @@ mod tests {
         let mut config_no_window = P2PConfig::default();
         config_no_window.limits.global_message_limit = 2;
         config_no_window.limits.global_message_window = Duration::from_millis(0); // Disable window
-        let network_no_window = HttpP2PNetwork::new(config_no_window, "http://127.0.0.1:9339".into()).expect("network");
-        
+        let network_no_window =
+            HttpP2PNetwork::new(config_no_window, "http://127.0.0.1:9339".into()).expect("network");
+
         assert!(network_no_window
             .process_incoming_message("http://127.0.0.1:9340", message.clone())
             .await

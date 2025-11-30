@@ -1,7 +1,7 @@
-use std::env;
-use std::path::PathBuf;
 use anyhow::{Context, Result};
 use ippan_ai_core::{load_model_from_path, model_hash_hex};
+use std::env;
+use std::path::PathBuf;
 
 fn main() -> Result<()> {
     let model_path = env::args()
@@ -13,7 +13,6 @@ fn main() -> Result<()> {
         .with_context(|| format!("Failed to load model from {}", model_path.display()))?;
 
     let hash = model_hash_hex(&model)?;
-    println!("{}", hash);
+    println!("{hash}");
     Ok(())
 }
-

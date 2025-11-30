@@ -195,12 +195,12 @@ impl ModelManager {
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
                 .map_err(|e| {
-                    AiCoreError::ExecutionFailed(format!("HTTP client init failed: {}", e))
+                    AiCoreError::ExecutionFailed(format!("HTTP client init failed: {e}"))
                 })?;
 
             let response =
                 client.get(url).send().await.map_err(|e| {
-                    AiCoreError::ExecutionFailed(format!("HTTP request failed: {}", e))
+                    AiCoreError::ExecutionFailed(format!("HTTP request failed: {e}"))
                 })?;
 
             if !response.status().is_success() {
@@ -213,7 +213,7 @@ impl ModelManager {
             let data = response
                 .bytes()
                 .await
-                .map_err(|e| AiCoreError::ExecutionFailed(format!("Read failed: {}", e)))?
+                .map_err(|e| AiCoreError::ExecutionFailed(format!("Read failed: {e}")))?
                 .to_vec();
 
             info!("Model loaded from URL successfully ({} bytes)", data.len());
@@ -259,7 +259,7 @@ impl ModelManager {
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
                 .map_err(|e| {
-                    AiCoreError::ExecutionFailed(format!("HTTP client init failed: {}", e))
+                    AiCoreError::ExecutionFailed(format!("HTTP client init failed: {e}"))
                 })?;
 
             for gateway_url in &gateways {

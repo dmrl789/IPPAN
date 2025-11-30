@@ -28,8 +28,10 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-    # Create app user
-    RUN useradd -rm -u 1000 -g users ippan || true
+# Create app user and group (check if exists first)
+RUN (groupadd -r ippan || true) && \
+    (useradd -rm -g ippan ippan || useradd -rm -g ippan -u 1001 ippan || true) && \
+    id ippan
 
 # Set working directory
 WORKDIR /app
@@ -40,8 +42,9 @@ COPY --from=builder /app/target/release/ippan-node /app/ippan-node
 # Copy models
 COPY --from=builder /app/models /app/models
 
-    # Create data directory
-    RUN mkdir -p /app/data && chown -R ippan:users /app || true
+# Create data directory and set ownership
+RUN mkdir -p /app/data /var/lib/ippan/data && \
+    chown -R ippan:ippan /app /var/lib/ippan || true
 
 # Switch to non-root user
 USER ippan

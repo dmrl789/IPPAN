@@ -1800,18 +1800,16 @@ fn drift_validator_metrics(
     ]);
 
     let tier_boost = tier as u64;
-    let uptime = ((850_000
+    let uptime = (850_000
         + ((base % 120_000) as i64)
         + (tier_boost as i64 * 10_000)
         + ((tick % 1_000) as i64) * 50)
-        .min(1_000_000))
-    .max(0);
-    let honesty = ((900_000
+        .clamp(0, 1_000_000);
+    let honesty = (900_000
         + ((base % 80_000) as i64)
         + (tier_boost as i64 * 8_000)
         + ((tick % 500) as i64) * 40)
-        .min(1_000_000))
-    .max(0);
+        .clamp(0, 1_000_000);
     let latency = (40_000
         + (base % 20_000)
         + (5_000u64
@@ -1825,8 +1823,7 @@ fn drift_validator_metrics(
     let slash_count = if base % 97 == 0 { 1 } else { 0 };
     let stake_amount = 10_000_000 + tier_boost * 1_000_000 + (base % 750_000);
     let network_contribution =
-        ((700_000 + ((base % 200_000) as i64) + (tier_boost as i64 * 15_000)).min(1_000_000))
-            .max(0);
+        (700_000 + ((base % 200_000) as i64) + (tier_boost as i64 * 15_000)).clamp(0, 1_000_000);
 
     DlcValidatorMetrics {
         blocks_proposed,
