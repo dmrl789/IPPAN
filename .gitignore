@@ -171,3 +171,6 @@ ai_training/*.csv
 
 # Local cargo config (vendoring optional; don't commit)
 .cargo/config.toml
+
+# Local training datasets (do not commit)
+ai_assets/datasets/
