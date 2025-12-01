@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from typing import Any, Dict, List
 
@@ -10,7 +11,6 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
 
 
 RANDOM_SEED = 42
@@ -133,12 +133,28 @@ def main() -> None:
     print(f"Features: {len(FEATURE_COLS)}")
     print(f"Target: {TARGET_COL} (scaled from {y_raw.min():.0f} to {y_raw.max():.0f})")
 
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=RANDOM_SEED, shuffle=True
-    )
+    # Deterministic hash-based split (stable across sklearn versions)
+    def row_key(i: int) -> str:
+        # Prefer stable identifiers if present
+        cols = df.columns
+        if "validator_id" in cols and "round_id" in cols:
+            return f"{df.at[i,'validator_id']}|{df.at[i,'round_id']}"
+        if "validator_id" in cols and "hashtimer" in cols:
+            return f"{df.at[i,'validator_id']}|{df.at[i,'hashtimer']}"
+        # Fallback: stable concat of feature values
+        return "|".join(str(df.at[i, c]) for c in FEATURE_COLS)
 
-    print(f"Training set: {len(X_train)} rows")
-    print(f"Validation set: {len(X_val)} rows")
+    def is_val(i: int) -> bool:
+        h = hashlib.sha256(row_key(i).encode("utf-8")).digest()
+        bucket = h[0]  # 0..255
+        return bucket < int(0.2 * 256)  # 20% val
+
+    val_mask = np.array([is_val(i) for i in range(len(df))], dtype=bool)
+
+    X_train, X_val = X[~val_mask], X[val_mask]
+    y_train, y_val = y[~val_mask], y[val_mask]
+
+    print(f"Split: train={len(X_train)} val={len(X_val)}")
 
     model = lgb.LGBMRegressor(
         n_estimators=300,
