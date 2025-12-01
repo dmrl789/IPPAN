@@ -99,13 +99,39 @@ def main() -> None:
 
     print(f"Loading dataset from: {csv_path}")
     df = pd.read_csv(csv_path)
+    
+    # Handle target column: accept either fairness_score_scaled OR fairness_score
+    if TARGET_COL in df.columns:
+        print(f"Using existing {TARGET_COL} column")
+        y_raw = df[TARGET_COL].astype("float64")
+    elif "fairness_score" in df.columns:
+        print(f"Converting fairness_score to {TARGET_COL} (multiply by {SCALE})")
+        y_raw = (df["fairness_score"].astype("float64") * SCALE).round().astype("int64").astype("float64")
+        # Store back to dataframe for consistency
+        df[TARGET_COL] = y_raw
+    else:
+        available_cols = ", ".join(df.columns.tolist())
+        raise ValueError(
+            f"CSV must contain either '{TARGET_COL}' or 'fairness_score' column.\n"
+            f"Available columns: {available_cols}"
+        )
+    
+    # Verify all feature columns exist
+    missing_features = [col for col in FEATURE_COLS if col not in df.columns]
+    if missing_features:
+        available_cols = ", ".join(df.columns.tolist())
+        raise ValueError(
+            f"Missing required feature columns: {missing_features}\n"
+            f"Available columns: {available_cols}"
+        )
+    
     X = df[FEATURE_COLS]
     # Convert scaled integer target back to float for training (divide by SCALE)
-    y = df[TARGET_COL].astype("float64") / SCALE
+    y = y_raw / SCALE
 
     print(f"Dataset size: {len(df)} rows")
     print(f"Features: {len(FEATURE_COLS)}")
-    print(f"Target: {TARGET_COL}")
+    print(f"Target: {TARGET_COL} (scaled from {y_raw.min():.0f} to {y_raw.max():.0f})")
 
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=0.2, random_state=RANDOM_SEED, shuffle=True
@@ -132,9 +158,23 @@ def main() -> None:
 
     print("Training model...")
     model.fit(X_train, y_train)
-    preds = model.predict(X_val)
-    mse = mean_squared_error(y_val, preds)
-    print(f"Validation MSE: {mse:.6f}")
+    
+    # Evaluate on both train and validation sets for honest assessment
+    train_preds = model.predict(X_train)
+    val_preds = model.predict(X_val)
+    
+    train_mse = mean_squared_error(y_train, train_preds)
+    val_mse = mean_squared_error(y_val, val_preds)
+    
+    print(f"Training MSE: {train_mse:.6f}")
+    print(f"Validation MSE: {val_mse:.6f}")
+    
+    # Warn if validation MSE is suspiciously low (possible data leakage or overfitting)
+    if val_mse < 1e-10:
+        print("WARNING: Validation MSE is extremely low. Possible causes:")
+        print("  - Data leakage (validation set too similar to training)")
+        print("  - Overfitting to training data")
+        print("  - Deterministic/synthetic data with no variance")
 
     raw = model.booster_.dump_model()
 
