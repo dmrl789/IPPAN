@@ -135,19 +135,29 @@ def main() -> None:
 
     # Deterministic hash-based split (stable across sklearn versions)
     def row_key(i: int) -> str:
-        # Prefer stable identifiers if present
         cols = df.columns
-        if "validator_id" in cols and "round_id" in cols:
-            return f"{df.at[i,'validator_id']}|{df.at[i,'round_id']}"
-        if "validator_id" in cols and "hashtimer" in cols:
-            return f"{df.at[i,'validator_id']}|{df.at[i,'hashtimer']}"
-        # Fallback: stable concat of feature values
-        return "|".join(str(df.at[i, c]) for c in FEATURE_COLS)
+        vid = df.at[i, "validator_id"] if "validator_id" in cols else "na"
+        rid = df.at[i, "round_id"] if "round_id" in cols else "na"
+
+        # Prefer per-row identifier (your CSV has this)
+        if "timestamp_utc" in cols:
+            return f"{vid}|{rid}|{df.at[i,'timestamp_utc']}"
+
+        # Keep other options for other CSV schemas
+        if "hashtimer" in cols:
+            return f"{vid}|{rid}|{df.at[i,'hashtimer']}"
+        if "timestamp" in cols:
+            return f"{vid}|{rid}|{df.at[i,'timestamp']}"
+        if "ts" in cols:
+            return f"{vid}|{rid}|{df.at[i,'ts']}"
+
+        # Fallback (least desirable)
+        return f"{vid}|{rid}"
 
     def is_val(i: int) -> bool:
         h = hashlib.sha256(row_key(i).encode("utf-8")).digest()
-        bucket = h[0]  # 0..255
-        return bucket < int(0.2 * 256)  # 20% val
+        bucket = (h[0] << 8) | h[1]  # 0..65535
+        return bucket < int(0.2 * 65536)  # 20% val
 
     val_mask = np.array([is_val(i) for i in range(len(df))], dtype=bool)
 
