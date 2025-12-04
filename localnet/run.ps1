@@ -8,6 +8,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Add Docker to PATH if not already there
+$dockerBin = "$Env:ProgramFiles\Docker\Docker\resources\bin"
+if (Test-Path $dockerBin) {
+  $env:Path = "$dockerBin;$env:Path"
+}
+
 $ComposeFile = "localnet/docker-compose.full-stack.yaml"
 $ProjectName = "ippan-local"
 
