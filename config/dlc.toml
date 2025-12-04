@@ -1,4 +1,4 @@
-# IPPAN Deterministic Learning Consensus (DLC) Configuration
+﻿# IPPAN Deterministic Learning Consensus (DLC) Configuration
 
 [consensus]
 # Consensus model - DLC uses temporal finality instead of voting
@@ -51,9 +51,9 @@ performance = 0.10
 stake = 0.05
 
 # Deterministic D-GBDT model artifact
-crates/ai_registry/models/ippan_d_gbdt_offline_20251204T141734Z.json
-0000000000000000000000000000000000000000000000000000000000000000
-
+[dgbdt.model]
+path = "crates/ai_registry/models/ippan_d_gbdt_offline_20251204T141734Z.json"
+expected_hash = "27022221142b96080e4c1c037ed879816c5ffee1c88aa756dbf34098d68f2dc1"
 [shadow_verifiers]
 # Maximum number of parallel shadow verifiers
 max_verifiers = 5
@@ -88,3 +88,4 @@ enable_metrics = true
 
 # Metrics export interval in seconds
 export_interval_secs = 15
+
