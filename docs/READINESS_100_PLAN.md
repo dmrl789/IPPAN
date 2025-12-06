@@ -248,6 +248,7 @@ cargo build --workspace --release
 - [ ] **No f32/f64:** Runtime code verified clean
 - [ ] **DLC consensus:** All tests passing
 - [ ] **Cross-platform determinism:** Verified (x86_64 ↔ aarch64)
+- [ ] **Audit Pack workflow run on HEAD passes and artifacts are published (SBOM + cargo-deny + logs).**
 
 ### Measurable Pass/Fail Criteria
 
