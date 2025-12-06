@@ -1,0 +1,9 @@
+# Critical surfaces
+/.github/workflows/   @dmrl789
+/config/dlc.toml      @dmrl789
+/crates/ai_core/      @dmrl789
+/crates/ai_registry/  @dmrl789
+/crates/consensus/    @dmrl789
+/crates/consensus_dlc/@dmrl789
+/docs/                @dmrl789
+
