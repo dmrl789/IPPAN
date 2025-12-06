@@ -1,0 +1,128 @@
+name: Audit Pack — P0 Gates + SBOM
+
+on:
+  workflow_dispatch:
+    inputs:
+      rust_toolchain:
+        description: "Rust toolchain version"
+        required: false
+        default: "stable"
+        type: string
+      clippy_all_features:
+        description: "Run clippy with all-features (true/false)"
+        required: false
+        default: "true"
+        type: string
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+
+jobs:
+  audit-pack:
+    name: Audit Pack — P0 Gates + SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ inputs.rust_toolchain || 'stable' }}
+          components: clippy, rustfmt
+
+      - name: Cache cargo (no target)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Create audit output directory
+        run: mkdir -p tmp/audit
+
+      - name: Run P0 gates
+        run: |
+          set -e
+          {
+            echo "=== Format Check ==="
+            cargo fmt --all -- --check
+            
+            echo ""
+            echo "=== Clippy Lint ==="
+            if [ "${{ inputs.clippy_all_features }}" = "true" ]; then
+              cargo clippy --workspace --all-targets --all-features -- -D warnings
+            else
+              cargo clippy --workspace --all-targets -- -D warnings
+            fi
+            
+            echo ""
+            echo "=== Tests ==="
+            cargo test --workspace --all-targets --all-features -- --nocapture
+          } 2>&1 | tee tmp/audit/gates.log
+
+      - name: Verify model hash
+        run: |
+          cargo run -p ippan-ai-core --bin verify_model_hash -- config/dlc.toml 2>&1 | tee tmp/audit/verify_model_hash.log
+
+      - name: Install cargo-cyclonedx
+        run: |
+          if ! command -v cargo-cyclonedx &> /dev/null; then
+            cargo install cargo-cyclonedx --locked
+          else
+            echo "cargo-cyclonedx already installed"
+          fi
+
+      - name: Generate SBOM
+        run: |
+          cargo cyclonedx --format json --output-file tmp/audit/sbom.json 2>&1 | tee -a tmp/audit/gates.log
+
+      - name: Install cargo-deny
+        run: |
+          if ! command -v cargo-deny &> /dev/null; then
+            cargo install cargo-deny --locked
+          else
+            echo "cargo-deny already installed"
+          fi
+
+      - name: Run cargo-deny checks
+        run: |
+          cargo deny check advisories bans licenses sources 2>&1 | tee tmp/audit/cargo-deny.txt
+
+      - name: Upload audit artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-pack-artifacts
+          path: tmp/audit/*
+          retention-days: 21
+          if-no-files-found: error
+
