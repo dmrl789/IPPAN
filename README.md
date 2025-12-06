@@ -41,7 +41,7 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 
 ## 📖 Documentation
 
-Start at [docs/README.md](docs/README.md) for the curated index that links protocol references, operator runbooks, AI/DLC evidence, audit artifacts, and contributor workflows.
+See [docs/INDEX.md](docs/INDEX.md) for the single entry point to all essential documentation.
 
 ## 🧭 IPPAN Codebase Readiness Dashboard
 
