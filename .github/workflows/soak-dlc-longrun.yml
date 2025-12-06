@@ -1,0 +1,109 @@
+name: Soak — DLC Long-Run Determinism
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "Soak duration in minutes"
+        required: true
+        default: "180"
+      profile:
+        description: "Soak profile: smoke|standard|heavy"
+        required: true
+        default: "standard"
+  schedule:
+    - cron: "0 3 * * 0" # Sundays 03:00 UTC
+
+concurrency:
+  group: soak-dlc-longrun
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 420
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo (no target)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Verify model hash (pre-soak)
+        run: cargo run -p ippan-ai-core --bin verify_model_hash -- config/dlc.toml
+
+      - name: Build soak binaries/tests (release-like settings)
+        env:
+          RUSTFLAGS: "-C debuginfo=0"
+        run: cargo test -p ippan-consensus-dlc --test fairness_invariants --no-run
+
+      - name: Run long-run soak
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/soak
+          echo "minutes=${{ inputs.minutes }}" | tee tmp/soak/meta.txt
+          echo "profile=${{ inputs.profile }}" | tee -a tmp/soak/meta.txt
+          echo "sha=${GITHUB_SHA}" | tee -a tmp/soak/meta.txt
+          echo "date=$(date -u +%FT%TZ)" | tee -a tmp/soak/meta.txt
+          MINUTES="${{ inputs.minutes }}"
+          PROFILE="${{ inputs.profile }}"
+          # Default parameters (no code changes; just extended repetitions)
+          # smoke: shorter, standard: medium, heavy: more repetitions
+          if [[ "$PROFILE" == "smoke" ]]; then
+            REPEAT=20
+          elif [[ "$PROFILE" == "heavy" ]]; then
+            REPEAT=200
+          else
+            REPEAT=80
+          fi
+          # Loop the existing invariant test repeatedly to catch flakiness / leaks
+          # Stop after MINUTES or on first failure.
+          END=$(( $(date +%s) + (MINUTES*60) ))
+          i=0
+          while [[ $(date +%s) -lt $END ]]; do
+            i=$((i+1))
+            echo "=== Iteration $i ===" | tee -a tmp/soak/soak.log
+            cargo test -p ippan-consensus-dlc --test fairness_invariants -- --nocapture 2>&1 | tee -a tmp/soak/soak.log
+            if [[ $i -ge $REPEAT ]]; then
+              echo "Reached repeat cap ($REPEAT) for profile=$PROFILE" | tee -a tmp/soak/soak.log
+              break
+            fi
+          done
+          echo "Soak completed OK" | tee -a tmp/soak/soak.log
+
+      - name: Upload soak artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-dlc-longrun-${{ github.run_id }}
+          path: |
+            tmp/soak/**
+          retention-days: 21
+
