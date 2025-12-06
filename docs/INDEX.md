@@ -2,6 +2,8 @@
 
 > **Single entry point** to all essential IPPAN documentation for auditors and developers.
 
+**Readiness Dashboard:** [docs/READINESS_STATUS.md](READINESS_STATUS.md)
+
 ---
 
 ## Start Here (2-Minute Orientation)
