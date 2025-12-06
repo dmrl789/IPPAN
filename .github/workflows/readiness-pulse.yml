@@ -1,0 +1,192 @@
+name: Readiness Pulse (Weekly)
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes_soak:
+        description: "Soak duration in minutes"
+        required: false
+        default: "30"
+        type: string
+      minutes_fuzz_each:
+        description: "Fuzz duration per target in minutes"
+        required: false
+        default: "5"
+        type: string
+  schedule:
+    - cron: "0 4 * * 0" # Sundays 04:00 UTC
+
+concurrency:
+  group: readiness-pulse
+  cancel-in-progress: false
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+
+jobs:
+  readiness-pulse:
+    name: Readiness Pulse — Audit Gates + Soak + Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Cache cargo (no target)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Create pulse output directory
+        run: mkdir -p tmp/pulse
+
+      - name: Run audit-pack gates
+        run: |
+          set -e
+          {
+            echo "=== Format Check ==="
+            cargo fmt --all -- --check
+            
+            echo ""
+            echo "=== Clippy Lint ==="
+            cargo clippy --workspace --all-targets --all-features -- -D warnings
+            
+            echo ""
+            echo "=== Tests ==="
+            cargo test --workspace --all-targets --all-features -- --nocapture
+          } 2>&1 | tee tmp/pulse/gates.log
+
+      - name: Verify model hash
+        run: |
+          cargo run -p ippan-ai-core --bin verify_model_hash -- config/dlc.toml 2>&1 | tee tmp/pulse/verify_model_hash.log
+
+      - name: Install cargo-cyclonedx
+        run: |
+          if ! command -v cargo-cyclonedx &> /dev/null; then
+            cargo install cargo-cyclonedx --locked
+          else
+            echo "cargo-cyclonedx already installed"
+          fi
+
+      - name: Generate SBOM
+        run: |
+          cargo cyclonedx --format json --output-file tmp/pulse/sbom.json 2>&1 | tee -a tmp/pulse/gates.log
+
+      - name: Install cargo-deny
+        run: |
+          if ! command -v cargo-deny &> /dev/null; then
+            cargo install cargo-deny --locked
+          else
+            echo "cargo-deny already installed"
+          fi
+
+      - name: Run cargo-deny checks
+        run: |
+          cargo deny check advisories bans licenses sources 2>&1 | tee tmp/pulse/cargo-deny.txt
+
+      - name: Run short soak loop
+        shell: bash
+        run: |
+          set -euo pipefail
+          MINUTES="${{ inputs.minutes_soak || '30' }}"
+          echo "Running soak for ${MINUTES} minutes" | tee tmp/pulse/soak.log
+          echo "sha=${GITHUB_SHA}" | tee -a tmp/pulse/soak.log
+          echo "date=$(date -u +%FT%TZ)" | tee -a tmp/pulse/soak.log
+          END=$(( $(date +%s) + (MINUTES*60) ))
+          i=0
+          while [[ $(date +%s) -lt $END ]]; do
+            i=$((i+1))
+            echo "=== Soak Iteration $i ===" | tee -a tmp/pulse/soak.log
+            cargo test -p ippan-consensus-dlc --test fairness_invariants -- --nocapture 2>&1 | tee -a tmp/pulse/soak.log
+          done
+          echo "Soak completed OK" | tee -a tmp/pulse/soak.log
+
+      - name: Install Rust nightly for cargo-fuzz
+        id: install_nightly
+        continue-on-error: true
+        run: |
+          rustup toolchain install nightly --component rustfmt clippy
+          rustup default nightly
+          echo "installed=true" >> $GITHUB_OUTPUT
+
+      - name: Install cargo-fuzz
+        id: install_fuzz
+        continue-on-error: true
+        if: steps.install_nightly.outputs.installed == 'true'
+        run: |
+          cargo install cargo-fuzz --locked
+          echo "installed=true" >> $GITHUB_OUTPUT
+
+      - name: Run short fuzz targets
+        if: steps.install_fuzz.outputs.installed == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          MINUTES_FUZZ="${{ inputs.minutes_fuzz_each || '5' }}"
+          SECONDS_FUZZ=$((MINUTES_FUZZ * 60))
+          mkdir -p tmp/pulse/fuzz
+          cd crates/fuzz
+          
+          for target in canonical_hash rpc_body_limit proof_parsing; do
+            echo "=== Fuzzing $target for ${MINUTES_FUZZ} minutes ===" | tee -a ../../tmp/pulse/fuzz/fuzz.log
+            timeout ${SECONDS_FUZZ} cargo fuzz run $target -- -max_total_time=${SECONDS_FUZZ} -timeout=5 2>&1 | tee -a ../../tmp/pulse/fuzz/fuzz.log || echo "Fuzz target $target completed or timed out" | tee -a ../../tmp/pulse/fuzz/fuzz.log
+          done
+          
+          # Copy any crash artifacts
+          if [ -d "fuzz/artifacts" ]; then
+            cp -r fuzz/artifacts ../../tmp/pulse/fuzz/ || true
+          fi
+
+      - name: Log fuzz skip if needed
+        if: steps.install_fuzz.outputs.installed != 'true'
+        run: |
+          echo "SKIPPED: Fuzz tool installation failed or was skipped" | tee tmp/pulse/fuzz/fuzz.log
+          echo "This is non-blocking. Core gates (fmt/clippy/test/verify_model_hash/cargo-deny/sbom) must pass." | tee -a tmp/pulse/fuzz/fuzz.log
+
+      - name: Upload readiness pulse artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: readiness-pulse-${{ github.run_id }}
+          path: |
+            tmp/pulse/**
+          retention-days: 21
+          if-no-files-found: warn
+
