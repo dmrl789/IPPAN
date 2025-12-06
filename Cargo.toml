@@ -47,6 +47,9 @@ members = [
   "crates/benchmark",        # Performance benchmarking tool
   "crates/explorer",         # Block explorer API gateway
   "tools/loadgen",           # RPC load generator for perf baselines
+
+  # Fuzz testing
+  "crates/fuzz",             # Fuzz harness for critical components
 ]
 
 resolver = "2"

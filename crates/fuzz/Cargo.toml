@@ -1,0 +1,36 @@
+[package]
+name = "ippan-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ippan-ai-core = { path = "../ai_core" }
+ippan-types = { path = "../types" }
+ippan-crypto = { path = "../crypto" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.21"
+
+[[bin]]
+name = "canonical_hash"
+path = "fuzz_targets/canonical_hash.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "rpc_body_limit"
+path = "fuzz_targets/rpc_body_limit.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "proof_parsing"
+path = "fuzz_targets/proof_parsing.rs"
+test = false
+doc = false
+

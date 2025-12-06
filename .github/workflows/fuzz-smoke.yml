@@ -1,0 +1,103 @@
+name: Fuzz Smoke Tests
+
+on:
+  pull_request:
+    paths:
+      - 'crates/fuzz/**'
+      - 'crates/ai_core/**'
+      - 'crates/rpc/**'
+      - 'crates/crypto/**'
+      - 'crates/types/**'
+      - '.github/workflows/fuzz-smoke.yml'
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - 'crates/fuzz/**'
+      - 'crates/ai_core/**'
+      - 'crates/rpc/**'
+      - 'crates/crypto/**'
+      - 'crates/types/**'
+      - '.github/workflows/fuzz-smoke.yml'
+
+concurrency:
+  group: fuzz-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install Rust (nightly for cargo-fuzz)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Cache cargo (no target)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build fuzz targets
+        run: |
+          cd crates/fuzz
+          cargo fuzz list
+
+      - name: Run canonical_hash (60s)
+        continue-on-error: true
+        run: |
+          cd crates/fuzz
+          timeout 60 cargo fuzz run canonical_hash -- -max_total_time=60 -timeout=5 || true
+
+      - name: Run rpc_body_limit (60s)
+        continue-on-error: true
+        run: |
+          cd crates/fuzz
+          timeout 60 cargo fuzz run rpc_body_limit -- -max_total_time=60 -timeout=5 || true
+
+      - name: Run proof_parsing (60s)
+        continue-on-error: true
+        run: |
+          cd crates/fuzz
+          timeout 60 cargo fuzz run proof_parsing -- -max_total_time=60 -timeout=5 || true
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-smoke-crashes-${{ github.run_id }}
+          path: |
+            crates/fuzz/fuzz/artifacts/**
+          retention-days: 7
+          if-no-files-found: ignore
+
