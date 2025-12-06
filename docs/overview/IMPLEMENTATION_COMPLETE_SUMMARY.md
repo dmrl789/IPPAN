@@ -1,3 +1,5 @@
+> **DEPRECATED (2025-01-XX):** This document is kept for history. See `docs/INDEX.md` for the current entry points.
+
 # Implementation Complete Summary
 
 **Date**: 2025-11-04  
