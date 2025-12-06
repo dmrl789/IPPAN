@@ -13,6 +13,12 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 - See [release notes](docs/release-notes/IPPAN_v0.9.0_RC1.md), the matching [changelog entry](CHANGELOG.md#v090-rc1--2025-11-20),
   and the [operator guide](docs/operators/running-ippan-rc-node.md) (including guidance for embedding git metadata into RC builds).
 
+### CI Status
+
+[![Build & Test (Rust)](https://github.com/dmrl789/IPPAN/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/dmrl789/IPPAN/actions/workflows/ci.yml?query=branch%3Amaster)
+[![AI Determinism & DLC Consensus](https://github.com/dmrl789/IPPAN/actions/workflows/ai-determinism.yml/badge.svg?branch=master)](https://github.com/dmrl789/IPPAN/actions/workflows/ai-determinism.yml?query=branch%3Amaster)
+[![Audit Pack — P0 Gates + SBOM](https://github.com/dmrl789/IPPAN/actions/workflows/audit-pack.yml/badge.svg)](https://github.com/dmrl789/IPPAN/actions/workflows/audit-pack.yml)
+
 ## RC Testnet
 
 - Current RC: **v0.9.0-rc1**
@@ -42,6 +48,11 @@ A real blockchain implementation with **IPPAN Time** and **HashTimer** systems f
 ## 📖 Documentation
 
 See [docs/INDEX.md](docs/INDEX.md) for the single entry point to all essential documentation.
+
+## Readiness
+
+- **Readiness Dashboard:** [docs/READINESS_STATUS.md](docs/READINESS_STATUS.md)
+- **Documentation Index:** [docs/INDEX.md](docs/INDEX.md)
 
 ## 🧭 IPPAN Codebase Readiness Dashboard
 
