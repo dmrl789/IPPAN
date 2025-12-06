@@ -1,6 +1,7 @@
 name: AI Determinism & DLC Consensus
 
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - main
