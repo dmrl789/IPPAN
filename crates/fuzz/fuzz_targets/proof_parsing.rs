@@ -1,7 +1,7 @@
 #![no_main]
-use libfuzzer_sys::fuzz_target;
+use base64::{engine::general_purpose, Engine as _};
 use ippan_crypto::CryptoUtils;
-use base64::{Engine as _, engine::general_purpose};
+use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     // Cap input size to prevent unbounded memory
@@ -25,7 +25,7 @@ fuzz_target!(|data: &[u8]| {
     if data.len() >= 102 {
         // Minimum size check (as per validate_confidential_transaction)
         let _has_min_size = true;
-        
+
         if data.len() > 10_000 {
             // Proof length should be bounded
             let _proof_too_large = true;
@@ -44,7 +44,7 @@ fuzz_target!(|data: &[u8]| {
                     proof_len_bytes[2],
                     proof_len_bytes[3],
                 ]) as usize;
-                
+
                 // Validate reasonable proof length
                 if proof_len > 0 && proof_len <= 10_000 {
                     // Check if we have enough data
@@ -56,4 +56,3 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 });
-

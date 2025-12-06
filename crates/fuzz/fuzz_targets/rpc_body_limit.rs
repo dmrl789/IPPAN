@@ -11,7 +11,7 @@ fuzz_target!(|data: &[u8]| {
 
     // Test body size limit enforcement
     let exceeds_limit = data.len() > MAX_BODY_BYTES;
-    
+
     // Simulate body limit check (as done in RPC server)
     if exceeds_limit {
         // Should reject with appropriate error
@@ -27,7 +27,7 @@ fuzz_target!(|data: &[u8]| {
         // Exactly at limit - should accept
         let _at_limit = true;
     }
-    
+
     if data.len() == MAX_BODY_BYTES + 1 {
         // One byte over - should reject
         let _over_limit = true;
@@ -41,4 +41,3 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 });
-

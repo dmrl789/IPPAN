@@ -1,6 +1,6 @@
 #![no_main]
+use ippan_ai_core::serde_canon::{hash_canonical, hash_canonical_hex, to_canonical_json};
 use libfuzzer_sys::fuzz_target;
-use ippan_ai_core::serde_canon::{to_canonical_json, hash_canonical, hash_canonical_hex};
 use serde_json::Value;
 
 fuzz_target!(|data: &[u8]| {
@@ -22,7 +22,7 @@ fuzz_target!(|data: &[u8]| {
         // Test canonicalization roundtrip
         let canonical1 = to_canonical_json(&json_value);
         let canonical2 = to_canonical_json(&json_value);
-        
+
         // Same input should produce same canonical output
         if let (Ok(c1), Ok(c2)) = (&canonical1, &canonical2) {
             assert_eq!(c1, c2);
@@ -31,7 +31,7 @@ fuzz_target!(|data: &[u8]| {
         // Test hashing
         let hash1 = hash_canonical(&json_value);
         let hash2 = hash_canonical(&json_value);
-        
+
         // Same input should produce same hash
         if let (Ok(h1), Ok(h2)) = (&hash1, &hash2) {
             assert_eq!(h1, h2);
@@ -40,7 +40,7 @@ fuzz_target!(|data: &[u8]| {
         // Test hex hash
         let hex1 = hash_canonical_hex(&json_value);
         let hex2 = hash_canonical_hex(&json_value);
-        
+
         if let (Ok(h1), Ok(h2)) = (&hex1, &hex2) {
             assert_eq!(h1, h2);
             // Hex should be 64 chars (32 bytes)
@@ -48,4 +48,3 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 });
-
