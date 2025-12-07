@@ -74,7 +74,7 @@ jobs:
             cargo-${{ runner.os }}-
 
       - name: Create pulse output directory
-        run: mkdir -p tmp/pulse
+        run: mkdir -p tmp/pulse tmp/pulse/audit tmp/pulse/soak tmp/pulse/fuzz
 
       - name: Run audit-pack gates
         run: |
@@ -177,6 +177,7 @@ jobs:
       - name: Log fuzz skip if needed
         if: steps.install_fuzz.outputs.installed != 'true'
         run: |
+          mkdir -p tmp/pulse/fuzz
           echo "SKIPPED: Fuzz tool installation failed or was skipped" | tee tmp/pulse/fuzz/fuzz.log
           echo "This is non-blocking. Core gates (fmt/clippy/test/verify_model_hash/cargo-deny/sbom) must pass." | tee -a tmp/pulse/fuzz/fuzz.log
 
