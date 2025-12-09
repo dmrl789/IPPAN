@@ -1,0 +1,34 @@
+BOOTSTRAP_NODES MEANING - Code Analysis
+========================================
+
+1. CONFIGURATION SOURCE:
+   - Location: `node/src/main.rs` line 426-441
+   - Config key: `p2p.bootstrap_nodes` (TOML) or `BOOTSTRAP_NODES` (env)
+   - Format: Comma-separated URLs (e.g., "http://188.245.97.41:8080")
+
+2. USAGE:
+   - Passed to P2P network as `bootstrap_peers` in `DhtConfig` (line 1305)
+   - Used by HTTP P2P network's `start()` method (line 380-384)
+   - Each bootstrap URL is passed to `add_peer()` method
+
+3. ADD_PEER BEHAVIOR:
+   - Location: `crates/p2p/src/lib.rs` line 413-467
+   - Makes HTTP requests to bootstrap node URLs
+   - Uses the URL as-is (no port transformation)
+   - Connects to `/p2p/peer-discovery` and `/p2p/peer-info` endpoints
+
+4. CRITICAL FINDING:
+   - P2P endpoints are on RPC port (8080), NOT on P2P port (9000)
+   - Evidence: `/p2p/peers`, `/p2p/peer-discovery` are RPC routes (crates/rpc/src/server.rs line 1462-1468)
+   - Therefore: bootstrap_nodes should use port 8080, not 9000
+
+5. PORT CONFUSION:
+   - Config shows `[p2p] port = 9000` but this is NOT used for HTTP P2P
+   - The `listen_address` uses p2p_port (9000) but actual HTTP endpoints are on RPC (8080)
+   - This is why nodes advertise themselves with :9000 but connections fail
+
+CONCLUSION:
+- bootstrap_nodes URLs should point to RPC port (8080) for HTTP P2P networking
+- The p2p.port = 9000 in config is misleading - actual P2P HTTP endpoints are on RPC port 8080
+- Current devnet configs correctly use port 8080 after our fixes
+
