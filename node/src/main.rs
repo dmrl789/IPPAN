@@ -9,6 +9,7 @@ use ippan_consensus::{
     ValidatorMetrics as DlcValidatorMetrics, VALIDATOR_BOND_AMOUNT,
 };
 use ippan_consensus_dlc::{DlcConfig as AiDlcConfig, DlcConsensus};
+use ippan_crypto::KeyPair;
 use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFileStorage};
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{HandleDhtService, L2HandleRegistry, StubHandleDhtService};
@@ -18,7 +19,7 @@ use ippan_p2p::{
     Libp2pHandleDhtService, Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig, P2PLimits,
 };
 use ippan_rpc::server::ConsensusHandle;
-use ippan_rpc::{start_server, AiStatusHandle, AppState, L2Config};
+use ippan_rpc::{start_p2p_server, start_server, AiStatusHandle, AppState, L2Config};
 use ippan_security::{SecurityConfig as RpcSecurityConfig, SecurityManager as RpcSecurityManager};
 use ippan_storage::{export_snapshot, import_snapshot, SledStorage, Storage};
 use ippan_types::{
@@ -219,6 +220,9 @@ struct AppConfig {
     // Node identity
     node_id: String,
     validator_id: [u8; 32],
+    #[allow(dead_code)]
+    validator_private_key: [u8; 32],
+    validator_key_path: PathBuf,
     network_id: String,
 
     // Network
@@ -325,24 +329,27 @@ impl AppConfig {
 
         let config = builder.build()?;
 
-        // Parse validator ID from hex string
-        let validator_id_str = config.get_string("VALIDATOR_ID").unwrap_or_else(|_| {
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()
+        // Resolve storage paths up front so we can derive the validator key path
+        let data_dir = get_string_value(&config, &["DATA_DIR", "storage.data_dir"])
+            .unwrap_or_else(|| defaults.data_dir.to_string());
+        let db_path = get_string_value(&config, &["DB_PATH", "storage.db_path"])
+            .unwrap_or_else(|| defaults.db_path.to_string());
+
+        // Validator key path: explicit override or <data_dir>/validator.key
+        let validator_key_path = get_string_value(
+            &config,
+            &["VALIDATOR_KEY_PATH", "validator.key_path", "validator.key"],
+        )
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let mut path = PathBuf::from(&data_dir);
+            path.push("validator.key");
+            path
         });
 
-        let validator_id = if validator_id_str.len() == 64 {
-            let mut id = [0u8; 32];
-            hex::decode_to_slice(&validator_id_str, &mut id)?;
-            id
-        } else {
-            // Generate a deterministic ID from the string
-            let mut id = [0u8; 32];
-            let hash_bytes = validator_id_str.as_bytes();
-            for (i, &byte) in hash_bytes.iter().enumerate().take(32) {
-                id[i] = byte;
-            }
-            id
-        };
+        let validator_keypair = load_or_create_validator_key(&validator_key_path)?;
+        let validator_id = validator_keypair.public_key();
+        let validator_private_key = validator_keypair.private_key();
 
         let mut external_ip_services: Vec<String> = config
             .get_string("P2P_EXTERNAL_IP_SERVICES")
@@ -446,6 +453,8 @@ impl AppConfig {
             node_id: get_string_value(&config, &["NODE_ID", "node.id"])
                 .unwrap_or_else(|| defaults.node_id.to_string()),
             validator_id,
+            validator_private_key,
+            validator_key_path,
             network_id: get_string_value(&config, &["NETWORK_ID", "network.id", "network_id"])
                 .unwrap_or_else(|| defaults.network_id.to_string()),
             consensus_mode: get_string_value(&config, &["CONSENSUS_MODE", "consensus.mode"])
@@ -477,10 +486,8 @@ impl AppConfig {
             p2p_port: get_string_value(&config, &["P2P_PORT", "p2p.port"])
                 .unwrap_or_else(|| defaults.p2p_port.to_string())
                 .parse()?,
-            data_dir: get_string_value(&config, &["DATA_DIR", "storage.data_dir"])
-                .unwrap_or_else(|| defaults.data_dir.to_string()),
-            db_path: get_string_value(&config, &["DB_PATH", "storage.db_path"])
-                .unwrap_or_else(|| defaults.db_path.to_string()),
+            data_dir,
+            db_path,
             slot_duration_ms: config
                 .get_string("SLOT_DURATION_MS")
                 .unwrap_or_else(|_| "100".to_string())
@@ -630,6 +637,41 @@ fn get_bool_value(config: &Config, keys: &[&str], default: bool) -> bool {
     default
 }
 
+fn load_or_create_validator_key(path: &Path) -> Result<KeyPair> {
+    if path.exists() {
+        let raw = fs::read_to_string(path)?;
+        let hex = raw.trim();
+        let bytes = hex::decode(hex).map_err(|e| {
+            anyhow!(
+                "failed to decode validator key at {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+        if bytes.len() != 32 {
+            anyhow::bail!(
+                "validator key at {} must be 32 bytes (64 hex chars), got {} bytes",
+                path.display(),
+                bytes.len()
+            );
+        }
+        let mut secret = [0u8; 32];
+        secret.copy_from_slice(&bytes);
+        let keypair = KeyPair::from_private_key(&secret)
+            .map_err(|e| anyhow!("invalid validator private key at {}: {}", path.display(), e))?;
+        Ok(keypair)
+    } else {
+        let keypair = KeyPair::generate();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let hex_key = hex::encode(keypair.private_key());
+        fs::write(path, format!("{hex_key}\n"))?;
+        info!("Generated new validator key at {}", path.display());
+        Ok(keypair)
+    }
+}
+
 fn parse_multiaddrs(values: &[String], label: &str) -> Vec<Multiaddr> {
     values
         .iter()
@@ -681,8 +723,18 @@ fn load_config_with_overrides(matches: &clap::ArgMatches) -> Result<AppConfig> {
 
 fn apply_overrides(matches: &clap::ArgMatches, config: &mut AppConfig) {
     if let Some(data_dir) = matches.get_one::<String>("data-dir") {
+        let previous_data_dir = config.data_dir.clone();
+        let uses_default_validator_key = config.validator_key_path.starts_with(&previous_data_dir)
+            && config
+                .validator_key_path
+                .file_name()
+                .map(|name| name == "validator.key")
+                .unwrap_or(false);
         config.data_dir = data_dir.clone();
         config.db_path = format!("{data_dir}/db");
+        if uses_default_validator_key {
+            config.validator_key_path = PathBuf::from(data_dir).join("validator.key");
+        }
     }
 
     if let Some(log_level) = matches.get_one::<String>("log-level") {
@@ -1167,15 +1219,22 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Build validator set from discovered IDs (ensures multi-node devnet has unique identities)
+    let discovered_validators = discover_validator_ids(&config);
+    let validator_entries: Vec<Validator> = discovered_validators
+        .iter()
+        .map(|id| Validator {
+            id: *id,
+            address: *id,
+            stake: 1_000_000,
+            is_active: true,
+        })
+        .collect();
+
     // Initialize consensus
     let consensus_config = PoAConfig {
         slot_duration_ms: config.slot_duration_ms,
-        validators: vec![Validator {
-            id: config.validator_id,
-            address: config.validator_id,
-            stake: 1_000_000,
-            is_active: true,
-        }],
+        validators: validator_entries,
         max_transactions_per_block: config.max_transactions_per_block,
         block_reward: config.block_reward,
         finalization_interval_ms: config.finalization_interval_ms,
@@ -1246,7 +1305,6 @@ async fn main() -> Result<()> {
         ai_status_handle = build_dlc_ai_status_handle();
 
         if let Some(handle) = &dlc_handle {
-            let discovered_validators = discover_validator_ids(&config);
             info!(
                 "Seeding DLC validator metrics store with {} validators",
                 discovered_validators.len()
@@ -1432,6 +1490,21 @@ async fn main() -> Result<()> {
     let rpc_addr = format!("{rpc_host}:{rpc_port}");
     let rpc_addr_clone = rpc_addr.clone();
     info!("Starting RPC server on {}", rpc_addr);
+
+    // Start P2P HTTP server on dedicated port
+    let p2p_host = &config.p2p_host;
+    let p2p_port = config.p2p_port;
+    let p2p_addr = format!("{p2p_host}:{p2p_port}");
+    let p2p_addr_clone = p2p_addr.clone();
+    let app_state_for_p2p = app_state.clone();
+    info!("Starting P2P HTTP server on {}", p2p_addr);
+
+    // Start P2P server in background
+    let _p2p_handle = tokio::spawn(async move {
+        if let Err(e) = start_p2p_server(app_state_for_p2p, &p2p_addr_clone).await {
+            error!("P2P HTTP server error: {}", e);
+        }
+    });
 
     // Start RPC server in background
     let rpc_handle = tokio::spawn(async move {
@@ -1655,6 +1728,9 @@ enum MetricsDriftMode {
 fn discover_validator_ids(config: &AppConfig) -> Vec<[u8; 32]> {
     let mut ids = vec![config.validator_id];
     ids.extend(load_localnet_validator_ids(&config.config_path));
+    if ids.is_empty() {
+        ids.push(config.validator_id);
+    }
     ids.sort();
     ids.dedup();
     ids
@@ -2164,6 +2240,8 @@ mod tests {
             config_path: None,
             node_id: "test-node".to_string(),
             validator_id: [0u8; 32],
+            validator_private_key: [0u8; 32],
+            validator_key_path: PathBuf::from("./data/testnet/validator.key"),
             network_id: "ippan-testnet".to_string(),
             rpc_host: "0.0.0.0".to_string(),
             rpc_port: 28080,

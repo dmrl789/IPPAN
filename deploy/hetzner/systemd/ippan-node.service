@@ -1,0 +1,21 @@
+[Unit]
+Description=IPPAN Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ippan
+Environment=RUST_LOG=info
+Environment=RUST_BACKTRACE=1
+ExecStart=/opt/ippan/target/release/ippan-node --config /etc/ippan/config/node.toml
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+StandardOutput=append:/var/log/ippan/node.log
+StandardError=append:/var/log/ippan/node.err
+
+[Install]
+WantedBy=multi-user.target
+

@@ -52,8 +52,8 @@ stake = 0.05
 
 # Deterministic D-GBDT model artifact
 [dgbdt.model]
-path = "crates/ai_registry/models/ippan_d_gbdt_offline_20251204T141734Z.json"
-expected_hash = "27022221142b96080e4c1c037ed879816c5ffee1c88aa756dbf34098d68f2dc1"
+path = "crates/ai_registry/models/ippan_d_gbdt_offline_20251213.json"
+expected_hash = "02b2ffc0ee97710e31780ebb111f3b662554af790c039efd46dde32eebbbd875"
 [shadow_verifiers]
 # Maximum number of parallel shadow verifiers
 max_verifiers = 5

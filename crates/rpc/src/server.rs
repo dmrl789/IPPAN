@@ -1426,6 +1426,53 @@ async fn bind_listener(addr: &str) -> Result<tokio::net::TcpListener> {
         .with_context(|| format!("failed to bind RPC listener on {socket_addr}"))
 }
 
+/// Start the P2P HTTP server on a dedicated port
+pub async fn start_p2p_server(state: AppState, addr: &str) -> Result<()> {
+    info!("Starting P2P HTTP server on {}", addr);
+    let shared = Arc::new(state);
+    let app = build_p2p_router(shared.clone());
+    let listener = bind_listener(addr).await?;
+    let bound_addr = listener.local_addr()?;
+    info!("P2P HTTP server listening on {}", bound_addr);
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .context("P2P HTTP server terminated unexpectedly")
+}
+
+/// Build P2P-only router with minimal middleware
+fn build_p2p_router(state: Arc<AppState>) -> Router {
+    // P2P server uses lighter middleware - allow all origins for peer communication
+    let max_body_bytes = configured_body_limit(&state);
+    let request_timeout = configured_request_timeout(&state);
+
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    Router::new()
+        .route("/p2p/peers", get(handle_get_p2p_peers))
+        .route("/p2p/blocks", post(handle_p2p_blocks))
+        .route("/p2p/transactions", post(handle_p2p_transactions))
+        .route("/p2p/peer-info", post(handle_p2p_peer_info))
+        .route("/p2p/peer-discovery", post(handle_p2p_peer_discovery))
+        .route("/p2p/block-request", post(handle_p2p_block_request))
+        .route("/p2p/block-response", post(handle_p2p_block_response))
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(handle_service_error))
+                .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
+                .layer(TimeoutLayer::new(request_timeout))
+                .layer(RequestBodyLimitLayer::new(max_body_bytes)),
+        )
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
+
 /// Build router and endpoints
 fn build_router(state: Arc<AppState>) -> Router {
     let max_body_bytes = configured_body_limit(&state);
@@ -1779,6 +1826,18 @@ fn build_consensus_payload(
                 metrics_map.insert(validator_id_str, convert_validator_metrics(&metrics));
             }
             view.validators_metrics = Some(metrics_map);
+        } else {
+            // Seed deterministic placeholder metrics for known validators (dev/localnet only)
+            if !view.validators.is_empty() {
+                let mut metrics_map = BTreeMap::new();
+                for validator_id_str in &view.validators {
+                    metrics_map.insert(
+                        validator_id_str.clone(),
+                        convert_validator_metrics(&DlcValidatorMetrics::default()),
+                    );
+                }
+                view.validators_metrics = Some(metrics_map);
+            }
         }
     }
 
