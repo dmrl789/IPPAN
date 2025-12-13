@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - master
+    tags:
+      - 'dgbdt-*'
+      - 'ops-*'
   pull_request:
     branches:
       - main
@@ -49,3 +52,41 @@ jobs:
           RUSTFLAGS="" cargo clippy --workspace --all-targets --all-features
           RUSTFLAGS="-D warnings" cargo build --all
           RUSTFLAGS="-D warnings" cargo test --all -- --nocapture
+
+  verify-model-hash-artifact:
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev ca-certificates
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: false
+      - name: Build verify_model_hash (release)
+        run: cargo build -p ippan-ai-core --bin verify_model_hash --release --locked
+      - name: Package verify_model_hash artifact
+        run: |
+          mkdir -p dist
+          cp target/release/verify_model_hash dist/
+          tar -C dist -czf verify-model-hash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz verify_model_hash
+      - name: Upload verify_model_hash artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-model-hash-${{ github.ref_name }}-x86_64-unknown-linux-gnu
+          path: verify-model-hash-${{ github.ref_name }}-x86_64-unknown-linux-gnu.tar.gz
+          retention-days: 14
