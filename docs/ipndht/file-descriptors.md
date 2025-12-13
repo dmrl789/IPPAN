@@ -28,6 +28,58 @@ The `/files/publish` and `/files/{id}` endpoints always use the configured DHT
 service through `AppState.file_dht`, so switching modes does not require API
 changes.
 
+### On-chain/DHT footprint
+
+File descriptors are **not** anchored on the IPPAN blockchain; they live in the
+File DHT (stub or libp2p) as small JSON blobs. Using the example values above:
+
+- Fixed fields: `id` (32 bytes), `content_hash` (32 bytes), `owner` (32 bytes),
+  `size_bytes` (8 bytes), `created_at_us` (8 bytes), and `dht_published`
+  (boolean).
+- Optional fields: `mime_type` (short UTF-8 string) and `tags` (small string
+  array).
+
+Even with all optional fields present the serialized descriptor remains only a
+few hundred bytes in the DHT, and **zero** bytes are written to consensus
+storage because the file payload itself never touches the chain.
+
+## Example publish flow
+
+Below is a concrete example of the JSON payload sent to `/files/publish` and
+the response returned by the node. Values use valid lengths for the
+`content_hash` (64 hex chars) and `owner` (Base58Check IPN address beginning
+with `i`; the RPC also accepts the equivalent `0x`-prefixed hex form):
+
+**Request**
+
+```json
+{
+  "owner": "ippan1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdsk9t",
+  "content_hash": "5a8b5d6d4c3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7",
+  "size_bytes": 24576,
+  "mime_type": "application/pdf",
+  "tags": ["whitepaper", "v1"]
+}
+```
+
+**Response**
+
+```json
+{
+  "id": "a93cf5d4e1b0f3c4d2a1e6f7c8b9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708",
+  "content_hash": "5a8b5d6d4c3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7",
+  "owner": "ippan1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdsk9t",
+  "size_bytes": 24576,
+  "created_at_us": 1700000123456789,
+  "mime_type": "application/pdf",
+  "tags": ["whitepaper", "v1"],
+  "dht_published": true
+}
+```
+
+The `id` is deterministically derived from the provided `content_hash` and
+`owner`, so identical inputs always generate the same identifier.
+
 ## Handle records
 
 Handle registrations now reuse the same IPNDHT infrastructure through a
