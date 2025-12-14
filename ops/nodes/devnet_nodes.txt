@@ -1,0 +1,5 @@
+# IPPAN devnet nodes (ssh targets)
+root@188.245.97.41
+root@135.181.145.174
+root@5.223.51.238
+root@178.156.219.107
