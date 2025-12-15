@@ -180,6 +180,7 @@ impl ChaosConfig {
 #[derive(Debug, Clone)]
 pub struct P2PConfig {
     pub listen_address: String,
+    pub local_peer_id: Option<String>,
     pub max_peers: usize,
     pub peer_discovery_interval: Duration,
     pub message_timeout: Duration,
@@ -193,6 +194,7 @@ impl Default for P2PConfig {
     fn default() -> Self {
         Self {
             listen_address: "http://0.0.0.0:9000".to_string(),
+            local_peer_id: None,
             max_peers: 50,
             peer_discovery_interval: Duration::from_secs(30),
             message_timeout: Duration::from_secs(10),
@@ -307,6 +309,11 @@ impl HttpP2PNetwork {
 
         let chaos = ChaosHandle::new(config.chaos.clone(), &listen_address);
 
+        let local_peer_id = config
+            .local_peer_id
+            .clone()
+            .unwrap_or_else(|| derive_peer_id(&listen_address));
+
         Ok(Self {
             config,
             client,
@@ -318,7 +325,7 @@ impl HttpP2PNetwork {
             global_window_start: Arc::new(AtomicU64::new(ippan_time_now())),
             peer_message_counts: Arc::new(Mutex::new(HashMap::new())),
             peer_cooldowns: Arc::new(Mutex::new(HashMap::new())),
-            local_peer_id: derive_peer_id(&listen_address),
+            local_peer_id,
             listen_address,
             announce_address: Arc::new(RwLock::new(announce_address)),
             incoming_sender,
