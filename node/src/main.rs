@@ -1152,19 +1152,22 @@ async fn main() -> Result<()> {
 
     let handle_registry = Arc::new(L2HandleRegistry::new());
     let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
-    let (identity_key_path, libp2p_identity) =
-        load_identity_with_fallback(config.p2p_identity_key_path.as_deref())?;
-    let libp2p_peer_id = PeerId::from(libp2p_identity.public());
-    let local_peer_id_string = format!("peer-{libp2p_peer_id}");
-    info!(
-        "Loaded P2P identity from {} (peer: {})",
-        identity_key_path.display(),
-        libp2p_peer_id
-    );
 
     let need_ipn_dht_network = matches!(config.file_dht_mode, FileDhtMode::Libp2p)
         || matches!(config.handle_dht_mode, HandleDhtMode::Libp2p);
-    let ipn_dht_backend: Option<Arc<IpnDhtService>> = if need_ipn_dht_network {
+
+    // Load libp2p identity only when libp2p networking is enabled
+    let (local_peer_id_string, ipn_dht_backend) = if need_ipn_dht_network {
+        let (identity_key_path, libp2p_identity) =
+            load_identity_with_fallback(config.p2p_identity_key_path.as_deref())?;
+        let libp2p_peer_id = PeerId::from(libp2p_identity.public());
+        let peer_id_string = format!("peer-{libp2p_peer_id}");
+        info!(
+            "Loaded P2P identity from {} (peer: {})",
+            identity_key_path.display(),
+            libp2p_peer_id
+        );
+
         let listen_multiaddrs =
             parse_multiaddrs(&config.file_dht_listen_multiaddrs, "FILE_DHT_LIBP2P_LISTEN");
         let bootstrap_multiaddrs = parse_multiaddrs(
@@ -1187,7 +1190,7 @@ async fn main() -> Result<()> {
                 libp2p_config.gossip_topics.push(topic.to_string());
             }
         }
-        match Libp2pNetwork::new(libp2p_config) {
+        let backend = match Libp2pNetwork::new(libp2p_config) {
             Ok(network) => {
                 let network = Arc::new(network);
                 let addresses = network.listen_addresses();
@@ -1201,9 +1204,10 @@ async fn main() -> Result<()> {
                 );
                 None
             }
-        }
+        };
+        (Some(peer_id_string), backend)
     } else {
-        None
+        (None, None)
     };
 
     let file_dht: Arc<dyn FileDhtService> = match config.file_dht_mode {
@@ -1388,7 +1392,7 @@ async fn main() -> Result<()> {
 
     let p2p_config = P2PConfig {
         listen_address: listen_address.clone(),
-        local_peer_id: Some(local_peer_id_string.clone()),
+        local_peer_id: local_peer_id_string.clone(),
         max_peers: config.max_peers,
         peer_discovery_interval: Duration::from_secs(config.peer_discovery_interval_secs),
         message_timeout: Duration::from_secs(10),
@@ -1916,7 +1920,7 @@ fn drift_validator_metrics(
     let rounds_active = tick + 10 + (base % 15);
     let blocks_proposed = rounds_active / 2 + (base % 7) + tier_boost;
     let blocks_verified = blocks_proposed + (tier_boost % 3) + (base % 3);
-    let slash_count = if base % 97 == 0 { 1 } else { 0 };
+    let slash_count = if base.is_multiple_of(97) { 1 } else { 0 };
     let stake_amount = 10_000_000 + tier_boost * 1_000_000 + (base % 750_000);
     let network_contribution =
         (700_000 + ((base % 200_000) as i64) + (tier_boost as i64 * 15_000)).clamp(0, 1_000_000);

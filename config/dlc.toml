@@ -30,7 +30,7 @@ performance = 0.10
 stake = 0.05
 
 [dgbdt.model]
-path = "/etc/ippan/models/ippan_dgbdt.json"
+path = "crates/ai_registry/models/ippan_d_gbdt_offline_20251213T171643Z.json"
 expected_hash = "9dfebc829b5726a2030b3a28ff1bcc21cdebf7f1b2e652085b3df0c6b3a14189"
 
 [shadow_verifiers]
