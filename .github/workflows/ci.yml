@@ -85,10 +85,11 @@ jobs:
           cp target/release/verify_model_hash dist/
           # Sanitize ref name by replacing slashes with dashes
           REF_NAME_SAFE="${GITHUB_REF_NAME//\//-}"
+          echo "REF_NAME_SAFE=${REF_NAME_SAFE}" >> $GITHUB_ENV
           tar -C dist -czf verify-model-hash-${REF_NAME_SAFE}-x86_64-unknown-linux-gnu.tar.gz verify_model_hash
       - name: Upload verify_model_hash artifact
         uses: actions/upload-artifact@v4
         with:
-          name: verify-model-hash-${{ github.ref_name }}-x86_64-unknown-linux-gnu
+          name: verify-model-hash-${{ env.REF_NAME_SAFE }}-x86_64-unknown-linux-gnu
           path: verify-model-hash-*.tar.gz
           retention-days: 14
