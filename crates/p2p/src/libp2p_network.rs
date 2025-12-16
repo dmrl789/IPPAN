@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,6 +15,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Result};
 use blake3;
 use futures::StreamExt;
+use ippan_network::load_identity_with_fallback;
 use libp2p::core::transport::OrTransport;
 use libp2p::core::upgrade;
 use libp2p::dcutr;
@@ -59,6 +61,8 @@ pub struct Libp2pConfig {
     pub enable_mdns: bool,
     /// Whether to enable relay and DCUtR hole punching.
     pub enable_relay: bool,
+    /// Optional path to a persisted libp2p identity key.
+    pub identity_key_path: Option<PathBuf>,
     /// Optional deterministic identity keypair.
     pub identity_keypair: Option<identity::Keypair>,
     /// Protocol version string.
@@ -85,6 +89,7 @@ impl Default for Libp2pConfig {
                 .collect(),
             enable_mdns: true,
             enable_relay: true,
+            identity_key_path: None,
             identity_keypair: None,
             protocol_version: "/ippan/1.0.0".to_string(),
             agent_version: format!("ippan-p2p/{}", env!("CARGO_PKG_VERSION")),
@@ -447,12 +452,22 @@ pub struct Libp2pNetwork {
 impl Libp2pNetwork {
     /// Initialise libp2p and spawn background swarm task.
     pub fn new(config: Libp2pConfig) -> Result<Self> {
-        let keypair = config
-            .identity_keypair
-            .clone()
-            .unwrap_or_else(identity::Keypair::generate_ed25519);
+        let (identity_path, keypair) = if let Some(keypair) = config.identity_keypair.clone() {
+            (config.identity_key_path.clone(), keypair)
+        } else {
+            let (path, keypair) = load_identity_with_fallback(config.identity_key_path.as_deref())?;
+            (Some(path), keypair)
+        };
         let peer_id = PeerId::from(keypair.public());
-        info!("Initialising libp2p peer {}", peer_id);
+        if let Some(path) = identity_path {
+            info!(
+                "Initialising libp2p peer {} using identity at {}",
+                peer_id,
+                path.display()
+            );
+        } else {
+            info!("Initialising libp2p peer {} (ephemeral identity)", peer_id);
+        }
 
         let (transport, relay_behaviour) = if config.enable_relay {
             let (relay_transport, relay_behaviour) = relay::client::new(peer_id);
@@ -949,7 +964,8 @@ mod tests {
             gossip_topics: vec!["ippan/test".to_string()],
             enable_mdns: false,
             enable_relay: false,
-            identity_keypair: None,
+            identity_key_path: None,
+            identity_keypair: Some(identity::Keypair::generate_ed25519()),
             protocol_version: "/ippan/test".to_string(),
             agent_version: "ippan-test/0.0.1".to_string(),
             bootstrap_retry_interval: Duration::from_secs(30),

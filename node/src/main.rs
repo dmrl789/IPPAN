@@ -14,6 +14,7 @@ use ippan_files::{dht::StubFileDhtService, FileDhtService, FileStorage, MemoryFi
 use ippan_l1_handle_anchors::L1HandleAnchorStorage;
 use ippan_l2_handle_registry::{HandleDhtService, L2HandleRegistry, StubHandleDhtService};
 use ippan_mempool::Mempool;
+use ippan_network::load_identity_with_fallback;
 use ippan_p2p::{
     ChaosConfig, DhtConfig, HttpP2PNetwork, IpnDhtService, Libp2pConfig, Libp2pFileDhtService,
     Libp2pHandleDhtService, Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig, P2PLimits,
@@ -25,6 +26,7 @@ use ippan_storage::{export_snapshot, import_snapshot, SledStorage, Storage};
 use ippan_types::{
     ippan_time_init, ippan_time_now, Block, HashTimer, IppanTimeMicros, Transaction,
 };
+use libp2p::PeerId;
 use metrics::describe_gauge;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use parking_lot::RwLock;
@@ -231,6 +233,7 @@ struct AppConfig {
     rpc_allowed_origins: Vec<String>,
     p2p_host: String,
     p2p_port: u16,
+    p2p_identity_key_path: Option<PathBuf>,
 
     // Storage
     data_dir: String,
@@ -364,6 +367,10 @@ impl AppConfig {
             external_ip_services.push("https://ifconfig.me/ip".to_string());
         }
 
+        let p2p_identity_key_path =
+            get_string_value(&config, &["P2P_IDENTITY_KEY_PATH", "p2p.identity_key_path"])
+                .map(PathBuf::from);
+
         let allowed_origins_value =
             get_string_value(&config, &["RPC_ALLOWED_ORIGINS", "rpc.allowed_origins"])
                 .unwrap_or_else(|| "http://127.0.0.1:3000,http://localhost:3000".to_string());
@@ -486,6 +493,7 @@ impl AppConfig {
             p2p_port: get_string_value(&config, &["P2P_PORT", "p2p.port"])
                 .unwrap_or_else(|| defaults.p2p_port.to_string())
                 .parse()?,
+            p2p_identity_key_path,
             data_dir,
             db_path,
             slot_duration_ms: config
@@ -1147,7 +1155,19 @@ async fn main() -> Result<()> {
 
     let need_ipn_dht_network = matches!(config.file_dht_mode, FileDhtMode::Libp2p)
         || matches!(config.handle_dht_mode, HandleDhtMode::Libp2p);
-    let ipn_dht_backend: Option<Arc<IpnDhtService>> = if need_ipn_dht_network {
+
+    // Load libp2p identity only when libp2p networking is enabled
+    let (local_peer_id_string, ipn_dht_backend) = if need_ipn_dht_network {
+        let (identity_key_path, libp2p_identity) =
+            load_identity_with_fallback(config.p2p_identity_key_path.as_deref())?;
+        let libp2p_peer_id = PeerId::from(libp2p_identity.public());
+        let peer_id_string = format!("peer-{libp2p_peer_id}");
+        info!(
+            "Loaded P2P identity from {} (peer: {})",
+            identity_key_path.display(),
+            libp2p_peer_id
+        );
+
         let listen_multiaddrs =
             parse_multiaddrs(&config.file_dht_listen_multiaddrs, "FILE_DHT_LIBP2P_LISTEN");
         let bootstrap_multiaddrs = parse_multiaddrs(
@@ -1159,6 +1179,8 @@ async fn main() -> Result<()> {
             libp2p_config.listen_addresses = listen_multiaddrs;
         }
         libp2p_config.bootstrap_peers = bootstrap_multiaddrs;
+        libp2p_config.identity_keypair = Some(libp2p_identity.clone());
+        libp2p_config.identity_key_path = Some(identity_key_path.clone());
         for topic in ["ippan/files", "ippan/handles"] {
             if !libp2p_config
                 .gossip_topics
@@ -1168,7 +1190,7 @@ async fn main() -> Result<()> {
                 libp2p_config.gossip_topics.push(topic.to_string());
             }
         }
-        match Libp2pNetwork::new(libp2p_config) {
+        let backend = match Libp2pNetwork::new(libp2p_config) {
             Ok(network) => {
                 let network = Arc::new(network);
                 let addresses = network.listen_addresses();
@@ -1182,9 +1204,10 @@ async fn main() -> Result<()> {
                 );
                 None
             }
-        }
+        };
+        (Some(peer_id_string), backend)
     } else {
-        None
+        (None, None)
     };
 
     let file_dht: Arc<dyn FileDhtService> = match config.file_dht_mode {
@@ -1369,6 +1392,7 @@ async fn main() -> Result<()> {
 
     let p2p_config = P2PConfig {
         listen_address: listen_address.clone(),
+        local_peer_id: local_peer_id_string.clone(),
         max_peers: config.max_peers,
         peer_discovery_interval: Duration::from_secs(config.peer_discovery_interval_secs),
         message_timeout: Duration::from_secs(10),
@@ -1896,7 +1920,7 @@ fn drift_validator_metrics(
     let rounds_active = tick + 10 + (base % 15);
     let blocks_proposed = rounds_active / 2 + (base % 7) + tier_boost;
     let blocks_verified = blocks_proposed + (tier_boost % 3) + (base % 3);
-    let slash_count = if base % 97 == 0 { 1 } else { 0 };
+    let slash_count = if base.is_multiple_of(97) { 1 } else { 0 };
     let stake_amount = 10_000_000 + tier_boost * 1_000_000 + (base % 750_000);
     let network_contribution =
         (700_000 + ((base % 200_000) as i64) + (tier_boost as i64 * 15_000)).clamp(0, 1_000_000);
@@ -2248,6 +2272,7 @@ mod tests {
             rpc_allowed_origins: vec![],
             p2p_host: "0.0.0.0".to_string(),
             p2p_port: 29000,
+            p2p_identity_key_path: None,
             data_dir: "./data/testnet".to_string(),
             db_path: "./data/testnet/db".to_string(),
             consensus_mode: "POA".to_string(),

@@ -1,46 +1,25 @@
-﻿# IPPAN Deterministic Learning Consensus (DLC) Configuration
+# IPPAN Deterministic Learning Consensus (DLC) Configuration
 
 [consensus]
-# Consensus model - DLC uses temporal finality instead of voting
 model = "DLC"
-
-# Temporal finality window in milliseconds (100-250ms recommended)
 temporal_finality_ms = 250
-
-# HashTimer precision in microseconds
 hashtimer_precision_us = 1
-
-# Number of shadow verifiers for redundant validation (3-5 recommended)
 shadow_verifier_count = 3
-
-# Minimum reputation score for validator selection (0-10000 scale)
 min_reputation_score = 5000
-
-# Maximum transactions per block
 max_transactions_per_block = 1000
 
 [dlc]
-# Enable D-GBDT fairness model for validator selection
 enable_dgbdt_fairness = true
-
-# Enable shadow verifier system
 enable_shadow_verifiers = true
-
-# Require 10 IPN validator bond
 require_validator_bond = true
-
-# Bonding amount in micro-IPN (10 IPN = 1,000,000,000 micro-IPN)
 validator_bond_amount = 1000000000
 
 [dag]
-# Maximum number of parent blocks a block can reference
 max_parents = 16
-
-# Ready queue bound for DAG processing
 ready_queue_bound = 4096
 
 [dgbdt]
-# D-GBDT model weights for fairness calculation
+
 [dgbdt.weights]
 blocks_proposed = 0.25
 blocks_verified = 0.20
@@ -50,42 +29,26 @@ slash_penalty = 0.10
 performance = 0.10
 stake = 0.05
 
-# Deterministic D-GBDT model artifact
 [dgbdt.model]
 path = "crates/ai_registry/models/ippan_d_gbdt_offline_20251213T171643Z.json"
 expected_hash = "9dfebc829b5726a2030b3a28ff1bcc21cdebf7f1b2e652085b3df0c6b3a14189"
-[shadow_verifiers]
-# Maximum number of parallel shadow verifiers
-max_verifiers = 5
 
-# Verification timeout in milliseconds
+[shadow_verifiers]
+max_verifiers = 5
 verification_timeout_ms = 100
 
 [emission]
-# Enable DAG-Fair emission distribution
 enable_dag_fair_emission = true
-
-# Block reward in micro-IPN
 block_reward = 10
 
 [fees]
-# Enable dynamic fee caps
 enable_fee_caps = true
-
-# Fee cap multiplier
 fee_cap_multiplier = 2.0
 
 [telemetry]
-# Enable validator telemetry collection
 enable_telemetry = true
-
-# Telemetry update interval in seconds
 update_interval_secs = 10
 
 [metrics]
-# Enable Prometheus metrics
 enable_metrics = true
-
-# Metrics export interval in seconds
 export_interval_secs = 15
-

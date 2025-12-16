@@ -17,6 +17,8 @@ futures = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }
+libp2p = { workspace = true }
+tempfile = { workspace = true }
 
 # Cryptographic and hashing
 blake3 = { workspace = true }

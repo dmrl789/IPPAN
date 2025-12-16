@@ -18,6 +18,7 @@ pub mod connection;
 pub mod deduplication;
 pub mod discovery;
 pub mod health;
+pub mod identity_store;
 pub mod metrics;
 pub mod parallel_gossip;
 pub mod peers;
@@ -31,6 +32,7 @@ pub mod reputation;
 // Connection & discovery
 pub use connection::{ConnectionConfig, ConnectionManager, ConnectionState};
 pub use discovery::{DiscoveryConfig, DiscoveryService, PeerDiscovery};
+pub use identity_store::{load_identity_with_fallback, load_or_generate_identity_keypair};
 
 // Gossip & messaging
 pub use deduplication::MessageDeduplicator;

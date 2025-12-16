@@ -1,6 +1,6 @@
 use anyhow::Result;
 use ippan_p2p::{Libp2pConfig, Libp2pEvent, Libp2pNetwork};
-use libp2p::Multiaddr;
+use libp2p::{identity, Multiaddr};
 use tokio::signal;
 use tracing::{info, warn};
 
@@ -14,6 +14,7 @@ async fn main() -> Result<()> {
         agent_version: format!("ippan-libp2p-demo/{}", env!("CARGO_PKG_VERSION")),
         ..Libp2pConfig::default()
     };
+    config.identity_keypair = Some(identity::Keypair::generate_ed25519());
     config.gossip_topics.push("ippan/demo".into());
 
     let network = Libp2pNetwork::new(config)?;

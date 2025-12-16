@@ -24,6 +24,7 @@ ippan-rpc = { path = "../crates/rpc" }
 ippan-consensus = { path = "../crates/consensus" }
 ippan-consensus-dlc = { path = "../crates/consensus_dlc" }
 ippan-p2p = { path = "../crates/p2p" }
+ippan-network = { path = "../crates/network" }
 ippan-crypto = { path = "../crates/crypto" }
 ippan-mempool = { path = "../crates/mempool" }
 ippan-security = { path = "../crates/security" }
@@ -49,6 +50,7 @@ fs2 = { workspace = true }
 blake3 = { workspace = true }
 toml = { workspace = true }
 parking_lot = { workspace = true }
+libp2p = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
