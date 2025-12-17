@@ -220,6 +220,10 @@ cargo test -p ippan-consensus-dlc --test fairness_invariants
 - **Production Deployment**: [docs/operators/PRODUCTION_DEPLOYMENT_GUIDE.md](operators/PRODUCTION_DEPLOYMENT_GUIDE.md) - Production rollout guide
 - [IPPAN Time — Monotonic TimeState](ops/time.md)
 
+### Rollouts
+
+- [2025-12-17 — ippan-time monotonic fix (devnet)](ops/rollouts/2025-12-17-ippan-time-monotonic.md)
+
 ---
 
 ## Additional Resources
