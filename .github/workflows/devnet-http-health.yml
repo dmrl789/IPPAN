@@ -19,6 +19,7 @@ jobs:
           port=8080
           expected_peers=4
           curl_opts=(--fail --silent --show-error --connect-timeout 3 --max-time 5 --retry 3 --retry-delay 1 --retry-all-errors)
+          build_shas=()
 
           for ip in "${ips[@]}"; do
             echo "=== ${ip}:${port} ==="
@@ -34,6 +35,14 @@ jobs:
               echo "status_json=${status_json}"
               exit 1
             fi
+
+            if [[ -z "$build_sha" || "$build_sha" == "unknown" ]]; then
+              echo "FAIL: missing build_sha (got: ${build_sha:-<empty>})"
+              echo "status_json=${status_json}"
+              exit 1
+            fi
+
+            build_shas+=("$build_sha")
 
             peers_json="$(curl "${curl_opts[@]}" "http://${ip}:${port}/peers")"
             peers_len="$(jq -er 'length' <<<"$peers_json")"
@@ -54,5 +63,14 @@ jobs:
             # Always print a concise, debuggable per-node summary line.
             echo "node=${ip} status=${status} peer_count=${peer_count} peers_len=${peers_len} time_us=${time_us} version=${version} build_sha=${build_sha}"
           done
+
+          unique="$(printf '%s\n' "${build_shas[@]}" | sort -u | wc -l | tr -d ' ')"
+          if [[ "$unique" -ne 1 ]]; then
+            echo "FAIL: build_sha drift detected across nodes"
+            printf 'build_sha=%s\n' "${build_shas[@]}"
+            exit 1
+          fi
+
+          echo "OK: build_sha consistent across all nodes: ${build_shas[0]}"
 
 
