@@ -12,14 +12,15 @@ IPPAN time must be monotonic (never move backwards). A prior implementation spli
 ## Canary verification (on-node)
 1) Service health:
    sudo systemctl status ippan-node --no-pager
-   curl -fsS http://127.0.0.1:9000/status | jq .
+   # Note: in the default devnet config, RPC listens on :8080 (P2P is :9000).
+   curl -fsS http://127.0.0.1:8080/status | jq .
 
 2) Peers:
-   curl -fsS http://127.0.0.1:9000/peers | jq .
+   curl -fsS http://127.0.0.1:8080/peers | jq .
 
 3) Monotonic time check:
    for i in $(seq 1 20); do
-     curl -fsS http://127.0.0.1:9000/time | jq -r '.time_us'
+     curl -fsS http://127.0.0.1:8080/time | jq -r '.time_us'
      sleep 0.2
    done
 
