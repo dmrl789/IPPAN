@@ -1,8 +1,20 @@
-#![no_main]
+#![cfg_attr(fuzzing, no_main)]
+
+// When running `cargo test --workspace --all-targets`, these fuzz targets are also built as
+// normal binaries. `#![no_main]` would then fail to link because no entrypoint exists.
+// `cargo fuzz` compiles with `--cfg fuzzing`, so we keep the real fuzz target there and use
+// a no-op `main()` otherwise.
+#[cfg(not(fuzzing))]
+fn main() {}
+
+#[cfg(fuzzing)]
 use ippan_ai_core::serde_canon::{hash_canonical, hash_canonical_hex, to_canonical_json};
+#[cfg(fuzzing)]
 use libfuzzer_sys::fuzz_target;
+#[cfg(fuzzing)]
 use serde_json::Value;
 
+#[cfg(fuzzing)]
 fuzz_target!(|data: &[u8]| {
     // Cap input size to prevent unbounded memory allocation
     if data.len() > 1_000_000 {
