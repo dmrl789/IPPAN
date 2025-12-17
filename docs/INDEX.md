@@ -218,6 +218,7 @@ cargo test -p ippan-consensus-dlc --test fairness_invariants
 - **Node Operator Guide**: [docs/operators/NODE_OPERATOR_GUIDE.md](operators/NODE_OPERATOR_GUIDE.md) - Production node operations
 - **Running RC Node**: [docs/operators/running-ippan-rc-node.md](operators/running-ippan-rc-node.md) - RC testnet guide
 - **Production Deployment**: [docs/operators/PRODUCTION_DEPLOYMENT_GUIDE.md](operators/PRODUCTION_DEPLOYMENT_GUIDE.md) - Production rollout guide
+- [IPPAN Time — Monotonic TimeState](ops/time.md)
 
 ---
 

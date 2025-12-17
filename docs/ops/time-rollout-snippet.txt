@@ -1,0 +1,24 @@
+CANARY:
+ssh root@<CANARY_IP>
+sudo systemctl status ippan-node --no-pager
+sudo cp -a /usr/local/bin/ippan-node /usr/local/bin/ippan-node.bak.$(date +%F_%H%M%S) || true
+cd <REPO_PATH_ON_SERVER>
+git fetch origin
+git checkout master
+git pull --rebase origin master
+cargo build -p ippan-node --release
+sudo cp -a target/release/ippan-node /usr/local/bin/ippan-node
+sudo systemctl restart ippan-node
+curl -fsS http://127.0.0.1:9000/status | jq .
+for i in $(seq 1 20); do curl -fsS http://127.0.0.1:9000/time | jq -r '.time_us'; sleep 0.2; done
+sudo journalctl -u ippan-node -n 200 --no-pager
+
+THEN REPEAT FOR:
+<IP2>, <IP3>, <IP4>
+
+DONE CRITERIA
+- docs PR merged (or included with your merge PR)
+- operators have a discoverable note in docs/ops/time.md
+- rollout snippet exists and uses /time -> .time_us
+
+
