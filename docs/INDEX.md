@@ -223,6 +223,7 @@ cargo test -p ippan-consensus-dlc --test fairness_invariants
 ### Rollouts
 
 - [2025-12-17 — ippan-time monotonic fix (devnet)](ops/rollouts/2025-12-17-ippan-time-monotonic.md)
+- Devnet verification: `scripts/ops/check-devnet.(sh|ps1)` checks `/status`, `/peers`, `/time` on `:8080` and `sha256sum` of `/usr/local/bin/ippan-node` via SSH.
 
 ---
 

@@ -1,0 +1,44 @@
+name: Devnet HTTP Health (non-SSH)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Every 6 hours
+    - cron: "0 */6 * * *"
+
+jobs:
+  devnet-http-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check devnet RPC endpoints (status/peers/time)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ips=(5.223.51.238 188.245.97.41 135.181.145.174 178.156.219.107)
+          port=8080
+          expected_peers=4
+
+          for ip in "${ips[@]}"; do
+            echo "=== ${ip}:${port} ==="
+
+            status="$(curl -fsS "http://${ip}:${port}/status" | jq -r '.status')"
+            if [[ "$status" != "ok" ]]; then
+              echo "FAIL: status != ok (got: $status)"
+              exit 1
+            fi
+
+            peers_len="$(curl -fsS "http://${ip}:${port}/peers" | jq -r 'length')"
+            if [[ "$peers_len" -ne "$expected_peers" ]]; then
+              echo "FAIL: peers_len != ${expected_peers} (got: $peers_len)"
+              exit 1
+            fi
+
+            time_us="$(curl -fsS "http://${ip}:${port}/time" | jq -r '.time_us')"
+            if ! [[ "$time_us" =~ ^[0-9]+$ ]]; then
+              echo "FAIL: time_us not integer (got: $time_us)"
+              exit 1
+            fi
+          done
+
+

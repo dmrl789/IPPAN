@@ -15,6 +15,8 @@
 $ErrorActionPreference = "Stop"
 
 $RpcPort = 8080
+$ExpectedPeers = 4
+$TimeSamples = 10
 $Nodes = @(
   @{ Name = "Node 1 (Nuremberg)"; Ip = "188.245.97.41" },
   @{ Name = "Node 2 (Helsinki)";  Ip = "135.181.145.174" },
@@ -27,9 +29,9 @@ function Get-Json($Uri) {
 }
 
 function Get-RemoteSha256($Ip) {
-  $cmd = "sha256sum /usr/local/bin/ippan-node 2>/dev/null | awk '{print `$1}'"
-  $out = & ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ("root@$Ip") $cmd 2>$null
-  return ($out | Select-Object -First 1).Trim()
+  # Avoid awk to keep quoting reliable on Windows.
+  $out = & ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR ("root@$Ip") "sha256sum /usr/local/bin/ippan-node 2>/dev/null | cut -d ' ' -f1" 2>$null
+  return (($out | Select-Object -First 1) -as [string]).Trim()
 }
 
 $results = @()
@@ -43,7 +45,6 @@ foreach ($n in $Nodes) {
   try {
     $status = Get-Json ("http://${ip}:${RpcPort}/status")
     $peers  = Get-Json ("http://${ip}:${RpcPort}/peers")
-    $time   = Get-Json ("http://${ip}:${RpcPort}/time")
     $sha    = Get-RemoteSha256 $ip
 
     $peerCount = 0
@@ -51,19 +52,32 @@ foreach ($n in $Nodes) {
       if ($peers -is [System.Array]) { $peerCount = $peers.Count } else { $peerCount = 1 }
     }
 
+    $times = @()
+    $monotonicOk = $true
+    $prev = $null
+    for ($i = 0; $i -lt $TimeSamples; $i++) {
+      $t = (Get-Json ("http://${ip}:${RpcPort}/time")).time_us
+      $times += $t
+      if ($null -ne $prev -and $null -ne $t -and [int64]$t -lt [int64]$prev) { $monotonicOk = $false }
+      $prev = $t
+      Start-Sleep -Milliseconds 200
+    }
+
     $row = [pscustomobject]@{
       ip          = $ip
       status      = $status.status
       peer_count  = $peerCount
+      peers_ok    = ($peerCount -eq $ExpectedPeers)
       version     = $status.version
       node_id     = $status.node_id
       uptime_s    = $status.uptime_seconds
-      time_us     = $time.time_us
+      time_us     = ($times | Select-Object -Last 1)
+      monotonic_ok= $monotonicOk
       sha256      = $sha
     }
     $results += $row
 
-    $ok = ($row.status -eq "ok") -and ($row.peer_count -ge 1) -and ($row.time_us -ne $null) -and ($row.sha256 -match "^[0-9a-fA-F]{64}$")
+    $ok = ($row.status -eq "ok") -and ($row.peers_ok) -and ($row.monotonic_ok) -and ($row.time_us -ne $null) -and ($row.sha256 -match "^[0-9a-fA-F]{64}$")
     if (-not $ok) { $failed = $true }
 
     $row | ConvertTo-Json -Compress
@@ -78,6 +92,11 @@ $uniqueHashes = @($results | Where-Object { $_.sha256 } | Select-Object -ExpandP
 Write-Host "=== SUMMARY ==="
 Write-Host ("nodes={0} unique_hashes={1}" -f $results.Count, $uniqueHashes.Count)
 if ($uniqueHashes.Count -gt 0) { Write-Host ("sha256={0}" -f $uniqueHashes[0]) }
+
+if ($results.Count -eq 0) {
+  Write-Host "FAIL: no successful node checks (ssh/http failed)"
+  exit 1
+}
 
 if ($uniqueHashes.Count -ne 1) {
   Write-Host "FAIL: sha256 mismatch across nodes"
