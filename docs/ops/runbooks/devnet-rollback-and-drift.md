@@ -26,6 +26,11 @@ This runbook is for the devnet fleet (4 nodes) and assumes:
    curl -fsS http://127.0.0.1:8080/peers | jq 'length'
    curl -fsS http://127.0.0.1:8080/time  | jq -r '.time_us'
 
+## Canary-first rollout (recommended)
+Use the automated rollout script (laptop/WSL) to upgrade canary-first and verify the full HTTP health contract:
+- `scripts/ops/rollout-devnet.sh`
+- (Windows) `scripts/ops/rollout-devnet.ps1`
+
 ## Drift response (HTTP-only)
 Symptoms:
 - CI devnet HTTP health reports multiple `build_sha` values across nodes.
@@ -54,5 +59,9 @@ Checklist (per node):
 
 3) Re-check status:
    curl -fsS http://127.0.0.1:8080/status | jq '.dataset_export'
+
+## One-command triage
+Collect everything needed to debug failures across all nodes:
+- `scripts/ops/triage-devnet.sh`
 
 

@@ -9,6 +9,10 @@ User=root
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
+TimeoutStartSec=900
+WorkingDirectory=/root/IPPAN
+StandardOutput=journal
+StandardError=journal
 ExecStart=/usr/local/lib/ippan/export-dataset.sh
 
 
