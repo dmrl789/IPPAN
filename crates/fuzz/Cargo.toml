@@ -7,6 +7,11 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
+[lints.rust]
+# `cargo-fuzz` compiles fuzz targets with a custom cfg; declare it to satisfy
+# `unexpected_cfgs` when running workspace clippy/tests with `-D warnings`.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
 [dependencies]
 libfuzzer-sys = "0.4"
 ippan-ai-core = { path = "../ai_core" }

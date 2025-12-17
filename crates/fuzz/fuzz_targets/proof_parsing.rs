@@ -1,8 +1,17 @@
-#![no_main]
+#![cfg_attr(fuzzing, no_main)]
+
+// See `canonical_hash.rs` for why this exists (workspace test builds also compile binaries).
+#[cfg(not(fuzzing))]
+fn main() {}
+
+#[cfg(fuzzing)]
 use base64::{engine::general_purpose, Engine as _};
+#[cfg(fuzzing)]
 use ippan_crypto::CryptoUtils;
+#[cfg(fuzzing)]
 use libfuzzer_sys::fuzz_target;
 
+#[cfg(fuzzing)]
 fuzz_target!(|data: &[u8]| {
     // Cap input size to prevent unbounded memory
     if data.len() > 100_000 {

@@ -291,6 +291,7 @@ mod tests {
 
     #[test]
     fn entropy_generation_produces_unique_values() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let first = generate_entropy();
         let second = generate_entropy();
         assert_ne!(first, second);
@@ -298,6 +299,7 @@ mod tests {
 
     #[test]
     fn signing_and_verifying_round_trip() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let timer = sign_hashtimer(&signing_key);
@@ -307,6 +309,7 @@ mod tests {
 
     #[test]
     fn tampering_invalidates_signature() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let mut timer = sign_hashtimer(&signing_key);
@@ -316,6 +319,7 @@ mod tests {
 
     #[test]
     fn derive_is_deterministic_for_identical_inputs() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(123_456);
         let domain = b"domain";
         let payload = b"payload";
@@ -332,6 +336,7 @@ mod tests {
 
     #[test]
     fn derive_changes_when_payload_differs() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(987_654);
         let base = HashTimer::derive("ctx", time, b"domain", b"payload-a", b"nonce", b"node");
         let different = HashTimer::derive("ctx", time, b"domain", b"payload-b", b"nonce", b"node");
@@ -342,6 +347,7 @@ mod tests {
 
     #[test]
     fn hex_round_trip_preserves_timestamp_and_digest() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(321_000);
         let timer = HashTimer::derive("ctx", time, b"domain", b"payload", b"nonce", b"node");
         let encoded = timer.to_hex();
@@ -357,6 +363,7 @@ mod tests {
 
     #[test]
     fn signed_variant_preserves_digest_and_verifies() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let signing_key = SigningKey::from_bytes(&[7u8; 32]);
         let base = HashTimer::derive(
             "ctx",
@@ -381,6 +388,7 @@ mod tests {
 
     #[test]
     fn hashtimer_entropy_never_repeats() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         use std::collections::HashSet;
         let mut seen = HashSet::new();
         for _ in 0..1000 {
@@ -391,6 +399,7 @@ mod tests {
 
     #[test]
     fn hashtimer_derive_is_deterministic() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(1000000);
         let domain = b"test-domain";
         let payload = b"test-payload";
@@ -410,6 +419,7 @@ mod tests {
 
     #[test]
     fn hashtimer_hex_round_trip() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let original = sign_hashtimer(&signing_key);
@@ -430,6 +440,7 @@ mod tests {
 
     #[test]
     fn hashtimer_hex_encoding_invalid_length_rejected() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let result = HashTimer::from_hex("abc123");
         assert!(result.is_err(), "Invalid length hex should be rejected");
 
@@ -442,6 +453,7 @@ mod tests {
 
     #[test]
     fn hashtimer_signature_verification_wrong_key() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key1 = SigningKey::generate(&mut rng);
         let signing_key2 = SigningKey::generate(&mut rng);
@@ -459,6 +471,7 @@ mod tests {
 
     #[test]
     fn hashtimer_unsigned_is_valid() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(1000000);
         let timer = HashTimer::derive("tx", time, b"domain", b"payload", &[0u8; 32], &[0u8; 32]);
 
@@ -469,6 +482,7 @@ mod tests {
 
     #[test]
     fn hashtimer_ordering_by_timestamp() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time1 = IppanTimeMicros(1000);
         let time2 = IppanTimeMicros(2000);
 
@@ -484,6 +498,7 @@ mod tests {
 
     #[test]
     fn hashtimer_ordering_breaks_ties_with_digest() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(7);
         let first = HashTimer::derive("tx", time, b"d", b"pa", &[1u8; 32], &[1u8; 32]);
         let second = HashTimer::derive("tx", time, b"d", b"pb", &[2u8; 32], &[2u8; 32]);
@@ -502,6 +517,7 @@ mod tests {
 
     #[test]
     fn hashtimer_ordering_is_stable_across_sorts() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(42);
         let a = HashTimer::derive("ctx", time, b"domain", b"payload-a", &[0u8; 32], &[1u8; 32]);
         let b = HashTimer::derive("ctx", time, b"domain", b"payload-b", &[0u8; 32], &[2u8; 32]);
@@ -517,6 +533,7 @@ mod tests {
 
     #[test]
     fn hashtimer_nonce_changes_digest() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(1000000);
         let nonce1 = [1u8; 32];
         let nonce2 = [2u8; 32];
@@ -537,6 +554,7 @@ mod tests {
 
     #[test]
     fn hashtimer_context_isolation() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(1000000);
         let common_args = (b"domain", b"payload", [0u8; 32], [0u8; 32]);
 
@@ -581,6 +599,7 @@ mod tests {
 
     #[test]
     fn hashtimer_digest_deterministic() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let timer = sign_hashtimer(&signing_key);
@@ -598,6 +617,7 @@ mod tests {
 
     #[test]
     fn hashtimer_id_hex_is_lowercase() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let timer = sign_hashtimer(&signing_key);
@@ -609,6 +629,7 @@ mod tests {
 
     #[test]
     fn hashtimer_sign_with_mutates_timer() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let time = IppanTimeMicros(1000000);
@@ -625,6 +646,7 @@ mod tests {
 
     #[test]
     fn hashtimer_signed_creates_new_copy() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let time = IppanTimeMicros(1000000);
@@ -646,6 +668,7 @@ mod tests {
 
     #[test]
     fn hashtimer_now_tx_different_each_call() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let tx1 = HashTimer::now_tx(
             "test",
             b"payload",
@@ -670,6 +693,7 @@ mod tests {
 
     #[test]
     fn hashtimer_now_block_vs_now_round() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let block_ht = HashTimer::now_block(
             "domain",
             b"p",
@@ -692,6 +716,7 @@ mod tests {
 
     #[test]
     fn random_nonce_never_repeats() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         use std::collections::HashSet;
         let mut seen = HashSet::new();
         for _ in 0..1000 {
@@ -702,6 +727,7 @@ mod tests {
 
     #[test]
     fn signature_verification_fails_when_entropy_is_tampered() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let mut timer = sign_hashtimer(&signing_key);
@@ -717,6 +743,7 @@ mod tests {
 
     #[test]
     fn hashtimer_time_accessor() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let time = IppanTimeMicros(12345678);
         let timer = HashTimer::derive("tx", time, b"d", b"p", &[0u8; 32], &[0u8; 32]);
 
@@ -729,6 +756,7 @@ mod tests {
 
     #[test]
     fn digest_from_parts_deterministic() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let timestamp_us = 1000000i64;
         let entropy = [42u8; HASHTIMER_ENTROPY_BYTES];
 
@@ -740,6 +768,7 @@ mod tests {
 
     #[test]
     fn sequential_hashtimers_remain_ordered_and_verifiable() {
+        let _guard = crate::ippan_time::TEST_LOCK.lock().unwrap();
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
 

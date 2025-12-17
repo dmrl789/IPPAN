@@ -1,8 +1,16 @@
-#![no_main]
+#![cfg_attr(fuzzing, no_main)]
+
+// See `canonical_hash.rs` for why this exists (workspace test builds also compile binaries).
+#[cfg(not(fuzzing))]
+fn main() {}
+
+#[cfg(fuzzing)]
 use libfuzzer_sys::fuzz_target;
 
+#[cfg(fuzzing)]
 const MAX_BODY_BYTES: usize = 64 * 1024; // 64 KiB
 
+#[cfg(fuzzing)]
 fuzz_target!(|data: &[u8]| {
     // Cap input to reasonable size for fuzzing (but allow testing beyond limit)
     if data.len() > 2 * MAX_BODY_BYTES {
