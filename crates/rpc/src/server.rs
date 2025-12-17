@@ -1768,10 +1768,10 @@ struct DatasetExportStatus {
 
 fn build_dataset_export_status() -> DatasetExportStatus {
     // This is intentionally low-I/O: one read_dir + a metadata lookup per candidate file.
-    const WRAPPER_PATH: &str = "/usr/local/lib/ippan/export-dataset.sh";
+    const MARKER_PATH: &str = "/etc/ippan/markers/dataset_export_enabled";
     const OUT_DIR: &str = "/var/lib/ippan/ai_datasets";
 
-    let enabled = Path::new(WRAPPER_PATH).exists();
+    let marker_present = Path::new(MARKER_PATH).exists();
 
     let out_dir = Path::new(OUT_DIR);
     let mut newest_modified_nanos: Option<i128> = None;
@@ -1799,6 +1799,18 @@ fn build_dataset_export_status() -> DatasetExportStatus {
                 newest_modified_nanos = Some(nanos);
             }
         }
+    }
+
+    // Truthful enabled semantics:
+    // - enabled=true only if operator explicitly enabled exports (marker) AND we have at least one dataset file.
+    // - otherwise enabled=false and freshness fields are omitted (null).
+    let enabled = marker_present && newest_modified_nanos.is_some();
+    if !enabled {
+        return DatasetExportStatus {
+            enabled: false,
+            last_ts_utc: None,
+            last_age_seconds: None,
+        };
     }
 
     let (last_ts_utc, last_age_seconds) = if let Some(nanos) = newest_modified_nanos {

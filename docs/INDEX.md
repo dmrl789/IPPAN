@@ -219,6 +219,7 @@ cargo test -p ippan-consensus-dlc --test fairness_invariants
 - **Running RC Node**: [docs/operators/running-ippan-rc-node.md](operators/running-ippan-rc-node.md) - RC testnet guide
 - **Production Deployment**: [docs/operators/PRODUCTION_DEPLOYMENT_GUIDE.md](operators/PRODUCTION_DEPLOYMENT_GUIDE.md) - Production rollout guide
 - [IPPAN Time — Monotonic TimeState](ops/time.md)
+- **Runbook: Devnet rollback + drift SOP**: [docs/ops/runbooks/devnet-rollback-and-drift.md](ops/runbooks/devnet-rollback-and-drift.md)
 
 ### Rollouts
 

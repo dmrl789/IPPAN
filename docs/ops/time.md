@@ -56,6 +56,8 @@ Fields relied on by ops tooling:
 - Timer: `ippan-export-dataset.timer` (`OnCalendar=00,06,12,18:15 UTC; RandomizedDelaySec=600; Persistent=true`)
 - Retention: `MAX_FILES=200; MAX_DIR_MB=2048`
 - Lock: `/var/lock/ippan-export-dataset.lock` (`flock`)
+- Enabled marker: `/etc/ippan/markers/dataset_export_enabled` (controls `/status.dataset_export.enabled`)
+- Canonical build repo: `/opt/ippan` (build as `ippan-devnet`, not `root`)
 
 Manual run:
   sudo systemctl start ippan-export-dataset.service
