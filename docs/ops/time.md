@@ -47,6 +47,35 @@ Fields relied on by ops tooling:
 ### /time (RPC)
 - `time_us`: integer microseconds
 - Must be monotonic over a short sample window (no decreases across successive samples)
+
+## Devnet dataset export (D-GBDT telemetry)
+- Exporter script: `/root/IPPAN/ai_training/export_localnet_dataset.py`
+- Wrapper: `/usr/local/lib/ippan/export-dataset.sh`
+- Output dir: `/var/lib/ippan/ai_datasets`
+- File pattern: `devnet_dataset_*.csv.gz`
+- Timer: `ippan-export-dataset.timer` (`OnCalendar=00,06,12,18:15 UTC; RandomizedDelaySec=600; Persistent=true`)
+- Retention: `MAX_FILES=200; MAX_DIR_MB=2048`
+- Lock: `/var/lock/ippan-export-dataset.lock` (`flock`)
+
+Manual run:
+  sudo systemctl start ippan-export-dataset.service
+  sudo journalctl -u ippan-export-dataset.service -n 120 --no-pager
+  ls -lh /var/lib/ippan/ai_datasets | tail -n 10
+
+Troubleshooting:
+  sudo systemctl status ippan-export-dataset.timer --no-pager
+  sudo systemctl status ippan-export-dataset.service --no-pager
+  sudo journalctl -u ippan-export-dataset.service -n 200 --no-pager
+  python3 -c "import requests; print('requests ok')"
+
+Operator “dataset freshness” checks:
+- HTTP-only (preferred): `/status` includes `dataset_export = { enabled, last_ts_utc, last_age_seconds }`.
+- SSH loop (quick spot-check):
+    for ip in 5.223.51.238 188.245.97.41 135.181.145.174 178.156.219.107; do
+      echo "=== $ip dataset freshness ==="
+      ssh root@$ip "ls -1t /var/lib/ippan/ai_datasets/devnet_dataset_*.csv.gz 2>/dev/null | head -n 1 || true"
+      ssh root@$ip "stat -c '%y %s %n' /var/lib/ippan/ai_datasets/devnet_dataset_*.csv.gz 2>/dev/null | tail -n 1 || true"
+    done
 ---
 
 

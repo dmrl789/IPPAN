@@ -2,6 +2,7 @@ use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
+use std::fs;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::ops::Deref;
@@ -10,7 +11,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context as TaskContext, Poll};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context as AnyhowContext, Result};
 use axum::async_trait;
@@ -70,6 +71,8 @@ use tracing::{debug, error, info, warn};
 use blake3::Hasher as Blake3Hasher;
 use hex::encode as hex_encode;
 use std::env;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 use crate::{
     files::{handle_get_file, handle_publish_file},
@@ -1753,6 +1756,71 @@ async fn build_health_snapshot(state: &Arc<AppState>) -> HealthStatus {
     NodeHealth::snapshot(context)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct DatasetExportStatus {
+    enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_ts_utc: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_age_seconds: Option<u64>,
+}
+
+fn build_dataset_export_status() -> DatasetExportStatus {
+    // This is intentionally low-I/O: one read_dir + a metadata lookup per candidate file.
+    const WRAPPER_PATH: &str = "/usr/local/lib/ippan/export-dataset.sh";
+    const OUT_DIR: &str = "/var/lib/ippan/ai_datasets";
+
+    let enabled = Path::new(WRAPPER_PATH).exists();
+
+    let out_dir = Path::new(OUT_DIR);
+    let mut newest_modified_nanos: Option<i128> = None;
+
+    if let Ok(entries) = fs::read_dir(out_dir) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+
+            // Expected: devnet_dataset_YYYYMMDDTHHMMSSZ.csv.gz
+            if !file_name.starts_with("devnet_dataset_") || !file_name.ends_with(".csv.gz") {
+                continue;
+            }
+
+            let Ok(meta) = entry.metadata() else { continue };
+            let Ok(modified) = meta.modified() else {
+                continue;
+            };
+            let Ok(dur) = modified.duration_since(UNIX_EPOCH) else {
+                continue;
+            };
+
+            let nanos = dur.as_nanos() as i128;
+            if newest_modified_nanos.map(|cur| nanos > cur).unwrap_or(true) {
+                newest_modified_nanos = Some(nanos);
+            }
+        }
+    }
+
+    let (last_ts_utc, last_age_seconds) = if let Some(nanos) = newest_modified_nanos {
+        let ts = OffsetDateTime::from_unix_timestamp_nanos(nanos)
+            .ok()
+            .and_then(|dt| dt.format(&Rfc3339).ok());
+
+        let now_nanos = OffsetDateTime::now_utc().unix_timestamp_nanos();
+        let age_seconds = (now_nanos - nanos).max(0) / 1_000_000_000;
+
+        (ts, u64::try_from(age_seconds).ok())
+    } else {
+        (None, None)
+    };
+
+    DatasetExportStatus {
+        enabled,
+        last_ts_utc,
+        last_age_seconds,
+    }
+}
+
 async fn handle_get_health(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -1795,6 +1863,8 @@ async fn handle_status(
 
     record_security_success(&state, &addr, ENDPOINT).await;
 
+    let dataset_export = build_dataset_export_status();
+
     Ok(Json(serde_json::json!({
         "status": "ok",
         "status_schema_version": 2,
@@ -1806,7 +1876,8 @@ async fn handle_status(
         "requests_served": requests_served,
         "network_active": state.p2p_network.is_some(),
         "consensus": consensus_view,
-        "mempool_size": mempool_size
+        "mempool_size": mempool_size,
+        "dataset_export": dataset_export
     })))
 }
 

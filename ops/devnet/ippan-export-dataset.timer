@@ -1,0 +1,12 @@
+[Unit]
+Description=Run dataset export periodically (devnet)
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:15:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+
+

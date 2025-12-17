@@ -1,0 +1,14 @@
+[Unit]
+Description=IPPAN Devnet Dataset Export (D-GBDT telemetry)
+After=network-online.target ippan-node.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+ExecStart=/usr/local/lib/ippan/export-dataset.sh
+
+

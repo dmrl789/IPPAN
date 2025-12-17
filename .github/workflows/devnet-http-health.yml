@@ -18,6 +18,7 @@ jobs:
           ips=(5.223.51.238 188.245.97.41 135.181.145.174 178.156.219.107)
           port=8080
           expected_peers=4
+          max_dataset_age_seconds=$((8*60*60))
           curl_opts=(--fail --silent --show-error --connect-timeout 3 --max-time 5 --retry 3 --retry-delay 1 --retry-all-errors)
           build_shas=()
 
@@ -29,6 +30,8 @@ jobs:
             peer_count="$(jq -er '.peer_count' <<<"$status_json")"
             version="$(jq -r '.version // empty' <<<"$status_json")"
             build_sha="$(jq -r '.build_sha // empty' <<<"$status_json")"
+            ds_enabled="$(jq -er '.dataset_export.enabled' <<<"$status_json")"
+            ds_age="$(jq -er '.dataset_export.last_age_seconds' <<<"$status_json")"
 
             if [[ "$status" != "ok" ]]; then
               echo "FAIL: status != ok (got: $status)"
@@ -38,6 +41,24 @@ jobs:
 
             if [[ -z "$build_sha" || "$build_sha" == "unknown" ]]; then
               echo "FAIL: missing build_sha (got: ${build_sha:-<empty>})"
+              echo "status_json=${status_json}"
+              exit 1
+            fi
+
+            if [[ "$ds_enabled" != "true" ]]; then
+              echo "FAIL: dataset_export.enabled != true (got: $ds_enabled)"
+              echo "status_json=${status_json}"
+              exit 1
+            fi
+
+            if ! [[ "$ds_age" =~ ^[0-9]+$ ]]; then
+              echo "FAIL: dataset_export.last_age_seconds not integer (got: $ds_age)"
+              echo "status_json=${status_json}"
+              exit 1
+            fi
+
+            if (( ds_age > max_dataset_age_seconds )); then
+              echo "FAIL: dataset_export is stale: age_seconds=${ds_age} > ${max_dataset_age_seconds}"
               echo "status_json=${status_json}"
               exit 1
             fi
@@ -61,7 +82,7 @@ jobs:
             fi
 
             # Always print a concise, debuggable per-node summary line.
-            echo "node=${ip} status=${status} peer_count=${peer_count} peers_len=${peers_len} time_us=${time_us} version=${version} build_sha=${build_sha}"
+            echo "node=${ip} status=${status} peer_count=${peer_count} peers_len=${peers_len} time_us=${time_us} version=${version} build_sha=${build_sha} dataset_age_seconds=${ds_age}"
           done
 
           unique="$(printf '%s\n' "${build_shas[@]}" | sort -u | wc -l | tr -d ' ')"
