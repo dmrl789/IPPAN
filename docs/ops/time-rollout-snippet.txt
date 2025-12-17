@@ -1,20 +1,52 @@
-CANARY:
-ssh root@<CANARY_IP>
+CANARY (Node 3 — Singapore):
+ssh root@5.223.51.238
 sudo systemctl status ippan-node --no-pager
 sudo cp -a /usr/local/bin/ippan-node /usr/local/bin/ippan-node.bak.$(date +%F_%H%M%S) || true
-cd <REPO_PATH_ON_SERVER>
+sudo tar -czf /root/ippan-config-backup.$(date +%F_%H%M%S).tgz /etc/ippan || true
+cd /opt/IPPAN || cd ~/IPPAN
 git fetch origin
 git checkout master
 git pull --rebase origin master
 cargo build -p ippan-node --release
 sudo cp -a target/release/ippan-node /usr/local/bin/ippan-node
+sudo chmod +x /usr/local/bin/ippan-node
 sudo systemctl restart ippan-node
+sudo systemctl status ippan-node --no-pager
 curl -fsS http://127.0.0.1:9000/status | jq .
+curl -fsS http://127.0.0.1:9000/peers  | jq .
+for i in $(seq 1 20); do curl -fsS http://127.0.0.1:9000/time | jq -r '.time_us'; sleep 0.2; done
+sudo journalctl -u ippan-node -n 200 --no-pager
+sudo journalctl -u ippan-node -f
+
+THEN REPEAT (one-by-one) FOR:
+- Node 1 (Nuremberg): ssh root@188.245.97.41
+- Node 2 (Helsinki):  ssh root@135.181.145.174
+- Node 4 (Ashburn):   ssh root@178.156.219.107
+
+Per-node rollout block (paste after SSH):
+sudo systemctl status ippan-node --no-pager
+sudo cp -a /usr/local/bin/ippan-node /usr/local/bin/ippan-node.bak.$(date +%F_%H%M%S) || true
+sudo tar -czf /root/ippan-config-backup.$(date +%F_%H%M%S).tgz /etc/ippan || true
+cd /opt/IPPAN || cd ~/IPPAN
+git fetch origin
+git checkout master
+git pull --rebase origin master
+cargo build -p ippan-node --release
+sudo cp -a target/release/ippan-node /usr/local/bin/ippan-node
+sudo chmod +x /usr/local/bin/ippan-node
+sudo systemctl restart ippan-node
+sudo systemctl status ippan-node --no-pager
+curl -fsS http://127.0.0.1:9000/status | jq .
+curl -fsS http://127.0.0.1:9000/peers  | jq .
 for i in $(seq 1 20); do curl -fsS http://127.0.0.1:9000/time | jq -r '.time_us'; sleep 0.2; done
 sudo journalctl -u ippan-node -n 200 --no-pager
 
-THEN REPEAT FOR:
-<IP2>, <IP3>, <IP4>
+POST-ROLLOUT (from laptop; assumes public RPC reachable on :9000):
+for ip in 188.245.97.41 135.181.145.174 5.223.51.238 178.156.219.107; do
+  echo "== $ip =="
+  curl -fsS "http://$ip:9000/status" | jq .
+  for i in $(seq 1 10); do curl -fsS "http://$ip:9000/time" | jq -r '.time_us'; sleep 0.2; done
+done
 
 DONE CRITERIA
 - docs PR merged (or included with your merge PR)
