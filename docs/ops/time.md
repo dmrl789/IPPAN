@@ -31,6 +31,22 @@ IPPAN time must be monotonic (never move backwards). A prior implementation spli
 - Restore previous binary: sudo cp -a /usr/local/bin/ippan-node.bak.<TIMESTAMP> /usr/local/bin/ippan-node
 - Start service: sudo systemctl start ippan-node
 - Re-run the health + /time checks.
+
+## Health contract (stable checks for ops/CI)
+
+### /status (RPC)
+Fields relied on by ops tooling:
+- `status`: string, expected `"ok"`
+- `peer_count`: integer (devnet expected 4)
+- `version`: string (semantic version)
+- `build_sha`: string git commit (for drift detection; may be `"unknown"` if build metadata not embedded)
+
+### /peers (RPC)
+- JSON array of peer addresses; devnet expected `length == 4`
+
+### /time (RPC)
+- `time_us`: integer microseconds
+- Must be monotonic over a short sample window (no decreases across successive samples)
 ---
 
 

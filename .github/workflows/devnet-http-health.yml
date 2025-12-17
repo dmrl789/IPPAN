@@ -23,23 +23,36 @@ jobs:
           for ip in "${ips[@]}"; do
             echo "=== ${ip}:${port} ==="
 
-            status="$(curl "${curl_opts[@]}" "http://${ip}:${port}/status" | jq -er '.status')"
+            status_json="$(curl "${curl_opts[@]}" "http://${ip}:${port}/status")"
+            status="$(jq -er '.status' <<<"$status_json")"
+            peer_count="$(jq -er '.peer_count' <<<"$status_json")"
+            version="$(jq -r '.version // empty' <<<"$status_json")"
+            build_sha="$(jq -r '.build_sha // empty' <<<"$status_json")"
+
             if [[ "$status" != "ok" ]]; then
               echo "FAIL: status != ok (got: $status)"
+              echo "status_json=${status_json}"
               exit 1
             fi
 
-            peers_len="$(curl "${curl_opts[@]}" "http://${ip}:${port}/peers" | jq -er 'length')"
+            peers_json="$(curl "${curl_opts[@]}" "http://${ip}:${port}/peers")"
+            peers_len="$(jq -er 'length' <<<"$peers_json")"
             if [[ "$peers_len" -ne "$expected_peers" ]]; then
               echo "FAIL: peers_len != ${expected_peers} (got: $peers_len)"
+              echo "peers_json=${peers_json}"
               exit 1
             fi
 
-            time_us="$(curl "${curl_opts[@]}" "http://${ip}:${port}/time" | jq -er '.time_us')"
+            time_json="$(curl "${curl_opts[@]}" "http://${ip}:${port}/time")"
+            time_us="$(jq -er '.time_us' <<<"$time_json")"
             if ! [[ "$time_us" =~ ^[0-9]+$ ]]; then
               echo "FAIL: time_us not integer (got: $time_us)"
+              echo "time_json=${time_json}"
               exit 1
             fi
+
+            # Always print a concise, debuggable per-node summary line.
+            echo "node=${ip} status=${status} peer_count=${peer_count} peers_len=${peers_len} time_us=${time_us} version=${version} build_sha=${build_sha}"
           done
 
 

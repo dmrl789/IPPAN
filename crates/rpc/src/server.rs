@@ -1800,6 +1800,7 @@ async fn handle_status(
         "status_schema_version": 2,
         "node_id": state.node_id.clone(),
         "version": env!("CARGO_PKG_VERSION"),
+        "build_sha": git_commit_hash(),
         "peer_count": peer_count,
         "uptime_seconds": uptime_seconds,
         "requests_served": requests_served,
