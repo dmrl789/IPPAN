@@ -18,23 +18,24 @@ jobs:
           ips=(5.223.51.238 188.245.97.41 135.181.145.174 178.156.219.107)
           port=8080
           expected_peers=4
+          curl_opts=(--fail --silent --show-error --connect-timeout 3 --max-time 5 --retry 3 --retry-delay 1 --retry-all-errors)
 
           for ip in "${ips[@]}"; do
             echo "=== ${ip}:${port} ==="
 
-            status="$(curl -fsS "http://${ip}:${port}/status" | jq -r '.status')"
+            status="$(curl "${curl_opts[@]}" "http://${ip}:${port}/status" | jq -er '.status')"
             if [[ "$status" != "ok" ]]; then
               echo "FAIL: status != ok (got: $status)"
               exit 1
             fi
 
-            peers_len="$(curl -fsS "http://${ip}:${port}/peers" | jq -r 'length')"
+            peers_len="$(curl "${curl_opts[@]}" "http://${ip}:${port}/peers" | jq -er 'length')"
             if [[ "$peers_len" -ne "$expected_peers" ]]; then
               echo "FAIL: peers_len != ${expected_peers} (got: $peers_len)"
               exit 1
             fi
 
-            time_us="$(curl -fsS "http://${ip}:${port}/time" | jq -r '.time_us')"
+            time_us="$(curl "${curl_opts[@]}" "http://${ip}:${port}/time" | jq -er '.time_us')"
             if ! [[ "$time_us" =~ ^[0-9]+$ ]]; then
               echo "FAIL: time_us not integer (got: $time_us)"
               exit 1
