@@ -11,6 +11,7 @@ set -euo pipefail
 RPC_PORT="${RPC_PORT:-8080}"
 EXPECTED_PEERS="${EXPECTED_PEERS:-4}"
 TIME_SAMPLES="${TIME_SAMPLES:-10}"
+SSH_BIN="${SSH_BIN:-ssh}"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1
@@ -32,7 +33,7 @@ json_get() {
   fi
 
   if need_cmd python3; then
-    python3 - "$expr" <<'PY'
+    python3 -c '
 import json,sys
 expr=sys.argv[1]
 data=json.load(sys.stdin)
@@ -40,9 +41,12 @@ if expr=="length":
     print(len(data))
 else:
     key=expr.lstrip(".")
-    val=data.get(key, "")
-    print("" if val is None else val)
-PY
+    if not isinstance(data, dict):
+        print("")
+    else:
+        val=data.get(key, "")
+        print("" if val is None else val)
+' "$expr" <<<"$json"
     return 0
   fi
 
@@ -54,8 +58,8 @@ if ! need_cmd curl; then
   echo "ERROR: curl not found" >&2
   exit 127
 fi
-if ! need_cmd ssh; then
-  echo "ERROR: ssh not found" >&2
+if ! need_cmd "$SSH_BIN"; then
+  echo "ERROR: ssh not found (SSH_BIN=$SSH_BIN)" >&2
   exit 127
 fi
 
@@ -88,13 +92,14 @@ for ip in "${NODES[@]}"; do
   prev=""
   monotonic_ok=1
   for ((i=1; i<=TIME_SAMPLES; i++)); do
-    t="$(curl -fsS "http://${ip}:${RPC_PORT}/time" | { if need_cmd jq; then jq -r '.time_us'; else python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"time_us\", \"\"))'; fi; })"
+    t="$(curl -fsS "http://${ip}:${RPC_PORT}/time" | { if need_cmd jq; then jq -r '.time_us'; else python3 -c 'import json,sys; print(json.load(sys.stdin).get("time_us",""))' 2>/dev/null; fi; })"
     if [[ -n "$prev" ]] && [[ "$t" -lt "$prev" ]]; then monotonic_ok=0; fi
     prev="$t"
     sleep 0.2
   done
 
-  sha="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "sha256sum /usr/local/bin/ippan-node 2>/dev/null | awk '{print \$1}'" | head -n1 || true)"
+  sha="$("$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "root@${ip}" \
+    "sha256sum /usr/local/bin/ippan-node 2>/dev/null | cut -d' ' -f1 | head -n1" 2>/dev/null || true)"
 
   echo "status=${status} version=${version} node_id=${node_id} peer_count=${peer_count} peers_len=${peers_len} time_us=${time_us} sha256=${sha}"
 

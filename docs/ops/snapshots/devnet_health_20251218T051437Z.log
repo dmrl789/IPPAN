@@ -1,0 +1,11 @@
+=== 188.245.97.41 ===
+status=ok version=0.1.0 node_id=ippan-devnet-node1 peer_count=4 peers_len=4 time_us=1766034880837143 sha256=c11b981cefae34cafa4e285da767dc5b38473ae96ae2553cb985cedc99c4b4e3
+=== 135.181.145.174 ===
+status=ok version=0.1.0 node_id=ippan-devnet-node2 peer_count=4 peers_len=4 time_us=1766034891542193 sha256=c11b981cefae34cafa4e285da767dc5b38473ae96ae2553cb985cedc99c4b4e3
+=== 5.223.51.238 ===
+status=ok version=0.1.0 node_id=ippan-devnet-node3 peer_count=4 peers_len=4 time_us=1766034901553813 sha256=c11b981cefae34cafa4e285da767dc5b38473ae96ae2553cb985cedc99c4b4e3
+=== 178.156.219.107 ===
+status=ok version=0.1.0 node_id=ippan-devnet-node4 peer_count=4 peers_len=4 time_us=1766034914917629 sha256=c11b981cefae34cafa4e285da767dc5b38473ae96ae2553cb985cedc99c4b4e3
+=== SUMMARY ===
+unique_hashes=1
+OK: all nodes healthy and binary hashes match

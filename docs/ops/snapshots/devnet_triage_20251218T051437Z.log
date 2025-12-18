@@ -1,0 +1,1048 @@
+
+================================================================================
+NODE 5.223.51.238
+================================================================================
+--- systemctl status ippan-node ---
+● ippan-node.service - IPPAN Node
+     Loaded: loaded (/etc/systemd/system/ippan-node.service; enabled; preset: enabled)
+    Drop-In: /etc/systemd/system/ippan-node.service.d
+             └─10-identity-strict.conf, 10-user.conf, 20-libp2p-debug.conf, 30-bootstrap.conf, 35-p2p-sane.conf, 40-public-host.conf, 99-bootstrap-override.conf, override.conf
+     Active: active (running) since Wed 2025-12-17 21:20:00 UTC; 7h ago
+    Process: 447557 ExecStartPre=/bin/rm -f /var/lib/ippan/data/devnet/ippan-node.pid (code=exited, status=0/SUCCESS)
+   Main PID: 447558 (ippan-node)
+      Tasks: 13 (limit: 9251)
+     Memory: 30.3M (peak: 31.1M)
+        CPU: 1min 6.135s
+     CGroup: /system.slice/ippan-node.service
+             └─447558 /usr/local/bin/ippan-node --config /etc/ippan/config/node.toml
+
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.064059Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.064099Z  INFO ippan_security::audit: Security event: {"id":"4e062244-a022-4b65-b21a-2b0302489f72","timestamp":{"secs_since_epoch":1766035006,"nanos_since_epoch":64062622},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":64059648,"secs_since_epoch":1766035006},"type":"SuccessfulRequest"}}
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.064136Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+--- journalctl -u ippan-node (last 120) ---
+Dec 18 05:16:16 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:16 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:19.500689Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:19.500767Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 404
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:19.821814Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:19.821946Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 404
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:19 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:20.153175Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:20.153242Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 404
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:20.484617Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:20.484701Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 404
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:20.805875Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:20.805951Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 404
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:20 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:21.127009Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:21.127084Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 404
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:21.458268Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:21.458366Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 404
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:21.791606Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:21.791682Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 404
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:21 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: CONNECT, uri: google.com:443, version: HTTP/1.1
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.207811Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.208058Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.208190Z  INFO ippan_security::audit: Security event: {"id":"a4605204-4184-420f-8775-cf489f5a8e88","timestamp":{"secs_since_epoch":1766034992,"nanos_since_epoch":208115173},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":208110106,"secs_since_epoch":1766034992},"type":"SuccessfulRequest"}}
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.208226Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.208331Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.208472Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.489141Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.489293Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 135.181.145.174:9000)
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.687628Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 135.181.145.174:9000)
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.687817Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 188.245.97.41:9000)
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:32.852122Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 188.245.97.41:9000)
+Dec 18 05:16:32 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:35.023580Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:35.023728Z  INFO ippan_security::audit: Security event: {"id":"ff1194c2-a6a8-48be-a180-b66c04c66440","timestamp":{"secs_since_epoch":1766034995,"nanos_since_epoch":23672667},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":23668851,"secs_since_epoch":1766034995},"type":"SuccessfulRequest"}}
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:35.023764Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:35 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:45.735295Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:45.735527Z  INFO ippan_security::audit: Security event: {"id":"cca97cf8-7593-471f-86f6-4e5041687d96","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":735465896},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":735461880,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:45.735560Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:45 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.023462Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.023614Z  INFO ippan_security::audit: Security event: {"id":"29824570-9967-41ea-b6d3-1a2e349c17c8","timestamp":{"secs_since_epoch":1766035006,"nanos_since_epoch":23549874},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":23546069,"secs_since_epoch":1766035006},"type":"SuccessfulRequest"}}
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.023652Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.063874Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.063918Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.064025Z  INFO ippan_security::audit: Security event: {"id":"b77881f3-1e7e-462f-abdd-050c1da9a037","timestamp":{"secs_since_epoch":1766035006,"nanos_since_epoch":63978075},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":63974520,"secs_since_epoch":1766035006},"type":"SuccessfulRequest"}}
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.064059Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.064099Z  INFO ippan_security::audit: Security event: {"id":"4e062244-a022-4b65-b21a-2b0302489f72","timestamp":{"secs_since_epoch":1766035006,"nanos_since_epoch":64062622},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":64059648,"secs_since_epoch":1766035006},"type":"SuccessfulRequest"}}
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:   2025-12-18T05:16:46.064136Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:46 ubuntu-8gb-sin-1 ippan-node[447558]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+--- /status summary ---
+status=ok build_sha=b564c618b33b1cebdeac24e849f96de3f73b570b peer_count=4 dataset_enabled=true dataset_age_seconds=17251 dataset_last_ts_utc=2025-12-18T00:29:22.60384853Z
+--- exporter timer/service status ---
+● ippan-export-dataset.timer - Run dataset export periodically (devnet)
+     Loaded: loaded (/etc/systemd/system/ippan-export-dataset.timer; enabled; preset: enabled)
+     Active: active (waiting) since Wed 2025-12-17 18:14:08 UTC; 11h ago
+    Trigger: Thu 2025-12-18 06:23:10 UTC; 1h 6min left
+   Triggers: ● ippan-export-dataset.service
+
+Dec 17 18:14:08 ubuntu-8gb-sin-1 systemd[1]: Started ippan-export-dataset.timer - Run dataset export periodically (devnet).
+
+○ ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry)
+     Loaded: loaded (/etc/systemd/system/ippan-export-dataset.service; static)
+     Active: inactive (dead) since Thu 2025-12-18 00:29:22 UTC; 4h 47min ago
+TriggeredBy: ● ippan-export-dataset.timer
+    Process: 450694 ExecStart=/usr/local/lib/ippan/export-dataset.sh (code=exited, status=0/SUCCESS)
+   Main PID: 450694 (code=exited, status=0/SUCCESS)
+        CPU: 590ms
+
+Dec 18 00:29:02 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 115/120... OK (1 validators)
+Dec 18 00:29:07 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 116/120... OK (1 validators)
+Dec 18 00:29:12 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 117/120... OK (1 validators)
+Dec 18 00:29:17 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 118/120... OK (1 validators)
+Dec 18 00:29:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 119/120... OK (1 validators)
+Dec 18 00:29:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 120/120... OK (1 validators)
+Dec 18 00:29:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]: Writing 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001926Z.csv...
+Dec 18 00:29:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]: [OK] Exported 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001926Z.csv
+Dec 18 00:29:22 ubuntu-8gb-sin-1 systemd[1]: ippan-export-dataset.service: Deactivated successfully.
+Dec 18 00:29:22 ubuntu-8gb-sin-1 systemd[1]: Finished ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry).
+--- exporter service logs (last 80) ---
+Dec 18 00:23:12 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 45/120... OK (1 validators)
+Dec 18 00:23:17 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 46/120... OK (1 validators)
+Dec 18 00:23:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 47/120... OK (1 validators)
+Dec 18 00:23:27 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 48/120... OK (1 validators)
+Dec 18 00:23:32 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 49/120... OK (1 validators)
+Dec 18 00:23:37 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 50/120... OK (1 validators)
+Dec 18 00:23:42 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 51/120... OK (1 validators)
+Dec 18 00:23:47 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 52/120... OK (1 validators)
+Dec 18 00:23:52 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 53/120... OK (1 validators)
+Dec 18 00:23:57 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 54/120... OK (1 validators)
+Dec 18 00:24:02 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 55/120... OK (1 validators)
+Dec 18 00:24:07 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 56/120... OK (1 validators)
+Dec 18 00:24:12 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 57/120... OK (1 validators)
+Dec 18 00:24:17 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 58/120... OK (1 validators)
+Dec 18 00:24:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 59/120... OK (1 validators)
+Dec 18 00:24:27 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 60/120... OK (1 validators)
+Dec 18 00:24:32 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 61/120... OK (1 validators)
+Dec 18 00:24:37 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 62/120... OK (1 validators)
+Dec 18 00:24:42 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 63/120... OK (1 validators)
+Dec 18 00:24:47 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 64/120... OK (1 validators)
+Dec 18 00:24:52 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 65/120... OK (1 validators)
+Dec 18 00:24:57 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 66/120... OK (1 validators)
+Dec 18 00:25:02 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 67/120... OK (1 validators)
+Dec 18 00:25:07 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 68/120... OK (1 validators)
+Dec 18 00:25:12 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 69/120... OK (1 validators)
+Dec 18 00:25:17 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 70/120... OK (1 validators)
+Dec 18 00:25:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 71/120... OK (1 validators)
+Dec 18 00:25:27 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 72/120... OK (1 validators)
+Dec 18 00:25:32 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 73/120... OK (1 validators)
+Dec 18 00:25:37 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 74/120... OK (1 validators)
+Dec 18 00:25:42 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 75/120... OK (1 validators)
+Dec 18 00:25:47 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 76/120... OK (1 validators)
+Dec 18 00:25:52 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 77/120... OK (1 validators)
+Dec 18 00:25:57 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 78/120... OK (1 validators)
+Dec 18 00:26:02 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 79/120... OK (1 validators)
+Dec 18 00:26:07 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 80/120... OK (1 validators)
+Dec 18 00:26:12 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 81/120... OK (1 validators)
+Dec 18 00:26:17 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 82/120... OK (1 validators)
+Dec 18 00:26:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 83/120... OK (1 validators)
+Dec 18 00:26:27 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 84/120... OK (1 validators)
+Dec 18 00:26:32 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 85/120... OK (1 validators)
+Dec 18 00:26:37 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 86/120... OK (1 validators)
+Dec 18 00:26:42 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 87/120... OK (1 validators)
+Dec 18 00:26:47 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 88/120... OK (1 validators)
+Dec 18 00:26:52 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 89/120... OK (1 validators)
+Dec 18 00:26:57 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 90/120... OK (1 validators)
+Dec 18 00:27:02 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 91/120... OK (1 validators)
+Dec 18 00:27:07 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 92/120... OK (1 validators)
+Dec 18 00:27:12 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 93/120... OK (1 validators)
+Dec 18 00:27:17 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 94/120... OK (1 validators)
+Dec 18 00:27:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 95/120... OK (1 validators)
+Dec 18 00:27:27 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 96/120... OK (1 validators)
+Dec 18 00:27:32 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 97/120... OK (1 validators)
+Dec 18 00:27:37 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 98/120... OK (1 validators)
+Dec 18 00:27:42 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 99/120... OK (1 validators)
+Dec 18 00:27:47 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 100/120... OK (1 validators)
+Dec 18 00:27:52 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 101/120... OK (1 validators)
+Dec 18 00:27:57 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 102/120... OK (1 validators)
+Dec 18 00:28:02 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 103/120... OK (1 validators)
+Dec 18 00:28:07 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 104/120... OK (1 validators)
+Dec 18 00:28:12 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 105/120... OK (1 validators)
+Dec 18 00:28:17 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 106/120... OK (1 validators)
+Dec 18 00:28:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 107/120... OK (1 validators)
+Dec 18 00:28:27 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 108/120... OK (1 validators)
+Dec 18 00:28:32 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 109/120... OK (1 validators)
+Dec 18 00:28:37 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 110/120... OK (1 validators)
+Dec 18 00:28:42 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 111/120... OK (1 validators)
+Dec 18 00:28:47 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 112/120... OK (1 validators)
+Dec 18 00:28:52 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 113/120... OK (1 validators)
+Dec 18 00:28:57 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 114/120... OK (1 validators)
+Dec 18 00:29:02 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 115/120... OK (1 validators)
+Dec 18 00:29:07 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 116/120... OK (1 validators)
+Dec 18 00:29:12 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 117/120... OK (1 validators)
+Dec 18 00:29:17 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 118/120... OK (1 validators)
+Dec 18 00:29:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 119/120... OK (1 validators)
+Dec 18 00:29:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]:   Sample 120/120... OK (1 validators)
+Dec 18 00:29:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]: Writing 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001926Z.csv...
+Dec 18 00:29:22 ubuntu-8gb-sin-1 export-dataset.sh[450699]: [OK] Exported 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001926Z.csv
+Dec 18 00:29:22 ubuntu-8gb-sin-1 systemd[1]: ippan-export-dataset.service: Deactivated successfully.
+Dec 18 00:29:22 ubuntu-8gb-sin-1 systemd[1]: Finished ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry).
+--- newest dataset file ---
+newest=/var/lib/ippan/ai_datasets/devnet_dataset_20251218T001926Z.csv.gz
+2025-12-18 00:29:22.603848530 +0000 1175 /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001926Z.csv.gz
+
+================================================================================
+NODE 188.245.97.41
+================================================================================
+--- systemctl status ippan-node ---
+● ippan-node.service - IPPAN Node
+     Loaded: loaded (/etc/systemd/system/ippan-node.service; enabled; preset: enabled)
+    Drop-In: /etc/systemd/system/ippan-node.service.d
+             └─10-identity-strict.conf, 10-user.conf, 20-dial-debug.conf, 20-dlc.conf, 20-libp2p-debug.conf, 30-bootstrap.conf, 30-force-dlc-metrics.conf, 30-net.conf, 31-dlc-runtime.conf, 35-p2p-sane.conf, 40-public-host.conf, 99-bootstrap-override.conf, override.conf
+     Active: active (running) since Wed 2025-12-17 21:21:45 UTC; 7h ago
+    Process: 549066 ExecStartPre=/bin/rm -f /var/lib/ippan/data/devnet/ippan-node.pid (code=exited, status=0/SUCCESS)
+   Main PID: 549068 (ippan-node)
+      Tasks: 13 (limit: 9248)
+     Memory: 30.6M (peak: 31.6M)
+        CPU: 1min 6.338s
+     CGroup: /system.slice/ippan-node.service
+             └─549068 /usr/local/bin/ippan-node --config /etc/ippan/config/node.toml
+
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:45.876585Z  INFO ippan_security::audit: Security event: {"id":"9f090b2b-0640-4601-98c6-e9e0df22ceac","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":876550915},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":876548185,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:17:02.762870Z  INFO ippan_security::audit: Security event: {"id":"cbd28260-fcb9-49a5-b44f-7c562abc3e64","timestamp":{"secs_since_epoch":1766035022,"nanos_since_epoch":762805965},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":762803565,"secs_since_epoch":1766035022},"type":"SuccessfulRequest"}}
+Dec 18 05:17:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:17:02.955061Z  INFO ippan_security::audit: Security event: {"id":"2701b3d9-3ca5-470a-822f-7f1c6b6b572b","timestamp":{"secs_since_epoch":1766035022,"nanos_since_epoch":954910140},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":954906020,"secs_since_epoch":1766035022},"type":"SuccessfulRequest"}}
+Dec 18 05:17:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:17:05.244158Z  INFO ippan_security::audit: Security event: {"id":"c1aa8af5-7837-4fe1-91f1-d11c2b1232d4","timestamp":{"secs_since_epoch":1766035025,"nanos_since_epoch":244106389},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":244103239,"secs_since_epoch":1766035025},"type":"SuccessfulRequest"}}
+Dec 18 05:17:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:17:05.244305Z  INFO ippan_security::audit: Security event: {"id":"cf1c9de6-8111-45df-b1f0-483a599c4df2","timestamp":{"secs_since_epoch":1766035025,"nanos_since_epoch":244269728},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":244266328,"secs_since_epoch":1766035025},"type":"SuccessfulRequest"}}
+Dec 18 05:17:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+--- journalctl -u ippan-node (last 120) ---
+Dec 18 05:14:44 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:44.346950Z  INFO ippan_security::audit: Security event: {"id":"9b9d67a8-bfba-4d8d-9b99-8df7cd644d26","timestamp":{"secs_since_epoch":1766034884,"nanos_since_epoch":346869284},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":346866204,"secs_since_epoch":1766034884},"type":"SuccessfulRequest"}}
+Dec 18 05:14:44 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:44 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:44.972911Z  INFO ippan_security::audit: Security event: {"id":"cffb8b8c-eb19-4405-9dfb-dda639b7601d","timestamp":{"secs_since_epoch":1766034884,"nanos_since_epoch":972855429},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":972852329,"secs_since_epoch":1766034884},"type":"SuccessfulRequest"}}
+Dec 18 05:14:44 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:45.485414Z  INFO ippan_security::audit: Security event: {"id":"9ba95aa2-1c8f-40a6-9992-d407be24976c","timestamp":{"secs_since_epoch":1766034885,"nanos_since_epoch":485357489},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":485354929,"secs_since_epoch":1766034885},"type":"SuccessfulRequest"}}
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:45.570888Z  INFO ippan_security::audit: Security event: {"id":"2ba2aac8-6a7d-491e-8031-c140b6d66dd1","timestamp":{"secs_since_epoch":1766034885,"nanos_since_epoch":570823495},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":570819475,"secs_since_epoch":1766034885},"type":"SuccessfulRequest"}}
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:45.570902Z  INFO ippan_security::audit: Security event: {"id":"c6c2f1af-3e96-4eff-ab93-a6fed14faf57","timestamp":{"secs_since_epoch":1766034885,"nanos_since_epoch":570876125},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":570873685,"secs_since_epoch":1766034885},"type":"SuccessfulRequest"}}
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:45.877579Z  INFO ippan_security::audit: Security event: {"id":"ec9c1d7e-90b6-4268-a2e4-e096fb387ed6","timestamp":{"secs_since_epoch":1766034885,"nanos_since_epoch":877526423},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":877522633,"secs_since_epoch":1766034885},"type":"SuccessfulRequest"}}
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:45.877643Z  INFO ippan_security::audit: Security event: {"id":"ebb68c79-8b0d-4514-8b0e-93be6994ebf3","timestamp":{"secs_since_epoch":1766034885,"nanos_since_epoch":877586852},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":877583552,"secs_since_epoch":1766034885},"type":"SuccessfulRequest"}}
+Dec 18 05:14:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:46 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:46.005142Z  INFO ippan_security::audit: Security event: {"id":"7b79f826-4e19-421b-bc30-a5d7176e2707","timestamp":{"secs_since_epoch":1766034886,"nanos_since_epoch":5096691},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":5093931,"secs_since_epoch":1766034886},"type":"SuccessfulRequest"}}
+Dec 18 05:14:46 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:46 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:46.636049Z  INFO ippan_security::audit: Security event: {"id":"40a0e6eb-f74f-4f65-8783-0848dc8348e1","timestamp":{"secs_since_epoch":1766034886,"nanos_since_epoch":635931062},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":635927342,"secs_since_epoch":1766034886},"type":"SuccessfulRequest"}}
+Dec 18 05:14:46 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:14:47 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:14:47.085607Z  INFO ippan_security::audit: Security event: {"id":"2ceeb05f-ec45-462a-bab0-3ee7b5e21ea9","timestamp":{"secs_since_epoch":1766034887,"nanos_since_epoch":85553013},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":85549713,"secs_since_epoch":1766034887},"type":"SuccessfulRequest"}}
+Dec 18 05:14:47 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:02.778595Z  INFO ippan_security::audit: Security event: {"id":"d2c02b27-1574-42b9-894a-38bc0271402d","timestamp":{"secs_since_epoch":1766034902,"nanos_since_epoch":778533621},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":778530172,"secs_since_epoch":1766034902},"type":"SuccessfulRequest"}}
+Dec 18 05:15:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:02.778856Z  INFO ippan_security::audit: Security event: {"id":"7506b9fb-188b-4226-ac20-385c550d36ac","timestamp":{"secs_since_epoch":1766034902,"nanos_since_epoch":778810010},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":778807360,"secs_since_epoch":1766034902},"type":"SuccessfulRequest"}}
+Dec 18 05:15:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:05.243694Z  INFO ippan_security::audit: Security event: {"id":"e1c9c119-3a01-459d-963e-a155b57d53f0","timestamp":{"secs_since_epoch":1766034905,"nanos_since_epoch":243639066},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":243635686,"secs_since_epoch":1766034905},"type":"SuccessfulRequest"}}
+Dec 18 05:15:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:05.243798Z  INFO ippan_security::audit: Security event: {"id":"f7726bef-cf3f-435b-ab6c-f6c6e1e8d786","timestamp":{"secs_since_epoch":1766034905,"nanos_since_epoch":243762505},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":243759855,"secs_since_epoch":1766034905},"type":"SuccessfulRequest"}}
+Dec 18 05:15:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:15 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:15.572646Z  INFO ippan_security::audit: Security event: {"id":"67ee3317-5b91-4a0f-ae2f-129dd0ab046b","timestamp":{"secs_since_epoch":1766034915,"nanos_since_epoch":572579774},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":572576484,"secs_since_epoch":1766034915},"type":"SuccessfulRequest"}}
+Dec 18 05:15:15 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:15 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:15.877356Z  INFO ippan_security::audit: Security event: {"id":"e299c2d1-a2c9-424a-af6e-ed2a40eb8c57","timestamp":{"secs_since_epoch":1766034915,"nanos_since_epoch":877292451},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":877289411,"secs_since_epoch":1766034915},"type":"SuccessfulRequest"}}
+Dec 18 05:15:15 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:32 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:32.769597Z  INFO ippan_security::audit: Security event: {"id":"9859028f-921e-4ee6-a7a6-a8798a96df38","timestamp":{"secs_since_epoch":1766034932,"nanos_since_epoch":769532149},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":769528709,"secs_since_epoch":1766034932},"type":"SuccessfulRequest"}}
+Dec 18 05:15:32 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:35 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:35.249137Z  INFO ippan_security::audit: Security event: {"id":"dc4da652-f73e-4b39-9234-fc568754eb09","timestamp":{"secs_since_epoch":1766034935,"nanos_since_epoch":249072741},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":249070411,"secs_since_epoch":1766034935},"type":"SuccessfulRequest"}}
+Dec 18 05:15:35 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:36 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:36.579419Z  INFO ippan_security::audit: Security event: {"id":"9a6d75af-bbdf-4c88-8116-e5807775f7f5","timestamp":{"secs_since_epoch":1766034936,"nanos_since_epoch":579357329},"event_type":"security","severity":"info","details":{"endpoint":"/status","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":579354229,"secs_since_epoch":1766034936},"type":"SuccessfulRequest"}}
+Dec 18 05:15:36 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:38 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:38.016856Z  INFO ippan_security::audit: Security event: {"id":"83803257-31db-4748-a341-44301726493f","timestamp":{"secs_since_epoch":1766034938,"nanos_since_epoch":16777836},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":16774416,"secs_since_epoch":1766034938},"type":"SuccessfulRequest"}}
+Dec 18 05:15:38 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:38 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:38.629310Z  INFO ippan_security::audit: Security event: {"id":"d1d74a83-a769-4239-b31b-4a9359260498","timestamp":{"secs_since_epoch":1766034938,"nanos_since_epoch":629252998},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":629249018,"secs_since_epoch":1766034938},"type":"SuccessfulRequest"}}
+Dec 18 05:15:38 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:39 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:39.247314Z  INFO ippan_security::audit: Security event: {"id":"d780467a-3f22-4af2-b3db-364f01d1c3f0","timestamp":{"secs_since_epoch":1766034939,"nanos_since_epoch":247266225},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":247262965,"secs_since_epoch":1766034939},"type":"SuccessfulRequest"}}
+Dec 18 05:15:39 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:39 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:39.843035Z  INFO ippan_security::audit: Security event: {"id":"0b83d8cc-96f0-44b6-9500-72113fb95834","timestamp":{"secs_since_epoch":1766034939,"nanos_since_epoch":842926567},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":842923477,"secs_since_epoch":1766034939},"type":"SuccessfulRequest"}}
+Dec 18 05:15:39 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:40 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:40.471296Z  INFO ippan_security::audit: Security event: {"id":"8643c6d5-7729-4a50-9284-8c0d5be2b753","timestamp":{"secs_since_epoch":1766034940,"nanos_since_epoch":471249249},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":471246019,"secs_since_epoch":1766034940},"type":"SuccessfulRequest"}}
+Dec 18 05:15:40 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:41 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:41.052376Z  INFO ippan_security::audit: Security event: {"id":"a4a6b735-237d-486f-96b4-05f4b79f8327","timestamp":{"secs_since_epoch":1766034941,"nanos_since_epoch":52334525},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":52332125,"secs_since_epoch":1766034941},"type":"SuccessfulRequest"}}
+Dec 18 05:15:41 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:41 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:41.655891Z  INFO ippan_security::audit: Security event: {"id":"627eeb08-2f5a-4db1-bd15-1be43eda3f16","timestamp":{"secs_since_epoch":1766034941,"nanos_since_epoch":655842579},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":655839459,"secs_since_epoch":1766034941},"type":"SuccessfulRequest"}}
+Dec 18 05:15:41 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:42 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:42.261330Z  INFO ippan_security::audit: Security event: {"id":"0c0169c4-cbec-4567-8f9c-0be3da792af2","timestamp":{"secs_since_epoch":1766034942,"nanos_since_epoch":261282362},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":261279542,"secs_since_epoch":1766034942},"type":"SuccessfulRequest"}}
+Dec 18 05:15:42 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:42 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:42.884913Z  INFO ippan_security::audit: Security event: {"id":"98be7b71-3ce5-45ae-9989-19184e90d170","timestamp":{"secs_since_epoch":1766034942,"nanos_since_epoch":884863717},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":884860937,"secs_since_epoch":1766034942},"type":"SuccessfulRequest"}}
+Dec 18 05:15:42 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:43 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:43.532445Z  INFO ippan_security::audit: Security event: {"id":"e9cebe0c-0e67-4167-9886-517eeb67bd23","timestamp":{"secs_since_epoch":1766034943,"nanos_since_epoch":532376742},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":532373462,"secs_since_epoch":1766034943},"type":"SuccessfulRequest"}}
+Dec 18 05:15:43 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:45.568697Z  INFO ippan_security::audit: Security event: {"id":"a5303edb-8d8a-443a-9f1c-df871539603a","timestamp":{"secs_since_epoch":1766034945,"nanos_since_epoch":568642345},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":568638715,"secs_since_epoch":1766034945},"type":"SuccessfulRequest"}}
+Dec 18 05:15:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:45.568845Z  INFO ippan_security::audit: Security event: {"id":"a379a24d-b14d-416d-a18d-e0109f5dbcad","timestamp":{"secs_since_epoch":1766034945,"nanos_since_epoch":568654624},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":568652124,"secs_since_epoch":1766034945},"type":"SuccessfulRequest"}}
+Dec 18 05:15:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:45.880334Z  INFO ippan_security::audit: Security event: {"id":"68fe5f1b-407f-4251-90dc-248c45859926","timestamp":{"secs_since_epoch":1766034945,"nanos_since_epoch":880274463},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":880270863,"secs_since_epoch":1766034945},"type":"SuccessfulRequest"}}
+Dec 18 05:15:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:15:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:15:45.880527Z  INFO ippan_security::audit: Security event: {"id":"394b6257-e509-4512-bac5-10fe197febd7","timestamp":{"secs_since_epoch":1766034945,"nanos_since_epoch":880284623},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":880281253,"secs_since_epoch":1766034945},"type":"SuccessfulRequest"}}
+Dec 18 05:15:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:02.769624Z  INFO ippan_security::audit: Security event: {"id":"d2a89023-015b-458b-b3f3-c51f811a06ac","timestamp":{"secs_since_epoch":1766034962,"nanos_since_epoch":768913944},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":768910004,"secs_since_epoch":1766034962},"type":"SuccessfulRequest"}}
+Dec 18 05:16:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:03 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:03.244819Z  INFO ippan_security::audit: Security event: {"id":"117a8092-acef-4786-adae-197627569178","timestamp":{"secs_since_epoch":1766034963,"nanos_since_epoch":244762184},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":244758864,"secs_since_epoch":1766034963},"type":"SuccessfulRequest"}}
+Dec 18 05:16:03 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:05.243696Z  INFO ippan_security::audit: Security event: {"id":"2419ce56-7bd2-41cb-acc2-d61446534a98","timestamp":{"secs_since_epoch":1766034965,"nanos_since_epoch":243628526},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":243623786,"secs_since_epoch":1766034965},"type":"SuccessfulRequest"}}
+Dec 18 05:16:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:05.243727Z  INFO ippan_security::audit: Security event: {"id":"bb6268c8-1b01-461f-9e9c-5aa4e04041a0","timestamp":{"secs_since_epoch":1766034965,"nanos_since_epoch":243686665},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":243683895,"secs_since_epoch":1766034965},"type":"SuccessfulRequest"}}
+Dec 18 05:16:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:15 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:15.571166Z  INFO ippan_security::audit: Security event: {"id":"13458306-b6b1-456f-9d06-cd02ea7fafe2","timestamp":{"secs_since_epoch":1766034975,"nanos_since_epoch":571101395},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":571098185,"secs_since_epoch":1766034975},"type":"SuccessfulRequest"}}
+Dec 18 05:16:15 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:15 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:15.880701Z  INFO ippan_security::audit: Security event: {"id":"496af020-5ef1-423d-b15c-f675eee92616","timestamp":{"secs_since_epoch":1766034975,"nanos_since_epoch":880649991},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":880647341,"secs_since_epoch":1766034975},"type":"SuccessfulRequest"}}
+Dec 18 05:16:15 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:16 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:16.482243Z  INFO ippan_security::audit: Security event: {"id":"7cc06491-242c-455a-884d-059a0569eb23","timestamp":{"secs_since_epoch":1766034976,"nanos_since_epoch":482192775},"event_type":"security","severity":"info","details":{"endpoint":"/status","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":482189595,"secs_since_epoch":1766034976},"type":"SuccessfulRequest"}}
+Dec 18 05:16:16 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:17 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:17.982936Z  INFO ippan_security::audit: Security event: {"id":"f3dd3dea-9bbe-4114-83e5-8272aa203a92","timestamp":{"secs_since_epoch":1766034977,"nanos_since_epoch":982881308},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":982877948,"secs_since_epoch":1766034977},"type":"SuccessfulRequest"}}
+Dec 18 05:16:17 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:18 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:18.586441Z  INFO ippan_security::audit: Security event: {"id":"a203456e-371d-481b-8f38-3c4ee70d4a1b","timestamp":{"secs_since_epoch":1766034978,"nanos_since_epoch":586382944},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":586379564,"secs_since_epoch":1766034978},"type":"SuccessfulRequest"}}
+Dec 18 05:16:18 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:19 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:19.186287Z  INFO ippan_security::audit: Security event: {"id":"ccb31573-dd04-4840-8d1d-d23f9b664498","timestamp":{"secs_since_epoch":1766034979,"nanos_since_epoch":186227791},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":186224211,"secs_since_epoch":1766034979},"type":"SuccessfulRequest"}}
+Dec 18 05:16:19 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:19 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:19.811648Z  INFO ippan_security::audit: Security event: {"id":"4477cf1e-3e15-4fe9-abb2-f76ef41fbe26","timestamp":{"secs_since_epoch":1766034979,"nanos_since_epoch":811577963},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":811573323,"secs_since_epoch":1766034979},"type":"SuccessfulRequest"}}
+Dec 18 05:16:19 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:20 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:20.443303Z  INFO ippan_security::audit: Security event: {"id":"3d5b9dcf-26c4-46c0-ad89-e51fa3197954","timestamp":{"secs_since_epoch":1766034980,"nanos_since_epoch":443231742},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":443228532,"secs_since_epoch":1766034980},"type":"SuccessfulRequest"}}
+Dec 18 05:16:20 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:21 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:21.089358Z  INFO ippan_security::audit: Security event: {"id":"0cf70ae1-afbf-4281-bc55-7c76849d02b7","timestamp":{"secs_since_epoch":1766034981,"nanos_since_epoch":89295459},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":89291729,"secs_since_epoch":1766034981},"type":"SuccessfulRequest"}}
+Dec 18 05:16:21 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:21 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:21.777098Z  INFO ippan_security::audit: Security event: {"id":"9567b3d3-bae0-417d-9461-6dfdc0864116","timestamp":{"secs_since_epoch":1766034981,"nanos_since_epoch":777040697},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":777037447,"secs_since_epoch":1766034981},"type":"SuccessfulRequest"}}
+Dec 18 05:16:21 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:22 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:22.427576Z  INFO ippan_security::audit: Security event: {"id":"6ff3448e-4aa3-479d-b575-7ead1b677d50","timestamp":{"secs_since_epoch":1766034982,"nanos_since_epoch":427523114},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":427519914,"secs_since_epoch":1766034982},"type":"SuccessfulRequest"}}
+Dec 18 05:16:22 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:23 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:23.049532Z  INFO ippan_security::audit: Security event: {"id":"bb4c838c-d4ac-42ff-b5c1-ec6b43a8d19c","timestamp":{"secs_since_epoch":1766034983,"nanos_since_epoch":49435463},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":49432033,"secs_since_epoch":1766034983},"type":"SuccessfulRequest"}}
+Dec 18 05:16:23 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:23 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:23.691747Z  INFO ippan_security::audit: Security event: {"id":"10f03416-d8d4-498a-853b-fa5ceddac7e5","timestamp":{"secs_since_epoch":1766034983,"nanos_since_epoch":691693634},"event_type":"security","severity":"info","details":{"endpoint":"/time","ip":"195.231.121.192","timestamp":{"nanos_since_epoch":691690355,"secs_since_epoch":1766034983},"type":"SuccessfulRequest"}}
+Dec 18 05:16:23 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:32 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:32.771282Z  INFO ippan_security::audit: Security event: {"id":"4ed45c65-48dd-4db6-8e42-25fc33fc9041","timestamp":{"secs_since_epoch":1766034992,"nanos_since_epoch":771189786},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":771185776,"secs_since_epoch":1766034992},"type":"SuccessfulRequest"}}
+Dec 18 05:16:32 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:35 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:35.244116Z  INFO ippan_security::audit: Security event: {"id":"50b944d7-e507-4d02-957b-91568eff2538","timestamp":{"secs_since_epoch":1766034995,"nanos_since_epoch":244049704},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":244046094,"secs_since_epoch":1766034995},"type":"SuccessfulRequest"}}
+Dec 18 05:16:35 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:45.573268Z  INFO ippan_security::audit: Security event: {"id":"5a764072-279c-42d6-8568-cdd2ef522725","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":573199666},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":573196436,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:45.573442Z  INFO ippan_security::audit: Security event: {"id":"6698b2ae-bf77-45e1-981a-af6838350e80","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":573230576},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":573229326,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:45.876565Z  INFO ippan_security::audit: Security event: {"id":"2f63a6c3-836b-4230-9687-4aa50725380e","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":876512966},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":876510166,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:16:45.876585Z  INFO ippan_security::audit: Security event: {"id":"9f090b2b-0640-4601-98c6-e9e0df22ceac","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":876550915},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":876548185,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:17:02.762870Z  INFO ippan_security::audit: Security event: {"id":"cbd28260-fcb9-49a5-b44f-7c562abc3e64","timestamp":{"secs_since_epoch":1766035022,"nanos_since_epoch":762805965},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":762803565,"secs_since_epoch":1766035022},"type":"SuccessfulRequest"}}
+Dec 18 05:17:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:17:02.955061Z  INFO ippan_security::audit: Security event: {"id":"2701b3d9-3ca5-470a-822f-7f1c6b6b572b","timestamp":{"secs_since_epoch":1766035022,"nanos_since_epoch":954910140},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":954906020,"secs_since_epoch":1766035022},"type":"SuccessfulRequest"}}
+Dec 18 05:17:02 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:17:05.244158Z  INFO ippan_security::audit: Security event: {"id":"c1aa8af5-7837-4fe1-91f1-d11c2b1232d4","timestamp":{"secs_since_epoch":1766035025,"nanos_since_epoch":244106389},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":244103239,"secs_since_epoch":1766035025},"type":"SuccessfulRequest"}}
+Dec 18 05:17:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:   2025-12-18T05:17:05.244305Z  INFO ippan_security::audit: Security event: {"id":"cf1c9de6-8111-45df-b1f0-483a599c4df2","timestamp":{"secs_since_epoch":1766035025,"nanos_since_epoch":244269728},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":244266328,"secs_since_epoch":1766035025},"type":"SuccessfulRequest"}}
+Dec 18 05:17:05 ubuntu-8gb-nbg1-1 ippan-node[549068]:     at crates/security/src/audit.rs:67
+--- /status summary ---
+status=ok build_sha=b564c618b33b1cebdeac24e849f96de3f73b570b peer_count=4 dataset_enabled=true dataset_age_seconds=17429 dataset_last_ts_utc=2025-12-18T00:26:42.670278909Z
+--- exporter timer/service status ---
+● ippan-export-dataset.timer - Run dataset export periodically (devnet)
+     Loaded: loaded (/etc/systemd/system/ippan-export-dataset.timer; enabled; preset: enabled)
+     Active: active (waiting) since Wed 2025-12-17 18:27:12 UTC; 10h ago
+    Trigger: Thu 2025-12-18 06:19:11 UTC; 1h 1min left
+   Triggers: ● ippan-export-dataset.service
+
+Dec 17 18:27:12 ubuntu-8gb-nbg1-1 systemd[1]: Started ippan-export-dataset.timer - Run dataset export periodically (devnet).
+
+○ ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry)
+     Loaded: loaded (/etc/systemd/system/ippan-export-dataset.service; static)
+     Active: inactive (dead) since Thu 2025-12-18 00:26:42 UTC; 4h 50min ago
+TriggeredBy: ● ippan-export-dataset.timer
+    Process: 551447 ExecStart=/usr/local/lib/ippan/export-dataset.sh (code=exited, status=0/SUCCESS)
+   Main PID: 551447 (code=exited, status=0/SUCCESS)
+        CPU: 649ms
+
+Dec 18 00:26:22 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 115/120... OK (1 validators)
+Dec 18 00:26:27 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 116/120... OK (1 validators)
+Dec 18 00:26:32 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 117/120... OK (1 validators)
+Dec 18 00:26:37 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 118/120... OK (1 validators)
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 119/120... OK (1 validators)
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 120/120... OK (1 validators)
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]: Writing 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001647Z.csv...
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]: [OK] Exported 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001647Z.csv
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 systemd[1]: ippan-export-dataset.service: Deactivated successfully.
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 systemd[1]: Finished ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry).
+--- exporter service logs (last 80) ---
+Dec 18 00:20:32 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 45/120... OK (1 validators)
+Dec 18 00:20:37 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 46/120... OK (1 validators)
+Dec 18 00:20:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 47/120... OK (1 validators)
+Dec 18 00:20:47 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 48/120... OK (1 validators)
+Dec 18 00:20:52 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 49/120... OK (1 validators)
+Dec 18 00:20:57 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 50/120... OK (1 validators)
+Dec 18 00:21:02 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 51/120... OK (1 validators)
+Dec 18 00:21:07 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 52/120... OK (1 validators)
+Dec 18 00:21:12 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 53/120... OK (1 validators)
+Dec 18 00:21:17 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 54/120... OK (1 validators)
+Dec 18 00:21:22 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 55/120... OK (1 validators)
+Dec 18 00:21:27 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 56/120... OK (1 validators)
+Dec 18 00:21:32 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 57/120... OK (1 validators)
+Dec 18 00:21:37 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 58/120... OK (1 validators)
+Dec 18 00:21:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 59/120... OK (1 validators)
+Dec 18 00:21:47 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 60/120... OK (1 validators)
+Dec 18 00:21:52 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 61/120... OK (1 validators)
+Dec 18 00:21:57 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 62/120... OK (1 validators)
+Dec 18 00:22:02 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 63/120... OK (1 validators)
+Dec 18 00:22:07 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 64/120... OK (1 validators)
+Dec 18 00:22:12 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 65/120... OK (1 validators)
+Dec 18 00:22:17 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 66/120... OK (1 validators)
+Dec 18 00:22:22 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 67/120... OK (1 validators)
+Dec 18 00:22:27 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 68/120... OK (1 validators)
+Dec 18 00:22:32 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 69/120... OK (1 validators)
+Dec 18 00:22:37 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 70/120... OK (1 validators)
+Dec 18 00:22:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 71/120... OK (1 validators)
+Dec 18 00:22:47 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 72/120... OK (1 validators)
+Dec 18 00:22:52 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 73/120... OK (1 validators)
+Dec 18 00:22:57 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 74/120... OK (1 validators)
+Dec 18 00:23:02 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 75/120... OK (1 validators)
+Dec 18 00:23:07 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 76/120... OK (1 validators)
+Dec 18 00:23:12 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 77/120... OK (1 validators)
+Dec 18 00:23:17 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 78/120... OK (1 validators)
+Dec 18 00:23:22 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 79/120... OK (1 validators)
+Dec 18 00:23:27 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 80/120... OK (1 validators)
+Dec 18 00:23:32 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 81/120... OK (1 validators)
+Dec 18 00:23:37 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 82/120... OK (1 validators)
+Dec 18 00:23:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 83/120... OK (1 validators)
+Dec 18 00:23:47 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 84/120... OK (1 validators)
+Dec 18 00:23:52 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 85/120... OK (1 validators)
+Dec 18 00:23:57 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 86/120... OK (1 validators)
+Dec 18 00:24:02 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 87/120... OK (1 validators)
+Dec 18 00:24:07 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 88/120... OK (1 validators)
+Dec 18 00:24:12 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 89/120... OK (1 validators)
+Dec 18 00:24:17 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 90/120... OK (1 validators)
+Dec 18 00:24:22 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 91/120... OK (1 validators)
+Dec 18 00:24:27 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 92/120... OK (1 validators)
+Dec 18 00:24:32 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 93/120... OK (1 validators)
+Dec 18 00:24:37 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 94/120... OK (1 validators)
+Dec 18 00:24:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 95/120... OK (1 validators)
+Dec 18 00:24:47 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 96/120... OK (1 validators)
+Dec 18 00:24:52 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 97/120... OK (1 validators)
+Dec 18 00:24:57 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 98/120... OK (1 validators)
+Dec 18 00:25:02 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 99/120... OK (1 validators)
+Dec 18 00:25:07 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 100/120... OK (1 validators)
+Dec 18 00:25:12 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 101/120... OK (1 validators)
+Dec 18 00:25:17 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 102/120... OK (1 validators)
+Dec 18 00:25:22 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 103/120... OK (1 validators)
+Dec 18 00:25:27 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 104/120... OK (1 validators)
+Dec 18 00:25:32 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 105/120... OK (1 validators)
+Dec 18 00:25:37 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 106/120... OK (1 validators)
+Dec 18 00:25:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 107/120... OK (1 validators)
+Dec 18 00:25:47 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 108/120... OK (1 validators)
+Dec 18 00:25:52 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 109/120... OK (1 validators)
+Dec 18 00:25:57 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 110/120... OK (1 validators)
+Dec 18 00:26:02 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 111/120... OK (1 validators)
+Dec 18 00:26:07 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 112/120... OK (1 validators)
+Dec 18 00:26:12 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 113/120... OK (1 validators)
+Dec 18 00:26:17 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 114/120... OK (1 validators)
+Dec 18 00:26:22 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 115/120... OK (1 validators)
+Dec 18 00:26:27 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 116/120... OK (1 validators)
+Dec 18 00:26:32 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 117/120... OK (1 validators)
+Dec 18 00:26:37 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 118/120... OK (1 validators)
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 119/120... OK (1 validators)
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]:   Sample 120/120... OK (1 validators)
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]: Writing 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001647Z.csv...
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 export-dataset.sh[551452]: [OK] Exported 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001647Z.csv
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 systemd[1]: ippan-export-dataset.service: Deactivated successfully.
+Dec 18 00:26:42 ubuntu-8gb-nbg1-1 systemd[1]: Finished ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry).
+--- newest dataset file ---
+newest=/var/lib/ippan/ai_datasets/devnet_dataset_20251218T001647Z.csv.gz
+2025-12-18 00:26:42.670278909 +0000 3403 /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001647Z.csv.gz
+
+================================================================================
+NODE 135.181.145.174
+================================================================================
+--- systemctl status ippan-node ---
+● ippan-node.service - IPPAN Node
+     Loaded: loaded (/etc/systemd/system/ippan-node.service; enabled; preset: enabled)
+    Drop-In: /etc/systemd/system/ippan-node.service.d
+             └─10-identity-strict.conf, 10-user.conf, 20-libp2p-debug.conf, 30-bootstrap.conf, 35-p2p-sane.conf, 40-public-host.conf, 99-bootstrap-override.conf, override.conf
+     Active: active (running) since Wed 2025-12-17 21:23:04 UTC; 7h ago
+    Process: 506185 ExecStartPre=/bin/rm -f /var/lib/ippan/data/devnet/ippan-node.pid (code=exited, status=0/SUCCESS)
+   Main PID: 506187 (ippan-node)
+      Tasks: 13 (limit: 9251)
+     Memory: 30.2M (peak: 30.9M)
+        CPU: 1min 3.385s
+     CGroup: /system.slice/ippan-node.service
+             └─506187 /usr/local/bin/ippan-node --config /etc/ippan/config/node.toml
+
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.864619Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.864751Z  INFO ippan_security::audit: Security event: {"id":"7608eb25-7655-4c39-8cf5-5cef6f5cb010","timestamp":{"secs_since_epoch":1766035035,"nanos_since_epoch":864701088},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":864697658,"secs_since_epoch":1766035035},"type":"SuccessfulRequest"}}
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.864786Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+--- journalctl -u ippan-node (last 120) ---
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.465665Z  INFO ippan_security::audit: Security event: {"id":"9ba1797c-9aec-427e-93d7-aa2366291df9","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":465607017},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":465603877,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.465700Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.465817Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.465988Z  INFO ippan_security::audit: Security event: {"id":"d1bb2029-0f01-4108-9e6b-b6ff07e3f021","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":465906995},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":465905045,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.466012Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.864299Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.864430Z  INFO ippan_security::audit: Security event: {"id":"c88491d2-d3c4-41ad-bcef-d9b1db369f0d","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":864382100},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":864378830,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.864465Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.864461Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.864644Z  INFO ippan_security::audit: Security event: {"id":"f9161fb0-f73b-427c-8879-675e1ddf8630","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":864600180},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":864596610,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:16:45.864674Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:45 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:02.582389Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:02.582549Z  INFO ippan_security::audit: Security event: {"id":"11062d81-49a1-44e2-aa01-ac5ff31709a6","timestamp":{"secs_since_epoch":1766035022,"nanos_since_epoch":582477991},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":582474331,"secs_since_epoch":1766035022},"type":"SuccessfulRequest"}}
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:02.582584Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:02.777360Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:02.777548Z  INFO ippan_security::audit: Security event: {"id":"c6fcc1ac-87bc-49ca-84d5-e1e6105a2433","timestamp":{"secs_since_epoch":1766035022,"nanos_since_epoch":777502963},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":777499623,"secs_since_epoch":1766035022},"type":"SuccessfulRequest"}}
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:02.777580Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:02 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:04 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:04.925685Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:17:04 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:04 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:04.925825Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:17:04 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.121164Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.121260Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.121316Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.121374Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.229859Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.229975Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.230058Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 188.245.97.41:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.230070Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 188.245.97.41:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257274Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 188.245.97.41:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257353Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 135.181.145.174:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257373Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 188.245.97.41:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257431Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257475Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 135.181.145.174:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257529Z  INFO ippan_security::audit: Security event: {"id":"6b0bad6a-e3d4-4707-8019-46ee435a95cc","timestamp":{"secs_since_epoch":1766035025,"nanos_since_epoch":257496371},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":257493861,"secs_since_epoch":1766035025},"type":"SuccessfulRequest"}}
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257546Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257601Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 135.181.145.174:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257613Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257695Z  INFO ippan_security::audit: Security event: {"id":"a41a99fb-65ff-4fdf-9e1f-e363949ad53f","timestamp":{"secs_since_epoch":1766035025,"nanos_since_epoch":257664920},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":257661890,"secs_since_epoch":1766035025},"type":"SuccessfulRequest"}}
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257726Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:05.257840Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 135.181.145.174:9000)
+Dec 18 05:17:05 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.463821Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.464046Z  INFO ippan_security::audit: Security event: {"id":"c566b4c4-6ea4-4901-a12b-c7547d7b5a34","timestamp":{"secs_since_epoch":1766035035,"nanos_since_epoch":463901154},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":463897875,"secs_since_epoch":1766035035},"type":"SuccessfulRequest"}}
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.464083Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.864619Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.864751Z  INFO ippan_security::audit: Security event: {"id":"7608eb25-7655-4c39-8cf5-5cef6f5cb010","timestamp":{"secs_since_epoch":1766035035,"nanos_since_epoch":864701088},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":864697658,"secs_since_epoch":1766035035},"type":"SuccessfulRequest"}}
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:   2025-12-18T05:17:15.864786Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:15 ubuntu-8gb-hel1-1 ippan-node[506187]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+--- /status summary ---
+status=ok build_sha=b564c618b33b1cebdeac24e849f96de3f73b570b peer_count=4 dataset_enabled=true dataset_age_seconds=17313 dataset_last_ts_utc=2025-12-18T00:28:49.19087947Z
+--- exporter timer/service status ---
+● ippan-export-dataset.timer - Run dataset export periodically (devnet)
+     Loaded: loaded (/etc/systemd/system/ippan-export-dataset.timer; enabled; preset: enabled)
+     Active: active (waiting) since Wed 2025-12-17 18:27:26 UTC; 10h ago
+    Trigger: Thu 2025-12-18 06:18:12 UTC; 1h 0min left
+   Triggers: ● ippan-export-dataset.service
+
+Dec 17 18:27:26 ubuntu-8gb-hel1-1 systemd[1]: Started ippan-export-dataset.timer - Run dataset export periodically (devnet).
+
+○ ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry)
+     Loaded: loaded (/etc/systemd/system/ippan-export-dataset.service; static)
+     Active: inactive (dead) since Thu 2025-12-18 00:28:49 UTC; 4h 48min ago
+TriggeredBy: ● ippan-export-dataset.timer
+    Process: 509427 ExecStart=/usr/local/lib/ippan/export-dataset.sh (code=exited, status=0/SUCCESS)
+   Main PID: 509427 (code=exited, status=0/SUCCESS)
+        CPU: 610ms
+
+Dec 18 00:28:29 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 115/120... OK (1 validators)
+Dec 18 00:28:34 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 116/120... OK (1 validators)
+Dec 18 00:28:39 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 117/120... OK (1 validators)
+Dec 18 00:28:44 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 118/120... OK (1 validators)
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 119/120... OK (1 validators)
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 120/120... OK (1 validators)
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]: Writing 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001853Z.csv...
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]: [OK] Exported 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001853Z.csv
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 systemd[1]: ippan-export-dataset.service: Deactivated successfully.
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 systemd[1]: Finished ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry).
+--- exporter service logs (last 80) ---
+Dec 18 00:22:38 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 45/120... OK (1 validators)
+Dec 18 00:22:43 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 46/120... OK (1 validators)
+Dec 18 00:22:48 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 47/120... OK (1 validators)
+Dec 18 00:22:53 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 48/120... OK (1 validators)
+Dec 18 00:22:58 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 49/120... OK (1 validators)
+Dec 18 00:23:03 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 50/120... OK (1 validators)
+Dec 18 00:23:08 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 51/120... OK (1 validators)
+Dec 18 00:23:13 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 52/120... OK (1 validators)
+Dec 18 00:23:18 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 53/120... OK (1 validators)
+Dec 18 00:23:23 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 54/120... OK (1 validators)
+Dec 18 00:23:28 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 55/120... OK (1 validators)
+Dec 18 00:23:33 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 56/120... OK (1 validators)
+Dec 18 00:23:38 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 57/120... OK (1 validators)
+Dec 18 00:23:43 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 58/120... OK (1 validators)
+Dec 18 00:23:48 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 59/120... OK (1 validators)
+Dec 18 00:23:54 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 60/120... OK (1 validators)
+Dec 18 00:23:59 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 61/120... OK (1 validators)
+Dec 18 00:24:04 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 62/120... OK (1 validators)
+Dec 18 00:24:09 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 63/120... OK (1 validators)
+Dec 18 00:24:14 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 64/120... OK (1 validators)
+Dec 18 00:24:19 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 65/120... OK (1 validators)
+Dec 18 00:24:24 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 66/120... OK (1 validators)
+Dec 18 00:24:29 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 67/120... OK (1 validators)
+Dec 18 00:24:34 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 68/120... OK (1 validators)
+Dec 18 00:24:39 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 69/120... OK (1 validators)
+Dec 18 00:24:44 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 70/120... OK (1 validators)
+Dec 18 00:24:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 71/120... OK (1 validators)
+Dec 18 00:24:54 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 72/120... OK (1 validators)
+Dec 18 00:24:59 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 73/120... OK (1 validators)
+Dec 18 00:25:04 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 74/120... OK (1 validators)
+Dec 18 00:25:09 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 75/120... OK (1 validators)
+Dec 18 00:25:14 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 76/120... OK (1 validators)
+Dec 18 00:25:19 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 77/120... OK (1 validators)
+Dec 18 00:25:24 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 78/120... OK (1 validators)
+Dec 18 00:25:29 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 79/120... OK (1 validators)
+Dec 18 00:25:34 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 80/120... OK (1 validators)
+Dec 18 00:25:39 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 81/120... OK (1 validators)
+Dec 18 00:25:44 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 82/120... OK (1 validators)
+Dec 18 00:25:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 83/120... OK (1 validators)
+Dec 18 00:25:54 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 84/120... OK (1 validators)
+Dec 18 00:25:59 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 85/120... OK (1 validators)
+Dec 18 00:26:04 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 86/120... OK (1 validators)
+Dec 18 00:26:09 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 87/120... OK (1 validators)
+Dec 18 00:26:14 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 88/120... OK (1 validators)
+Dec 18 00:26:19 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 89/120... OK (1 validators)
+Dec 18 00:26:24 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 90/120... OK (1 validators)
+Dec 18 00:26:29 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 91/120... OK (1 validators)
+Dec 18 00:26:34 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 92/120... OK (1 validators)
+Dec 18 00:26:39 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 93/120... OK (1 validators)
+Dec 18 00:26:44 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 94/120... OK (1 validators)
+Dec 18 00:26:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 95/120... OK (1 validators)
+Dec 18 00:26:54 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 96/120... OK (1 validators)
+Dec 18 00:26:59 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 97/120... OK (1 validators)
+Dec 18 00:27:04 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 98/120... OK (1 validators)
+Dec 18 00:27:09 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 99/120... OK (1 validators)
+Dec 18 00:27:14 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 100/120... OK (1 validators)
+Dec 18 00:27:19 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 101/120... OK (1 validators)
+Dec 18 00:27:24 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 102/120... OK (1 validators)
+Dec 18 00:27:29 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 103/120... OK (1 validators)
+Dec 18 00:27:34 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 104/120... OK (1 validators)
+Dec 18 00:27:39 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 105/120... OK (1 validators)
+Dec 18 00:27:44 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 106/120... OK (1 validators)
+Dec 18 00:27:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 107/120... OK (1 validators)
+Dec 18 00:27:54 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 108/120... OK (1 validators)
+Dec 18 00:27:59 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 109/120... OK (1 validators)
+Dec 18 00:28:04 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 110/120... OK (1 validators)
+Dec 18 00:28:09 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 111/120... OK (1 validators)
+Dec 18 00:28:14 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 112/120... OK (1 validators)
+Dec 18 00:28:19 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 113/120... OK (1 validators)
+Dec 18 00:28:24 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 114/120... OK (1 validators)
+Dec 18 00:28:29 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 115/120... OK (1 validators)
+Dec 18 00:28:34 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 116/120... OK (1 validators)
+Dec 18 00:28:39 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 117/120... OK (1 validators)
+Dec 18 00:28:44 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 118/120... OK (1 validators)
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 119/120... OK (1 validators)
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]:   Sample 120/120... OK (1 validators)
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]: Writing 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001853Z.csv...
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 export-dataset.sh[509432]: [OK] Exported 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001853Z.csv
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 systemd[1]: ippan-export-dataset.service: Deactivated successfully.
+Dec 18 00:28:49 ubuntu-8gb-hel1-1 systemd[1]: Finished ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry).
+--- newest dataset file ---
+newest=/var/lib/ippan/ai_datasets/devnet_dataset_20251218T001853Z.csv.gz
+2025-12-18 00:28:49.190879470 +0000 1166 /var/lib/ippan/ai_datasets/devnet_dataset_20251218T001853Z.csv.gz
+
+================================================================================
+NODE 178.156.219.107
+================================================================================
+--- systemctl status ippan-node ---
+● ippan-node.service - IPPAN Node
+     Loaded: loaded (/etc/systemd/system/ippan-node.service; enabled; preset: enabled)
+    Drop-In: /etc/systemd/system/ippan-node.service.d
+             └─10-identity-strict.conf, 10-user.conf, 20-libp2p-debug.conf, 30-bootstrap.conf, 35-p2p-sane.conf, 40-public-host.conf, 99-bootstrap-override.conf, override.conf
+     Active: active (running) since Wed 2025-12-17 21:24:44 UTC; 7h ago
+    Process: 390167 ExecStartPre=/bin/rm -f /var/lib/ippan/data/devnet/ippan-node.pid (code=exited, status=0/SUCCESS)
+   Main PID: 390169 (ippan-node)
+      Tasks: 13 (limit: 9258)
+     Memory: 30.2M (peak: 30.9M)
+        CPU: 50.947s
+     CGroup: /system.slice/ippan-node.service
+             └─390169 /usr/local/bin/ippan-node --config /etc/ippan/config/node.toml
+
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:32.378745Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:32.378925Z  INFO ippan_security::audit: Security event: {"id":"eaaa7ea1-c93f-402e-85a0-112065a4851e","timestamp":{"secs_since_epoch":1766035052,"nanos_since_epoch":378845520},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":378839960,"secs_since_epoch":1766035052},"type":"SuccessfulRequest"}}
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:32.378996Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+--- journalctl -u ippan-node (last 120) ---
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:45.925131Z  INFO ippan_security::audit: Security event: {"id":"fd76ef7c-081b-4bff-9cd5-fb4bbb38ddf3","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":925092723},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":925089637,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:45.925171Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:45.925219Z  INFO ippan_security::audit: Security event: {"id":"77986994-890e-442a-bc22-c2c1528dcd32","timestamp":{"secs_since_epoch":1766035005,"nanos_since_epoch":925186147},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":925183662,"secs_since_epoch":1766035005},"type":"SuccessfulRequest"}}
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:45.925245Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:45 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:46.686896Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:46.687056Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:46.687223Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:46.687309Z  INFO ippan_security::audit: Security event: {"id":"b854ca97-1849-4753-a665-30e3c9a76933","timestamp":{"secs_since_epoch":1766035006,"nanos_since_epoch":687272533},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":687269959,"secs_since_epoch":1766035006},"type":"SuccessfulRequest"}}
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:46.687333Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:46.687513Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:46.915398Z DEBUG hyper_util::client::legacy::connect::http: connected to 5.223.51.238:9000
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/connect/http.rs:771
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:16:46.915497Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:16:46 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:02.372862Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:02.373007Z  INFO ippan_security::audit: Security event: {"id":"aeaf08f5-fa54-41a5-ba9f-d21af293e678","timestamp":{"secs_since_epoch":1766035022,"nanos_since_epoch":372952124},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":372948588,"secs_since_epoch":1766035022},"type":"SuccessfulRequest"}}
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:02.373118Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:02.377199Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:02.377345Z  INFO ippan_security::audit: Security event: {"id":"a20cf93b-be15-4b53-80b6-1dd7be886a06","timestamp":{"secs_since_epoch":1766035022,"nanos_since_epoch":377317321},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":377315086,"secs_since_epoch":1766035022},"type":"SuccessfulRequest"}}
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:02.377373Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:02 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:05.166342Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:05.166369Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:05.166451Z  INFO ippan_security::audit: Security event: {"id":"60146162-4f0e-4344-9bc8-ee029e3a3aa0","timestamp":{"secs_since_epoch":1766035025,"nanos_since_epoch":166404359},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":166402235,"secs_since_epoch":1766035025},"type":"SuccessfulRequest"}}
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:05.166464Z  INFO ippan_security::audit: Security event: {"id":"e3611076-87d9-47ec-9766-104adb7fe436","timestamp":{"secs_since_epoch":1766035025,"nanos_since_epoch":166451497},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peer-info","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":166450054,"secs_since_epoch":1766035025},"type":"SuccessfulRequest"}}
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:05.166474Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:05.166481Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:05 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: POST, uri: /p2p/peer-info, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.400838Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 135.181.145.174:9000)
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.509390Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 135.181.145.174:9000)
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.509503Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 188.245.97.41:9000)
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.617502Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 188.245.97.41:9000)
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.617630Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.894905Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 5.223.51.238:9000)
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.895097Z DEBUG hyper_util::client::legacy::pool: reuse idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:269
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.895219Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.895301Z  INFO ippan_security::audit: Security event: {"id":"1b245b68-a53b-4caf-a929-efe68ffbab79","timestamp":{"secs_since_epoch":1766035035,"nanos_since_epoch":895265171},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"178.156.219.107","timestamp":{"nanos_since_epoch":895262305,"secs_since_epoch":1766035035},"type":"SuccessfulRequest"}}
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.895330Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.895461Z DEBUG hyper_util::client::legacy::pool: pooling idle connection for ("http", 178.156.219.107:9000)
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-util-0.1.18/src/client/legacy/pool.rs:402
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.925650Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.925749Z  INFO ippan_security::audit: Security event: {"id":"6f903787-c271-419a-9ee0-089335421917","timestamp":{"secs_since_epoch":1766035035,"nanos_since_epoch":925714442},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"188.245.97.41","timestamp":{"nanos_since_epoch":925712098,"secs_since_epoch":1766035035},"type":"SuccessfulRequest"}}
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:15.925774Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:15 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:32.378745Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:32.378925Z  INFO ippan_security::audit: Security event: {"id":"eaaa7ea1-c93f-402e-85a0-112065a4851e","timestamp":{"secs_since_epoch":1766035052,"nanos_since_epoch":378845520},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"5.223.51.238","timestamp":{"nanos_since_epoch":378839960,"secs_since_epoch":1766035052},"type":"SuccessfulRequest"}}
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:32.378996Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:32 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:35.170929Z DEBUG tower_http::trace::on_request: started processing request
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_request.rs:80
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:35.171052Z  INFO ippan_security::audit: Security event: {"id":"4ce8b0c2-f4b2-4f20-8c67-a29cb8dbddc9","timestamp":{"secs_since_epoch":1766035055,"nanos_since_epoch":170992268},"event_type":"security","severity":"info","details":{"endpoint":"/p2p/peers","ip":"135.181.145.174","timestamp":{"nanos_since_epoch":170989813,"secs_since_epoch":1766035055},"type":"SuccessfulRequest"}}
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:     at crates/security/src/audit.rs:67
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:   2025-12-18T05:17:35.171091Z DEBUG tower_http::trace::on_response: finished processing request, latency: 0 ms, status: 200
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:     at /home/ippan-devnet/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tower-http-0.5.2/src/trace/on_response.rs:114
+Dec 18 05:17:35 ubuntu-8gb-ash-2 ippan-node[390169]:     in tower_http::trace::make_span::request with method: GET, uri: /p2p/peers, version: HTTP/1.1
+--- /status summary ---
+status=ok build_sha=b564c618b33b1cebdeac24e849f96de3f73b570b peer_count=4 dataset_enabled=true dataset_age_seconds=17232 dataset_last_ts_utc=2025-12-18T00:30:26.356492284Z
+--- exporter timer/service status ---
+● ippan-export-dataset.timer - Run dataset export periodically (devnet)
+     Loaded: loaded (/etc/systemd/system/ippan-export-dataset.timer; enabled; preset: enabled)
+     Active: active (waiting) since Wed 2025-12-17 18:27:46 UTC; 10h ago
+    Trigger: Thu 2025-12-18 06:21:05 UTC; 1h 3min left
+   Triggers: ● ippan-export-dataset.service
+
+Dec 17 18:27:46 ubuntu-8gb-ash-2 systemd[1]: Started ippan-export-dataset.timer - Run dataset export periodically (devnet).
+
+○ ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry)
+     Loaded: loaded (/etc/systemd/system/ippan-export-dataset.service; static)
+     Active: inactive (dead) since Thu 2025-12-18 00:30:26 UTC; 4h 47min ago
+TriggeredBy: ● ippan-export-dataset.timer
+    Process: 392579 ExecStart=/usr/local/lib/ippan/export-dataset.sh (code=exited, status=0/SUCCESS)
+   Main PID: 392579 (code=exited, status=0/SUCCESS)
+        CPU: 526ms
+
+Dec 18 00:30:06 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 115/120... OK (1 validators)
+Dec 18 00:30:11 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 116/120... OK (1 validators)
+Dec 18 00:30:16 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 117/120... OK (1 validators)
+Dec 18 00:30:21 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 118/120... OK (1 validators)
+Dec 18 00:30:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 119/120... OK (1 validators)
+Dec 18 00:30:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 120/120... OK (1 validators)
+Dec 18 00:30:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]: Writing 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T002030Z.csv...
+Dec 18 00:30:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]: [OK] Exported 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T002030Z.csv
+Dec 18 00:30:26 ubuntu-8gb-ash-2 systemd[1]: ippan-export-dataset.service: Deactivated successfully.
+Dec 18 00:30:26 ubuntu-8gb-ash-2 systemd[1]: Finished ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry).
+--- exporter service logs (last 80) ---
+Dec 18 00:24:16 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 45/120... OK (1 validators)
+Dec 18 00:24:21 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 46/120... OK (1 validators)
+Dec 18 00:24:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 47/120... OK (1 validators)
+Dec 18 00:24:31 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 48/120... OK (1 validators)
+Dec 18 00:24:36 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 49/120... OK (1 validators)
+Dec 18 00:24:41 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 50/120... OK (1 validators)
+Dec 18 00:24:46 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 51/120... OK (1 validators)
+Dec 18 00:24:51 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 52/120... OK (1 validators)
+Dec 18 00:24:56 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 53/120... OK (1 validators)
+Dec 18 00:25:01 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 54/120... OK (1 validators)
+Dec 18 00:25:06 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 55/120... OK (1 validators)
+Dec 18 00:25:11 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 56/120... OK (1 validators)
+Dec 18 00:25:16 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 57/120... OK (1 validators)
+Dec 18 00:25:21 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 58/120... OK (1 validators)
+Dec 18 00:25:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 59/120... OK (1 validators)
+Dec 18 00:25:31 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 60/120... OK (1 validators)
+Dec 18 00:25:36 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 61/120... OK (1 validators)
+Dec 18 00:25:41 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 62/120... OK (1 validators)
+Dec 18 00:25:46 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 63/120... OK (1 validators)
+Dec 18 00:25:51 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 64/120... OK (1 validators)
+Dec 18 00:25:56 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 65/120... OK (1 validators)
+Dec 18 00:26:01 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 66/120... OK (1 validators)
+Dec 18 00:26:06 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 67/120... OK (1 validators)
+Dec 18 00:26:11 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 68/120... OK (1 validators)
+Dec 18 00:26:16 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 69/120... OK (1 validators)
+Dec 18 00:26:21 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 70/120... OK (1 validators)
+Dec 18 00:26:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 71/120... OK (1 validators)
+Dec 18 00:26:31 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 72/120... OK (1 validators)
+Dec 18 00:26:36 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 73/120... OK (1 validators)
+Dec 18 00:26:41 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 74/120... OK (1 validators)
+Dec 18 00:26:46 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 75/120... OK (1 validators)
+Dec 18 00:26:51 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 76/120... OK (1 validators)
+Dec 18 00:26:56 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 77/120... OK (1 validators)
+Dec 18 00:27:01 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 78/120... OK (1 validators)
+Dec 18 00:27:06 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 79/120... OK (1 validators)
+Dec 18 00:27:11 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 80/120... OK (1 validators)
+Dec 18 00:27:16 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 81/120... OK (1 validators)
+Dec 18 00:27:21 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 82/120... OK (1 validators)
+Dec 18 00:27:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 83/120... OK (1 validators)
+Dec 18 00:27:31 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 84/120... OK (1 validators)
+Dec 18 00:27:36 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 85/120... OK (1 validators)
+Dec 18 00:27:41 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 86/120... OK (1 validators)
+Dec 18 00:27:46 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 87/120... OK (1 validators)
+Dec 18 00:27:51 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 88/120... OK (1 validators)
+Dec 18 00:27:56 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 89/120... OK (1 validators)
+Dec 18 00:28:01 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 90/120... OK (1 validators)
+Dec 18 00:28:06 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 91/120... OK (1 validators)
+Dec 18 00:28:11 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 92/120... OK (1 validators)
+Dec 18 00:28:16 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 93/120... OK (1 validators)
+Dec 18 00:28:21 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 94/120... OK (1 validators)
+Dec 18 00:28:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 95/120... OK (1 validators)
+Dec 18 00:28:31 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 96/120... OK (1 validators)
+Dec 18 00:28:36 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 97/120... OK (1 validators)
+Dec 18 00:28:41 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 98/120... OK (1 validators)
+Dec 18 00:28:46 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 99/120... OK (1 validators)
+Dec 18 00:28:51 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 100/120... OK (1 validators)
+Dec 18 00:28:56 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 101/120... OK (1 validators)
+Dec 18 00:29:01 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 102/120... OK (1 validators)
+Dec 18 00:29:06 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 103/120... OK (1 validators)
+Dec 18 00:29:11 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 104/120... OK (1 validators)
+Dec 18 00:29:16 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 105/120... OK (1 validators)
+Dec 18 00:29:21 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 106/120... OK (1 validators)
+Dec 18 00:29:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 107/120... OK (1 validators)
+Dec 18 00:29:31 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 108/120... OK (1 validators)
+Dec 18 00:29:36 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 109/120... OK (1 validators)
+Dec 18 00:29:41 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 110/120... OK (1 validators)
+Dec 18 00:29:46 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 111/120... OK (1 validators)
+Dec 18 00:29:51 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 112/120... OK (1 validators)
+Dec 18 00:29:56 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 113/120... OK (1 validators)
+Dec 18 00:30:01 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 114/120... OK (1 validators)
+Dec 18 00:30:06 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 115/120... OK (1 validators)
+Dec 18 00:30:11 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 116/120... OK (1 validators)
+Dec 18 00:30:16 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 117/120... OK (1 validators)
+Dec 18 00:30:21 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 118/120... OK (1 validators)
+Dec 18 00:30:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 119/120... OK (1 validators)
+Dec 18 00:30:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]:   Sample 120/120... OK (1 validators)
+Dec 18 00:30:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]: Writing 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T002030Z.csv...
+Dec 18 00:30:26 ubuntu-8gb-ash-2 export-dataset.sh[392585]: [OK] Exported 120 rows to /var/lib/ippan/ai_datasets/devnet_dataset_20251218T002030Z.csv
+Dec 18 00:30:26 ubuntu-8gb-ash-2 systemd[1]: ippan-export-dataset.service: Deactivated successfully.
+Dec 18 00:30:26 ubuntu-8gb-ash-2 systemd[1]: Finished ippan-export-dataset.service - IPPAN Devnet Dataset Export (D-GBDT telemetry).
+--- newest dataset file ---
+newest=/var/lib/ippan/ai_datasets/devnet_dataset_20251218T002030Z.csv.gz
+2025-12-18 00:30:26.356492284 +0000 1165 /var/lib/ippan/ai_datasets/devnet_dataset_20251218T002030Z.csv.gz
