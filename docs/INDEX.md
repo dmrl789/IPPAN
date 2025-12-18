@@ -79,6 +79,7 @@ cargo build --workspace --release
   - Model lifecycle: train → canonicalize → hash → load → cache
   - Model rotation procedures
   - Determinism checklist and troubleshooting
+- **AI Roadmap**: [docs/ai/ROADMAP.md](ai/ROADMAP.md) - vNext training pipeline TODOs and promotion intent
 - **AI Implementation Guide**: [docs/AI_IMPLEMENTATION_GUIDE.md](AI_IMPLEMENTATION_GUIDE.md) - AI system overview
 - **AI Model Lifecycle**: [docs/AI_MODEL_LIFECYCLE.md](AI_MODEL_LIFECYCLE.md) - Model training and deployment
 - **Model Registry**: [docs/ai/MODEL_REGISTRY.md](ai/MODEL_REGISTRY.md) - Model storage and verification
@@ -219,6 +220,7 @@ cargo test -p ippan-consensus-dlc --test fairness_invariants
 - **Running RC Node**: [docs/operators/running-ippan-rc-node.md](operators/running-ippan-rc-node.md) - RC testnet guide
 - **Production Deployment**: [docs/operators/PRODUCTION_DEPLOYMENT_GUIDE.md](operators/PRODUCTION_DEPLOYMENT_GUIDE.md) - Production rollout guide
 - [IPPAN Time — Monotonic TimeState](ops/time.md)
+- [Transaction smoke test (safe + bounded)](ops/tx-smoke-test.md)
 - **Runbook: Devnet rollback + drift SOP**: [docs/ops/runbooks/devnet-rollback-and-drift.md](ops/runbooks/devnet-rollback-and-drift.md)
 
 ### Rollouts

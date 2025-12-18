@@ -70,6 +70,9 @@ Troubleshooting:
   sudo journalctl -u ippan-export-dataset.service -n 200 --no-pager
   python3 -c "import requests; print('requests ok')"
 
+Related:
+- Network baseline checks (latency/loss/throughput, bounded): see `docs/ops/network-test.md`
+
 Operator “dataset freshness” checks:
 - HTTP-only (preferred): `/status` includes `dataset_export = { enabled, last_ts_utc, last_age_seconds }`.
 - SSH loop (quick spot-check):
@@ -78,6 +81,23 @@ Operator “dataset freshness” checks:
       ssh root@$ip "ls -1t /var/lib/ippan/ai_datasets/devnet_dataset_*.csv.gz 2>/dev/null | head -n 1 || true"
       ssh root@$ip "stat -c '%y %s %n' /var/lib/ippan/ai_datasets/devnet_dataset_*.csv.gz 2>/dev/null | tail -n 1 || true"
     done
+
+## Policy decision (D-GBDT datasets + training + promotion)
+
+This is the **operator/auditor-facing** intent for how devnet datasets are used.
+
+- **Data source**: devnet exporter output on nodes: `/var/lib/ippan/ai_datasets/devnet_dataset_*.csv.gz`
+- **Training cadence**: at most **once per 2 weeks**, or immediately after a material incident (time drift, peer collapse, sustained latency regression) that warrants re-weighting fairness.
+- **Versioning**:
+  - Dataset: record the exact filename set + UTC export timestamps; compute and record a content hash (BLAKE3) over the dataset bytes used for training.
+  - Model: name as `ippan_d_gbdt_devnet_vN.json`; record its hash and training metadata in `docs/ai/MODEL_REGISTRY.md`.
+- **Promotion rule (devnet → ship)**: a new model is promoted only if it passes:
+  - Offline metrics thresholds on a held-out slice (no regression beyond defined tolerance),
+  - Determinism checks (canonical JSON + stable hash verification),
+  - Shadow-scoring vs current model on devnet for ≥ 24h with no safety regressions.
+- **Retention**:
+  - Datasets: keep at least **90 days** (or the exporter’s cap, whichever is larger).
+  - Models: keep all shipped models + their training metadata indefinitely (audit trail), with an explicit “active” pointer via `config/dlc.toml` expected hash.
 ---
 
 
