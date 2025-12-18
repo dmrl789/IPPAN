@@ -2,6 +2,9 @@
 
 ## TODO (vNext)
 
-- Implement **D-GBDT vNext training pipeline** from devnet datasets (`/var/lib/ippan/ai_datasets/devnet_dataset_*.csv.gz`), using the existing localnet scripts as a template, with **shadow scoring first** and promotion gated by determinism + offline metrics + devnet shadow window.
+- [ ] Implement `train_ippan_d_gbdt_devnet.py` using `docs/ai/DGBDT_TRAINING_SPEC.md`.
+- [ ] Add CI job for “train-then-verify hash” on a small sample dataset.
+- [ ] Add CLI or script to promote a model: copy JSON → update `config/dlc.toml` → run hash verifier → `rollout-devnet.sh` verify-only.
+- [ ] Document the first vNext promotion in `docs/ai/models/ippan_d_gbdt_devnet_v2.md`.
 
 
