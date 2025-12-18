@@ -17,6 +17,7 @@ RPC_PORT="${RPC_PORT:-8080}"
 EXPECTED_PEERS="${EXPECTED_PEERS:-4}"
 MAX_DATASET_AGE_SECONDS="${MAX_DATASET_AGE_SECONDS:-28800}" # 8h
 TIME_SAMPLES="${TIME_SAMPLES:-10}"
+SSH_BIN="${SSH_BIN:-ssh}"
 
 CANARY_IP="5.223.51.238"
 OTHER_IPS=("188.245.97.41" "135.181.145.174" "178.156.219.107")
@@ -43,6 +44,7 @@ Env:
   EXPECTED_PEERS (default: 4)
   MAX_DATASET_AGE_SECONDS (default: 28800)
   TIME_SAMPLES (default: 10)
+  SSH_BIN (default: ssh)  Optional: explicit ssh binary path (e.g. WSL calling Windows ssh.exe)
 EOF
 }
 
@@ -81,7 +83,7 @@ json_get_path() {
   fi
 
   if need_cmd python3; then
-    python3 - "$path" <<'PY'
+    python3 -c '
 import json,sys
 path=sys.argv[1]
 data=json.load(sys.stdin)
@@ -98,7 +100,7 @@ elif isinstance(cur, bool):
     print("true" if cur else "false")
 else:
     print(cur)
-PY
+' "$path" <<<"$json"
     return 0
   fi
 
@@ -171,7 +173,8 @@ verify_node_http() {
 
   verify_time_monotonic "$ip"
 
-  echo "OK: node=${ip} build_sha=${build_sha} peer_count=${peer_count} dataset_age_seconds=${ds_age}"
+  # Keep stdout clean for callers that capture build_sha.
+  echo "OK: node=${ip} build_sha=${build_sha} peer_count=${peer_count} dataset_age_seconds=${ds_age}" >&2
   printf '%s\n' "$build_sha"
 }
 
@@ -181,7 +184,7 @@ deploy_node() {
 
   if [[ "$APPLY_EXPORTER_UNIT" -eq 1 ]]; then
     # Harden exporter unit on node (template lives in repo; apply directly here).
-    run_cmd "apply exporter unit ($ip)" ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
+    run_cmd "apply exporter unit ($ip)" "$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
 cat >/etc/systemd/system/ippan-export-dataset.service <<'EOF'
 [Unit]
 Description=IPPAN Devnet Dataset Export (D-GBDT telemetry)
@@ -205,7 +208,7 @@ systemctl daemon-reload
   fi
 
   # Update and build as ippan-devnet (avoids git ownership ambiguity).
-  run_cmd "update+build ($ip)" ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
+  run_cmd "update+build ($ip)" "$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
 sudo -u ippan-devnet -H bash -lc 'set -euo pipefail
   git config --global --add safe.directory /opt/ippan || true
   cd /opt/ippan
@@ -217,7 +220,7 @@ sudo -u ippan-devnet -H bash -lc 'set -euo pipefail
 " 
 
   # Stop → install (avoid \"text file busy\") → start
-  run_cmd "install+restart ($ip)" ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
+  run_cmd "install+restart ($ip)" "$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
 TS=\$(date -u +%Y%m%dT%H%M%SZ)
 cp -a /usr/local/bin/ippan-node /usr/local/bin/ippan-node.bak.\${TS} || true
 systemctl stop ippan-node
@@ -231,7 +234,7 @@ systemctl status ippan-node --no-pager | head -n 8
 main() {
   parse_args "$@"
 
-  if ! need_cmd curl || ! need_cmd ssh; then
+  if ! need_cmd curl || ! need_cmd "$SSH_BIN"; then
     echo "ERROR: missing curl and/or ssh" >&2
     exit 127
   fi

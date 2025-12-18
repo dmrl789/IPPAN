@@ -8,6 +8,7 @@ set -euo pipefail
 # - jq OR python3 (JSON parsing)
 
 RPC_PORT="${RPC_PORT:-8080}"
+SSH_BIN="${SSH_BIN:-ssh}"
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
@@ -26,7 +27,7 @@ json_get_path() {
   fi
 
   if need_cmd python3; then
-    python3 - "$path" <<'PY'
+    python3 -c '
 import json,sys
 path=sys.argv[1]
 try:
@@ -47,7 +48,7 @@ elif isinstance(cur, bool):
     print("true" if cur else "false")
 else:
     print(cur)
-PY
+' "$path" <<<"$json"
     return 0
   fi
 
@@ -61,7 +62,7 @@ NODES=(
   "178.156.219.107"
 )
 
-if ! need_cmd ssh || ! need_cmd curl; then
+if ! need_cmd "$SSH_BIN" || ! need_cmd curl; then
   echo "ERROR: need ssh and curl" >&2
   exit 127
 fi
@@ -73,11 +74,11 @@ for ip in "${NODES[@]}"; do
   echo "================================================================================"
 
   echo "--- systemctl status ippan-node ---"
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
+  "$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
     "systemctl status ippan-node --no-pager || true"
 
   echo "--- journalctl -u ippan-node (last 120) ---"
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
+  "$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
     "journalctl -u ippan-node -n 120 --no-pager || true"
 
   echo "--- /status summary ---"
@@ -95,15 +96,15 @@ for ip in "${NODES[@]}"; do
   fi
 
   echo "--- exporter timer/service status ---"
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
+  "$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
     "systemctl status ippan-export-dataset.timer --no-pager || true; echo; systemctl status ippan-export-dataset.service --no-pager || true"
 
   echo "--- exporter service logs (last 80) ---"
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
+  "$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
     "journalctl -u ippan-export-dataset.service -n 80 --no-pager || true"
 
   echo "--- newest dataset file ---"
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
+  "$SSH_BIN" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" \
     "set -euo pipefail
 f=\$(ls -1t /var/lib/ippan/ai_datasets/devnet_dataset_*.csv.gz 2>/dev/null | head -n 1 || true)
 echo \"newest=\${f:-<none>}\"
