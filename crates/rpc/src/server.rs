@@ -444,6 +444,14 @@ struct AiStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    shadow_configured: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shadow_loaded: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shadow_model_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shadow_model_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     consensus_mode: Option<String>,
 }
 
@@ -454,6 +462,10 @@ impl AiStatus {
             using_stub: false,
             model_hash: None,
             model_version: None,
+            shadow_configured: None,
+            shadow_loaded: None,
+            shadow_model_hash: None,
+            shadow_model_version: None,
             consensus_mode: None,
         }
     }
@@ -466,6 +478,10 @@ impl From<AiConsensusStatus> for AiStatus {
             using_stub: status.using_stub,
             model_hash: status.model_hash,
             model_version: status.model_version,
+            shadow_configured: Some(status.shadow_configured),
+            shadow_loaded: Some(status.shadow_loaded),
+            shadow_model_hash: status.shadow_model_hash,
+            shadow_model_version: status.shadow_model_version,
             consensus_mode: None,
         }
     }
@@ -1873,6 +1889,14 @@ async fn handle_status(
         None
     };
 
+    let mut ai_view = if let Some(handle) = &state.ai_status {
+        let snapshot = handle.snapshot().await;
+        AiStatus::from(snapshot)
+    } else {
+        AiStatus::disabled()
+    };
+    ai_view.consensus_mode = Some(state.consensus_mode.clone());
+
     record_security_success(&state, &addr, ENDPOINT).await;
 
     let dataset_export = build_dataset_export_status();
@@ -1888,6 +1912,7 @@ async fn handle_status(
         "requests_served": requests_served,
         "network_active": state.p2p_network.is_some(),
         "consensus": consensus_view,
+        "ai": ai_view,
         "mempool_size": mempool_size,
         "dataset_export": dataset_export
     })))

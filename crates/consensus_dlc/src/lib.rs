@@ -115,6 +115,18 @@ pub struct AiConsensusStatus {
     pub using_stub: bool,
     pub model_hash: Option<String>,
     pub model_version: Option<String>,
+    /// Shadow model is configured (should not affect decisions; observability only)
+    #[serde(default)]
+    pub shadow_configured: bool,
+    /// Shadow model loaded successfully
+    #[serde(default)]
+    pub shadow_loaded: bool,
+    /// Shadow model canonical hash (BLAKE3 hex) when loaded
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_model_hash: Option<String>,
+    /// Shadow model version when loaded
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_model_version: Option<String>,
 }
 
 impl AiConsensusStatus {
@@ -124,6 +136,10 @@ impl AiConsensusStatus {
             using_stub: false,
             model_hash: None,
             model_version: None,
+            shadow_configured: false,
+            shadow_loaded: false,
+            shadow_model_hash: None,
+            shadow_model_version: None,
         }
     }
 }
@@ -158,6 +174,10 @@ impl DlcConsensus {
             using_stub: false,
             model_hash: None,
             model_version: None,
+            shadow_configured: false,
+            shadow_loaded: false,
+            shadow_model_hash: None,
+            shadow_model_version: None,
         };
 
         let model = match FairnessModel::load_from_env_registry() {
@@ -186,6 +206,27 @@ impl DlcConsensus {
                 }
             }
         };
+
+        // Optional: load shadow model from config (observability only)
+        if let Ok((shadow_model, shadow_hash)) = load_shadow_model_from_env_config() {
+            ai_status.shadow_configured = true;
+            ai_status.shadow_loaded = true;
+            ai_status.shadow_model_hash = Some(shadow_hash.clone());
+            ai_status.shadow_model_version = shadow_model.model_version();
+            tracing::info!(
+                target: "consensus_dlc::dgbdt",
+                hash = %shadow_hash,
+                "Loaded D-GBDT shadow fairness model (shadow only; no decision impact)"
+            );
+        } else if shadow_model_is_configured_from_env() {
+            // Configured but failed to load: expose via status, but do not crash the node.
+            ai_status.shadow_configured = true;
+            ai_status.shadow_loaded = false;
+            tracing::warn!(
+                target: "consensus_dlc::dgbdt",
+                "Shadow fairness model configured but failed to load (shadow disabled)"
+            );
+        }
 
         Self {
             dag: BlockDAG::new(),
@@ -342,6 +383,74 @@ impl DlcConsensus {
     pub fn ai_status(&self) -> AiConsensusStatus {
         self.ai_status.clone()
     }
+}
+
+fn shadow_model_is_configured_from_env() -> bool {
+    use std::env;
+    use std::path::Path;
+
+    let config_path =
+        env::var(crate::dgbdt::DLC_CONFIG_ENV_KEY).unwrap_or_else(|_| crate::dgbdt::DEFAULT_DLC_CONFIG_PATH.to_string());
+    let config_path = Path::new(&config_path);
+    let Ok(contents) = std::fs::read_to_string(config_path) else {
+        return false;
+    };
+    let Ok(value) = toml::from_str::<toml::Value>(&contents) else {
+        return false;
+    };
+    value
+        .get("dgbdt")
+        .and_then(|d| d.get("shadow_model"))
+        .is_some()
+}
+
+fn load_shadow_model_from_env_config(
+) -> anyhow::Result<(crate::dgbdt::FairnessModel, String)> {
+    use ippan_ai_registry::d_gbdt::load_fairness_model_strict;
+    use std::env;
+    use std::path::{Path, PathBuf};
+
+    let config_path =
+        env::var(crate::dgbdt::DLC_CONFIG_ENV_KEY).unwrap_or_else(|_| crate::dgbdt::DEFAULT_DLC_CONFIG_PATH.to_string());
+    let config_path = PathBuf::from(config_path);
+    let contents = std::fs::read_to_string(&config_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read DLC config {}: {e}", config_path.display()))?;
+    let value: toml::Value = toml::from_str(&contents)
+        .map_err(|e| anyhow::anyhow!("Failed to parse DLC config {}: {e}", config_path.display()))?;
+
+    let shadow = value
+        .get("dgbdt")
+        .and_then(|d| d.get("shadow_model"))
+        .and_then(|v| v.as_table())
+        .ok_or_else(|| anyhow::anyhow!("No [dgbdt.shadow_model] configured"))?;
+
+    let path = shadow
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing dgbdt.shadow_model.path"))?;
+
+    let expected_hash = shadow
+        .get("expected_hash")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing dgbdt.shadow_model.expected_hash"))?;
+
+    let resolved = resolve_model_path(&config_path, Path::new(path));
+    let (model, hash) = load_fairness_model_strict(&resolved, expected_hash)
+        .map_err(|e| anyhow::anyhow!("Shadow model strict load failed: {e}"))?;
+
+    Ok((crate::dgbdt::FairnessModel::from_d_gbdt_model(model), hash))
+}
+
+fn resolve_model_path(config_path: &std::path::Path, model_path: &std::path::Path) -> std::path::PathBuf {
+    if model_path.is_absolute() {
+        return model_path.to_path_buf();
+    }
+    // Match `ai_registry` behavior: resolve relative to repo root when config is `config/dlc.toml`.
+    config_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join(model_path)
 }
 
 /// Result of processing a consensus round

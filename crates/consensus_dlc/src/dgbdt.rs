@@ -15,10 +15,10 @@ use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 
-const REGISTRY_ENV_KEY: &str = "IPPAN_DGBDT_REGISTRY_PATH";
-const DEFAULT_REGISTRY_PATH: &str = "data/dgbdt_registry";
-const DLC_CONFIG_ENV_KEY: &str = "IPPAN_DLC_CONFIG_PATH";
-const DEFAULT_DLC_CONFIG_PATH: &str = "config/dlc.toml";
+pub(crate) const REGISTRY_ENV_KEY: &str = "IPPAN_DGBDT_REGISTRY_PATH";
+pub(crate) const DEFAULT_REGISTRY_PATH: &str = "data/dgbdt_registry";
+pub(crate) const DLC_CONFIG_ENV_KEY: &str = "IPPAN_DLC_CONFIG_PATH";
+pub(crate) const DEFAULT_DLC_CONFIG_PATH: &str = "config/dlc.toml";
 
 /// Validator metrics used for fairness scoring (deterministic, scaled integers)
 /// All percentage/ratio fields are scaled by 10000 (e.g., 10000 = 100%)

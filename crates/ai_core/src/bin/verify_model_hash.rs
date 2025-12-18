@@ -13,32 +13,11 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("config/dlc.toml"));
 
     let (model_path, expected_hash) = parse_model_entry(&config_path)?;
-    let resolved_path = resolve_model_path(&config_path, &model_path);
+    verify_one(&config_path, &model_path, &expected_hash, "active")?;
 
-    let model = load_model_from_path(&resolved_path).with_context(|| {
-        format!(
-            "Failed to load model from {} referenced in {}",
-            resolved_path.display(),
-            config_path.display()
-        )
-    })?;
-
-    let actual_hash = model_hash_hex(&model)?;
-
-    if !actual_hash.eq_ignore_ascii_case(&expected_hash) {
-        bail!(
-            "Model hash mismatch: expected {}, computed {} for {}",
-            expected_hash,
-            actual_hash,
-            resolved_path.display()
-        );
+    if let Some((shadow_path, shadow_expected)) = parse_shadow_model_entry(&config_path)? {
+        verify_one(&config_path, &shadow_path, &shadow_expected, "shadow")?;
     }
-
-    println!(
-        "✅ Model hash matches expected value {} for {}",
-        actual_hash,
-        resolved_path.display()
-    );
 
     Ok(())
 }
@@ -69,6 +48,64 @@ fn parse_model_entry(config_path: &Path) -> Result<(PathBuf, String)> {
         .to_owned();
 
     Ok((PathBuf::from(model_path), expected_hash))
+}
+
+fn parse_shadow_model_entry(config_path: &Path) -> Result<Option<(PathBuf, String)>> {
+    let contents = fs::read_to_string(config_path)
+        .with_context(|| format!("Unable to read config file at {}", config_path.display()))?;
+
+    let value: Value = toml::from_str(&contents)
+        .with_context(|| format!("Failed to parse TOML at {}", config_path.display()))?;
+
+    let Some(dgbdt) = value.get("dgbdt") else {
+        return Ok(None);
+    };
+    let Some(shadow) = dgbdt.get("shadow_model").and_then(Value::as_table) else {
+        return Ok(None);
+    };
+
+    let model_path = shadow
+        .get("path")
+        .and_then(Value::as_str)
+        .context("Missing dgbdt.shadow_model.path entry")?;
+
+    let expected_hash = shadow
+        .get("expected_hash")
+        .and_then(Value::as_str)
+        .context("Missing dgbdt.shadow_model.expected_hash entry")?
+        .trim()
+        .to_owned();
+
+    Ok(Some((PathBuf::from(model_path), expected_hash)))
+}
+
+fn verify_one(config_path: &Path, model_path: &Path, expected_hash: &str, label: &str) -> Result<()> {
+    let resolved_path = resolve_model_path(config_path, model_path);
+    let model = load_model_from_path(&resolved_path).with_context(|| {
+        format!(
+            "Failed to load {label} model from {} referenced in {}",
+            resolved_path.display(),
+            config_path.display()
+        )
+    })?;
+
+    let actual_hash = model_hash_hex(&model)?;
+
+    if !actual_hash.eq_ignore_ascii_case(expected_hash) {
+        bail!(
+            "{label} model hash mismatch: expected {}, computed {} for {}",
+            expected_hash,
+            actual_hash,
+            resolved_path.display()
+        );
+    }
+
+    println!(
+        "✅ {label} model hash matches expected value {} for {}",
+        actual_hash,
+        resolved_path.display()
+    );
+    Ok(())
 }
 
 fn resolve_model_path(config_path: &Path, model_path: &Path) -> PathBuf {

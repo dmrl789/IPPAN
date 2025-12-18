@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -25,13 +26,14 @@ import pandas as pd
 from sklearn.metrics import mean_squared_error
 
 try:
-    from blake3 import blake3
-except ImportError:
-    print(
-        "ERROR: 'blake3' package required. Install with: pip install blake3==0.4.1",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+    from blake3 import blake3  # type: ignore
+
+    _HAS_PY_BLAKE3 = True
+except Exception:
+    # We intentionally allow a fallback path for environments where `pip install blake3`
+    # is not available (e.g., missing wheels / Rust build issues). In that case we
+    # compute the canonical hash using the existing Rust helper binary.
+    _HAS_PY_BLAKE3 = False
 
 
 RANDOM_SEED = 42
@@ -79,8 +81,29 @@ def _pick_latest_dataset_file(data_dir: Path) -> Path:
 
 
 def _compute_model_hash_b3(model_path: Path) -> str:
-    data = model_path.read_bytes()
-    return blake3(data).hexdigest()
+    if _HAS_PY_BLAKE3:
+        data = model_path.read_bytes()
+        return blake3(data).hexdigest()
+
+    # Fallback: use Rust canonical hasher (matches verifier expectations).
+    # Requires: `cargo` available and workspace builds.
+    out = subprocess.check_output(
+        [
+            "cargo",
+            "run",
+            "-q",
+            "-p",
+            "ippan-ai-core",
+            "--bin",
+            "compute_model_hash",
+            "--",
+            str(model_path),
+        ],
+        text=True,
+    ).strip()
+    if not out or len(out) != 64:
+        raise RuntimeError(f"Unexpected compute_model_hash output: {out!r}")
+    return out
 
 
 def quantize_tree_structure(tree: Dict[str, Any]) -> List[Dict[str, Any]]:
