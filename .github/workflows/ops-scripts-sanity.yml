@@ -1,0 +1,45 @@
+name: Ops Scripts Sanity
+
+on:
+  pull_request: {}
+  push:
+    branches: [master]
+
+jobs:
+  ops-scripts-sanity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure ops scripts are executable (mode 100755)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in scripts/ops/rollout-devnet.sh scripts/ops/triage-devnet.sh; do
+            mode="$(git ls-files -s "$f" | awk '{print $1}')"
+            if [[ "$mode" != "100755" ]]; then
+              echo "FAIL: $f is not executable in git index (expected 100755, got $mode)"
+              exit 1
+            fi
+          done
+
+      - name: bash -n (syntax)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/rollout-devnet.sh
+          bash -n scripts/ops/triage-devnet.sh
+
+      - name: shellcheck (optional)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x scripts/ops/rollout-devnet.sh scripts/ops/triage-devnet.sh
+          else
+            echo "shellcheck not installed; skipping"
+          fi
+
+
+

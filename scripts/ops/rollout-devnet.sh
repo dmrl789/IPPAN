@@ -23,6 +23,52 @@ OTHER_IPS=("188.245.97.41" "135.181.145.174" "178.156.219.107")
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
+VERIFY_ONLY=0
+DRY_RUN=0
+APPLY_EXPORTER_UNIT=1
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/ops/rollout-devnet.sh [--verify-only] [--dry-run] [--apply-exporter-unit=0|1]
+
+Options:
+  --verify-only            Skip SSH deploy; only run HTTP verification + build_sha parity checks
+  --dry-run                Print the SSH commands that would run, do not execute them (exits 0)
+  --apply-exporter-unit=0  Do not rewrite exporter systemd unit on nodes
+  --apply-exporter-unit=1  Rewrite exporter systemd unit on nodes (default)
+  -h, --help               Show this help
+
+Env:
+  RPC_PORT (default: 8080)
+  EXPECTED_PEERS (default: 4)
+  MAX_DATASET_AGE_SECONDS (default: 28800)
+  TIME_SAMPLES (default: 10)
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --verify-only) VERIFY_ONLY=1; shift ;;
+      --dry-run) DRY_RUN=1; shift ;;
+      --apply-exporter-unit=0) APPLY_EXPORTER_UNIT=0; shift ;;
+      --apply-exporter-unit=1) APPLY_EXPORTER_UNIT=1; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) echo "ERROR: unknown arg: $1" >&2; usage >&2; exit 2 ;;
+    esac
+  done
+}
+
+run_cmd() {
+  # Usage: run_cmd <desc> <command...>
+  local desc="$1"; shift
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "[dry-run] ${desc}: $*"
+    return 0
+  fi
+  "$@"
+}
+
 json_get_path() {
   # Usage: json_get_path '<json>' 'status' OR 'dataset_export.enabled'
   local json="$1"
@@ -133,8 +179,9 @@ deploy_node() {
   local ip="$1"
   echo "=== DEPLOY ${ip} ==="
 
-  # Harden exporter unit on node (template lives in repo; apply directly here).
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
+  if [[ "$APPLY_EXPORTER_UNIT" -eq 1 ]]; then
+    # Harden exporter unit on node (template lives in repo; apply directly here).
+    run_cmd "apply exporter unit ($ip)" ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
 cat >/etc/systemd/system/ippan-export-dataset.service <<'EOF'
 [Unit]
 Description=IPPAN Devnet Dataset Export (D-GBDT telemetry)
@@ -154,10 +201,11 @@ StandardError=journal
 ExecStart=/usr/local/lib/ippan/export-dataset.sh
 EOF
 systemctl daemon-reload
-" || true
+"
+  fi
 
   # Update and build as ippan-devnet (avoids git ownership ambiguity).
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
+  run_cmd "update+build ($ip)" ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
 sudo -u ippan-devnet -H bash -lc 'set -euo pipefail
   git config --global --add safe.directory /opt/ippan || true
   cd /opt/ippan
@@ -169,7 +217,7 @@ sudo -u ippan-devnet -H bash -lc 'set -euo pipefail
 " 
 
   # Stop → install (avoid \"text file busy\") → start
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
+  run_cmd "install+restart ($ip)" ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "root@${ip}" "set -euo pipefail
 TS=\$(date -u +%Y%m%dT%H%M%SZ)
 cp -a /usr/local/bin/ippan-node /usr/local/bin/ippan-node.bak.\${TS} || true
 systemctl stop ippan-node
@@ -181,13 +229,26 @@ systemctl status ippan-node --no-pager | head -n 8
 }
 
 main() {
+  parse_args "$@"
+
   if ! need_cmd curl || ! need_cmd ssh; then
     echo "ERROR: missing curl and/or ssh" >&2
     exit 127
   fi
+  if [[ "$VERIFY_ONLY" -eq 1 ]] && [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "ERROR: cannot combine --verify-only with --dry-run" >&2
+    exit 2
+  fi
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "NOTE: --dry-run set; no changes will be made and no HTTP checks will be run."
+    echo "OK: dry-run complete"
+    exit 0
+  fi
 
   echo "=== CANARY FIRST: ${CANARY_IP} ==="
-  deploy_node "${CANARY_IP}"
+  if [[ "$VERIFY_ONLY" -ne 1 ]]; then
+    deploy_node "${CANARY_IP}"
+  fi
   canary_sha="$(verify_node_http "${CANARY_IP}")" || {
     echo "CANARY FAILED: aborting rollout." >&2
     exit 1
@@ -195,7 +256,9 @@ main() {
 
   echo "=== REMAINING NODES ==="
   for ip in "${OTHER_IPS[@]}"; do
-    deploy_node "$ip"
+    if [[ "$VERIFY_ONLY" -ne 1 ]]; then
+      deploy_node "$ip"
+    fi
     node_sha="$(verify_node_http "$ip")"
     if [[ "$node_sha" != "$canary_sha" ]]; then
       echo "FAIL: build_sha drift (canary=${canary_sha} node=${ip} sha=${node_sha})" >&2
