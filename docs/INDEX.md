@@ -81,6 +81,9 @@ cargo build --workspace --release
   - Determinism checklist and troubleshooting
 - **D-GBDT Devnet Training Spec**: [docs/ai/DGBDT_TRAINING_SPEC.md](ai/DGBDT_TRAINING_SPEC.md) - Devnet dataset contract + training + promotion gates
 - **D-GBDT Model Metadata Template**: [docs/ai/models/_TEMPLATE.md](ai/models/_TEMPLATE.md) - Template for `docs/ai/models/ippan_d_gbdt_devnet_vN.md`
+- **Devnet Training Scripts**:
+  - Manual train: `scripts/ai/train-dgbdt-devnet.sh`
+  - Train + capture hash (ready to wire into verifier): `scripts/ai/train-and-verify-devnet.sh`
 - **AI Roadmap**: [docs/ai/ROADMAP.md](ai/ROADMAP.md) - vNext training pipeline TODOs and promotion intent
 - **AI Implementation Guide**: [docs/AI_IMPLEMENTATION_GUIDE.md](AI_IMPLEMENTATION_GUIDE.md) - AI system overview
 - **AI Model Lifecycle**: [docs/AI_MODEL_LIFECYCLE.md](AI_MODEL_LIFECYCLE.md) - Model training and deployment

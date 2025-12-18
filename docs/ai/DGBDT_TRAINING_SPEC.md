@@ -132,6 +132,11 @@ If used, record:
 - **Model format**: JSON-serialized deterministic D-GBDT model (canonical JSON)
 - **Runtime expectation**: strict hash-verified JSON load (see `docs/REPO_GUARDRAILS.md`)
 
+**Devnet output location (trainer default)**
+
+- `ai_assets/models/devnet/<model_id>.json`
+- Default `model_id`: `ippan_d_gbdt_devnet_v2` (vNext starting point)
+
 The canonical model artifact is produced by the trainer with:
 
 - stable key ordering (`sort_keys=true`)
