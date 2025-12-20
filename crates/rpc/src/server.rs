@@ -3631,6 +3631,10 @@ mod tests {
             using_stub: false,
             model_hash: Some("deadbeef".into()),
             model_version: Some("v2".into()),
+            shadow_configured: false,
+            shadow_loaded: false,
+            shadow_model_hash: None,
+            shadow_model_version: None,
         });
 
         let mut state = (*make_app_state()).clone();

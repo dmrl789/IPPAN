@@ -33,11 +33,12 @@ stake = 0.05
 path = "crates/ai_registry/models/ippan_d_gbdt_offline_20251213T171643Z.json"
 expected_hash = "9dfebc829b5726a2030b3a28ff1bcc21cdebf7f1b2e652085b3df0c6b3a14189"
 
-[dgbdt.shadow_model]
+# [dgbdt.shadow_model]
 # Shadow model is loaded + hash-verified for observability only.
 # It MUST NOT affect live selection/rewards until explicitly promoted.
-path = "ai_assets/models/devnet/ippan_d_gbdt_devnet_v2.json"
-expected_hash = "150167882b7f598dcb54df2d6853790202c9d6ee4a79ba6348576c093499179c"
+# Commented out: shadow model file not yet committed to repository.
+# path = "ai_assets/models/devnet/ippan_d_gbdt_devnet_v2.json"
+# expected_hash = "150167882b7f598dcb54df2d6853790202c9d6ee4a79ba6348576c093499179c"
 
 [shadow_verifiers]
 max_verifiers = 5
