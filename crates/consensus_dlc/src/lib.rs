@@ -389,8 +389,8 @@ fn shadow_model_is_configured_from_env() -> bool {
     use std::env;
     use std::path::Path;
 
-    let config_path =
-        env::var(crate::dgbdt::DLC_CONFIG_ENV_KEY).unwrap_or_else(|_| crate::dgbdt::DEFAULT_DLC_CONFIG_PATH.to_string());
+    let config_path = env::var(crate::dgbdt::DLC_CONFIG_ENV_KEY)
+        .unwrap_or_else(|_| crate::dgbdt::DEFAULT_DLC_CONFIG_PATH.to_string());
     let config_path = Path::new(&config_path);
     let Ok(contents) = std::fs::read_to_string(config_path) else {
         return false;
@@ -404,19 +404,19 @@ fn shadow_model_is_configured_from_env() -> bool {
         .is_some()
 }
 
-fn load_shadow_model_from_env_config(
-) -> anyhow::Result<(crate::dgbdt::FairnessModel, String)> {
+fn load_shadow_model_from_env_config() -> anyhow::Result<(crate::dgbdt::FairnessModel, String)> {
     use ippan_ai_registry::d_gbdt::load_fairness_model_strict;
     use std::env;
     use std::path::{Path, PathBuf};
 
-    let config_path =
-        env::var(crate::dgbdt::DLC_CONFIG_ENV_KEY).unwrap_or_else(|_| crate::dgbdt::DEFAULT_DLC_CONFIG_PATH.to_string());
+    let config_path = env::var(crate::dgbdt::DLC_CONFIG_ENV_KEY)
+        .unwrap_or_else(|_| crate::dgbdt::DEFAULT_DLC_CONFIG_PATH.to_string());
     let config_path = PathBuf::from(config_path);
     let contents = std::fs::read_to_string(&config_path)
         .map_err(|e| anyhow::anyhow!("Failed to read DLC config {}: {e}", config_path.display()))?;
-    let value: toml::Value = toml::from_str(&contents)
-        .map_err(|e| anyhow::anyhow!("Failed to parse DLC config {}: {e}", config_path.display()))?;
+    let value: toml::Value = toml::from_str(&contents).map_err(|e| {
+        anyhow::anyhow!("Failed to parse DLC config {}: {e}", config_path.display())
+    })?;
 
     let shadow = value
         .get("dgbdt")
@@ -441,7 +441,10 @@ fn load_shadow_model_from_env_config(
     Ok((crate::dgbdt::FairnessModel::from_d_gbdt_model(model), hash))
 }
 
-fn resolve_model_path(config_path: &std::path::Path, model_path: &std::path::Path) -> std::path::PathBuf {
+fn resolve_model_path(
+    config_path: &std::path::Path,
+    model_path: &std::path::Path,
+) -> std::path::PathBuf {
     if model_path.is_absolute() {
         return model_path.to_path_buf();
     }

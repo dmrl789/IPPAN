@@ -79,7 +79,12 @@ fn parse_shadow_model_entry(config_path: &Path) -> Result<Option<(PathBuf, Strin
     Ok(Some((PathBuf::from(model_path), expected_hash)))
 }
 
-fn verify_one(config_path: &Path, model_path: &Path, expected_hash: &str, label: &str) -> Result<()> {
+fn verify_one(
+    config_path: &Path,
+    model_path: &Path,
+    expected_hash: &str,
+    label: &str,
+) -> Result<()> {
     let resolved_path = resolve_model_path(config_path, model_path);
     let model = load_model_from_path(&resolved_path).with_context(|| {
         format!(
