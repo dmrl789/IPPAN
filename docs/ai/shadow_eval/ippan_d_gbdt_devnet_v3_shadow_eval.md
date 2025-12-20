@@ -51,6 +51,48 @@ shadow hash.
 The integrity analysis for devnet v3 should treat this timestamp as the start of
 the “clean” period in which all four nodes were running the expected shadow model.
 
+## Final clean-window verdict (partial observed window)
+
+- Target evaluation window: **2025-12-19T12:58:16Z → 2025-12-20T12:58:16Z**
+- Actual observed logs window: **2025-12-19T12:58:16Z → 2025-12-20T11:26:11Z**
+- Analyzer: `scripts/ai/shadow_eval/analyze_shadow_status_window.py`
+- Source log dir: `logs/ai_shadow`
+- Full analyzer output: `docs/devnet_v3_shadow_eval_FINAL_clean_24h.txt`
+
+Summary:
+
+```text
+OK: All samples in window match EXPECTED_HASH and shadow_loaded=true on all nodes.
+```
+
+Per-node stats (excerpt):
+
+```text
+Node: root_188.245.97.41
+  Samples parsed: 132
+  shadow_loaded=true: 132 (100.0%)
+  Shadow hashes observed:
+    994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270  (count=132)
+
+Node: root_135.181.145.174
+  Samples parsed: 132
+  shadow_loaded=true: 132 (100.0%)
+  Shadow hashes observed:
+    994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270  (count=132)
+
+Node: root_178.156.219.107
+  Samples parsed: 132
+  shadow_loaded=true: 132 (100.0%)
+  Shadow hashes observed:
+    994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270  (count=132)
+
+Node: root_5.223.51.238
+  Samples parsed: 132
+  shadow_loaded=true: 132 (100.0%)
+  Shadow hashes observed:
+    994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270  (count=132)
+```
+
 ## Online checks (24–72h)
 
 From repo root:

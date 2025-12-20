@@ -1,0 +1,34 @@
+### Shadow status window analysis ###
+LOG_DIR: logs/ai_shadow
+EXPECTED_HASH: 994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270
+WINDOW_SINCE: 2025-12-19T12:58:16Z
+WINDOW_UNTIL: 2025-12-20T12:58:16Z (hours=24.0)
+FILES_TOTAL_IN_WINDOW (name-filtered): 528
+PARSE_ERRORS_IN_WINDOW: 0
+OBSERVED_WINDOW_TS: 2025-12-19T12:58:16Z -> 2025-12-20T11:26:11Z
+
+Node: root_188.245.97.41
+  Samples parsed: 132
+  shadow_loaded=true: 132 (100.0%)
+  Shadow hashes observed:
+    994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270  (count=132)
+
+Node: root_135.181.145.174
+  Samples parsed: 132
+  shadow_loaded=true: 132 (100.0%)
+  Shadow hashes observed:
+    994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270  (count=132)
+
+Node: root_178.156.219.107
+  Samples parsed: 132
+  shadow_loaded=true: 132 (100.0%)
+  Shadow hashes observed:
+    994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270  (count=132)
+
+Node: root_5.223.51.238
+  Samples parsed: 132
+  shadow_loaded=true: 132 (100.0%)
+  Shadow hashes observed:
+    994993e4ec1a6bb01dc5c9a3f1ce52cca7dad58f673385c7cf2c8b00d0c6c270  (count=132)
+
+OK: All samples in window match EXPECTED_HASH and shadow_loaded=true on all nodes.
