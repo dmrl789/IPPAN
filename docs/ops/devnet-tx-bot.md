@@ -297,4 +297,22 @@ It will:
 ./docs/ops/devnet-window2-after-24h.sh --activate
 ```
 
+---
+
+## 6) Live monitor (during the 24h window)
+
+Run the 60s heartbeat monitor:
+
+```bash
+./docs/ops/devnet-window2-live-monitor.sh
+```
+
+Optional env vars:
+
+- `SLEEP_SEC=30`: faster refresh
+- `BOT_HOST=...`: if bot host differs
+- `RPC_PRIMARY=...`: if primary RPC differs
+- `BOT_HEX=... USER_HEX=...`: only needed if your address format isn’t Base58Check(v0)/32-byte pubkey (the script will auto-derive hex from `BOT_ADDR`/`USER_ADDR` in the common case)
+
+
 
