@@ -55,11 +55,12 @@ PY
 
 mv "$tmp_json" "$OUT_DIR/senders.json"
 
-for i in $(seq -w 1 "$N"); do
-  key="$KEY_DIR/s${i}.key"
+for i in $(seq 1 "$N"); do
+  i3="$(printf "%03d" "$i")"
+  key="$KEY_DIR/s${i3}.key"
   # generate-key refuses unencrypted keys unless --insecure-plaintext is set.
   # shellcheck disable=SC2086
-  $WALLET_BIN --network "$NETWORK" generate-key --out "$key" --force --insecure-plaintext --notes "txload sender s${i}" >/dev/null
+  $WALLET_BIN --network "$NETWORK" generate-key --out "$key" --force --insecure-plaintext --notes "txload sender s${i3}" >/dev/null
 
   # shellcheck disable=SC2086
   info="$($WALLET_BIN --network "$NETWORK" show-address --key "$key" --json)"
