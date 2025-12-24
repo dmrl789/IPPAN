@@ -44,10 +44,16 @@ else
 fi
 
 sleep 2
-echo \"--- local /status ---\"
-curl -sS http://127.0.0.1:8080/status | head -c 1200; echo
-echo \"--- local /consensus/view ---\"
-curl -sS http://127.0.0.1:8080/consensus/view | head -c 1200; echo
+echo \"--- local listen (ss -lntp | grep ports) ---\"
+ss -lntp 2>/dev/null | grep -E \":(8080|18080|28080|38080|3000|3001)\\b\" || true
+echo \"--- local /status (try 8080 then 18080) ---\"
+curl -sS --max-time 2 http://127.0.0.1:8080/status | head -c 1200; echo
+curl -sS --max-time 2 http://127.0.0.1:18080/status | head -c 1200; echo
+echo \"--- local /consensus/view (try 8080 then 18080) ---\"
+curl -sS --max-time 2 http://127.0.0.1:8080/consensus/view | head -c 1200; echo
+curl -sS --max-time 2 http://127.0.0.1:18080/consensus/view | head -c 1200; echo
+echo \"--- systemd status tail ---\"
+systemctl status ippan-node --no-pager -l | tail -n 60 || true
 '"
 
 echo "== Done $NODE_IP =="
