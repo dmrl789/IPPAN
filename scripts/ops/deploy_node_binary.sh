@@ -30,7 +30,7 @@ echo "== Deploying to $NODE_IP =="
 scp $SCP_OPTS "$BIN_LOCAL" "root@$NODE_IP:${REMOTE_BIN}.new"
 
 ssh $SSH_OPTS "root@$NODE_IP" "bash -lc '
-set -euo pipefail
+set -u
 mv ${REMOTE_BIN}.new ${REMOTE_BIN}
 chmod +x ${REMOTE_BIN}
 
@@ -47,11 +47,11 @@ sleep 2
 echo \"--- local listen (ss -lntp | grep ports) ---\"
 ss -lntp 2>/dev/null | grep -E \":(8080|18080|28080|38080|3000|3001)\\b\" || true
 echo \"--- local /status (try 8080 then 18080) ---\"
-curl -sS --max-time 2 http://127.0.0.1:8080/status | head -c 1200; echo
-curl -sS --max-time 2 http://127.0.0.1:18080/status | head -c 1200; echo
+curl -sS --max-time 2 http://127.0.0.1:8080/status | head -c 1200 || true; echo
+curl -sS --max-time 2 http://127.0.0.1:18080/status | head -c 1200 || true; echo
 echo \"--- local /consensus/view (try 8080 then 18080) ---\"
-curl -sS --max-time 2 http://127.0.0.1:8080/consensus/view | head -c 1200; echo
-curl -sS --max-time 2 http://127.0.0.1:18080/consensus/view | head -c 1200; echo
+curl -sS --max-time 2 http://127.0.0.1:8080/consensus/view | head -c 1200 || true; echo
+curl -sS --max-time 2 http://127.0.0.1:18080/consensus/view | head -c 1200 || true; echo
 echo \"--- systemd status tail ---\"
 systemctl status ippan-node --no-pager -l | tail -n 60 || true
 '"
