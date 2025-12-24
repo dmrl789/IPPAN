@@ -2151,7 +2151,9 @@ fn compute_active_validators(state: &Arc<AppState>) -> (u64, Vec<String>, &'stat
     let mut ids: Vec<String> = vec![state.self_validator_id_hex.clone()];
 
     let now = ippan_time_now();
-    let active_window_us: u64 = 30_000_000; // 30s
+    // Peers typically announce at ~60s intervals in devnet configs; use a window wide enough
+    // to avoid false "1 validator" regressions when announcements are sparse.
+    let active_window_us: u64 = 180_000_000; // 180s
     if let Some(net) = &state.p2p_network {
         for peer in net.get_peer_metadata() {
             // Only count active/connected peers seen recently.
