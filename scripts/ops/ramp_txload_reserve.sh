@@ -187,10 +187,10 @@ log "building ippan-txload..."
 cargo build --release -p ippan-txload >/dev/null
 
 # Schedule (edit freely)
-run_stage "tps50_20s"   50  20  200  2500
-run_stage "tps100_30s"  100 30  300  6000
-run_stage "tps200_30s"  200 30  600  12000
-run_stage "tps300_30s"  300 30  800  18000
+run_stage "tps100_20s"  100 20  300  5000
+run_stage "tps200_20s"  200 20  600  10000
+run_stage "tps300_20s"  300 20  800  15000
+run_stage "tps400_20s"  400 20  1000 20000
 
 log "ALL DONE. Evidence root: $OUT"
 
