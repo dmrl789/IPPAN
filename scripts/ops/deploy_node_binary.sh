@@ -43,9 +43,13 @@ else
   echo \"nohup: started\"
 fi
 
-sleep 2
-echo \"--- local listen (ss -lntp | grep ports) ---\"
-ss -lntp 2>/dev/null | grep -E \":(8080|18080|28080|38080|3000|3001)\\b\" || true
+sleep 8
+echo \"--- local listen (ss/netstat, key ports) ---\"
+if command -v ss >/dev/null 2>&1; then
+  ss -lntp 2>/dev/null | grep -E \":(8080|18080|28080|38080|3000|3001)\\b\" || true
+else
+  netstat -lntp 2>/dev/null | grep -E \":(8080|18080|28080|38080|3000|3001)\\b\" || true
+fi
 echo \"--- local /status (try 8080 then 18080) ---\"
 curl -sS --max-time 2 http://127.0.0.1:8080/status | head -c 1200 || true; echo
 curl -sS --max-time 2 http://127.0.0.1:18080/status | head -c 1200 || true; echo
@@ -54,6 +58,8 @@ curl -sS --max-time 2 http://127.0.0.1:8080/consensus/view | head -c 1200 || tru
 curl -sS --max-time 2 http://127.0.0.1:18080/consensus/view | head -c 1200 || true; echo
 echo \"--- systemd status tail ---\"
 systemctl status ippan-node --no-pager -l | tail -n 60 || true
+echo \"--- journal tail ---\"
+journalctl -u ippan-node --no-pager -n 200 || true
 '"
 
 echo "== Done $NODE_IP =="
