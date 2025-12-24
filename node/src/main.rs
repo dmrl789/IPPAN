@@ -1483,6 +1483,32 @@ async fn main() -> Result<()> {
 
     let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::new());
 
+    // ---------------------------------------------------------------------
+    // Env-tunable RPC admission queue knobs (no consensus rule changes)
+    // ---------------------------------------------------------------------
+    fn env_u64(name: &str) -> Option<u64> {
+        std::env::var(name).ok().and_then(|v| v.parse::<u64>().ok())
+    }
+    fn env_usize(name: &str) -> Option<usize> {
+        std::env::var(name).ok().and_then(|v| v.parse::<usize>().ok())
+    }
+    fn clamp_u64(v: u64, lo: u64, hi: u64) -> u64 {
+        v.max(lo).min(hi)
+    }
+    fn clamp_usize(v: usize, lo: usize, hi: usize) -> usize {
+        v.max(lo).min(hi)
+    }
+
+    let default_payment_admission_capacity: u64 = 10_000;
+    let default_payment_admission_workers: usize = 8;
+
+    let payment_admission_capacity = env_u64("IPPAN_PAYMENT_ADMISSION_CAPACITY")
+        .map(|v| clamp_u64(v, 1_000, 1_000_000))
+        .unwrap_or(default_payment_admission_capacity) as usize;
+    let payment_admission_workers = env_usize("IPPAN_PAYMENT_ADMISSION_WORKERS")
+        .map(|v| clamp_usize(v, 1, 256))
+        .unwrap_or(default_payment_admission_workers);
+
     let app_state = AppState {
         storage: storage.clone(),
         start_time,
@@ -1512,8 +1538,8 @@ async fn main() -> Result<()> {
         self_validator_id_hex: hex::encode(config.validator_id),
         payment_admission_tx: None,
         payment_admission_depth: Arc::new(AtomicUsize::new(0)),
-        payment_admission_capacity: 10_000,
-        payment_admission_workers: 8,
+        payment_admission_capacity,
+        payment_admission_workers,
         nonce_reservation_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
 

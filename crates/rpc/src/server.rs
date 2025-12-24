@@ -2078,6 +2078,7 @@ async fn handle_status(
 
     let rpc_queue_depth = state.payment_admission_depth.load(Ordering::Relaxed) as u64;
     let rpc_queue_capacity = state.payment_admission_capacity as u64;
+    let rpc_queue_workers = state.payment_admission_workers as u64;
 
     Ok(Json(serde_json::json!({
         "status": "ok",
@@ -2097,6 +2098,7 @@ async fn handle_status(
         "mempool_size": mempool_size,
         "rpc_queue_depth": rpc_queue_depth,
         "rpc_queue_capacity": rpc_queue_capacity,
+        "rpc_queue_workers": rpc_queue_workers,
         "dataset_export": dataset_export
     })))
 }
@@ -2126,6 +2128,7 @@ async fn handle_consensus_view(
     let mempool_size = state.mempool.size();
     let rpc_queue_depth = state.payment_admission_depth.load(Ordering::Relaxed) as u64;
     let rpc_queue_capacity = state.payment_admission_capacity as u64;
+    let rpc_queue_workers = state.payment_admission_workers as u64;
     let (validator_count, validator_ids_sample, validator_source) =
         compute_active_validators(&state);
 
@@ -2136,6 +2139,7 @@ async fn handle_consensus_view(
         "mempool_size": mempool_size,
         "rpc_queue_depth": rpc_queue_depth,
         "rpc_queue_capacity": rpc_queue_capacity,
+        "rpc_queue_workers": rpc_queue_workers,
         "validator_count": validator_count,
         "validator_ids_sample": validator_ids_sample,
         "validator_source": validator_source,

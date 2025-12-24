@@ -121,6 +121,33 @@ curl -sS -X POST "$IPPAN_RPC_URL/nonce/reserve" \
 
 ---
 
+## Tuning RPC admission (accepted TPS)
+
+The `/tx/payment` path uses a **bounded admission queue**. Under load, the node should return **HTTP 429** (bounded backpressure) instead of collapsing with 503s.
+
+### Env knobs (node process)
+
+- `IPPAN_PAYMENT_ADMISSION_CAPACITY` (default: **10_000**; clamp: 1_000..1_000_000)
+- `IPPAN_PAYMENT_ADMISSION_WORKERS` (default: **8**; clamp: 1..256)
+
+### Verify effective settings
+
+```bash
+curl -s http://127.0.0.1:8080/status | head -c 1200; echo
+```
+
+Look for:
+
+- `rpc_queue_depth`
+- `rpc_queue_capacity`
+- `rpc_queue_workers`
+
+### Suggested starting points
+
+- 10–200 TPS: capacity **10_000**, workers **8**
+- 200–500 TPS: capacity **50_000**, workers **16**
+- 500+ TPS: capacity **100_000**, workers **32** (watch CPU + latency)
+
 ## What “success” looks like
 
 - **Accepted rate**: >= 95% accepted-to-mempool (or a clearly explained limit, e.g. rate-limiter / overload)
