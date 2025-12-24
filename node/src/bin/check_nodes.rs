@@ -42,6 +42,7 @@ struct Cli {
 
 #[derive(Debug, Deserialize, Clone, Default)]
 struct HealthPayload {
+    ok: Option<bool>,
     status: Option<String>,
     node_id: Option<String>,
     version: Option<String>,
@@ -76,6 +77,8 @@ struct NodeReport {
     status_status_code: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     health_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    health_ok_field: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     peer_count_reported: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -177,6 +180,7 @@ async fn check_node(
     }
     if let Some(payload) = health_payload {
         report.health_status = payload.status.clone();
+        report.health_ok_field = payload.ok;
         report.node_id = payload.node_id.clone();
         if report.version.is_none() {
             report.version = payload.version.clone();
@@ -218,7 +222,11 @@ fn evaluate_connectivity(report: &mut NodeReport, require_peers: usize) {
         .as_deref()
         .map(|s| s.eq_ignore_ascii_case("healthy"))
         .unwrap_or(false);
-    let health_ok = report.health_status_code == Some(200) && status_ok;
+    // Backward + forward compatible:
+    // - legacy /health: { status: "healthy", ... }
+    // - fast /health:   { ok: true, ts: ... }
+    let health_ok = report.health_status_code == Some(200)
+        && (status_ok || report.health_ok_field == Some(true));
     report.healthy = health_ok;
 
     if !health_ok {

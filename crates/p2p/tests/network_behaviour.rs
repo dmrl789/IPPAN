@@ -201,6 +201,8 @@ async fn distributed_metadata_converges_across_nodes() {
             NetworkMessage::PeerInfo {
                 peer_id: "node-b".to_string(),
                 addresses: vec![addr_b.clone()],
+                node_id: None,
+                validator_id_hex: None,
                 time_us: Some(time_primary),
             },
         )
@@ -212,6 +214,8 @@ async fn distributed_metadata_converges_across_nodes() {
             NetworkMessage::PeerInfo {
                 peer_id: "node-a".to_string(),
                 addresses: vec![addr_a.clone()],
+                node_id: None,
+                validator_id_hex: None,
                 time_us: Some(time_primary),
             },
         )
@@ -247,6 +251,8 @@ async fn distributed_metadata_converges_across_nodes() {
                 NetworkMessage::PeerInfo {
                     peer_id: node_c_id.clone(),
                     addresses: vec![addr_c.clone()],
+                    node_id: None,
+                    validator_id_hex: None,
                     time_us: Some(time_c),
                 },
             )
@@ -326,6 +332,8 @@ async fn peer_reconnection_restores_metadata() {
             NetworkMessage::PeerInfo {
                 peer_id: "rejoining-peer".to_string(),
                 addresses: vec![peer_addr.clone()],
+                node_id: None,
+                validator_id_hex: None,
                 time_us: Some(reconnection_time),
             },
         )

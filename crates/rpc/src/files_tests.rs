@@ -27,7 +27,7 @@ mod tests {
     use crate::files::{
         handle_get_file, handle_publish_file, FileDescriptorResponse, PublishFileRequest,
     };
-    use crate::server::{AppState, L2Config, ValidatedJson};
+    use crate::server::{AppState, L2Config, StatusSnapshot, ValidatedJson};
 
     #[derive(Clone, Default)]
     struct RecordingFileDht {
@@ -116,6 +116,7 @@ mod tests {
             payment_admission_depth: Arc::new(AtomicUsize::new(0)),
             payment_admission_capacity: 0,
             payment_admission_workers: 0,
+            status_snapshot: Arc::new(StatusSnapshot::new()),
             nonce_reservation_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }

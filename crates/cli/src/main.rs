@@ -315,7 +315,6 @@ async fn handle_tx_commands(cmd: TxCommands, rpc_url: &str) -> Result<()> {
                 } else {
                     println!("{}", serde_json::to_string_pretty(&body)?);
                 }
-                ()
             } else {
                 anyhow::bail!(
                     "payment rejected (status {}): {}",

@@ -2,16 +2,15 @@ use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
-use std::fs;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context as TaskContext, Poll};
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context as AnyhowContext, Result};
 use axum::async_trait;
@@ -44,7 +43,6 @@ use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
 use ippan_storage::{Account, Storage};
 use ippan_types::address::{decode_address, encode_address};
-use ippan_types::health::{HealthStatus, NodeHealth, NodeHealthContext};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
     Amount, Block, HandleOperation, HandleRegisterOp, L2Commit, L2ExitRecord, L2Network,
@@ -55,8 +53,8 @@ use serde::de::{self, DeserializeOwned, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::sync::{mpsc, Mutex};
 use tokio::sync::oneshot;
+use tokio::sync::{mpsc, Mutex};
 use tower::limit::ConcurrencyLimitLayer;
 use tower::timeout::TimeoutLayer;
 use tower::BoxError;
@@ -67,12 +65,11 @@ use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use blake3::Hasher as Blake3Hasher;
 use hex::encode as hex_encode;
 use std::env;
-use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::{
@@ -158,20 +155,45 @@ pub struct AppState {
     pub payment_admission_depth: Arc<AtomicUsize>,
     pub payment_admission_capacity: usize,
     pub payment_admission_workers: usize,
+    /// Snapshot-style status data for `/status`, updated off the request path.
+    pub status_snapshot: Arc<StatusSnapshot>,
     /// Serialize nonce reservation operations (simple, correct, per-node).
     pub nonce_reservation_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Debug)]
-pub enum PaymentAdmissionError {
-    Backpressure,
-    MempoolRejected,
-    Internal(String),
+pub struct StatusSnapshot {
+    pub rpc_queue_depth: AtomicU64,
+    pub mempool_size: AtomicU64,
+    pub validator_count: AtomicU32,
+    pub peer_count: AtomicU32,
+    pub last_round: AtomicU64,
+    pub updated_at_unix_ms: AtomicU64,
 }
 
+impl StatusSnapshot {
+    pub fn new() -> Self {
+        Self {
+            rpc_queue_depth: AtomicU64::new(0),
+            mempool_size: AtomicU64::new(0),
+            validator_count: AtomicU32::new(0),
+            peer_count: AtomicU32::new(0),
+            last_round: AtomicU64::new(0),
+            updated_at_unix_ms: AtomicU64::new(0),
+        }
+    }
+}
+
+impl Default for StatusSnapshot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug)]
 pub struct PaymentAdmissionJob {
-    pub tx: Transaction,
-    pub responder: oneshot::Sender<Result<(), PaymentAdmissionError>>,
+    pub request: PaymentRequest,
+    pub responder: oneshot::Sender<Result<PaymentResponse, PaymentError>>,
 }
 
 type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
@@ -654,7 +676,7 @@ struct AccountResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PaymentRequest {
+pub struct PaymentRequest {
     /// Sender identifier (Base58Check, hex, or @handle)
     from: String,
     /// Recipient identifier (Base58Check, hex, or @handle)
@@ -682,7 +704,7 @@ struct DevFundRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-struct PaymentResponse {
+pub struct PaymentResponse {
     tx_hash: String,
     status: PaymentStatus,
     from: String,
@@ -952,7 +974,7 @@ async fn handle_not_found() -> (StatusCode, Json<ApiError>) {
 }
 
 #[derive(Debug, Error)]
-enum PaymentError {
+pub enum PaymentError {
     #[error("signing key is required to submit a payment")]
     MissingSigningKey,
     #[error("invalid signing key: {0}")]
@@ -1506,6 +1528,7 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
         state.payment_admission_tx = Some(tx);
         let shared = Arc::new(state);
         spawn_payment_admission_workers(shared.clone(), rx, shared.payment_admission_workers);
+        spawn_status_snapshot_updater(shared.clone());
         let app = build_router(shared.clone());
         let listener = bind_listener(addr).await?;
         let bound_addr = listener.local_addr()?;
@@ -1519,6 +1542,7 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     }
 
     let shared = Arc::new(state);
+    spawn_status_snapshot_updater(shared.clone());
     // Queue sender was already configured; still ensure workers exist by creating a new receiver.
     // (If sender was configured externally, operator is responsible for workers.)
     let app = build_router(shared.clone());
@@ -1552,7 +1576,7 @@ fn spawn_payment_admission_workers(
             debug!("payment admission worker {} started", idx);
             while let Some(job) = wrx.recv().await {
                 st.payment_admission_depth.fetch_sub(1, Ordering::Relaxed);
-                let result = process_payment_admission(&st, job.tx).await;
+                let result = process_payment_admission(&st, job.request).await;
                 let _ = job.responder.send(result);
             }
             debug!("payment admission worker {} stopped", idx);
@@ -1571,17 +1595,15 @@ fn spawn_payment_admission_workers(
                     st_for_dispatch
                         .payment_admission_depth
                         .fetch_sub(1, Ordering::Relaxed);
-                    let _ = job.responder.send(Err(PaymentAdmissionError::Backpressure));
+                    let _ = job.responder.send(Err(PaymentError::Backpressure));
                 }
                 Err(mpsc::error::TrySendError::Closed(job)) => {
                     st_for_dispatch
                         .payment_admission_depth
                         .fetch_sub(1, Ordering::Relaxed);
-                    let _ = job
-                        .responder
-                        .send(Err(PaymentAdmissionError::Internal(
-                            "worker queue closed".into(),
-                        )));
+                    let _ = job.responder.send(Err(PaymentError::SubmissionFailed(
+                        "worker queue closed".into(),
+                    )));
                 }
             }
         }
@@ -1590,22 +1612,94 @@ fn spawn_payment_admission_workers(
 
 async fn process_payment_admission(
     state: &Arc<AppState>,
-    tx_for_ingest: Transaction,
-) -> Result<(), PaymentAdmissionError> {
+    request: PaymentRequest,
+) -> Result<PaymentResponse, PaymentError> {
+    let Some(consensus) = &state.consensus else {
+        return Err(PaymentError::ConsensusUnavailable);
+    };
+
+    let built = build_payment_transaction(state, request)?;
+    let tx_for_ingest = built.transaction.clone();
     let tx_hash_hex = hex::encode(tx_for_ingest.hash());
 
     match state.mempool.add_transaction(tx_for_ingest.clone()) {
         Ok(true) => {}
-        Ok(false) => return Err(PaymentAdmissionError::MempoolRejected),
-        Err(err) => return Err(PaymentAdmissionError::Internal(err.to_string())),
+        Ok(false) => return Err(PaymentError::MempoolRejected),
+        Err(err) => return Err(PaymentError::SubmissionFailed(err.to_string())),
     }
 
-    if let Err(err) = state.storage.store_transaction(tx_for_ingest.clone()) {
+    // Dispatch to consensus before storage write to avoid persisting txs that will never be proposed.
+    if let Err(err) = consensus.submit_transaction(tx_for_ingest.clone()) {
         let _ = state.mempool.remove_transaction(&tx_hash_hex);
-        return Err(PaymentAdmissionError::Internal(err.to_string()));
+        return Err(PaymentError::SubmissionFailed(err.to_string()));
     }
 
-    Ok(())
+    if let Err(err) = state.storage.store_transaction(tx_for_ingest) {
+        let _ = state.mempool.remove_transaction(&tx_hash_hex);
+        return Err(PaymentError::SubmissionFailed(err.to_string()));
+    }
+
+    Ok(payment_response_from_built(&built))
+}
+
+fn spawn_status_snapshot_updater(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        // Keep this small and regular; it is allowed to take locks/await because it is off the
+        // request path.
+        let mut last = Instant::now();
+        loop {
+            // 200ms cadence by default; adjust here if needed.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+
+            // Avoid snapshotting too frequently if the runtime is under pressure.
+            if last.elapsed() < Duration::from_millis(150) {
+                continue;
+            }
+            last = Instant::now();
+
+            let peer_count = state.peer_count.load(Ordering::Relaxed) as u64;
+            let mempool_size = state.mempool.size() as u64;
+            let rpc_queue_depth = state.payment_admission_depth.load(Ordering::Relaxed) as u64;
+            let (validator_count, _sample, _source) = compute_active_validators(&state);
+
+            let last_round = if let Some(consensus) = &state.consensus {
+                match consensus.snapshot().await {
+                    Ok(view) => view.round,
+                    Err(_) => 0,
+                }
+            } else {
+                0
+            };
+
+            let now_ms = OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+            let now_ms_u64 = u64::try_from(now_ms.max(0)).unwrap_or(0);
+
+            state.status_snapshot.peer_count.store(
+                peer_count.min(u64::from(u32::MAX)) as u32,
+                Ordering::Relaxed,
+            );
+            state
+                .status_snapshot
+                .mempool_size
+                .store(mempool_size, Ordering::Relaxed);
+            state
+                .status_snapshot
+                .rpc_queue_depth
+                .store(rpc_queue_depth, Ordering::Relaxed);
+            state.status_snapshot.validator_count.store(
+                validator_count.min(u64::from(u32::MAX)) as u32,
+                Ordering::Relaxed,
+            );
+            state
+                .status_snapshot
+                .last_round
+                .store(last_round, Ordering::Relaxed);
+            state
+                .status_snapshot
+                .updated_at_unix_ms
+                .store(now_ms_u64, Ordering::Relaxed);
+        }
+    });
 }
 
 /// Bind to TCP listener
@@ -1669,23 +1763,45 @@ fn build_router(state: Arc<AppState>) -> Router {
     let request_timeout = configured_request_timeout(&state);
     let global_rps = configured_global_rps(&state);
     let cors = build_cors_layer(&state);
-    let rate_limiter = RateLimiterLayer::new(global_rps, Duration::from_secs(1));
-    let circuit_breaker = CircuitBreakerLayer::new(
+    // IMPORTANT:
+    // - /health and /status must remain responsive under tx load, so they get a "fast lane"
+    //   with minimal middleware and no shared/expensive locks on the request path.
+    // - /tx/* gets a strict concurrency cap to prevent runtime saturation and preserve 429 semantics.
+
+    // Fast lane router: avoid layers that can be saturated by tx load.
+    let fast_router = Router::new()
+        .route("/health", get(handle_get_health))
+        .route("/status", get(handle_status));
+
+    // Tx router: apply caps and heavier layers here only.
+    // Keep this conservative; goal is protecting operability, not maximizing throughput yet.
+    const MAX_CONCURRENT_TX_REQUESTS: usize = 64;
+    let tx_middleware_stack = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(handle_service_error))
+        .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_TX_REQUESTS))
+        .layer(TimeoutLayer::new(request_timeout))
+        .layer(RequestBodyLimitLayer::new(max_body_bytes));
+    let tx_rate_limiter = RateLimiterLayer::new(global_rps, Duration::from_secs(1));
+    let tx_circuit_breaker = CircuitBreakerLayer::new(
         CIRCUIT_BREAKER_FAILURE_THRESHOLD,
         Duration::from_secs(CIRCUIT_BREAKER_OPEN_SECS),
     );
+    let tx_router = Router::new()
+        .route("/tx", post(handle_submit_tx))
+        .route("/tx/payment", post(handle_payment_tx))
+        .route("/tx/:hash", get(handle_get_transaction))
+        .layer(tx_middleware_stack)
+        .layer(tx_rate_limiter)
+        .layer(tx_circuit_breaker)
+        .layer(TraceLayer::new_for_http());
 
-    let mut router = Router::new()
-        .route("/health", get(handle_get_health))
-        .route("/status", get(handle_status))
+    // Everything else (non-fast, non-tx).
+    let mut other_router = Router::new()
         .route("/consensus/view", get(handle_consensus_view))
         .route("/time", get(handle_time))
         .route("/version", get(handle_version))
         .route("/metrics", get(handle_metrics))
         .route("/ai/status", get(handle_get_ai_status))
-        .route("/tx", post(handle_submit_tx))
-        .route("/tx/payment", post(handle_payment_tx))
-        .route("/tx/:hash", get(handle_get_transaction))
         .route("/nonce/:pubkey_hex", get(handle_get_nonce))
         .route("/nonce/batch", post(handle_nonce_batch))
         .route("/nonce/reserve", post(handle_nonce_reserve))
@@ -1713,8 +1829,26 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/l2/exits", get(handle_list_l2_exits));
 
     if state.dev_mode {
-        router = router.route("/dev/fund", post(handle_dev_fund));
+        other_router = other_router.route("/dev/fund", post(handle_dev_fund));
     }
+
+    let other_middleware_stack = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(handle_service_error))
+        .layer(TimeoutLayer::new(request_timeout))
+        .layer(RequestBodyLimitLayer::new(max_body_bytes));
+    let other_rate_limiter = RateLimiterLayer::new(global_rps, Duration::from_secs(1));
+    let other_circuit_breaker = CircuitBreakerLayer::new(
+        CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+        Duration::from_secs(CIRCUIT_BREAKER_OPEN_SECS),
+    );
+
+    let mut app = fast_router.merge(tx_router).merge(
+        other_router
+            .layer(other_middleware_stack)
+            .layer(other_rate_limiter)
+            .layer(other_circuit_breaker)
+            .layer(TraceLayer::new_for_http()),
+    );
 
     if let Some(static_root) = &state.unified_ui_dist {
         if Path::new(static_root).exists() {
@@ -1723,28 +1857,16 @@ fn build_router(state: Arc<AppState>) -> Router {
                 ServeDir::new(static_root).not_found_service(tower::service_fn(|_req| async {
                     Ok::<_, Infallible>(handle_not_found().await.into_response())
                 }));
-            router = router.fallback_service(file_service);
+            app = app.fallback_service(file_service);
         } else {
             warn!("Static UI directory {:?} not found", static_root);
-            router = router.fallback(handle_not_found);
+            app = app.fallback(handle_not_found);
         }
     } else {
-        router = router.fallback(handle_not_found);
+        app = app.fallback(handle_not_found);
     }
 
-    let middleware_stack = ServiceBuilder::new()
-        .layer(HandleErrorLayer::new(handle_service_error))
-        .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
-        .layer(TimeoutLayer::new(request_timeout))
-        .layer(RequestBodyLimitLayer::new(max_body_bytes));
-
-    router
-        .layer(middleware_stack)
-        .layer(cors)
-        .layer(rate_limiter)
-        .layer(circuit_breaker)
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+    app.layer(cors).with_state(state)
 }
 
 fn configured_body_limit(state: &Arc<AppState>) -> usize {
@@ -1883,156 +2005,34 @@ async fn deny_request(
 // Handlers
 // -----------------------------------------------------------------------------
 
-async fn build_health_snapshot(state: &Arc<AppState>) -> HealthStatus {
-    let peer_count = state.peer_count.load(Ordering::Relaxed) as u64;
-    let mempool_size = state.mempool.size() as u64;
-    let uptime_seconds = state.start_time.elapsed().as_secs();
-    let requests_served = state.req_count.load(Ordering::Relaxed) as u64;
-
-    let ai_enabled = if let Some(handle) = &state.ai_status {
-        handle.snapshot().await.enabled
-    } else {
-        false
-    };
-
-    let (consensus_healthy, last_consensus_round) = if let Some(consensus) = &state.consensus {
-        match consensus.snapshot().await {
-            Ok(view) => (true, Some(view.round)),
-            Err(err) => {
-                warn!("Failed to snapshot consensus state for /health: {}", err);
-                (false, None)
-            }
-        }
-    } else {
-        (false, None)
-    };
-
-    let (mut storage_healthy, last_finalized_round) =
-        match state.storage.get_latest_round_finalization() {
-            Ok(record) => (true, record.map(|entry| entry.round)),
-            Err(err) => {
-                warn!("Failed to read latest finalization for /health: {}", err);
-                (false, None)
-            }
-        };
-
-    if let Err(err) = state.storage.get_latest_height() {
-        warn!("Failed to read latest height for /health: {}", err);
-        storage_healthy = false;
-    }
-
-    let context = NodeHealthContext {
-        consensus_mode: state.consensus_mode.clone(),
-        consensus_healthy,
-        ai_enabled,
-        dht_file_mode: state.dht_file_mode.clone(),
-        dht_handle_mode: state.dht_handle_mode.clone(),
-        dht_healthy: state.file_dht.is_some() || state.handle_dht.is_some(),
-        rpc_healthy: true,
-        storage_healthy,
-        last_finalized_round,
-        last_consensus_round,
-        peer_count,
-        mempool_size,
-        uptime_seconds,
-        requests_served,
-        node_id: state.node_id.clone(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        dev_mode: state.dev_mode,
-    };
-
-    NodeHealth::snapshot(context)
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-struct DatasetExportStatus {
-    enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_ts_utc: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    last_age_seconds: Option<u64>,
-}
-
-fn build_dataset_export_status() -> DatasetExportStatus {
-    // This is intentionally low-I/O: one read_dir + a metadata lookup per candidate file.
-    const MARKER_PATH: &str = "/etc/ippan/markers/dataset_export_enabled";
-    const OUT_DIR: &str = "/var/lib/ippan/ai_datasets";
-
-    let marker_present = Path::new(MARKER_PATH).exists();
-
-    let out_dir = Path::new(OUT_DIR);
-    let mut newest_modified_nanos: Option<i128> = None;
-
-    if let Ok(entries) = fs::read_dir(out_dir) {
-        for entry in entries.flatten() {
-            let file_name = entry.file_name();
-            let file_name = file_name.to_string_lossy();
-
-            // Expected: devnet_dataset_YYYYMMDDTHHMMSSZ.csv.gz
-            if !file_name.starts_with("devnet_dataset_") || !file_name.ends_with(".csv.gz") {
-                continue;
-            }
-
-            let Ok(meta) = entry.metadata() else { continue };
-            let Ok(modified) = meta.modified() else {
-                continue;
-            };
-            let Ok(dur) = modified.duration_since(UNIX_EPOCH) else {
-                continue;
-            };
-
-            let nanos = dur.as_nanos() as i128;
-            if newest_modified_nanos.map(|cur| nanos > cur).unwrap_or(true) {
-                newest_modified_nanos = Some(nanos);
-            }
-        }
-    }
-
-    // Truthful enabled semantics:
-    // - enabled=true only if operator explicitly enabled exports (marker) AND we have at least one dataset file.
-    // - otherwise enabled=false and freshness fields are omitted (null).
-    let enabled = marker_present && newest_modified_nanos.is_some();
-    if !enabled {
-        return DatasetExportStatus {
-            enabled: false,
-            last_ts_utc: None,
-            last_age_seconds: None,
-        };
-    }
-
-    let (last_ts_utc, last_age_seconds) = if let Some(nanos) = newest_modified_nanos {
-        let ts = OffsetDateTime::from_unix_timestamp_nanos(nanos)
-            .ok()
-            .and_then(|dt| dt.format(&Rfc3339).ok());
-
-        let now_nanos = OffsetDateTime::now_utc().unix_timestamp_nanos();
-        let age_seconds = (now_nanos - nanos).max(0) / 1_000_000_000;
-
-        (ts, u64::try_from(age_seconds).ok())
-    } else {
-        (None, None)
-    };
-
-    DatasetExportStatus {
-        enabled,
-        last_ts_utc,
-        last_age_seconds,
-    }
-}
+// NOTE: /health and /status are intentionally minimal and request-path safe.
+// Previous richer health/status payloads were removed to avoid locks/awaits under load.
 
 async fn handle_get_health(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Result<Json<HealthStatus>, (StatusCode, &'static str)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
     const ENDPOINT: &str = "/health";
+    let start = Instant::now();
+    trace!(endpoint = ENDPOINT, remote_addr = %addr, "rpc handler start");
     if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
         return Err(deny_request(&state, &addr, ENDPOINT, err).await);
     }
 
-    let snapshot = build_health_snapshot(&state).await;
-    record_security_success(&state, &addr, ENDPOINT).await;
-    Ok(Json(snapshot))
+    // Lock-free, request-path safe payload.
+    let ts_unix_ms = OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    let ts_unix_ms = u64::try_from(ts_unix_ms.max(0)).unwrap_or(0);
+    let body = serde_json::json!({
+        "ok": true,
+        "ts": ts_unix_ms,
+    });
+    trace!(
+        endpoint = ENDPOINT,
+        remote_addr = %addr,
+        elapsed_ms = start.elapsed().as_millis(),
+        "rpc handler end"
+    );
+    Ok(Json(body))
 }
 
 async fn handle_status(
@@ -2040,67 +2040,43 @@ async fn handle_status(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
     const ENDPOINT: &str = "/status";
+    let start = Instant::now();
+    trace!(endpoint = ENDPOINT, remote_addr = %addr, "rpc handler start");
     if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
         return Err(deny_request(&state, &addr, ENDPOINT, err).await);
     }
 
+    // Request-path safe: reads atomics only (updated by background task).
     let uptime_seconds = state.start_time.elapsed().as_secs();
-    let peer_count = state.peer_count.load(Ordering::Relaxed);
-    let requests_served = state.req_count.load(Ordering::Relaxed);
-    let mempool_size = state.mempool.size();
-
-    let consensus_view = if let Some(consensus) = &state.consensus {
-        match consensus.snapshot().await {
-            Ok(view) => build_consensus_payload(view, state.dlc_consensus.as_ref()),
-            Err(err) => {
-                warn!("Failed to snapshot consensus state: {}", err);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    let mut ai_view = if let Some(handle) = &state.ai_status {
-        let snapshot = handle.snapshot().await;
-        AiStatus::from(snapshot)
-    } else {
-        AiStatus::disabled()
-    };
-    ai_view.consensus_mode = Some(state.consensus_mode.clone());
-
-    record_security_success(&state, &addr, ENDPOINT).await;
-
-    let dataset_export = build_dataset_export_status();
-
-    let (validator_count, validator_ids_sample, validator_source) =
-        compute_active_validators(&state);
-
-    let rpc_queue_depth = state.payment_admission_depth.load(Ordering::Relaxed) as u64;
-    let rpc_queue_capacity = state.payment_admission_capacity as u64;
-    let rpc_queue_workers = state.payment_admission_workers as u64;
-
-    Ok(Json(serde_json::json!({
+    let requests_served = state.req_count.load(Ordering::Relaxed) as u64;
+    let snapshot = &state.status_snapshot;
+    let last_round = snapshot.last_round.load(Ordering::Relaxed);
+    let body = serde_json::json!({
         "status": "ok",
-        "status_schema_version": 2,
+        "status_schema_version": 3,
         "node_id": state.node_id.clone(),
         "version": env!("CARGO_PKG_VERSION"),
         "build_sha": git_commit_hash(),
-        "peer_count": peer_count,
-        "validator_count": validator_count,
-        "validator_ids_sample": validator_ids_sample,
-        "validator_source": validator_source,
         "uptime_seconds": uptime_seconds,
         "requests_served": requests_served,
-        "network_active": state.p2p_network.is_some(),
-        "consensus": consensus_view,
-        "ai": ai_view,
-        "mempool_size": mempool_size,
-        "rpc_queue_depth": rpc_queue_depth,
-        "rpc_queue_capacity": rpc_queue_capacity,
-        "rpc_queue_workers": rpc_queue_workers,
-        "dataset_export": dataset_export
-    })))
+        "peer_count": snapshot.peer_count.load(Ordering::Relaxed) as u64,
+        "validator_count": snapshot.validator_count.load(Ordering::Relaxed) as u64,
+        "mempool_size": snapshot.mempool_size.load(Ordering::Relaxed),
+        "rpc_queue_depth": snapshot.rpc_queue_depth.load(Ordering::Relaxed),
+        "rpc_queue_capacity": state.payment_admission_capacity as u64,
+        "rpc_queue_workers": state.payment_admission_workers as u64,
+        "last_round": last_round,
+        "snapshot_updated_at_unix_ms": snapshot.updated_at_unix_ms.load(Ordering::Relaxed),
+        // Compatibility shim: scripts expect `consensus.round` to exist.
+        "consensus": { "round": last_round },
+    });
+    trace!(
+        endpoint = ENDPOINT,
+        remote_addr = %addr,
+        elapsed_ms = start.elapsed().as_millis(),
+        "rpc handler end"
+    );
+    Ok(Json(body))
 }
 
 async fn handle_consensus_view(
@@ -2483,76 +2459,83 @@ async fn handle_payment_tx(
         return Err((status, Json(ApiError::new("security_error", message))));
     }
 
-    let built = match build_payment_transaction(&state, request) {
-        Ok(tx) => tx,
-        Err(err) => return Err(payment_error_response(&state, &addr, err).await),
-    };
-
-    let response = payment_response_from_built(&built);
+    // Preflight validation: preserve 4xx semantics even if consensus/admission is unavailable.
+    // Keep this lightweight (no storage reads, no consensus locks).
+    if let Err(err) = preflight_payment_request(&state, &request) {
+        return Err(payment_error_response(&state, &addr, err).await);
+    }
 
     // ---------------------------------------------------------------------
     // Bounded admission queue (backpressure instead of 503 collapse)
     // ---------------------------------------------------------------------
     let Some(admission_tx) = state.payment_admission_tx.as_ref() else {
-        return Err(
-            payment_error_response(
-                &state,
-                &addr,
-                PaymentError::SubmissionFailed("payment admission queue not initialized".into()),
-            )
-            .await,
-        );
+        // Test / non-server usage: fall back to inline processing.
+        let response = match process_payment_admission(&state, request).await {
+            Ok(response) => response,
+            Err(err) => return Err(payment_error_response(&state, &addr, err).await),
+        };
+        record_security_success(&state, &addr, PAYMENT_ENDPOINT).await;
+        return Ok(Json(response));
     };
 
-    let (responder_tx, responder_rx) = oneshot::channel::<Result<(), PaymentAdmissionError>>();
+    let (responder_tx, responder_rx) = oneshot::channel::<Result<PaymentResponse, PaymentError>>();
     let job = PaymentAdmissionJob {
-        tx: built.transaction.clone(),
+        request,
         responder: responder_tx,
     };
 
     match admission_tx.try_send(job) {
         Ok(()) => {
-            state.payment_admission_depth.fetch_add(1, Ordering::Relaxed);
+            state
+                .payment_admission_depth
+                .fetch_add(1, Ordering::Relaxed);
         }
         Err(mpsc::error::TrySendError::Full(_)) => {
             return Err(payment_error_response(&state, &addr, PaymentError::Backpressure).await);
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {
-            return Err(
-                payment_error_response(
-                    &state,
-                    &addr,
-                    PaymentError::SubmissionFailed("admission queue closed".into()),
-                )
-                .await,
-            );
+            return Err(payment_error_response(
+                &state,
+                &addr,
+                PaymentError::SubmissionFailed("admission queue closed".into()),
+            )
+            .await);
         }
     }
 
     match responder_rx.await {
-        Ok(Ok(())) => {}
-        Ok(Err(err)) => {
-            let mapped = match err {
-                PaymentAdmissionError::Backpressure => PaymentError::Backpressure,
-                PaymentAdmissionError::MempoolRejected => PaymentError::MempoolRejected,
-                PaymentAdmissionError::Internal(msg) => PaymentError::SubmissionFailed(msg),
-            };
-            return Err(payment_error_response(&state, &addr, mapped).await);
+        Ok(Ok(response)) => {
+            record_security_success(&state, &addr, PAYMENT_ENDPOINT).await;
+            Ok(Json(response))
         }
+        Ok(Err(err)) => Err(payment_error_response(&state, &addr, err).await),
         Err(_) => {
-            return Err(
-                payment_error_response(
-                    &state,
-                    &addr,
-                    PaymentError::SubmissionFailed("admission worker dropped response".into()),
-                )
-                .await,
+            return Err(payment_error_response(
+                &state,
+                &addr,
+                PaymentError::SubmissionFailed("admission worker dropped response".into()),
             )
+            .await)
         }
     }
+}
 
-    record_security_success(&state, &addr, PAYMENT_ENDPOINT).await;
-    Ok(Json(response))
+fn preflight_payment_request(
+    state: &Arc<AppState>,
+    request: &PaymentRequest,
+) -> Result<(), PaymentError> {
+    let _from = resolve_address_or_handle(state, "from", &request.from)?;
+    let _to = resolve_address_or_handle(state, "to", &request.to)?;
+    if request.amount == 0 {
+        return Err(PaymentError::ZeroAmount);
+    }
+    let _memo = normalize_memo(request.memo.clone())?;
+    let signing_key = request
+        .signing_key
+        .as_deref()
+        .ok_or(PaymentError::MissingSigningKey)?;
+    let _ = parse_signing_key_hex(signing_key)?;
+    Ok(())
 }
 
 async fn handle_get_nonce(
@@ -2665,9 +2648,7 @@ async fn handle_nonce_reserve(
     };
 
     let start = account.nonce;
-    account.nonce = account
-        .nonce
-        .saturating_add(request.count);
+    account.nonce = account.nonce.saturating_add(request.count);
 
     if let Err(err) = state.storage.update_account(account) {
         return Err((
@@ -4021,6 +4002,7 @@ mod tests {
             payment_admission_depth: Arc::new(AtomicUsize::new(0)),
             payment_admission_capacity: 0,
             payment_admission_workers: 0,
+            status_snapshot: Arc::new(StatusSnapshot::new()),
             nonce_reservation_lock: Arc::new(Mutex::new(())),
         });
 
@@ -4028,9 +4010,7 @@ mod tests {
         let Json(status) = handle_get_health(State(app_state), ConnectInfo(addr))
             .await
             .expect("health");
-        assert_eq!(status.consensus_mode, "poa");
-        assert!(status.rpc_healthy);
-        assert_eq!(status.peer_count, 0);
+        assert_eq!(status.get("ok").and_then(|v| v.as_bool()), Some(true));
     }
 
     #[tokio::test]
@@ -4050,9 +4030,7 @@ mod tests {
         let Json(status) = handle_get_health(State(state), ConnectInfo(addr))
             .await
             .expect("health");
-        assert!(!status.consensus_healthy);
-        assert!(!status.storage_healthy);
-        assert!(!status.dht_healthy);
+        assert_eq!(status.get("ok").and_then(|v| v.as_bool()), Some(true));
     }
 
     #[tokio::test]
@@ -4168,6 +4146,7 @@ mod tests {
             payment_admission_depth: Arc::new(AtomicUsize::new(0)),
             payment_admission_capacity: 0,
             payment_admission_workers: 0,
+            status_snapshot: Arc::new(StatusSnapshot::new()),
             nonce_reservation_lock: Arc::new(Mutex::new(())),
         })
     }
@@ -4598,6 +4577,8 @@ mod tests {
                 "http://0.0.0.0:9000".into(),
                 "http://192.168.1.5:9000".into(),
             ],
+            node_id: None,
+            validator_id_hex: None,
             time_us: None,
         };
         let addr = message_announced_address(&message).expect("address");
@@ -5859,6 +5840,8 @@ mod tests {
             ValidatedJson(NetworkMessage::PeerInfo {
                 peer_id: "peer".into(),
                 addresses: vec![],
+                node_id: None,
+                validator_id_hex: None,
                 time_us: None,
             }),
         )
@@ -5877,6 +5860,8 @@ mod tests {
             ValidatedJson(NetworkMessage::PeerInfo {
                 peer_id: "peer-1".into(),
                 addresses: vec!["http://example.com".into()],
+                node_id: None,
+                validator_id_hex: None,
                 time_us: Some(1),
             }),
         )
@@ -6178,6 +6163,8 @@ mod tests {
             ValidatedJson(NetworkMessage::PeerInfo {
                 peer_id: "peer".into(),
                 addresses: vec!["http://peer".into()],
+                node_id: None,
+                validator_id_hex: None,
                 time_us: Some(1),
             }),
         )
@@ -6463,6 +6450,7 @@ mod tests {
             payment_admission_depth: Arc::new(AtomicUsize::new(0)),
             payment_admission_capacity: 0,
             payment_admission_workers: 0,
+            status_snapshot: Arc::new(StatusSnapshot::new()),
             nonce_reservation_lock: Arc::new(Mutex::new(())),
         });
 

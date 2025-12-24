@@ -1260,6 +1260,8 @@ mod tests {
                 NetworkMessage::PeerInfo {
                     peer_id: "peer-a".into(),
                     addresses: vec![valid_peer.into()],
+                    node_id: None,
+                    validator_id_hex: None,
                     time_us: Some(1),
                 },
             )
@@ -1279,6 +1281,8 @@ mod tests {
         let message = NetworkMessage::PeerInfo {
             peer_id: "peer-oversized".into(),
             addresses: vec!["http://127.0.0.1:9315/with/a/very/long/address".into()],
+            node_id: None,
+            validator_id_hex: None,
             time_us: Some(1),
         };
 

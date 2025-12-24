@@ -20,6 +20,7 @@ use ippan_p2p::{
     Libp2pHandleDhtService, Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig, P2PLimits,
 };
 use ippan_rpc::server::ConsensusHandle;
+use ippan_rpc::server::StatusSnapshot;
 use ippan_rpc::{start_p2p_server, start_server, AiStatusHandle, AppState, L2Config};
 use ippan_security::{SecurityConfig as RpcSecurityConfig, SecurityManager as RpcSecurityManager};
 use ippan_storage::{export_snapshot, import_snapshot, SledStorage, Storage};
@@ -1490,7 +1491,9 @@ async fn main() -> Result<()> {
         std::env::var(name).ok().and_then(|v| v.parse::<u64>().ok())
     }
     fn env_usize(name: &str) -> Option<usize> {
-        std::env::var(name).ok().and_then(|v| v.parse::<usize>().ok())
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
     }
     fn clamp_u64(v: u64, lo: u64, hi: u64) -> u64 {
         v.max(lo).min(hi)
@@ -1504,7 +1507,8 @@ async fn main() -> Result<()> {
 
     let payment_admission_capacity = env_u64("IPPAN_PAYMENT_ADMISSION_CAPACITY")
         .map(|v| clamp_u64(v, 1_000, 1_000_000))
-        .unwrap_or(default_payment_admission_capacity) as usize;
+        .unwrap_or(default_payment_admission_capacity)
+        as usize;
     let payment_admission_workers = env_usize("IPPAN_PAYMENT_ADMISSION_WORKERS")
         .map(|v| clamp_usize(v, 1, 256))
         .unwrap_or(default_payment_admission_workers);
@@ -1540,6 +1544,7 @@ async fn main() -> Result<()> {
         payment_admission_depth: Arc::new(AtomicUsize::new(0)),
         payment_admission_capacity,
         payment_admission_workers,
+        status_snapshot: Arc::new(StatusSnapshot::new()),
         nonce_reservation_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
 

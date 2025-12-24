@@ -362,15 +362,12 @@ async fn main() -> Result<()> {
         }
 
         let n = entries.len() as u64;
-        let per_sender_planned = (total_planned + n - 1) / n;
+        let per_sender_planned = total_planned.div_ceil(n);
         let reserve = per_sender_planned.saturating_add(1_000);
         // If nonce_start is provided (either via --senders-nonce-start or per-entry nonce_start),
         // skip /nonce/reserve entirely.
         let override_nonce_start = args.senders_nonce_start;
-        let provided_nonce_starts = entries
-            .iter()
-            .filter(|e| e.nonce_start.is_some())
-            .count();
+        let provided_nonce_starts = entries.iter().filter(|e| e.nonce_start.is_some()).count();
         let all_have_nonce_start = provided_nonce_starts == entries.len();
         let none_have_nonce_start = provided_nonce_starts == 0;
         if override_nonce_start.is_none() && !(all_have_nonce_start || none_have_nonce_start) {
@@ -533,7 +530,7 @@ async fn main() -> Result<()> {
     let mut sample_tx_hashes: Vec<String> = Vec::new();
 
     // We keep a bounded number of join handles to avoid unbounded memory.
-    let mut in_flight: tokio::task::JoinSet<(
+    type InFlightResult = (
         usize,
         bool,
         Option<u16>,
@@ -541,15 +538,14 @@ async fn main() -> Result<()> {
         Option<String>,
         Option<String>,
         u64,
-    )> = tokio::task::JoinSet::new();
+    );
+    let mut in_flight: tokio::task::JoinSet<InFlightResult> = tokio::task::JoinSet::new();
 
     while let Some(seq) = token_rx.recv().await {
         // Drain completions opportunistically to keep joinset bounded.
         while in_flight.len() >= args.concurrency.saturating_mul(2) {
-            if let Some(res) = in_flight.join_next().await {
-                if let Ok((sender_idx, ok, status, rpc_code, _rpc_msg, tx_hash, latency_ms_u64)) =
-                    res
-                {
+            match in_flight.join_next().await {
+                Some(Ok((sender_idx, ok, status, rpc_code, _rpc_msg, tx_hash, latency_ms_u64))) => {
                     if ok {
                         accepted += 1;
                         if sender_idx < accepted_by_sender.len() {
@@ -571,6 +567,10 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                Some(Err(_join_err)) => {
+                    // Ignore task join errors; they will reflect as missing samples.
+                }
+                None => break,
             }
         }
 
@@ -717,17 +717,17 @@ async fn main() -> Result<()> {
     let achieved_tps_accepted = accepted as f64 / elapsed_s;
     let http_429 = *errors_by_http_status.get("429").unwrap_or(&0);
 
-    let latency_ms_p50 = if latency_hist.len() == 0 {
+    let latency_ms_p50 = if latency_hist.is_empty() {
         0.0
     } else {
         latency_hist.value_at_quantile(0.50) as f64
     };
-    let latency_ms_p95 = if latency_hist.len() == 0 {
+    let latency_ms_p95 = if latency_hist.is_empty() {
         0.0
     } else {
         latency_hist.value_at_quantile(0.95) as f64
     };
-    let latency_ms_p99 = if latency_hist.len() == 0 {
+    let latency_ms_p99 = if latency_hist.is_empty() {
         0.0
     } else {
         latency_hist.value_at_quantile(0.99) as f64
@@ -741,7 +741,7 @@ async fn main() -> Result<()> {
     }
 
     let from_address = senders_arc
-        .get(0)
+        .first()
         .map(|s| s.from_address.clone())
         .unwrap_or_else(|| "unknown".to_string());
 
