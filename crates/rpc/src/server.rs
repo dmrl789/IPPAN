@@ -147,6 +147,8 @@ pub struct AppState {
     pub dht_handle_mode: String,
     /// DLC consensus handle (if DLC mode is enabled)
     pub dlc_consensus: Option<Arc<parking_lot::RwLock<DLCConsensus>>>,
+    /// This node's validator id (32-byte hex). Observability only.
+    pub self_validator_id_hex: String,
 
     // ---------------------------------------------------------------------
     // RPC admission + nonce plumbing (ops/txload-hardening)
@@ -2071,12 +2073,8 @@ async fn handle_status(
 
     let dataset_export = build_dataset_export_status();
 
-    let validator_count = consensus_view
-        .as_ref()
-        .and_then(|v| v.get("validator_ids"))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.len() as u64)
-        .unwrap_or(0);
+    let (validator_count, validator_ids_sample, validator_source) =
+        compute_active_validators(&state);
 
     let rpc_queue_depth = state.payment_admission_depth.load(Ordering::Relaxed) as u64;
     let rpc_queue_capacity = state.payment_admission_capacity as u64;
@@ -2089,6 +2087,8 @@ async fn handle_status(
         "build_sha": git_commit_hash(),
         "peer_count": peer_count,
         "validator_count": validator_count,
+        "validator_ids_sample": validator_ids_sample,
+        "validator_source": validator_source,
         "uptime_seconds": uptime_seconds,
         "requests_served": requests_served,
         "network_active": state.p2p_network.is_some(),
@@ -2126,6 +2126,8 @@ async fn handle_consensus_view(
     let mempool_size = state.mempool.size();
     let rpc_queue_depth = state.payment_admission_depth.load(Ordering::Relaxed) as u64;
     let rpc_queue_capacity = state.payment_admission_capacity as u64;
+    let (validator_count, validator_ids_sample, validator_source) =
+        compute_active_validators(&state);
 
     record_security_success(&state, &addr, ENDPOINT).await;
     Ok(Json(serde_json::json!({
@@ -2134,8 +2136,41 @@ async fn handle_consensus_view(
         "mempool_size": mempool_size,
         "rpc_queue_depth": rpc_queue_depth,
         "rpc_queue_capacity": rpc_queue_capacity,
+        "validator_count": validator_count,
+        "validator_ids_sample": validator_ids_sample,
+        "validator_source": validator_source,
         "consensus": consensus_view,
     })))
+}
+
+fn compute_active_validators(state: &Arc<AppState>) -> (u64, Vec<String>, &'static str) {
+    // Evidence-driven: derive from live P2P peer metadata.
+    // - includes self
+    // - includes peers that have announced a validator_id_hex recently
+    // - avoids guessing from config defaults/env vars
+    let mut ids: Vec<String> = vec![state.self_validator_id_hex.clone()];
+
+    let now = ippan_time_now();
+    let active_window_us: u64 = 30_000_000; // 30s
+    if let Some(net) = &state.p2p_network {
+        for peer in net.get_peer_metadata() {
+            // Only count active/connected peers seen recently.
+            if !peer.is_connected {
+                continue;
+            }
+            if now.saturating_sub(peer.last_seen) > active_window_us {
+                continue;
+            }
+            if let Some(v) = peer.validator_id_hex {
+                ids.push(v);
+            }
+        }
+    }
+
+    ids.sort();
+    ids.dedup();
+    let sample: Vec<String> = ids.iter().take(8).cloned().collect();
+    (ids.len() as u64, sample, "p2p_peer_info")
 }
 
 fn build_consensus_payload(
@@ -3975,6 +4010,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            self_validator_id_hex: "00".repeat(32),
             payment_admission_tx: None,
             payment_admission_depth: Arc::new(AtomicUsize::new(0)),
             payment_admission_capacity: 0,
@@ -4121,6 +4157,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            self_validator_id_hex: "00".repeat(32),
             payment_admission_tx: None,
             payment_admission_depth: Arc::new(AtomicUsize::new(0)),
             payment_admission_capacity: 0,
@@ -6415,6 +6452,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            self_validator_id_hex: "00".repeat(32),
             payment_admission_tx: None,
             payment_admission_depth: Arc::new(AtomicUsize::new(0)),
             payment_admission_capacity: 0,

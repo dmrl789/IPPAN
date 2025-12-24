@@ -81,6 +81,7 @@ mod tests {
 
         AppState {
             dlc_consensus: None,
+            self_validator_id_hex: "00".repeat(32),
             storage,
             start_time: Instant::now(),
             peer_count: Arc::new(AtomicUsize::new(0)),

@@ -19,16 +19,14 @@ Explorer should **not guess** validator counts. Use the node RPC as the source o
 
 `validator_count` is computed from the same **in-memory consensus view** returned under `consensus.validator_ids`.
 
-### DevNet / multi-node: configuring a real validator set (without changing consensus rules)
+### DevNet / multi-node: where validator_count comes from
 
-By default, nodes only know **their own** validator id unless additional ids are provided.
+`validator_count` is derived from **live cluster state** via P2P peer announcements:
 
-Set a comma-separated validator set on each node:
+- nodes periodically send `PeerInfo` messages
+- each includes `validator_id_hex` and `node_id`
+- `/status` counts **distinct active validator ids** observed within a recent window (plus self)
 
-```bash
-export IPPAN_VALIDATOR_IDS="<64hex_id_1>,<64hex_id_2>,<64hex_id_3>,<64hex_id_4>"
-```
-
-After restart, `/status.validator_count` should reflect the full set and Explorer should display it from `/status.validator_count`.
+This avoids env-var/config “guessing” and makes Explorer evidence-driven.
 
 

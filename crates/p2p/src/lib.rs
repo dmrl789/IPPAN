@@ -82,6 +82,12 @@ pub enum NetworkMessage {
     PeerInfo {
         peer_id: String,
         addresses: Vec<String>,
+        /// Stable node identifier (operator-defined). Observability only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        node_id: Option<String>,
+        /// Validator ID (32-byte hex). Observability only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        validator_id_hex: Option<String>,
         #[serde(default)]
         time_us: Option<u64>,
     },
@@ -97,6 +103,10 @@ pub struct PeerInfo {
     pub address: String,
     pub last_seen: u64,
     pub is_connected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validator_id_hex: Option<String>,
 }
 
 /// Events emitted by the HTTP P2P network when inbound messages are processed.
@@ -114,6 +124,8 @@ pub enum NetworkEvent {
         from: String,
         peer_id: String,
         addresses: Vec<String>,
+        node_id: Option<String>,
+        validator_id_hex: Option<String>,
         time_us: Option<u64>,
     },
     PeerDiscovery {
@@ -138,6 +150,8 @@ struct PeerRecord {
     last_announced_us: Option<u64>,
     observed_address: Option<String>,
     advertised_addresses: Vec<String>,
+    node_id: Option<String>,
+    validator_id_hex: Option<String>,
 }
 
 impl PeerRecord {
@@ -149,6 +163,8 @@ impl PeerRecord {
             last_announced_us: None,
             observed_address: None,
             advertised_addresses: Vec::new(),
+            node_id: None,
+            validator_id_hex: None,
         }
     }
 }
@@ -181,6 +197,10 @@ impl ChaosConfig {
 pub struct P2PConfig {
     pub listen_address: String,
     pub local_peer_id: Option<String>,
+    /// Stable node identifier (operator-defined). Included in PeerInfo announcements.
+    pub node_id: Option<String>,
+    /// Validator ID (32-byte hex). Included in PeerInfo announcements.
+    pub validator_id_hex: Option<String>,
     pub max_peers: usize,
     pub peer_discovery_interval: Duration,
     pub message_timeout: Duration,
@@ -195,6 +215,8 @@ impl Default for P2PConfig {
         Self {
             listen_address: "http://0.0.0.0:9000".to_string(),
             local_peer_id: None,
+            node_id: None,
+            validator_id_hex: None,
             max_peers: 50,
             peer_discovery_interval: Duration::from_secs(30),
             message_timeout: Duration::from_secs(10),
@@ -363,6 +385,8 @@ impl HttpP2PNetwork {
                 address: record.address.clone(),
                 last_seen: record.last_seen,
                 is_connected: peers.contains(&record.address),
+                node_id: record.node_id.clone(),
+                validator_id_hex: record.validator_id_hex.clone(),
             })
             .collect()
     }
@@ -489,9 +513,18 @@ impl HttpP2PNetwork {
             NetworkMessage::PeerInfo {
                 peer_id,
                 addresses,
+                node_id,
+                validator_id_hex,
                 time_us,
             } => {
-                self.record_peer_metadata(&from, peer_id, addresses, *time_us);
+                self.record_peer_metadata(
+                    &from,
+                    peer_id,
+                    addresses,
+                    node_id.as_deref(),
+                    validator_id_hex.as_deref(),
+                    *time_us,
+                );
             }
             NetworkMessage::PeerDiscovery { peers } => {
                 for peer in peers.clone() {
@@ -515,11 +548,15 @@ impl HttpP2PNetwork {
             NetworkMessage::PeerInfo {
                 peer_id,
                 addresses,
+                node_id,
+                validator_id_hex,
                 time_us,
             } => NetworkEvent::PeerInfo {
                 from: from.clone(),
                 peer_id,
                 addresses,
+                node_id,
+                validator_id_hex,
                 time_us,
             },
             NetworkMessage::PeerDiscovery { peers } => NetworkEvent::PeerDiscovery {
@@ -744,6 +781,8 @@ impl HttpP2PNetwork {
         let client = self.client.clone();
         let is_running = self.is_running.clone();
         let peer_id = self.local_peer_id.clone();
+        let node_id = self.config.node_id.clone();
+        let validator_id_hex = self.config.validator_id_hex.clone();
         let announce_address = self.announce_address.clone();
         let listen_address = self.listen_address.clone();
         let chaos = self.chaos.clone();
@@ -769,6 +808,8 @@ impl HttpP2PNetwork {
                 let message = NetworkMessage::PeerInfo {
                     peer_id: peer_id.clone(),
                     addresses: addresses.clone(),
+                    node_id: node_id.clone(),
+                    validator_id_hex: validator_id_hex.clone(),
                     time_us: Some(ippan_time_now()),
                 };
 
@@ -792,6 +833,8 @@ impl HttpP2PNetwork {
         let message = NetworkMessage::PeerInfo {
             peer_id: self.local_peer_id.clone(),
             addresses: vec![address],
+            node_id: self.config.node_id.clone(),
+            validator_id_hex: self.config.validator_id_hex.clone(),
             time_us: Some(ippan_time_now()),
         };
         post_message_with_chaos(&self.client, peer, &message, &self.chaos).await
@@ -810,6 +853,8 @@ impl HttpP2PNetwork {
         observed: &str,
         peer_id: &str,
         addresses: &[String],
+        node_id: Option<&str>,
+        validator_id_hex: Option<&str>,
         announced_time: Option<u64>,
     ) {
         let normalized_addresses: Vec<String> = addresses
@@ -826,6 +871,8 @@ impl HttpP2PNetwork {
             entry.last_seen = announced_time.unwrap_or_else(ippan_time_now);
             entry.last_announced_us = announced_time;
             entry.observed_address = Some(observed.to_string());
+            entry.node_id = node_id.map(|s| s.to_string());
+            entry.validator_id_hex = validator_id_hex.map(|s| s.to_string());
             for advertised in addresses {
                 if !entry.advertised_addresses.contains(advertised) {
                     entry.advertised_addresses.push(advertised.clone());
