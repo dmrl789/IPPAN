@@ -46,6 +46,11 @@ struct Args {
     #[arg(long, value_name = "PATH", conflicts_with = "from_key")]
     senders_file: Option<PathBuf>,
 
+    /// Override nonce_start for ALL senders (skips /nonce/reserve). Useful when you know
+    /// accounts are fresh (nonce=0) and want deterministic stage offsets.
+    #[arg(long, requires = "senders_file")]
+    senders_nonce_start: Option<u64>,
+
     /// Path to sender wallet key file (ippan-wallet JSON keyfile)
     #[arg(long, value_name = "PATH", required_unless_present = "senders_file")]
     from_key: Option<PathBuf>,
@@ -171,6 +176,8 @@ struct SenderFileEntry {
     from: Option<String>,
     pubkey_hex: String,
     signing_key_file: PathBuf,
+    #[serde(default)]
+    nonce_start: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -357,7 +364,23 @@ async fn main() -> Result<()> {
         let n = entries.len() as u64;
         let per_sender_planned = (total_planned + n - 1) / n;
         let reserve = per_sender_planned.saturating_add(1_000);
-        reserve_each = Some(reserve);
+        // If nonce_start is provided (either via --senders-nonce-start or per-entry nonce_start),
+        // skip /nonce/reserve entirely.
+        let override_nonce_start = args.senders_nonce_start;
+        let provided_nonce_starts = entries
+            .iter()
+            .filter(|e| e.nonce_start.is_some())
+            .count();
+        let all_have_nonce_start = provided_nonce_starts == entries.len();
+        let none_have_nonce_start = provided_nonce_starts == 0;
+        if override_nonce_start.is_none() && !(all_have_nonce_start || none_have_nonce_start) {
+            return Err(anyhow!(
+                "senders file must either provide nonce_start for all senders or for none"
+            ));
+        }
+        if override_nonce_start.is_none() && none_have_nonce_start {
+            reserve_each = Some(reserve);
+        }
 
         for entry in entries {
             let keyfile = KeyFile::load(&entry.signing_key_file)
@@ -382,7 +405,13 @@ async fn main() -> Result<()> {
                 ));
             }
             let signing_key_hex = hex::encode(unlocked.private_key);
-            let nonce_start = reserve_nonce_range(&client, &rpc, &pubkey_hex, reserve).await?;
+            let nonce_start = match override_nonce_start {
+                Some(start) => start,
+                None => match entry.nonce_start {
+                    Some(start) => start,
+                    None => reserve_nonce_range(&client, &rpc, &pubkey_hex, reserve).await?,
+                },
+            };
 
             senders.push(SenderRuntime {
                 from_address,

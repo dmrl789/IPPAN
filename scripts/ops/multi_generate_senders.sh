@@ -45,7 +45,8 @@ out_dir=sys.argv[2]
 items=[]
 for i in range(1,n+1):
     items.append({
-        "from": f"@s{i:03d}.ipn",
+        "label": f"s{i:03d}",
+        "from": "",
         "pubkey_hex": "",
         "signing_key_file": os.path.join(out_dir, "keys", f"s{i:03d}.key").replace("\\","/"),
         "address": ""
@@ -75,6 +76,8 @@ for item in data:
     if item["signing_key_file"] == key:
         item["pubkey_hex"] = pub
         item["address"] = addr
+        # Use the real address for tx submission (avoid relying on @handle resolution).
+        item["from"] = addr
         break
 json.dump(data, open(path,"w",encoding="utf-8"), indent=2)
 PY

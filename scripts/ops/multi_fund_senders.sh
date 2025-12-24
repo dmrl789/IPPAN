@@ -14,12 +14,7 @@ set -euo pipefail
 : "${AMOUNT:=100000}"
 : "${PARALLEL:=8}"
 
-host="$(python3 - <<PY
-import sys, urllib.parse
-u=urllib.parse.urlparse(sys.argv[1])
-print(u.hostname or "")
-PY
-"$RPC")"
+host="$(python3 -c 'import os, urllib.parse; u=urllib.parse.urlparse(os.environ.get("RPC","")); print(u.hostname or "")')"
 
 if [[ "$host" != "127.0.0.1" && "$host" != "localhost" && "${FORCE_NON_LOOPBACK:-0}" != "1" ]]; then
   echo "Refusing to call /dev/fund on non-loopback RPC ($RPC)."
@@ -57,9 +52,11 @@ fund_one() {
   local addr="$1"
   local body
   body="$(printf '{"address":"%s","amount":%s}' "$addr" "$AMOUNT")"
-  curl -sS -X POST "$RPC/dev/fund" -H 'content-type: application/json' -d "$body" \
-    | python3 -c 'import json,sys; j=json.load(sys.stdin); print(json.dumps(j, separators=(",",":")))' \
-    || printf '{"error":"fund_failed","address":"%s"}\n' "$addr"
+  {
+    resp="$(curl -sS -X POST "$RPC/dev/fund" -H 'content-type: application/json' -d "$body" 2>/dev/null)" || resp=""
+    python3 -c 'import json,sys; j=json.load(sys.stdin); print(json.dumps(j, separators=(",",":")))' <<<"$resp" 2>/dev/null \
+      || printf '{"error":"fund_failed","address":"%s"}\n' "$addr"
+  } || printf '{"error":"fund_failed","address":"%s"}\n' "$addr"
 }
 
 export -f fund_one
