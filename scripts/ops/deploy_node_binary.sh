@@ -13,6 +13,8 @@ set -euo pipefail
 BIN_LOCAL="${1:-target/release/ippan-node}"
 NODE_IP="${2:-}"
 REMOTE_BIN="${REMOTE_BIN:-/usr/local/bin/ippan-node}"
+SSH_OPTS="${SSH_OPTS:--o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new}"
+SCP_OPTS="${SCP_OPTS:--o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new}"
 
 if [[ -z "$NODE_IP" ]]; then
   echo "Usage: $0 <local_bin_path> <node_ip>" >&2
@@ -25,9 +27,9 @@ if [[ ! -f "$BIN_LOCAL" ]]; then
 fi
 
 echo "== Deploying to $NODE_IP =="
-scp "$BIN_LOCAL" "root@$NODE_IP:${REMOTE_BIN}.new"
+scp $SCP_OPTS "$BIN_LOCAL" "root@$NODE_IP:${REMOTE_BIN}.new"
 
-ssh "root@$NODE_IP" "bash -lc '
+ssh $SSH_OPTS "root@$NODE_IP" "bash -lc '
 set -euo pipefail
 mv ${REMOTE_BIN}.new ${REMOTE_BIN}
 chmod +x ${REMOTE_BIN}
