@@ -107,11 +107,15 @@ struct Report {
     total_sent: u64,
     accepted: u64,
     rejected: u64,
+    /// Alias for achieved_tps_accepted (kept for convenience in ops tooling).
+    accepted_tps: f64,
     achieved_tps_sent: f64,
     achieved_tps_accepted: f64,
     latency_ms_p50: f64,
     latency_ms_p95: f64,
     latency_ms_p99: f64,
+    /// Convenience counter for 429 Too Many Requests (backpressure).
+    http_429: u64,
     errors_by_http_status: BTreeMap<String, u64>,
     errors_by_rpc_code: BTreeMap<String, u64>,
     sample_tx_hashes: Vec<String>,
@@ -487,6 +491,7 @@ async fn main() -> Result<()> {
     let elapsed_s = (ended_at_ms.saturating_sub(started_at_ms) as f64 / 1000.0).max(0.001);
     let achieved_tps_sent = total_sent as f64 / elapsed_s;
     let achieved_tps_accepted = accepted as f64 / elapsed_s;
+    let http_429 = *errors_by_http_status.get("429").unwrap_or(&0);
 
     let latency_ms_p50 = if latency_hist.len() == 0 {
         0.0
@@ -517,11 +522,13 @@ async fn main() -> Result<()> {
         total_sent,
         accepted,
         rejected,
+        accepted_tps: achieved_tps_accepted,
         achieved_tps_sent,
         achieved_tps_accepted,
         latency_ms_p50,
         latency_ms_p95,
         latency_ms_p99,
+        http_429,
         errors_by_http_status,
         errors_by_rpc_code,
         sample_tx_hashes,
