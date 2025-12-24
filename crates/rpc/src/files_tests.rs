@@ -111,6 +111,11 @@ mod tests {
             handle_anchors,
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
+            payment_admission_tx: None,
+            payment_admission_depth: Arc::new(AtomicUsize::new(0)),
+            payment_admission_capacity: 0,
+            payment_admission_workers: 0,
+            nonce_reservation_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 

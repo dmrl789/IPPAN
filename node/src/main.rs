@@ -1507,6 +1507,11 @@ async fn main() -> Result<()> {
         handle_dht: Some(handle_dht.clone()),
         dht_handle_mode: config.handle_dht_mode.to_string(),
         dlc_consensus: dlc_handle,
+        payment_admission_tx: None,
+        payment_admission_depth: Arc::new(AtomicUsize::new(0)),
+        payment_admission_capacity: 10_000,
+        payment_admission_workers: 8,
+        nonce_reservation_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
 
     let rpc_host = &config.rpc_host;
@@ -1751,12 +1756,32 @@ enum MetricsDriftMode {
 
 fn discover_validator_ids(config: &AppConfig) -> Vec<[u8; 32]> {
     let mut ids = vec![config.validator_id];
+    ids.extend(load_validator_ids_from_env());
     ids.extend(load_localnet_validator_ids(&config.config_path));
     if ids.is_empty() {
         ids.push(config.validator_id);
     }
     ids.sort();
     ids.dedup();
+    ids
+}
+
+fn load_validator_ids_from_env() -> Vec<[u8; 32]> {
+    let mut ids = Vec::new();
+    let Ok(raw) = env::var("IPPAN_VALIDATOR_IDS") else {
+        return ids;
+    };
+    for part in raw.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(id) = parse_hex_validator_id(trimmed) {
+            ids.push(id);
+        } else {
+            warn!("Ignoring invalid IPPAN_VALIDATOR_IDS entry (expected 64 hex chars): {}", trimmed);
+        }
+    }
     ids
 }
 

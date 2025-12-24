@@ -78,6 +78,22 @@ pids/
 *.seed
 *.pid.lock
 
+# Ops/loadtest artifacts
+out/
+.secrets/
+
+# Local key material / operator secrets
+keys/
+
+# Local Python venvs (training/dev)
+.venv*/
+
+# Cursor/IDE local project rules & state
+.cursor/
+
+# Large local AI model artifacts (do not commit)
+ai_assets/models/devnet*/
+
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov

@@ -2157,6 +2157,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "hdrhistogram"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "765c9198f173dd59ce26ff9f95ef0aafd0a0fe01fb9d72841bc5066a4c06511d"
+dependencies = [
+ "base64 0.21.7",
+ "byteorder",
+ "crossbeam-channel",
+ "flate2",
+ "nom",
+ "num-traits",
+]
+
+[[package]]
 name = "headers"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2902,6 +2916,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "ippan_wallet",
  "reqwest",
  "serde",
  "serde_json",
@@ -3432,6 +3447,23 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "ippan-txload"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hdrhistogram",
+ "hex",
+ "ippan_wallet",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

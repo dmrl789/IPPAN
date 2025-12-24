@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
+use ippan_wallet::keyfile::KeyFile;
 use serde_json::{Map, Value};
 use std::fs;
 use std::path::PathBuf;
@@ -14,7 +15,7 @@ use std::path::PathBuf;
 #[command(version)]
 struct Cli {
     /// RPC endpoint URL
-    #[arg(long, default_value = "http://localhost:8080")]
+    #[arg(long, alias = "rpc", default_value = "http://localhost:8080")]
     rpc_url: String,
 
     #[command(subcommand)]
@@ -89,13 +90,40 @@ enum TxCommands {
         /// Transaction hash
         hash: String,
     },
-    /// Send raw transaction
-    Send {
+    /// Send a real signed payment (convenience wrapper over POST /tx/payment)
+    Send(TxSendCommand),
+    /// Send raw transaction (legacy)
+    SendRaw {
         /// Raw transaction hex
         raw_tx: String,
     },
     /// List pending transactions
     Pending,
+}
+
+#[derive(Args)]
+struct TxSendCommand {
+    /// Path to the sender keyfile (ippan-wallet JSON keyfile)
+    #[arg(long, alias = "from", value_name = "PATH")]
+    from_key: PathBuf,
+    /// Optional keyfile password (can also be provided via IPPAN_KEY_PASSWORD env)
+    #[arg(long)]
+    from_key_password: Option<String>,
+    /// Recipient identifier (Base58Check, hex, or @handle)
+    #[arg(long)]
+    to: String,
+    /// Amount in atomic units
+    #[arg(long)]
+    amount: u128,
+    /// Optional fee limit in atomic units
+    #[arg(long)]
+    fee: Option<u128>,
+    /// Optional explicit nonce (otherwise derived by the node)
+    #[arg(long)]
+    nonce: Option<u64>,
+    /// Optional memo/topic
+    #[arg(long)]
+    memo: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -241,7 +269,62 @@ async fn handle_tx_commands(cmd: TxCommands, rpc_url: &str) -> Result<()> {
             let json: Value = response.json().await?;
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
-        TxCommands::Send { raw_tx } => {
+        TxCommands::Send(send) => {
+            let password = send
+                .from_key_password
+                .or_else(|| std::env::var("IPPAN_KEY_PASSWORD").ok());
+            let keyfile = KeyFile::load(&send.from_key)
+                .with_context(|| format!("failed to load keyfile {}", send.from_key.display()))?;
+            let unlocked = keyfile
+                .unlock(password.as_deref())
+                .context("failed to unlock keyfile")?;
+
+            let mut payload = Map::new();
+            payload.insert("from".into(), Value::String(unlocked.address));
+            payload.insert("to".into(), Value::String(send.to));
+            payload.insert("amount".into(), Value::String(send.amount.to_string()));
+            payload.insert(
+                "signing_key".into(),
+                Value::String(hex::encode(unlocked.private_key)),
+            );
+            if let Some(fee_limit) = send.fee {
+                payload.insert("fee".into(), Value::String(fee_limit.to_string()));
+            }
+            if let Some(nonce_value) = send.nonce {
+                payload.insert(
+                    "nonce".into(),
+                    Value::Number(serde_json::Number::from(nonce_value)),
+                );
+            }
+            if let Some(memo_value) = send.memo {
+                payload.insert("memo".into(), Value::String(memo_value));
+            }
+
+            let response = client
+                .post(format!("{rpc_url}/tx/payment"))
+                .json(&Value::Object(payload))
+                .send()
+                .await?;
+
+            let status = response.status();
+            let body = response.json::<Value>().await.unwrap_or(Value::Null);
+
+            if status.is_success() {
+                if let Some(tx_hash) = body.get("tx_hash").and_then(|v| v.as_str()) {
+                    println!("Payment accepted: {tx_hash}");
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&body)?);
+                }
+                ()
+            } else {
+                anyhow::bail!(
+                    "payment rejected (status {}): {}",
+                    status,
+                    serde_json::to_string_pretty(&body)?
+                )
+            }
+        }
+        TxCommands::SendRaw { raw_tx } => {
             let payload = serde_json::json!({
                 "raw": raw_tx
             });

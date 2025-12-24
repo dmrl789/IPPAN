@@ -47,6 +47,7 @@ members = [
   "crates/benchmark",        # Performance benchmarking tool
   "crates/explorer",         # Block explorer API gateway
   "tools/loadgen",           # RPC load generator for perf baselines
+  "tools/ippan-txload",      # True tx load test harness (paced TPS)
 
   # Fuzz testing
   "crates/fuzz",             # Fuzz harness for critical components

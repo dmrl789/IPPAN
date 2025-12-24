@@ -56,6 +56,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
+use tokio::sync::oneshot;
 use tower::limit::ConcurrencyLimitLayer;
 use tower::timeout::TimeoutLayer;
 use tower::BoxError;
@@ -92,6 +93,8 @@ const HANDLE_LOOKUP_ENDPOINT: &str = "/handle/:handle";
 const MAX_BODY_BYTES: usize = 64 * 1024; // 64 KiB default when security manager not configured
 const REQUEST_TIMEOUT_SECS: u64 = 10;
 const MAX_CONCURRENT_REQUESTS: usize = 128;
+const DEFAULT_PAYMENT_ADMISSION_QUEUE_CAPACITY: usize = 10_000;
+const DEFAULT_PAYMENT_ADMISSION_WORKERS: usize = 8;
 
 /// Stable response payload for the `/version` endpoint.
 /// Keep this schema backward-compatible; bump `protocol_version` before
@@ -144,6 +147,29 @@ pub struct AppState {
     pub dht_handle_mode: String,
     /// DLC consensus handle (if DLC mode is enabled)
     pub dlc_consensus: Option<Arc<parking_lot::RwLock<DLCConsensus>>>,
+
+    // ---------------------------------------------------------------------
+    // RPC admission + nonce plumbing (ops/txload-hardening)
+    // ---------------------------------------------------------------------
+    /// Bounded admission queue for /tx/payment (initialized at RPC server start).
+    pub payment_admission_tx: Option<mpsc::Sender<PaymentAdmissionJob>>,
+    pub payment_admission_depth: Arc<AtomicUsize>,
+    pub payment_admission_capacity: usize,
+    pub payment_admission_workers: usize,
+    /// Serialize nonce reservation operations (simple, correct, per-node).
+    pub nonce_reservation_lock: Arc<Mutex<()>>,
+}
+
+#[derive(Debug)]
+pub enum PaymentAdmissionError {
+    Backpressure,
+    MempoolRejected,
+    Internal(String),
+}
+
+pub struct PaymentAdmissionJob {
+    pub tx: Transaction,
+    pub responder: oneshot::Sender<Result<(), PaymentAdmissionError>>,
 }
 
 type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
@@ -703,6 +729,41 @@ struct DevFundResponse {
     created: bool,
 }
 
+// -----------------------------------------------------------------------------
+// Nonce endpoints (fast path for txload)
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+struct NonceResponse {
+    pubkey_hex: String,
+    nonce: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NonceBatchRequest {
+    pubkeys: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct NonceBatchResponse {
+    nonces: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NonceReserveRequest {
+    pubkey_hex: String,
+    count: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct NonceReserveResponse {
+    pubkey_hex: String,
+    start: u64,
+    count: u64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HandleRegisterRequest {
@@ -918,6 +979,10 @@ enum PaymentError {
     SigningFailed(String),
     #[error("transaction submission failed: {0}")]
     SubmissionFailed(String),
+    #[error("backpressure: server overloaded")]
+    Backpressure,
+    #[error("mempool rejected transaction")]
+    MempoolRejected,
 }
 
 #[derive(Debug, Error)]
@@ -1000,6 +1065,8 @@ impl PaymentError {
             PaymentError::SubmissionFailed(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "submission_failed")
             }
+            PaymentError::Backpressure => (StatusCode::TOO_MANY_REQUESTS, "backpressure"),
+            PaymentError::MempoolRejected => (StatusCode::TOO_MANY_REQUESTS, "mempool_rejected"),
         }
     }
 }
@@ -1424,7 +1491,34 @@ struct L2Filter {
 /// Start the RPC server
 pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     info!("Starting RPC server on {}", addr);
+    let mut state = state;
+    // Initialize bounded /tx/payment admission queue if not already configured.
+    if state.payment_admission_capacity == 0 {
+        state.payment_admission_capacity = DEFAULT_PAYMENT_ADMISSION_QUEUE_CAPACITY;
+    }
+    if state.payment_admission_workers == 0 {
+        state.payment_admission_workers = DEFAULT_PAYMENT_ADMISSION_WORKERS;
+    }
+    if state.payment_admission_tx.is_none() {
+        let (tx, rx) = mpsc::channel::<PaymentAdmissionJob>(state.payment_admission_capacity);
+        state.payment_admission_tx = Some(tx);
+        let shared = Arc::new(state);
+        spawn_payment_admission_workers(shared.clone(), rx, shared.payment_admission_workers);
+        let app = build_router(shared.clone());
+        let listener = bind_listener(addr).await?;
+        let bound_addr = listener.local_addr()?;
+        info!("RPC server listening on {}", bound_addr);
+        return axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .context("RPC server terminated unexpectedly");
+    }
+
     let shared = Arc::new(state);
+    // Queue sender was already configured; still ensure workers exist by creating a new receiver.
+    // (If sender was configured externally, operator is responsible for workers.)
     let app = build_router(shared.clone());
     let listener = bind_listener(addr).await?;
     let bound_addr = listener.local_addr()?;
@@ -1435,6 +1529,81 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     )
     .await
     .context("RPC server terminated unexpectedly")
+}
+
+fn spawn_payment_admission_workers(
+    state: Arc<AppState>,
+    mut rx: mpsc::Receiver<PaymentAdmissionJob>,
+    workers: usize,
+) {
+    let workers = workers.max(1);
+    let per_worker_capacity = (state.payment_admission_capacity / workers).max(1);
+
+    // Fan-out via dispatcher: single receiver -> N worker channels.
+    let mut worker_txs = Vec::with_capacity(workers);
+    for idx in 0..workers {
+        let (tx, mut wrx) = mpsc::channel::<PaymentAdmissionJob>(per_worker_capacity);
+        worker_txs.push(tx);
+
+        let st = state.clone();
+        tokio::spawn(async move {
+            debug!("payment admission worker {} started", idx);
+            while let Some(job) = wrx.recv().await {
+                st.payment_admission_depth.fetch_sub(1, Ordering::Relaxed);
+                let result = process_payment_admission(&st, job.tx).await;
+                let _ = job.responder.send(result);
+            }
+            debug!("payment admission worker {} stopped", idx);
+        });
+    }
+
+    let st_for_dispatch = state.clone();
+    tokio::spawn(async move {
+        let mut i = 0usize;
+        while let Some(job) = rx.recv().await {
+            let tx = &worker_txs[i % worker_txs.len()];
+            i = i.wrapping_add(1);
+            match tx.try_send(job) {
+                Ok(()) => {}
+                Err(mpsc::error::TrySendError::Full(job)) => {
+                    st_for_dispatch
+                        .payment_admission_depth
+                        .fetch_sub(1, Ordering::Relaxed);
+                    let _ = job.responder.send(Err(PaymentAdmissionError::Backpressure));
+                }
+                Err(mpsc::error::TrySendError::Closed(job)) => {
+                    st_for_dispatch
+                        .payment_admission_depth
+                        .fetch_sub(1, Ordering::Relaxed);
+                    let _ = job
+                        .responder
+                        .send(Err(PaymentAdmissionError::Internal(
+                            "worker queue closed".into(),
+                        )));
+                }
+            }
+        }
+    });
+}
+
+async fn process_payment_admission(
+    state: &Arc<AppState>,
+    tx_for_ingest: Transaction,
+) -> Result<(), PaymentAdmissionError> {
+    let tx_hash_hex = hex::encode(tx_for_ingest.hash());
+
+    match state.mempool.add_transaction(tx_for_ingest.clone()) {
+        Ok(true) => {}
+        Ok(false) => return Err(PaymentAdmissionError::MempoolRejected),
+        Err(err) => return Err(PaymentAdmissionError::Internal(err.to_string())),
+    }
+
+    if let Err(err) = state.storage.store_transaction(tx_for_ingest.clone()) {
+        let _ = state.mempool.remove_transaction(&tx_hash_hex);
+        return Err(PaymentAdmissionError::Internal(err.to_string()));
+    }
+
+    Ok(())
 }
 
 /// Bind to TCP listener
@@ -1507,6 +1676,7 @@ fn build_router(state: Arc<AppState>) -> Router {
     let mut router = Router::new()
         .route("/health", get(handle_get_health))
         .route("/status", get(handle_status))
+        .route("/consensus/view", get(handle_consensus_view))
         .route("/time", get(handle_time))
         .route("/version", get(handle_version))
         .route("/metrics", get(handle_metrics))
@@ -1514,6 +1684,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/tx", post(handle_submit_tx))
         .route("/tx/payment", post(handle_payment_tx))
         .route("/tx/:hash", get(handle_get_transaction))
+        .route("/nonce/:pubkey_hex", get(handle_get_nonce))
+        .route("/nonce/batch", post(handle_nonce_batch))
+        .route("/nonce/reserve", post(handle_nonce_reserve))
         .route(HANDLE_REGISTER_ENDPOINT, post(handle_register_handle))
         .route(HANDLE_LOOKUP_ENDPOINT, get(handle_get_handle))
         .route("/files/publish", post(handle_publish_file))
@@ -1681,10 +1854,7 @@ fn map_security_error(err: &SecurityError) -> (StatusCode, &'static str) {
         SecurityError::IpBlocked => (StatusCode::FORBIDDEN, "IP address blocked"),
         SecurityError::IpNotWhitelisted => (StatusCode::FORBIDDEN, "IP address not permitted"),
         SecurityError::RateLimitExceeded => (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded"),
-        SecurityError::CircuitBreakerOpen => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Service temporarily unavailable",
-        ),
+        SecurityError::CircuitBreakerOpen => (StatusCode::TOO_MANY_REQUESTS, "backpressure"),
         SecurityError::ValidationFailed(_) => (StatusCode::BAD_REQUEST, "Invalid request payload"),
         SecurityError::AuditFailed(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "Security audit failure")
@@ -1901,6 +2071,16 @@ async fn handle_status(
 
     let dataset_export = build_dataset_export_status();
 
+    let validator_count = consensus_view
+        .as_ref()
+        .and_then(|v| v.get("validator_ids"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.len() as u64)
+        .unwrap_or(0);
+
+    let rpc_queue_depth = state.payment_admission_depth.load(Ordering::Relaxed) as u64;
+    let rpc_queue_capacity = state.payment_admission_capacity as u64;
+
     Ok(Json(serde_json::json!({
         "status": "ok",
         "status_schema_version": 2,
@@ -1908,13 +2088,53 @@ async fn handle_status(
         "version": env!("CARGO_PKG_VERSION"),
         "build_sha": git_commit_hash(),
         "peer_count": peer_count,
+        "validator_count": validator_count,
         "uptime_seconds": uptime_seconds,
         "requests_served": requests_served,
         "network_active": state.p2p_network.is_some(),
         "consensus": consensus_view,
         "ai": ai_view,
         "mempool_size": mempool_size,
+        "rpc_queue_depth": rpc_queue_depth,
+        "rpc_queue_capacity": rpc_queue_capacity,
         "dataset_export": dataset_export
+    })))
+}
+
+async fn handle_consensus_view(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<Json<serde_json::Value>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/consensus/view";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    let consensus_view = if let Some(consensus) = &state.consensus {
+        match consensus.snapshot().await {
+            Ok(view) => build_consensus_payload(view, state.dlc_consensus.as_ref()),
+            Err(err) => {
+                warn!("Failed to snapshot consensus state: {}", err);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let peer_count = state.peer_count.load(Ordering::Relaxed);
+    let mempool_size = state.mempool.size();
+    let rpc_queue_depth = state.payment_admission_depth.load(Ordering::Relaxed) as u64;
+    let rpc_queue_capacity = state.payment_admission_capacity as u64;
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(serde_json::json!({
+        "node_id": state.node_id.clone(),
+        "peer_count": peer_count,
+        "mempool_size": mempool_size,
+        "rpc_queue_depth": rpc_queue_depth,
+        "rpc_queue_capacity": rpc_queue_capacity,
+        "consensus": consensus_view,
     })))
 }
 
@@ -2228,25 +2448,199 @@ async fn handle_payment_tx(
     };
 
     let response = payment_response_from_built(&built);
-    let tx_for_consensus = built.transaction.clone();
 
-    if let Some(consensus) = &state.consensus {
-        if let Err(err) = consensus.submit_transaction(tx_for_consensus) {
-            return Err(payment_error_response(
+    // ---------------------------------------------------------------------
+    // Bounded admission queue (backpressure instead of 503 collapse)
+    // ---------------------------------------------------------------------
+    let Some(admission_tx) = state.payment_admission_tx.as_ref() else {
+        return Err(
+            payment_error_response(
                 &state,
                 &addr,
-                PaymentError::SubmissionFailed(err.to_string()),
+                PaymentError::SubmissionFailed("payment admission queue not initialized".into()),
             )
-            .await);
-        }
-    } else {
-        return Err(
-            payment_error_response(&state, &addr, PaymentError::ConsensusUnavailable).await,
+            .await,
         );
+    };
+
+    let (responder_tx, responder_rx) = oneshot::channel::<Result<(), PaymentAdmissionError>>();
+    let job = PaymentAdmissionJob {
+        tx: built.transaction.clone(),
+        responder: responder_tx,
+    };
+
+    match admission_tx.try_send(job) {
+        Ok(()) => {
+            state.payment_admission_depth.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(mpsc::error::TrySendError::Full(_)) => {
+            return Err(payment_error_response(&state, &addr, PaymentError::Backpressure).await);
+        }
+        Err(mpsc::error::TrySendError::Closed(_)) => {
+            return Err(
+                payment_error_response(
+                    &state,
+                    &addr,
+                    PaymentError::SubmissionFailed("admission queue closed".into()),
+                )
+                .await,
+            );
+        }
+    }
+
+    match responder_rx.await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            let mapped = match err {
+                PaymentAdmissionError::Backpressure => PaymentError::Backpressure,
+                PaymentAdmissionError::MempoolRejected => PaymentError::MempoolRejected,
+                PaymentAdmissionError::Internal(msg) => PaymentError::SubmissionFailed(msg),
+            };
+            return Err(payment_error_response(&state, &addr, mapped).await);
+        }
+        Err(_) => {
+            return Err(
+                payment_error_response(
+                    &state,
+                    &addr,
+                    PaymentError::SubmissionFailed("admission worker dropped response".into()),
+                )
+                .await,
+            )
+        }
     }
 
     record_security_success(&state, &addr, PAYMENT_ENDPOINT).await;
     Ok(Json(response))
+}
+
+async fn handle_get_nonce(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(pubkey_hex): AxumPath<String>,
+) -> Result<Json<NonceResponse>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/nonce/:pubkey_hex";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    let key_bytes = match parse_hex_32(&pubkey_hex) {
+        Ok(b) => b,
+        Err(_) => return Err((StatusCode::BAD_REQUEST, "Invalid pubkey_hex")),
+    };
+
+    let nonce = match state.storage.get_account(&key_bytes) {
+        Ok(Some(account)) => account.nonce,
+        Ok(None) => 0,
+        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load account")),
+    };
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(NonceResponse {
+        pubkey_hex: hex::encode(key_bytes),
+        nonce,
+    }))
+}
+
+async fn handle_nonce_batch(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ValidatedJson(request): ValidatedJson<NonceBatchRequest>,
+) -> Result<Json<NonceBatchResponse>, (StatusCode, Json<ApiError>)> {
+    const ENDPOINT: &str = "/nonce/batch";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    let mut nonces = BTreeMap::new();
+    for pubkey in request.pubkeys {
+        let key_bytes = parse_hex_32(&pubkey).map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("invalid_pubkey", "invalid pubkey hex")),
+            )
+        })?;
+        let nonce = match state.storage.get_account(&key_bytes) {
+            Ok(Some(account)) => account.nonce,
+            Ok(None) => 0,
+            Err(err) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError::new("storage_error", err.to_string())),
+                ))
+            }
+        };
+        nonces.insert(hex::encode(key_bytes), nonce);
+    }
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(NonceBatchResponse { nonces }))
+}
+
+async fn handle_nonce_reserve(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ValidatedJson(request): ValidatedJson<NonceReserveRequest>,
+) -> Result<Json<NonceReserveResponse>, (StatusCode, Json<ApiError>)> {
+    const ENDPOINT: &str = "/nonce/reserve";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    if request.count == 0 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new("invalid_count", "count must be > 0")),
+        ));
+    }
+
+    let key_bytes = parse_hex_32(&request.pubkey_hex).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new("invalid_pubkey", "invalid pubkey hex")),
+        )
+    })?;
+
+    let _guard = state.nonce_reservation_lock.lock().await;
+
+    let (mut account, _existed) = match state.storage.get_account(&key_bytes) {
+        Ok(Some(acc)) => (acc, true),
+        Ok(None) => (
+            Account {
+                address: key_bytes,
+                balance: 0,
+                nonce: 0,
+            },
+            false,
+        ),
+        Err(err) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::new("storage_error", err.to_string())),
+            ))
+        }
+    };
+
+    let start = account.nonce;
+    account.nonce = account
+        .nonce
+        .saturating_add(request.count);
+
+    if let Err(err) = state.storage.update_account(account) {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError::new("storage_error", err.to_string())),
+        ));
+    }
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(NonceReserveResponse {
+        pubkey_hex: hex::encode(key_bytes),
+        start,
+        count: request.count,
+    }))
 }
 
 async fn handle_dev_fund(
@@ -3581,6 +3975,11 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            payment_admission_tx: None,
+            payment_admission_depth: Arc::new(AtomicUsize::new(0)),
+            payment_admission_capacity: 0,
+            payment_admission_workers: 0,
+            nonce_reservation_lock: Arc::new(Mutex::new(())),
         });
 
         let addr: SocketAddr = "127.0.0.1:6000".parse().unwrap();
@@ -3722,6 +4121,11 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            payment_admission_tx: None,
+            payment_admission_depth: Arc::new(AtomicUsize::new(0)),
+            payment_admission_capacity: 0,
+            payment_admission_workers: 0,
+            nonce_reservation_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -6011,6 +6415,11 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            payment_admission_tx: None,
+            payment_admission_depth: Arc::new(AtomicUsize::new(0)),
+            payment_admission_capacity: 0,
+            payment_admission_workers: 0,
+            nonce_reservation_lock: Arc::new(Mutex::new(())),
         });
 
         let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();

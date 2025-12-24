@@ -4,10 +4,46 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Hash, Clock, Users, Activity } from 'lucide-react';
 
+type NodeStatus = {
+  validator_count?: number;
+  consensus?: { validator_ids?: string[]; round?: number };
+};
+
 export function BlockchainExplorer() {
   const [searchQuery, setSearchQuery] = useState('');
   const [blocks, setBlocks] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [validatorCount, setValidatorCount] = useState<number | null>(null);
+  const [validatorSource, setValidatorSource] = useState<string>('—');
+
+  useEffect(() => {
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+    if (!base) return;
+
+    const url = `${base.replace(/\\/$/, '')}/status`;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        const json = (await res.json()) as NodeStatus;
+        const count =
+          json.validator_count ??
+          (Array.isArray(json.consensus?.validator_ids) ? json.consensus?.validator_ids.length : undefined);
+        if (!cancelled) {
+          setValidatorCount(typeof count === 'number' ? count : null);
+          setValidatorSource(json.validator_count != null ? '/status.validator_count' : '/status.consensus.validator_ids');
+        }
+      } catch {
+        if (!cancelled) {
+          setValidatorCount(null);
+          setValidatorSource('fetch failed');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -69,7 +105,10 @@ export function BlockchainExplorer() {
               <Users className="w-5 h-5 text-purple-500" />
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Validators</p>
-                <p className="text-lg font-semibold text-gray-900 dark:text-white">25</p>
+                <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {validatorCount ?? '—'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">source: {validatorSource}</p>
               </div>
             </div>
           </div>
