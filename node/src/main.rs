@@ -1125,6 +1125,19 @@ async fn main() -> Result<()> {
         info!("Config file: {}", path.display());
     } else {
         info!("Config file: (built-in defaults)");
+        if !config.dev_mode {
+            warn!(
+                "No config file was loaded while dev mode is disabled. \
+                 If this is unintended, pass --config <path> or ensure the default config file is present."
+            );
+            let require_cfg = env::var("IPPAN_REQUIRE_CONFIG")
+                .ok()
+                .map(|v| matches!(v.trim(), "1" | "true" | "TRUE"))
+                .unwrap_or(false);
+            if require_cfg {
+                anyhow::bail!("IPPAN_REQUIRE_CONFIG=1 but no config file was loaded");
+            }
+        }
     }
     info!("Data directory: {}", config.data_dir);
     info!("Development mode: {}", config.dev_mode);
@@ -1243,7 +1256,14 @@ async fn main() -> Result<()> {
     };
 
     // Build validator set from discovered IDs (ensures multi-node devnet has unique identities)
+    // NOTE: production deployments can optionally provide IPPAN_VALIDATOR_IDS (comma-separated 64-hex IDs)
+    // to seed the validator set across nodes.
     let discovered_validators = discover_validator_ids(&config);
+    info!(
+        "Discovered validator IDs: {} (self={})",
+        discovered_validators.len(),
+        hex::encode(config.validator_id)
+    );
     let validator_entries: Vec<Validator> = discovered_validators
         .iter()
         .map(|id| Validator {
@@ -1268,6 +1288,7 @@ async fn main() -> Result<()> {
 
     // Initialize consensus based on mode
     let (tx_sender, mempool, consensus);
+    let consensus_task_handle: tokio::task::JoinHandle<()>;
     let mut ai_status_handle: Option<AiStatusHandle> = None;
     let mut dlc_handle: Option<Arc<RwLock<ippan_consensus::DLCConsensus>>> = None;
 
@@ -1301,9 +1322,6 @@ async fn main() -> Result<()> {
         let mut dlc_integrated =
             DLCIntegratedConsensus::new(poa_instance, dlc_config, config.validator_id);
 
-        tx_sender = dlc_integrated.poa.get_tx_sender();
-        mempool = dlc_integrated.poa.mempool();
-
         // Add validator bond if required
         if config.require_validator_bond {
             info!(
@@ -1319,6 +1337,16 @@ async fn main() -> Result<()> {
 
         // Start DLC consensus
         dlc_integrated.start().await?;
+
+        consensus_task_handle = dlc_integrated
+            .poa
+            .take_task_handle()
+            .ok_or_else(|| anyhow!("Consensus task handle missing after DLC start"))?;
+
+        // IMPORTANT: fetch the tx sender AFTER start(). Some consensus backends may re-wire
+        // their internal submission channels during startup.
+        tx_sender = dlc_integrated.poa.get_tx_sender();
+        mempool = dlc_integrated.poa.mempool();
 
         // Store DLC handle before moving dlc_integrated
         // get_dlc() returns Arc<RwLock<DLCConsensus>>, which is what we need
@@ -1360,7 +1388,7 @@ async fn main() -> Result<()> {
         info!("  - Validator bonding: {}", config.require_validator_bond);
     } else {
         info!("Starting PoA consensus mode");
-        let consensus_instance = PoAConsensus::with_handle_services(
+        let mut consensus_instance = PoAConsensus::with_handle_services(
             consensus_config,
             storage.clone(),
             config.validator_id,
@@ -1368,15 +1396,57 @@ async fn main() -> Result<()> {
             handle_anchors.clone(),
             Some(handle_dht.clone()),
         );
+        // Start first, then fetch handles in case start() re-wires channels.
+        consensus_instance.start().await?;
+        consensus_task_handle = consensus_instance
+            .take_task_handle()
+            .ok_or_else(|| anyhow!("Consensus task handle missing after PoA start"))?;
         tx_sender = consensus_instance.get_tx_sender();
         mempool = consensus_instance.mempool();
         consensus = Arc::new(Mutex::new(consensus_instance));
-        {
-            let mut consensus_guard = consensus.lock().await;
-            consensus_guard.start().await?;
-        }
         info!("PoA consensus engine started");
     }
+
+    // Fail-fast invariant: don't serve RPC if the consensus submit channel is closed.
+    if tx_sender.is_closed() {
+        anyhow::bail!("Consensus submit channel is closed; refusing to start RPC");
+    }
+
+    // Fail-fast invariant: if consensus task dies or the submit channel closes, exit(1).
+    // This prevents a state where `/health` is OK but consensus is dead.
+    {
+        let mut task = Some(consensus_task_handle);
+        let tx_sender_watch = tx_sender.clone();
+        tokio::spawn(async move {
+            loop {
+                if tx_sender_watch.is_closed() {
+                    error!("Consensus submit channel closed; exiting for systemd restart");
+                    std::process::exit(1);
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        });
+        tokio::spawn(async move {
+            if let Some(handle) = task.take() {
+                match handle.await {
+                    Ok(()) => {
+                        error!("Consensus task exited unexpectedly; exiting for systemd restart");
+                        std::process::exit(1);
+                    }
+                    Err(err) => {
+                        error!(
+                            "Consensus task crashed/panicked: {}; exiting for systemd restart",
+                            err
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+        });
+    }
+
+    // NOTE: Consensus transaction ingestion is mempool-driven in this codebase; RPC submission
+    // should ensure transactions reach the mempool even if the internal tx channel is not wired.
 
     // Initialize P2P network
     let p2p_host = &config.p2p_host;
@@ -1751,6 +1821,18 @@ enum MetricsDriftMode {
 
 fn discover_validator_ids(config: &AppConfig) -> Vec<[u8; 32]> {
     let mut ids = vec![config.validator_id];
+
+    if let Ok(raw) = env::var("IPPAN_VALIDATOR_IDS") {
+        let extra = parse_validator_ids_list(&raw);
+        if !extra.is_empty() {
+            info!(
+                "Loaded {} validator IDs from IPPAN_VALIDATOR_IDS",
+                extra.len()
+            );
+        }
+        ids.extend(extra);
+    }
+
     ids.extend(load_localnet_validator_ids(&config.config_path));
     if ids.is_empty() {
         ids.push(config.validator_id);
@@ -1758,6 +1840,24 @@ fn discover_validator_ids(config: &AppConfig) -> Vec<[u8; 32]> {
     ids.sort();
     ids.dedup();
     ids
+}
+
+fn parse_validator_ids_list(raw: &str) -> Vec<[u8; 32]> {
+    raw.split(',')
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .filter_map(|id| {
+            if let Some(parsed) = parse_hex_validator_id(id) {
+                Some(parsed)
+            } else {
+                warn!(
+                    "Ignoring invalid validator id in IPPAN_VALIDATOR_IDS: {}",
+                    id
+                );
+                None
+            }
+        })
+        .collect()
 }
 
 fn load_localnet_validator_ids(config_path: &Option<PathBuf>) -> Vec<[u8; 32]> {

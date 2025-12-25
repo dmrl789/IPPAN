@@ -1877,17 +1877,30 @@ async fn handle_status(
     let requests_served = state.req_count.load(Ordering::Relaxed);
     let mempool_size = state.mempool.size();
 
-    let consensus_view = if let Some(consensus) = &state.consensus {
-        match consensus.snapshot().await {
-            Ok(view) => build_consensus_payload(view, state.dlc_consensus.as_ref()),
-            Err(err) => {
-                warn!("Failed to snapshot consensus state: {}", err);
-                None
+    let (validator_count, validator_ids_sample, consensus_round, consensus_view) =
+        if let Some(consensus) = &state.consensus {
+            match consensus.snapshot().await {
+                Ok(view) => {
+                    let validator_count = view.validators.len() as u64;
+                    let validator_ids_sample = view.validators.iter().take(8).cloned().collect();
+                    let consensus_round = view.round;
+                    let consensus_view =
+                        build_consensus_payload(view, state.dlc_consensus.as_ref());
+                    (
+                        validator_count,
+                        validator_ids_sample,
+                        consensus_round,
+                        consensus_view,
+                    )
+                }
+                Err(err) => {
+                    warn!("Failed to snapshot consensus state: {}", err);
+                    (0, Vec::new(), 0, None)
+                }
             }
-        }
-    } else {
-        None
-    };
+        } else {
+            (0, Vec::new(), 0, None)
+        };
 
     let mut ai_view = if let Some(handle) = &state.ai_status {
         let snapshot = handle.snapshot().await;
@@ -1908,6 +1921,10 @@ async fn handle_status(
         "version": env!("CARGO_PKG_VERSION"),
         "build_sha": git_commit_hash(),
         "peer_count": peer_count,
+        "validator_count": validator_count,
+        "validator_ids_sample": validator_ids_sample,
+        // Compatibility: some ops scripts want a top-level round.
+        "round": consensus_round,
         "uptime_seconds": uptime_seconds,
         "requests_served": requests_served,
         "network_active": state.p2p_network.is_some(),

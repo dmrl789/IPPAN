@@ -29,6 +29,8 @@ use std::{
 };
 use tokio::{
     sync::mpsc,
+    sync::oneshot,
+    task::JoinHandle,
     time::{interval, sleep},
 };
 use tracing::{error, info, warn};
@@ -194,6 +196,8 @@ pub struct PoAConsensus {
     pub is_running: Arc<RwLock<bool>>,
     pub current_slot: Arc<RwLock<u64>>,
     pub tx_sender: mpsc::UnboundedSender<Transaction>,
+    tx_receiver: Option<mpsc::UnboundedReceiver<Transaction>>,
+    task_handle: Option<JoinHandle<()>>,
     pub mempool: Arc<Mempool>,
     pub round_tracker: Arc<RwLock<RoundTracker>>,
     pub finalization_interval: Duration,
@@ -233,7 +237,7 @@ impl PoAConsensus {
         handle_anchors: Arc<L1HandleAnchorStorage>,
         handle_dht: Option<Arc<dyn HandleDhtService>>,
     ) -> Self {
-        let (tx_sender, _rx) = mpsc::unbounded_channel();
+        let (tx_sender, tx_receiver) = mpsc::unbounded_channel();
         let latest_height = storage.get_latest_height().unwrap_or(0);
 
         let previous_round_blocks = if latest_height == 0 {
@@ -270,6 +274,8 @@ impl PoAConsensus {
             is_running: Arc::new(RwLock::new(false)),
             current_slot: Arc::new(RwLock::new(0)),
             tx_sender,
+            tx_receiver: Some(tx_receiver),
+            task_handle: None,
             mempool: Arc::new(Mempool::new(10_000)),
             round_tracker: Arc::new(RwLock::new(tracker)),
             finalization_interval: Duration::from_millis(
@@ -307,6 +313,15 @@ impl PoAConsensus {
     // -----------------------------------------------------------------
 
     pub async fn start(&mut self) -> Result<()> {
+        if self.task_handle.is_some() {
+            anyhow::bail!("Consensus engine already started");
+        }
+
+        let mut rx = self
+            .tx_receiver
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Consensus submit receiver missing"))?;
+
         *self.is_running.write() = true;
         info!("Starting PoA consensus engine");
 
@@ -348,10 +363,27 @@ impl PoAConsensus {
         );
 
         let mut ticker = interval(Duration::from_millis(config.slot_duration_ms));
-        tokio::spawn(async move {
+        let (started_tx, started_rx) = oneshot::channel::<()>();
+        let handle = tokio::spawn(async move {
+            let _ = started_tx.send(());
             loop {
                 if !*is_running.read() {
                     break;
+                }
+
+                // Drain inbound tx submissions into the mempool. This keeps the submit channel
+                // "wired" and gives ops a concrete liveness signal (channel closure => failure).
+                loop {
+                    match rx.try_recv() {
+                        Ok(tx) => {
+                            let _ = mempool.add_transaction(tx);
+                        }
+                        Err(mpsc::error::TryRecvError::Empty) => break,
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
+                            error!("Consensus submit channel disconnected");
+                            return;
+                        }
+                    }
                 }
 
                 if let Err(e) = Self::finalize_round_if_ready(
@@ -401,6 +433,16 @@ impl PoAConsensus {
             }
         });
 
+        self.task_handle = Some(handle);
+
+        // Fail fast if the consensus task didn't even reach its first poll.
+        tokio::time::timeout(Duration::from_secs(2), started_rx)
+            .await
+            .map_err(|_| anyhow::anyhow!("Consensus task failed to start within timeout"))?
+            .map_err(|_| {
+                anyhow::anyhow!("Consensus task failed to start (start signal dropped)")
+            })?;
+
         info!("PoA consensus engine started");
         Ok(())
     }
@@ -410,6 +452,12 @@ impl PoAConsensus {
         sleep(Duration::from_millis(100)).await;
         info!("PoA consensus engine stopped");
         Ok(())
+    }
+
+    /// Take the join handle for the background consensus task (if started).
+    /// This lets the node monitor task termination and fail-fast if consensus dies.
+    pub fn take_task_handle(&mut self) -> Option<JoinHandle<()>> {
+        self.task_handle.take()
     }
 
     // -----------------------------------------------------------------
