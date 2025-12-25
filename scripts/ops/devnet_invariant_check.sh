@@ -40,10 +40,15 @@ json_get() {
   # For arrays/dicts, outputs compact JSON with stable key ordering.
   local json="$1"
   local expr="$2"
-  python3 - "$expr" <<<"$json" <<'PY'
+  python3 -c '
 import json,sys
 expr=sys.argv[1].strip()
-data=json.load(sys.stdin)
+raw=sys.stdin.read()
+try:
+    data=json.loads(raw) if raw.strip() else None
+except Exception:
+    print("")
+    raise SystemExit(0)
 def get(obj, path):
     cur=obj
     for p in path:
@@ -55,14 +60,19 @@ def get(obj, path):
 if expr.startswith("."):
     expr=expr[1:]
 path=[p for p in expr.split(".") if p]
-val=get(data, path)
+val=get(data, path) if data is not None else None
 if isinstance(val, (dict,list)):
     print(json.dumps(val, sort_keys=True))
 elif val is None:
     print("")
 else:
     print(val)
-PY
+' "$expr" <<<"$json"
+}
+
+is_jsonish() {
+  local s="$1"
+  [[ -n "$s" ]] && [[ "${s:0:1}" == "{" || "${s:0:1}" == "[" ]]
 }
 
 json_compact() {
@@ -98,12 +108,12 @@ declare -A vset=()
 
 fetch_status() {
   local host="$1"
-  curl -fsS -m "$CURL_TIMEOUT_SECS" "http://${host}:${RPC_PORT}/status"
+  curl -fsS -m "$CURL_TIMEOUT_SECS" -H "Accept: application/json" "http://${host}:${RPC_PORT}/status"
 }
 
 fetch_health() {
   local host="$1"
-  curl -fsS -m "$CURL_TIMEOUT_SECS" "http://${host}:${RPC_PORT}/health"
+  curl -fsS -m "$CURL_TIMEOUT_SECS" -H "Accept: application/json" "http://${host}:${RPC_PORT}/health"
 }
 
 get_round() {
@@ -124,11 +134,31 @@ check_once() {
   local status_json="$2"
   local health_json="$3"
 
-  local ok
-  ok="$(json_get "$health_json" '.ok')"
-  if [[ "$ok" != "true" ]]; then
-    echo "FAIL ${host}: /health ok != true (got: ${ok})" >&2
+  if ! is_jsonish "$health_json"; then
+    echo "FAIL ${host}: /health did not return JSON (first bytes: ${health_json:0:80})" >&2
     return 1
+  fi
+  if ! is_jsonish "$status_json"; then
+    echo "FAIL ${host}: /status did not return JSON (first bytes: ${status_json:0:80})" >&2
+    return 1
+  fi
+
+  # Health semantics: accept either legacy {"ok":true} or modern {"rpc_healthy":true,...}.
+  local ok rpc_healthy
+  ok="$(json_get "$health_json" '.ok')"
+  rpc_healthy="$(json_get "$health_json" '.rpc_healthy')"
+  if [[ -n "$ok" ]]; then
+    ok_norm="${ok,,}"
+    if [[ "$ok_norm" != "true" && "$ok_norm" != "1" ]]; then
+      echo "FAIL ${host}: /health ok != true (got: ${ok})" >&2
+      return 1
+    fi
+  elif [[ -n "$rpc_healthy" ]]; then
+    rpc_norm="${rpc_healthy,,}"
+    if [[ "$rpc_norm" != "true" && "$rpc_norm" != "1" ]]; then
+      echo "FAIL ${host}: /health rpc_healthy != true (got: ${rpc_healthy})" >&2
+      return 1
+    fi
   fi
 
   local peer_count validator_count round validators
@@ -138,6 +168,10 @@ check_once() {
   validators="$(json_compact "$status_json" '.validator_ids_sample')"
 
   echo "${host}: peer_count=${peer_count} validator_count=${validator_count} round=${round} validators=${validators}"
+
+  # Record what we observed even if a later check fails (helps diagnose drift).
+  vset["$host"]="$validators"
+  round1["$host"]="$round"
 
   if [[ -z "$peer_count" ]] || [[ "$peer_count" -lt "$MIN_PEERS" ]]; then
     echo "FAIL ${host}: peer_count < ${MIN_PEERS} (got: ${peer_count})" >&2
@@ -151,9 +185,6 @@ check_once() {
     echo "FAIL ${host}: missing round (expected consensus.round or round)" >&2
     return 1
   fi
-
-  vset["$host"]="$validators"
-  round1["$host"]="$round"
   return 0
 }
 
