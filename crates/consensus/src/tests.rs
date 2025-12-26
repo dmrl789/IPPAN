@@ -7,7 +7,7 @@ use ippan_types::{
     IppanTimeMicros, Transaction,
 };
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 fn create_test_config() -> PoAConfig {
     PoAConfig {
@@ -70,8 +70,13 @@ async fn test_consensus_start_stop() {
 
     let mut consensus = PoAConsensus::new(config, storage, validator_id);
 
-    assert!(consensus.start().await.is_ok());
+    let (_tx_sender, handle) = consensus.start().await.unwrap();
     assert!(consensus.stop().await.is_ok());
+    // Ensure the task exits after stop so tests don't leak background tasks.
+    tokio::time::timeout(Duration::from_secs(1), handle)
+        .await
+        .expect("consensus task did not exit after stop")
+        .expect("consensus task join failed");
 }
 
 #[tokio::test]

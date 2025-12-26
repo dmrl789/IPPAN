@@ -197,7 +197,6 @@ pub struct PoAConsensus {
     pub current_slot: Arc<RwLock<u64>>,
     pub tx_sender: mpsc::UnboundedSender<Transaction>,
     tx_receiver: Option<mpsc::UnboundedReceiver<Transaction>>,
-    task_handle: Option<JoinHandle<()>>,
     pub mempool: Arc<Mempool>,
     pub round_tracker: Arc<RwLock<RoundTracker>>,
     pub finalization_interval: Duration,
@@ -275,7 +274,6 @@ impl PoAConsensus {
             current_slot: Arc::new(RwLock::new(0)),
             tx_sender,
             tx_receiver: Some(tx_receiver),
-            task_handle: None,
             mempool: Arc::new(Mempool::new(10_000)),
             round_tracker: Arc::new(RwLock::new(tracker)),
             finalization_interval: Duration::from_millis(
@@ -312,9 +310,13 @@ impl PoAConsensus {
     // Lifecycle
     // -----------------------------------------------------------------
 
-    pub async fn start(&mut self) -> Result<()> {
-        if self.task_handle.is_some() {
+    pub async fn start(&mut self) -> Result<(mpsc::UnboundedSender<Transaction>, JoinHandle<()>)> {
+        if *self.is_running.read() {
             anyhow::bail!("Consensus engine already started");
+        }
+
+        if self.config.validators.is_empty() {
+            panic!("No validators configured. Set IPPAN_VALIDATOR_IDS or config validators.");
         }
 
         let mut rx = self
@@ -433,8 +435,6 @@ impl PoAConsensus {
             }
         });
 
-        self.task_handle = Some(handle);
-
         // Fail fast if the consensus task didn't even reach its first poll.
         tokio::time::timeout(Duration::from_secs(2), started_rx)
             .await
@@ -443,8 +443,13 @@ impl PoAConsensus {
                 anyhow::anyhow!("Consensus task failed to start (start signal dropped)")
             })?;
 
+        // If the task already exited, fail fast instead of letting the node wedge.
+        if handle.is_finished() {
+            anyhow::bail!("Consensus task exited immediately after startup");
+        }
+
         info!("PoA consensus engine started");
-        Ok(())
+        Ok((self.tx_sender.clone(), handle))
     }
 
     pub async fn stop(&mut self) -> Result<()> {
@@ -452,12 +457,6 @@ impl PoAConsensus {
         sleep(Duration::from_millis(100)).await;
         info!("PoA consensus engine stopped");
         Ok(())
-    }
-
-    /// Take the join handle for the background consensus task (if started).
-    /// This lets the node monitor task termination and fail-fast if consensus dies.
-    pub fn take_task_handle(&mut self) -> Option<JoinHandle<()>> {
-        self.task_handle.take()
     }
 
     // -----------------------------------------------------------------
@@ -891,7 +890,8 @@ pub trait ConsensusEngine {
 
 impl ConsensusEngine for PoAConsensus {
     async fn start(&mut self) -> Result<()> {
-        PoAConsensus::start(self).await
+        let _ = PoAConsensus::start(self).await?;
+        Ok(())
     }
     async fn stop(&mut self) -> Result<()> {
         PoAConsensus::stop(self).await

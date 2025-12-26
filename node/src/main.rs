@@ -1264,6 +1264,17 @@ async fn main() -> Result<()> {
         discovered_validators.len(),
         hex::encode(config.validator_id)
     );
+
+    if discovered_validators.is_empty() {
+        panic!("No validators configured. Set IPPAN_VALIDATOR_IDS or config validators.");
+    }
+
+    if !discovered_validators.contains(&config.validator_id) {
+        panic!(
+            "This node validator_id {} not in configured validator set. Refusing to start.",
+            hex::encode(config.validator_id)
+        );
+    }
     let validator_entries: Vec<Validator> = discovered_validators
         .iter()
         .map(|id| Validator {
@@ -1273,6 +1284,12 @@ async fn main() -> Result<()> {
             is_active: true,
         })
         .collect();
+
+    // DLC-only safety gate: refuse to start unless DLC is enabled.
+    // This prevents accidental PoA starts in environments that expect DLC-only behavior.
+    if !(config.consensus_mode.eq_ignore_ascii_case("DLC") || config.enable_dlc) {
+        panic!("DLC-only: set CONSENSUS_MODE=DLC (IPPAN_CONSENSUS_MODE) or ENABLE_DLC=1 (IPPAN_ENABLE_DLC) — refusing to start");
+    }
 
     // Initialize consensus
     let consensus_config = PoAConfig {
@@ -1335,17 +1352,10 @@ async fn main() -> Result<()> {
             }
         }
 
-        // Start DLC consensus
-        dlc_integrated.start().await?;
-
-        consensus_task_handle = dlc_integrated
-            .poa
-            .take_task_handle()
-            .ok_or_else(|| anyhow!("Consensus task handle missing after DLC start"))?;
-
-        // IMPORTANT: fetch the tx sender AFTER start(). Some consensus backends may re-wire
-        // their internal submission channels during startup.
-        tx_sender = dlc_integrated.poa.get_tx_sender();
+        // Start DLC consensus (fail-fast: returns tx sender + task JoinHandle)
+        let (started_tx_sender, handle) = dlc_integrated.start().await?;
+        consensus_task_handle = handle;
+        tx_sender = started_tx_sender;
         mempool = dlc_integrated.poa.mempool();
 
         // Store DLC handle before moving dlc_integrated
@@ -1396,12 +1406,10 @@ async fn main() -> Result<()> {
             handle_anchors.clone(),
             Some(handle_dht.clone()),
         );
-        // Start first, then fetch handles in case start() re-wires channels.
-        consensus_instance.start().await?;
-        consensus_task_handle = consensus_instance
-            .take_task_handle()
-            .ok_or_else(|| anyhow!("Consensus task handle missing after PoA start"))?;
-        tx_sender = consensus_instance.get_tx_sender();
+        // Start PoA consensus (fail-fast: returns tx sender + task JoinHandle)
+        let (started_tx_sender, handle) = consensus_instance.start().await?;
+        consensus_task_handle = handle;
+        tx_sender = started_tx_sender;
         mempool = consensus_instance.mempool();
         consensus = Arc::new(Mutex::new(consensus_instance));
         info!("PoA consensus engine started");
@@ -1820,7 +1828,8 @@ enum MetricsDriftMode {
 }
 
 fn discover_validator_ids(config: &AppConfig) -> Vec<[u8; 32]> {
-    let mut ids = vec![config.validator_id];
+    let mut ids: Vec<[u8; 32]> = Vec::new();
+    let mut sources: Vec<&'static str> = Vec::new();
 
     if let Ok(raw) = env::var("IPPAN_VALIDATOR_IDS") {
         let extra = parse_validator_ids_list(&raw);
@@ -1829,16 +1838,49 @@ fn discover_validator_ids(config: &AppConfig) -> Vec<[u8; 32]> {
                 "Loaded {} validator IDs from IPPAN_VALIDATOR_IDS",
                 extra.len()
             );
+            sources.push("IPPAN_VALIDATOR_IDS");
         }
         ids.extend(extra);
     }
 
-    ids.extend(load_localnet_validator_ids(&config.config_path));
+    // Backwards-compat: some deployments used CONSENSUS_VALIDATOR_IDS in systemd unit env.
+    // Prefer IPPAN_VALIDATOR_IDS, but accept this alias to avoid silent "1 validator" regressions.
     if ids.is_empty() {
-        ids.push(config.validator_id);
+        if let Ok(raw) = env::var("CONSENSUS_VALIDATOR_IDS") {
+            let extra = parse_validator_ids_list(&raw);
+            if !extra.is_empty() {
+                warn!(
+                    "Loaded {} validator IDs from CONSENSUS_VALIDATOR_IDS (deprecated; prefer IPPAN_VALIDATOR_IDS)",
+                    extra.len()
+                );
+                sources.push("CONSENSUS_VALIDATOR_IDS");
+            }
+            ids.extend(extra);
+        }
+    }
+
+    let before_cfg = ids.len();
+    ids.extend(load_localnet_validator_ids(&config.config_path));
+    if ids.len() != before_cfg {
+        sources.push("config");
+    }
+    if ids.is_empty() {
+        panic!("No validators configured. Set IPPAN_VALIDATOR_IDS or config validators.");
     }
     ids.sort();
     ids.dedup();
+
+    let source_label = if sources.is_empty() {
+        "unknown".to_string()
+    } else {
+        sources.join("+")
+    };
+    info!(
+        "Effective validator set: {} ids (source={})",
+        ids.len(),
+        source_label
+    );
+
     ids
 }
 

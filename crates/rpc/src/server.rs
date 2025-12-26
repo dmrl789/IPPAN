@@ -204,7 +204,11 @@ impl ConsensusHandle {
 
     pub async fn snapshot(&self) -> Result<ConsensusStateView> {
         let guard = self.consensus.lock().await;
+        // Expose a liveness-oriented round that advances as long as the consensus task is running.
+        // The in-memory round tracker may not advance on non-proposer nodes when no blocks are
+        // produced, but the slot clock should always advance if consensus is live.
         let state = guard.get_state();
+        let round = state.current_slot;
         let validators: Vec<String> = guard
             .config
             .validators
@@ -216,7 +220,7 @@ impl ConsensusHandle {
         let validators_metrics = None;
 
         Ok(ConsensusStateView {
-            round: state.current_round,
+            round,
             validators,
             validators_metrics,
         })

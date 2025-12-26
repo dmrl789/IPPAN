@@ -5,6 +5,7 @@
 use anyhow::Result;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{DLCConfig, DLCConsensus, PoAConsensus, ValidatorMetrics};
 use ippan_types::ValidatorId;
@@ -35,9 +36,14 @@ impl DLCIntegratedConsensus {
 
     /// Start the integrated consensus engine
     #[allow(clippy::await_holding_lock)]
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start(
+        &mut self,
+    ) -> Result<(
+        mpsc::UnboundedSender<ippan_types::Transaction>,
+        JoinHandle<()>,
+    )> {
         // Start base PoA consensus
-        self.poa.start().await?;
+        let (tx_sender, handle) = self.poa.start().await?;
 
         // Start DLC consensus if enabled
         // Note: We intentionally hold the lock during the async operation
@@ -47,7 +53,7 @@ impl DLCIntegratedConsensus {
             dlc.start().await?;
         }
 
-        Ok(())
+        Ok((tx_sender, handle))
     }
 
     /// Stop the integrated consensus engine
