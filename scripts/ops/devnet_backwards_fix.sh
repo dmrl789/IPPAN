@@ -15,21 +15,36 @@ fi
 
 DLC_PATH="${DLC_PATH:-/opt/ippan/config/dlc.toml}"
 
-# Optional overrides (space-separated hostnames/IPs):
-#   DEVNET_NODES="api1.ippan.uk api2.ippan.uk api3.ippan.uk api4.ippan.uk"
-#   DEVNET_ROLL="api2.ippan.uk api3.ippan.uk api4.ippan.uk api1.ippan.uk"
+# Node selection:
+# - Recommended (matches Cursor order STEP 5):
+#     bash scripts/ops/devnet_backwards_fix.sh api1.ippan.uk api2.ippan.uk api3.ippan.uk api4.ippan.uk
+#   This sets NODES to the args and sets ROLL to (args[1], args[2], ..., args[0]).
 #
-# Defaults match the original api1..api4 IPs.
+# - Optional overrides (space-separated hostnames/IPs):
+#     DEVNET_NODES="api1.ippan.uk api2.ippan.uk api3.ippan.uk api4.ippan.uk"
+#     DEVNET_ROLL="api2.ippan.uk api3.ippan.uk api4.ippan.uk api1.ippan.uk"
+#
+# Defaults match the original api1..api4 IPs if neither args nor env are provided.
 DEFAULT_NODES=(188.245.97.41 135.181.145.174 5.223.51.238 178.156.219.107)
 DEFAULT_ROLL=(135.181.145.174 5.223.51.238 178.156.219.107 188.245.97.41)
 
-if [[ -n "${DEVNET_NODES:-}" ]]; then
+if [[ "$#" -gt 0 ]]; then
+  NODES=("$@")
+  if [[ "$#" -gt 1 ]]; then
+    # Rolling restart order: api2 → api3 → api4 → api1 (left-rotate by 1).
+    ROLL=("${NODES[@]:1}" "${NODES[0]}")
+  else
+    ROLL=("${NODES[@]}")
+  fi
+elif [[ -n "${DEVNET_NODES:-}" ]]; then
   read -r -a NODES <<< "${DEVNET_NODES}"
 else
   NODES=("${DEFAULT_NODES[@]}")
 fi
 
-if [[ -n "${DEVNET_ROLL:-}" ]]; then
+if [[ "$#" -gt 0 ]]; then
+  : # ROLL already set above
+elif [[ -n "${DEVNET_ROLL:-}" ]]; then
   read -r -a ROLL <<< "${DEVNET_ROLL}"
 else
   ROLL=("${DEFAULT_ROLL[@]}")
@@ -40,35 +55,24 @@ authoritative_dropin_path="/etc/systemd/system/ippan-node.service.d/60-devnet-co
 log() { printf '%s\n' "$*"; }
 
 assert_single_validator_ids_source() {
-  # Enforce "one source of truth" for validator ids: exactly one non-disabled file
-  # should define IPPAN_VALIDATOR_IDS. If multiple are active, drift will eventually
-  # reappear depending on drop-in ordering and future edits.
+  # Enforce "one source of truth" for validator ids:
+  # - Look only at active drop-ins (*.conf excluding *.disabled)
+  # - Fail if more than one active file defines IPPAN_VALIDATOR_IDS
   local ip="$1"
   log "=== assert single validator-ids source on ${ip} ==="
   ssh root@"${ip}" 'set -euo pipefail
     d=/etc/systemd/system/ippan-node.service.d
-    active_files=$(ls -1 "$d" | grep -v "\.disabled$" || true)
-    # Count occurrences across active drop-ins + unit file.
-    hits=$(
-      (
-        for f in $active_files; do
-          grep -H "IPPAN_VALIDATOR_IDS" "$d/$f" 2>/dev/null || true
-        done
-        grep -H "IPPAN_VALIDATOR_IDS" /etc/systemd/system/ippan-node.service 2>/dev/null || true
-      ) | wc -l
-    )
-
-    if [ "$hits" -le 1 ]; then
-      exit 0
-    fi
-
-    echo "ERROR: multiple active sources define IPPAN_VALIDATOR_IDS (drift risk)" >&2
-    (
-      for f in $active_files; do
-        grep -H "IPPAN_VALIDATOR_IDS" "$d/$f" 2>/dev/null || true
-      done
-      grep -H "IPPAN_VALIDATOR_IDS" /etc/systemd/system/ippan-node.service 2>/dev/null || true
-    ) >&2
+    offenders="$(
+      ls -1 "$d" 2>/dev/null \
+        | grep -v "\.disabled$" \
+        | while read -r f; do
+            grep -H "IPPAN_VALIDATOR_IDS" "$d/$f" 2>/dev/null || true
+          done
+    )"
+    count="$(printf "%s\n" "$offenders" | grep -c "IPPAN_VALIDATOR_IDS" || true)"
+    if [ "${count:-0}" -le 1 ]; then exit 0; fi
+    echo "ERROR: Multiple active IPPAN_VALIDATOR_IDS sources detected:" >&2
+    printf "%s\n" "$offenders" >&2
     exit 11
   '
 }

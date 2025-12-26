@@ -62,6 +62,7 @@ Note: the drift fix now also disables `99-validator-set.conf` (renamed to `.disa
 - **Must be disabled** (renamed to `.disabled`):
   - `99-consensus-validators.conf` (legacy env key history / drift risk)
   - `99-validator-set.conf` (duplicate validator set source)
+ - **Must not override DLC path**: any extra DLC path overrides should be disabled so only `60-devnet-consensus.conf` chooses `IPPAN_DLC_CONFIG_PATH`.
 
 Quick verification (example on api1):
 
@@ -70,6 +71,20 @@ ssh root@api1.ippan.uk 'ls -1 /etc/systemd/system/ippan-node.service.d | egrep "
 ```
 
 Expected: both show as `*.disabled` (or do not exist).
+
+Verify drift-free validator-id sources (example on api1):
+
+```bash
+ssh root@api1.ippan.uk '
+  D=/etc/systemd/system/ippan-node.service.d
+  echo "Active validator-id sources:"
+  ls -1 "$D" | grep -v "\.disabled$" | while read -r f; do
+    grep -H "IPPAN_VALIDATOR_IDS" "$D/$f" 2>/dev/null || true
+  done
+'
+```
+
+Expected: either **one** line (from `60-devnet-consensus.conf`) or none (before you apply it).
 
 And the invariant gate:
 
