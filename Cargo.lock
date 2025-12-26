@@ -3435,6 +3435,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ippan-txload"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ed25519-dalek",
+ "hex",
+ "ippan-types",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "ippan-types"
 version = "0.1.0"
 dependencies = [
