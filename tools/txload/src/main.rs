@@ -729,7 +729,7 @@ async fn run_batch(args: BatchArgs) -> Result<()> {
                                 metrics.http_429.fetch_add(over, Ordering::Relaxed);
                             }
                             Err(_) => {
-                                metrics.client_read.fetch_add(1, Ordering::Relaxed);
+                                // Treat malformed/empty 429 bodies as overload without counting a client error.
                                 metrics.http_429.fetch_add(batch_len, Ordering::Relaxed);
                             }
                         }

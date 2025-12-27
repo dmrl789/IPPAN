@@ -95,7 +95,9 @@ const MAX_BODY_BYTES: usize = 64 * 1024; // 64 KiB default when security manager
 const REQUEST_TIMEOUT_SECS: u64 = 10;
 const MAX_CONCURRENT_REQUESTS: usize = 128;
 const DEFAULT_BATCH_MAX_BODY_BYTES: usize = 32 * 1024 * 1024; // 32 MiB (devnet batch ingest)
-const DEFAULT_BATCH_MAX_TX_PER_BATCH: usize = 2000;
+                                                              // Must be >= the default client `ippan-txload batch --batch-size` used by ops ramp scripts.
+                                                              // Still configurable via `IPPAN_BATCH_MAX_TX_PER_BATCH`.
+const DEFAULT_BATCH_MAX_TX_PER_BATCH: usize = 4096;
 const DEFAULT_BATCH_BACKPRESSURE_MEMPOOL_SIZE: usize = 50_000;
 const ENABLE_BATCH_SUBMIT_ENV: &str = "IPPAN_ENABLE_BATCH_SUBMIT";
 const BATCH_MAX_BODY_BYTES_ENV: &str = "IPPAN_BATCH_MAX_BODY_BYTES";
@@ -1641,10 +1643,18 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route(SUBMIT_BATCH_ENDPOINT, post(handle_submit_batch))
         .layer(batch_stack);
 
-    let mut router = Router::new()
-        .merge(fastlane_routes)
+    // Apply global rate limiting ONLY to the normal RPC surface (read + tx).
+    // Do NOT apply it to:
+    // - `/health` + `/status` (must stay responsive)
+    // - `/tx/submit_batch` (has its own dedicated 429-only overload gate)
+    let limited_routes = Router::new()
         .merge(tx_routes)
         .merge(read_routes)
+        .layer(rate_limiter);
+
+    let mut router = Router::new()
+        .merge(fastlane_routes)
+        .merge(limited_routes)
         .merge(batch_routes);
 
     if let Some(static_root) = &state.unified_ui_dist {
@@ -1665,7 +1675,6 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     router
         .layer(cors)
-        .layer(rate_limiter)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
