@@ -2610,20 +2610,7 @@ async fn handle_submit_batch(
         let frame = &bytes[range.clone()];
         let tx: Transaction = match bincode_tx_options().deserialize(frame) {
             Ok(tx) => tx,
-            Err(e) => {
-                if invalid == 0 {
-                    let hex_preview: String = frame
-                        .iter()
-                        .take(64)
-                        .map(|b| format!("{:02x}", b))
-                        .collect();
-                    warn!(
-                        "submit_batch: first bincode deserialize error: {:?} (frame len={}, hex prefix={})",
-                        e,
-                        frame.len(),
-                        hex_preview
-                    );
-                }
+            Err(_) => {
                 invalid += 1;
                 continue;
             }
