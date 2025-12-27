@@ -2206,25 +2206,25 @@ fn derive_status_invariants_fields(
     let mut round_top: u64 = 0;
     let mut validator_ids: Vec<String> = Vec::new();
 
-    if let Some(consensus) = consensus_view.as_ref() {
-        round_top = consensus.get("round").and_then(|v| v.as_u64()).unwrap_or(0);
-        if let Some(arr) = consensus.get("validator_ids").and_then(|v| v.as_array()) {
-            validator_ids = arr
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect();
-        }
+    // Prefer the configured validator set when present (devnet ops tooling expects stable 4 ids).
+    if let Ok(raw) = std::env::var("IPPAN_VALIDATOR_IDS") {
+        validator_ids = raw
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
     }
 
-    // Fallback: use configured validator IDs if consensus snapshot omits them.
-    if validator_ids.is_empty() {
-        if let Ok(raw) = std::env::var("IPPAN_VALIDATOR_IDS") {
-            validator_ids = raw
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-                .collect();
+    if let Some(consensus) = consensus_view.as_ref() {
+        round_top = consensus.get("round").and_then(|v| v.as_u64()).unwrap_or(0);
+        if validator_ids.is_empty() {
+            if let Some(arr) = consensus.get("validator_ids").and_then(|v| v.as_array()) {
+                validator_ids = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+            }
         }
     }
 
