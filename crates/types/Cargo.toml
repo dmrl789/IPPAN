@@ -21,3 +21,6 @@ thiserror = { workspace = true }
 bs58 = { workspace = true }
 sha2 = { workspace = true }
 ippan-time = { path = "../time" }
+
+[dev-dependencies]
+bincode = { workspace = true }

@@ -349,3 +349,41 @@ async fn test_concurrent_operations() {
 
     assert_eq!(consensus.mempool().size(), 10);
 }
+
+/// Regression test: submit channel must stay open after consensus starts.
+/// Bug was: `let (tx_sender, _rx) = mpsc::unbounded_channel();` dropped the receiver,
+/// causing `tx_sender.is_closed()` to return true and blocking batch ingestion.
+#[tokio::test]
+async fn submit_channel_stays_open_while_consensus_runs() {
+    let storage = Arc::new(MemoryStorage::new());
+    let config = create_test_config();
+    let validator_id = [1u8; 32];
+
+    let mut consensus = PoAConsensus::new(config, storage, validator_id);
+    let tx_sender = consensus.get_tx_sender();
+
+    // Before start: channel should be open
+    assert!(
+        !tx_sender.is_closed(),
+        "tx_sender closed before start (submit_rx dropped too early?)"
+    );
+
+    // Start consensus
+    consensus.start().await.expect("start consensus");
+
+    // After start: channel must still be open (drainer task keeps rx alive)
+    assert!(
+        !tx_sender.is_closed(),
+        "tx_sender closed after start (submit_rx not held by drainer?)"
+    );
+
+    // The key invariant: channel stays open while consensus runs
+    // (Mempool validation may reject test txs, but channel openness is what matters for RPC)
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        !tx_sender.is_closed(),
+        "tx_sender closed while consensus running"
+    );
+
+    consensus.stop().await.expect("stop consensus");
+}
