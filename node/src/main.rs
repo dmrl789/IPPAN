@@ -20,7 +20,7 @@ use ippan_p2p::{
     Libp2pHandleDhtService, Libp2pNetwork, Multiaddr, NetworkEvent, P2PConfig, P2PLimits,
 };
 use ippan_rpc::server::ConsensusHandle;
-use ippan_rpc::{start_p2p_server, start_server, AiStatusHandle, AppState, L2Config};
+use ippan_rpc::{start_p2p_server, start_server, AiStatusHandle, AppState, BatchLane, L2Config};
 use ippan_security::{SecurityConfig as RpcSecurityConfig, SecurityManager as RpcSecurityManager};
 use ippan_storage::{export_snapshot, import_snapshot, SledStorage, Storage};
 use ippan_types::{
@@ -1507,6 +1507,7 @@ async fn main() -> Result<()> {
         handle_dht: Some(handle_dht.clone()),
         dht_handle_mode: config.handle_dht_mode.to_string(),
         dlc_consensus: dlc_handle,
+        batch_lane: BatchLane::from_env(),
     };
 
     let rpc_host = &config.rpc_host;

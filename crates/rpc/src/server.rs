@@ -55,7 +55,7 @@ use serde::de::{self, DeserializeOwned, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, Semaphore};
 use tower::limit::ConcurrencyLimitLayer;
 use tower::timeout::TimeoutLayer;
 use tower::BoxError;
@@ -68,6 +68,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, warn};
 
+use bincode::Options;
 use blake3::Hasher as Blake3Hasher;
 use hex::encode as hex_encode;
 use std::env;
@@ -86,12 +87,28 @@ const MAX_MEMO_BYTES: usize = 256;
 const DEFAULT_PAYMENT_HISTORY_LIMIT: usize = 25;
 const MAX_PAYMENT_HISTORY_LIMIT: usize = 200;
 const PAYMENT_ENDPOINT: &str = "/tx/payment";
+const SUBMIT_BATCH_ENDPOINT: &str = "/tx/submit_batch";
 const RPC_PROTOCOL_VERSION: &str = "v1";
 const HANDLE_REGISTER_ENDPOINT: &str = "/handle/register";
 const HANDLE_LOOKUP_ENDPOINT: &str = "/handle/:handle";
 const MAX_BODY_BYTES: usize = 64 * 1024; // 64 KiB default when security manager not configured
 const REQUEST_TIMEOUT_SECS: u64 = 10;
 const MAX_CONCURRENT_REQUESTS: usize = 128;
+const DEFAULT_BATCH_MAX_BODY_BYTES: usize = 32 * 1024 * 1024; // 32 MiB (devnet batch ingest)
+const DEFAULT_BATCH_MAX_TX_PER_BATCH: usize = 2000;
+const DEFAULT_BATCH_BACKPRESSURE_MEMPOOL_SIZE: usize = 50_000;
+const ENABLE_BATCH_SUBMIT_ENV: &str = "IPPAN_ENABLE_BATCH_SUBMIT";
+const BATCH_MAX_BODY_BYTES_ENV: &str = "IPPAN_BATCH_MAX_BODY_BYTES";
+const BATCH_MAX_TX_PER_BATCH_ENV: &str = "IPPAN_BATCH_MAX_TX_PER_BATCH";
+const BATCH_BACKPRESSURE_MEMPOOL_SIZE_ENV: &str = "IPPAN_BATCH_BACKPRESSURE_MEMPOOL_SIZE";
+// New batch lane knobs (preferred).
+const BATCH_CONCURRENCY_LIMIT_ENV: &str = "IPPAN_BATCH_CONCURRENCY_LIMIT";
+const BATCH_QUEUE_CAPACITY_ENV: &str = "IPPAN_BATCH_QUEUE_CAPACITY";
+const BATCH_BODY_LIMIT_BYTES_ENV: &str = "IPPAN_BATCH_BODY_LIMIT_BYTES";
+const BATCH_DECODE_WORKERS_ENV: &str = "IPPAN_BATCH_DECODE_WORKERS";
+const DEFAULT_BATCH_CONCURRENCY_LIMIT: usize = 64; // requests in-flight on the batch lane
+const DEFAULT_BATCH_QUEUE_CAPACITY: usize = 4096; // txs queued into admission workers
+const DEFAULT_BATCH_DECODE_WORKERS: usize = 0; // reserved; 0 = decode inline (current behavior)
 
 /// Stable response payload for the `/version` endpoint.
 /// Keep this schema backward-compatible; bump `protocol_version` before
@@ -144,6 +161,33 @@ pub struct AppState {
     pub dht_handle_mode: String,
     /// DLC consensus handle (if DLC mode is enabled)
     pub dlc_consensus: Option<Arc<parking_lot::RwLock<DLCConsensus>>>,
+    /// Dedicated ingestion lane for `/tx/submit_batch` (semaphore + bounded queue).
+    pub batch_lane: Arc<BatchLane>,
+}
+
+/// Batch ingestion lane state (cloneable via Arc on `AppState`).
+pub struct BatchLane {
+    semaphore: Arc<Semaphore>,
+    queue_tx: mpsc::Sender<Transaction>,
+    queue_rx: Mutex<mpsc::Receiver<Transaction>>,
+    #[allow(dead_code)]
+    decode_workers: usize,
+}
+
+impl BatchLane {
+    pub fn from_env() -> Arc<Self> {
+        let concurrency = configured_batch_concurrency_limit();
+        let capacity = configured_batch_queue_capacity();
+        let decode_workers = configured_batch_decode_workers();
+
+        let (queue_tx, queue_rx) = mpsc::channel::<Transaction>(capacity.max(1));
+        Arc::new(Self {
+            semaphore: Arc::new(Semaphore::new(concurrency.max(1))),
+            queue_tx,
+            queue_rx: Mutex::new(queue_rx),
+            decode_workers,
+        })
+    }
 }
 
 type AiStatusFuture = Pin<Box<dyn Future<Output = AiConsensusStatus> + Send>>;
@@ -1425,6 +1469,7 @@ struct L2Filter {
 pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     info!("Starting RPC server on {}", addr);
     let shared = Arc::new(state);
+    spawn_batch_lane_workers(shared.clone());
     let app = build_router(shared.clone());
     let listener = bind_listener(addr).await?;
     let bound_addr = listener.local_addr()?;
@@ -1435,6 +1480,24 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<()> {
     )
     .await
     .context("RPC server terminated unexpectedly")
+}
+
+fn spawn_batch_lane_workers(state: Arc<AppState>) {
+    // Drain the bounded batch queue into the existing consensus/admission channel.
+    // This isolates overload: handlers can quickly return 429 when the queue is full.
+    let Some(tx_sender) = state.tx_sender.clone() else {
+        return;
+    };
+
+    tokio::spawn(async move {
+        let mut rx = state.batch_lane.queue_rx.lock().await;
+        while let Some(tx) = rx.recv().await {
+            if tx_sender.send(tx).is_err() {
+                warn!("batch lane worker: admission channel closed; stopping");
+                break;
+            }
+        }
+    });
 }
 
 /// Bind to TCP listener
@@ -1495,6 +1558,7 @@ fn build_p2p_router(state: Arc<AppState>) -> Router {
 /// Build router and endpoints
 fn build_router(state: Arc<AppState>) -> Router {
     let max_body_bytes = configured_body_limit(&state);
+    let batch_body_bytes = configured_batch_body_limit();
     let request_timeout = configured_request_timeout(&state);
     let global_rps = configured_global_rps(&state);
     let cors = build_cors_layer(&state);
@@ -1504,19 +1568,50 @@ fn build_router(state: Arc<AppState>) -> Router {
         Duration::from_secs(CIRCUIT_BREAKER_OPEN_SECS),
     );
 
-    let mut router = Router::new()
+    // Fast lane: keep `/health` and `/status` responsive even when tx lane is saturated.
+    let fastlane_stack = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(handle_service_error))
+        .layer(TimeoutLayer::new(request_timeout));
+    let fastlane_routes = Router::new()
         .route("/health", get(handle_get_health))
         .route("/status", get(handle_status))
-        .route("/time", get(handle_time))
-        .route("/version", get(handle_version))
-        .route("/metrics", get(handle_metrics))
-        .route("/ai/status", get(handle_get_ai_status))
+        .layer(fastlane_stack);
+
+    // TX lane: mutation-heavy endpoints. Never circuit-break these; they should apply backpressure (429)
+    // rather than wedging the whole RPC surface.
+    let tx_stack = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(handle_service_error))
+        .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
+        .layer(TimeoutLayer::new(request_timeout))
+        .layer(RequestBodyLimitLayer::new(max_body_bytes));
+
+    let mut tx_routes = Router::new()
         .route("/tx", post(handle_submit_tx))
         .route("/tx/payment", post(handle_payment_tx))
         .route("/tx/:hash", get(handle_get_transaction))
         .route(HANDLE_REGISTER_ENDPOINT, post(handle_register_handle))
         .route(HANDLE_LOOKUP_ENDPOINT, get(handle_get_handle))
         .route("/files/publish", post(handle_publish_file))
+        .layer(tx_stack);
+
+    if state.dev_mode {
+        tx_routes = tx_routes.route("/dev/fund", post(handle_dev_fund));
+    }
+
+    // Read lane: safe to circuit-break. Importantly, keep this separate so breaker never starves /health
+    // and never blocks batch ingest.
+    let read_stack = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(handle_service_error))
+        .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
+        .layer(TimeoutLayer::new(request_timeout))
+        .layer(RequestBodyLimitLayer::new(max_body_bytes))
+        .layer(circuit_breaker);
+
+    let read_routes = Router::new()
+        .route("/time", get(handle_time))
+        .route("/version", get(handle_version))
+        .route("/metrics", get(handle_metrics))
+        .route("/ai/status", get(handle_get_ai_status))
         .route("/files/:id", get(handle_get_file))
         .route("/block/:id", get(handle_get_block))
         .route("/account/:address", get(handle_get_account))
@@ -1535,11 +1630,22 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/l2/config", get(handle_get_l2_config))
         .route("/l2/networks", get(handle_list_l2_networks))
         .route("/l2/commits", get(handle_list_l2_commits))
-        .route("/l2/exits", get(handle_list_l2_exits));
+        .route("/l2/exits", get(handle_list_l2_exits))
+        .layer(read_stack);
 
-    if state.dev_mode {
-        router = router.route("/dev/fund", post(handle_dev_fund));
-    }
+    let batch_stack = ServiceBuilder::new()
+        .layer(HandleErrorLayer::new(handle_service_error))
+        .layer(TimeoutLayer::new(request_timeout))
+        .layer(RequestBodyLimitLayer::new(batch_body_bytes));
+    let batch_routes = Router::new()
+        .route(SUBMIT_BATCH_ENDPOINT, post(handle_submit_batch))
+        .layer(batch_stack);
+
+    let mut router = Router::new()
+        .merge(fastlane_routes)
+        .merge(tx_routes)
+        .merge(read_routes)
+        .merge(batch_routes);
 
     if let Some(static_root) = &state.unified_ui_dist {
         if Path::new(static_root).exists() {
@@ -1557,17 +1663,9 @@ fn build_router(state: Arc<AppState>) -> Router {
         router = router.fallback(handle_not_found);
     }
 
-    let middleware_stack = ServiceBuilder::new()
-        .layer(HandleErrorLayer::new(handle_service_error))
-        .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
-        .layer(TimeoutLayer::new(request_timeout))
-        .layer(RequestBodyLimitLayer::new(max_body_bytes));
-
     router
-        .layer(middleware_stack)
         .layer(cors)
         .layer(rate_limiter)
-        .layer(circuit_breaker)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -1578,6 +1676,55 @@ fn configured_body_limit(state: &Arc<AppState>) -> usize {
         .as_ref()
         .map(|manager| manager.max_request_size().max(1))
         .unwrap_or(MAX_BODY_BYTES)
+}
+
+fn configured_batch_body_limit() -> usize {
+    // Prefer new knob; keep old env as alias for backwards compatibility.
+    let raw = std::env::var(BATCH_BODY_LIMIT_BYTES_ENV)
+        .ok()
+        .or_else(|| std::env::var(BATCH_MAX_BODY_BYTES_ENV).ok());
+    raw.and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_BATCH_MAX_BODY_BYTES)
+}
+
+fn configured_batch_max_txs() -> usize {
+    std::env::var(BATCH_MAX_TX_PER_BATCH_ENV)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_BATCH_MAX_TX_PER_BATCH)
+}
+
+fn configured_batch_backpressure_mempool_size() -> usize {
+    std::env::var(BATCH_BACKPRESSURE_MEMPOOL_SIZE_ENV)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_BATCH_BACKPRESSURE_MEMPOOL_SIZE)
+}
+
+fn configured_batch_concurrency_limit() -> usize {
+    std::env::var(BATCH_CONCURRENCY_LIMIT_ENV)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .map(|v| v.clamp(1, 4096))
+        .unwrap_or(DEFAULT_BATCH_CONCURRENCY_LIMIT)
+}
+
+fn configured_batch_queue_capacity() -> usize {
+    std::env::var(BATCH_QUEUE_CAPACITY_ENV)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .map(|v| v.clamp(128, 1_000_000))
+        .unwrap_or(DEFAULT_BATCH_QUEUE_CAPACITY)
+}
+
+fn configured_batch_decode_workers() -> usize {
+    std::env::var(BATCH_DECODE_WORKERS_ENV)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .unwrap_or(DEFAULT_BATCH_DECODE_WORKERS)
 }
 
 fn configured_request_timeout(state: &Arc<AppState>) -> Duration {
@@ -1625,6 +1772,121 @@ fn build_cors_layer(state: &AppState) -> CorsLayer {
     }
 
     layer.allow_origin(AllowOrigin::list(origins))
+}
+
+#[derive(Debug, Serialize)]
+struct SubmitBatchResponse {
+    accepted: usize,
+    rejected: usize,
+    http_429: usize,
+    invalid: usize,
+    elapsed_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lane: Option<&'static str>,
+}
+
+#[derive(Debug, Error)]
+enum BatchFrameParseError {
+    #[error("truncated count prefix")]
+    TruncatedCount,
+    #[error("truncated length prefix")]
+    TruncatedLength,
+    #[error("frame length exceeds remaining bytes")]
+    TruncatedFrame,
+    #[error("too many frames")]
+    TooManyFrames,
+    #[error("trailing bytes after frames")]
+    TrailingBytes,
+}
+
+/// Parse `[u32 count_le][u32 len_le][len bytes]...` framing and return byte ranges for each frame.
+///
+/// On-wire format (binary, no JSON, counted length-delimited frames):
+/// - First: **u32 little-endian** frame count `count`
+/// - Then `count` repeats of:
+///   - **u32 little-endian** length `len`
+///   - `len` raw bytes containing a **bincode-serialized** `ippan_types::Transaction` (signed)
+fn parse_counted_len_delimited_frames(
+    body: &[u8],
+    max_frames: usize,
+) -> Result<Vec<std::ops::Range<usize>>, BatchFrameParseError> {
+    let mut ranges = Vec::new();
+    let mut offset = 0usize;
+
+    if body.len().saturating_sub(offset) < 4 {
+        return Err(BatchFrameParseError::TruncatedCount);
+    }
+    let count = u32::from_le_bytes(
+        body[offset..offset + 4]
+            .try_into()
+            .expect("slice of 4 bytes"),
+    ) as usize;
+    offset += 4;
+
+    if count > max_frames {
+        return Err(BatchFrameParseError::TooManyFrames);
+    }
+
+    for _ in 0..count {
+        if body.len().saturating_sub(offset) < 4 {
+            return Err(BatchFrameParseError::TruncatedLength);
+        }
+        let len = u32::from_le_bytes(
+            body[offset..offset + 4]
+                .try_into()
+                .expect("slice of 4 bytes"),
+        ) as usize;
+        offset += 4;
+        if body.len().saturating_sub(offset) < len {
+            return Err(BatchFrameParseError::TruncatedFrame);
+        }
+        ranges.push(offset..offset + len);
+        offset += len;
+    }
+
+    if offset != body.len() {
+        return Err(BatchFrameParseError::TrailingBytes);
+    }
+
+    Ok(ranges)
+}
+
+fn batch_endpoint_enabled(state: &AppState) -> bool {
+    if !state.dev_mode {
+        return false;
+    }
+    matches!(std::env::var(ENABLE_BATCH_SUBMIT_ENV).as_deref(), Ok("1"))
+}
+
+fn bincode_tx_options() -> impl bincode::Options {
+    // Fixint ensures stable, non-varint integer encoding across clients.
+    bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .reject_trailing_bytes()
+}
+
+fn tx_basic_sanity(tx: &Transaction) -> bool {
+    // Minimal, deterministic stateless validation: signature + obvious sanity constraints.
+    // Full admission (fees, nonce ordering, confidential validation, etc.) still happens later.
+    if !tx.verify() {
+        return false;
+    }
+    let has_handle = tx.handle_op.is_some();
+    if tx.visibility == TransactionVisibility::Confidential {
+        if tx.confidential.is_none() || tx.zk_proof.is_none() {
+            return false;
+        }
+    } else if !has_handle {
+        if tx.amount.is_zero() {
+            return false;
+        }
+        if tx.from == tx.to {
+            return false;
+        }
+    }
+    true
 }
 
 async fn guard_request(
@@ -2131,6 +2393,222 @@ async fn handle_submit_tx(
             )),
         ))
     }
+}
+
+async fn handle_submit_batch(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: Request<Body>,
+) -> Result<(StatusCode, Json<SubmitBatchResponse>), (StatusCode, Json<ApiError>)> {
+    let start = Instant::now();
+    if !batch_endpoint_enabled(&state) {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiError::new("not_found", "Not found")),
+        ));
+    }
+
+    if let Err(err) = guard_request(&state, &addr, SUBMIT_BATCH_ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, SUBMIT_BATCH_ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    let content_type_ok = req
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.starts_with("application/octet-stream"))
+        .unwrap_or(false);
+    if !content_type_ok {
+        record_security_success(&state, &addr, SUBMIT_BATCH_ENDPOINT).await;
+        return Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Json(ApiError::new(
+                "unsupported_media_type",
+                "Content-Type must be application/octet-stream",
+            )),
+        ));
+    }
+
+    // Count batch requests even if we overload before reading the body.
+    metrics::counter!("rpc_submit_batch_requests_total").increment(1);
+
+    // Lane gate: fail fast with 429 if batch lane is saturated.
+    // Do this *before* reading the body or decoding.
+    let _lane_permit = match state.batch_lane.semaphore.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            record_security_success(&state, &addr, SUBMIT_BATCH_ENDPOINT).await;
+            metrics::counter!("rpc_submit_batch_rejected_429_total").increment(1);
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+            return Ok((
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(SubmitBatchResponse {
+                    accepted: 0,
+                    rejected: 0,
+                    http_429: 0,
+                    invalid: 0,
+                    elapsed_ms,
+                    error: Some("overloaded"),
+                    lane: Some("batch"),
+                }),
+            ));
+        }
+    };
+
+    let max_body = configured_batch_body_limit();
+    let max_txs = configured_batch_max_txs();
+    let backpressure_mempool = configured_batch_backpressure_mempool_size();
+
+    // Quick backpressure check before doing any work.
+    if state.mempool.size() >= backpressure_mempool {
+        record_security_success(&state, &addr, SUBMIT_BATCH_ENDPOINT).await;
+        metrics::counter!("rpc_submit_batch_rejected_429_total").increment(1);
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+        return Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(SubmitBatchResponse {
+                accepted: 0,
+                rejected: 0,
+                http_429: 0,
+                invalid: 0,
+                elapsed_ms,
+                error: Some("overloaded"),
+                lane: Some("batch"),
+            }),
+        ));
+    }
+
+    let (_parts, body) = req.into_parts();
+    let bytes = match axum::body::to_bytes(body, max_body).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            warn!("submit_batch body read failed: {}", err);
+            record_security_failure(&state, &addr, SUBMIT_BATCH_ENDPOINT, "body_read_failed").await;
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("invalid_body", "Failed to read request body")),
+            ));
+        }
+    };
+
+    metrics::counter!("rpc_submit_batch_bytes_total").increment(bytes.len() as u64);
+
+    let ranges = match parse_counted_len_delimited_frames(&bytes, max_txs) {
+        Ok(ranges) => ranges,
+        Err(err) => {
+            record_security_success(&state, &addr, SUBMIT_BATCH_ENDPOINT).await;
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("invalid_framing", err.to_string())),
+            ));
+        }
+    };
+
+    // Ensure the admission channel is available.
+    let Some(tx_sender) = state.tx_sender.as_ref() else {
+        record_security_failure(&state, &addr, SUBMIT_BATCH_ENDPOINT, "consensus_not_active").await;
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiError::new(
+                "consensus_unavailable",
+                "Consensus not active",
+            )),
+        ));
+    };
+    if tx_sender.is_closed() {
+        record_security_failure(
+            &state,
+            &addr,
+            SUBMIT_BATCH_ENDPOINT,
+            "consensus_channel_closed",
+        )
+        .await;
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiError::new(
+                "consensus_unavailable",
+                "Consensus not active",
+            )),
+        ));
+    }
+
+    let mut accepted = 0usize;
+    let mut rejected = 0usize;
+    let mut invalid = 0usize;
+    let mut http_429 = 0usize;
+
+    // Process frames with minimal per-frame work; do not hold global locks across the loop.
+    for (idx, range) in ranges.iter().enumerate() {
+        // Periodically re-check backpressure.
+        if idx % 32 == 0 && state.mempool.size() >= backpressure_mempool {
+            http_429 += ranges.len().saturating_sub(idx);
+            break;
+        }
+
+        // Bound decode work: never decode if the batch queue is full.
+        let queue_permit = match state.batch_lane.queue_tx.try_reserve() {
+            Ok(permit) => permit,
+            Err(_) => {
+                http_429 += ranges.len().saturating_sub(idx);
+                break;
+            }
+        };
+
+        let frame = &bytes[range.clone()];
+        let tx: Transaction = match bincode_tx_options().deserialize(frame) {
+            Ok(tx) => tx,
+            Err(_) => {
+                invalid += 1;
+                continue;
+            }
+        };
+
+        if !tx_basic_sanity(&tx) {
+            rejected += 1;
+            continue;
+        }
+
+        // Enqueue into bounded batch lane queue. The worker forwards to consensus/admission.
+        queue_permit.send(tx);
+        accepted += 1;
+    }
+
+    record_security_success(&state, &addr, SUBMIT_BATCH_ENDPOINT).await;
+
+    metrics::counter!("rpc_submit_batch_txs_total").increment(ranges.len() as u64);
+    metrics::counter!("rpc_submit_batch_accepted_total").increment(accepted as u64);
+    metrics::counter!("rpc_submit_batch_rejected_total").increment(rejected as u64);
+    metrics::counter!("rpc_submit_batch_rejected_429_total").increment(http_429 as u64);
+    metrics::counter!("rpc_submit_batch_invalid_total").increment(invalid as u64);
+
+    let status = if http_429 > 0 && accepted == 0 {
+        StatusCode::TOO_MANY_REQUESTS
+    } else {
+        StatusCode::OK
+    };
+
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+    Ok((
+        status,
+        Json(SubmitBatchResponse {
+            accepted,
+            rejected,
+            http_429,
+            invalid,
+            elapsed_ms,
+            error: if status == StatusCode::TOO_MANY_REQUESTS {
+                Some("overloaded")
+            } else {
+                None
+            },
+            lane: if status == StatusCode::TOO_MANY_REQUESTS {
+                Some("batch")
+            } else {
+                None
+            },
+        }),
+    ))
 }
 
 async fn handle_register_handle(
@@ -3542,6 +4020,70 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_parse_counted_len_delimited_frames_happy_path() {
+        let frame1 = b"abc";
+        let frame2 = b"012345";
+        let mut body = Vec::new();
+        body.extend_from_slice(&(2u32).to_le_bytes());
+        body.extend_from_slice(&(frame1.len() as u32).to_le_bytes());
+        body.extend_from_slice(frame1);
+        body.extend_from_slice(&(frame2.len() as u32).to_le_bytes());
+        body.extend_from_slice(frame2);
+
+        let ranges = parse_counted_len_delimited_frames(&body, 10).expect("ranges");
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(&body[ranges[0].clone()], frame1);
+        assert_eq!(&body[ranges[1].clone()], frame2);
+    }
+
+    #[test]
+    fn test_parse_counted_len_delimited_frames_truncated_count_prefix() {
+        let body = vec![1u8, 2u8, 3u8];
+        let err = parse_counted_len_delimited_frames(&body, 10).expect_err("error");
+        assert!(matches!(err, BatchFrameParseError::TruncatedCount));
+    }
+
+    #[test]
+    fn test_parse_counted_len_delimited_frames_truncated_frame() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(1u32).to_le_bytes());
+        body.extend_from_slice(&(10u32).to_le_bytes());
+        body.extend_from_slice(b"short");
+        let err = parse_counted_len_delimited_frames(&body, 10).expect_err("error");
+        assert!(matches!(err, BatchFrameParseError::TruncatedFrame));
+    }
+
+    #[test]
+    fn test_parse_counted_len_delimited_frames_trailing_bytes() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(1u32).to_le_bytes());
+        body.extend_from_slice(&(3u32).to_le_bytes());
+        body.extend_from_slice(b"abc");
+        body.push(0xFF);
+        let err = parse_counted_len_delimited_frames(&body, 10).expect_err("error");
+        assert!(matches!(err, BatchFrameParseError::TrailingBytes));
+    }
+
+    #[tokio::test]
+    async fn test_submit_batch_gate_disabled_returns_404() {
+        let _guard = EnvVarGuard::set(ENABLE_BATCH_SUBMIT_ENV, "0");
+        let state = make_app_state();
+        let router = build_router(state);
+
+        let addr: SocketAddr = "127.0.0.1:9420".parse().unwrap();
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(SUBMIT_BATCH_ENDPOINT)
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .body(Body::from(Vec::<u8>::new()))
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(addr));
+
+        let response = router.oneshot(request).await.expect("response");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
     #[tokio::test]
     async fn test_handle_get_health_basic() {
         let file_storage: Arc<dyn FileStorage> = Arc::new(MemoryFileStorage::default());
@@ -3581,6 +4123,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            batch_lane: BatchLane::from_env(),
         });
 
         let addr: SocketAddr = "127.0.0.1:6000".parse().unwrap();
@@ -3722,6 +4265,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            batch_lane: BatchLane::from_env(),
         })
     }
 
@@ -6011,6 +6555,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            batch_lane: BatchLane::from_env(),
         });
 
         let socket: SocketAddr = "203.0.113.10:9100".parse().unwrap();
