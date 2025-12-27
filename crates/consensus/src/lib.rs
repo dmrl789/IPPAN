@@ -194,6 +194,8 @@ pub struct PoAConsensus {
     pub is_running: Arc<RwLock<bool>>,
     pub current_slot: Arc<RwLock<u64>>,
     pub tx_sender: mpsc::UnboundedSender<Transaction>,
+    /// Submit channel receiver. Stored here to keep channel open; drained by start().
+    submit_rx: std::sync::Mutex<Option<mpsc::UnboundedReceiver<Transaction>>>,
     pub mempool: Arc<Mempool>,
     pub round_tracker: Arc<RwLock<RoundTracker>>,
     pub finalization_interval: Duration,
@@ -233,7 +235,7 @@ impl PoAConsensus {
         handle_anchors: Arc<L1HandleAnchorStorage>,
         handle_dht: Option<Arc<dyn HandleDhtService>>,
     ) -> Self {
-        let (tx_sender, _rx) = mpsc::unbounded_channel();
+        let (tx_sender, submit_rx) = mpsc::unbounded_channel();
         let latest_height = storage.get_latest_height().unwrap_or(0);
 
         let previous_round_blocks = if latest_height == 0 {
@@ -270,6 +272,7 @@ impl PoAConsensus {
             is_running: Arc::new(RwLock::new(false)),
             current_slot: Arc::new(RwLock::new(0)),
             tx_sender,
+            submit_rx: std::sync::Mutex::new(Some(submit_rx)),
             mempool: Arc::new(Mempool::new(10_000)),
             round_tracker: Arc::new(RwLock::new(tracker)),
             finalization_interval: Duration::from_millis(
@@ -309,6 +312,36 @@ impl PoAConsensus {
     pub async fn start(&mut self) -> Result<()> {
         *self.is_running.write() = true;
         info!("Starting PoA consensus engine");
+
+        // Spawn submit channel drainer: enqueues RPC-submitted txs into mempool.
+        // This keeps the channel open so tx_sender.is_closed() returns false.
+        if let Some(mut submit_rx) = self.submit_rx.lock().unwrap().take() {
+            let mempool = self.mempool.clone();
+            let is_running = self.is_running.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        maybe_tx = submit_rx.recv() => {
+                            match maybe_tx {
+                                Some(tx) => {
+                                    // Enqueue into mempool (same path as local txs)
+                                    if let Err(e) = mempool.add_transaction(tx) {
+                                        // Log but don't crash; RPC will see rejection via response
+                                        tracing::debug!("submit_rx tx rejected by mempool: {e}");
+                                    }
+                                }
+                                None => break, // channel closed
+                            }
+                        }
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                            if !*is_running.read() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64;
         *self.current_slot.write() = now / self.config.slot_duration_ms;
