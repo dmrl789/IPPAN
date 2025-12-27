@@ -141,6 +141,17 @@ struct BatchArgs {
     /// If /health fails twice consecutively, stop early and write RPC_UNHEALTHY_STOP.txt (in cwd).
     #[arg(long, default_value_t = true)]
     stop_on_unhealthy: bool,
+
+    /// Use backpressure (wait) instead of dropping when internal queue is full.
+    /// When true, producer blocks if workers can't keep up. This ensures delivered == enqueued.
+    #[arg(long, default_value_t = true)]
+    backpressure: bool,
+
+    /// Comma-separated list of RPC targets for round-robin load distribution.
+    /// Example: --targets http://127.0.0.1:8080,http://api2:8080,http://api3:8080
+    /// If omitted, uses --rpc as the single target.
+    #[arg(long)]
+    targets: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -256,9 +267,14 @@ struct SubmitBatchResponse {
 struct BatchMetrics {
     ticks: AtomicUsize,
     enqueued: AtomicUsize,
+    /// Number of individual txs sent in HTTP POSTs (sum of batch sizes)
+    sent_txs: AtomicUsize,
+    /// Number of HTTP requests sent (each batch = 1 request)
+    sent_requests: AtomicUsize,
     accepted: AtomicUsize,
     rejected: AtomicUsize,
     http_429: AtomicUsize,
+    http_2xx: AtomicUsize,
     invalid: AtomicUsize,
     http_other: AtomicUsize,
     client_timeouts: AtomicUsize,
@@ -544,8 +560,23 @@ async fn run_batch(args: BatchArgs) -> Result<()> {
         .build()
         .context("build reqwest client")?;
 
-    let endpoint = format!("{}/tx/submit_batch", args.rpc.trim_end_matches('/'));
-    let health_url = format!("{}/health", args.rpc.trim_end_matches('/'));
+    // Parse targets (multi-target support for round-robin)
+    let targets: Vec<String> = if let Some(ref t) = args.targets {
+        t.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        vec![args.rpc.clone()]
+    };
+    if targets.is_empty() {
+        return Err(anyhow!("no valid targets specified"));
+    }
+    let endpoints: Vec<String> = targets
+        .iter()
+        .map(|t| format!("{}/tx/submit_batch", t.trim_end_matches('/')))
+        .collect();
+    let health_url = format!("{}/health", targets[0].trim_end_matches('/'));
 
     let to_pub = if let Some(raw) = &args.to {
         decode_address(raw).map_err(|e| anyhow!("invalid --to address: {e}"))?
@@ -624,6 +655,7 @@ async fn run_batch(args: BatchArgs) -> Result<()> {
     // Producer: tick at target TPS, pre-build + pre-sign tx bytes into queue.
     let producer_metrics = Arc::clone(&metrics);
     let stop = stop_flag.clone();
+    let use_backpressure = args.backpressure;
     let producer = tokio::spawn(async move {
         let mut interval = tokio::time::interval(ticks_every);
         let mut rr = 0usize;
@@ -647,25 +679,38 @@ async fn run_batch(args: BatchArgs) -> Result<()> {
                 Err(_) => continue,
             };
 
-            if tx.try_send(tx_bytes).is_ok() {
-                producer_metrics.enqueued.fetch_add(1, Ordering::Relaxed);
+            if use_backpressure {
+                // Backpressure: wait for queue space (ensures delivered == enqueued)
+                if tx.send(tx_bytes).await.is_ok() {
+                    producer_metrics.enqueued.fetch_add(1, Ordering::Relaxed);
+                }
+                // If send fails, channel is closed - stop producing
             } else {
-                producer_metrics
-                    .dropped_queue_full
-                    .fetch_add(1, Ordering::Relaxed);
+                // Drop mode: silently drop if queue full (legacy behavior)
+                if tx.try_send(tx_bytes).is_ok() {
+                    producer_metrics.enqueued.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    producer_metrics
+                        .dropped_queue_full
+                        .fetch_add(1, Ordering::Relaxed);
+                }
             }
         }
     });
 
-    // Workers: submit binary batches.
+    // Workers: submit binary batches (round-robin across targets).
+    let endpoints = Arc::new(endpoints);
+    let num_targets = endpoints.len();
     let mut workers = Vec::with_capacity(args.concurrency as usize);
-    for _ in 0..args.concurrency {
+    for worker_id in 0..args.concurrency {
         let client = client.clone();
-        let endpoint = endpoint.clone();
+        let endpoints = Arc::clone(&endpoints);
         let metrics = Arc::clone(&metrics);
         let rx = Arc::clone(&rx);
         let batch_size = args.batch_size as usize;
         let stop = stop_flag.clone();
+        // Each worker starts at a different offset for better distribution
+        let mut target_idx = worker_id as usize % num_targets;
         workers.push(tokio::spawn(async move {
             loop {
                 if stop.load(Ordering::Relaxed) {
@@ -687,33 +732,43 @@ async fn run_batch(args: BatchArgs) -> Result<()> {
 
                 let body = build_batch_body(&frames);
                 let batch_len = frames.len();
+
+                // Round-robin target selection
+                let endpoint = &endpoints[target_idx];
+                target_idx = (target_idx + 1) % num_targets;
+
+                // Track sent txs (before response, since we're about to send)
+                metrics.sent_txs.fetch_add(batch_len, Ordering::Relaxed);
+                metrics.sent_requests.fetch_add(1, Ordering::Relaxed);
+
                 let resp = client
-                    .post(&endpoint)
+                    .post(endpoint)
                     .header("Content-Type", "application/octet-stream")
                     .body(body)
                     .send()
                     .await;
 
                 match resp {
-                    Ok(r) if r.status().is_success() => match r.json::<SubmitBatchResponse>().await
-                    {
-                        Ok(parsed) => {
-                            metrics
-                                .accepted
-                                .fetch_add(parsed.accepted, Ordering::Relaxed);
-                            metrics
-                                .rejected
-                                .fetch_add(parsed.rejected, Ordering::Relaxed);
-                            metrics
-                                .http_429
-                                .fetch_add(parsed.http_429, Ordering::Relaxed);
-                            metrics.invalid.fetch_add(parsed.invalid, Ordering::Relaxed);
+                    Ok(r) if r.status().is_success() => {
+                        metrics.http_2xx.fetch_add(1, Ordering::Relaxed);
+                        match r.json::<SubmitBatchResponse>().await {
+                            Ok(parsed) => {
+                                metrics
+                                    .accepted
+                                    .fetch_add(parsed.accepted, Ordering::Relaxed);
+                                metrics
+                                    .rejected
+                                    .fetch_add(parsed.rejected, Ordering::Relaxed);
+                                metrics
+                                    .http_429
+                                    .fetch_add(parsed.http_429, Ordering::Relaxed);
+                                metrics.invalid.fetch_add(parsed.invalid, Ordering::Relaxed);
+                            }
+                            Err(_) => {
+                                metrics.client_read.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
-                        Err(_) => {
-                            metrics.client_read.fetch_add(1, Ordering::Relaxed);
-                            metrics.http_other.fetch_add(1, Ordering::Relaxed);
-                        }
-                    },
+                    }
                     Ok(r) if r.status() == StatusCode::TOO_MANY_REQUESTS => {
                         match r.json::<SubmitBatchResponse>().await {
                             Ok(parsed) => {
@@ -779,8 +834,11 @@ async fn run_batch(args: BatchArgs) -> Result<()> {
     }
 
     let elapsed = (args.seconds as f64).max(0.001);
+    let enqueued = metrics.enqueued.load(Ordering::Relaxed);
+    let sent_txs = metrics.sent_txs.load(Ordering::Relaxed);
+    let sent_requests = metrics.sent_requests.load(Ordering::Relaxed);
+    let http_2xx = metrics.http_2xx.load(Ordering::Relaxed);
     let accepted = metrics.accepted.load(Ordering::Relaxed);
-    let accepted_tps = accepted as f64 / elapsed;
     let rejected = metrics.rejected.load(Ordering::Relaxed);
     let http_429 = metrics.http_429.load(Ordering::Relaxed);
     let invalid = metrics.invalid.load(Ordering::Relaxed);
@@ -792,32 +850,67 @@ async fn run_batch(args: BatchArgs) -> Result<()> {
     let client_other = metrics.client_other.load(Ordering::Relaxed);
     let client_errors = client_timeouts + client_connect + client_read + client_other;
 
-    println!("RPC: {}", args.rpc);
-    println!("Endpoint: {}", endpoint);
-    println!("offered_tps: {}", args.tps);
+    // Calculate rates
+    let target_tps = args.tps as f64;
+    let delivered_tps = sent_txs as f64 / elapsed;
+    let accepted_tps = accepted as f64 / elapsed;
+
+    println!("=== BATCH LOAD TEST RESULTS ===");
+    println!("Targets: {:?}", targets);
+    println!("target_tps: {}", args.tps);
     println!("duration_s: {}", args.seconds);
     println!("batch_size: {}", args.batch_size);
     println!("concurrency: {}", args.concurrency);
+    println!("backpressure: {}", args.backpressure);
+    println!();
+    println!("--- Producer ---");
+    println!("enqueued: {}", enqueued);
+    println!("dropped_queue_full: {}", dropped_queue_full);
+    println!();
+    println!("--- Delivery ---");
+    println!("sent_txs: {}", sent_txs);
+    println!("sent_requests: {}", sent_requests);
+    println!("delivered_tps: {:.2}", delivered_tps);
+    println!();
+    println!("--- Server Response ---");
+    println!("http_2xx: {}", http_2xx);
+    println!("http_429: {}", http_429);
     println!("accepted: {}", accepted);
     println!("rejected: {}", rejected);
-    println!("http_429: {}", http_429);
     println!("invalid: {}", invalid);
+    println!("accepted_tps: {:.2}", accepted_tps);
+    println!();
+    println!("--- Client Errors ---");
     println!("client_timeouts: {}", client_timeouts);
     println!("client_connect: {}", client_connect);
     println!("client_read: {}", client_read);
     println!("client_other: {}", client_other);
-    println!("dropped_queue_full: {}", dropped_queue_full);
-    println!("accepted_tps: {:.2}", accepted_tps);
+    println!("client_errors: {}", client_errors);
+    println!();
 
+    // One-line summary for scripts/tee parsing
     println!(
-        "SUMMARY offered_tps={:.2} accepted_tps={:.2} http_429={} invalid={} client_errors={} dropped_queue_full={}",
-        args.tps as f64,
+        "SUMMARY target_tps={:.2} delivered_tps={:.2} accepted_tps={:.2} http_2xx={} http_429={} invalid={} client_errors={} dropped={}",
+        target_tps,
+        delivered_tps,
         accepted_tps,
+        http_2xx,
         http_429,
         invalid,
         client_errors,
         dropped_queue_full
     );
+
+    // Validation check
+    if dropped_queue_full > 0 && args.backpressure {
+        eprintln!("WARNING: dropped_queue_full > 0 despite backpressure mode");
+    }
+    if client_errors > 0 {
+        eprintln!("WARNING: client_errors > 0 — measurement may be incomplete");
+    }
+    if invalid > 0 {
+        eprintln!("WARNING: invalid > 0 — check transaction format/nonces");
+    }
 
     Ok(())
 }

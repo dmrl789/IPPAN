@@ -2490,8 +2490,10 @@ async fn handle_submit_batch(
     let _lane_permit = match state.batch_lane.semaphore.clone().try_acquire_owned() {
         Ok(permit) => permit,
         Err(_) => {
+            // Early 429: semaphore exhausted (before reading body)
             record_security_success(&state, &addr, SUBMIT_BATCH_ENDPOINT).await;
             metrics::counter!("rpc_submit_batch_rejected_429_total").increment(1);
+            metrics::counter!("rpc_submit_batch_early_429_semaphore").increment(1);
             let elapsed_ms = start.elapsed().as_millis() as u64;
             return Ok((
                 StatusCode::TOO_MANY_REQUESTS,
@@ -2512,10 +2514,12 @@ async fn handle_submit_batch(
     let max_txs = configured_batch_max_txs();
     let backpressure_mempool = configured_batch_backpressure_mempool_size();
 
-    // Quick backpressure check before doing any work.
+    // Quick backpressure check before doing any work (before reading body).
     if state.mempool.size() >= backpressure_mempool {
+        // Early 429: mempool backpressure (before reading body)
         record_security_success(&state, &addr, SUBMIT_BATCH_ENDPOINT).await;
         metrics::counter!("rpc_submit_batch_rejected_429_total").increment(1);
+        metrics::counter!("rpc_submit_batch_early_429_mempool").increment(1);
         let elapsed_ms = start.elapsed().as_millis() as u64;
         return Ok((
             StatusCode::TOO_MANY_REQUESTS,
