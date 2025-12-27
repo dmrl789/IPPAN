@@ -27,7 +27,7 @@ mod tests {
     use crate::files::{
         handle_get_file, handle_publish_file, FileDescriptorResponse, PublishFileRequest,
     };
-    use crate::server::{AppState, L2Config, ValidatedJson};
+    use crate::server::{AppState, BatchLane, L2Config, ValidatedJson};
 
     #[derive(Clone, Default)]
     struct RecordingFileDht {
@@ -111,6 +111,7 @@ mod tests {
             handle_anchors,
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
+            batch_lane: BatchLane::from_env(),
         }
     }
 

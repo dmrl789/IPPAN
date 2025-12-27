@@ -47,6 +47,7 @@ members = [
   "crates/benchmark",        # Performance benchmarking tool
   "crates/explorer",         # Block explorer API gateway
   "tools/loadgen",           # RPC load generator for perf baselines
+  "tools/txload",            # Rate-limited RPC load generator with metrics
 
   # Fuzz testing
   "crates/fuzz",             # Fuzz harness for critical components
