@@ -98,16 +98,16 @@ pub struct Transaction {
     #[serde(default)]
     pub visibility: TransactionVisibility,
     /// Optional cleartext topics/tags for routing or indexing.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub topics: Vec<String>,
     /// Optional embedded handle operation payload.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub handle_op: Option<HandleOperation>,
     /// Optional confidential payload envelope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub confidential: Option<ConfidentialEnvelope>,
     /// Optional zero-knowledge proof metadata.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub zk_proof: Option<ConfidentialProof>,
     /// Transaction signature (64 bytes)
     #[serde(with = "serde_bytes")]
