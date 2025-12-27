@@ -48,7 +48,7 @@ use ippan_types::health::{HealthStatus, NodeHealth, NodeHealthContext};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
     Amount, Block, HandleOperation, HandleRegisterOp, L2Commit, L2ExitRecord, L2Network,
-    RoundFinalizationRecord, Transaction, TransactionVisibility,
+    RoundFinalizationRecord, Transaction, TransactionVisibility, TransactionWireV1,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::de::{self, DeserializeOwned, Deserializer, Visitor};
@@ -2608,8 +2608,19 @@ async fn handle_submit_batch(
         };
 
         let frame = &bytes[range.clone()];
-        let tx: Transaction = match bincode_tx_options().deserialize(frame) {
-            Ok(tx) => tx,
+
+        // Decode WireV1 (bincode-stable format)
+        let wire: TransactionWireV1 = match bincode_tx_options().deserialize(frame) {
+            Ok(w) => w,
+            Err(_) => {
+                invalid += 1;
+                continue;
+            }
+        };
+
+        // Convert WireV1 -> Transaction
+        let tx: Transaction = match wire.try_into() {
+            Ok(t) => t,
             Err(_) => {
                 invalid += 1;
                 continue;

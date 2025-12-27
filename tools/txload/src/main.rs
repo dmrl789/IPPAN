@@ -9,7 +9,7 @@ use bincode::Options;
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
 use ippan_types::address::{decode_address, encode_address};
-use ippan_types::{Amount, Transaction};
+use ippan_types::{Amount, Transaction, TransactionWireV1};
 use rand::rngs::OsRng;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -640,7 +640,9 @@ async fn run_batch(args: BatchArgs) -> Result<()> {
             let _ = tx_obj.sign(&sender.signing_key.to_bytes());
             sender.nonce = sender.nonce.saturating_add(1);
 
-            let tx_bytes = match bincode_tx_options().serialize(&tx_obj) {
+            // Convert to WireV1 for bincode-stable serialization
+            let wire = TransactionWireV1::from(&tx_obj);
+            let tx_bytes = match bincode_tx_options().serialize(&wire) {
                 Ok(b) => b,
                 Err(_) => continue,
             };

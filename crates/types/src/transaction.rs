@@ -98,16 +98,16 @@ pub struct Transaction {
     #[serde(default)]
     pub visibility: TransactionVisibility,
     /// Optional cleartext topics/tags for routing or indexing.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub topics: Vec<String>,
     /// Optional embedded handle operation payload.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handle_op: Option<HandleOperation>,
     /// Optional confidential payload envelope.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidential: Option<ConfidentialEnvelope>,
     /// Optional zero-knowledge proof metadata.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zk_proof: Option<ConfidentialProof>,
     /// Transaction signature (64 bytes)
     #[serde(with = "serde_bytes")]
@@ -443,9 +443,109 @@ impl Transaction {
     }
 }
 
+// ============================================================================
+// TransactionWireV1 — bincode-stable wire format for batch ingestion
+// ============================================================================
+//
+// This type is used exclusively for high-throughput binary batch submission
+// via `/tx/submit_batch`. Unlike the canonical `Transaction` (which uses
+// `skip_serializing_if` for JSON compactness), WireV1 serializes ALL fields
+// in fixed order so bincode deserialization is deterministic.
+//
+// Flow:
+//   Client: Transaction -> TransactionWireV1 -> bincode bytes -> HTTP POST
+//   Server: bincode bytes -> TransactionWireV1 -> Transaction -> verify/admit
+
+/// Bincode-stable wire format for batch transaction submission.
+///
+/// All fields are serialized unconditionally in fixed order. Optional fields
+/// use `Option<T>` without `skip_serializing_if`, and `Vec` includes length.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionWireV1 {
+    /// Transaction ID (32 bytes)
+    pub id: [u8; 32],
+    /// Sender address (32 bytes)
+    pub from: [u8; 32],
+    /// Recipient address (32 bytes)
+    pub to: [u8; 32],
+    /// Amount (u128 atomic units)
+    pub amount: Amount,
+    /// Nonce for replay protection
+    pub nonce: u64,
+    /// HashTimer timestamp_us
+    pub hashtimer_timestamp_us: i64,
+    /// HashTimer entropy (32 bytes)
+    pub hashtimer_entropy: [u8; 32],
+    /// HashTimer signature (empty if unsigned)
+    pub hashtimer_signature: Vec<u8>,
+    /// HashTimer public_key (empty if unsigned)
+    pub hashtimer_public_key: Vec<u8>,
+    /// Transaction timestamp
+    pub timestamp: IppanTimeMicros,
+    /// Visibility flag (0=Public, 1=Confidential)
+    pub visibility: u8,
+    /// Signature (64 bytes)
+    #[serde(with = "serde_bytes")]
+    pub signature: [u8; 64],
+}
+
+impl From<&Transaction> for TransactionWireV1 {
+    fn from(tx: &Transaction) -> Self {
+        TransactionWireV1 {
+            id: tx.id,
+            from: tx.from,
+            to: tx.to,
+            amount: tx.amount,
+            nonce: tx.nonce,
+            hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+            hashtimer_entropy: tx.hashtimer.entropy,
+            hashtimer_signature: tx.hashtimer.signature.clone(),
+            hashtimer_public_key: tx.hashtimer.public_key.clone(),
+            timestamp: tx.timestamp,
+            visibility: tx.visibility.as_byte(),
+            signature: tx.signature,
+        }
+    }
+}
+
+impl TryFrom<TransactionWireV1> for Transaction {
+    type Error = &'static str;
+
+    fn try_from(wire: TransactionWireV1) -> Result<Self, Self::Error> {
+        let visibility = match wire.visibility {
+            0 => TransactionVisibility::Public,
+            1 => TransactionVisibility::Confidential,
+            _ => return Err("invalid visibility byte"),
+        };
+
+        Ok(Transaction {
+            id: wire.id,
+            from: wire.from,
+            to: wire.to,
+            amount: wire.amount,
+            nonce: wire.nonce,
+            hashtimer: HashTimer {
+                timestamp_us: wire.hashtimer_timestamp_us,
+                entropy: wire.hashtimer_entropy,
+                signature: wire.hashtimer_signature,
+                public_key: wire.hashtimer_public_key,
+            },
+            timestamp: wire.timestamp,
+            visibility,
+            // Wire format does not carry optional fields (batch ingest path)
+            topics: Vec::new(),
+            handle_op: None,
+            confidential: None,
+            zk_proof: None,
+            signature: wire.signature,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bincode::Options;
     use ed25519_dalek::SigningKey;
     use rand_core::{OsRng, RngCore};
 
@@ -523,5 +623,48 @@ mod tests {
 
         tx.sign(&private_key).unwrap();
         assert!(!tx.is_valid());
+    }
+
+    #[test]
+    fn test_transaction_wire_v1_bincode_roundtrip() {
+        // Build a Transaction with optional fields None (typical batch ingest case)
+        let (private_key, from) = generate_account();
+        let (_, to) = generate_account();
+        let mut tx = Transaction::new(from, to, Amount::from_micro_ipn(5000), 42);
+        tx.sign(&private_key).unwrap();
+
+        // Convert to WireV1
+        let wire = TransactionWireV1::from(&tx);
+
+        // Bincode serialize with fixint (same options as batch endpoint)
+        let bytes = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .reject_trailing_bytes()
+            .serialize(&wire)
+            .expect("serialize WireV1");
+
+        // Bincode deserialize back to WireV1
+        let wire2: TransactionWireV1 = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .reject_trailing_bytes()
+            .deserialize(&bytes)
+            .expect("deserialize WireV1");
+
+        // Convert back to Transaction
+        let tx2 = Transaction::try_from(wire2).expect("convert WireV1 to Transaction");
+
+        // Assert semantic equality of critical fields
+        assert_eq!(tx.id, tx2.id);
+        assert_eq!(tx.from, tx2.from);
+        assert_eq!(tx.to, tx2.to);
+        assert_eq!(tx.amount, tx2.amount);
+        assert_eq!(tx.nonce, tx2.nonce);
+        assert_eq!(tx.signature, tx2.signature);
+        assert_eq!(tx.visibility, tx2.visibility);
+        assert_eq!(tx.hashtimer.timestamp_us, tx2.hashtimer.timestamp_us);
+        assert_eq!(tx.hashtimer.entropy, tx2.hashtimer.entropy);
+
+        // Verify the reconstructed tx still verifies
+        assert!(tx2.verify(), "roundtrip tx must still verify signature");
     }
 }
