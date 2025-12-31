@@ -1285,7 +1285,9 @@ async fn main() -> Result<()> {
         );
 
         // Create DLC configuration
+        // Use network_id as chain_id for commitment disambiguation
         let dlc_config = DLCConfig {
+            chain_id: config.network_id.clone(),
             temporal_finality_ms: config.temporal_finality_ms,
             hashtimer_precision_us: 1,
             shadow_verifier_count: config.shadow_verifier_count,
@@ -1317,22 +1319,27 @@ async fn main() -> Result<()> {
             }
         }
 
-        // Start DLC consensus
-        dlc_integrated.start().await?;
-
-        // Store DLC handle before moving dlc_integrated
+        // Store DLC handle BEFORE start() so we can seed metrics first
         // get_dlc() returns Arc<RwLock<DLCConsensus>>, which is what we need
         dlc_handle = Some(dlc_integrated.get_dlc());
+
+        // IMPORTANT: Seed validator metrics BEFORE start() computes initial selection
+        // This ensures deterministic selection uses the full validator set, not just self
+        if let Some(handle) = &dlc_handle {
+            info!(
+                "Seeding DLC validator metrics store with {} validators (before start)",
+                discovered_validators.len()
+            );
+            seed_dlc_validator_metrics(handle, &discovered_validators);
+        }
+
+        // Start DLC consensus (will now have metrics for all validators)
+        dlc_integrated.start().await?;
 
         consensus = Arc::new(Mutex::new(dlc_integrated.poa));
         ai_status_handle = build_dlc_ai_status_handle();
 
         if let Some(handle) = &dlc_handle {
-            info!(
-                "Seeding DLC validator metrics store with {} validators",
-                discovered_validators.len()
-            );
-            seed_dlc_validator_metrics(handle, &discovered_validators);
 
             let drift_cfg = read_status_metrics_drift_cfg(config.dev_mode);
             if drift_cfg.enabled {
@@ -1752,7 +1759,23 @@ enum MetricsDriftMode {
 
 fn discover_validator_ids(config: &AppConfig) -> Vec<[u8; 32]> {
     let mut ids = vec![config.validator_id];
+
+    // Priority 1: IPPAN_VALIDATOR_IDS env var (comma-separated hex IDs)
+    if let Ok(raw) = std::env::var("IPPAN_VALIDATOR_IDS") {
+        for hex_id in raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            if let Ok(bytes) = hex::decode(hex_id) {
+                if bytes.len() == 32 {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&bytes);
+                    ids.push(arr);
+                }
+            }
+        }
+    }
+
+    // Priority 2: localnet config files
     ids.extend(load_localnet_validator_ids(&config.config_path));
+
     if ids.is_empty() {
         ids.push(config.validator_id);
     }
