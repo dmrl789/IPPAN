@@ -25,6 +25,9 @@ use crate::shadow_verifier::ShadowVerifierSet;
 /// DLC Consensus configuration
 #[derive(Debug, Clone)]
 pub struct DLCConfig {
+    /// Chain ID for commitment disambiguation
+    pub chain_id: String,
+
     /// Temporal finality window in milliseconds (100-250ms)
     pub temporal_finality_ms: u64,
 
@@ -56,6 +59,7 @@ pub struct DLCConfig {
 impl Default for DLCConfig {
     fn default() -> Self {
         Self {
+            chain_id: "default".to_string(),
             temporal_finality_ms: 250,
             hashtimer_precision_us: 1,
             shadow_verifier_count: 3,

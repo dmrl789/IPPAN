@@ -82,6 +82,7 @@ impl DLCIntegratedConsensus {
 /// Helper to create DLC config from PoA config
 pub fn dlc_config_from_poa(enable_dlc: bool, finality_ms: u64) -> DLCConfig {
     DLCConfig {
+        chain_id: "default".to_string(),
         temporal_finality_ms: finality_ms.clamp(100, 250),
         hashtimer_precision_us: 1,
         shadow_verifier_count: 3,
