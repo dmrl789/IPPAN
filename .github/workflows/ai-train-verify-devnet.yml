@@ -2,18 +2,6 @@ name: AI - Train then Verify (Devnet Skeleton)
 
 on:
   workflow_dispatch: {}
-  push:
-    paths:
-      - ".github/workflows/ai-train-verify-devnet.yml"
-      - "ai_training/**"
-      - "ai_assets/**"
-      - "crates/**"
-  pull_request:
-    paths:
-      - ".github/workflows/ai-train-verify-devnet.yml"
-      - "ai_training/**"
-      - "ai_assets/**"
-      - "crates/**"
 
 jobs:
   train-then-verify-devnet:
@@ -39,20 +27,17 @@ jobs:
         run: |
           python - <<'PY'
           import csv
+          import os
           from pathlib import Path
-
           SCALE = 1_000_000
-
           out_dir = Path("ai_assets/datasets/devnet")
           out_dir.mkdir(parents=True, exist_ok=True)
           out = out_dir / "devnet_dataset_20990101T000000Z.csv"
-
           cols = [
               "timestamp_utc","round_id","validator_id",
               "uptime_ratio_7d","validated_blocks_7d","missed_blocks_7d","avg_latency_ms",
               "slashing_events_90d","stake_normalized","peer_reports_quality","fairness_score_scaled",
           ]
-
           with out.open("w", newline="", encoding="utf-8") as f:
               w = csv.writer(f)
               w.writerow(cols)
@@ -70,11 +55,10 @@ jobs:
                       fairness = min(SCALE, max(0, int(0.6*SCALE + 0.2*uptime + 0.1*stake + 0.1*peerq - 0.1*latency)))
                       ts = f"2099-01-01T00:00:{r:02d}Z"
                       w.writerow([ts, r, vid, uptime, validated, missed, latency, slash, stake, peerq, fairness])
-
           print(f"Wrote {out}")
           PY
 
-      - name: "Train (devnet entrypoint) and capture hash"
+      - name: Train (devnet entrypoint) and capture hash
         run: |
           set -euo pipefail
           python ai_training/train_ippan_d_gbdt_devnet.py \
@@ -82,14 +66,13 @@ jobs:
             --output-dir ai_assets/models/devnet \
             --model-id ippan_d_gbdt_devnet_ci_smoke \
             | tee train.log
-
           grep -E '^model_path=' train.log
           grep -E '^model_hash=' train.log
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: "Verify Rust hash matches trainer hash (canonical JSON)"
+      - name: Verify Rust hash matches trainer hash (canonical JSON)
         run: |
           set -euo pipefail
           MODEL_PATH="$(grep -E '^model_path=' train.log | tail -n 1 | cut -d= -f2-)"
@@ -99,7 +82,7 @@ jobs:
           echo "RS_HASH=$RS_HASH"
           test "$PY_HASH" = "$RS_HASH"
 
-      - name: "Determinism smoke - retrain and ensure hash stable"
+      - name: Determinism smoke: retrain and ensure hash stable
         run: |
           set -euo pipefail
           python ai_training/train_ippan_d_gbdt_devnet.py \
@@ -107,9 +90,10 @@ jobs:
             --output-dir ai_assets/models/devnet \
             --model-id ippan_d_gbdt_devnet_ci_smoke \
             | tee train2.log
-
           HASH1="$(grep -E '^model_hash=' train.log | tail -n 1 | cut -d= -f2-)"
           HASH2="$(grep -E '^model_hash=' train2.log | tail -n 1 | cut -d= -f2-)"
           echo "HASH1=$HASH1"
           echo "HASH2=$HASH2"
           test "$HASH1" = "$HASH2"
+
+
