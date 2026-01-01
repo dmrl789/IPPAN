@@ -1285,9 +1285,7 @@ async fn main() -> Result<()> {
         );
 
         // Create DLC configuration
-        // Use network_id as chain_id for commitment disambiguation
         let dlc_config = DLCConfig {
-            chain_id: config.network_id.clone(),
             temporal_finality_ms: config.temporal_finality_ms,
             hashtimer_precision_us: 1,
             shadow_verifier_count: config.shadow_verifier_count,
@@ -1340,7 +1338,6 @@ async fn main() -> Result<()> {
         ai_status_handle = build_dlc_ai_status_handle();
 
         if let Some(handle) = &dlc_handle {
-
             let drift_cfg = read_status_metrics_drift_cfg(config.dev_mode);
             if drift_cfg.enabled {
                 info!(
