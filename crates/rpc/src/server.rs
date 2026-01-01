@@ -2195,7 +2195,8 @@ async fn handle_status(
         "consensus": consensus_view,
         "ai": ai_view,
         "mempool_size": mempool_size,
-        "dataset_export": dataset_export
+        "dataset_export": dataset_export,
+        "ippan_time_us": ippan_time_now()
     })))
 }
 

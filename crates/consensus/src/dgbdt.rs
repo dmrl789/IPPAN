@@ -224,8 +224,10 @@ impl DGBDTEngine {
     /// ALL selection paths MUST use this to get candidates in deterministic order.
     /// Returns: Vec of (ValidatorId, score) sorted by (score DESC, id ASC).
     fn rank_candidates(scores: &HashMap<ValidatorId, i32>) -> Vec<(ValidatorId, i32)> {
-        let mut candidates: Vec<(ValidatorId, i32)> =
-            scores.iter().map(|(id, score)| (*id, *score)).collect();
+        let mut candidates: Vec<(ValidatorId, i32)> = scores
+            .iter()
+            .map(|(id, score)| (*id, *score))
+            .collect();
 
         // Sort by score descending, then by validator ID ascending (deterministic tie-break)
         candidates.sort_by(|(id_a, score_a), (id_b, score_b)| {
@@ -412,30 +414,27 @@ mod tests {
             }
 
             let result = engine.select_verifiers(1, &metrics, 3, 0).unwrap();
-            results.push((
-                result.primary,
-                result.shadows.clone(),
-                result.selection_seed,
-            ));
+            results.push((result.primary, result.shadows.clone(), result.selection_seed));
         }
 
         // All permutations MUST produce identical results
         let (first_primary, first_shadows, first_seed) = &results[0];
         for (i, (primary, shadows, seed)) in results.iter().enumerate().skip(1) {
             assert_eq!(
-                primary,
-                first_primary,
+                primary, first_primary,
                 "Primary mismatch on permutation {}: expected {:?}, got {:?}",
-                i,
-                hex::encode(first_primary),
-                hex::encode(primary)
+                i, hex::encode(first_primary), hex::encode(primary)
             );
             assert_eq!(
                 shadows, first_shadows,
                 "Shadows mismatch on permutation {}",
                 i
             );
-            assert_eq!(seed, first_seed, "Seed mismatch on permutation {}", i);
+            assert_eq!(
+                seed, first_seed,
+                "Seed mismatch on permutation {}",
+                i
+            );
         }
 
         // The primary should be deterministically chosen based on the seed + scores
@@ -492,7 +491,7 @@ mod tests {
             for &idx in &order {
                 ordered_metrics.insert(validator_ids[idx], metrics[&validator_ids[idx]].clone());
             }
-
+            
             // Use min_reputation = -1000000 to allow zero/negative scores
             let result = engine.select_verifiers(1, &ordered_metrics, 3, -1000000);
             if let Ok(r) = result {
@@ -532,18 +531,15 @@ mod tests {
 
             assert_eq!(
                 result1.primary, result2.primary,
-                "Primary not deterministic for round {}",
-                round
+                "Primary not deterministic for round {}", round
             );
             assert_eq!(
                 result1.shadows, result2.shadows,
-                "Shadows not deterministic for round {}",
-                round
+                "Shadows not deterministic for round {}", round
             );
             assert_eq!(
                 result1.selection_seed, result2.selection_seed,
-                "Seed not deterministic for round {}",
-                round
+                "Seed not deterministic for round {}", round
             );
         }
     }

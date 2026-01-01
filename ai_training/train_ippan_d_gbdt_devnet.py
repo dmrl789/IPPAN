@@ -81,32 +81,9 @@ def _pick_latest_dataset_file(data_dir: Path) -> Path:
 
 
 def _compute_model_hash_b3(model_path: Path) -> str:
-    """Compute BLAKE3 hash of the model's canonical JSON representation.
-    
-    IMPORTANT: The hash is computed over the canonical JSON that includes ONLY
-    the fields recognized by the Rust Model struct: version, scale, trees, bias,
-    post_scale. This ensures hash compatibility between Python and Rust.
-    """
-    # Load the full model JSON
-    with open(model_path, "r", encoding="utf-8") as f:
-        full_model = json.load(f)
-    
-    # Extract only the fields that Rust's Model struct includes in its hash
-    # (see crates/ai_core/src/gbdt/model.rs)
-    canonical_model = {
-        "bias": full_model["bias"],
-        "post_scale": full_model["post_scale"],
-        "scale": full_model["scale"],
-        "trees": full_model["trees"],
-        "version": full_model["version"],
-    }
-    
-    # Serialize to canonical JSON: sorted keys, no whitespace
-    # This matches Rust's serde_canon::to_canonical_json
-    canonical_json = json.dumps(canonical_model, sort_keys=True, separators=(",", ":"))
-    
     if _HAS_PY_BLAKE3:
-        return blake3(canonical_json.encode("utf-8")).hexdigest()
+        data = model_path.read_bytes()
+        return blake3(data).hexdigest()
 
     # Fallback: use Rust canonical hasher (matches verifier expectations).
     # Requires: `cargo` available and workspace builds.
