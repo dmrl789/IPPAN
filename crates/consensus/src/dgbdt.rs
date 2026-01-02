@@ -470,8 +470,8 @@ mod tests {
         // This triggers the total_score == 0 fallback path
         let mut metrics = HashMap::new();
         for &id in &validator_ids {
+            // Set values that will result in 0 score
             let m = ValidatorMetrics {
-                // Set values that will result in 0 score
                 slash_count: 100, // Heavy slashing reduces score
                 uptime_percentage: 0,
                 recent_performance: 0,
