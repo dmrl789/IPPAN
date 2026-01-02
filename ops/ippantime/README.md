@@ -27,6 +27,17 @@ Once it reports `OK: 40` and exits 0, you can switch off any 4-target fallback a
 
 - `ops/ippantime/out/ippantime_<probe>.csv` — raw per-sample data
 - `ops/ippantime/out/REPORT.md` — summary with rankings + cross-probe consistency
+- `ops/ippantime/out/JITTER_HOTSPOTS.md` — jitter-first hotspot ranking (see `ops/ippantime/diag/`)
+
+## Jitter triage kit (Ashburn p99 / outliers)
+
+When you see high jitter (e.g. Ashburn nodes 30–39) or a node outlier (e.g. `node-00`), use:
+
+- `ops/ippantime/diag/collect_srv_diag.sh` — one-command server snapshot bundle (CPU vs IO vs NIC queueing)
+- `ops/ippantime/diag/collect_operator_view.sh` — operator reachability + RTT spot-check
+- `ops/ippantime/diag/analyze_jitter_hotspots.py` — generates `ops/ippantime/out/JITTER_HOTSPOTS.md`
+
+Playbook: `ops/ippantime/diag/README.md`.
 
 ## What is measured
 
