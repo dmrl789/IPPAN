@@ -1285,9 +1285,7 @@ async fn main() -> Result<()> {
         );
 
         // Create DLC configuration
-        // Use network_id as chain_id for commitment disambiguation
         let dlc_config = DLCConfig {
-            chain_id: config.network_id.clone(),
             temporal_finality_ms: config.temporal_finality_ms,
             hashtimer_precision_us: 1,
             shadow_verifier_count: config.shadow_verifier_count,
