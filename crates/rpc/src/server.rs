@@ -42,13 +42,16 @@ use ippan_l2_handle_registry::{
 };
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
-use ippan_storage::{Account, RecentTxEntryV1, Storage, TxLifecycleStatusV1, TxMetaV1};
+use ippan_storage::{
+    Account, RecentTxEntryV1, Storage, TxLifecycleStatusV1, TxMetaV1,
+};
 use ippan_types::address::{decode_address, encode_address};
 use ippan_types::health::{HealthStatus, NodeHealth, NodeHealthContext};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
-    Amount, Block, HandleOperation, HandleRegisterOp, HashTimer, L2Commit, L2ExitRecord, L2Network,
-    RoundFinalizationRecord, Transaction, TransactionVisibility, TransactionWireV1,
+    Amount, Block, HandleOperation, HandleRegisterOp, HashTimer, L2Commit, L2ExitRecord,
+    L2Network, RoundFinalizationRecord, Transaction, TransactionVisibility, TransactionWireV1,
+    IppanTimeMicros,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::de::{self, DeserializeOwned, Deserializer, Visitor};
@@ -822,6 +825,141 @@ struct TxSubmitResponse {
     tx_hashtimer: Option<String>,
 }
 
+#[derive(Debug)]
+enum AdmissionResult {
+    Accepted { tx_id: [u8; 32], tx_hashtimer: String },
+    Rejected {
+        tx_id: [u8; 32],
+        code: &'static str,
+        reason: String,
+    },
+}
+
+fn append_length_prefixed(out: &mut Vec<u8>, data: &[u8]) {
+    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    out.extend_from_slice(data);
+}
+
+fn tx_hashtimer_payload(tx: &Transaction) -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&tx.from);
+    payload.extend_from_slice(&tx.to);
+    payload.extend_from_slice(&tx.amount.atomic().to_be_bytes());
+    payload.extend_from_slice(&tx.nonce.to_be_bytes());
+    if let Some(op) = &tx.handle_op {
+        payload.push(1);
+        match op {
+            HandleOperation::Register(reg) => {
+                // Must match `Transaction::append_handle_operation`.
+                payload.push(0);
+                append_length_prefixed(&mut payload, reg.handle.as_bytes());
+                payload.extend_from_slice(&reg.owner);
+                if let Some(exp) = reg.expires_at {
+                    payload.push(1);
+                    payload.extend_from_slice(&exp.to_be_bytes());
+                } else {
+                    payload.push(0);
+                }
+                payload.extend_from_slice(&(reg.metadata.len() as u32).to_be_bytes());
+                for (k, v) in &reg.metadata {
+                    append_length_prefixed(&mut payload, k.as_bytes());
+                    append_length_prefixed(&mut payload, v.as_bytes());
+                }
+                append_length_prefixed(&mut payload, &reg.signature);
+            }
+        }
+    } else {
+        payload.push(0);
+    }
+    payload
+}
+
+fn validate_tx_for_admission(tx: &Transaction) -> Result<(), (&'static str, String)> {
+    // Keep this deterministic and aligned with Transaction::is_valid() / mempool checks.
+    let has_handle = tx.handle_op.is_some();
+    if tx.visibility == ippan_types::TransactionVisibility::Confidential {
+        if tx.confidential.is_none() || tx.zk_proof.is_none() {
+            return Err((
+                "confidential_missing_proof",
+                "confidential tx missing envelope/proof".to_string(),
+            ));
+        }
+    } else if !has_handle {
+        if tx.amount.is_zero() {
+            return Err(("amount_zero", "amount must be non-zero".to_string()));
+        }
+        if tx.from == tx.to {
+            return Err(("self_transfer", "from must not equal to".to_string()));
+        }
+    }
+
+    if !tx.verify() {
+        return Err(("invalid_signature", "invalid signature".to_string()));
+    }
+
+    let computed = tx.hash();
+    if tx.id != computed {
+        return Err(("tx_id_mismatch", "tx.id does not match canonical hash".to_string()));
+    }
+
+    // Verify HashTimer is consistent with contents.
+    let payload = tx_hashtimer_payload(tx);
+    let expected_hashtimer = HashTimer::derive(
+        "transaction",
+        tx.timestamp,
+        b"transaction",
+        &payload,
+        &tx.nonce.to_be_bytes(),
+        &tx.from,
+    );
+    if expected_hashtimer != tx.hashtimer {
+        return Err((
+            "hashtimer_mismatch",
+            "hashtimer does not match transaction contents".to_string(),
+        ));
+    }
+
+    if let Some(op) = &tx.handle_op {
+        if op.validate_for_sender(&tx.from).is_err() {
+            return Err(("handle_op_invalid", "invalid handle operation".to_string()));
+        }
+    }
+
+    if tx.hashtimer.time().0 > IppanTimeMicros::now().0 {
+        return Err(("hashtimer_future", "hashtimer from the future".to_string()));
+    }
+
+    Ok(())
+}
+
+fn admit_transaction(state: &AppState, tx: &Transaction) -> AdmissionResult {
+    let tx_id = tx.hash();
+    if let Err((code, reason)) = validate_tx_for_admission(tx) {
+        return AdmissionResult::Rejected {
+            tx_id,
+            code,
+            reason,
+        };
+    }
+
+    match state.mempool.add_transaction(tx.clone()) {
+        Ok(true) => AdmissionResult::Accepted {
+            tx_id,
+            tx_hashtimer: tx.hashtimer.to_hex(),
+        },
+        Ok(false) => AdmissionResult::Rejected {
+            tx_id,
+            code: "mempool_rejected",
+            reason: "rejected by mempool policy (duplicate, nonce/fee, or capacity)".to_string(),
+        },
+        Err(err) => AdmissionResult::Rejected {
+            tx_id,
+            code: "invalid_transaction",
+            reason: err.to_string(),
+        },
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 struct RecentTxQuery {
@@ -1029,6 +1167,12 @@ fn map_json_rejection(rejection: &JsonRejection) -> (StatusCode, &'static str, S
 pub struct ApiError {
     code: &'static str,
     message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    status_v2: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tx_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rejected_reason: Option<String>,
 }
 
 impl ApiError {
@@ -1036,6 +1180,20 @@ impl ApiError {
         Self {
             code,
             message: message.into(),
+            status_v2: None,
+            tx_id: None,
+            rejected_reason: None,
+        }
+    }
+
+    pub fn rejected(code: &'static str, reason: impl Into<String>, tx_id: [u8; 32]) -> Self {
+        let reason = reason.into();
+        Self {
+            code,
+            message: reason.clone(),
+            status_v2: Some("Rejected".to_string()),
+            tx_id: Some(hex_encode(tx_id)),
+            rejected_reason: Some(reason),
         }
     }
 }
@@ -2328,9 +2486,16 @@ async fn handle_status(
         .map(|r| r.round);
 
     let tip_height = state.storage.get_latest_height().ok().unwrap_or(0);
-    let tip_block = state.storage.get_block_by_height(tip_height).ok().flatten();
+    let tip_block = state
+        .storage
+        .get_block_by_height(tip_height)
+        .ok()
+        .flatten();
     let tip_block_hash = tip_block.as_ref().map(|b| hex_encode(b.hash()));
     let current_hashtimer = tip_block.as_ref().map(|b| b.header.hashtimer.to_hex());
+    let block_tip_round_id = tip_block.as_ref().map(|b| b.header.round);
+    let finalized_round_tip_id = tip_round_id;
+    let production_active = state.consensus.is_some();
 
     let consensus_view = if let Some(consensus) = &state.consensus {
         match consensus.snapshot().await {
@@ -2377,6 +2542,9 @@ async fn handle_status(
         "network_active": state.p2p_network.is_some(),
         "round": round_top,
         "tip_round_id": tip_round_id,
+        "finalized_round_tip_id": finalized_round_tip_id,
+        "block_tip_round_id": block_tip_round_id,
+        "production_active": production_active,
         "tip_block_hash": tip_block_hash,
         "current_hashtimer": current_hashtimer,
         "validator_count": validator_count,
@@ -2395,8 +2563,7 @@ async fn handle_status(
             "batch_max_txs_per_request": configured_batch_max_txs(),
             "batch_backpressure_mempool_size": configured_batch_backpressure_mempool_size()
         },
-        "dataset_export": dataset_export,
-        "ippan_time_us": ippan_time_now()
+        "dataset_export": dataset_export
     })))
 }
 
@@ -2625,26 +2792,81 @@ async fn handle_submit_tx(
         return Err((status, Json(ApiError::new("security_error", message))));
     }
 
-    if let Some(consensus) = &state.consensus {
-        if let Err(e) = consensus.submit_transaction(tx.clone()) {
-            warn!("Failed to enqueue transaction: {}", e);
-            record_security_failure(&state, &addr, "/tx", &e.to_string()).await;
+    let consensus = match &state.consensus {
+        Some(handle) => handle,
+        None => {
+            record_security_failure(&state, &addr, "/tx", "Consensus not active").await;
             return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::new("submission_failed", "Failed to submit tx")),
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiError::new(
+                    "consensus_unavailable",
+                    "Consensus not active",
+                )),
             ));
         }
-        record_security_success(&state, &addr, "/tx").await;
-        Ok("Transaction accepted")
-    } else {
-        record_security_failure(&state, &addr, "/tx", "Consensus not active").await;
-        Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ApiError::new(
-                "consensus_unavailable",
-                "Consensus not active",
-            )),
-        ))
+    };
+
+    // Use the same deterministic admission path as `/tx/submit`.
+    match admit_transaction(&state, &tx) {
+        AdmissionResult::Rejected { tx_id, code, reason } => {
+            let first_seen_us = ippan_time_now();
+            let meta = TxMetaV1 {
+                version: TxMetaV1::VERSION,
+                tx_id,
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                first_seen_us,
+                status: TxLifecycleStatusV1::Rejected,
+                included: None,
+                rejected_reason: Some(reason.clone()),
+            };
+            let _ = state.storage.put_tx_meta(meta.clone());
+            let _ = state.storage.push_recent_tx(RecentTxEntryV1 {
+                version: RecentTxEntryV1::VERSION,
+                tx_id,
+                tx_hashtimer: meta.tx_hashtimer,
+                tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
+            });
+
+            record_security_success(&state, &addr, "/tx").await;
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ApiError::rejected(code, reason, tx_id)),
+            ));
+        }
+        AdmissionResult::Accepted { tx_id, .. } => {
+            let first_seen_us = ippan_time_now();
+            let meta = TxMetaV1 {
+                version: TxMetaV1::VERSION,
+                tx_id,
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                first_seen_us,
+                status: TxLifecycleStatusV1::Mempool,
+                included: None,
+                rejected_reason: None,
+            };
+            let _ = state.storage.put_mempool_tx(tx.clone());
+            let _ = state.storage.put_tx_meta(meta.clone());
+            let _ = state.storage.push_recent_tx(RecentTxEntryV1 {
+                version: RecentTxEntryV1::VERSION,
+                tx_id,
+                tx_hashtimer: meta.tx_hashtimer,
+                tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
+            });
+
+            // Forward to consensus (best-effort). The tx is already in the shared mempool.
+            if let Err(e) = consensus.submit_transaction(tx.clone()) {
+                warn!("Failed to enqueue transaction: {}", e);
+                record_security_failure(&state, &addr, "/tx", &e.to_string()).await;
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError::new("submission_failed", "Failed to submit tx")),
+                ));
+            }
+            record_security_success(&state, &addr, "/tx").await;
+            Ok("Transaction accepted")
+        }
     }
 }
 
@@ -2659,68 +2881,120 @@ async fn handle_tx_submit(
         return Err((status, Json(ApiError::new("security_error", message))));
     }
 
-    let tx_id = tx.hash();
-    let first_seen_us = ippan_time_now();
-    let meta = TxMetaV1 {
-        version: TxMetaV1::VERSION,
-        tx_id,
-        tx_hashtimer: tx.hashtimer.digest(),
-        tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
-        first_seen_us,
-        status: TxLifecycleStatusV1::Mempool,
-        included: None,
-        rejected_reason: None,
-    };
-
-    // Forward to consensus for inclusion first, before persisting.
-    if let Some(consensus) = &state.consensus {
-        metrics::counter!("rpc_tx_submit_total").increment(1);
-        if let Err(e) = consensus.submit_transaction(tx.clone()) {
-            warn!("Failed to enqueue transaction (tx/submit): {}", e);
-            metrics::counter!("rpc_tx_submit_failed_total").increment(1);
-            record_security_failure(&state, &addr, ENDPOINT, &e.to_string()).await;
+    let consensus = match &state.consensus {
+        Some(handle) => handle,
+        None => {
+            record_security_failure(&state, &addr, ENDPOINT, "Consensus not active").await;
             return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::new("submission_failed", "Failed to submit tx")),
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiError::new(
+                    "consensus_unavailable",
+                    "Consensus not active",
+                )),
             ));
         }
-        metrics::counter!("rpc_tx_submit_accepted_total").increment(1);
-        tracing::info!(
-            tx_id = %hex_encode(tx_id),
-            tx_hashtimer = %tx.hashtimer.to_hex(),
-            first_seen_us = first_seen_us,
-            "tx admitted by consensus"
-        );
-        record_security_success(&state, &addr, ENDPOINT).await;
+    };
 
-        // Now persist to durable storage after consensus acceptance.
-        if let Err(err) = state.storage.put_mempool_tx(tx.clone()) {
-            // Log but don't fail the request - tx is already in consensus mempool.
-            warn!("Failed to persist mempool tx to storage: {}", err);
-        }
-        if let Err(err) = state.storage.put_tx_meta(meta.clone()) {
-            warn!("Failed to persist tx meta to storage: {}", err);
-        }
-        let _ = state.storage.push_recent_tx(RecentTxEntryV1 {
-            version: RecentTxEntryV1::VERSION,
-            tx_id,
-            tx_hashtimer: meta.tx_hashtimer,
-            tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
-        });
+    metrics::counter!("rpc_tx_submit_total").increment(1);
+    let first_seen_us = ippan_time_now();
 
-        Ok(Json(TxSubmitResponse {
-            tx_id: hex_encode(tx_id),
-            tx_hashtimer: Some(tx.hashtimer.to_hex()),
-        }))
-    } else {
-        record_security_failure(&state, &addr, ENDPOINT, "Consensus not active").await;
-        Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ApiError::new(
-                "consensus_unavailable",
-                "Consensus not active",
-            )),
-        ))
+    match admit_transaction(&state, &tx) {
+        AdmissionResult::Rejected { tx_id, code, reason } => {
+            metrics::counter!("rpc_tx_submit_failed_total").increment(1);
+            let meta = TxMetaV1 {
+                version: TxMetaV1::VERSION,
+                tx_id,
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                first_seen_us,
+                status: TxLifecycleStatusV1::Rejected,
+                included: None,
+                rejected_reason: Some(reason.clone()),
+            };
+            let _ = state.storage.put_tx_meta(meta.clone());
+            let _ = state.storage.push_recent_tx(RecentTxEntryV1 {
+                version: RecentTxEntryV1::VERSION,
+                tx_id,
+                tx_hashtimer: meta.tx_hashtimer,
+                tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
+            });
+
+            record_security_success(&state, &addr, ENDPOINT).await;
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ApiError::rejected(code, reason, tx_id)),
+            ));
+        }
+        AdmissionResult::Accepted { tx_id, tx_hashtimer } => {
+            let meta = TxMetaV1 {
+                version: TxMetaV1::VERSION,
+                tx_id,
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                first_seen_us,
+                status: TxLifecycleStatusV1::Mempool,
+                included: None,
+                rejected_reason: None,
+            };
+
+            // Persist tx into a durable mempool mirror + indexes for restart safety.
+            if let Err(err) = state.storage.put_mempool_tx(tx.clone()) {
+                record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError::new("storage_error", "Failed to persist mempool tx")),
+                ));
+            }
+            if let Err(err) = state.storage.put_tx_meta(meta.clone()) {
+                record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError::new("storage_error", "Failed to persist tx meta")),
+                ));
+            }
+            let _ = state.storage.push_recent_tx(RecentTxEntryV1 {
+                version: RecentTxEntryV1::VERSION,
+                tx_id,
+                tx_hashtimer: meta.tx_hashtimer,
+                tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
+            });
+
+            // Forward to consensus for inclusion.
+            if let Err(e) = consensus.submit_transaction(tx.clone()) {
+                warn!("Failed to enqueue transaction (tx/submit): {}", e);
+                record_security_failure(&state, &addr, ENDPOINT, &e.to_string()).await;
+                // Roll back mempool mirror and flip meta to Rejected to avoid "stuck in mempool".
+                let _ = state.storage.delete_mempool_tx(&tx_id);
+                let _ = state.storage.put_tx_meta(TxMetaV1 {
+                    version: TxMetaV1::VERSION,
+                    tx_id,
+                    tx_hashtimer: meta.tx_hashtimer,
+                    tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
+                    first_seen_us,
+                    status: TxLifecycleStatusV1::Rejected,
+                    included: None,
+                    rejected_reason: Some("consensus enqueue failed".to_string()),
+                });
+                metrics::counter!("rpc_tx_submit_failed_total").increment(1);
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiError::new("submission_failed", "Failed to submit tx")),
+                ));
+            }
+
+            metrics::counter!("rpc_tx_submit_accepted_total").increment(1);
+            tracing::info!(
+                tx_id = %hex_encode(tx_id),
+                tx_hashtimer = %tx_hashtimer,
+                first_seen_us = first_seen_us,
+                "tx admitted"
+            );
+            record_security_success(&state, &addr, ENDPOINT).await;
+            Ok(Json(TxSubmitResponse {
+                tx_id: hex_encode(tx_id),
+                tx_hashtimer: Some(tx_hashtimer),
+            }))
+        }
     }
 }
 
@@ -3357,10 +3631,7 @@ async fn handle_get_tx_recent(
         Err(err) => {
             error!("Failed fetching recent tx list for {}: {}", addr, err);
             record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to load recent txs",
-            ));
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load recent txs"));
         }
     };
 
@@ -3371,17 +3642,11 @@ async fn handle_get_tx_recent(
             .as_ref()
             .map(|m| lifecycle_status_label(m.status).to_string())
             .unwrap_or_else(|| "Mempool".to_string());
-        let included = meta
-            .as_ref()
-            .and_then(|m| m.included.as_ref())
-            .map(|inc| TxInclusionView {
-                block_hash: hex_encode(inc.block_hash),
-                round_id: inc.round_id,
-                hashtimer: render_hashtimer_hex(
-                    inc.block_hashtimer_timestamp_us,
-                    inc.block_hashtimer,
-                ),
-            });
+        let included = meta.as_ref().and_then(|m| m.included.as_ref()).map(|inc| TxInclusionView {
+            block_hash: hex_encode(inc.block_hash),
+            round_id: inc.round_id,
+            hashtimer: render_hashtimer_hex(inc.block_hashtimer_timestamp_us, inc.block_hashtimer),
+        });
         let rejected_reason = meta.as_ref().and_then(|m| m.rejected_reason.clone());
         let first_seen_ts = meta.as_ref().map(|m| m.first_seen_us);
         out.push(TxStatusResponse {
@@ -3502,10 +3767,7 @@ async fn handle_get_block(
     }
 }
 
-fn round_header_canonical_bytes_v1(
-    record: &RoundFinalizationRecord,
-    prev_round_hash: &[u8; 32],
-) -> Vec<u8> {
+fn round_header_canonical_bytes_v1(record: &RoundFinalizationRecord, prev_round_hash: &[u8; 32]) -> Vec<u8> {
     // Deterministic encoding (no floats, explicit lengths).
     let mut out = Vec::new();
     out.extend_from_slice(&1u32.to_be_bytes()); // encoding version
@@ -3655,12 +3917,7 @@ async fn handle_get_round(
     let round_hash = round_hash_v1(&record, &prev_for_hash);
     let round_hashtimer = round_hashtimer_v1(&record, &prev_for_hash, &round_hash);
 
-    let included_blocks = record
-        .proof
-        .block_ids
-        .iter()
-        .map(|id| hex_encode(*id))
-        .collect();
+    let included_blocks = record.proof.block_ids.iter().map(|id| hex_encode(*id)).collect();
     let finality_proof = if record.proof.agg_sig.is_empty() {
         None
     } else {
@@ -3683,7 +3940,11 @@ async fn handle_get_round(
                 .iter()
                 .map(|id| hex_encode(*id))
                 .collect(),
-            fork_drops: record.fork_drops.iter().map(|id| hex_encode(*id)).collect(),
+            fork_drops: record
+                .fork_drops
+                .iter()
+                .map(|id| hex_encode(*id))
+                .collect(),
             included_blocks,
             finality_proof,
             total_fees_atomic: record.total_fees_atomic.map(format_atomic),
@@ -4404,12 +4665,7 @@ fn block_response_with_fee_summary(
         _ => None,
     };
     let prev_block_hash = block.header.parent_ids.first().map(|id| hex_encode(*id));
-    let parent_ids = block
-        .header
-        .parent_ids
-        .iter()
-        .map(|id| hex_encode(*id))
-        .collect::<Vec<_>>();
+    let parent_ids = block.header.parent_ids.iter().map(|id| hex_encode(*id)).collect::<Vec<_>>();
     let payload_ids = block
         .header
         .payload_ids
@@ -6755,8 +7011,7 @@ mod tests {
         let consensus = Arc::new(Mutex::new(poa));
 
         let (tx_sender_ok, _rx_ok) = mpsc::unbounded_channel();
-        let handle_ok =
-            ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
+        let handle_ok = ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
 
         let mut ok_state = (*build_app_state(None, None)).clone();
         ok_state.storage = storage.clone();
@@ -6767,13 +7022,9 @@ mod tests {
 
         let addr: SocketAddr = "127.0.0.1:9201".parse().unwrap();
         let tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 21);
-        let Json(resp) = handle_tx_submit(
-            State(ok_state.clone()),
-            ConnectInfo(addr),
-            ValidatedJson(tx.clone()),
-        )
-        .await
-        .expect("tx submit");
+        let Json(resp) = handle_tx_submit(State(ok_state.clone()), ConnectInfo(addr), ValidatedJson(tx.clone()))
+            .await
+            .expect("tx submit");
         assert_eq!(resp.tx_id, hex::encode(tx.hash()));
 
         let Json(recent) = handle_get_tx_recent(
@@ -6797,6 +7048,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn invalid_tx_submit_is_rejected_and_never_looks_like_mempool() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = PoAConfig::default();
+        config.validators.push(Validator {
+            id: sample_public_key([3u8; 32]),
+            address: sample_public_key([4u8; 32]),
+            stake: 1_000,
+            is_active: true,
+        });
+        let poa = PoAConsensus::new(config, storage.clone(), sample_public_key([9u8; 32]));
+        let mempool = poa.mempool();
+        let consensus = Arc::new(Mutex::new(poa));
+
+        let (tx_sender_ok, _rx_ok) = mpsc::unbounded_channel();
+        let handle_ok = ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
+
+        let mut ok_state = (*build_app_state(None, None)).clone();
+        ok_state.storage = storage.clone();
+        ok_state.consensus = Some(handle_ok);
+        ok_state.tx_sender = Some(tx_sender_ok);
+        ok_state.mempool = mempool.clone();
+        let ok_state = Arc::new(ok_state);
+
+        let addr: SocketAddr = "127.0.0.1:9301".parse().unwrap();
+        let mut tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 31);
+        // Corrupt signature deterministically (invalid_signature).
+        tx.signature[0] ^= 0x01;
+
+        let rejected = handle_tx_submit(State(ok_state.clone()), ConnectInfo(addr), ValidatedJson(tx))
+            .await
+            .expect_err("invalid tx rejected");
+        assert_eq!(rejected.0, StatusCode::UNPROCESSABLE_ENTITY);
+        let Json(err) = rejected.1;
+        assert_eq!(err.status_v2.as_deref(), Some("Rejected"));
+        assert!(err.rejected_reason.as_deref().unwrap_or("").len() <= 512);
+        let tx_id = err.tx_id.clone().expect("tx_id present");
+
+        // /tx/status must reflect rejection immediately (never "Mempool").
+        let Json(status) = handle_get_tx_status(
+            State(ok_state.clone()),
+            ConnectInfo(addr),
+            AxumPath(tx_id.clone()),
+        )
+        .await
+        .expect("tx status");
+        assert_eq!(status.status, "Rejected");
+        assert!(status.included.is_none());
+        assert!(status.rejected_reason.is_some());
+
+        // Recent endpoint should not lie either.
+        let Json(recent) = handle_get_tx_recent(
+            State(ok_state.clone()),
+            ConnectInfo(addr),
+            Query(RecentTxQuery { limit: 5 }),
+        )
+        .await
+        .expect("recent");
+        let item = recent.iter().find(|item| item.tx_id == tx_id).expect("in recent");
+        assert_eq!(item.status, "Rejected");
+    }
+
+    #[tokio::test]
     async fn test_tx_status_transitions_and_hash_recomputation() {
         let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
         let mut state = (*build_app_state(None, None)).clone();
@@ -6807,12 +7120,8 @@ mod tests {
 
         // Create a signed tx and admit it into durable mempool/index.
         let tx = sample_transaction([9u8; 32], sample_public_key([8u8; 32]), 1);
-        state
-            .storage
-            .put_mempool_tx(tx.clone())
-            .expect("mempool persist");
-        state
-            .storage
+        state.storage.put_mempool_tx(tx.clone()).expect("mempool persist");
+        state.storage
             .put_tx_meta(TxMetaV1 {
                 version: TxMetaV1::VERSION,
                 tx_id: tx.hash(),
@@ -6824,8 +7133,7 @@ mod tests {
                 rejected_reason: None,
             })
             .expect("meta");
-        state
-            .storage
+        state.storage
             .push_recent_tx(RecentTxEntryV1 {
                 version: RecentTxEntryV1::VERSION,
                 tx_id: tx.hash(),
@@ -6836,10 +7144,7 @@ mod tests {
 
         // Include tx in a block; store_block should (a) store tx, (b) drop from mempool mirror, (c) set Included meta.
         let block = Block::new(vec![[0u8; 32]], vec![tx.clone()], 1, [7u8; 32]);
-        state
-            .storage
-            .store_block(block.clone())
-            .expect("store block");
+        state.storage.store_block(block.clone()).expect("store block");
 
         let Json(after_block) = handle_get_transaction(
             State(state.clone()),
@@ -6978,10 +7283,7 @@ mod tests {
             rejected_payments: round_resp.header.rejected_payments,
         };
         let recomputed_round_hash = round_hash_v1(&record_from_header, &prev_hash);
-        assert_eq!(
-            round_resp.header.round_hash,
-            hex::encode(recomputed_round_hash)
-        );
+        assert_eq!(round_resp.header.round_hash, hex::encode(recomputed_round_hash));
 
         // Block hash recomputation from /block audit header payload.
         let Json(block_resp) = handle_get_block(
