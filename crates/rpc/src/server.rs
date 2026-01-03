@@ -42,12 +42,12 @@ use ippan_l2_handle_registry::{
 };
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
-use ippan_storage::{Account, Storage};
+use ippan_storage::{Account, RecentTxEntryV1, Storage, TxLifecycleStatusV1, TxMetaV1};
 use ippan_types::address::{decode_address, encode_address};
 use ippan_types::health::{HealthStatus, NodeHealth, NodeHealthContext};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
-    Amount, Block, HandleOperation, HandleRegisterOp, L2Commit, L2ExitRecord, L2Network,
+    Amount, Block, HandleOperation, HandleRegisterOp, HashTimer, L2Commit, L2ExitRecord, L2Network,
     RoundFinalizationRecord, Transaction, TransactionVisibility, TransactionWireV1,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
@@ -543,6 +543,39 @@ struct BlockResponse {
     block: BlockView,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     fee_summary: Option<RoundFeeSummaryView>,
+    /// Audit-friendly header surface for explorer verification (v1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    header: Option<BlockHeaderAuditV1>,
+    /// Transaction IDs committed in this block (hex).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tx_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct BlockHeaderAuditV1 {
+    block_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prev_block_hash: Option<String>,
+    height_or_rank: u64,
+    round_id: u64,
+    hashtimer: String,
+    hashtimer_timestamp_us: i64,
+    /// Digest used by block hash computation (hex, 32 bytes).
+    hashtimer_digest: String,
+    /// Parent pointers used by canonical hash recomputation.
+    parent_ids: Vec<String>,
+    /// Payload IDs used by canonical hash recomputation (tx hashes).
+    payload_ids: Vec<String>,
+    tx_commitment_root: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_root: Option<String>,
+    producer_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sigs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vrf_proof: Option<String>,
+    canonical_encoding_version: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -572,6 +605,42 @@ struct RoundFeeSummaryView {
     rejected_payments: u64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct RoundResponse {
+    header: RoundHeaderAuditV1,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct RoundHeaderAuditV1 {
+    round_id: u64,
+    round_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prev_round_hash: Option<String>,
+    round_hashtimer: String,
+    round_hashtimer_digest: String,
+    window_start_us: u64,
+    window_end_us: u64,
+    state_root: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ordered_tx_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    fork_drops: Vec<String>,
+    included_blocks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    finality_proof: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    total_fees_atomic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    treasury_fees_atomic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    applied_payments: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rejected_payments: Option<u64>,
+    canonical_encoding_version: u32,
+}
+
 impl RoundFeeSummaryView {
     fn from_record(record: &RoundFinalizationRecord) -> Option<Self> {
         let total = record.total_fees_atomic?;
@@ -591,6 +660,7 @@ impl TransactionView {
         let fee_required = FeePolicy::default().required_fee(tx);
         Self {
             hash: hex_encode(tx.hash()),
+            tx_id: None,
             from: encode_address(&tx.from),
             to: encode_address(&tx.to),
             amount_atomic: format_atomic(tx.amount.atomic()),
@@ -599,6 +669,10 @@ impl TransactionView {
             timestamp: tx.timestamp.0,
             hash_timer: tx.hashtimer.to_hex(),
             status,
+            status_v2: None,
+            included: None,
+            first_seen_ts: None,
+            rejected_reason: None,
             visibility: tx.visibility,
             memo: tx.topics.first().cloned(),
             handle_operation: tx.handle_op.clone(),
@@ -646,6 +720,9 @@ enum TransactionStatus {
 #[serde(rename_all = "snake_case")]
 struct TransactionView {
     hash: String,
+    /// Alias for explorer-style `tx_id` terminology.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tx_id: Option<String>,
     from: String,
     to: String,
     amount_atomic: String,
@@ -654,11 +731,31 @@ struct TransactionView {
     timestamp: u64,
     hash_timer: String,
     status: TransactionStatus,
+    /// Explorer audit status vocabulary (Mempool/Included/Finalized/Rejected/Pruned).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    status_v2: Option<String>,
+    /// Inclusion pointer when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    included: Option<TxInclusionView>,
+    /// First-seen wallclock (µs) if indexed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_seen_ts: Option<u64>,
+    /// Rejection reason if applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rejected_reason: Option<String>,
     visibility: TransactionVisibility,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     memo: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     handle_operation: Option<HandleOperation>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct TxInclusionView {
+    block_hash: String,
+    round_id: u64,
+    hashtimer: String,
 }
 
 /// Account lookup response payload with recent transaction history.
@@ -715,6 +812,69 @@ struct PaymentResponse {
     hash_timer: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     memo: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct TxSubmitResponse {
+    tx_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tx_hashtimer: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct RecentTxQuery {
+    #[serde(default = "default_recent_limit")]
+    limit: usize,
+}
+
+fn default_recent_limit() -> usize {
+    50
+}
+
+fn lifecycle_status_label(status: TxLifecycleStatusV1) -> &'static str {
+    match status {
+        TxLifecycleStatusV1::Mempool => "Mempool",
+        TxLifecycleStatusV1::Included => "Included",
+        TxLifecycleStatusV1::Finalized => "Finalized",
+        TxLifecycleStatusV1::Rejected => "Rejected",
+        TxLifecycleStatusV1::Pruned => "Pruned",
+    }
+}
+
+fn render_hashtimer_hex(timestamp_us: i64, digest: [u8; 32]) -> String {
+    let ts_u64 = if timestamp_us.is_negative() {
+        0u64
+    } else {
+        timestamp_us as u64
+    };
+    let time_bits = ts_u64 & 0x00FF_FFFF_FFFF_FFFF;
+    let time_bytes = time_bits.to_be_bytes();
+    let time_hex_full = hex::encode(&time_bytes[1..8]); // 7 bytes => 14 hex chars
+    let time_prefix = if time_hex_full.len() >= 14 {
+        time_hex_full[time_hex_full.len() - 14..].to_string()
+    } else {
+        format!("{time_hex_full:0>14}")
+    };
+    let digest_hex = hex::encode(digest);
+    let hash_suffix = &digest_hex[0..50.min(digest_hex.len())];
+    format!("{time_prefix}{hash_suffix}")
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct TxStatusResponse {
+    tx_id: String,
+    status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    included: Option<TxInclusionView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rejected_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_seen_ts: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tx_hashtimer: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq)]
@@ -1592,6 +1752,7 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     let mut tx_routes = Router::new()
         .route("/tx", post(handle_submit_tx))
+        .route("/tx/submit", post(handle_tx_submit))
         .route("/tx/payment", post(handle_payment_tx))
         .route("/tx/:hash", get(handle_get_transaction))
         .route(HANDLE_REGISTER_ENDPOINT, post(handle_register_handle))
@@ -1618,7 +1779,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/metrics", get(handle_metrics))
         .route("/ai/status", get(handle_get_ai_status))
         .route("/files/:id", get(handle_get_file))
+        .route("/tx/recent", get(handle_get_tx_recent))
+        .route("/tx/status/:hash", get(handle_get_tx_status))
         .route("/block/:id", get(handle_get_block))
+        .route("/round/:id", get(handle_get_round))
         .route("/account/:address", get(handle_get_account))
         .route(
             "/account/:address/payments",
@@ -2150,6 +2314,23 @@ async fn handle_status(
     let peer_count = state.peer_count.load(Ordering::Relaxed);
     let requests_served = state.req_count.load(Ordering::Relaxed);
     let mempool_size = state.mempool.size();
+    let peers = state
+        .p2p_network
+        .as_ref()
+        .map(|net| net.get_peers())
+        .unwrap_or_default();
+
+    let tip_round_id = state
+        .storage
+        .get_latest_round_finalization()
+        .ok()
+        .flatten()
+        .map(|r| r.round);
+
+    let tip_height = state.storage.get_latest_height().ok().unwrap_or(0);
+    let tip_block = state.storage.get_block_by_height(tip_height).ok().flatten();
+    let tip_block_hash = tip_block.as_ref().map(|b| hex_encode(b.hash()));
+    let current_hashtimer = tip_block.as_ref().map(|b| b.header.hashtimer.to_hex());
 
     let consensus_view = if let Some(consensus) = &state.consensus {
         match consensus.snapshot().await {
@@ -2178,6 +2359,10 @@ async fn handle_status(
     record_security_success(&state, &addr, ENDPOINT).await;
 
     let dataset_export = build_dataset_export_status();
+    let storage_mode = std::env::var("IPPAN_STORAGE_MODE").unwrap_or_else(|_| "full".to_string());
+    let pruned_keep_last_n = std::env::var("IPPAN_PRUNED_KEEP_LAST_N")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok());
 
     Ok(Json(serde_json::json!({
         "status": "ok",
@@ -2186,15 +2371,30 @@ async fn handle_status(
         "version": env!("CARGO_PKG_VERSION"),
         "build_sha": git_commit_hash(),
         "peer_count": peer_count,
+        "peers": peers,
         "uptime_seconds": uptime_seconds,
         "requests_served": requests_served,
         "network_active": state.p2p_network.is_some(),
         "round": round_top,
+        "tip_round_id": tip_round_id,
+        "tip_block_hash": tip_block_hash,
+        "current_hashtimer": current_hashtimer,
         "validator_count": validator_count,
         "validator_ids_sample": validator_ids_sample,
         "consensus": consensus_view,
         "ai": ai_view,
         "mempool_size": mempool_size,
+        "storage_mode": storage_mode,
+        "pruned_keep_last_n": pruned_keep_last_n,
+        "lane_config": {
+            "max_concurrent_requests": MAX_CONCURRENT_REQUESTS,
+            "request_timeout_seconds": REQUEST_TIMEOUT_SECS,
+            "batch_concurrency_limit": configured_batch_concurrency_limit(),
+            "batch_queue_capacity": configured_batch_queue_capacity(),
+            "batch_body_limit_bytes": configured_batch_body_limit(),
+            "batch_max_txs_per_request": configured_batch_max_txs(),
+            "batch_backpressure_mempool_size": configured_batch_backpressure_mempool_size()
+        },
         "dataset_export": dataset_export,
         "ippan_time_us": ippan_time_now()
     })))
@@ -2438,6 +2638,82 @@ async fn handle_submit_tx(
         Ok("Transaction accepted")
     } else {
         record_security_failure(&state, &addr, "/tx", "Consensus not active").await;
+        Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiError::new(
+                "consensus_unavailable",
+                "Consensus not active",
+            )),
+        ))
+    }
+}
+
+async fn handle_tx_submit(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ValidatedJson(tx): ValidatedJson<Transaction>,
+) -> Result<Json<TxSubmitResponse>, (StatusCode, Json<ApiError>)> {
+    const ENDPOINT: &str = "/tx/submit";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        let (status, message) = deny_request(&state, &addr, ENDPOINT, err).await;
+        return Err((status, Json(ApiError::new("security_error", message))));
+    }
+
+    let tx_id = tx.hash();
+    let first_seen_us = ippan_time_now();
+    let meta = TxMetaV1 {
+        version: TxMetaV1::VERSION,
+        tx_id,
+        tx_hashtimer: tx.hashtimer.digest(),
+        tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+        first_seen_us,
+        status: TxLifecycleStatusV1::Mempool,
+        included: None,
+        rejected_reason: None,
+    };
+
+    // Forward to consensus for inclusion first, before persisting.
+    if let Some(consensus) = &state.consensus {
+        metrics::counter!("rpc_tx_submit_total").increment(1);
+        if let Err(e) = consensus.submit_transaction(tx.clone()) {
+            warn!("Failed to enqueue transaction (tx/submit): {}", e);
+            metrics::counter!("rpc_tx_submit_failed_total").increment(1);
+            record_security_failure(&state, &addr, ENDPOINT, &e.to_string()).await;
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::new("submission_failed", "Failed to submit tx")),
+            ));
+        }
+        metrics::counter!("rpc_tx_submit_accepted_total").increment(1);
+        tracing::info!(
+            tx_id = %hex_encode(tx_id),
+            tx_hashtimer = %tx.hashtimer.to_hex(),
+            first_seen_us = first_seen_us,
+            "tx admitted by consensus"
+        );
+        record_security_success(&state, &addr, ENDPOINT).await;
+
+        // Now persist to durable storage after consensus acceptance.
+        if let Err(err) = state.storage.put_mempool_tx(tx.clone()) {
+            // Log but don't fail the request - tx is already in consensus mempool.
+            warn!("Failed to persist mempool tx to storage: {}", err);
+        }
+        if let Err(err) = state.storage.put_tx_meta(meta.clone()) {
+            warn!("Failed to persist tx meta to storage: {}", err);
+        }
+        let _ = state.storage.push_recent_tx(RecentTxEntryV1 {
+            version: RecentTxEntryV1::VERSION,
+            tx_id,
+            tx_hashtimer: meta.tx_hashtimer,
+            tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
+        });
+
+        Ok(Json(TxSubmitResponse {
+            tx_id: hex_encode(tx_id),
+            tx_hashtimer: Some(tx.hashtimer.to_hex()),
+        }))
+    } else {
+        record_security_failure(&state, &addr, ENDPOINT, "Consensus not active").await;
         Err((
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ApiError::new(
@@ -2990,9 +3266,53 @@ async fn handle_get_transaction(
         }
     };
 
+    // First: committed/known transaction store.
     match state.storage.get_transaction(&hash_bytes) {
         Ok(Some(tx)) => {
-            let envelope = TransactionView::from_transaction(&tx, TransactionStatus::Finalized);
+            let meta = state.storage.get_tx_meta(&hash_bytes).ok().flatten();
+            let mut envelope = TransactionView::from_transaction(&tx, TransactionStatus::Finalized);
+            envelope.tx_id = Some(envelope.hash.clone());
+            if let Some(meta) = meta {
+                envelope.status_v2 = Some(lifecycle_status_label(meta.status).to_string());
+                envelope.first_seen_ts = Some(meta.first_seen_us);
+                envelope.rejected_reason = meta.rejected_reason;
+                envelope.included = meta.included.map(|inc| TxInclusionView {
+                    block_hash: hex_encode(inc.block_hash),
+                    round_id: inc.round_id,
+                    hashtimer: render_hashtimer_hex(
+                        inc.block_hashtimer_timestamp_us,
+                        inc.block_hashtimer,
+                    ),
+                });
+            } else {
+                envelope.status_v2 = Some("Finalized".to_string());
+            }
+            record_security_success(&state, &addr, "/tx/:hash").await;
+            return Ok(Json(envelope));
+        }
+        Ok(None) => { /* fallthrough */ }
+        Err(err) => {
+            error!("Failed fetching transaction {} for {}: {}", hash, addr, err);
+            record_security_failure(&state, &addr, "/tx/:hash", &err.to_string()).await;
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load transaction",
+            ));
+        }
+    }
+
+    // Second: durable mempool mirror (for explorer-visible pending txs).
+    match state.storage.get_mempool_tx(&hash_bytes) {
+        Ok(Some(tx)) => {
+            let meta = state.storage.get_tx_meta(&hash_bytes).ok().flatten();
+            let mut envelope =
+                TransactionView::from_transaction(&tx, TransactionStatus::AcceptedToMempool);
+            envelope.tx_id = Some(envelope.hash.clone());
+            envelope.status_v2 = Some("Mempool".to_string());
+            if let Some(meta) = meta {
+                envelope.first_seen_ts = Some(meta.first_seen_us);
+                envelope.rejected_reason = meta.rejected_reason;
+            }
             record_security_success(&state, &addr, "/tx/:hash").await;
             Ok(Json(envelope))
         }
@@ -3001,7 +3321,10 @@ async fn handle_get_transaction(
             Err((StatusCode::NOT_FOUND, "Transaction not found"))
         }
         Err(err) => {
-            error!("Failed fetching transaction {} for {}: {}", hash, addr, err);
+            error!(
+                "Failed fetching mempool transaction {} for {}: {}",
+                hash, addr, err
+            );
             record_security_failure(&state, &addr, "/tx/:hash", &err.to_string()).await;
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -3009,6 +3332,129 @@ async fn handle_get_transaction(
             ))
         }
     }
+}
+
+fn clamp_recent_limit(mut limit: usize) -> usize {
+    if limit == 0 {
+        limit = 50;
+    }
+    limit.min(200)
+}
+
+async fn handle_get_tx_recent(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Query(query): Query<RecentTxQuery>,
+) -> Result<Json<Vec<TxStatusResponse>>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/tx/recent";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    let limit = clamp_recent_limit(query.limit);
+    let entries = match state.storage.list_recent_txs(limit) {
+        Ok(list) => list,
+        Err(err) => {
+            error!("Failed fetching recent tx list for {}: {}", addr, err);
+            record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load recent txs",
+            ));
+        }
+    };
+
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let meta = state.storage.get_tx_meta(&entry.tx_id).ok().flatten();
+        let status = meta
+            .as_ref()
+            .map(|m| lifecycle_status_label(m.status).to_string())
+            .unwrap_or_else(|| "Mempool".to_string());
+        let included = meta
+            .as_ref()
+            .and_then(|m| m.included.as_ref())
+            .map(|inc| TxInclusionView {
+                block_hash: hex_encode(inc.block_hash),
+                round_id: inc.round_id,
+                hashtimer: render_hashtimer_hex(
+                    inc.block_hashtimer_timestamp_us,
+                    inc.block_hashtimer,
+                ),
+            });
+        let rejected_reason = meta.as_ref().and_then(|m| m.rejected_reason.clone());
+        let first_seen_ts = meta.as_ref().map(|m| m.first_seen_us);
+        out.push(TxStatusResponse {
+            tx_id: hex_encode(entry.tx_id),
+            status,
+            included,
+            rejected_reason,
+            first_seen_ts,
+            tx_hashtimer: Some(render_hashtimer_hex(
+                entry.tx_hashtimer_timestamp_us,
+                entry.tx_hashtimer,
+            )),
+        });
+    }
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(out))
+}
+
+async fn handle_get_tx_status(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(hash): AxumPath<String>,
+) -> Result<Json<TxStatusResponse>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/tx/status/:hash";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    let tx_id = match parse_hex_32(&hash) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            record_security_failure(&state, &addr, ENDPOINT, "Invalid transaction hash").await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid transaction hash"));
+        }
+    };
+
+    // Prefer explicit lifecycle meta when available.
+    if let Ok(Some(meta)) = state.storage.get_tx_meta(&tx_id) {
+        let included = meta.included.as_ref().map(|inc| TxInclusionView {
+            block_hash: hex_encode(inc.block_hash),
+            round_id: inc.round_id,
+            hashtimer: render_hashtimer_hex(inc.block_hashtimer_timestamp_us, inc.block_hashtimer),
+        });
+        record_security_success(&state, &addr, ENDPOINT).await;
+        return Ok(Json(TxStatusResponse {
+            tx_id: hex_encode(tx_id),
+            status: lifecycle_status_label(meta.status).to_string(),
+            included,
+            rejected_reason: meta.rejected_reason,
+            first_seen_ts: Some(meta.first_seen_us),
+            tx_hashtimer: Some(render_hashtimer_hex(
+                meta.tx_hashtimer_timestamp_us,
+                meta.tx_hashtimer,
+            )),
+        }));
+    }
+
+    // Fallback: if the tx exists in the durable mempool mirror, report as mempool.
+    if let Ok(Some(tx)) = state.storage.get_mempool_tx(&tx_id) {
+        record_security_success(&state, &addr, ENDPOINT).await;
+        return Ok(Json(TxStatusResponse {
+            tx_id: hex_encode(tx_id),
+            status: "Mempool".to_string(),
+            included: None,
+            rejected_reason: None,
+            first_seen_ts: None,
+            tx_hashtimer: Some(tx.hashtimer.to_hex()),
+        }));
+    }
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Err((StatusCode::NOT_FOUND, "Transaction not found"))
 }
 
 async fn handle_get_block(
@@ -3054,6 +3500,199 @@ async fn handle_get_block(
             Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load block"))
         }
     }
+}
+
+fn round_header_canonical_bytes_v1(
+    record: &RoundFinalizationRecord,
+    prev_round_hash: &[u8; 32],
+) -> Vec<u8> {
+    // Deterministic encoding (no floats, explicit lengths).
+    let mut out = Vec::new();
+    out.extend_from_slice(&1u32.to_be_bytes()); // encoding version
+    out.extend_from_slice(&record.round.to_be_bytes());
+    out.extend_from_slice(prev_round_hash);
+    out.extend_from_slice(&record.window.start_us.0.to_be_bytes());
+    out.extend_from_slice(&record.window.end_us.0.to_be_bytes());
+    out.extend_from_slice(&record.state_root);
+
+    out.extend_from_slice(&(record.ordered_tx_ids.len() as u32).to_be_bytes());
+    for tx_id in &record.ordered_tx_ids {
+        out.extend_from_slice(tx_id);
+    }
+
+    out.extend_from_slice(&(record.fork_drops.len() as u32).to_be_bytes());
+    for dropped in &record.fork_drops {
+        out.extend_from_slice(dropped);
+    }
+
+    // Certificate block ids (order preserved from record).
+    out.extend_from_slice(&(record.proof.block_ids.len() as u32).to_be_bytes());
+    for block_id in &record.proof.block_ids {
+        out.extend_from_slice(block_id);
+    }
+
+    // Proof bytes (length + bytes)
+    out.extend_from_slice(&(record.proof.agg_sig.len() as u32).to_be_bytes());
+    out.extend_from_slice(&record.proof.agg_sig);
+
+    // Optional fee fields (explicit presence bits).
+    match record.total_fees_atomic {
+        Some(v) => {
+            out.push(1);
+            out.extend_from_slice(&v.to_be_bytes());
+        }
+        None => out.push(0),
+    }
+    match record.treasury_fees_atomic {
+        Some(v) => {
+            out.push(1);
+            out.extend_from_slice(&v.to_be_bytes());
+        }
+        None => out.push(0),
+    }
+    match record.applied_payments {
+        Some(v) => {
+            out.push(1);
+            out.extend_from_slice(&v.to_be_bytes());
+        }
+        None => out.push(0),
+    }
+    match record.rejected_payments {
+        Some(v) => {
+            out.push(1);
+            out.extend_from_slice(&v.to_be_bytes());
+        }
+        None => out.push(0),
+    }
+
+    out
+}
+
+fn round_hash_v1(record: &RoundFinalizationRecord, prev_round_hash: &[u8; 32]) -> [u8; 32] {
+    let bytes = round_header_canonical_bytes_v1(record, prev_round_hash);
+    let hash = blake3::hash(&bytes);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(hash.as_bytes());
+    out
+}
+
+fn round_hashtimer_v1(
+    record: &RoundFinalizationRecord,
+    prev_round_hash: &[u8; 32],
+    round_hash: &[u8; 32],
+) -> HashTimer {
+    let mut payload = round_header_canonical_bytes_v1(record, prev_round_hash);
+    payload.extend_from_slice(round_hash);
+    // Nonce derived from the round hash (deterministic).
+    let nonce = round_hash;
+    HashTimer::derive(
+        "round",
+        record.window.end_us,
+        b"round",
+        &payload,
+        nonce,
+        &record.state_root,
+    )
+}
+
+fn compute_round_hash_chain(
+    storage: &Arc<dyn Storage + Send + Sync>,
+    round: u64,
+    cache: &mut std::collections::HashMap<u64, [u8; 32]>,
+) -> Option<[u8; 32]> {
+    if let Some(existing) = cache.get(&round) {
+        return Some(*existing);
+    }
+    let record = storage.get_round_finalization(round).ok().flatten()?;
+    let prev = if round == 0 {
+        [0u8; 32]
+    } else {
+        compute_round_hash_chain(storage, round.saturating_sub(1), cache).unwrap_or([0u8; 32])
+    };
+    let hash = round_hash_v1(&record, &prev);
+    cache.insert(round, hash);
+    Some(hash)
+}
+
+async fn handle_get_round(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<RoundResponse>, (StatusCode, &'static str)> {
+    const ENDPOINT: &str = "/round/:id";
+    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
+        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
+    }
+
+    let round_id: u64 = match id.trim().parse() {
+        Ok(v) => v,
+        Err(_) => {
+            record_security_failure(&state, &addr, ENDPOINT, "Invalid round id").await;
+            return Err((StatusCode::BAD_REQUEST, "Invalid round id"));
+        }
+    };
+
+    let record = match state.storage.get_round_finalization(round_id) {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            record_security_success(&state, &addr, ENDPOINT).await;
+            return Err((StatusCode::NOT_FOUND, "Round not found"));
+        }
+        Err(err) => {
+            error!("Failed fetching round {} for {}: {}", round_id, addr, err);
+            record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load round"));
+        }
+    };
+
+    let mut cache = std::collections::HashMap::<u64, [u8; 32]>::new();
+    let prev_hash = if round_id == 0 {
+        None
+    } else {
+        compute_round_hash_chain(&state.storage, round_id.saturating_sub(1), &mut cache)
+    };
+    let prev_for_hash = prev_hash.unwrap_or([0u8; 32]);
+    let round_hash = round_hash_v1(&record, &prev_for_hash);
+    let round_hashtimer = round_hashtimer_v1(&record, &prev_for_hash, &round_hash);
+
+    let included_blocks = record
+        .proof
+        .block_ids
+        .iter()
+        .map(|id| hex_encode(*id))
+        .collect();
+    let finality_proof = if record.proof.agg_sig.is_empty() {
+        None
+    } else {
+        Some(hex::encode(&record.proof.agg_sig))
+    };
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(RoundResponse {
+        header: RoundHeaderAuditV1 {
+            round_id,
+            round_hash: hex_encode(round_hash),
+            prev_round_hash: prev_hash.map(hex_encode),
+            round_hashtimer: round_hashtimer.to_hex(),
+            round_hashtimer_digest: hex_encode(round_hashtimer.digest()),
+            window_start_us: record.window.start_us.0,
+            window_end_us: record.window.end_us.0,
+            state_root: hex_encode(record.state_root),
+            ordered_tx_ids: record
+                .ordered_tx_ids
+                .iter()
+                .map(|id| hex_encode(*id))
+                .collect(),
+            fork_drops: record.fork_drops.iter().map(|id| hex_encode(*id)).collect(),
+            included_blocks,
+            finality_proof,
+            total_fees_atomic: record.total_fees_atomic.map(format_atomic),
+            treasury_fees_atomic: record.treasury_fees_atomic.map(format_atomic),
+            applied_payments: record.applied_payments,
+            rejected_payments: record.rejected_payments,
+            canonical_encoding_version: 1,
+        },
+    }))
 }
 
 async fn handle_get_account(
@@ -3764,10 +4403,56 @@ fn block_response_with_fee_summary(
         Ok(Some(record)) => RoundFeeSummaryView::from_record(&record),
         _ => None,
     };
+    let prev_block_hash = block.header.parent_ids.first().map(|id| hex_encode(*id));
+    let parent_ids = block
+        .header
+        .parent_ids
+        .iter()
+        .map(|id| hex_encode(*id))
+        .collect::<Vec<_>>();
+    let payload_ids = block
+        .header
+        .payload_ids
+        .iter()
+        .map(|id| hex_encode(*id))
+        .collect::<Vec<_>>();
+    let tx_ids = block
+        .transactions
+        .iter()
+        .map(|tx| hex_encode(tx.hash()))
+        .collect::<Vec<_>>();
+    let tx_commitment_root = block
+        .header
+        .tx_root
+        .clone()
+        .unwrap_or_else(|| hex_encode(block.header.merkle_payload));
+    let header = BlockHeaderAuditV1 {
+        block_hash: hex_encode(block.header.id),
+        prev_block_hash,
+        height_or_rank: block.header.round,
+        round_id: block.header.round,
+        hashtimer: block.header.hashtimer.to_hex(),
+        hashtimer_timestamp_us: block.header.hashtimer.timestamp_us,
+        hashtimer_digest: hex_encode(block.header.hashtimer.digest()),
+        parent_ids,
+        payload_ids,
+        tx_commitment_root,
+        state_root: block.header.state_root.clone(),
+        producer_id: hex_encode(block.header.creator),
+        sigs: block.header.validator_sigs.clone(),
+        vrf_proof: if block.header.vrf_proof.is_empty() {
+            None
+        } else {
+            Some(hex::encode(&block.header.vrf_proof))
+        },
+        canonical_encoding_version: 1,
+    };
     let block_view = BlockView::from_block(&block, height_hint);
     BlockResponse {
         block: block_view,
         fee_summary,
+        header: Some(header),
+        tx_ids: Some(tx_ids),
     }
 }
 
@@ -4676,6 +5361,70 @@ mod tests {
                 Err(anyhow!("forced failure: list_file_descriptors_by_owner"))
             } else {
                 self.inner.list_file_descriptors_by_owner(owner)
+            }
+        }
+
+        fn put_tx_meta(&self, meta: TxMetaV1) -> Result<()> {
+            if self.should_fail("put_tx_meta") {
+                Err(anyhow!("forced failure: put_tx_meta"))
+            } else {
+                self.inner.put_tx_meta(meta)
+            }
+        }
+
+        fn get_tx_meta(&self, tx_id: &[u8; 32]) -> Result<Option<TxMetaV1>> {
+            if self.should_fail("get_tx_meta") {
+                Err(anyhow!("forced failure: get_tx_meta"))
+            } else {
+                self.inner.get_tx_meta(tx_id)
+            }
+        }
+
+        fn put_mempool_tx(&self, tx: Transaction) -> Result<()> {
+            if self.should_fail("put_mempool_tx") {
+                Err(anyhow!("forced failure: put_mempool_tx"))
+            } else {
+                self.inner.put_mempool_tx(tx)
+            }
+        }
+
+        fn get_mempool_tx(&self, tx_id: &[u8; 32]) -> Result<Option<Transaction>> {
+            if self.should_fail("get_mempool_tx") {
+                Err(anyhow!("forced failure: get_mempool_tx"))
+            } else {
+                self.inner.get_mempool_tx(tx_id)
+            }
+        }
+
+        fn delete_mempool_tx(&self, tx_id: &[u8; 32]) -> Result<()> {
+            if self.should_fail("delete_mempool_tx") {
+                Err(anyhow!("forced failure: delete_mempool_tx"))
+            } else {
+                self.inner.delete_mempool_tx(tx_id)
+            }
+        }
+
+        fn list_mempool_txs(&self, limit: usize) -> Result<Vec<Transaction>> {
+            if self.should_fail("list_mempool_txs") {
+                Err(anyhow!("forced failure: list_mempool_txs"))
+            } else {
+                self.inner.list_mempool_txs(limit)
+            }
+        }
+
+        fn push_recent_tx(&self, entry: RecentTxEntryV1) -> Result<()> {
+            if self.should_fail("push_recent_tx") {
+                Err(anyhow!("forced failure: push_recent_tx"))
+            } else {
+                self.inner.push_recent_tx(entry)
+            }
+        }
+
+        fn list_recent_txs(&self, limit: usize) -> Result<Vec<RecentTxEntryV1>> {
+            if self.should_fail("list_recent_txs") {
+                Err(anyhow!("forced failure: list_recent_txs"))
+            } else {
+                self.inner.list_recent_txs(limit)
             }
         }
     }
@@ -5989,6 +6738,297 @@ mod tests {
         .await
         .expect_err("submission failed");
         assert_eq!(rejected.0, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn test_tx_submit_appears_in_recent_and_tx_lookup_is_mempool() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut config = PoAConfig::default();
+        config.validators.push(Validator {
+            id: sample_public_key([3u8; 32]),
+            address: sample_public_key([4u8; 32]),
+            stake: 1_000,
+            is_active: true,
+        });
+        let poa = PoAConsensus::new(config, storage.clone(), sample_public_key([9u8; 32]));
+        let mempool = poa.mempool();
+        let consensus = Arc::new(Mutex::new(poa));
+
+        let (tx_sender_ok, _rx_ok) = mpsc::unbounded_channel();
+        let handle_ok =
+            ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
+
+        let mut ok_state = (*build_app_state(None, None)).clone();
+        ok_state.storage = storage.clone();
+        ok_state.consensus = Some(handle_ok);
+        ok_state.tx_sender = Some(tx_sender_ok);
+        ok_state.mempool = mempool.clone();
+        let ok_state = Arc::new(ok_state);
+
+        let addr: SocketAddr = "127.0.0.1:9201".parse().unwrap();
+        let tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 21);
+        let Json(resp) = handle_tx_submit(
+            State(ok_state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(tx.clone()),
+        )
+        .await
+        .expect("tx submit");
+        assert_eq!(resp.tx_id, hex::encode(tx.hash()));
+
+        let Json(recent) = handle_get_tx_recent(
+            State(ok_state.clone()),
+            ConnectInfo(addr),
+            Query(RecentTxQuery { limit: 50 }),
+        )
+        .await
+        .expect("recent");
+        assert!(recent.iter().any(|item| item.tx_id == resp.tx_id));
+
+        let Json(lookup) = handle_get_transaction(
+            State(ok_state.clone()),
+            ConnectInfo(addr),
+            AxumPath(resp.tx_id.clone()),
+        )
+        .await
+        .expect("tx lookup");
+        assert_eq!(lookup.tx_id.as_deref(), Some(resp.tx_id.as_str()));
+        assert_eq!(lookup.status_v2.as_deref(), Some("Mempool"));
+    }
+
+    #[tokio::test]
+    async fn test_tx_status_transitions_and_hash_recomputation() {
+        let storage: Arc<dyn Storage + Send + Sync> = Arc::new(MemoryStorage::default());
+        let mut state = (*build_app_state(None, None)).clone();
+        state.storage = storage.clone();
+        let state = Arc::new(state);
+
+        let addr: SocketAddr = "127.0.0.1:9301".parse().unwrap();
+
+        // Create a signed tx and admit it into durable mempool/index.
+        let tx = sample_transaction([9u8; 32], sample_public_key([8u8; 32]), 1);
+        state
+            .storage
+            .put_mempool_tx(tx.clone())
+            .expect("mempool persist");
+        state
+            .storage
+            .put_tx_meta(TxMetaV1 {
+                version: TxMetaV1::VERSION,
+                tx_id: tx.hash(),
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                first_seen_us: ippan_time_now(),
+                status: TxLifecycleStatusV1::Mempool,
+                included: None,
+                rejected_reason: None,
+            })
+            .expect("meta");
+        state
+            .storage
+            .push_recent_tx(RecentTxEntryV1 {
+                version: RecentTxEntryV1::VERSION,
+                tx_id: tx.hash(),
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+            })
+            .expect("recent push");
+
+        // Include tx in a block; store_block should (a) store tx, (b) drop from mempool mirror, (c) set Included meta.
+        let block = Block::new(vec![[0u8; 32]], vec![tx.clone()], 1, [7u8; 32]);
+        state
+            .storage
+            .store_block(block.clone())
+            .expect("store block");
+
+        let Json(after_block) = handle_get_transaction(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(tx.hash())),
+        )
+        .await
+        .expect("tx lookup after inclusion");
+        assert!(matches!(after_block.status, TransactionStatus::Finalized)); // legacy field
+        assert_eq!(after_block.status_v2.as_deref(), Some("Included"));
+        assert!(after_block.included.is_some());
+
+        // Finalize the round.
+        let round0 = RoundFinalizationRecord {
+            round: 0,
+            window: RoundWindow {
+                id: 0,
+                start_us: IppanTimeMicros(0),
+                end_us: IppanTimeMicros(0),
+            },
+            ordered_tx_ids: vec![],
+            fork_drops: vec![],
+            state_root: [0u8; 32],
+            proof: RoundCertificate {
+                round: 0,
+                block_ids: vec![[0u8; 32]],
+                agg_sig: vec![],
+            },
+            total_fees_atomic: None,
+            treasury_fees_atomic: None,
+            applied_payments: None,
+            rejected_payments: None,
+        };
+        state
+            .storage
+            .store_round_finalization(round0)
+            .expect("store round 0");
+
+        let round1 = RoundFinalizationRecord {
+            round: 1,
+            window: RoundWindow {
+                id: 1,
+                start_us: IppanTimeMicros(1),
+                end_us: IppanTimeMicros(2),
+            },
+            ordered_tx_ids: vec![tx.hash()],
+            fork_drops: vec![],
+            state_root: [1u8; 32],
+            proof: RoundCertificate {
+                round: 1,
+                block_ids: vec![block.hash()],
+                agg_sig: vec![1, 2, 3],
+            },
+            total_fees_atomic: Some(10),
+            treasury_fees_atomic: Some(2),
+            applied_payments: Some(1),
+            rejected_payments: Some(0),
+        };
+        state
+            .storage
+            .store_round_finalization(round1)
+            .expect("store round 1");
+
+        let Json(after_round) = handle_get_transaction(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(tx.hash())),
+        )
+        .await
+        .expect("tx lookup after finalization");
+        assert_eq!(after_round.status_v2.as_deref(), Some("Finalized"));
+
+        // Round linkage + recomputation from /round payload.
+        let Json(round_resp) = handle_get_round(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath("1".to_string()),
+        )
+        .await
+        .expect("round 1");
+        assert_eq!(round_resp.header.round_id, 1);
+        assert!(round_resp.header.prev_round_hash.is_some());
+        let prev_hash = round_resp
+            .header
+            .prev_round_hash
+            .as_ref()
+            .map(|s| parse_hex_32(s).expect("prev hash bytes"))
+            .unwrap_or([0u8; 32]);
+        // Recompute round hash from returned header fields.
+        let record_from_header = RoundFinalizationRecord {
+            round: round_resp.header.round_id,
+            window: RoundWindow {
+                id: round_resp.header.round_id,
+                start_us: IppanTimeMicros(round_resp.header.window_start_us),
+                end_us: IppanTimeMicros(round_resp.header.window_end_us),
+            },
+            ordered_tx_ids: round_resp
+                .header
+                .ordered_tx_ids
+                .iter()
+                .map(|s| parse_hex_32(s).expect("tx id"))
+                .collect(),
+            fork_drops: round_resp
+                .header
+                .fork_drops
+                .iter()
+                .map(|s| parse_hex_32(s).expect("fork drop"))
+                .collect(),
+            state_root: parse_hex_32(&round_resp.header.state_root).expect("state root"),
+            proof: RoundCertificate {
+                round: round_resp.header.round_id,
+                block_ids: round_resp
+                    .header
+                    .included_blocks
+                    .iter()
+                    .map(|s| parse_hex_32(s).expect("block id"))
+                    .collect(),
+                agg_sig: round_resp
+                    .header
+                    .finality_proof
+                    .as_ref()
+                    .map(|hex| hex::decode(hex).expect("proof hex"))
+                    .unwrap_or_default(),
+            },
+            total_fees_atomic: round_resp
+                .header
+                .total_fees_atomic
+                .as_ref()
+                .map(|s| s.parse::<u128>().expect("total fee")),
+            treasury_fees_atomic: round_resp
+                .header
+                .treasury_fees_atomic
+                .as_ref()
+                .map(|s| s.parse::<u128>().expect("treasury fee")),
+            applied_payments: round_resp.header.applied_payments,
+            rejected_payments: round_resp.header.rejected_payments,
+        };
+        let recomputed_round_hash = round_hash_v1(&record_from_header, &prev_hash);
+        assert_eq!(
+            round_resp.header.round_hash,
+            hex::encode(recomputed_round_hash)
+        );
+
+        // Block hash recomputation from /block audit header payload.
+        let Json(block_resp) = handle_get_block(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex::encode(block.hash())),
+        )
+        .await
+        .expect("block");
+        let header = block_resp.header.expect("audit header present");
+        let creator = parse_hex_32(&header.producer_id).expect("producer id bytes");
+        let round = header.round_id;
+        let hashtimer_digest = parse_hex_32(&header.hashtimer_digest).expect("ht digest");
+        let parent_ids: Vec<[u8; 32]> = header
+            .parent_ids
+            .iter()
+            .map(|s| parse_hex_32(s).expect("parent"))
+            .collect();
+        let payload_ids: Vec<[u8; 32]> = header
+            .payload_ids
+            .iter()
+            .map(|s| parse_hex_32(s).expect("payload"))
+            .collect();
+        let merkle_payload = Block::compute_merkle_root_from_hashes(&payload_ids);
+        let merkle_parents = Block::compute_merkle_root_from_hashes(&parent_ids);
+        let vrf_bytes = header
+            .vrf_proof
+            .as_ref()
+            .map(|s| hex::decode(s).expect("vrf hex"))
+            .unwrap_or_default();
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&creator);
+        hasher.update(&round.to_be_bytes());
+        hasher.update(&hashtimer_digest);
+        hasher.update(&merkle_payload);
+        hasher.update(&merkle_parents);
+        for p in &parent_ids {
+            hasher.update(p);
+        }
+        for p in &payload_ids {
+            hasher.update(p);
+        }
+        hasher.update(&vrf_bytes);
+        let digest = hasher.finalize();
+        let mut recomputed_block_hash = [0u8; 32];
+        recomputed_block_hash.copy_from_slice(&digest.as_bytes()[0..32]);
+        assert_eq!(header.block_hash, hex::encode(recomputed_block_hash));
     }
 
     #[tokio::test]
