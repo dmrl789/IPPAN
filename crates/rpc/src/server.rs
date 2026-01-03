@@ -2401,7 +2401,8 @@ async fn handle_status(
             "batch_max_txs_per_request": configured_batch_max_txs(),
             "batch_backpressure_mempool_size": configured_batch_backpressure_mempool_size()
         },
-        "dataset_export": dataset_export
+        "dataset_export": dataset_export,
+        "ippan_time_us": ippan_time_now()
     })))
 }
 
