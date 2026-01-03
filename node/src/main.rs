@@ -81,6 +81,38 @@ enum HandleDhtMode {
     Libp2p,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NodeStorageMode {
+    Full,
+    Archive,
+    Pruned { keep_last_n: u64 },
+}
+
+impl NodeStorageMode {
+    fn from_env() -> Self {
+        let raw = env::var("IPPAN_STORAGE_MODE").unwrap_or_else(|_| "full".to_string());
+        let value = raw.trim().to_lowercase();
+        if value == "archive" {
+            return NodeStorageMode::Archive;
+        }
+        if value.starts_with("pruned") {
+            // Accept: "pruned", "pruned:1000", "pruned=1000"
+            let keep = value
+                .split(|c| c == ':' || c == '=')
+                .nth(1)
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .or_else(|| {
+                    env::var("IPPAN_PRUNED_KEEP_LAST_N")
+                        .ok()
+                        .and_then(|v| v.trim().parse::<u64>().ok())
+                })
+                .unwrap_or(10_000);
+            return NodeStorageMode::Pruned { keep_last_n: keep.max(1) };
+        }
+        NodeStorageMode::Full
+    }
+}
+
 impl HandleDhtMode {
     fn from_env(value: &str) -> Self {
         match value.trim().to_lowercase().as_str() {
@@ -1150,6 +1182,15 @@ async fn main() -> Result<()> {
     storage.initialize()?;
     info!("Storage initialized at {}", config.db_path);
 
+    let storage_mode = NodeStorageMode::from_env();
+    match storage_mode {
+        NodeStorageMode::Full => info!("Node storage mode: Full"),
+        NodeStorageMode::Archive => info!("Node storage mode: Archive"),
+        NodeStorageMode::Pruned { keep_last_n } => {
+            info!("Node storage mode: Pruned (keep_last_n={})", keep_last_n)
+        }
+    }
+
     let handle_registry = Arc::new(L2HandleRegistry::new());
     let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
 
@@ -1582,6 +1623,46 @@ async fn main() -> Result<()> {
         })
     };
 
+    // Pruning loop (only in Pruned mode): run periodically and only prune finalized history.
+    let prune_task = match storage_mode {
+        NodeStorageMode::Pruned { keep_last_n } => {
+            let storage = storage.clone();
+            Some(tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(10));
+                loop {
+                    interval.tick().await;
+                    let latest_finalized = storage
+                        .get_latest_round_finalization()
+                        .ok()
+                        .flatten()
+                        .map(|r| r.round)
+                        .unwrap_or(0);
+                    if latest_finalized <= keep_last_n {
+                        continue;
+                    }
+                    let min_round_to_keep = latest_finalized.saturating_sub(keep_last_n);
+                    match storage.prune_below_round(min_round_to_keep) {
+                        Ok(report) => {
+                            if report.blocks_pruned > 0 || report.txs_pruned > 0 {
+                                info!(
+                                    "Pruned below round {}: blocks_pruned={}, txs_pruned={}, header_only_blocks={}",
+                                    report.min_round_to_keep,
+                                    report.blocks_pruned,
+                                    report.txs_pruned,
+                                    report.header_only_blocks
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            warn!("Prune failed: {}", err);
+                        }
+                    }
+                }
+            }))
+        }
+        _ => None,
+    };
+
     info!("IPPAN node is ready and running");
     info!("RPC API available at: http://{}", rpc_addr);
     info!(
@@ -1602,6 +1683,9 @@ async fn main() -> Result<()> {
     p2p_network_for_shutdown.stop().await?;
     rpc_handle.abort();
     peer_count_updater.abort();
+    if let Some(task) = prune_task {
+        task.abort();
+    }
 
     // Flush storage
     storage.flush()?;

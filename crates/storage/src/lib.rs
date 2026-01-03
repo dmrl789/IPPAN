@@ -10,12 +10,13 @@ use ippan_types::{
     Transaction,
 };
 use parking_lot::RwLock;
+use parking_lot::Mutex;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sled::{Db, Tree};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Storage errors
@@ -69,6 +70,12 @@ pub struct SnapshotManifest {
     pub blocks_count: u64,
     pub handles_count: u64,
     pub files_count: u64,
+    #[serde(default)]
+    pub tx_meta_count: u64,
+    #[serde(default)]
+    pub recent_txs_count: u64,
+    #[serde(default)]
+    pub mempool_txs_count: u64,
     pub ai_model_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tip_block_hash: Option<String>,
@@ -91,7 +98,7 @@ pub struct HandleSnapshotRecord {
     pub expires_at: u64,
 }
 
-const SNAPSHOT_MANIFEST_VERSION: u32 = 2;
+const SNAPSHOT_MANIFEST_VERSION: u32 = 3;
 const MANIFEST_FILE: &str = "manifest.json";
 const BLOCKS_FILE: &str = "blocks.jsonl";
 const PAYMENTS_FILE: &str = "payments.jsonl";
@@ -100,6 +107,27 @@ const HANDLES_FILE: &str = "handles.jsonl";
 const FILES_FILE: &str = "files.jsonl";
 const ROUNDS_FILE: &str = "rounds.jsonl";
 const CHAIN_STATE_FILE: &str = "chain_state.json";
+const TX_META_FILE: &str = "tx_meta.jsonl";
+const RECENT_TXS_FILE: &str = "recent_txs.jsonl";
+const MEMPOOL_TXS_FILE: &str = "mempool_txs.jsonl";
+
+/// Best-effort bound for `/tx/recent` index size (not consensus-critical).
+const RECENT_TX_MAX_ENTRIES: usize = 50_000;
+
+/// Cap stored rejection reasons to avoid unbounded DB growth.
+const MAX_REJECT_REASON_BYTES: usize = 512;
+
+fn cap_utf8_bytes(mut s: String, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut cut = max_bytes;
+    while cut > 0 && !s.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    s.truncate(cut);
+    s
+}
 
 impl SnapshotManifest {
     pub fn new_from_storage(storage: &impl StorageLike) -> Result<Self, SnapshotError> {
@@ -161,6 +189,29 @@ impl SnapshotManifest {
                 collections.files.len()
             )));
         }
+        if self.version >= 3 {
+            if self.tx_meta_count != collections.tx_meta.len() as u64 {
+                return Err(SnapshotError::InvalidManifest(format!(
+                    "tx_meta mismatch: manifest={}, storage={}",
+                    self.tx_meta_count,
+                    collections.tx_meta.len()
+                )));
+            }
+            if self.recent_txs_count != collections.recent_txs.len() as u64 {
+                return Err(SnapshotError::InvalidManifest(format!(
+                    "recent_txs mismatch: manifest={}, storage={}",
+                    self.recent_txs_count,
+                    collections.recent_txs.len()
+                )));
+            }
+            if self.mempool_txs_count != collections.mempool_txs.len() as u64 {
+                return Err(SnapshotError::InvalidManifest(format!(
+                    "mempool_txs mismatch: manifest={}, storage={}",
+                    self.mempool_txs_count,
+                    collections.mempool_txs.len()
+                )));
+            }
+        }
         if self.ai_model_hash != storage.snapshot_ai_model_hash()? {
             return Err(SnapshotError::InvalidManifest(
                 "AI model hash mismatch".to_string(),
@@ -206,6 +257,131 @@ pub struct Account {
     pub nonce: u64,
 }
 
+// ============================================================================
+// Explorer-visible indexing (tx lifecycle + recent list + durable mempool)
+// ============================================================================
+
+/// Persisted lifecycle status for a transaction.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TxLifecycleStatusV1 {
+    Mempool,
+    Included,
+    Finalized,
+    Rejected,
+    Pruned,
+}
+
+impl TxLifecycleStatusV1 {
+    fn as_u8(self) -> u8 {
+        match self {
+            Self::Mempool => 1,
+            Self::Included => 2,
+            Self::Finalized => 3,
+            Self::Rejected => 4,
+            Self::Pruned => 5,
+        }
+    }
+}
+
+/// Inclusion pointer recorded once a tx is observed inside a block.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TxInclusionV1 {
+    pub block_hash: [u8; 32],
+    pub round_id: u64,
+    /// Digest of the block HashTimer anchoring the inclusion.
+    pub block_hashtimer: [u8; 32],
+    /// HashTimer timestamp for rendering/verifying the to_hex representation.
+    pub block_hashtimer_timestamp_us: i64,
+}
+
+/// Versioned transaction metadata stored for explorer auditability.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TxMetaV1 {
+    pub version: u32,
+    pub tx_id: [u8; 32],
+    /// Digest of the tx HashTimer.
+    pub tx_hashtimer: [u8; 32],
+    /// HashTimer timestamp (may be negative in malformed inputs; stored as-is).
+    pub tx_hashtimer_timestamp_us: i64,
+    /// First observed wallclock in IPPAN microseconds.
+    pub first_seen_us: u64,
+    pub status: TxLifecycleStatusV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub included: Option<TxInclusionV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected_reason: Option<String>,
+}
+
+impl TxMetaV1 {
+    pub const VERSION: u32 = 1;
+
+    /// Deterministic bytes for hashing/auditing (not used in consensus).
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(4 + 32 + 32 + 8 + 8 + 1 + 1 + 32 + 8 + 32 + 4);
+        out.extend_from_slice(&self.version.to_be_bytes());
+        out.extend_from_slice(&self.tx_id);
+        out.extend_from_slice(&self.tx_hashtimer);
+        out.extend_from_slice(&self.tx_hashtimer_timestamp_us.to_be_bytes());
+        out.extend_from_slice(&self.first_seen_us.to_be_bytes());
+        out.push(self.status.as_u8());
+        match &self.included {
+            Some(inc) => {
+                out.push(1);
+                out.extend_from_slice(&inc.block_hash);
+                out.extend_from_slice(&inc.round_id.to_be_bytes());
+                out.extend_from_slice(&inc.block_hashtimer);
+                out.extend_from_slice(&inc.block_hashtimer_timestamp_us.to_be_bytes());
+            }
+            None => out.push(0),
+        }
+        match &self.rejected_reason {
+            Some(reason) => {
+                out.push(1);
+                let bytes = reason.as_bytes();
+                let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
+                out.extend_from_slice(&len.to_be_bytes());
+                out.extend_from_slice(bytes);
+            }
+            None => out.push(0),
+        }
+        out
+    }
+}
+
+/// Recent-tx index entry used for deterministic ordering.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RecentTxEntryV1 {
+    pub version: u32,
+    pub tx_id: [u8; 32],
+    pub tx_hashtimer: [u8; 32],
+    pub tx_hashtimer_timestamp_us: i64,
+}
+
+impl RecentTxEntryV1 {
+    pub const VERSION: u32 = 1;
+}
+
+/// Fixed-width key for deterministic `/tx/recent` ordering:
+/// `[inverted_timestamp_us_be:8][tx_hashtimer_digest:32][tx_id:32]`
+///
+/// Notes:
+/// - We invert timestamp so sled's ascending iteration returns newest-first.
+/// - We include `tx_id` as a stable tie-breaker (avoid same-digest collisions).
+fn recent_tx_key(entry: &RecentTxEntryV1) -> [u8; 72] {
+    let ts = if entry.tx_hashtimer_timestamp_us.is_negative() {
+        0u64
+    } else {
+        entry.tx_hashtimer_timestamp_us as u64
+    };
+    let inverted = u64::MAX.wrapping_sub(ts);
+    let mut key = [0u8; 72];
+    key[0..8].copy_from_slice(&inverted.to_be_bytes());
+    key[8..40].copy_from_slice(&entry.tx_hashtimer);
+    key[40..72].copy_from_slice(&entry.tx_id);
+    key
+}
+
 /// Extended storage interface for snapshot export/import helpers.
 pub trait StorageLike: Storage + Send + Sync {
     fn snapshot_network_id(&self) -> String;
@@ -218,6 +394,15 @@ pub trait StorageLike: Storage + Send + Sync {
     fn snapshot_file_descriptors(&self) -> Result<Vec<FileDescriptor>>;
     fn snapshot_round_finalizations(&self) -> Result<Vec<RoundFinalizationRecord>>;
     fn snapshot_chain_state(&self) -> Result<ChainState>;
+    fn snapshot_tx_meta(&self) -> Result<Vec<TxMetaV1>> {
+        Ok(Vec::new())
+    }
+    fn snapshot_recent_txs(&self) -> Result<Vec<RecentTxEntryV1>> {
+        Ok(Vec::new())
+    }
+    fn snapshot_mempool_txs(&self) -> Result<Vec<Transaction>> {
+        Ok(Vec::new())
+    }
     fn snapshot_ai_model_hash(&self) -> Result<Option<String>> {
         Ok(None)
     }
@@ -236,6 +421,9 @@ struct SnapshotCollections {
     handles: Vec<HandleSnapshotRecord>,
     files: Vec<FileDescriptor>,
     rounds: Vec<RoundFinalizationRecord>,
+    tx_meta: Vec<TxMetaV1>,
+    recent_txs: Vec<RecentTxEntryV1>,
+    mempool_txs: Vec<Transaction>,
     chain_state: ChainState,
 }
 
@@ -261,6 +449,17 @@ fn collect_snapshot_data(storage: &impl StorageLike) -> Result<SnapshotCollectio
     sort_file_descriptors(&mut files);
     let mut rounds = storage.snapshot_round_finalizations()?;
     sort_rounds(&mut rounds);
+    let mut tx_meta = storage.snapshot_tx_meta()?;
+    tx_meta.sort_by(|a, b| a.tx_id.cmp(&b.tx_id));
+    let mut recent_txs = storage.snapshot_recent_txs()?;
+    recent_txs.sort_by(|a, b| {
+        b.tx_hashtimer_timestamp_us
+            .cmp(&a.tx_hashtimer_timestamp_us)
+            .then_with(|| b.tx_hashtimer.cmp(&a.tx_hashtimer))
+            .then_with(|| b.tx_id.cmp(&a.tx_id))
+    });
+    let mut mempool_txs = storage.snapshot_mempool_txs()?;
+    mempool_txs.sort_by(|a, b| b.hashtimer.timestamp_us.cmp(&a.hashtimer.timestamp_us));
     Ok(SnapshotCollections {
         accounts,
         blocks,
@@ -268,6 +467,9 @@ fn collect_snapshot_data(storage: &impl StorageLike) -> Result<SnapshotCollectio
         handles,
         files,
         rounds,
+        tx_meta,
+        recent_txs,
+        mempool_txs,
         chain_state: storage.snapshot_chain_state()?,
     })
 }
@@ -328,6 +530,9 @@ fn build_manifest_from_collections(
         blocks_count: collections.blocks.len() as u64,
         handles_count: collections.handles.len() as u64,
         files_count: collections.files.len() as u64,
+        tx_meta_count: collections.tx_meta.len() as u64,
+        recent_txs_count: collections.recent_txs.len() as u64,
+        mempool_txs_count: collections.mempool_txs.len() as u64,
         ai_model_hash: storage.snapshot_ai_model_hash()?,
         tip_block_hash: bounds.tip_block_hash,
         hashtimer_start: bounds.hashtimer_start,
@@ -358,6 +563,9 @@ pub fn export_snapshot(
     write_jsonl(&path.join(HANDLES_FILE), &collections.handles)?;
     write_jsonl(&path.join(FILES_FILE), &collections.files)?;
     write_jsonl(&path.join(ROUNDS_FILE), &collections.rounds)?;
+    write_jsonl(&path.join(TX_META_FILE), &collections.tx_meta)?;
+    write_jsonl(&path.join(RECENT_TXS_FILE), &collections.recent_txs)?;
+    write_jsonl(&path.join(MEMPOOL_TXS_FILE), &collections.mempool_txs)?;
     write_json_file(&path.join(CHAIN_STATE_FILE), &collections.chain_state)?;
 
     let manifest = build_manifest_from_collections(storage, &collections, snapshot_height)?;
@@ -372,7 +580,7 @@ pub fn import_snapshot(
     ensure_import_directory(path)?;
     let manifest_path = path.join(MANIFEST_FILE);
     let manifest: SnapshotManifest = read_json_file(&manifest_path)?;
-    if manifest.version != SNAPSHOT_MANIFEST_VERSION {
+    if manifest.version != 2 && manifest.version != SNAPSHOT_MANIFEST_VERSION {
         return Err(SnapshotError::InvalidManifest(format!(
             "unsupported manifest version {}",
             manifest.version
@@ -393,6 +601,9 @@ pub fn import_snapshot(
     let handles: Vec<HandleSnapshotRecord> = read_optional_jsonl(&path.join(HANDLES_FILE))?;
     let files: Vec<FileDescriptor> = read_optional_jsonl(&path.join(FILES_FILE))?;
     let rounds: Vec<RoundFinalizationRecord> = read_optional_jsonl(&path.join(ROUNDS_FILE))?;
+    let tx_meta: Vec<TxMetaV1> = read_optional_jsonl(&path.join(TX_META_FILE))?;
+    let recent_txs: Vec<RecentTxEntryV1> = read_optional_jsonl(&path.join(RECENT_TXS_FILE))?;
+    let mempool_txs: Vec<Transaction> = read_optional_jsonl(&path.join(MEMPOOL_TXS_FILE))?;
     let chain_state: Option<ChainState> = read_optional_json(&path.join(CHAIN_STATE_FILE))?;
 
     for block in blocks {
@@ -412,6 +623,19 @@ pub fn import_snapshot(
     }
     if let Some(state) = chain_state {
         storage.update_chain_state(&state)?;
+    }
+
+    // Explorer index restoration (v3+ snapshots).
+    if manifest.version >= 3 {
+        for meta in tx_meta {
+            storage.put_tx_meta(meta)?;
+        }
+        for entry in recent_txs {
+            storage.push_recent_tx(entry)?;
+        }
+        for tx in mempool_txs {
+            storage.put_mempool_tx(tx)?;
+        }
     }
 
     // Handles are documented but currently in-memory only. We parse the file to
@@ -516,6 +740,15 @@ fn ensure_storage_empty(storage: &impl StorageLike) -> Result<(), SnapshotError>
     if !storage.snapshot_file_descriptors()?.is_empty() {
         return Err(SnapshotError::StorageNotEmpty);
     }
+    if !storage.snapshot_tx_meta()?.is_empty() {
+        return Err(SnapshotError::StorageNotEmpty);
+    }
+    if !storage.snapshot_recent_txs()?.is_empty() {
+        return Err(SnapshotError::StorageNotEmpty);
+    }
+    if !storage.snapshot_mempool_txs()?.is_empty() {
+        return Err(SnapshotError::StorageNotEmpty);
+    }
     Ok(())
 }
 
@@ -590,6 +823,24 @@ pub trait Storage {
     fn store_file_descriptor(&self, descriptor: FileDescriptor) -> Result<()>;
     fn get_file_descriptor(&self, id: &FileDescriptorId) -> Result<Option<FileDescriptor>>;
     fn list_file_descriptors_by_owner(&self, owner: &Address) -> Result<Vec<FileDescriptor>>;
+
+    // ---------------------------------------------------------------------
+    // Explorer/audit indexes (devnet-safe, deterministic encoding)
+    // ---------------------------------------------------------------------
+
+    /// Store/update transaction lifecycle metadata.
+    fn put_tx_meta(&self, meta: TxMetaV1) -> Result<()>;
+    fn get_tx_meta(&self, tx_id: &[u8; 32]) -> Result<Option<TxMetaV1>>;
+
+    /// Durable mempool mirror for restart safety.
+    fn put_mempool_tx(&self, tx: Transaction) -> Result<()>;
+    fn get_mempool_tx(&self, tx_id: &[u8; 32]) -> Result<Option<Transaction>>;
+    fn delete_mempool_tx(&self, tx_id: &[u8; 32]) -> Result<()>;
+    fn list_mempool_txs(&self, limit: usize) -> Result<Vec<Transaction>>;
+
+    /// Append a transaction to the recent index (bounded internally).
+    fn push_recent_tx(&self, entry: RecentTxEntryV1) -> Result<()>;
+    fn list_recent_txs(&self, limit: usize) -> Result<Vec<RecentTxEntryV1>>;
 }
 
 /// Validator telemetry for AI consensus
@@ -635,6 +886,9 @@ struct MemoryStorageInner {
     latest_finalized_round: RwLock<Option<RoundId>>,
     file_descriptors: RwLock<HashMap<FileDescriptorId, FileDescriptor>>,
     files_by_owner: RwLock<HashMap<[u8; 32], Vec<FileDescriptorId>>>,
+    tx_meta: RwLock<HashMap<[u8; 32], TxMetaV1>>,
+    mempool_txs: RwLock<HashMap<[u8; 32], Transaction>>,
+    recent_txs: RwLock<BTreeMap<[u8; 72], RecentTxEntryV1>>,
 }
 
 impl MemoryStorage {
@@ -660,6 +914,44 @@ impl Storage for MemoryStorage {
                 *latest_height = block.header.round;
             }
         }
+
+        // Ensure txs committed in the block are queryable by hash.
+        // Also mark inclusion and remove any durable mempool mirrors.
+        for tx in &block.transactions {
+            self.store_transaction(tx.clone())?;
+            self.delete_mempool_tx(&tx.hash())?;
+            let tx_id = tx.hash();
+            let now = ippan_time_now();
+            let mut meta = self
+                .get_tx_meta(&tx_id)?
+                .unwrap_or_else(|| TxMetaV1 {
+                    version: TxMetaV1::VERSION,
+                    tx_id,
+                    tx_hashtimer: tx.hashtimer.digest(),
+                    tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                    first_seen_us: now,
+                    status: TxLifecycleStatusV1::Included,
+                    included: None,
+                    rejected_reason: None,
+                });
+            if meta.status != TxLifecycleStatusV1::Finalized {
+                meta.status = TxLifecycleStatusV1::Included;
+            }
+            meta.included = Some(TxInclusionV1 {
+                block_hash: hash,
+                round_id: block.header.round,
+                block_hashtimer: block.header.hashtimer.digest(),
+                block_hashtimer_timestamp_us: block.header.hashtimer.timestamp_us,
+            });
+            self.put_tx_meta(meta)?;
+            tracing::info!(
+                tx_id = %hex::encode(tx_id),
+                block_hash = %hex::encode(hash),
+                round_id = block.header.round,
+                "tx included in block"
+            );
+        }
+        // WAL is only for durable backends (SledStorage). MemoryStorage is ephemeral.
         Ok(())
     }
 
@@ -787,6 +1079,21 @@ impl Storage for MemoryStorage {
                 *latest = Some(round);
             }
         }
+
+        // Promote tx lifecycle to finalized for ordered tx ids.
+        if let Some(record) = self.inner.round_finalizations.read().get(&round).cloned() {
+            for tx_id in record.ordered_tx_ids {
+                if let Some(mut meta) = self.get_tx_meta(&tx_id)? {
+                    meta.status = TxLifecycleStatusV1::Finalized;
+                    // Keep inclusion pointer if known; otherwise set round id hint.
+                    if let Some(mut inc) = meta.included.clone() {
+                        inc.round_id = round;
+                        meta.included = Some(inc);
+                    }
+                    self.put_tx_meta(meta)?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -874,6 +1181,55 @@ impl Storage for MemoryStorage {
             .filter_map(|id| descriptors.get(id).cloned())
             .collect())
     }
+
+    fn put_tx_meta(&self, meta: TxMetaV1) -> Result<()> {
+        let mut meta = meta;
+        meta.rejected_reason = meta
+            .rejected_reason
+            .map(|s| cap_utf8_bytes(s, MAX_REJECT_REASON_BYTES));
+        self.inner.tx_meta.write().insert(meta.tx_id, meta);
+        Ok(())
+    }
+
+    fn get_tx_meta(&self, tx_id: &[u8; 32]) -> Result<Option<TxMetaV1>> {
+        Ok(self.inner.tx_meta.read().get(tx_id).cloned())
+    }
+
+    fn put_mempool_tx(&self, tx: Transaction) -> Result<()> {
+        self.inner.mempool_txs.write().insert(tx.hash(), tx);
+        Ok(())
+    }
+
+    fn get_mempool_tx(&self, tx_id: &[u8; 32]) -> Result<Option<Transaction>> {
+        Ok(self.inner.mempool_txs.read().get(tx_id).cloned())
+    }
+
+    fn delete_mempool_tx(&self, tx_id: &[u8; 32]) -> Result<()> {
+        self.inner.mempool_txs.write().remove(tx_id);
+        Ok(())
+    }
+
+    fn list_mempool_txs(&self, limit: usize) -> Result<Vec<Transaction>> {
+        let mut txs: Vec<Transaction> = self.inner.mempool_txs.read().values().cloned().collect();
+        txs.sort_by(|a, b| b.hashtimer.timestamp_us.cmp(&a.hashtimer.timestamp_us));
+        txs.truncate(limit);
+        Ok(txs)
+    }
+
+    fn push_recent_tx(&self, entry: RecentTxEntryV1) -> Result<()> {
+        let key = recent_tx_key(&entry);
+        let mut map = self.inner.recent_txs.write();
+        map.insert(key, entry);
+        while map.len() > RECENT_TX_MAX_ENTRIES {
+            let _ = map.pop_last();
+        }
+        Ok(())
+    }
+
+    fn list_recent_txs(&self, limit: usize) -> Result<Vec<RecentTxEntryV1>> {
+        let map = self.inner.recent_txs.read();
+        Ok(map.values().take(limit).cloned().collect())
+    }
 }
 
 impl StorageLike for MemoryStorage {
@@ -926,6 +1282,18 @@ impl StorageLike for MemoryStorage {
     fn snapshot_chain_state(&self) -> Result<ChainState> {
         Ok(self.inner.chain_state.read().clone())
     }
+
+    fn snapshot_tx_meta(&self) -> Result<Vec<TxMetaV1>> {
+        Ok(self.inner.tx_meta.read().values().cloned().collect())
+    }
+
+    fn snapshot_recent_txs(&self) -> Result<Vec<RecentTxEntryV1>> {
+        Ok(self.inner.recent_txs.read().values().cloned().collect())
+    }
+
+    fn snapshot_mempool_txs(&self) -> Result<Vec<Transaction>> {
+        Ok(self.inner.mempool_txs.read().values().cloned().collect())
+    }
 }
 
 /// Sled-backed implementation
@@ -933,6 +1301,7 @@ pub struct SledStorage {
     db: Db,
     blocks: Tree,
     transactions: Tree,
+    mempool_txs: Tree,
     accounts: Tree,
     metadata: Tree,
     l2_networks: Tree,
@@ -940,18 +1309,24 @@ pub struct SledStorage {
     l2_exits: Tree,
     round_certificates: Tree,
     round_finalizations: Tree,
+    tx_meta: Tree,
+    recent_txs: Tree,
     validator_telemetry: Tree,
     file_descriptors: Tree,
     file_owner_index: Tree,
     chain_state: Arc<RwLock<ChainState>>,
     network_id: Arc<RwLock<String>>,
+    recent_lock: Mutex<()>,
+    wal_path: PathBuf,
 }
 
 impl SledStorage {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let wal_path = path.as_ref().join("ippan.wal.jsonl");
         let db = sled::open(path)?;
         let blocks = db.open_tree("blocks")?;
         let transactions = db.open_tree("transactions")?;
+        let mempool_txs = db.open_tree("mempool_txs")?;
         let accounts = db.open_tree("accounts")?;
         let metadata = db.open_tree("metadata")?;
         let l2_networks = db.open_tree("l2_networks")?;
@@ -960,6 +1335,8 @@ impl SledStorage {
         let round_certificates = db.open_tree("round_certificates")?;
         let validator_telemetry = db.open_tree("validator_telemetry")?;
         let round_finalizations = db.open_tree("round_finalizations")?;
+        let tx_meta = db.open_tree("tx_meta_v1")?;
+        let recent_txs = db.open_tree("recent_txs_v1")?;
         let file_descriptors = db.open_tree("file_descriptors")?;
         let file_owner_index = db.open_tree("file_owner_index")?;
 
@@ -978,6 +1355,7 @@ impl SledStorage {
             db,
             blocks,
             transactions,
+            mempool_txs,
             accounts,
             metadata,
             l2_networks,
@@ -985,12 +1363,42 @@ impl SledStorage {
             l2_exits,
             round_certificates,
             round_finalizations,
+            tx_meta,
+            recent_txs,
             validator_telemetry,
             file_descriptors,
             file_owner_index,
             chain_state: Arc::new(RwLock::new(chain_state)),
             network_id: Arc::new(RwLock::new(network_id)),
+            recent_lock: Mutex::new(()),
+            wal_path,
         })
+    }
+
+    fn wal_enabled() -> bool {
+        std::env::var("IPPAN_DISABLE_WAL")
+            .ok()
+            .map(|v| matches!(v.trim(), "1" | "true" | "TRUE"))
+            .unwrap_or(false)
+            == false
+    }
+
+    fn append_wal(&self, value: &serde_json::Value) -> Result<()> {
+        if !Self::wal_enabled() {
+            return Ok(());
+        }
+        if let Some(parent) = self.wal_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.wal_path)?;
+        serde_json::to_writer(&mut file, value)?;
+        file.write_all(b"\n")?;
+        file.flush()?;
+        file.sync_data()?;
+        Ok(())
     }
 
     pub fn initialize(&self) -> Result<()> {
@@ -1018,6 +1426,75 @@ impl SledStorage {
         *self.network_id.write() = network_id.to_string();
         Ok(())
     }
+
+    /// Prune finalized history while preserving headers for continuity.
+    ///
+    /// - Only acts on data strictly below `min_round_to_keep`.
+    /// - Blocks are retained as header-only (transactions cleared) to preserve
+    ///   parent linkage.
+    /// - Transactions older than the window are removed from the tx store, but
+    ///   tx metadata is retained and marked as `pruned`.
+    pub fn prune_below_round(&self, min_round_to_keep: u64) -> Result<PruneReportV1> {
+        let mut blocks_pruned = 0u64;
+        let mut txs_pruned = 0u64;
+        let mut header_only_blocks = 0u64;
+
+        // Rewrite old blocks to header-only.
+        for entry in self.blocks.iter() {
+            let (key, value) = entry?;
+            let mut block: Block = serde_json::from_slice(&value)?;
+            if block.header.round < min_round_to_keep && !block.transactions.is_empty() {
+                block.transactions.clear();
+                // Keep outer prev_hashes for UI compatibility.
+                let encoded = serde_json::to_vec(&block)?;
+                self.blocks.insert(&key, encoded)?;
+                blocks_pruned += 1;
+                header_only_blocks += 1;
+            }
+        }
+
+        // Remove old transactions but keep metadata (mark as pruned).
+        for entry in self.tx_meta.iter() {
+            let (key, value) = entry?;
+            let mut meta: TxMetaV1 = serde_json::from_slice(&value)?;
+            let Some(included) = &meta.included else {
+                continue;
+            };
+            if included.round_id < min_round_to_keep
+                && meta.status == TxLifecycleStatusV1::Finalized
+            {
+                let _ = self.transactions.remove(&key)?;
+                meta.status = TxLifecycleStatusV1::Pruned;
+                let encoded = serde_json::to_vec(&meta)?;
+                self.tx_meta.insert(&key, encoded)?;
+                txs_pruned += 1;
+            }
+        }
+
+        Ok(PruneReportV1 {
+            version: PruneReportV1::VERSION,
+            min_round_to_keep,
+            blocks_pruned,
+            txs_pruned,
+            header_only_blocks,
+            timestamp_us: ippan_time_now(),
+        })
+    }
+}
+
+/// Summary returned from pruning runs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PruneReportV1 {
+    pub version: u32,
+    pub min_round_to_keep: u64,
+    pub blocks_pruned: u64,
+    pub txs_pruned: u64,
+    pub header_only_blocks: u64,
+    pub timestamp_us: u64,
+}
+
+impl PruneReportV1 {
+    pub const VERSION: u32 = 1;
 }
 
 impl Storage for SledStorage {
@@ -1036,6 +1513,41 @@ impl Storage for SledStorage {
         if height >= latest_height {
             self.metadata
                 .insert(b"latest_height", &height.to_be_bytes())?;
+        }
+
+        // Ensure txs committed in this block are queryable and indexed.
+        for tx in &block.transactions {
+            // Store tx object idempotently for /tx queries.
+            let _ = self.store_transaction(tx.clone());
+
+            // Remove durable mempool mirror if present.
+            let _ = self.delete_mempool_tx(&tx.hash());
+
+            // Mark tx as included with an inclusion pointer.
+            let tx_id = tx.hash();
+            let now = ippan_time_now();
+            let mut meta = self
+                .get_tx_meta(&tx_id)?
+                .unwrap_or_else(|| TxMetaV1 {
+                    version: TxMetaV1::VERSION,
+                    tx_id,
+                    tx_hashtimer: tx.hashtimer.digest(),
+                    tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                    first_seen_us: now,
+                    status: TxLifecycleStatusV1::Included,
+                    included: None,
+                    rejected_reason: None,
+                });
+            if meta.status != TxLifecycleStatusV1::Finalized {
+                meta.status = TxLifecycleStatusV1::Included;
+            }
+            meta.included = Some(TxInclusionV1 {
+                block_hash: hash,
+                round_id: block.header.round,
+                block_hashtimer: block.header.hashtimer.digest(),
+                block_hashtimer_timestamp_us: block.header.hashtimer.timestamp_us,
+            });
+            self.put_tx_meta(meta)?;
         }
         Ok(())
     }
@@ -1201,6 +1713,31 @@ impl Storage for SledStorage {
         self.round_finalizations
             .insert(key, serde_json::to_vec(&rec)?)?;
         self.metadata.insert(b"latest_finalized_round", &key)?;
+
+        // Promote tx lifecycle to finalized.
+        for tx_id in &rec.ordered_tx_ids {
+            if let Some(mut meta) = self.get_tx_meta(tx_id)? {
+                meta.status = TxLifecycleStatusV1::Finalized;
+                if let Some(mut inc) = meta.included.clone() {
+                    inc.round_id = rec.round;
+                    meta.included = Some(inc);
+                }
+                self.put_tx_meta(meta)?;
+                tracing::info!(
+                    tx_id = %hex::encode(tx_id),
+                    round_id = rec.round,
+                    "tx finalized in round"
+                );
+            }
+        }
+        let ordered_len = rec.ordered_tx_ids.len();
+        let _ = self.append_wal(&serde_json::json!({
+            "v": 1,
+            "kind": "round_finalization",
+            "round": rec.round,
+            "ordered_tx_count": ordered_len,
+            "has_window": true
+        }));
         Ok(())
     }
 
@@ -1313,6 +1850,94 @@ impl Storage for SledStorage {
         }
         Ok(descriptors)
     }
+
+    fn put_tx_meta(&self, meta: TxMetaV1) -> Result<()> {
+        let mut meta = meta;
+        meta.rejected_reason = meta
+            .rejected_reason
+            .map(|s| cap_utf8_bytes(s, MAX_REJECT_REASON_BYTES));
+        let key = meta.tx_id;
+        let data = serde_json::to_vec(&meta)?;
+        self.tx_meta.insert(&key[..], data)?;
+        Ok(())
+    }
+
+    fn get_tx_meta(&self, tx_id: &[u8; 32]) -> Result<Option<TxMetaV1>> {
+        self.tx_meta
+            .get(&tx_id[..])?
+            .map(|v| serde_json::from_slice(&v))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    fn put_mempool_tx(&self, tx: Transaction) -> Result<()> {
+        let key = tx.hash();
+        let data = serde_json::to_vec(&tx)?;
+        self.mempool_txs.insert(&key[..], data)?;
+        let _ = self.append_wal(&serde_json::json!({
+            "v": 1,
+            "kind": "mempool_tx",
+            "tx_id": hex::encode(key),
+            "tx_hashtimer": tx.hashtimer.to_hex(),
+            "first_seen_us": ippan_time_now()
+        }));
+        Ok(())
+    }
+
+    fn get_mempool_tx(&self, tx_id: &[u8; 32]) -> Result<Option<Transaction>> {
+        self.mempool_txs
+            .get(&tx_id[..])?
+            .map(|v| serde_json::from_slice(&v))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    fn delete_mempool_tx(&self, tx_id: &[u8; 32]) -> Result<()> {
+        let _ = self.mempool_txs.remove(&tx_id[..])?;
+        Ok(())
+    }
+
+    fn list_mempool_txs(&self, limit: usize) -> Result<Vec<Transaction>> {
+        let mut txs = Vec::new();
+        for entry in self.mempool_txs.iter() {
+            let (_key, value) = entry?;
+            txs.push(serde_json::from_slice::<Transaction>(&value)?);
+        }
+        txs.sort_by(|a, b| b.hashtimer.timestamp_us.cmp(&a.hashtimer.timestamp_us));
+        txs.truncate(limit);
+        Ok(txs)
+    }
+
+    fn push_recent_tx(&self, entry: RecentTxEntryV1) -> Result<()> {
+        let _guard = self.recent_lock.lock();
+        let key = recent_tx_key(&entry);
+        let data = serde_json::to_vec(&entry)?;
+        self.recent_txs.insert(&key[..], data)?;
+
+        // Best-effort bounding (keep newest N). This is not consensus-critical.
+        let max = 50_000usize;
+        let len = self.recent_txs.len() as usize;
+        if len > max {
+            let extra = len.saturating_sub(max);
+            for (idx, item) in self.recent_txs.iter().rev().enumerate() {
+                if idx >= extra {
+                    break;
+                }
+                let (k, _) = item?;
+                let _ = self.recent_txs.remove(k)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn list_recent_txs(&self, limit: usize) -> Result<Vec<RecentTxEntryV1>> {
+        let mut out = Vec::new();
+        for entry in self.recent_txs.iter().take(limit) {
+            let (_k, v) = entry?;
+            out.push(serde_json::from_slice::<RecentTxEntryV1>(&v)?);
+        }
+        Ok(out)
+    }
 }
 
 impl StorageLike for SledStorage {
@@ -1372,6 +1997,33 @@ impl StorageLike for SledStorage {
 
     fn snapshot_chain_state(&self) -> Result<ChainState> {
         self.get_chain_state()
+    }
+
+    fn snapshot_tx_meta(&self) -> Result<Vec<TxMetaV1>> {
+        let mut metas = Vec::new();
+        for entry in self.tx_meta.iter() {
+            let (_key, value) = entry?;
+            metas.push(serde_json::from_slice::<TxMetaV1>(&value)?);
+        }
+        Ok(metas)
+    }
+
+    fn snapshot_recent_txs(&self) -> Result<Vec<RecentTxEntryV1>> {
+        let mut entries = Vec::new();
+        for entry in self.recent_txs.iter() {
+            let (_key, value) = entry?;
+            entries.push(serde_json::from_slice::<RecentTxEntryV1>(&value)?);
+        }
+        Ok(entries)
+    }
+
+    fn snapshot_mempool_txs(&self) -> Result<Vec<Transaction>> {
+        let mut txs = Vec::new();
+        for entry in self.mempool_txs.iter() {
+            let (_key, value) = entry?;
+            txs.push(serde_json::from_slice::<Transaction>(&value)?);
+        }
+        Ok(txs)
     }
 
     fn snapshot_ai_model_hash(&self) -> Result<Option<String>> {
@@ -1478,6 +2130,109 @@ mod tests {
         let mut tx = Transaction::new([1u8; 32], [2u8; 32], Amount::from_atomic(1_000), round);
         tx.refresh_id();
         Block::new(vec![], vec![tx], round, [3u8; 32])
+    }
+
+    #[test]
+    fn sled_restart_retains_tx_meta_recent_and_mempool() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("init");
+
+        let mut tx = Transaction::new([9u8; 32], [8u8; 32], Amount::from_atomic(123), 7);
+        tx.refresh_id();
+
+        let meta = TxMetaV1 {
+            version: TxMetaV1::VERSION,
+            tx_id: tx.hash(),
+            tx_hashtimer: tx.hashtimer.digest(),
+            tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+            first_seen_us: ippan_time_now(),
+            status: TxLifecycleStatusV1::Mempool,
+            included: None,
+            rejected_reason: None,
+        };
+
+        storage.put_mempool_tx(tx.clone()).expect("mempool persist");
+        storage.put_tx_meta(meta).expect("meta persist");
+        storage
+            .push_recent_tx(RecentTxEntryV1 {
+                version: RecentTxEntryV1::VERSION,
+                tx_id: tx.hash(),
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+            })
+            .expect("recent persist");
+        storage.flush().expect("flush");
+        drop(storage);
+
+        let reopened = SledStorage::new(dir.path()).expect("reopen");
+        let fetched_meta = reopened.get_tx_meta(&tx.hash()).expect("get meta");
+        assert!(fetched_meta.is_some());
+        let fetched_mempool = reopened.get_mempool_tx(&tx.hash()).expect("get mempool");
+        assert!(fetched_mempool.is_some());
+        let recent = reopened.list_recent_txs(10).expect("recent");
+        assert!(!recent.is_empty());
+    }
+
+    #[test]
+    fn recent_index_orders_by_hashtimer_desc_then_digest() {
+        let dir = tempdir().expect("tempdir");
+        let storage = SledStorage::new(dir.path()).expect("sled storage");
+        storage.initialize().expect("init");
+
+        let a = RecentTxEntryV1 {
+            version: RecentTxEntryV1::VERSION,
+            tx_id: [1u8; 32],
+            tx_hashtimer: [0x10u8; 32],
+            tx_hashtimer_timestamp_us: 10,
+        };
+        let b = RecentTxEntryV1 {
+            version: RecentTxEntryV1::VERSION,
+            tx_id: [2u8; 32],
+            tx_hashtimer: [0x20u8; 32],
+            tx_hashtimer_timestamp_us: 20,
+        };
+        // Same timestamp tie-breaker by digest: higher digest should come first.
+        let c = RecentTxEntryV1 {
+            version: RecentTxEntryV1::VERSION,
+            tx_id: [3u8; 32],
+            tx_hashtimer: [0x30u8; 32],
+            tx_hashtimer_timestamp_us: 20,
+        };
+        // Same timestamp + digest tie-breaker by tx_id (ascending via key bytes).
+        let d_low = RecentTxEntryV1 {
+            version: RecentTxEntryV1::VERSION,
+            tx_id: [4u8; 32],
+            tx_hashtimer: [0x40u8; 32],
+            tx_hashtimer_timestamp_us: 30,
+        };
+        let d_high = RecentTxEntryV1 {
+            version: RecentTxEntryV1::VERSION,
+            tx_id: [5u8; 32],
+            tx_hashtimer: [0x40u8; 32],
+            tx_hashtimer_timestamp_us: 30,
+        };
+
+        storage.push_recent_tx(a.clone()).expect("push a");
+        storage.push_recent_tx(b.clone()).expect("push b");
+        storage.push_recent_tx(c.clone()).expect("push c");
+        storage.push_recent_tx(d_low.clone()).expect("push d_low");
+        storage.push_recent_tx(d_high.clone()).expect("push d_high");
+
+        let list = storage.list_recent_txs(5).expect("list");
+        assert_eq!(list.len(), 5);
+        // Newest timestamp first.
+        assert_eq!(list[0].tx_hashtimer_timestamp_us, 30);
+        assert_eq!(list[1].tx_hashtimer_timestamp_us, 30);
+        assert_eq!(list[2].tx_hashtimer_timestamp_us, 20);
+        assert_eq!(list[3].tx_hashtimer_timestamp_us, 20);
+        assert_eq!(list[4].tx_hashtimer_timestamp_us, 10);
+        // Within the same timestamp, digest ascending.
+        assert_eq!(list[2].tx_hashtimer, b.tx_hashtimer);
+        assert_eq!(list[3].tx_hashtimer, c.tx_hashtimer);
+        // Within the same timestamp + digest, tx_id ascending.
+        assert_eq!(list[0].tx_id, d_low.tx_id);
+        assert_eq!(list[1].tx_id, d_high.tx_id);
     }
 
     #[test]
