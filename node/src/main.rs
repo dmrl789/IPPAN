@@ -107,7 +107,9 @@ impl NodeStorageMode {
                         .and_then(|v| v.trim().parse::<u64>().ok())
                 })
                 .unwrap_or(10_000);
-            return NodeStorageMode::Pruned { keep_last_n: keep.max(1) };
+            return NodeStorageMode::Pruned {
+                keep_last_n: keep.max(1),
+            };
         }
         NodeStorageMode::Full
     }
