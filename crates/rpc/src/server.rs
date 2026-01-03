@@ -2672,32 +2672,7 @@ async fn handle_tx_submit(
         rejected_reason: None,
     };
 
-    // Persist tx into a durable mempool mirror + indexes for restart safety.
-    if let Err(err) = state.storage.put_mempool_tx(tx.clone()) {
-        record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError::new(
-                "storage_error",
-                "Failed to persist mempool tx",
-            )),
-        ));
-    }
-    if let Err(err) = state.storage.put_tx_meta(meta.clone()) {
-        record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError::new("storage_error", "Failed to persist tx meta")),
-        ));
-    }
-    let _ = state.storage.push_recent_tx(RecentTxEntryV1 {
-        version: RecentTxEntryV1::VERSION,
-        tx_id,
-        tx_hashtimer: meta.tx_hashtimer,
-        tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
-    });
-
-    // Forward to consensus for inclusion.
+    // Forward to consensus for inclusion first, before persisting.
     if let Some(consensus) = &state.consensus {
         metrics::counter!("rpc_tx_submit_total").increment(1);
         if let Err(e) = consensus.submit_transaction(tx.clone()) {
@@ -2714,9 +2689,25 @@ async fn handle_tx_submit(
             tx_id = %hex_encode(tx_id),
             tx_hashtimer = %tx.hashtimer.to_hex(),
             first_seen_us = first_seen_us,
-            "tx admitted"
+            "tx admitted by consensus"
         );
         record_security_success(&state, &addr, ENDPOINT).await;
+
+        // Now persist to durable storage after consensus acceptance.
+        if let Err(err) = state.storage.put_mempool_tx(tx.clone()) {
+            // Log but don't fail the request - tx is already in consensus mempool.
+            warn!("Failed to persist mempool tx to storage: {}", err);
+        }
+        if let Err(err) = state.storage.put_tx_meta(meta.clone()) {
+            warn!("Failed to persist tx meta to storage: {}", err);
+        }
+        let _ = state.storage.push_recent_tx(RecentTxEntryV1 {
+            version: RecentTxEntryV1::VERSION,
+            tx_id,
+            tx_hashtimer: meta.tx_hashtimer,
+            tx_hashtimer_timestamp_us: meta.tx_hashtimer_timestamp_us,
+        });
+
         Ok(Json(TxSubmitResponse {
             tx_id: hex_encode(tx_id),
             tx_hashtimer: Some(tx.hashtimer.to_hex()),
