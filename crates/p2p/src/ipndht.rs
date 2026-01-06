@@ -107,6 +107,16 @@ impl IpnDhtService {
         Ok(peers.into_iter().map(|peer| peer.to_string()).collect())
     }
 
+    /// Publish a gossip message to a specific topic (for p2p-testkit feature).
+    /// This method is used by the test RPC to publish gossip messages.
+    pub fn publish_gossip(&self, topic: &str, data: Vec<u8>) -> Result<()> {
+        let Some(network) = &self.network else {
+            return Err(anyhow!("libp2p network not available"));
+        };
+
+        network.publish(topic, data)
+    }
+
     fn key_for(id: &FileId) -> Vec<u8> {
         id.as_bytes().to_vec()
     }
