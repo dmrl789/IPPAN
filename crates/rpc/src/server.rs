@@ -42,16 +42,14 @@ use ippan_l2_handle_registry::{
 };
 use ippan_mempool::Mempool;
 use ippan_security::{SecurityError, SecurityManager};
-use ippan_storage::{
-    Account, RecentTxEntryV1, Storage, TxLifecycleStatusV1, TxMetaV1,
-};
+use ippan_storage::{Account, RecentTxEntryV1, Storage, TxLifecycleStatusV1, TxMetaV1};
 use ippan_types::address::{decode_address, encode_address};
 use ippan_types::health::{HealthStatus, NodeHealth, NodeHealthContext};
 use ippan_types::time_service::ippan_time_now;
 use ippan_types::{
-    Amount, Block, HandleOperation, HandleRegisterOp, HashTimer, L2Commit, L2ExitRecord,
-    L2Network, RoundFinalizationRecord, Transaction, TransactionVisibility, TransactionWireV1,
-    IppanTimeMicros,
+    Amount, Block, HandleOperation, HandleRegisterOp, HashTimer, IppanTimeMicros, L2Commit,
+    L2ExitRecord, L2Network, RoundFinalizationRecord, Transaction, TransactionVisibility,
+    TransactionWireV1,
 };
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::de::{self, DeserializeOwned, Deserializer, Visitor};
@@ -829,7 +827,10 @@ struct TxSubmitResponse {
 
 #[derive(Debug)]
 enum AdmissionResult {
-    Accepted { tx_id: [u8; 32], tx_hashtimer: String },
+    Accepted {
+        tx_id: [u8; 32],
+        tx_hashtimer: String,
+    },
     Rejected {
         tx_id: [u8; 32],
         code: &'static str,
@@ -901,7 +902,10 @@ fn validate_tx_for_admission(tx: &Transaction) -> Result<(), (&'static str, Stri
 
     let computed = tx.hash();
     if tx.id != computed {
-        return Err(("tx_id_mismatch", "tx.id does not match canonical hash".to_string()));
+        return Err((
+            "tx_id_mismatch",
+            "tx.id does not match canonical hash".to_string(),
+        ));
     }
 
     // Verify HashTimer is consistent with contents.
@@ -1867,7 +1871,10 @@ async fn handle_test_gossip_publish(
     if std::env::var("IPPAN_ENABLE_P2P_TEST_RPC").unwrap_or_default() != "1" {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(ApiError::new("security_error", "P2P test RPC is disabled. Enable with IPPAN_ENABLE_P2P_TEST_RPC=1")),
+            Json(ApiError::new(
+                "security_error",
+                "P2P test RPC is disabled. Enable with IPPAN_ENABLE_P2P_TEST_RPC=1",
+            )),
         ));
     }
 
@@ -1877,7 +1884,12 @@ async fn handle_test_gossip_publish(
             "sent_ts_ms": request.sent_ts_ms,
             "payload_len": request.payload_len,
         }))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::new("serialization_error", e.to_string()))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::new("serialization_error", e.to_string())),
+            )
+        })?;
 
         dht.publish_gossip(&request.topic, msg).map_err(|e| {
             (
@@ -2545,11 +2557,7 @@ async fn handle_status(
         .map(|r| r.round);
 
     let tip_height = state.storage.get_latest_height().ok().unwrap_or(0);
-    let tip_block = state
-        .storage
-        .get_block_by_height(tip_height)
-        .ok()
-        .flatten();
+    let tip_block = state.storage.get_block_by_height(tip_height).ok().flatten();
     let tip_block_hash = tip_block.as_ref().map(|b| hex_encode(b.hash()));
     let current_hashtimer = tip_block.as_ref().map(|b| b.header.hashtimer.to_hex());
     let block_tip_round_id = tip_block.as_ref().map(|b| b.header.round);
@@ -2867,7 +2875,11 @@ async fn handle_submit_tx(
 
     // Use the same deterministic admission path as `/tx/submit`.
     match admit_transaction(&state, &tx) {
-        AdmissionResult::Rejected { tx_id, code, reason } => {
+        AdmissionResult::Rejected {
+            tx_id,
+            code,
+            reason,
+        } => {
             let first_seen_us = ippan_time_now();
             let meta = TxMetaV1 {
                 version: TxMetaV1::VERSION,
@@ -2958,7 +2970,11 @@ async fn handle_tx_submit(
     let first_seen_us = ippan_time_now();
 
     match admit_transaction(&state, &tx) {
-        AdmissionResult::Rejected { tx_id, code, reason } => {
+        AdmissionResult::Rejected {
+            tx_id,
+            code,
+            reason,
+        } => {
             metrics::counter!("rpc_tx_submit_failed_total").increment(1);
             let meta = TxMetaV1 {
                 version: TxMetaV1::VERSION,
@@ -2984,7 +3000,10 @@ async fn handle_tx_submit(
                 Json(ApiError::rejected(code, reason, tx_id)),
             ));
         }
-        AdmissionResult::Accepted { tx_id, tx_hashtimer } => {
+        AdmissionResult::Accepted {
+            tx_id,
+            tx_hashtimer,
+        } => {
             let meta = TxMetaV1 {
                 version: TxMetaV1::VERSION,
                 tx_id,
@@ -3001,7 +3020,10 @@ async fn handle_tx_submit(
                 record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
                 return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ApiError::new("storage_error", "Failed to persist mempool tx")),
+                    Json(ApiError::new(
+                        "storage_error",
+                        "Failed to persist mempool tx",
+                    )),
                 ));
             }
             if let Err(err) = state.storage.put_tx_meta(meta.clone()) {
@@ -3690,7 +3712,10 @@ async fn handle_get_tx_recent(
         Err(err) => {
             error!("Failed fetching recent tx list for {}: {}", addr, err);
             record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load recent txs"));
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load recent txs",
+            ));
         }
     };
 
@@ -3701,11 +3726,17 @@ async fn handle_get_tx_recent(
             .as_ref()
             .map(|m| lifecycle_status_label(m.status).to_string())
             .unwrap_or_else(|| "Mempool".to_string());
-        let included = meta.as_ref().and_then(|m| m.included.as_ref()).map(|inc| TxInclusionView {
-            block_hash: hex_encode(inc.block_hash),
-            round_id: inc.round_id,
-            hashtimer: render_hashtimer_hex(inc.block_hashtimer_timestamp_us, inc.block_hashtimer),
-        });
+        let included = meta
+            .as_ref()
+            .and_then(|m| m.included.as_ref())
+            .map(|inc| TxInclusionView {
+                block_hash: hex_encode(inc.block_hash),
+                round_id: inc.round_id,
+                hashtimer: render_hashtimer_hex(
+                    inc.block_hashtimer_timestamp_us,
+                    inc.block_hashtimer,
+                ),
+            });
         let rejected_reason = meta.as_ref().and_then(|m| m.rejected_reason.clone());
         let first_seen_ts = meta.as_ref().map(|m| m.first_seen_us);
         out.push(TxStatusResponse {
@@ -3826,7 +3857,10 @@ async fn handle_get_block(
     }
 }
 
-fn round_header_canonical_bytes_v1(record: &RoundFinalizationRecord, prev_round_hash: &[u8; 32]) -> Vec<u8> {
+fn round_header_canonical_bytes_v1(
+    record: &RoundFinalizationRecord,
+    prev_round_hash: &[u8; 32],
+) -> Vec<u8> {
     // Deterministic encoding (no floats, explicit lengths).
     let mut out = Vec::new();
     out.extend_from_slice(&1u32.to_be_bytes()); // encoding version
@@ -3976,7 +4010,12 @@ async fn handle_get_round(
     let round_hash = round_hash_v1(&record, &prev_for_hash);
     let round_hashtimer = round_hashtimer_v1(&record, &prev_for_hash, &round_hash);
 
-    let included_blocks = record.proof.block_ids.iter().map(|id| hex_encode(*id)).collect();
+    let included_blocks = record
+        .proof
+        .block_ids
+        .iter()
+        .map(|id| hex_encode(*id))
+        .collect();
     let finality_proof = if record.proof.agg_sig.is_empty() {
         None
     } else {
@@ -3999,11 +4038,7 @@ async fn handle_get_round(
                 .iter()
                 .map(|id| hex_encode(*id))
                 .collect(),
-            fork_drops: record
-                .fork_drops
-                .iter()
-                .map(|id| hex_encode(*id))
-                .collect(),
+            fork_drops: record.fork_drops.iter().map(|id| hex_encode(*id)).collect(),
             included_blocks,
             finality_proof,
             total_fees_atomic: record.total_fees_atomic.map(format_atomic),
@@ -4724,7 +4759,12 @@ fn block_response_with_fee_summary(
         _ => None,
     };
     let prev_block_hash = block.header.parent_ids.first().map(|id| hex_encode(*id));
-    let parent_ids = block.header.parent_ids.iter().map(|id| hex_encode(*id)).collect::<Vec<_>>();
+    let parent_ids = block
+        .header
+        .parent_ids
+        .iter()
+        .map(|id| hex_encode(*id))
+        .collect::<Vec<_>>();
     let payload_ids = block
         .header
         .payload_ids
@@ -7070,7 +7110,8 @@ mod tests {
         let consensus = Arc::new(Mutex::new(poa));
 
         let (tx_sender_ok, _rx_ok) = mpsc::unbounded_channel();
-        let handle_ok = ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
+        let handle_ok =
+            ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
 
         let mut ok_state = (*build_app_state(None, None)).clone();
         ok_state.storage = storage.clone();
@@ -7081,9 +7122,13 @@ mod tests {
 
         let addr: SocketAddr = "127.0.0.1:9201".parse().unwrap();
         let tx = sample_transaction([5u8; 32], sample_public_key([6u8; 32]), 21);
-        let Json(resp) = handle_tx_submit(State(ok_state.clone()), ConnectInfo(addr), ValidatedJson(tx.clone()))
-            .await
-            .expect("tx submit");
+        let Json(resp) = handle_tx_submit(
+            State(ok_state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(tx.clone()),
+        )
+        .await
+        .expect("tx submit");
         assert_eq!(resp.tx_id, hex::encode(tx.hash()));
 
         let Json(recent) = handle_get_tx_recent(
@@ -7121,7 +7166,8 @@ mod tests {
         let consensus = Arc::new(Mutex::new(poa));
 
         let (tx_sender_ok, _rx_ok) = mpsc::unbounded_channel();
-        let handle_ok = ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
+        let handle_ok =
+            ConsensusHandle::new(consensus.clone(), tx_sender_ok.clone(), mempool.clone());
 
         let mut ok_state = (*build_app_state(None, None)).clone();
         ok_state.storage = storage.clone();
@@ -7135,9 +7181,13 @@ mod tests {
         // Corrupt signature deterministically (invalid_signature).
         tx.signature[0] ^= 0x01;
 
-        let rejected = handle_tx_submit(State(ok_state.clone()), ConnectInfo(addr), ValidatedJson(tx))
-            .await
-            .expect_err("invalid tx rejected");
+        let rejected = handle_tx_submit(
+            State(ok_state.clone()),
+            ConnectInfo(addr),
+            ValidatedJson(tx),
+        )
+        .await
+        .expect_err("invalid tx rejected");
         assert_eq!(rejected.0, StatusCode::UNPROCESSABLE_ENTITY);
         let Json(err) = rejected.1;
         assert_eq!(err.status_v2.as_deref(), Some("Rejected"));
@@ -7164,7 +7214,10 @@ mod tests {
         )
         .await
         .expect("recent");
-        let item = recent.iter().find(|item| item.tx_id == tx_id).expect("in recent");
+        let item = recent
+            .iter()
+            .find(|item| item.tx_id == tx_id)
+            .expect("in recent");
         assert_eq!(item.status, "Rejected");
     }
 
@@ -7179,8 +7232,12 @@ mod tests {
 
         // Create a signed tx and admit it into durable mempool/index.
         let tx = sample_transaction([9u8; 32], sample_public_key([8u8; 32]), 1);
-        state.storage.put_mempool_tx(tx.clone()).expect("mempool persist");
-        state.storage
+        state
+            .storage
+            .put_mempool_tx(tx.clone())
+            .expect("mempool persist");
+        state
+            .storage
             .put_tx_meta(TxMetaV1 {
                 version: TxMetaV1::VERSION,
                 tx_id: tx.hash(),
@@ -7192,7 +7249,8 @@ mod tests {
                 rejected_reason: None,
             })
             .expect("meta");
-        state.storage
+        state
+            .storage
             .push_recent_tx(RecentTxEntryV1 {
                 version: RecentTxEntryV1::VERSION,
                 tx_id: tx.hash(),
@@ -7203,7 +7261,10 @@ mod tests {
 
         // Include tx in a block; store_block should (a) store tx, (b) drop from mempool mirror, (c) set Included meta.
         let block = Block::new(vec![[0u8; 32]], vec![tx.clone()], 1, [7u8; 32]);
-        state.storage.store_block(block.clone()).expect("store block");
+        state
+            .storage
+            .store_block(block.clone())
+            .expect("store block");
 
         let Json(after_block) = handle_get_transaction(
             State(state.clone()),
@@ -7342,7 +7403,10 @@ mod tests {
             rejected_payments: round_resp.header.rejected_payments,
         };
         let recomputed_round_hash = round_hash_v1(&record_from_header, &prev_hash);
-        assert_eq!(round_resp.header.round_hash, hex::encode(recomputed_round_hash));
+        assert_eq!(
+            round_resp.header.round_hash,
+            hex::encode(recomputed_round_hash)
+        );
 
         // Block hash recomputation from /block audit header payload.
         let Json(block_resp) = handle_get_block(
