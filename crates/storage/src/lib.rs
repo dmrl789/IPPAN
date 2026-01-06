@@ -9,8 +9,8 @@ use ippan_types::{
     L2Commit, L2ExitRecord, L2Network, RoundCertificate, RoundFinalizationRecord, RoundId,
     Transaction,
 };
-use parking_lot::RwLock;
 use parking_lot::Mutex;
+use parking_lot::RwLock;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sled::{Db, Tree};
 use std::collections::{BTreeMap, HashMap};
@@ -922,18 +922,16 @@ impl Storage for MemoryStorage {
             self.delete_mempool_tx(&tx.hash())?;
             let tx_id = tx.hash();
             let now = ippan_time_now();
-            let mut meta = self
-                .get_tx_meta(&tx_id)?
-                .unwrap_or_else(|| TxMetaV1 {
-                    version: TxMetaV1::VERSION,
-                    tx_id,
-                    tx_hashtimer: tx.hashtimer.digest(),
-                    tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
-                    first_seen_us: now,
-                    status: TxLifecycleStatusV1::Included,
-                    included: None,
-                    rejected_reason: None,
-                });
+            let mut meta = self.get_tx_meta(&tx_id)?.unwrap_or_else(|| TxMetaV1 {
+                version: TxMetaV1::VERSION,
+                tx_id,
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                first_seen_us: now,
+                status: TxLifecycleStatusV1::Included,
+                included: None,
+                rejected_reason: None,
+            });
             if meta.status != TxLifecycleStatusV1::Finalized {
                 meta.status = TxLifecycleStatusV1::Included;
             }
@@ -1526,18 +1524,16 @@ impl Storage for SledStorage {
             // Mark tx as included with an inclusion pointer.
             let tx_id = tx.hash();
             let now = ippan_time_now();
-            let mut meta = self
-                .get_tx_meta(&tx_id)?
-                .unwrap_or_else(|| TxMetaV1 {
-                    version: TxMetaV1::VERSION,
-                    tx_id,
-                    tx_hashtimer: tx.hashtimer.digest(),
-                    tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
-                    first_seen_us: now,
-                    status: TxLifecycleStatusV1::Included,
-                    included: None,
-                    rejected_reason: None,
-                });
+            let mut meta = self.get_tx_meta(&tx_id)?.unwrap_or_else(|| TxMetaV1 {
+                version: TxMetaV1::VERSION,
+                tx_id,
+                tx_hashtimer: tx.hashtimer.digest(),
+                tx_hashtimer_timestamp_us: tx.hashtimer.timestamp_us,
+                first_seen_us: now,
+                status: TxLifecycleStatusV1::Included,
+                included: None,
+                rejected_reason: None,
+            });
             if meta.status != TxLifecycleStatusV1::Finalized {
                 meta.status = TxLifecycleStatusV1::Included;
             }

@@ -1,0 +1,52 @@
+# Edit these 6 hosts only (4 servers + 2 threadrippers).
+# Ports/nodes are derived automatically unless you override with explicit_targets.
+
+servers:
+  - name: srv1
+    host: 188.245.97.41
+    ssh_user: root
+    node_index_range: [0, 9]
+  - name: srv2
+    host: 135.181.145.174
+    ssh_user: root
+    node_index_range: [10, 19]
+  - name: srv3
+    host: 5.223.51.238
+    ssh_user: root
+    node_index_range: [20, 29]
+  - name: srv4
+    host: 178.156.219.107
+    ssh_user: root
+    node_index_range: [30, 39]
+
+threadrippers:
+  - name: tr-a
+    host: 88.198.26.37
+    ssh_user: root
+  - name: tr-b
+    host: 136.243.131.187
+    ssh_user: root
+
+# Default node HTTP base port. Node i uses BASE_PORT + i.
+http:
+  base_port: 8080
+  status_path: /status
+  ippan_time_field: ippan_time_us
+  timeout_sec: 2.0
+
+probe:
+  samples: 600
+  interval_ms: 25
+
+# Temporary override: current deployment appears to expose only :8080 per server.
+# Comment/remove this block once all 40 ports are live (BASE_PORT+idx) so range-based
+# targets (0..39) are used.
+explicit_targets:
+  - node: node-00
+    url: http://188.245.97.41:8080
+  - node: node-10
+    url: http://135.181.145.174:8080
+  - node: node-20
+    url: http://5.223.51.238:8080
+  - node: node-30
+    url: http://178.156.219.107:8080
