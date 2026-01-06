@@ -41,6 +41,10 @@ enum Commands {
         msgs: usize,
         #[arg(long, default_value_t = 512)]
         size: usize,
+        #[arg(long, default_value_t = 20)]
+        warmup_msgs: usize,
+        #[arg(long, default_value_t = 3)]
+        warmup_seconds: u64,
     },
     Churn {
         #[arg(long, default_value_t = 10)]
@@ -67,6 +71,10 @@ enum Commands {
         size: usize,
         #[arg(long, default_value_t = 0.70)]
         min_delivery_rate: f64,
+        #[arg(long, default_value_t = 20)]
+        warmup_msgs: usize,
+        #[arg(long, default_value_t = 3)]
+        warmup_seconds: u64,
     },
 }
 
@@ -100,6 +108,12 @@ struct Summary {
     latency_p95_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     latency_max_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warmup_msgs: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warmup_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    measurement_start_ts_ms: Option<u64>,
     metrics: HashMap<String, serde_json::Value>,
     errors: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -327,10 +341,11 @@ async fn main() -> Result<()> {
 
     let res = match cli.command {
         Commands::Smoke { nodes } => run_smoke(&mut harness, nodes).await,
-        Commands::Gossip { nodes, msgs, size } => run_gossip(&mut harness, nodes, msgs, size).await,
+        Commands::Gossip { nodes, msgs, size, warmup_msgs, warmup_seconds } => 
+            run_gossip(&mut harness, nodes, msgs, size, warmup_msgs, warmup_seconds).await,
         Commands::Churn { nodes, churn_pct, minutes } => run_churn(&mut harness, nodes, churn_pct, minutes).await,
-        Commands::Chaos { nodes, loss, latency_ms, jitter_ms, minutes, msgs, size, min_delivery_rate } => 
-            run_chaos(&mut harness, nodes, loss, latency_ms, jitter_ms, minutes, msgs, size, min_delivery_rate).await,
+        Commands::Chaos { nodes, loss, latency_ms, jitter_ms, minutes, msgs, size, min_delivery_rate, warmup_msgs, warmup_seconds } => 
+            run_chaos(&mut harness, nodes, loss, latency_ms, jitter_ms, minutes, msgs, size, min_delivery_rate, warmup_msgs, warmup_seconds).await,
     };
 
     harness.stop_all();
@@ -391,11 +406,21 @@ async fn run_smoke(harness: &mut TestHarness, node_count: usize) -> Result<()> {
     }
 }
 
-async fn run_gossip(harness: &mut TestHarness, node_count: usize, msg_count: usize, msg_size: usize) -> Result<()> {
-    info!("Starting GOSSIP test: nodes={}, msgs={}, size={}", node_count, msg_count, msg_size);
+async fn run_gossip(
+    harness: &mut TestHarness,
+    node_count: usize,
+    msg_count: usize,
+    msg_size: usize,
+    warmup_msgs: usize,
+    warmup_seconds: u64,
+) -> Result<()> {
+    info!("Starting GOSSIP test: nodes={}, msgs={}, size={}, warmup_msgs={}, warmup_secs={}", 
+        node_count, msg_count, msg_size, warmup_msgs, warmup_seconds);
     let mut summary = Summary {
         scenario: "gossip".to_string(),
         nodes: node_count,
+        warmup_msgs: Some(warmup_msgs),
+        warmup_seconds: Some(warmup_seconds),
         ..Default::default()
     };
     
@@ -409,10 +434,11 @@ async fn run_gossip(harness: &mut TestHarness, node_count: usize, msg_count: usi
     // Wait for mesh readiness
     tokio::time::sleep(Duration::from_secs(15)).await;
     
-    let sent_count = run_gossip_burst(harness, msg_count, msg_size, 10).await?;
-    let stats = calculate_gossip_stats(&harness.nodes, sent_count).await;
+    let (sent_count, measurement_start_ts_ms) = run_gossip_burst(harness, msg_count, msg_size, 10, warmup_msgs, warmup_seconds).await?;
+    let stats = calculate_gossip_stats(&harness.nodes, sent_count, measurement_start_ts_ms).await;
     
     summary.msgs_sent = Some(sent_count);
+    summary.measurement_start_ts_ms = Some(measurement_start_ts_ms);
     summary.expected_total_receipts = Some(stats.expected_total_receipts);
     summary.unique_receipts = Some(stats.unique_receipts);
     summary.duplicate_receipts = Some(stats.duplicate_receipts);
@@ -494,12 +520,16 @@ async fn run_chaos(
     msgs: usize,
     size: usize,
     min_delivery_rate: f64,
+    warmup_msgs: usize,
+    warmup_seconds: u64,
 ) -> Result<()> {
-    info!("Starting CHAOS test: nodes={}, loss={}%, latency={}ms, jitter={}ms, msgs={}, size={}, min_delivery={}", 
-        node_count, loss, latency, jitter, msgs, size, min_delivery_rate);
+    info!("Starting CHAOS test: nodes={}, loss={}%, latency={}ms, jitter={}ms, msgs={}, size={}, min_delivery={}, warmup_msgs={}, warmup_secs={}", 
+        node_count, loss, latency, jitter, msgs, size, min_delivery_rate, warmup_msgs, warmup_seconds);
     let mut summary = Summary {
         scenario: "chaos".to_string(),
         nodes: node_count,
+        warmup_msgs: Some(warmup_msgs),
+        warmup_seconds: Some(warmup_seconds),
         ..Default::default()
     };
     
@@ -524,10 +554,11 @@ async fn run_chaos(
     // Wait for mesh readiness
     tokio::time::sleep(Duration::from_secs(20)).await;
     
-    let sent_count = run_gossip_burst(harness, msgs, size, 15).await?;
-    let stats = calculate_gossip_stats(&harness.nodes, sent_count).await;
+    let (sent_count, measurement_start_ts_ms) = run_gossip_burst(harness, msgs, size, 15, warmup_msgs, warmup_seconds).await?;
+    let stats = calculate_gossip_stats(&harness.nodes, sent_count, measurement_start_ts_ms).await;
 
     summary.msgs_sent = Some(sent_count);
+    summary.measurement_start_ts_ms = Some(measurement_start_ts_ms);
     summary.expected_total_receipts = Some(stats.expected_total_receipts);
     summary.unique_receipts = Some(stats.unique_receipts);
     summary.duplicate_receipts = Some(stats.duplicate_receipts);
@@ -583,12 +614,44 @@ struct GossipStats {
     latency_p50_ms: u64,
     latency_p95_ms: u64,
     latency_max_ms: u64,
+    _measurement_start_ts_ms: u64,
 }
 
-async fn run_gossip_burst(harness: &mut TestHarness, msg_count: usize, msg_size: usize, timeout_secs: u64) -> Result<usize> {
+async fn run_gossip_burst(
+    harness: &mut TestHarness,
+    msg_count: usize,
+    msg_size: usize,
+    timeout_secs: u64,
+    warmup_msgs: usize,
+    warmup_seconds: u64,
+) -> Result<(usize, u64)> {
     let client = reqwest::Client::new();
     let node0_rpc = format!("http://127.0.0.1:{}", harness.nodes[0].rpc_port);
-    
+
+    // Warmup phase
+    if warmup_msgs > 0 {
+        info!("Warmup: publishing {} messages", warmup_msgs);
+        for i in 0..warmup_msgs {
+            let msg_id = 1_000_000 + i as u64; // Use large IDs to avoid collision if any
+            let sent_ts = chrono::Utc::now().timestamp_millis() as u64;
+            let req = serde_json::json!({
+                "topic": "ippan/test/gossip",
+                "msg_id": msg_id,
+                "sent_ts_ms": sent_ts,
+                "payload_len": msg_size as u32,
+            });
+            let _ = client.post(format!("{}/p2p/test/gossip", node0_rpc)).json(&req).send().await;
+        }
+    }
+
+    if warmup_seconds > 0 {
+        info!("Warmup: waiting {} seconds", warmup_seconds);
+        tokio::time::sleep(Duration::from_secs(warmup_seconds)).await;
+    }
+
+    let measurement_start_ts_ms = chrono::Utc::now().timestamp_millis() as u64;
+    info!("Measurement started at {}", measurement_start_ts_ms);
+
     let mut sent_count = 0;
     for i in 0..msg_count {
         let msg_id = i as u64;
@@ -611,10 +674,10 @@ async fn run_gossip_burst(harness: &mut TestHarness, msg_count: usize, msg_size:
     
     // Wait for propagation
     tokio::time::sleep(Duration::from_secs(timeout_secs)).await;
-    Ok(sent_count)
+    Ok((sent_count, measurement_start_ts_ms))
 }
 
-async fn calculate_gossip_stats(nodes: &[NodeInstance], msgs_sent: usize) -> GossipStats {
+async fn calculate_gossip_stats(nodes: &[NodeInstance], msgs_sent: usize, measurement_start_ts_ms: u64) -> GossipStats {
     let mut unique_keys = HashSet::new();
     let mut total_observed = 0;
     let mut per_node_unique = HashMap::new();
@@ -630,13 +693,16 @@ async fn calculate_gossip_stats(nodes: &[NodeInstance], msgs_sent: usize) -> Gos
             if unique_keys.insert(key) {
                 node_unique_count += 1;
                 
-                let latency = if *recv_ts >= *sent_ts {
-                    *recv_ts - *sent_ts
-                } else {
-                    negative_latency_samples += 1;
-                    0
-                };
-                latencies.push(latency);
+                // Only include in latency metrics if sent after measurement start
+                if *sent_ts >= measurement_start_ts_ms {
+                    let latency = if *recv_ts >= *sent_ts {
+                        *recv_ts - *sent_ts
+                    } else {
+                        negative_latency_samples += 1;
+                        0
+                    };
+                    latencies.push(latency);
+                }
             }
         }
         per_node_unique.insert(node_idx, node_unique_count);
@@ -672,6 +738,7 @@ async fn calculate_gossip_stats(nodes: &[NodeInstance], msgs_sent: usize) -> Gos
         latency_p50_ms: get_percentile(50.0),
         latency_p95_ms: get_percentile(95.0),
         latency_max_ms: latencies.last().copied().unwrap_or(0),
+        _measurement_start_ts_ms: measurement_start_ts_ms,
     }
 }
 
@@ -709,7 +776,7 @@ mod tests {
             }
         }
 
-        let stats = calculate_gossip_stats(&nodes, msgs_sent).await;
+        let stats = calculate_gossip_stats(&nodes, msgs_sent, 0).await;
         
         assert_eq!(stats.expected_total_receipts, 1400); // 200 * (8-1)
         assert_eq!(stats.unique_receipts, 1400);
@@ -725,7 +792,7 @@ mod tests {
             received.push((0, 1000, 1200)); // Duplicate of msg 0 on node 1
         }
         
-        let stats_with_dupes = calculate_gossip_stats(&nodes, msgs_sent).await;
+        let stats_with_dupes = calculate_gossip_stats(&nodes, msgs_sent, 0).await;
         assert_eq!(stats_with_dupes.unique_receipts, 1400);
         assert_eq!(stats_with_dupes.duplicate_receipts, 1);
         assert_eq!(stats_with_dupes.delivery_rate, 1.0);

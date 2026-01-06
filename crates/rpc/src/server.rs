@@ -166,6 +166,8 @@ pub struct AppState {
     pub dht_handle_mode: String,
     /// DLC consensus handle (if DLC mode is enabled)
     pub dlc_consensus: Option<Arc<parking_lot::RwLock<DLCConsensus>>>,
+    /// libp2p DHT service (if enabled)
+    pub ipn_dht: Option<Arc<ippan_p2p::IpnDhtService>>,
     /// Dedicated ingestion lane for `/tx/submit_batch` (semaphore + bounded queue).
     pub batch_lane: Arc<BatchLane>,
 }
@@ -1847,6 +1849,51 @@ pub async fn start_p2p_server(state: AppState, addr: &str) -> Result<()> {
     .context("P2P HTTP server terminated unexpectedly")
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TestGossipRequest {
+    pub topic: String,
+    pub msg_id: u64,
+    pub sent_ts_ms: u64,
+    pub payload_len: u32,
+}
+
+/// DEV-ONLY. NEVER ENABLE IN PRODUCTION.
+#[cfg(feature = "p2p-testkit")]
+async fn handle_test_gossip_publish(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<TestGossipRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
+    // Runtime guard: only enable if explicit env var is set
+    if std::env::var("IPPAN_ENABLE_P2P_TEST_RPC").unwrap_or_default() != "1" {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ApiError::new("security_error", "P2P test RPC is disabled. Enable with IPPAN_ENABLE_P2P_TEST_RPC=1")),
+        ));
+    }
+
+    if let Some(dht) = &state.ipn_dht {
+        let msg = serde_json::to_vec(&serde_json::json!({
+            "msg_id": request.msg_id,
+            "sent_ts_ms": request.sent_ts_ms,
+            "payload_len": request.payload_len,
+        }))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::new("serialization_error", e.to_string()))))?;
+
+        dht.publish_gossip(&request.topic, msg).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::new("p2p_error", e.to_string())),
+            )
+        })?;
+        Ok(StatusCode::OK)
+    } else {
+        Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiError::new("p2p_disabled", "Libp2p not enabled")),
+        ))
+    }
+}
+
 /// Build P2P-only router with minimal middleware
 fn build_p2p_router(state: Arc<AppState>) -> Router {
     // P2P server uses lighter middleware - allow all origins for peer communication
@@ -1858,14 +1905,21 @@ fn build_p2p_router(state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let mut router = Router::new()
         .route("/p2p/peers", get(handle_get_p2p_peers))
         .route("/p2p/blocks", post(handle_p2p_blocks))
         .route("/p2p/transactions", post(handle_p2p_transactions))
         .route("/p2p/peer-info", post(handle_p2p_peer_info))
         .route("/p2p/peer-discovery", post(handle_p2p_peer_discovery))
         .route("/p2p/block-request", post(handle_p2p_block_request))
-        .route("/p2p/block-response", post(handle_p2p_block_response))
+        .route("/p2p/block-response", post(handle_p2p_block_response));
+
+    #[cfg(feature = "p2p-testkit")]
+    {
+        router = router.route("/p2p/test/gossip", post(handle_test_gossip_publish));
+    }
+
+    router
         .layer(
             ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(handle_service_error))
@@ -1920,6 +1974,11 @@ fn build_router(state: Arc<AppState>) -> Router {
 
     if state.dev_mode {
         tx_routes = tx_routes.route("/dev/fund", post(handle_dev_fund));
+    }
+
+    #[cfg(feature = "p2p-testkit")]
+    {
+        tx_routes = tx_routes.route("/p2p/test/gossip", post(handle_test_gossip_publish));
     }
 
     // Read lane: safe to circuit-break. Importantly, keep this separate so breaker never starves /health
