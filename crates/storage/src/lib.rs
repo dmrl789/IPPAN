@@ -590,6 +590,9 @@ pub trait Storage {
     fn store_file_descriptor(&self, descriptor: FileDescriptor) -> Result<()>;
     fn get_file_descriptor(&self, id: &FileDescriptorId) -> Result<Option<FileDescriptor>>;
     fn list_file_descriptors_by_owner(&self, owner: &Address) -> Result<Vec<FileDescriptor>>;
+
+    /// List blocks with pagination (newest first).
+    fn list_blocks(&self, limit: usize, cursor: Option<Vec<u8>>) -> Result<Vec<Block>>;
 }
 
 /// Validator telemetry for AI consensus
@@ -635,6 +638,7 @@ struct MemoryStorageInner {
     latest_finalized_round: RwLock<Option<RoundId>>,
     file_descriptors: RwLock<HashMap<FileDescriptorId, FileDescriptor>>,
     files_by_owner: RwLock<HashMap<[u8; 32], Vec<FileDescriptorId>>>,
+    blocks_by_time: RwLock<BTreeMap<[u8; 48], [u8; 32]>>,
 }
 
 impl MemoryStorage {
@@ -659,6 +663,15 @@ impl Storage for MemoryStorage {
             if block.header.round > *latest_height {
                 *latest_height = block.header.round;
             }
+        }
+        {
+            let time_us = block.header.hashtimer.timestamp_us;
+            let time_u128 = if time_us < 0 { 0u128 } else { time_us as u128 };
+            let mut key = [0u8; 48];
+            key[0..16].copy_from_slice(&time_u128.to_be_bytes());
+            key[16..48].copy_from_slice(&hash);
+            let mut blocks_by_time = self.inner.blocks_by_time.write();
+            blocks_by_time.insert(key, hash);
         }
         Ok(())
     }
@@ -710,6 +723,30 @@ impl Storage for MemoryStorage {
 
     fn get_transaction_count(&self) -> Result<u64> {
         Ok(self.inner.transactions.read().len() as u64)
+    }
+
+    fn list_blocks(&self, limit: usize, cursor: Option<Vec<u8>>) -> Result<Vec<Block>> {
+        let blocks_by_time = self.inner.blocks_by_time.read();
+        let blocks = self.inner.blocks.read();
+
+        let mut items = Vec::new();
+        let iter = if let Some(cursor_bytes) = cursor {
+            let mut cursor_key = [0u8; 48];
+            if cursor_bytes.len() == 48 {
+                cursor_key.copy_from_slice(&cursor_bytes);
+            }
+            blocks_by_time.range(..cursor_key).rev()
+        } else {
+            blocks_by_time.range::<[u8; 48], _>(..).rev()
+        };
+
+        for (_, hash) in iter.take(limit) {
+            if let Some(block) = blocks.get(hash) {
+                items.push(block.clone());
+            }
+        }
+
+        Ok(items)
     }
 
     fn put_l2_network(&self, network: L2Network) -> Result<()> {
@@ -932,6 +969,8 @@ impl StorageLike for MemoryStorage {
 pub struct SledStorage {
     db: Db,
     blocks: Tree,
+    blocks_by_time: Tree,
+    blocks_by_height: Tree,
     transactions: Tree,
     accounts: Tree,
     metadata: Tree,
@@ -951,6 +990,8 @@ impl SledStorage {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         let db = sled::open(path)?;
         let blocks = db.open_tree("blocks")?;
+        let blocks_by_time = db.open_tree("blocks_by_time")?;
+        let blocks_by_height = db.open_tree("blocks_by_height")?;
         let transactions = db.open_tree("transactions")?;
         let accounts = db.open_tree("accounts")?;
         let metadata = db.open_tree("metadata")?;
@@ -977,6 +1018,8 @@ impl SledStorage {
         Ok(Self {
             db,
             blocks,
+            blocks_by_time,
+            blocks_by_height,
             transactions,
             accounts,
             metadata,
@@ -1037,6 +1080,19 @@ impl Storage for SledStorage {
             self.metadata
                 .insert(b"latest_height", &height.to_be_bytes())?;
         }
+
+        // Fast height lookup
+        self.blocks_by_height
+            .insert(height.to_be_bytes(), &hash[..])?;
+
+        // Time-ordered index for newest-first listing
+        let time_us = block.header.hashtimer.timestamp_us;
+        let time_u128 = if time_us < 0 { 0u128 } else { time_us as u128 };
+        let mut time_key = [0u8; 48];
+        time_key[0..16].copy_from_slice(&time_u128.to_be_bytes());
+        time_key[16..48].copy_from_slice(&hash);
+        self.blocks_by_time.insert(time_key, &hash[..])?;
+
         Ok(())
     }
 
@@ -1049,14 +1105,13 @@ impl Storage for SledStorage {
     }
 
     fn get_block_by_height(&self, height: u64) -> Result<Option<Block>> {
-        for item in self.blocks.iter() {
-            let (_, val) = item?;
-            let b: Block = serde_json::from_slice(&val)?;
-            if b.header.round == height {
-                return Ok(Some(b));
-            }
+        if let Some(hash_bytes) = self.blocks_by_height.get(height.to_be_bytes())? {
+            let mut hash = [0u8; 32];
+            hash.copy_from_slice(&hash_bytes);
+            self.get_block(&hash)
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 
     fn store_transaction(&self, tx: Transaction) -> Result<()> {
@@ -1120,6 +1175,25 @@ impl Storage for SledStorage {
 
     fn get_transaction_count(&self) -> Result<u64> {
         Ok(self.transactions.len() as u64)
+    }
+
+    fn list_blocks(&self, limit: usize, cursor: Option<Vec<u8>>) -> Result<Vec<Block>> {
+        let mut items = Vec::new();
+        let iter = if let Some(cursor_bytes) = cursor {
+            self.blocks_by_time.range(..cursor_bytes).rev()
+        } else {
+            self.blocks_by_time.iter().rev()
+        };
+
+        for item in iter.take(limit) {
+            let (_, hash_bytes) = item?;
+            let mut hash = [0u8; 32];
+            hash.copy_from_slice(&hash_bytes);
+            if let Some(block) = self.get_block(&hash)? {
+                items.push(block);
+            }
+        }
+        Ok(items)
     }
 
     fn put_l2_network(&self, n: L2Network) -> Result<()> {
