@@ -1,5 +1,5 @@
 use crate::Libp2pNetwork;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use blake3;
 use ippan_files::descriptor::FileDescriptor;
@@ -105,6 +105,16 @@ impl IpnDhtService {
             .await
             .context("query descriptor providers from DHT")?;
         Ok(peers.into_iter().map(|peer| peer.to_string()).collect())
+    }
+
+    /// Publish a gossip message to a specific topic (for p2p-testkit feature).
+    /// This method is used by the test RPC to publish gossip messages.
+    pub fn publish_gossip(&self, topic: &str, data: Vec<u8>) -> Result<()> {
+        let Some(network) = &self.network else {
+            return Err(anyhow!("libp2p network not available"));
+        };
+
+        network.publish(topic, data)
     }
 
     fn key_for(id: &FileId) -> Vec<u8> {

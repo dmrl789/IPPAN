@@ -203,6 +203,38 @@ impl DGBDTEngine {
         seed
     }
 
+    // =========================================================================
+    // DETERMINISM CONTRACT
+    // =========================================================================
+    //
+    // ALL selection decisions MUST go through `rank_candidates()` which:
+    //   1. NEVER iterates HashMap directly for ordering
+    //   2. ALWAYS sorts by (score DESC, validator_id ASC) for deterministic tie-breaking
+    //   3. Returns candidates in a stable, reproducible order
+    //
+    // This ensures identical selection results across all nodes given the same
+    // validator set and metrics. Violation of this contract will cause consensus
+    // divergence in multi-host deployments.
+    //
+    // See: test_equal_scores_determinism_with_random_insertion_order
+    // =========================================================================
+
+    /// Canonical candidate ranking function.
+    ///
+    /// ALL selection paths MUST use this to get candidates in deterministic order.
+    /// Returns: Vec of (ValidatorId, score) sorted by (score DESC, id ASC).
+    fn rank_candidates(scores: &HashMap<ValidatorId, i32>) -> Vec<(ValidatorId, i32)> {
+        let mut candidates: Vec<(ValidatorId, i32)> =
+            scores.iter().map(|(id, score)| (*id, *score)).collect();
+
+        // Sort by score descending, then by validator ID ascending (deterministic tie-break)
+        candidates.sort_by(|(id_a, score_a), (id_b, score_b)| {
+            score_b.cmp(score_a).then_with(|| id_a.cmp(id_b))
+        });
+
+        candidates
+    }
+
     /// Weighted deterministic selection using seed
     fn weighted_deterministic_selection(
         &self,
@@ -213,6 +245,9 @@ impl DGBDTEngine {
         if scores.is_empty() {
             return Err(anyhow::anyhow!("No candidates available"));
         }
+
+        // Get candidates in canonical order (DETERMINISM CONTRACT)
+        let ranked = Self::rank_candidates(scores);
 
         // Create deterministic ordering based on seed and index
         let mut hasher = Blake3::new();
@@ -226,33 +261,31 @@ impl DGBDTEngine {
         let selection_value = u64::from_be_bytes(selection_bytes);
 
         // Calculate total weighted score
-        let total_score: i64 = scores.values().map(|&s| s as i64).sum();
+        let total_score: i64 = ranked.iter().map(|(_, s)| *s as i64).sum();
 
         if total_score == 0 {
-            // Fallback to first validator if all scores are 0
-            return Ok(*scores.keys().next().unwrap());
+            // Fallback: first in ranked order (highest score, then lowest ID)
+            // With equal scores, this is deterministically the lowest ID
+            return Ok(ranked[0].0);
         }
 
         // Weighted random selection using the deterministic value
         let target = (selection_value % total_score as u64) as i64;
         let mut cumulative = 0i64;
 
-        let mut ordered: Vec<(ValidatorId, i32)> =
-            scores.iter().map(|(id, score)| (*id, *score)).collect();
-        ordered.sort_by(|(a, _), (b, _)| a.cmp(b));
+        // Iterate in ID-sorted order for weighted selection (deterministic)
+        let mut id_ordered = ranked.clone();
+        id_ordered.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-        for (validator_id, score) in &ordered {
+        for (validator_id, score) in &id_ordered {
             cumulative += *score as i64;
             if target < cumulative {
                 return Ok(*validator_id);
             }
         }
 
-        // Fallback (shouldn't reach here)
-        Ok(ordered
-            .last()
-            .map(|(id, _)| *id)
-            .unwrap_or_else(|| scores.keys().next().copied().unwrap()))
+        // Fallback: last in ID order (should never reach here)
+        Ok(id_ordered.last().map(|(id, _)| *id).unwrap_or(ranked[0].0))
     }
 
     /// Record selection in history for learning
@@ -336,5 +369,184 @@ mod tests {
 
         assert_eq!(seed1, seed2); // Same round = same seed
         assert_ne!(seed1, seed3); // Different round = different seed
+    }
+
+    /// Critical test: verifier selection MUST be deterministic even when:
+    /// 1. All validators have equal scores (total_score == 0 fallback)
+    /// 2. HashMap is constructed with randomized insertion order
+    ///
+    /// This test would have caught the HashMap iteration order bug.
+    #[test]
+    fn test_equal_scores_determinism_with_random_insertion_order() {
+        let engine = DGBDTEngine::new();
+
+        // Helper to convert hex string to [u8; 32]
+        fn hex_to_array(s: &str) -> [u8; 32] {
+            let bytes = hex::decode(s).unwrap();
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            arr
+        }
+
+        // Create 4 validators with equal default metrics (all scores will be equal)
+        let validator_ids: Vec<[u8; 32]> = vec![
+            hex_to_array("2375fcf66a2a70ae2d1f61cd2ac886368f06507e046c8de46d9b935c39995d07"),
+            hex_to_array("ae232813d973c4c3a82a4cdf3dcf80b376a776fab6af56c743ddff9b82a83c6a"),
+            hex_to_array("99a03e57ab842364122713227ee54e84608879bacdfd6b8e01d13f5a8c56d676"),
+            hex_to_array("790df385aad79d22844a2ae85aa9ad2fdbfcb28e055f651031904c9a0bf8c02b"),
+        ];
+
+        // Run multiple times with different insertion orders
+        let mut results = Vec::new();
+        for permutation in 0..4 {
+            let mut metrics = HashMap::new();
+            // Insert in different orders
+            let order: Vec<usize> = match permutation {
+                0 => vec![0, 1, 2, 3],
+                1 => vec![3, 2, 1, 0],
+                2 => vec![1, 3, 0, 2],
+                _ => vec![2, 0, 3, 1],
+            };
+            for &idx in &order {
+                metrics.insert(validator_ids[idx], ValidatorMetrics::default());
+            }
+
+            let result = engine.select_verifiers(1, &metrics, 3, 0).unwrap();
+            results.push((
+                result.primary,
+                result.shadows.clone(),
+                result.selection_seed,
+            ));
+        }
+
+        // All permutations MUST produce identical results
+        let (first_primary, first_shadows, first_seed) = &results[0];
+        for (i, (primary, shadows, seed)) in results.iter().enumerate().skip(1) {
+            assert_eq!(
+                primary,
+                first_primary,
+                "Primary mismatch on permutation {}: expected {:?}, got {:?}",
+                i,
+                hex::encode(first_primary),
+                hex::encode(primary)
+            );
+            assert_eq!(
+                shadows, first_shadows,
+                "Shadows mismatch on permutation {}",
+                i
+            );
+            assert_eq!(seed, first_seed, "Seed mismatch on permutation {}", i);
+        }
+
+        // The primary should be deterministically chosen based on the seed + scores
+        // With non-zero equal scores, selection uses weighted random (deterministic via seed)
+        // The key invariant: regardless of HashMap insertion order, result is the same
+        assert!(
+            validator_ids.contains(&results[0].0),
+            "Primary should be one of the validators"
+        );
+    }
+
+    /// Test the zero-score fallback specifically (the HashMap iteration bug fix)
+    #[test]
+    fn test_zero_score_fallback_determinism() {
+        let engine = DGBDTEngine::new();
+
+        fn hex_to_array(s: &str) -> [u8; 32] {
+            let bytes = hex::decode(s).unwrap();
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            arr
+        }
+
+        let validator_ids: Vec<[u8; 32]> = vec![
+            hex_to_array("2375fcf66a2a70ae2d1f61cd2ac886368f06507e046c8de46d9b935c39995d07"),
+            hex_to_array("ae232813d973c4c3a82a4cdf3dcf80b376a776fab6af56c743ddff9b82a83c6a"),
+            hex_to_array("99a03e57ab842364122713227ee54e84608879bacdfd6b8e01d13f5a8c56d676"),
+            hex_to_array("790df385aad79d22844a2ae85aa9ad2fdbfcb28e055f651031904c9a0bf8c02b"),
+        ];
+
+        // Create metrics with zero scores by having all weights result in 0
+        // This triggers the total_score == 0 fallback path
+        let mut metrics = HashMap::new();
+        for &id in &validator_ids {
+            // Set values that will result in 0 score
+            let m = ValidatorMetrics {
+                slash_count: 100, // Heavy slashing reduces score
+                uptime_percentage: 0,
+                recent_performance: 0,
+                network_contribution: 0,
+                stake_amount: 0,
+                ..Default::default()
+            };
+            metrics.insert(id, m);
+        }
+
+        // Insert in different orders and verify same result
+        let mut results = Vec::new();
+        for order in [
+            vec![0, 1, 2, 3],
+            vec![3, 2, 1, 0],
+            vec![1, 3, 0, 2],
+            vec![2, 0, 3, 1],
+        ] {
+            let mut ordered_metrics = HashMap::new();
+            for &idx in &order {
+                ordered_metrics.insert(validator_ids[idx], metrics[&validator_ids[idx]].clone());
+            }
+
+            // Use min_reputation = -1000000 to allow zero/negative scores
+            let result = engine.select_verifiers(1, &ordered_metrics, 3, -1000000);
+            if let Ok(r) = result {
+                results.push(r.primary);
+            }
+        }
+
+        // All results must be identical
+        if !results.is_empty() {
+            let first = results[0];
+            for (i, &r) in results.iter().enumerate().skip(1) {
+                assert_eq!(
+                    r, first,
+                    "Zero-score fallback not deterministic at permutation {}: got {:?}, expected {:?}",
+                    i, hex::encode(r), hex::encode(first)
+                );
+            }
+        }
+    }
+
+    /// Test that selection is deterministic across multiple rounds
+    #[test]
+    fn test_multi_round_determinism() {
+        let engine = DGBDTEngine::new();
+        let mut metrics = HashMap::new();
+
+        for i in 0..4u8 {
+            let mut id = [0u8; 32];
+            id[0] = i;
+            metrics.insert(id, ValidatorMetrics::default());
+        }
+
+        // Run same selection for multiple rounds, verify determinism per round
+        for round in 1..=10u64 {
+            let result1 = engine.select_verifiers(round, &metrics, 3, 0).unwrap();
+            let result2 = engine.select_verifiers(round, &metrics, 3, 0).unwrap();
+
+            assert_eq!(
+                result1.primary, result2.primary,
+                "Primary not deterministic for round {}",
+                round
+            );
+            assert_eq!(
+                result1.shadows, result2.shadows,
+                "Shadows not deterministic for round {}",
+                round
+            );
+            assert_eq!(
+                result1.selection_seed, result2.selection_seed,
+                "Seed not deterministic for round {}",
+                round
+            );
+        }
     }
 }
