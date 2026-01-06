@@ -98,7 +98,7 @@ impl NodeStorageMode {
         if value.starts_with("pruned") {
             // Accept: "pruned", "pruned:1000", "pruned=1000"
             let keep = value
-                .split(|c| c == ':' || c == '=')
+                .split([':', '='])
                 .nth(1)
                 .and_then(|v| v.trim().parse::<u64>().ok())
                 .or_else(|| {
@@ -1554,6 +1554,7 @@ async fn main() -> Result<()> {
         handle_dht: Some(handle_dht.clone()),
         dht_handle_mode: config.handle_dht_mode.to_string(),
         dlc_consensus: dlc_handle,
+        ipn_dht: ipn_dht_backend.clone(),
         batch_lane: BatchLane::from_env(),
     };
 
