@@ -1,0 +1,44 @@
+name: P2P Testkit
+
+on:
+  push:
+    branches: [ main, p2p/test-harness ]
+  pull_request:
+    branches: [ main, p2p/test-harness ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Production
+        run: cargo build --workspace
+
+      - name: Build Testkit
+        run: cargo build -p p2p-testkit --features p2p-testkit
+
+      - name: Run Testkit Unit Tests
+        run: cargo test -p p2p-testkit
+
+      - name: Build Node with Features
+        run: cargo build -p ippan-node --features p2p-testkit
+
+      - name: Run Smoke Test
+        run: |
+          export IPPAN_NODE_CMD="./target/debug/ippan-node"
+          cargo run -p p2p-testkit --features p2p-testkit -- smoke --nodes 3
+        timeout-minutes: 5
+
+      - name: Upload Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2p-test-artifacts
+          path: artifacts/p2p/
