@@ -902,7 +902,7 @@ mod tests {
         let msgs_sent = 200;
 
         let mut nodes = Vec::new();
-        for i in 0..node_count {
+        for _i in 0..node_count {
             nodes.push(NodeInstance {
                 process: None,
                 _data_dir: PathBuf::new(),
