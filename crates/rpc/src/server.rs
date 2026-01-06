@@ -5232,6 +5232,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            ipn_dht: None,
             batch_lane: BatchLane::from_env(),
         });
 
@@ -5374,6 +5375,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            ipn_dht: None,
             batch_lane: BatchLane::from_env(),
         })
     }
@@ -8089,6 +8091,7 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
+            ipn_dht: None,
             batch_lane: BatchLane::from_env(),
         });
 

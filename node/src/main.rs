@@ -98,7 +98,7 @@ impl NodeStorageMode {
         if value.starts_with("pruned") {
             // Accept: "pruned", "pruned:1000", "pruned=1000"
             let keep = value
-                .split(|c| c == ':' || c == '=')
+                .split([':', '='])
                 .nth(1)
                 .and_then(|v| v.trim().parse::<u64>().ok())
                 .or_else(|| {
