@@ -8506,6 +8506,7 @@ mod tests {
             rpc_allowed_origins: vec![],
             handle_registry,
             handle_anchors,
+            ipn_dht: None,
             batch_lane,
         });
 
@@ -8613,6 +8614,7 @@ mod tests {
             rpc_allowed_origins: vec![],
             handle_registry,
             handle_anchors,
+            ipn_dht: None,
             batch_lane,
         });
 
