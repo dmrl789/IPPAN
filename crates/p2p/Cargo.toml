@@ -7,6 +7,7 @@ authors.workspace = true
 
 [features]
 integration-tests = []
+p2p-testkit = []
 
 [dependencies]
 ippan-types = { path = "../types" }

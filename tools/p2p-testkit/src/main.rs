@@ -1,16 +1,16 @@
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
-use std::time::{Duration, Instant};
-use rand::{Rng, SeedableRng, rngs::StdRng};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -121,7 +121,6 @@ struct Summary {
 }
 
 struct NodeInstance {
-    id: usize,
     process: Option<Child>,
     _data_dir: PathBuf,
     p2p_port: u16,
@@ -168,7 +167,13 @@ impl TestHarness {
         })
     }
 
-    async fn spawn_node(&mut self, id: usize, bootstrap_addr: Option<String>, extra_args: Vec<String>, extra_env: HashMap<String, String>) -> Result<()> {
+    async fn spawn_node(
+        &mut self,
+        id: usize,
+        bootstrap_addr: Option<String>,
+        extra_args: Vec<String>,
+        extra_env: HashMap<String, String>,
+    ) -> Result<()> {
         let data_dir = self.artifacts_path.join(format!("node{}", id));
         std::fs::create_dir_all(&data_dir)?;
 
@@ -207,18 +212,26 @@ impl TestHarness {
         for arg in extra_args {
             cmd.arg(arg);
         }
-        
+
         cmd.envs(extra_env);
 
         if let Some(addr) = bootstrap_addr {
             cmd.env("IPPAN_BOOTSTRAP_NODES", addr);
         }
-        
+
         let identity_key_path = data_dir.join("p2p_identity.key");
-        cmd.env("IPPAN_P2P_IDENTITY_KEY_PATH", identity_key_path.to_str().unwrap());
+        cmd.env(
+            "IPPAN_P2P_IDENTITY_KEY_PATH",
+            identity_key_path.to_str().unwrap(),
+        );
         cmd.env("IPPAN_ENABLE_P2P_TEST_RPC", "1");
 
-        println!("Spawning node {}: {} {:?}", id, program, cmd.as_std().get_args().collect::<Vec<_>>());
+        println!(
+            "Spawning node {}: {} {:?}",
+            id,
+            program,
+            cmd.as_std().get_args().collect::<Vec<_>>()
+        );
 
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
@@ -243,9 +256,11 @@ impl TestHarness {
             let mut reader = BufReader::new(stdout);
             let mut line = String::new();
             while let Ok(n) = reader.read_line(&mut line).await {
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 let _ = std::io::Write::write_all(&mut log_file, line.as_bytes());
-                
+
                 // Strip ANSI escape codes for easier parsing
                 let clean_line = strip_ansi_codes(&line);
 
@@ -259,21 +274,34 @@ impl TestHarness {
                 if clean_line.contains("peer_connected ") {
                     let re = regex::Regex::new(r"peer_connected (\S+)").unwrap();
                     if let Some(caps) = re.captures(&clean_line) {
-                        connected_peers_clone.lock().await.insert(caps[1].to_string());
+                        connected_peers_clone
+                            .lock()
+                            .await
+                            .insert(caps[1].to_string());
                     }
                 }
                 if clean_line.contains("peer_disconnected ") {
                     let re = regex::Regex::new(r"peer_disconnected (\S+)").unwrap();
                     if let Some(caps) = re.captures(&clean_line) {
-                        connected_peers_clone.lock().await.remove(&caps[1].to_string());
+                        connected_peers_clone
+                            .lock()
+                            .await
+                            .remove(&caps[1].to_string());
                     }
                 }
                 if clean_line.contains("gossip_received ippan/test/gossip") {
-                    let re = regex::Regex::new(r"gossip_received ippan/test/gossip (\d+) (\S+) (\d+)").unwrap();
+                    let re =
+                        regex::Regex::new(r"gossip_received ippan/test/gossip (\d+) (\S+) (\d+)")
+                            .unwrap();
                     if let Some(caps) = re.captures(&clean_line) {
-                        if let (Ok(msg_id), Ok(sent_ts)) = (caps[1].parse::<u64>(), caps[3].parse::<u64>()) {
+                        if let (Ok(msg_id), Ok(sent_ts)) =
+                            (caps[1].parse::<u64>(), caps[3].parse::<u64>())
+                        {
                             let recv_ts = chrono::Utc::now().timestamp_millis() as u64;
-                            gossip_received_clone.lock().await.push((msg_id, sent_ts, recv_ts));
+                            gossip_received_clone
+                                .lock()
+                                .await
+                                .push((msg_id, sent_ts, recv_ts));
                         }
                     }
                 }
@@ -281,19 +309,22 @@ impl TestHarness {
             }
         });
 
-        let mut log_file_err = std::fs::OpenOptions::new().append(true).open(self.artifacts_path.join(format!("node{}.log", id)))?;
+        let mut log_file_err = std::fs::OpenOptions::new()
+            .append(true)
+            .open(self.artifacts_path.join(format!("node{}.log", id)))?;
         tokio::spawn(async move {
             let mut reader = BufReader::new(stderr);
             let mut line = String::new();
             while let Ok(n) = reader.read_line(&mut line).await {
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 let _ = std::io::Write::write_all(&mut log_file_err, line.as_bytes());
                 line.clear();
             }
         });
 
         let node = NodeInstance {
-            id,
             process: Some(child),
             _data_dir: data_dir,
             p2p_port,
@@ -341,11 +372,45 @@ async fn main() -> Result<()> {
 
     let res = match cli.command {
         Commands::Smoke { nodes } => run_smoke(&mut harness, nodes).await,
-        Commands::Gossip { nodes, msgs, size, warmup_msgs, warmup_seconds } => 
-            run_gossip(&mut harness, nodes, msgs, size, warmup_msgs, warmup_seconds).await,
-        Commands::Churn { nodes, churn_pct, minutes } => run_churn(&mut harness, nodes, churn_pct, minutes).await,
-        Commands::Chaos { nodes, loss, latency_ms, jitter_ms, minutes, msgs, size, min_delivery_rate, warmup_msgs, warmup_seconds } => 
-            run_chaos(&mut harness, nodes, loss, latency_ms, jitter_ms, minutes, msgs, size, min_delivery_rate, warmup_msgs, warmup_seconds).await,
+        Commands::Gossip {
+            nodes,
+            msgs,
+            size,
+            warmup_msgs,
+            warmup_seconds,
+        } => run_gossip(&mut harness, nodes, msgs, size, warmup_msgs, warmup_seconds).await,
+        Commands::Churn {
+            nodes,
+            churn_pct,
+            minutes,
+        } => run_churn(&mut harness, nodes, churn_pct, minutes).await,
+        Commands::Chaos {
+            nodes,
+            loss,
+            latency_ms,
+            jitter_ms,
+            minutes,
+            msgs,
+            size,
+            min_delivery_rate,
+            warmup_msgs,
+            warmup_seconds,
+        } => {
+            run_chaos(
+                &mut harness,
+                nodes,
+                loss,
+                latency_ms,
+                jitter_ms,
+                minutes,
+                msgs,
+                size,
+                min_delivery_rate,
+                warmup_msgs,
+                warmup_seconds,
+            )
+            .await
+        }
     };
 
     harness.stop_all();
@@ -367,7 +432,9 @@ async fn run_smoke(harness: &mut TestHarness, node_count: usize) -> Result<()> {
     let bootstrap_addr = format!("http://127.0.0.1:{}", bootstrap_port);
 
     for i in 1..node_count {
-        harness.spawn_node(i, Some(bootstrap_addr.clone()), vec![], HashMap::new()).await?;
+        harness
+            .spawn_node(i, Some(bootstrap_addr.clone()), vec![], HashMap::new())
+            .await?;
     }
 
     let start = Instant::now();
@@ -393,7 +460,9 @@ async fn run_smoke(harness: &mut TestHarness, node_count: usize) -> Result<()> {
 
     summary.pass = passed;
     if !passed {
-        summary.errors.push("Not all nodes connected to at least one peer within timeout".to_string());
+        summary
+            .errors
+            .push("Not all nodes connected to at least one peer within timeout".to_string());
     }
 
     harness.write_summary(summary).await?;
@@ -414,8 +483,10 @@ async fn run_gossip(
     warmup_msgs: usize,
     warmup_seconds: u64,
 ) -> Result<()> {
-    info!("Starting GOSSIP test: nodes={}, msgs={}, size={}, warmup_msgs={}, warmup_secs={}", 
-        node_count, msg_count, msg_size, warmup_msgs, warmup_seconds);
+    info!(
+        "Starting GOSSIP test: nodes={}, msgs={}, size={}, warmup_msgs={}, warmup_secs={}",
+        node_count, msg_count, msg_size, warmup_msgs, warmup_seconds
+    );
     let mut summary = Summary {
         scenario: "gossip".to_string(),
         nodes: node_count,
@@ -423,20 +494,30 @@ async fn run_gossip(
         warmup_seconds: Some(warmup_seconds),
         ..Default::default()
     };
-    
+
     harness.spawn_node(0, None, vec![], HashMap::new()).await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
     let bootstrap_addr = format!("http://127.0.0.1:{}", harness.nodes[0].p2p_port);
     for i in 1..node_count {
-        harness.spawn_node(i, Some(bootstrap_addr.clone()), vec![], HashMap::new()).await?;
+        harness
+            .spawn_node(i, Some(bootstrap_addr.clone()), vec![], HashMap::new())
+            .await?;
     }
-    
+
     // Wait for mesh readiness
     tokio::time::sleep(Duration::from_secs(15)).await;
-    
-    let (sent_count, measurement_start_ts_ms) = run_gossip_burst(harness, msg_count, msg_size, 10, warmup_msgs, warmup_seconds).await?;
+
+    let (sent_count, measurement_start_ts_ms) = run_gossip_burst(
+        harness,
+        msg_count,
+        msg_size,
+        10,
+        warmup_msgs,
+        warmup_seconds,
+    )
+    .await?;
     let stats = calculate_gossip_stats(&harness.nodes, sent_count, measurement_start_ts_ms).await;
-    
+
     summary.msgs_sent = Some(sent_count);
     summary.measurement_start_ts_ms = Some(measurement_start_ts_ms);
     summary.expected_total_receipts = Some(stats.expected_total_receipts);
@@ -445,7 +526,7 @@ async fn run_gossip(
     summary.per_node_unique_receipts = Some(stats.per_node_unique_receipts);
     summary.delivery_rate = Some(stats.delivery_rate);
     summary.expected_formula = Some("msgs_sent * (nodes - 1)".to_string());
-    
+
     summary.latency_samples = Some(stats.latency_samples);
     summary.negative_latency_samples = Some(stats.negative_latency_samples);
     summary.latency_p50_ms = Some(stats.latency_p50_ms);
@@ -456,18 +537,32 @@ async fn run_gossip(
     let pass = summary.pass;
     let delivery_rate = stats.delivery_rate;
     harness.write_summary(summary).await?;
-    
+
     if pass {
-        info!("GOSSIP test PASSED (delivery_rate={:.2}%)", delivery_rate * 100.0);
+        info!(
+            "GOSSIP test PASSED (delivery_rate={:.2}%)",
+            delivery_rate * 100.0
+        );
         Ok(())
     } else {
-        warn!("GOSSIP test FAILED (delivery_rate={:.2}%)", delivery_rate * 100.0);
+        warn!(
+            "GOSSIP test FAILED (delivery_rate={:.2}%)",
+            delivery_rate * 100.0
+        );
         Err(anyhow!("GOSSIP test failed"))
     }
 }
 
-async fn run_churn(harness: &mut TestHarness, node_count: usize, churn_pct: usize, minutes: u64) -> Result<()> {
-    info!("Starting CHURN test: nodes={}, churn={}%, minutes={}", node_count, churn_pct, minutes);
+async fn run_churn(
+    harness: &mut TestHarness,
+    node_count: usize,
+    churn_pct: usize,
+    minutes: u64,
+) -> Result<()> {
+    info!(
+        "Starting CHURN test: nodes={}, churn={}%, minutes={}",
+        node_count, churn_pct, minutes
+    );
     let seed = rand::thread_rng().gen::<u64>();
     let mut rng = StdRng::seed_base(seed);
     let mut summary = Summary {
@@ -476,17 +571,19 @@ async fn run_churn(harness: &mut TestHarness, node_count: usize, churn_pct: usiz
         seed: Some(seed),
         ..Default::default()
     };
-    
+
     harness.spawn_node(0, None, vec![], HashMap::new()).await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
     let bootstrap_addr = format!("http://127.0.0.1:{}", harness.nodes[0].p2p_port);
     for i in 1..node_count {
-        harness.spawn_node(i, Some(bootstrap_addr.clone()), vec![], HashMap::new()).await?;
+        harness
+            .spawn_node(i, Some(bootstrap_addr.clone()), vec![], HashMap::new())
+            .await?;
     }
-    
+
     let end_time = Instant::now() + Duration::from_secs(minutes * 60);
     let mut churn_events = 0;
-    
+
     while Instant::now() < end_time {
         // Randomly kill/restart a node (not node0)
         let idx = rng.gen_range(1..node_count);
@@ -498,24 +595,28 @@ async fn run_churn(harness: &mut TestHarness, node_count: usize, churn_pct: usiz
             }
         } else {
             info!("Churn: restarting node {}", idx);
-            harness.spawn_node(idx, Some(bootstrap_addr.clone()), vec![], HashMap::new()).await?;
+            harness
+                .spawn_node(idx, Some(bootstrap_addr.clone()), vec![], HashMap::new())
+                .await?;
             churn_events += 1;
         }
         tokio::time::sleep(Duration::from_secs(10)).await;
     }
-    
-    summary.metrics.insert("churn_events".to_string(), serde_json::json!(churn_events));
+
+    summary
+        .metrics
+        .insert("churn_events".to_string(), serde_json::json!(churn_events));
     summary.pass = true; // Churn test passes if no deadlock/crash (best effort)
     harness.write_summary(summary).await?;
     Ok(())
 }
 
 async fn run_chaos(
-    harness: &mut TestHarness, 
-    node_count: usize, 
-    loss: usize, 
-    latency: u64, 
-    jitter: u64, 
+    harness: &mut TestHarness,
+    node_count: usize,
+    loss: usize,
+    latency: u64,
+    jitter: u64,
     _minutes: u64,
     msgs: usize,
     size: usize,
@@ -532,29 +633,52 @@ async fn run_chaos(
         warmup_seconds: Some(warmup_seconds),
         ..Default::default()
     };
-    
-    summary.metrics.insert("loss_pct".to_string(), serde_json::json!(loss));
-    summary.metrics.insert("latency_ms".to_string(), serde_json::json!(latency));
-    summary.metrics.insert("jitter_ms".to_string(), serde_json::json!(jitter));
+
+    summary
+        .metrics
+        .insert("loss_pct".to_string(), serde_json::json!(loss));
+    summary
+        .metrics
+        .insert("latency_ms".to_string(), serde_json::json!(latency));
+    summary
+        .metrics
+        .insert("jitter_ms".to_string(), serde_json::json!(jitter));
 
     // IPPAN chaos environment variables
     let mut chaos_env = HashMap::new();
-    chaos_env.insert("IPPAN_CHAOS_DROP_OUTBOUND_PROB".to_string(), (loss * 100).to_string());
-    chaos_env.insert("IPPAN_CHAOS_DROP_INBOUND_PROB".to_string(), (loss * 100).to_string());
-    chaos_env.insert("IPPAN_CHAOS_EXTRA_LATENCY_MS_MIN".to_string(), latency.to_string());
-    chaos_env.insert("IPPAN_CHAOS_EXTRA_LATENCY_MS_MAX".to_string(), (latency + jitter).to_string());
-    
-    harness.spawn_node(0, None, vec![], chaos_env.clone()).await?;
+    chaos_env.insert(
+        "IPPAN_CHAOS_DROP_OUTBOUND_PROB".to_string(),
+        (loss * 100).to_string(),
+    );
+    chaos_env.insert(
+        "IPPAN_CHAOS_DROP_INBOUND_PROB".to_string(),
+        (loss * 100).to_string(),
+    );
+    chaos_env.insert(
+        "IPPAN_CHAOS_EXTRA_LATENCY_MS_MIN".to_string(),
+        latency.to_string(),
+    );
+    chaos_env.insert(
+        "IPPAN_CHAOS_EXTRA_LATENCY_MS_MAX".to_string(),
+        (latency + jitter).to_string(),
+    );
+
+    harness
+        .spawn_node(0, None, vec![], chaos_env.clone())
+        .await?;
     tokio::time::sleep(Duration::from_secs(5)).await;
     let bootstrap_addr = format!("http://127.0.0.1:{}", harness.nodes[0].p2p_port);
     for i in 1..node_count {
-        harness.spawn_node(i, Some(bootstrap_addr.clone()), vec![], chaos_env.clone()).await?;
+        harness
+            .spawn_node(i, Some(bootstrap_addr.clone()), vec![], chaos_env.clone())
+            .await?;
     }
-    
+
     // Wait for mesh readiness
     tokio::time::sleep(Duration::from_secs(20)).await;
-    
-    let (sent_count, measurement_start_ts_ms) = run_gossip_burst(harness, msgs, size, 15, warmup_msgs, warmup_seconds).await?;
+
+    let (sent_count, measurement_start_ts_ms) =
+        run_gossip_burst(harness, msgs, size, 15, warmup_msgs, warmup_seconds).await?;
     let stats = calculate_gossip_stats(&harness.nodes, sent_count, measurement_start_ts_ms).await;
 
     summary.msgs_sent = Some(sent_count);
@@ -565,7 +689,7 @@ async fn run_chaos(
     summary.per_node_unique_receipts = Some(stats.per_node_unique_receipts);
     summary.delivery_rate = Some(stats.delivery_rate);
     summary.expected_formula = Some("msgs_sent * (nodes - 1)".to_string());
-    
+
     summary.latency_samples = Some(stats.latency_samples);
     summary.negative_latency_samples = Some(stats.negative_latency_samples);
     summary.latency_p50_ms = Some(stats.latency_p50_ms);
@@ -576,12 +700,18 @@ async fn run_chaos(
     let pass = summary.pass;
     let delivery_rate = stats.delivery_rate;
     harness.write_summary(summary).await?;
-    
+
     if pass {
-        info!("CHAOS test PASSED (delivery_rate={:.2}%)", delivery_rate * 100.0);
+        info!(
+            "CHAOS test PASSED (delivery_rate={:.2}%)",
+            delivery_rate * 100.0
+        );
         Ok(())
     } else {
-        warn!("CHAOS test FAILED (delivery_rate={:.2}%)", delivery_rate * 100.0);
+        warn!(
+            "CHAOS test FAILED (delivery_rate={:.2}%)",
+            delivery_rate * 100.0
+        );
         Err(anyhow!("CHAOS test failed"))
     }
 }
@@ -640,7 +770,11 @@ async fn run_gossip_burst(
                 "sent_ts_ms": sent_ts,
                 "payload_len": msg_size as u32,
             });
-            let _ = client.post(format!("{}/p2p/test/gossip", node0_rpc)).json(&req).send().await;
+            let _ = client
+                .post(format!("{}/p2p/test/gossip", node0_rpc))
+                .json(&req)
+                .send()
+                .await;
         }
     }
 
@@ -656,28 +790,38 @@ async fn run_gossip_burst(
     for i in 0..msg_count {
         let msg_id = i as u64;
         let sent_ts = chrono::Utc::now().timestamp_millis() as u64;
-        
+
         let req = serde_json::json!({
             "topic": "ippan/test/gossip",
             "msg_id": msg_id,
             "sent_ts_ms": sent_ts,
             "payload_len": msg_size as u32,
         });
-        
-        if client.post(format!("{}/p2p/test/gossip", node0_rpc)).json(&req).send().await.is_ok() {
+
+        if client
+            .post(format!("{}/p2p/test/gossip", node0_rpc))
+            .json(&req)
+            .send()
+            .await
+            .is_ok()
+        {
             sent_count += 1;
         }
         if i % 10 == 0 {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
-    
+
     // Wait for propagation
     tokio::time::sleep(Duration::from_secs(timeout_secs)).await;
     Ok((sent_count, measurement_start_ts_ms))
 }
 
-async fn calculate_gossip_stats(nodes: &[NodeInstance], msgs_sent: usize, measurement_start_ts_ms: u64) -> GossipStats {
+async fn calculate_gossip_stats(
+    nodes: &[NodeInstance],
+    msgs_sent: usize,
+    measurement_start_ts_ms: u64,
+) -> GossipStats {
     let mut unique_keys = HashSet::new();
     let mut total_observed = 0;
     let mut per_node_unique = HashMap::new();
@@ -692,7 +836,7 @@ async fn calculate_gossip_stats(nodes: &[NodeInstance], msgs_sent: usize, measur
             let key = (node_idx, *msg_id);
             if unique_keys.insert(key) {
                 node_unique_count += 1;
-                
+
                 // Only include in latency metrics if sent after measurement start
                 if *sent_ts >= measurement_start_ts_ms {
                     let latency = if *recv_ts >= *sent_ts {
@@ -718,12 +862,18 @@ async fn calculate_gossip_stats(nodes: &[NodeInstance], msgs_sent: usize, measur
 
     latencies.sort_unstable();
     let latency_samples = latencies.len();
-    
+
     let get_percentile = |p: f64| {
-        if latencies.is_empty() { return 0; }
+        if latencies.is_empty() {
+            return 0;
+        }
         let idx = ((p / 100.0) * (latencies.len() as f64)).ceil() as usize;
-        if idx == 0 { return latencies[0]; }
-        if idx >= latencies.len() { return latencies[latencies.len() - 1]; }
+        if idx == 0 {
+            return latencies[0];
+        }
+        if idx >= latencies.len() {
+            return latencies[latencies.len() - 1];
+        }
         latencies[idx - 1]
     };
 
@@ -750,11 +900,10 @@ mod tests {
     async fn test_gossip_stats_calculation() {
         let node_count = 8;
         let msgs_sent = 200;
-        
+
         let mut nodes = Vec::new();
         for i in 0..node_count {
             nodes.push(NodeInstance {
-                id: i,
                 process: None,
                 _data_dir: PathBuf::new(),
                 p2p_port: 0,
@@ -777,7 +926,7 @@ mod tests {
         }
 
         let stats = calculate_gossip_stats(&nodes, msgs_sent, 0).await;
-        
+
         assert_eq!(stats.expected_total_receipts, 1400); // 200 * (8-1)
         assert_eq!(stats.unique_receipts, 1400);
         assert_eq!(stats.duplicate_receipts, 0);
@@ -791,7 +940,7 @@ mod tests {
             let mut received = nodes[1].gossip_received.lock().await;
             received.push((0, 1000, 1200)); // Duplicate of msg 0 on node 1
         }
-        
+
         let stats_with_dupes = calculate_gossip_stats(&nodes, msgs_sent, 0).await;
         assert_eq!(stats_with_dupes.unique_receipts, 1400);
         assert_eq!(stats_with_dupes.duplicate_receipts, 1);
