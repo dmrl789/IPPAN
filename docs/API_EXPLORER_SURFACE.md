@@ -133,6 +133,35 @@ rolling out client changes.
 * **Response:** Same `PaymentView` objects as `recent_payments`, sorted by
   timestamp descending.
 
+### `GET /blocks`
+
+* **Query parameters:**
+  * `limit` (optional, default 50, clamp 1..200).
+  * `cursor` (optional, opaque string for pagination).
+* **Response:**
+  * `items` – array of `BlockSummary` objects.
+    * `hash` (hex), `height`, `ippan_time` (µs), `tx_count`, `size_bytes`, `producer` (hex), `parents` (hex array).
+  * `next_cursor` – opaque string to resume listing (strictly before the last item).
+* **Ordering:** Newest → Oldest.
+* **Example:**
+
+```json
+{
+  "items": [
+    {
+      "hash": "4e8c…",
+      "height": 128,
+      "ippan_time": 1731000123456,
+      "tx_count": 12,
+      "size_bytes": 4096,
+      "producer": "06bb…",
+      "parents": ["4a10…", "3ff2…"]
+    }
+  ],
+  "next_cursor": "..."
+}
+```
+
 ### `GET /handle/{handle}`
 
 * **Path parameter:** canonical handle (accepts with/without `@` prefix).
