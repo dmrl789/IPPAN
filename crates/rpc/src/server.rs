@@ -1917,6 +1917,7 @@ fn build_p2p_router(state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    #[allow(unused_mut)]
     let mut router = Router::new()
         .route("/p2p/peers", get(handle_get_p2p_peers))
         .route("/p2p/blocks", post(handle_p2p_blocks))
@@ -2900,10 +2901,10 @@ async fn handle_submit_tx(
             });
 
             record_security_success(&state, &addr, "/tx").await;
-            return Err((
+            Err((
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(ApiError::rejected(code, reason, tx_id)),
-            ));
+            ))
         }
         AdmissionResult::Accepted { tx_id, .. } => {
             let first_seen_us = ippan_time_now();
@@ -2995,10 +2996,10 @@ async fn handle_tx_submit(
             });
 
             record_security_success(&state, &addr, ENDPOINT).await;
-            return Err((
+            Err((
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(ApiError::rejected(code, reason, tx_id)),
-            ));
+            ))
         }
         AdmissionResult::Accepted {
             tx_id,
