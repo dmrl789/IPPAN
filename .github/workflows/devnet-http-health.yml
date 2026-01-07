@@ -17,7 +17,10 @@ jobs:
           set -euo pipefail
           ips=(5.223.51.238 188.245.97.41 135.181.145.174 178.156.219.107)
           port=8080
-          expected_peers=4
+          # /peers may include more than just the 4 devnet nodes (e.g. multiple
+          # ports per node, historical peers, etc.). Enforce a minimum size and
+          # require that all expected devnet node IPs appear.
+          expected_min_peers=4
           max_dataset_age_seconds=$((8*60*60))
           curl_opts=(--fail --silent --show-error --connect-timeout 3 --max-time 5 --retry 3 --retry-delay 1 --retry-all-errors)
           build_shas=()
@@ -67,11 +70,29 @@ jobs:
 
             peers_json="$(curl "${curl_opts[@]}" "http://${ip}:${port}/peers")"
             peers_len="$(jq -er 'length' <<<"$peers_json")"
-            if [[ "$peers_len" -ne "$expected_peers" ]]; then
-              echo "FAIL: peers_len != ${expected_peers} (got: $peers_len)"
+            if (( peers_len < expected_min_peers )); then
+              echo "FAIL: peers_len < ${expected_min_peers} (got: $peers_len)"
               echo "peers_json=${peers_json}"
               exit 1
             fi
+
+            for expected_ip in "${ips[@]}"; do
+              # Some implementations include "self" entries in /peers, others do not.
+              # Only require that the node sees the *other* expected devnet nodes.
+              if [[ "$expected_ip" == "$ip" ]]; then
+                continue
+              fi
+              if ! jq -e --arg ip "$expected_ip" 'map(capture("http://(?<host>[^:/]+)") | .host) | index($ip) != null' <<<"$peers_json" >/dev/null; then
+                echo "FAIL: expected devnet peer IP missing from /peers: missing=${expected_ip}"
+                peers_hosts="$(
+                  jq -r '.[] | capture("http://(?<host>[^:/]+)") | .host' <<<"$peers_json" \
+                    | sort -u
+                )"
+                echo "peers_hosts=${peers_hosts}"
+                echo "peers_json=${peers_json}"
+                exit 1
+              fi
+            done
 
             time_json="$(curl "${curl_opts[@]}" "http://${ip}:${port}/time")"
             time_us="$(jq -er '.time_us' <<<"$time_json")"

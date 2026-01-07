@@ -8,6 +8,7 @@ authors.workspace = true
 [features]
 integration-tests = []
 production = []
+p2p-testkit = ["ippan-p2p/p2p-testkit", "ippan-rpc/p2p-testkit"]
 
 [[bin]]
 name = "ippan-node"

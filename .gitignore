@@ -177,3 +177,10 @@ ai_training/*.csv
 
 # Local training datasets (do not commit)
 ai_assets/datasets/
+
+# ops/ippantime (generated artifacts; keep repo clean)
+ops/ippantime/out/*.csv
+ops/ippantime/out/REPORT.md
+ops/ippantime/out/JITTER_HOTSPOTS.md
+ops/ippantime/out/operator_*.txt
+ops/ippantime/out/diag_*/

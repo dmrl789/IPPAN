@@ -118,10 +118,10 @@ jobs:
             ${{ runner.os }}-cargo-v2-
 
       - name: Build ai_core
-        run: cargo build -p ai_core --all-targets --verbose
+        run: cargo build -p ippan-ai-core --all-targets --verbose
 
       - name: Determinism tests
-        run: cargo test -p ai_core --features deterministic-tests -- --nocapture
+        run: cargo test -p ippan-ai-core -- --nocapture
 
       - name: Upload logs on failure
         if: failure()

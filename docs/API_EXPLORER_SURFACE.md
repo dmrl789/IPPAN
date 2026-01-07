@@ -140,7 +140,7 @@ rolling out client changes.
   * `cursor` (optional, opaque string for pagination).
 * **Response:**
   * `items` – array of `BlockSummary` objects.
-    * `hash` (hex), `round_id`, `height_or_seq`, `ippan_time` (µs), `tx_count`, `size_bytes`, `producer` (hex), `parents` (hex array).
+    * `hash` (hex), `height`, `ippan_time` (µs), `tx_count`, `size_bytes`, `producer` (hex), `parents` (hex array).
   * `next_cursor` – opaque string to resume listing (strictly before the last item).
 * **Ordering:** Newest → Oldest.
 * **Example:**
@@ -150,8 +150,7 @@ rolling out client changes.
   "items": [
     {
       "hash": "4e8c…",
-      "round_id": 128,
-      "height_or_seq": 128,
+      "height": 128,
       "ippan_time": 1731000123456,
       "tx_count": 12,
       "size_bytes": 4096,
