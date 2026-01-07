@@ -111,7 +111,6 @@ mod tests {
             handle_anchors,
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
-            ipn_dht: None,
             batch_lane: BatchLane::from_env(),
         }
     }

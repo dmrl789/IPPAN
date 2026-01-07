@@ -126,7 +126,7 @@ struct VersionInfo {
 }
 
 /// Layer 2 configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize)]
 pub struct L2Config {
     pub max_commit_size: usize,
     pub min_epoch_gap_ms: u64,
@@ -164,8 +164,6 @@ pub struct AppState {
     pub dht_handle_mode: String,
     /// DLC consensus handle (if DLC mode is enabled)
     pub dlc_consensus: Option<Arc<parking_lot::RwLock<DLCConsensus>>>,
-    /// libp2p DHT service (if enabled)
-    pub ipn_dht: Option<Arc<ippan_p2p::IpnDhtService>>,
     /// Dedicated ingestion lane for `/tx/submit_batch` (semaphore + bounded queue).
     pub batch_lane: Arc<BatchLane>,
 }
@@ -254,30 +252,12 @@ impl ConsensusHandle {
     pub async fn snapshot(&self) -> Result<ConsensusStateView> {
         let guard = self.consensus.lock().await;
         let state = guard.get_state();
-        let mut validators: Vec<String> = guard
+        let validators: Vec<String> = guard
             .config
             .validators
             .iter()
             .map(|v| hex::encode(v.id))
             .collect();
-
-        // Ensure we include IDs from the environment if configured (devnet support)
-        if let Ok(raw) = std::env::var("IPPAN_VALIDATOR_IDS") {
-            let env_ids: Vec<String> = raw
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-                .collect();
-            for id in env_ids {
-                if !validators.contains(&id) {
-                    validators.push(id);
-                }
-            }
-        }
-
-        // Stable deterministic ordering
-        validators.sort();
 
         // Metrics will be populated from DLC consensus if available (see handle_status)
         let validators_metrics = None;
@@ -597,40 +577,6 @@ struct BlockHeaderAuditV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     vrf_proof: Option<String>,
     canonical_encoding_version: u32,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-struct BlockSummary {
-    hash: String,
-    height: u64,
-    ippan_time: u64,
-    tx_count: usize,
-    size_bytes: usize,
-    producer: String,
-    parents: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-struct BlocksListResponse {
-    items: Vec<BlockSummary>,
-    next_cursor: Option<String>,
-}
-
-impl BlockSummary {
-    fn from_block(block: &Block) -> Self {
-        let timestamp = block.header.hashtimer.timestamp_us.max(0) as u64;
-        Self {
-            hash: hex_encode(block.hash()),
-            height: block.header.round,
-            ippan_time: timestamp,
-            tx_count: block.transactions.len(),
-            size_bytes: block.size(),
-            producer: hex_encode(block.header.creator),
-            parents: block.header.parent_ids.iter().map(hex_encode).collect(),
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1905,59 +1851,6 @@ pub async fn start_p2p_server(state: AppState, addr: &str) -> Result<()> {
     .context("P2P HTTP server terminated unexpectedly")
 }
 
-#[derive(Debug, Deserialize)]
-pub struct TestGossipRequest {
-    pub topic: String,
-    pub msg_id: u64,
-    pub sent_ts_ms: u64,
-    pub payload_len: u32,
-}
-
-/// DEV-ONLY. NEVER ENABLE IN PRODUCTION.
-#[cfg(feature = "p2p-testkit")]
-async fn handle_test_gossip_publish(
-    State(state): State<Arc<AppState>>,
-    Json(request): Json<TestGossipRequest>,
-) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
-    // Runtime guard: only enable if explicit env var is set
-    if std::env::var("IPPAN_ENABLE_P2P_TEST_RPC").unwrap_or_default() != "1" {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(ApiError::new(
-                "security_error",
-                "P2P test RPC is disabled. Enable with IPPAN_ENABLE_P2P_TEST_RPC=1",
-            )),
-        ));
-    }
-
-    if let Some(dht) = &state.ipn_dht {
-        let msg = serde_json::to_vec(&serde_json::json!({
-            "msg_id": request.msg_id,
-            "sent_ts_ms": request.sent_ts_ms,
-            "payload_len": request.payload_len,
-        }))
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::new("serialization_error", e.to_string())),
-            )
-        })?;
-
-        dht.publish_gossip(&request.topic, msg).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::new("p2p_error", e.to_string())),
-            )
-        })?;
-        Ok(StatusCode::OK)
-    } else {
-        Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ApiError::new("p2p_disabled", "Libp2p not enabled")),
-        ))
-    }
-}
-
 /// Build P2P-only router with minimal middleware
 fn build_p2p_router(state: Arc<AppState>) -> Router {
     // P2P server uses lighter middleware - allow all origins for peer communication
@@ -1969,22 +1862,14 @@ fn build_p2p_router(state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    #[allow(unused_mut)]
-    let mut router = Router::new()
+    Router::new()
         .route("/p2p/peers", get(handle_get_p2p_peers))
         .route("/p2p/blocks", post(handle_p2p_blocks))
         .route("/p2p/transactions", post(handle_p2p_transactions))
         .route("/p2p/peer-info", post(handle_p2p_peer_info))
         .route("/p2p/peer-discovery", post(handle_p2p_peer_discovery))
         .route("/p2p/block-request", post(handle_p2p_block_request))
-        .route("/p2p/block-response", post(handle_p2p_block_response));
-
-    #[cfg(feature = "p2p-testkit")]
-    {
-        router = router.route("/p2p/test/gossip", post(handle_test_gossip_publish));
-    }
-
-    router
+        .route("/p2p/block-response", post(handle_p2p_block_response))
         .layer(
             ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(handle_service_error))
@@ -2041,11 +1926,6 @@ fn build_router(state: Arc<AppState>) -> Router {
         tx_routes = tx_routes.route("/dev/fund", post(handle_dev_fund));
     }
 
-    #[cfg(feature = "p2p-testkit")]
-    {
-        tx_routes = tx_routes.route("/p2p/test/gossip", post(handle_test_gossip_publish));
-    }
-
     // Read lane: safe to circuit-break. Importantly, keep this separate so breaker never starves /health
     // and never blocks batch ingest.
     let read_stack = ServiceBuilder::new()
@@ -2061,7 +1941,6 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/metrics", get(handle_metrics))
         .route("/ai/status", get(handle_get_ai_status))
         .route("/files/:id", get(handle_get_file))
-        .route("/blocks", get(handle_get_blocks))
         .route("/tx/recent", get(handle_get_tx_recent))
         .route("/tx/status/:hash", get(handle_get_tx_status))
         .route("/block/:id", get(handle_get_block))
@@ -2631,25 +2510,8 @@ async fn handle_status(
     };
 
     // Backwards-compatible top-level fields expected by ops tooling.
-    let (round_top, validator_count, mut all_validator_ids) =
+    let (round_top, validator_count, validator_ids_sample) =
         derive_status_invariants_fields(&consensus_view);
-
-    // Stable ordering for all validator IDs.
-    all_validator_ids.sort();
-    all_validator_ids.dedup();
-
-    // Ensure the consensus object is consistent with the top-level validator fields.
-    let mut consensus_json = consensus_view.unwrap_or_else(|| {
-        serde_json::json!({
-            "round": round_top,
-            "validator_count": all_validator_ids.len(),
-            "validator_ids": all_validator_ids
-        })
-    });
-
-    // Mandatory: Ensure consensus.validator_ids reflects the full set, not just those with metrics.
-    consensus_json["validator_ids"] = serde_json::json!(all_validator_ids);
-    consensus_json["validator_count"] = serde_json::json!(all_validator_ids.len());
 
     let mut ai_view = if let Some(handle) = &state.ai_status {
         let snapshot = handle.snapshot().await;
@@ -2686,8 +2548,8 @@ async fn handle_status(
         "tip_block_hash": tip_block_hash,
         "current_hashtimer": current_hashtimer,
         "validator_count": validator_count,
-        "validator_ids_sample": all_validator_ids,
-        "consensus": consensus_json,
+        "validator_ids_sample": validator_ids_sample,
+        "consensus": consensus_view,
         "ai": ai_view,
         "mempool_size": mempool_size,
         "storage_mode": storage_mode,
@@ -2720,26 +2582,20 @@ fn derive_status_invariants_fields(
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .collect();
-        validator_ids.sort();
     }
 
     if let Some(consensus) = consensus_view.as_ref() {
         round_top = consensus.get("round").and_then(|v| v.as_u64()).unwrap_or(0);
-        // Merge with consensus validator IDs if present
-        if let Some(arr) = consensus.get("validator_ids").and_then(|v| v.as_array()) {
-            for v in arr {
-                if let Some(s) = v.as_str() {
-                    let s = s.to_string();
-                    if !validator_ids.contains(&s) {
-                        validator_ids.push(s);
-                    }
-                }
+        if validator_ids.is_empty() {
+            if let Some(arr) = consensus.get("validator_ids").and_then(|v| v.as_array()) {
+                validator_ids = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
             }
         }
     }
 
-    validator_ids.sort();
-    validator_ids.dedup();
     let validator_count = validator_ids.len();
     (round_top, validator_count, validator_ids)
 }
@@ -2758,13 +2614,8 @@ fn build_consensus_payload(
             let mut metrics_map = BTreeMap::new();
             for (validator_id, metrics) in snapshot {
                 let validator_id_str = hex::encode(validator_id);
-                // Ensure the ID is in the main list so /status.validator_count matches
-                if !view.validators.contains(&validator_id_str) {
-                    view.validators.push(validator_id_str.clone());
-                }
                 metrics_map.insert(validator_id_str, convert_validator_metrics(&metrics));
             }
-            view.validators.sort();
             view.validators_metrics = Some(metrics_map);
         } else {
             // Seed deterministic placeholder metrics for known validators (dev/localnet only)
@@ -2783,7 +2634,6 @@ fn build_consensus_payload(
 
     let mut json = serde_json::json!({
         "round": view.round,
-        "validator_count": view.validators.len(),
         "validator_ids": view.validators,
     });
 
@@ -3768,55 +3618,6 @@ async fn handle_get_transaction(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to load transaction",
             ))
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct BlocksQuery {
-    limit: Option<usize>,
-    cursor: Option<String>,
-}
-
-async fn handle_get_blocks(
-    State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Query(query): Query<BlocksQuery>,
-) -> Result<Json<BlocksListResponse>, (StatusCode, &'static str)> {
-    const ENDPOINT: &str = "/blocks";
-    if let Err(err) = guard_request(&state, &addr, ENDPOINT).await {
-        return Err(deny_request(&state, &addr, ENDPOINT, err).await);
-    }
-
-    let limit = query.limit.unwrap_or(50).clamp(1, 200);
-    let cursor = query.cursor.and_then(|c| hex::decode(c).ok());
-
-    match state.storage.list_blocks(limit, cursor) {
-        Ok(blocks) => {
-            let items: Vec<BlockSummary> = blocks.iter().map(BlockSummary::from_block).collect();
-
-            let next_cursor = if items.len() == limit {
-                if let Some(last_block) = blocks.last() {
-                    let time_us = last_block.header.hashtimer.timestamp_us;
-                    let time_u128 = if time_us < 0 { 0u128 } else { time_us as u128 };
-                    let mut key = [0u8; 48];
-                    key[0..16].copy_from_slice(&time_u128.to_be_bytes());
-                    key[16..48].copy_from_slice(&last_block.hash());
-                    Some(hex_encode(key))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            record_security_success(&state, &addr, ENDPOINT).await;
-            Ok(Json(BlocksListResponse { items, next_cursor }))
-        }
-        Err(err) => {
-            error!("Failed to list blocks for {}: {}", addr, err);
-            record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
-            Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load blocks"))
         }
     }
 }
@@ -5363,7 +5164,6 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
-            ipn_dht: None,
             batch_lane: BatchLane::from_env(),
         });
 
@@ -5506,7 +5306,6 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
-            ipn_dht: None,
             batch_lane: BatchLane::from_env(),
         })
     }
@@ -5673,6 +5472,14 @@ mod tests {
                 Err(anyhow!("forced failure: get_transaction_count"))
             } else {
                 self.inner.get_transaction_count()
+            }
+        }
+
+        fn list_blocks(&self, limit: usize, cursor: Option<Vec<u8>>) -> Result<Vec<Block>> {
+            if self.should_fail("list_blocks") {
+                Err(anyhow!("forced failure: list_blocks"))
+            } else {
+                self.inner.list_blocks(limit, cursor)
             }
         }
 
@@ -5850,14 +5657,6 @@ mod tests {
                 Err(anyhow!("forced failure: list_file_descriptors_by_owner"))
             } else {
                 self.inner.list_file_descriptors_by_owner(owner)
-            }
-        }
-
-        fn list_blocks(&self, limit: usize, cursor: Option<Vec<u8>>) -> Result<Vec<Block>> {
-            if self.should_fail("list_blocks") {
-                Err(anyhow!("forced failure: list_blocks"))
-            } else {
-                self.inner.list_blocks(limit, cursor)
             }
         }
 
@@ -8230,7 +8029,6 @@ mod tests {
             handle_dht: Some(handle_dht),
             dht_handle_mode: "stub".into(),
             dlc_consensus: None,
-            ipn_dht: None,
             batch_lane: BatchLane::from_env(),
         });
 
@@ -8468,249 +8266,5 @@ mod tests {
         assert_eq!(consensus_json["validator_ids"].as_array().unwrap().len(), 2);
         assert_eq!(consensus_json["metrics_available"], false);
         assert!(consensus_json.get("validators").is_none());
-    }
-
-    #[tokio::test]
-    async fn test_get_blocks_pagination() {
-        let storage = Arc::new(MemoryStorage::new());
-        let (tx_sender, _) = mpsc::unbounded_channel();
-        let mempool = Arc::new(Mempool::new(100));
-        let handle_registry = Arc::new(L2HandleRegistry::new());
-        let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
-        let batch_lane = BatchLane::from_env();
-
-        let state = Arc::new(AppState {
-            storage: storage.clone(),
-            consensus: None,
-            dlc_consensus: None,
-            mempool,
-            peer_count: Arc::new(AtomicUsize::new(0)),
-            req_count: Arc::new(AtomicUsize::new(0)),
-            start_time: Instant::now(),
-            p2p_network: None,
-            ai_status: None,
-            node_id: "test".to_string(),
-            dev_mode: false,
-            dht_file_mode: "disabled".to_string(),
-            dht_handle_mode: "disabled".to_string(),
-            file_dht: None,
-            handle_dht: None,
-            security: None,
-            unified_ui_dist: None,
-            consensus_mode: "poa".to_string(),
-            tx_sender: Some(tx_sender),
-            l2_config: L2Config::default(),
-            metrics: None,
-            file_storage: None,
-            rpc_allowed_origins: vec![],
-            handle_registry,
-            handle_anchors,
-            ipn_dht: None,
-            batch_lane,
-        });
-
-        // Add 3 blocks with distinct timestamps
-        for i in 1..=3 {
-            let mut block = Block::new(vec![], vec![], i, [i as u8; 32]);
-            block.header.hashtimer.timestamp_us = i as i64 * 1000;
-            storage.store_block(block).unwrap();
-        }
-
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-
-        // Page 1: limit 2
-        let query = BlocksQuery {
-            limit: Some(2),
-            cursor: None,
-        };
-        let response = handle_get_blocks(State(state.clone()), ConnectInfo(addr), Query(query))
-            .await
-            .expect("success");
-
-        assert_eq!(response.0.items.len(), 2);
-        assert_eq!(response.0.items[0].height, 3);
-        assert_eq!(response.0.items[1].height, 2);
-        assert!(response.0.next_cursor.is_some());
-
-        // Page 2: remaining 1
-        let cursor = response.0.next_cursor.clone();
-        let query2 = BlocksQuery {
-            limit: Some(2),
-            cursor,
-        };
-        let response2 = handle_get_blocks(State(state), ConnectInfo(addr), Query(query2))
-            .await
-            .expect("success");
-
-        assert_eq!(response2.0.items.len(), 1);
-        assert_eq!(response2.0.items[0].height, 1);
-        assert!(response2.0.next_cursor.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_validator_count_consistency_in_status() {
-        let storage = Arc::new(MemoryStorage::new());
-        let (tx_sender, _) = mpsc::unbounded_channel();
-        let mempool = Arc::new(Mempool::new(100));
-
-        let mut poa_config = PoAConfig::default();
-        let v1_id = [1u8; 32];
-        poa_config.validators = vec![Validator {
-            id: v1_id,
-            address: [1u8; 32],
-            stake: 10,
-            is_active: true,
-        }];
-
-        let poa = PoAConsensus::new(poa_config, storage.clone(), v1_id);
-        let consensus_ptr = Arc::new(Mutex::new(poa));
-        let consensus_handle = Arc::new(ConsensusHandle::new(
-            consensus_ptr,
-            tx_sender.clone(),
-            mempool.clone(),
-        ));
-
-        // Mock IPPAN_VALIDATOR_IDS with 4 validators
-        let v2_id = [2u8; 32];
-        let v3_id = [3u8; 32];
-        let v4_id = [4u8; 32];
-        let validator_ids_str = format!(
-            "{},{},{},{}",
-            hex_encode(v1_id),
-            hex_encode(v2_id),
-            hex_encode(v3_id),
-            hex_encode(v4_id)
-        );
-        let _guard = EnvVarGuard::set("IPPAN_VALIDATOR_IDS", &validator_ids_str);
-
-        let handle_registry = Arc::new(L2HandleRegistry::new());
-        let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
-        let batch_lane = BatchLane::from_env();
-
-        let state = Arc::new(AppState {
-            storage,
-            consensus: Some((*consensus_handle).clone()),
-            dlc_consensus: None,
-            mempool,
-            peer_count: Arc::new(AtomicUsize::new(0)),
-            req_count: Arc::new(AtomicUsize::new(0)),
-            start_time: Instant::now(),
-            p2p_network: None,
-            ai_status: None,
-            node_id: "test-node".to_string(),
-            dev_mode: true,
-            dht_file_mode: "disabled".to_string(),
-            dht_handle_mode: "disabled".to_string(),
-            file_dht: None,
-            handle_dht: None,
-            security: None,
-            unified_ui_dist: None,
-            consensus_mode: "poa".to_string(),
-            tx_sender: Some(tx_sender),
-            l2_config: L2Config::default(),
-            metrics: None,
-            file_storage: None,
-            rpc_allowed_origins: vec![],
-            handle_registry,
-            handle_anchors,
-            ipn_dht: None,
-            batch_lane,
-        });
-
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let response = handle_status(State(state), ConnectInfo(addr))
-            .await
-            .expect("status ok");
-        let json = response.0;
-
-        let validator_count = json["validator_count"]
-            .as_u64()
-            .expect("validator_count exists");
-        let validator_ids = json["consensus"]["validator_ids"]
-            .as_array()
-            .expect("consensus.validator_ids exists");
-
-        assert_eq!(validator_count, 4);
-        assert_eq!(validator_ids.len(), 4);
-    }
-
-    #[tokio::test]
-    async fn test_handle_blocks_list_pagination() {
-        let state = make_app_state();
-        let addr: SocketAddr = "127.0.0.1:9099".parse().unwrap();
-
-        // Insert 5 blocks with distinct times
-        for i in 1..=5 {
-            let mut block = Block::new(vec![], vec![], i as u64, [i as u8; 32]);
-            // Force distinct times for ordering
-            block.header.hashtimer.timestamp_us = (i * 1000) as i64;
-            state.storage.store_block(block).expect("store block");
-        }
-
-        // Call #1: limit 2
-        let query1 = BlocksQuery {
-            limit: Some(2),
-            cursor: None,
-        };
-        let res1 = handle_get_blocks(State(state.clone()), ConnectInfo(addr), Query(query1))
-            .await
-            .expect("list blocks 1");
-
-        assert_eq!(res1.0.items.len(), 2);
-        assert_eq!(res1.0.items[0].height, 5); // Newest first
-        assert_eq!(res1.0.items[1].height, 4);
-        assert!(res1.0.next_cursor.is_some());
-
-        // Call #2: use next_cursor
-        let query2 = BlocksQuery {
-            limit: Some(2),
-            cursor: res1.0.next_cursor,
-        };
-        let res2 = handle_get_blocks(State(state.clone()), ConnectInfo(addr), Query(query2))
-            .await
-            .expect("list blocks 2");
-
-        assert_eq!(res2.0.items.len(), 2);
-        assert_eq!(res2.0.items[0].height, 3);
-        assert_eq!(res2.0.items[1].height, 2);
-        assert!(res2.0.next_cursor.is_some());
-
-        // Call #3: final page
-        let query3 = BlocksQuery {
-            limit: Some(2),
-            cursor: res2.0.next_cursor,
-        };
-        let res3 = handle_get_blocks(State(state.clone()), ConnectInfo(addr), Query(query3))
-            .await
-            .expect("list blocks 3");
-
-        assert_eq!(res3.0.items.len(), 1);
-        assert_eq!(res3.0.items[0].height, 1);
-        assert!(res3.0.next_cursor.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_validator_count_undercount_fix() {
-        let state = make_app_state();
-        let addr: SocketAddr = "127.0.0.1:9098".parse().unwrap();
-
-        // Mock 4 validators in environment
-        std::env::set_var("IPPAN_VALIDATOR_IDS", "id1,id2,id3,id4");
-
-        // Request status
-        let res = handle_status(State(state.clone()), ConnectInfo(addr))
-            .await
-            .expect("status success");
-
-        let data = res.0;
-        assert_eq!(data["validator_count"], 4);
-        assert_eq!(data["validator_ids_sample"].as_array().unwrap().len(), 4);
-        assert_eq!(data["consensus"]["validator_count"], 4);
-        assert_eq!(
-            data["consensus"]["validator_ids"].as_array().unwrap().len(),
-            4
-        );
-
-        std::env::remove_var("IPPAN_VALIDATOR_IDS");
     }
 }

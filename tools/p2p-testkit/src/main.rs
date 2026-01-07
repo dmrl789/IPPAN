@@ -624,7 +624,7 @@ async fn run_chaos(
     warmup_msgs: usize,
     warmup_seconds: u64,
 ) -> Result<()> {
-    info!("Starting CHAOS test: nodes={}, loss={}%, latency={}ms, jitter={}ms, msgs={}, size={}, min_delivery={}, warmup_msgs={}, warmup_secs={}", 
+    info!("Starting CHAOS test: nodes={}, loss={}%, latency={}ms, jitter={}ms, msgs={}, size={}, min_delivery={}, warmup_msgs={}, warmup_secs={}",
         node_count, loss, latency, jitter, msgs, size, min_delivery_rate, warmup_msgs, warmup_seconds);
     let mut summary = Summary {
         scenario: "chaos".to_string(),

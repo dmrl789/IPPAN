@@ -1554,7 +1554,6 @@ async fn main() -> Result<()> {
         handle_dht: Some(handle_dht.clone()),
         dht_handle_mode: config.handle_dht_mode.to_string(),
         dlc_consensus: dlc_handle,
-        ipn_dht: ipn_dht_backend.clone(),
         batch_lane: BatchLane::from_env(),
     };
 
