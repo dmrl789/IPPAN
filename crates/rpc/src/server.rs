@@ -2833,10 +2833,10 @@ async fn handle_submit_tx(
             });
 
             record_security_success(&state, &addr, "/tx").await;
-            return Err((
+            Err((
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(ApiError::rejected(code, reason, tx_id)),
-            ));
+            ))
         }
         AdmissionResult::Accepted { tx_id, .. } => {
             let first_seen_us = ippan_time_now();
@@ -2928,10 +2928,10 @@ async fn handle_tx_submit(
             });
 
             record_security_success(&state, &addr, ENDPOINT).await;
-            return Err((
+            Err((
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(ApiError::rejected(code, reason, tx_id)),
-            ));
+            ))
         }
         AdmissionResult::Accepted {
             tx_id,
