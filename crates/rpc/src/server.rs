@@ -636,43 +636,6 @@ impl BlockSummary {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(Debug, Serialize, Deserialize)]
-struct BlockSummary {
-    hash: String,
-    round_id: u64,
-    height_or_seq: u64,
-    ippan_time: u64,
-    tx_count: usize,
-    size_bytes: usize,
-    producer: String,
-    parents: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-struct BlocksListResponse {
-    items: Vec<BlockSummary>,
-    next_cursor: Option<String>,
-}
-
-impl BlockSummary {
-    fn from_block(block: &Block) -> Self {
-        let timestamp = block.header.hashtimer.timestamp_us.max(0) as u64;
-        Self {
-            hash: hex_encode(block.hash()),
-            round_id: block.header.round,
-            height_or_seq: block.header.round,
-            ippan_time: timestamp,
-            tx_count: block.transactions.len(),
-            size_bytes: block.size(),
-            producer: hex_encode(block.header.creator),
-            parents: block.header.parent_ids.iter().map(hex_encode).collect(),
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
 struct BlockView {
     id: String,
     round: u64,
