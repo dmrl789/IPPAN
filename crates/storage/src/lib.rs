@@ -1460,11 +1460,10 @@ impl SledStorage {
     }
 
     fn wal_enabled() -> bool {
-        std::env::var("IPPAN_DISABLE_WAL")
+        !std::env::var("IPPAN_DISABLE_WAL")
             .ok()
             .map(|v| matches!(v.trim(), "1" | "true" | "TRUE"))
             .unwrap_or(false)
-            == false
     }
 
     fn append_wal(&self, value: &serde_json::Value) -> Result<()> {
@@ -2100,7 +2099,7 @@ impl Storage for SledStorage {
 
         // Best-effort bounding (keep newest N). This is not consensus-critical.
         let max = 50_000usize;
-        let len = self.recent_txs.len() as usize;
+        let len = self.recent_txs.len();
         if len > max {
             let extra = len.saturating_sub(max);
             for (idx, item) in self.recent_txs.iter().rev().enumerate() {
