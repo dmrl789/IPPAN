@@ -1,6 +1,10 @@
 name: Audit Pack — P0 Gates + SBOM
 
 on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
     inputs:
       rust_toolchain:
