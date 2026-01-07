@@ -88,6 +88,39 @@ enum NodeStorageMode {
     Pruned { keep_last_n: u64 },
 }
 
+/// Node operation mode: gateway (RPC-only, no consensus) or validator (full participation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum NodeMode {
+    /// Gateway mode: serve RPC, relay transactions, but do NOT propose blocks.
+    Gateway,
+    /// Validator mode: full consensus participation including block proposals.
+    #[default]
+    Validator,
+}
+
+impl NodeMode {
+    fn from_env() -> Self {
+        let raw = env::var("IPPAN_NODE_MODE").unwrap_or_else(|_| "validator".to_string());
+        match raw.trim().to_lowercase().as_str() {
+            "gateway" | "rpc" | "observer" => NodeMode::Gateway,
+            _ => NodeMode::Validator,
+        }
+    }
+
+    fn is_gateway(&self) -> bool {
+        matches!(self, NodeMode::Gateway)
+    }
+}
+
+impl fmt::Display for NodeMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NodeMode::Gateway => f.write_str("gateway"),
+            NodeMode::Validator => f.write_str("validator"),
+        }
+    }
+}
+
 impl NodeStorageMode {
     fn from_env() -> Self {
         let raw = env::var("IPPAN_STORAGE_MODE").unwrap_or_else(|_| "full".to_string());
@@ -333,6 +366,9 @@ struct AppConfig {
 
     // Development
     dev_mode: bool,
+
+    // Node operation mode
+    node_mode: NodeMode,
 }
 
 impl AppConfig {
@@ -623,6 +659,7 @@ impl AppConfig {
                 .unwrap_or_else(|_| defaults.log_format.to_string()),
             dev_mode,
             pid_file: get_string_value(&config, &["PID_FILE", "node.pid_file"]).map(PathBuf::from),
+            node_mode: NodeMode::from_env(),
         })
     }
 
@@ -1161,7 +1198,12 @@ async fn main() -> Result<()> {
         info!("Config file: (built-in defaults)");
     }
     info!("Data directory: {}", config.data_dir);
+    info!("Database path: {}", config.db_path);
     info!("Development mode: {}", config.dev_mode);
+    info!("Node mode: {} (IPPAN_NODE_MODE)", config.node_mode);
+    if config.node_mode.is_gateway() {
+        info!("  - Gateway mode: RPC/relay only, NO block proposing");
+    }
 
     if !config.dev_mode {
         if let Ok(ip) = config.rpc_host.parse::<IpAddr>() {
@@ -1182,6 +1224,20 @@ async fn main() -> Result<()> {
     let storage = Arc::new(SledStorage::new(&config.db_path)?);
     storage.set_network_id(&config.network_id)?;
     storage.initialize()?;
+
+    // Rebuild blocks index if needed (gateway mode or after restart)
+    // This ensures /blocks returns data even if the index was empty
+    let max_blocks_to_index = 50_000; // Reasonable cap for devnet
+    match storage.rebuild_blocks_index(max_blocks_to_index) {
+        Ok(indexed) => {
+            if indexed > 0 {
+                info!("Blocks index ready: {} blocks indexed", indexed);
+            }
+        }
+        Err(e) => {
+            warn!("Failed to rebuild blocks index (non-fatal): {}", e);
+        }
+    }
     info!("Storage initialized at {}", config.db_path);
 
     let storage_mode = NodeStorageMode::from_env();
@@ -1375,7 +1431,13 @@ async fn main() -> Result<()> {
         }
 
         // Start DLC consensus (will now have metrics for all validators)
-        dlc_integrated.start().await?;
+        // In gateway mode, skip consensus proposing to avoid "Previous block not found" errors
+        if !config.node_mode.is_gateway() {
+            dlc_integrated.start().await?;
+            info!("DLC consensus engine started (proposing enabled)");
+        } else {
+            info!("DLC consensus engine NOT started (gateway mode - no block proposing)");
+        }
 
         consensus = Arc::new(Mutex::new(dlc_integrated.poa));
         ai_status_handle = build_dlc_ai_status_handle();
@@ -1400,7 +1462,7 @@ async fn main() -> Result<()> {
             }
         }
 
-        info!("DLC consensus engine started");
+        info!("DLC consensus mode configured");
         info!("  - Temporal finality: {}ms", config.temporal_finality_ms);
         info!("  - Shadow verifiers: {}", config.shadow_verifier_count);
         info!("  - D-GBDT fairness: {}", config.enable_dgbdt_fairness);
@@ -1418,11 +1480,14 @@ async fn main() -> Result<()> {
         tx_sender = consensus_instance.get_tx_sender();
         mempool = consensus_instance.mempool();
         consensus = Arc::new(Mutex::new(consensus_instance));
-        {
+        // In gateway mode, skip consensus proposing to avoid "Previous block not found" errors
+        if !config.node_mode.is_gateway() {
             let mut consensus_guard = consensus.lock().await;
             consensus_guard.start().await?;
+            info!("PoA consensus engine started (proposing enabled)");
+        } else {
+            info!("PoA consensus engine NOT started (gateway mode - no block proposing)");
         }
-        info!("PoA consensus engine started");
     }
 
     // Initialize P2P network

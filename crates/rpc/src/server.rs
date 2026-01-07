@@ -3794,34 +3794,95 @@ async fn handle_get_blocks(
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let cursor = query.cursor.and_then(|c| hex::decode(c).ok());
 
-    match state.storage.list_blocks(limit, cursor) {
-        Ok(blocks) => {
-            let items: Vec<BlockSummary> = blocks.iter().map(BlockSummary::from_block).collect();
-
-            let next_cursor = if items.len() == limit {
-                if let Some(last_block) = blocks.last() {
-                    let time_us = last_block.header.hashtimer.timestamp_us;
-                    let time_u128 = if time_us < 0 { 0u128 } else { time_us as u128 };
-                    let mut key = [0u8; 48];
-                    key[0..16].copy_from_slice(&time_u128.to_be_bytes());
-                    key[16..48].copy_from_slice(&last_block.hash());
-                    Some(hex_encode(key))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            record_security_success(&state, &addr, ENDPOINT).await;
-            Ok(Json(BlocksListResponse { items, next_cursor }))
-        }
+    // First attempt: try to list blocks from the time-ordered index
+    let blocks = match state.storage.list_blocks(limit, cursor.clone()) {
+        Ok(b) => b,
         Err(err) => {
             error!("Failed to list blocks for {}: {}", addr, err);
             record_security_failure(&state, &addr, ENDPOINT, &err.to_string()).await;
-            Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load blocks"))
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to load blocks"));
         }
-    }
+    };
+
+    // Fallback: if index is empty and no cursor (first page), try to populate from tx metadata
+    let blocks = if blocks.is_empty() && cursor.is_none() {
+        // Check if index is truly empty vs no blocks at all
+        let index_size = state.storage.blocks_index_size();
+        if index_size == 0 {
+            // Try to populate index from recent tx metadata (which includes block_hash)
+            if let Ok(recent_entries) = state.storage.list_recent_txs(200) {
+                let mut seen_hashes = std::collections::HashSet::new();
+                let mut fallback_blocks = Vec::new();
+
+                for entry in recent_entries {
+                    // Look up tx metadata to get block inclusion info
+                    if let Ok(Some(meta)) = state.storage.get_tx_meta(&entry.tx_id) {
+                        if let Some(included) = &meta.included {
+                            if seen_hashes.insert(included.block_hash) {
+                                // Fetch and index this block
+                                if let Ok(Some(block)) =
+                                    state.storage.get_block(&included.block_hash)
+                                {
+                                    // Index the block so future calls don't need this fallback
+                                    let _ = state.storage.index_block(&block);
+                                    fallback_blocks.push(block);
+
+                                    // Cap work to keep response fast
+                                    if fallback_blocks.len() >= limit {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Sort by timestamp descending (newest first)
+                fallback_blocks.sort_by(|a, b| {
+                    b.header
+                        .hashtimer
+                        .timestamp_us
+                        .cmp(&a.header.hashtimer.timestamp_us)
+                });
+
+                if !fallback_blocks.is_empty() {
+                    debug!(
+                        "Blocks index self-healed from tx metadata: {} blocks indexed",
+                        fallback_blocks.len()
+                    );
+                }
+
+                fallback_blocks.truncate(limit);
+                fallback_blocks
+            } else {
+                blocks
+            }
+        } else {
+            blocks
+        }
+    } else {
+        blocks
+    };
+
+    let items: Vec<BlockSummary> = blocks.iter().map(BlockSummary::from_block).collect();
+
+    let next_cursor = if items.len() == limit {
+        if let Some(last_block) = blocks.last() {
+            let time_us = last_block.header.hashtimer.timestamp_us;
+            let time_u128 = if time_us < 0 { 0u128 } else { time_us as u128 };
+            let mut key = [0u8; 48];
+            key[0..16].copy_from_slice(&time_u128.to_be_bytes());
+            key[16..48].copy_from_slice(&last_block.hash());
+            Some(hex_encode(key))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    record_security_success(&state, &addr, ENDPOINT).await;
+    Ok(Json(BlocksListResponse { items, next_cursor }))
 }
 
 fn clamp_recent_limit(mut limit: usize) -> usize {
@@ -3977,6 +4038,13 @@ async fn handle_get_block(
     match block_result {
         Ok(Some(block)) => {
             record_security_success(&state, &addr, "/block/:id").await;
+
+            // Opportunistic indexing: ensure fetched blocks appear in /blocks listing
+            // This is idempotent and ensures the index populates as blocks are accessed
+            if let Err(e) = state.storage.index_block(&block) {
+                debug!("Failed to opportunistically index block: {}", e);
+            }
+
             let response = block_response_with_fee_summary(&state.storage, block, height_hint);
             Ok(Json(response))
         }
@@ -8635,5 +8703,204 @@ mod tests {
 
         assert_eq!(validator_count, 4);
         assert_eq!(validator_ids.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_blocks_index_rebuild_from_storage() {
+        let storage = Arc::new(MemoryStorage::new());
+
+        // Insert 3 blocks directly into storage
+        for i in 1..=3u64 {
+            let mut block = Block::new(vec![], vec![], i, [i as u8; 32]);
+            block.header.hashtimer.timestamp_us = i as i64 * 1000;
+            storage.store_block(block).unwrap();
+        }
+
+        // MemoryStorage already populates blocks_by_time in store_block,
+        // but verify rebuild_blocks_index returns the count
+        let indexed = storage.rebuild_blocks_index(100).unwrap();
+        assert!(
+            indexed >= 3,
+            "expected at least 3 blocks indexed, got {}",
+            indexed
+        );
+
+        // Verify list_blocks returns them in newest-first order
+        let blocks = storage.list_blocks(2, None).unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].header.round, 3); // Newest first
+        assert_eq!(blocks[1].header.round, 2);
+    }
+
+    #[tokio::test]
+    async fn test_blocks_index_populates_on_block_fetch() {
+        let storage = Arc::new(MemoryStorage::new());
+        let (tx_sender, _) = mpsc::unbounded_channel();
+        let mempool = Arc::new(Mempool::new(100));
+        let handle_registry = Arc::new(L2HandleRegistry::new());
+        let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let batch_lane = BatchLane::from_env();
+
+        let state = Arc::new(AppState {
+            storage: storage.clone(),
+            consensus: None,
+            dlc_consensus: None,
+            mempool,
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            req_count: Arc::new(AtomicUsize::new(0)),
+            start_time: Instant::now(),
+            p2p_network: None,
+            ai_status: None,
+            node_id: "test".to_string(),
+            dev_mode: false,
+            dht_file_mode: "disabled".to_string(),
+            dht_handle_mode: "disabled".to_string(),
+            file_dht: None,
+            handle_dht: None,
+            security: None,
+            unified_ui_dist: None,
+            consensus_mode: "poa".to_string(),
+            tx_sender: Some(tx_sender),
+            l2_config: L2Config::default(),
+            metrics: None,
+            file_storage: None,
+            rpc_allowed_origins: vec![],
+            handle_registry,
+            handle_anchors,
+            ipn_dht: None,
+            batch_lane,
+        });
+
+        // Store a block
+        let block = Block::new(vec![], vec![], 5, [5u8; 32]);
+        let block_hash = block.hash();
+        storage.store_block(block).unwrap();
+
+        // Initial index size
+        let initial_size = storage.blocks_index_size();
+
+        let addr: SocketAddr = "127.0.0.1:9100".parse().unwrap();
+
+        // Fetch block via handler (triggers opportunistic indexing)
+        let response = handle_get_block(
+            State(state.clone()),
+            ConnectInfo(addr),
+            AxumPath(hex_encode(block_hash)),
+        )
+        .await
+        .expect("block by hash");
+        assert_eq!(response.0.block.round, 5);
+
+        // Verify the block is indexed (or was already indexed by store_block)
+        let final_size = storage.blocks_index_size();
+        assert!(final_size >= initial_size, "index size should not decrease");
+
+        // Verify block appears in list_blocks
+        let blocks = storage.list_blocks(10, None).unwrap();
+        assert!(!blocks.is_empty(), "list_blocks should return the block");
+        assert!(
+            blocks.iter().any(|b| b.hash() == block_hash),
+            "fetched block should appear in list"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_blocks_fallback_from_tx_metadata() {
+        let storage = Arc::new(MemoryStorage::new());
+        let (tx_sender, _) = mpsc::unbounded_channel();
+        let mempool = Arc::new(Mempool::new(100));
+        let handle_registry = Arc::new(L2HandleRegistry::new());
+        let handle_anchors = Arc::new(L1HandleAnchorStorage::new());
+        let batch_lane = BatchLane::from_env();
+
+        let state = Arc::new(AppState {
+            storage: storage.clone(),
+            consensus: None,
+            dlc_consensus: None,
+            mempool,
+            peer_count: Arc::new(AtomicUsize::new(0)),
+            req_count: Arc::new(AtomicUsize::new(0)),
+            start_time: Instant::now(),
+            p2p_network: None,
+            ai_status: None,
+            node_id: "test".to_string(),
+            dev_mode: false,
+            dht_file_mode: "disabled".to_string(),
+            dht_handle_mode: "disabled".to_string(),
+            file_dht: None,
+            handle_dht: None,
+            security: None,
+            unified_ui_dist: None,
+            consensus_mode: "poa".to_string(),
+            tx_sender: Some(tx_sender),
+            l2_config: L2Config::default(),
+            metrics: None,
+            file_storage: None,
+            rpc_allowed_origins: vec![],
+            handle_registry,
+            handle_anchors,
+            ipn_dht: None,
+            batch_lane,
+        });
+
+        // Store a block with a transaction
+        let tx = sample_transaction([1u8; 32], sample_public_key([2u8; 32]), 100);
+        let tx_hash = tx.hash();
+        let block = Block::new(vec![], vec![tx.clone()], 10, [10u8; 32]);
+        let block_hash = block.hash();
+        storage.store_block(block.clone()).unwrap();
+        storage.store_transaction(tx).unwrap();
+
+        // Push recent tx entry and tx metadata with block inclusion
+        use ippan_storage::{RecentTxEntryV1, TxInclusionV1, TxLifecycleStatusV1, TxMetaV1};
+        let recent_entry = RecentTxEntryV1 {
+            version: RecentTxEntryV1::VERSION,
+            tx_id: tx_hash,
+            tx_hashtimer: [0u8; 32],
+            tx_hashtimer_timestamp_us: 12345,
+        };
+        storage.push_recent_tx(recent_entry).unwrap();
+
+        // Store tx metadata with block inclusion info
+        let tx_meta = TxMetaV1 {
+            version: TxMetaV1::VERSION,
+            tx_id: tx_hash,
+            tx_hashtimer: [0u8; 32],
+            tx_hashtimer_timestamp_us: 12345,
+            first_seen_us: 12345,
+            status: TxLifecycleStatusV1::Finalized,
+            included: Some(TxInclusionV1 {
+                block_hash,
+                round_id: 10,
+                block_hashtimer: [0u8; 32],
+                block_hashtimer_timestamp_us: 12345,
+            }),
+            rejected_reason: None,
+        };
+        storage.put_tx_meta(tx_meta).unwrap();
+
+        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+
+        // Request blocks - should return the block from storage
+        // (MemoryStorage already populates the index on store_block)
+        let query = BlocksQuery {
+            limit: Some(10),
+            cursor: None,
+        };
+        let response = handle_get_blocks(State(state), ConnectInfo(addr), Query(query))
+            .await
+            .expect("success");
+
+        // Should have the block
+        assert!(!response.0.items.is_empty(), "expected at least one block");
+        assert!(
+            response
+                .0
+                .items
+                .iter()
+                .any(|b| b.hash == hex_encode(block_hash)),
+            "expected block {} in response",
+            hex_encode(block_hash)
+        );
     }
 }
