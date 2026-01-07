@@ -433,6 +433,15 @@ jobs:
           cargo test -p ippan-consensus -- dgbdt_reputation --nocapture
           cargo test -p ippan-consensus -- selection_determinism --nocapture
 
+      - name: Test verifier selection determinism (HashMap invariance)
+        run: |
+          echo "🔒 Running verifier selection determinism tests..."
+          echo "   These tests verify selection is invariant to HashMap insertion order"
+          cargo test -p ippan-consensus --lib -- test_equal_scores_determinism --nocapture
+          cargo test -p ippan-consensus --lib -- test_zero_score_fallback_determinism --nocapture
+          cargo test -p ippan-consensus --lib -- test_multi_round_determinism --nocapture
+          echo "✅ Verifier selection determinism verified"
+
       - name: Test shadow verifiers
         run: |
           cargo test -p ippan-consensus -- shadow_verifier_parallel --nocapture
