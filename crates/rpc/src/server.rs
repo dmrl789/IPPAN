@@ -5475,6 +5475,14 @@ mod tests {
             }
         }
 
+        fn list_blocks(&self, limit: usize, cursor: Option<Vec<u8>>) -> Result<Vec<Block>> {
+            if self.should_fail("list_blocks") {
+                Err(anyhow!("forced failure: list_blocks"))
+            } else {
+                self.inner.list_blocks(limit, cursor)
+            }
+        }
+
         fn put_l2_network(&self, network: L2Network) -> Result<()> {
             if self.should_fail("put_l2_network") {
                 Err(anyhow!("forced failure: put_l2_network"))
