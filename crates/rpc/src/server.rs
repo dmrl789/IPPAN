@@ -2631,31 +2631,25 @@ async fn handle_status(
     };
 
     // Backwards-compatible top-level fields expected by ops tooling.
-    let (round_top, validator_count, validator_ids_sample) =
+    let (round_top, validator_count, mut all_validator_ids) =
         derive_status_invariants_fields(&consensus_view);
+
+    // Stable ordering for all validator IDs.
+    all_validator_ids.sort();
+    all_validator_ids.dedup();
 
     // Ensure the consensus object is consistent with the top-level validator fields.
     let mut consensus_json = consensus_view.unwrap_or_else(|| {
         serde_json::json!({
             "round": round_top,
-            "validator_count": 0,
-            "validator_ids": []
+            "validator_count": all_validator_ids.len(),
+            "validator_ids": all_validator_ids
         })
     });
 
-    // Override consensus.validator_ids if we have a more complete set from top-level discovery.
-    if let Some(arr) = consensus_json
-        .get("validator_ids")
-        .and_then(|v| v.as_array())
-    {
-        if arr.len() < validator_ids_sample.len() {
-            consensus_json["validator_ids"] = serde_json::json!(validator_ids_sample);
-            consensus_json["validator_count"] = serde_json::json!(validator_ids_sample.len());
-        }
-    } else {
-        consensus_json["validator_ids"] = serde_json::json!(validator_ids_sample);
-        consensus_json["validator_count"] = serde_json::json!(validator_ids_sample.len());
-    }
+    // Mandatory: Ensure consensus.validator_ids reflects the full set, not just those with metrics.
+    consensus_json["validator_ids"] = serde_json::json!(all_validator_ids);
+    consensus_json["validator_count"] = serde_json::json!(all_validator_ids.len());
 
     let mut ai_view = if let Some(handle) = &state.ai_status {
         let snapshot = handle.snapshot().await;
@@ -2692,7 +2686,7 @@ async fn handle_status(
         "tip_block_hash": tip_block_hash,
         "current_hashtimer": current_hashtimer,
         "validator_count": validator_count,
-        "validator_ids_sample": validator_ids_sample,
+        "validator_ids_sample": all_validator_ids,
         "consensus": consensus_json,
         "ai": ai_view,
         "mempool_size": mempool_size,
@@ -2731,16 +2725,21 @@ fn derive_status_invariants_fields(
 
     if let Some(consensus) = consensus_view.as_ref() {
         round_top = consensus.get("round").and_then(|v| v.as_u64()).unwrap_or(0);
-        if validator_ids.is_empty() {
-            if let Some(arr) = consensus.get("validator_ids").and_then(|v| v.as_array()) {
-                validator_ids = arr
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
+        // Merge with consensus validator IDs if present
+        if let Some(arr) = consensus.get("validator_ids").and_then(|v| v.as_array()) {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    let s = s.to_string();
+                    if !validator_ids.contains(&s) {
+                        validator_ids.push(s);
+                    }
+                }
             }
         }
     }
 
+    validator_ids.sort();
+    validator_ids.dedup();
     let validator_count = validator_ids.len();
     (round_top, validator_count, validator_ids)
 }
@@ -8633,5 +8632,85 @@ mod tests {
 
         assert_eq!(validator_count, 4);
         assert_eq!(validator_ids.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_handle_blocks_list_pagination() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9099".parse().unwrap();
+
+        // Insert 5 blocks with distinct times
+        for i in 1..=5 {
+            let mut block = Block::new(vec![], vec![], i as u64, [i as u8; 32]);
+            // Force distinct times for ordering
+            block.header.hashtimer.timestamp_us = (i * 1000) as i64;
+            state.storage.store_block(block).expect("store block");
+        }
+
+        // Call #1: limit 2
+        let query1 = BlocksQuery {
+            limit: Some(2),
+            cursor: None,
+        };
+        let res1 = handle_get_blocks(State(state.clone()), ConnectInfo(addr), Query(query1))
+            .await
+            .expect("list blocks 1");
+
+        assert_eq!(res1.0.items.len(), 2);
+        assert_eq!(res1.0.items[0].height, 5); // Newest first
+        assert_eq!(res1.0.items[1].height, 4);
+        assert!(res1.0.next_cursor.is_some());
+
+        // Call #2: use next_cursor
+        let query2 = BlocksQuery {
+            limit: Some(2),
+            cursor: res1.0.next_cursor,
+        };
+        let res2 = handle_get_blocks(State(state.clone()), ConnectInfo(addr), Query(query2))
+            .await
+            .expect("list blocks 2");
+
+        assert_eq!(res2.0.items.len(), 2);
+        assert_eq!(res2.0.items[0].height, 3);
+        assert_eq!(res2.0.items[1].height, 2);
+        assert!(res2.0.next_cursor.is_some());
+
+        // Call #3: final page
+        let query3 = BlocksQuery {
+            limit: Some(2),
+            cursor: res2.0.next_cursor,
+        };
+        let res3 = handle_get_blocks(State(state.clone()), ConnectInfo(addr), Query(query3))
+            .await
+            .expect("list blocks 3");
+
+        assert_eq!(res3.0.items.len(), 1);
+        assert_eq!(res3.0.items[0].height, 1);
+        assert!(res3.0.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_validator_count_undercount_fix() {
+        let state = make_app_state();
+        let addr: SocketAddr = "127.0.0.1:9098".parse().unwrap();
+
+        // Mock 4 validators in environment
+        std::env::set_var("IPPAN_VALIDATOR_IDS", "id1,id2,id3,id4");
+
+        // Request status
+        let res = handle_status(State(state.clone()), ConnectInfo(addr))
+            .await
+            .expect("status success");
+
+        let data = res.0;
+        assert_eq!(data["validator_count"], 4);
+        assert_eq!(data["validator_ids_sample"].as_array().unwrap().len(), 4);
+        assert_eq!(data["consensus"]["validator_count"], 4);
+        assert_eq!(
+            data["consensus"]["validator_ids"].as_array().unwrap().len(),
+            4
+        );
+
+        std::env::remove_var("IPPAN_VALIDATOR_IDS");
     }
 }
