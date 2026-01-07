@@ -2487,6 +2487,7 @@ mod tests {
             log_format: "json".to_string(),
             pid_file: None,
             dev_mode: false,
+            node_mode: NodeMode::Validator,
         };
 
         let err = config.validate().unwrap_err();
