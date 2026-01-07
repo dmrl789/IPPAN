@@ -8744,7 +8744,10 @@ mod tests {
         assert_eq!(data["validator_count"], 4);
         assert_eq!(data["validator_ids_sample"].as_array().unwrap().len(), 4);
         assert_eq!(data["consensus"]["validator_count"], 4);
-        assert_eq!(data["consensus"]["validator_ids"].as_array().unwrap().len(), 4);
+        assert_eq!(
+            data["consensus"]["validator_ids"].as_array().unwrap().len(),
+            4
+        );
 
         std::env::remove_var("IPPAN_VALIDATOR_IDS");
     }
