@@ -8657,8 +8657,8 @@ mod tests {
             .expect("list blocks 1");
 
         assert_eq!(res1.0.items.len(), 2);
-        assert_eq!(res1.0.items[0].round_id, 5); // Newest first
-        assert_eq!(res1.0.items[1].round_id, 4);
+        assert_eq!(res1.0.items[0].height, 5); // Newest first
+        assert_eq!(res1.0.items[1].height, 4);
         assert!(res1.0.next_cursor.is_some());
 
         // Call #2: use next_cursor
@@ -8671,8 +8671,8 @@ mod tests {
             .expect("list blocks 2");
 
         assert_eq!(res2.0.items.len(), 2);
-        assert_eq!(res2.0.items[0].round_id, 3);
-        assert_eq!(res2.0.items[1].round_id, 2);
+        assert_eq!(res2.0.items[0].height, 3);
+        assert_eq!(res2.0.items[1].height, 2);
         assert!(res2.0.next_cursor.is_some());
 
         // Call #3: final page
@@ -8685,7 +8685,7 @@ mod tests {
             .expect("list blocks 3");
 
         assert_eq!(res3.0.items.len(), 1);
-        assert_eq!(res3.0.items[0].round_id, 1);
+        assert_eq!(res3.0.items[0].height, 1);
         assert!(res3.0.next_cursor.is_none());
     }
 
