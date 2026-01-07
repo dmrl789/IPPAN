@@ -844,6 +844,26 @@ pub trait Storage {
     /// Append a transaction to the recent index (bounded internally).
     fn push_recent_tx(&self, entry: RecentTxEntryV1) -> Result<()>;
     fn list_recent_txs(&self, limit: usize) -> Result<Vec<RecentTxEntryV1>>;
+
+    // ---------------------------------------------------------------------
+    // Blocks index management (for gateway /blocks endpoint)
+    // ---------------------------------------------------------------------
+
+    /// Rebuild the blocks_by_time index from stored blocks (startup recovery).
+    /// Returns the number of blocks indexed.
+    fn rebuild_blocks_index(&self, _max_blocks: usize) -> Result<usize> {
+        Ok(0) // Default no-op for backends that don't need it
+    }
+
+    /// Index a single block into the time-ordered index (opportunistic).
+    fn index_block(&self, _block: &Block) -> Result<()> {
+        Ok(()) // Default no-op
+    }
+
+    /// Get the current size of the blocks index.
+    fn blocks_index_size(&self) -> usize {
+        0
+    }
 }
 
 /// Validator telemetry for AI consensus
@@ -1265,6 +1285,29 @@ impl Storage for MemoryStorage {
         let map = self.inner.recent_txs.read();
         Ok(map.values().take(limit).cloned().collect())
     }
+
+    fn rebuild_blocks_index(&self, max_blocks: usize) -> Result<usize> {
+        // MemoryStorage already populates blocks_by_time in store_block,
+        // so we just return the current count
+        let count = self.inner.blocks_by_time.read().len().min(max_blocks);
+        Ok(count)
+    }
+
+    fn index_block(&self, block: &Block) -> Result<()> {
+        // Index the block into blocks_by_time (idempotent)
+        let hash = block.hash();
+        let time_us = block.header.hashtimer.timestamp_us;
+        let time_u128 = if time_us < 0 { 0u128 } else { time_us as u128 };
+        let mut key = [0u8; 48];
+        key[0..16].copy_from_slice(&time_u128.to_be_bytes());
+        key[16..48].copy_from_slice(&hash);
+        self.inner.blocks_by_time.write().insert(key, hash);
+        Ok(())
+    }
+
+    fn blocks_index_size(&self) -> usize {
+        self.inner.blocks_by_time.read().len()
+    }
 }
 
 impl StorageLike for MemoryStorage {
@@ -1455,6 +1498,78 @@ impl SledStorage {
             tracing::info!("Initialized genesis block + account");
         }
         Ok(())
+    }
+
+    /// Rebuild the `blocks_by_time` index from stored blocks.
+    ///
+    /// This is useful after restart if the index was empty or corrupted.
+    /// Scans all blocks in storage and populates the time-ordered index.
+    /// Returns the number of blocks indexed.
+    pub fn rebuild_blocks_index(&self, max_blocks: usize) -> Result<usize> {
+        let mut indexed = 0usize;
+        let existing_count = self.blocks_by_time.len();
+
+        // If we already have a reasonable index, skip rebuild
+        if existing_count > 0 {
+            tracing::info!(
+                "blocks_by_time index already has {} entries, skipping rebuild",
+                existing_count
+            );
+            return Ok(existing_count);
+        }
+
+        tracing::info!(
+            "Rebuilding blocks_by_time index (max_blocks={})",
+            max_blocks
+        );
+
+        // Iterate through all blocks and index them
+        for entry in self.blocks.iter().take(max_blocks) {
+            let (_, value) = entry?;
+            let block: Block = match serde_json::from_slice(&value) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+
+            let hash = block.hash();
+            let time_us = block.header.hashtimer.timestamp_us;
+            let time_u128 = if time_us < 0 { 0u128 } else { time_us as u128 };
+            let mut time_key = [0u8; 48];
+            time_key[0..16].copy_from_slice(&time_u128.to_be_bytes());
+            time_key[16..48].copy_from_slice(&hash);
+
+            self.blocks_by_time.insert(time_key, &hash[..])?;
+            indexed += 1;
+        }
+
+        if indexed > 0 {
+            self.blocks_by_time.flush()?;
+        }
+
+        tracing::info!("blocks_by_time index rebuilt: indexed={}", indexed);
+        Ok(indexed)
+    }
+
+    /// Index a single block into `blocks_by_time` (opportunistic indexing).
+    ///
+    /// Called when a block is fetched via `/block/:hash` to ensure it appears
+    /// in the `/blocks` listing. Safe to call multiple times (idempotent).
+    pub fn index_block(&self, block: &Block) -> Result<()> {
+        let hash = block.hash();
+        let time_us = block.header.hashtimer.timestamp_us;
+        let time_u128 = if time_us < 0 { 0u128 } else { time_us as u128 };
+        let mut time_key = [0u8; 48];
+        time_key[0..16].copy_from_slice(&time_u128.to_be_bytes());
+        time_key[16..48].copy_from_slice(&hash);
+
+        // Insert into blocks_by_time (idempotent - same key/value)
+        self.blocks_by_time.insert(time_key, &hash[..])?;
+        Ok(())
+    }
+
+    /// Get the current size of the blocks_by_time index.
+    pub fn blocks_index_size(&self) -> usize {
+        self.blocks_by_time.len()
     }
 
     pub fn flush(&self) -> Result<()> {
@@ -2006,6 +2121,20 @@ impl Storage for SledStorage {
             out.push(serde_json::from_slice::<RecentTxEntryV1>(&v)?);
         }
         Ok(out)
+    }
+
+    fn rebuild_blocks_index(&self, max_blocks: usize) -> Result<usize> {
+        // Call the inherent method
+        SledStorage::rebuild_blocks_index(self, max_blocks)
+    }
+
+    fn index_block(&self, block: &Block) -> Result<()> {
+        // Call the inherent method
+        SledStorage::index_block(self, block)
+    }
+
+    fn blocks_index_size(&self) -> usize {
+        SledStorage::blocks_index_size(self)
     }
 }
 
