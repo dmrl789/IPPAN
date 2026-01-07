@@ -1,0 +1,29 @@
+    Blocking waiting for file lock on build directory
+    Checking ippan-time v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/time)
+   Compiling ippan-rpc v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/rpc)
+    Checking ippan-types v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/types)
+    Checking ippan-crypto v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/crypto)
+    Checking ippan_economics v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/ippan_economics)
+    Checking ippan-ai-registry v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/ai_registry)
+    Checking ippan-l1-fees v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/l1_fees)
+    Checking ippan-storage v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/storage)
+    Checking ippan-network v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/network)
+    Checking ippan-l2-handle-registry v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/l2_handle_registry)
+    Checking ippan-mempool v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/mempool)
+    Checking ippan-files v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/files)
+    Checking ippan-treasury v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/treasury)
+    Checking ippan-governance v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/governance)
+    Checking ippan-consensus-dlc v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/consensus_dlc)
+    Checking ippan-l1-handle-anchors v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/l1_handle_anchors)
+    Checking ippan-p2p v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/p2p)
+    Checking ippan-consensus v0.1.0 (/mnt/c/Users/ugosa/Desktop/Cursor SOFTWARE/IPPAN/crates/consensus)
+error[E0560]: struct `server::AppState` has no field named `ipn_dht`
+   --> crates/rpc/src/files_tests.rs:114:13
+    |
+114 |             ipn_dht: None,
+    |             ^^^^^^^ `server::AppState` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `ippan-rpc` (lib test) due to 1 previous error

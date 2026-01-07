@@ -916,8 +916,8 @@ mod tests {
         }
 
         // Fill receipts for nodes 1..7 (node 0 is sender)
-        for node_idx in 1..node_count {
-            let mut received = nodes[node_idx].gossip_received.lock().await;
+        for (node_idx, node) in nodes.iter().enumerate().skip(1) {
+            let mut received = node.gossip_received.lock().await;
             for msg_id in 0..msgs_sent {
                 let sent_ts = 1000;
                 let recv_ts = 1100 + (node_idx as u64 * 10) + (msg_id as u64 / 10);
