@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::fs;
@@ -69,7 +69,6 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, warn};
 
-use base64::{engine::general_purpose, Engine as _};
 use bincode::Options;
 use blake3::Hasher as Blake3Hasher;
 use hex::encode as hex_encode;
