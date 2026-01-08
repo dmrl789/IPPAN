@@ -1,6 +1,10 @@
 name: "\U0001F9EA IPPAN Test Suite"
 
 on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
     inputs:
       mode:
