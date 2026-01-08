@@ -255,6 +255,13 @@ impl TestHarness {
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
             let mut line = String::new();
+
+            // Pre-compile regex patterns outside the loop
+            let re_connected = regex::Regex::new(r"peer_connected (\S+)").unwrap();
+            let re_disconnected = regex::Regex::new(r"peer_disconnected (\S+)").unwrap();
+            let re_gossip =
+                regex::Regex::new(r"gossip_received ippan/test/gossip (\d+) (\S+) (\d+)").unwrap();
+
             while let Ok(n) = reader.read_line(&mut line).await {
                 if n == 0 {
                     break;
@@ -272,8 +279,7 @@ impl TestHarness {
                     }
                 }
                 if clean_line.contains("peer_connected ") {
-                    let re = regex::Regex::new(r"peer_connected (\S+)").unwrap();
-                    if let Some(caps) = re.captures(&clean_line) {
+                    if let Some(caps) = re_connected.captures(&clean_line) {
                         connected_peers_clone
                             .lock()
                             .await
@@ -281,8 +287,7 @@ impl TestHarness {
                     }
                 }
                 if clean_line.contains("peer_disconnected ") {
-                    let re = regex::Regex::new(r"peer_disconnected (\S+)").unwrap();
-                    if let Some(caps) = re.captures(&clean_line) {
+                    if let Some(caps) = re_disconnected.captures(&clean_line) {
                         connected_peers_clone
                             .lock()
                             .await
@@ -290,10 +295,7 @@ impl TestHarness {
                     }
                 }
                 if clean_line.contains("gossip_received ippan/test/gossip") {
-                    let re =
-                        regex::Regex::new(r"gossip_received ippan/test/gossip (\d+) (\S+) (\d+)")
-                            .unwrap();
-                    if let Some(caps) = re.captures(&clean_line) {
+                    if let Some(caps) = re_gossip.captures(&clean_line) {
                         if let (Ok(msg_id), Ok(sent_ts)) =
                             (caps[1].parse::<u64>(), caps[3].parse::<u64>())
                         {
@@ -611,6 +613,7 @@ async fn run_churn(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_chaos(
     harness: &mut TestHarness,
     node_count: usize,
