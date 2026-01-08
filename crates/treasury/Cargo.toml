@@ -14,6 +14,7 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 hex = { workspace = true }
+blake3 = { workspace = true }
 ippan_economics = { path = "../ippan_economics" }
 ippan-types = { path = "../types" }
 

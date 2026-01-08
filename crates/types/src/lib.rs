@@ -7,6 +7,7 @@ pub mod address;
 pub mod block;
 pub mod chain_state;
 pub mod currency;
+pub mod fee_policy;
 pub mod file_descriptor;
 pub mod handle;
 pub mod health;
@@ -65,6 +66,15 @@ pub use time_service::{
 
 // Transaction types
 pub use transaction::*;
+
+// Fee policy types (kambei units, schedules, epochs)
+pub use fee_policy::{
+    checked_add_kambei, checked_sub_kambei, epoch_end_us, epoch_from_ippan_time_secs,
+    epoch_from_ippan_time_us, epoch_start_us, fee_pool_account_id, ipn_to_kambei, kambei_to_ipn,
+    mul_div_u128, Epoch, EpochFeePoolState, FailureFeeLevel, FeeScheduleError, FeeScheduleV1,
+    Kambei, PayoutProfile, PayoutProfileError, PayoutRecipient, RegistryPriceScheduleV1,
+    TxFailureCategory, BYTE_QUANTUM, EPOCH_SECS, EPOCH_US, KAMBEI_PER_IPN,
+};
 
 #[cfg(test)]
 mod tests;
