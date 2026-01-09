@@ -218,6 +218,39 @@ impl L2HandleRegistry {
         map.get(owner).cloned().unwrap_or_default()
     }
 
+    /// Count total registered handles
+    pub fn count(&self) -> Result<usize> {
+        let handles = self.handles.read();
+        Ok(handles.len())
+    }
+
+    /// List handles with pagination (returns items and total count)
+    pub fn list(&self, limit: usize) -> Result<(Vec<HandleListItem>, usize)> {
+        let handles = self.handles.read();
+        let total = handles.len();
+
+        let items: Vec<HandleListItem> = handles
+            .iter()
+            .take(limit)
+            .map(|(handle, meta)| HandleListItem {
+                handle: handle.as_str().to_string(),
+                owner: hex::encode(meta.owner.as_bytes()),
+                expires_at: if meta.expires_at > 0 {
+                    Some(meta.expires_at)
+                } else {
+                    None
+                },
+                updated_at: if meta.updated_at > 0 {
+                    Some(meta.updated_at)
+                } else {
+                    None
+                },
+            })
+            .collect();
+
+        Ok((items, total))
+    }
+
     /// Compute deterministic L1 anchor hash
     fn compute_l1_anchor(&self, handle: &Handle, owner: &PublicKey) -> [u8; 32] {
         let mut h = Sha256::new();
