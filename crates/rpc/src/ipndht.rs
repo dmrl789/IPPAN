@@ -107,7 +107,7 @@ pub async fn handle_ipndht_summary(
 
     // Get file count from storage
     let files = if let Some(file_storage) = &state.file_storage {
-        file_storage.count().unwrap_or(0)
+        file_storage.count().unwrap_or(0) as usize
     } else {
         0
     };
