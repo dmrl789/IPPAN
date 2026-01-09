@@ -78,6 +78,7 @@ use time::OffsetDateTime;
 
 use crate::{
     files::{handle_get_file, handle_publish_file},
+    ipndht::{handle_ipndht_files, handle_ipndht_handles, handle_ipndht_summary},
     HttpP2PNetwork, NetworkMessage,
 };
 
@@ -2085,6 +2086,10 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/l2/networks", get(handle_list_l2_networks))
         .route("/l2/commits", get(handle_list_l2_commits))
         .route("/l2/exits", get(handle_list_l2_exits))
+        // IPNDHT endpoints
+        .route("/ipndht/summary", get(handle_ipndht_summary))
+        .route("/ipndht/handles", get(handle_ipndht_handles))
+        .route("/ipndht/files", get(handle_ipndht_files))
         .layer(read_stack);
 
     let batch_stack = ServiceBuilder::new()

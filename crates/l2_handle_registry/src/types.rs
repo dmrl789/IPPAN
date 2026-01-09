@@ -80,6 +80,21 @@ pub enum HandleStatus {
     Transferred,
 }
 
+/// Handle item for list responses (API-friendly format)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandleListItem {
+    /// Handle string
+    pub handle: String,
+    /// Owner address (hex encoded)
+    pub owner: String,
+    /// Expiration timestamp (None if never expires)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+    /// Last updated timestamp
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<u64>,
+}
+
 impl Default for HandleMetadata {
     fn default() -> Self {
         let now = SystemTime::now()
